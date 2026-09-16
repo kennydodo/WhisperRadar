@@ -61,6 +61,7 @@ class Config:
         self.studio_tts_command = studio.get("tts_command") or None
         self.studio_imagegen_command = studio.get("imagegen_command") or None
         self.studio_merge_command = studio.get("merge_command") or None
+        self.studio_script_words = studio.get("script_words") or None
         self.studio_dir = base_dir / "data" / "studio"
 
 

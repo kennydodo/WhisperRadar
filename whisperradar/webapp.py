@@ -620,14 +620,19 @@ def create_app(cfg) -> Flask:
                     raise RuntimeError(
                         "No source transcript - write the style guide manually"
                     )
+                import re as _re
+
+                word_count = len(_re.findall(r"\w+", source_text))
                 prompt = studio.style_prompt(prod["title"], prod["genre"],
-                                             source_text)
+                                             source_text,
+                                             word_count=word_count)
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 if not text:
                     raise RuntimeError("LLM returned an empty style guide")
                 pdir = studio.prod_dir(cfg, pid)
                 (pdir / "style.md").write_text(text + "\n", encoding="utf-8")
-                db.add_step(conn, pid, "style", "auto", detail=provider)
+                db.add_step(conn, pid, "style", "auto",
+                            detail=f"{provider}, source ~{word_count} words")
             finally:
                 conn.close()
 
@@ -669,8 +674,13 @@ def create_app(cfg) -> Flask:
             conn.close()
         style = studio.find_style(studio.prod_dir(cfg, pid))
         style_guide = style.read_text(encoding="utf-8") if style else ""
+        import re as _re
+
+        source_words = len(_re.findall(r"\w+", source_text)) if source_text else 0
+        target_words = cfg.studio_script_words or source_words or 1200
         prompt = studio.script_prompt(prod["title"], prod["genre"],
-                                      source_text, style_guide)
+                                      source_text, style_guide,
+                                      target_words=target_words)
 
         def worker():
             conn = db.connect(cfg.db_path)
@@ -686,7 +696,8 @@ def create_app(cfg) -> Flask:
                 warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
                 db.update_production(conn, pid, llm_provider=provider)
                 db.add_step(conn, pid, "script", "auto",
-                            detail=f"{provider}, overlap {ratio:.1%}{warn}")
+                            detail=f"{provider}, overlap {ratio:.1%}, "
+                                   f"target {target_words} words{warn}")
             finally:
                 conn.close()
 

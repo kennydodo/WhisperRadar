@@ -260,7 +260,8 @@ def overlap_ratio(script: str, source: str) -> float:
     return len(a & b) / len(a)
 
 
-def style_prompt(title: str, genre: str, source_text: str) -> str:
+def style_prompt(title: str, genre: str, source_text: str,
+                 word_count: int | None = None) -> str:
     text = (source_text or "").strip()
     if len(text) > 12000:
         text = text[:12000] + " ..."
@@ -268,9 +269,14 @@ def style_prompt(title: str, genre: str, source_text: str) -> str:
         raise RuntimeError(
             "No source transcript available - write the style guide manually"
         )
+    length_note = ""
+    if word_count:
+        length_note = (f"\nThe transcript is about {word_count} words "
+                       f"(~{max(1, round(word_count / 150))} minutes of "
+                       f"narration) - reflect this in the Structure section.")
     return f"""You are a writing coach for a {genre} YouTube channel.
 Analyze the WRITING STYLE of the transcript below (from a video titled "{title}").
-
+{length_note}
 TRANSCRIPT TO ANALYZE:
 {text}
 

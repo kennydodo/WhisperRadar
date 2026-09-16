@@ -35,6 +35,9 @@ studio:
       model: deepseek-v4.1-flash
       api_key: null
   llm_default: glm-flash
+  # Target script length in words. null = match the source transcript's
+  # length automatically; set a number to force a fixed target (e.g. 1200).
+  script_words: null
   ollama_model: null     # used when llm: ollama
   tts_command: null      # e.g. python C:\path\chatterbox\run_tts.py {script} {out}
   imagegen_command: null # e.g. renderly --prompt-file {prompts} --outdir {outdir}
