@@ -79,6 +79,68 @@ def ollama_generate(model: str, prompt: str, timeout: int = 1800) -> str:
         return json.loads(r.read()).get("response", "").strip()
 
 
+def openai_generate(cfg, prompt: str, timeout: int = 600) -> str:
+    """Call any OpenAI-compatible chat API (DeepSeek, GLM, OpenAI, ...)."""
+    import os
+
+    key = cfg.studio_llm_api_key or os.environ.get("WR_LLM_API_KEY")
+    if not key:
+        raise RuntimeError(
+            "No API key: set studio.llm_api_key in config.yaml or the "
+            "WR_LLM_API_KEY environment variable"
+        )
+    if not cfg.studio_llm_base_url or not cfg.studio_llm_model:
+        raise RuntimeError(
+            "Set studio.llm_base_url and studio.llm_model in config.yaml"
+        )
+    url = cfg.studio_llm_base_url.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": cfg.studio_llm_model,
+        "stream": False,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = json.loads(r.read())
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError) as exc:
+        raise RuntimeError(f"Unexpected LLM response: {data}") from exc
+
+
+def llm_generate(cfg, prompt: str, timeout: int = 1800) -> str:
+    """Dispatch to the configured LLM provider."""
+    if cfg.studio_llm == "openai":
+        return openai_generate(cfg, prompt, timeout=timeout)
+    if cfg.studio_llm == "ollama":
+        models = ollama_models()
+        if not models:
+            raise RuntimeError("Ollama is not reachable at localhost:11434")
+        model = models[0]
+        for m in models:
+            if cfg.ollama_model and m.startswith(cfg.ollama_model):
+                model = m
+                break
+        return ollama_generate(model, prompt, timeout=timeout)
+    raise RuntimeError("LLM disabled (studio.llm: none in config.yaml)")
+
+
+def llm_label(cfg) -> str:
+    if cfg.studio_llm == "openai":
+        return cfg.studio_llm_model or "OpenAI-compatible LLM"
+    if cfg.studio_llm == "ollama":
+        return "local LLM (Ollama)"
+    return "LLM disabled"
+
+
 # ------------------------------------------------------ "not a copycat" ----
 
 def _ngrams(text: str, n: int = 5) -> set:

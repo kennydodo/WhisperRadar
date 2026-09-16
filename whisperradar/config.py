@@ -37,6 +37,9 @@ class Config:
         studio = raw.get("studio") or {}
         self.studio_llm = studio.get("llm", "ollama")
         self.ollama_model = studio.get("ollama_model") or None
+        self.studio_llm_base_url = studio.get("llm_base_url") or None
+        self.studio_llm_api_key = studio.get("llm_api_key") or None
+        self.studio_llm_model = studio.get("llm_model") or None
         self.studio_tts_command = studio.get("tts_command") or None
         self.studio_imagegen_command = studio.get("imagegen_command") or None
         self.studio_merge_command = studio.get("merge_command") or None

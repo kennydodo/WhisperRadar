@@ -147,10 +147,10 @@
       </form>
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
-              onsubmit="return confirm('Generate a script with the local LLM? Existing script will be overwritten.')">
+              onsubmit="return confirm('Generate a script with {{ llm_label }}? Existing script will be overwritten.')">
           <button type="submit" {{ '' if llm_ready else 'disabled' }}
-                  title="{{ 'Generate with Ollama (' + (models[0] if models else 'no model') + ')' if llm_ready else 'Ollama not reachable or llm: none in config' }}">
-            Generate with local LLM{% if models %} ({{ models[0].split(':')[0] }}){% endif %}
+                  title="{{ 'Generate with ' + llm_label if llm_ready else 'Configure studio.llm in config.yaml (provider, key, model)' }}">
+            Generate with {{ llm_label }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/save" enctype="multipart/form-data">
@@ -228,8 +228,8 @@
           <button type="submit">Save prompts</button>
           <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/generate">
             <button type="submit" class="secondary" {{ '' if llm_ready else 'disabled' }}
-                    title="{{ 'Write one image prompt per scene with the local LLM' if llm_ready else 'Ollama not reachable' }}">
-              Generate prompts with local LLM
+                    title="{{ 'Write one image prompt per scene with ' + llm_label if llm_ready else 'Configure studio.llm in config.yaml' }}">
+              Generate prompts with {{ llm_label }}
             </button>
           </form>
         </div>

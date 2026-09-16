@@ -22,8 +22,16 @@ whisper:
 # Every stage also works fully by hand (paste text / upload files) - these
 # hooks are optional. {placeholders} are replaced at runtime.
 studio:
-  llm: ollama            # ollama | none  (script + image-prompt writing)
-  ollama_model: null     # null = first installed Ollama model
+  # LLM for script + image-prompt writing: openai | ollama | none
+  # "openai" = any OpenAI-compatible chat API (DeepSeek, GLM, OpenAI, ...)
+  llm: openai
+  llm_api_key: null      # or environment variable WR_LLM_API_KEY (recommended)
+  # DeepSeek:   base_url https://api.deepseek.com           model deepseek-chat
+  # GLM (z.ai): base_url https://api.z.ai/api/paas/v4        model glm-5.3-flash
+  # GLM (cn):   base_url https://open.bigmodel.cn/api/paas/v4
+  llm_base_url: https://api.deepseek.com
+  llm_model: deepseek-chat
+  ollama_model: null     # used when llm: ollama
   tts_command: null      # e.g. python C:\path\chatterbox\run_tts.py {script} {out}
   imagegen_command: null # e.g. renderly --prompt-file {prompts} --outdir {outdir}
   merge_command: null    # e.g. imgtovideo --images {images} --audio {audio} --srt {srt} --out {out}

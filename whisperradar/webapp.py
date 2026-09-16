@@ -396,17 +396,6 @@ def create_app(cfg) -> Flask:
             return Path(row["transcript_path"]).read_text(encoding="utf-8")
         return ""
 
-    def _pick_model() -> str:
-        models = studio.ollama_models()
-        if not models:
-            raise RuntimeError("Ollama is not reachable at localhost:11434")
-        if cfg.ollama_model:
-            for m in models:
-                if m.startswith(cfg.ollama_model):
-                    return m
-            raise RuntimeError(f"Ollama model '{cfg.ollama_model}' not installed")
-        return models[0]
-
     @app.get("/studio")
     def studio_list():
         conn = db.connect(cfg.db_path)
@@ -468,7 +457,17 @@ def create_app(cfg) -> Flask:
         final = studio.find_final(pdir)
 
         models = studio.ollama_models()
-        llm_ready = cfg.studio_llm != "none" and bool(models)
+        if cfg.studio_llm == "openai":
+            import os
+
+            llm_ready = bool(cfg.studio_llm_model and
+                             (cfg.studio_llm_api_key or
+                              os.environ.get("WR_LLM_API_KEY")))
+        elif cfg.studio_llm == "ollama":
+            llm_ready = bool(models)
+        else:
+            llm_ready = False
+        llm_label = studio.llm_label(cfg)
         hooks = {
             "tts": bool(cfg.studio_tts_command),
             "imagegen": bool(cfg.studio_imagegen_command),
@@ -480,7 +479,7 @@ def create_app(cfg) -> Flask:
             audio=audio, srt=srt, srt_text=srt_text,
             prompts_text=prompts_text, images=images,
             final=final, source_video=source_video, llm_ready=llm_ready,
-            models=models, hooks=hooks, job=sjob,
+            llm_label=llm_label, models=models, hooks=hooks, job=sjob,
             msg=request.args.get("msg"), error=request.args.get("error"),
         )
 
@@ -585,11 +584,10 @@ def create_app(cfg) -> Flask:
                 prod = db.get_production(conn, pid)
                 if not prod:
                     return
-                model = _pick_model()
                 source_text = _source_transcript(prod)
                 prompt = studio.script_prompt(prod["title"], prod["genre"],
                                               source_text)
-                text = studio.ollama_generate(model, prompt)
+                text = studio.llm_generate(cfg, prompt)
                 if not text:
                     raise RuntimeError("LLM returned an empty script")
                 pdir = studio.prod_dir(cfg, pid)
@@ -597,7 +595,8 @@ def create_app(cfg) -> Flask:
                 ratio = _script_overlap(prod, text)
                 warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
                 db.add_step(conn, pid, "script", "auto",
-                            detail=f"ollama:{model}, overlap {ratio:.1%}{warn}")
+                            detail=f"{studio.llm_label(cfg)}, "
+                                   f"overlap {ratio:.1%}{warn}")
             finally:
                 conn.close()
 
@@ -715,10 +714,9 @@ def create_app(cfg) -> Flask:
                 script = studio.find_script(pdir)
                 if not script:
                     raise RuntimeError("Write the script first")
-                model = _pick_model()
                 prompt = studio.image_prompts_prompt(
                     script.read_text(encoding="utf-8"), prod["genre"])
-                text = studio.ollama_generate(model, prompt)
+                text = studio.llm_generate(cfg, prompt)
                 lines = studio.parse_image_prompts(text)
                 if not lines:
                     raise RuntimeError("LLM returned no image prompts")
