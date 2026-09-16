@@ -6,6 +6,10 @@ set "PORT=8540"
 set "URL=http://127.0.0.1:%PORT%"
 cd /d "%~dp0"
 
+rem pull the latest WR_* user environment variables (keys set with setx
+rem after this window's parent process started would otherwise be missed)
+for /f "tokens=1,2,*" %%a in ('reg query HKCU\Environment 2^>nul ^| findstr /i "WR_"') do set "%%a=%%c"
+
 if exist ".venv\Scripts\python.exe" (set "PY=.venv\Scripts\python.exe") else (set "PY=python")
 
 rem If the dashboard is already running, just open the browser
