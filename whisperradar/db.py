@@ -103,6 +103,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE videos ADD COLUMN auto INTEGER NOT NULL DEFAULT 1")
         # videos discovered but never downloaded are backlog, not auto-queue
         conn.execute("UPDATE videos SET auto = 0 WHERE status = 'new'")
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(productions)")}
+    if "llm_provider" not in cols:
+        conn.execute("ALTER TABLE productions ADD COLUMN llm_provider TEXT")
 
 
 def add_channel(
@@ -309,7 +312,8 @@ def start_run(conn) -> int:
 
 STAGES = ["script", "audio", "srt", "images", "merge", "review"]
 
-_PROD_FIELDS = {"title", "genre", "stage", "status", "notes", "source_video_id"}
+_PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
+                "source_video_id", "llm_provider"}
 
 
 def create_production(conn, title: str, genre: str = "general",

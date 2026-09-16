@@ -457,17 +457,25 @@ def create_app(cfg) -> Flask:
         final = studio.find_final(pdir)
 
         models = studio.ollama_models()
-        if cfg.studio_llm == "openai":
+        providers = cfg.studio_llm_providers
+        default_provider = prod["llm_provider"] or cfg.studio_llm_default
+        if providers:
+            llm_ready = any(studio.provider_ready(cfg, p["name"])
+                            for p in providers)
+            llm_label = studio.llm_label(cfg, default_provider)
+        elif cfg.studio_llm == "openai":
             import os
 
             llm_ready = bool(cfg.studio_llm_model and
                              (cfg.studio_llm_api_key or
                               os.environ.get("WR_LLM_API_KEY")))
+            llm_label = studio.llm_label(cfg)
         elif cfg.studio_llm == "ollama":
             llm_ready = bool(models)
+            llm_label = studio.llm_label(cfg)
         else:
             llm_ready = False
-        llm_label = studio.llm_label(cfg)
+            llm_label = studio.llm_label(cfg)
         hooks = {
             "tts": bool(cfg.studio_tts_command),
             "imagegen": bool(cfg.studio_imagegen_command),
@@ -479,7 +487,9 @@ def create_app(cfg) -> Flask:
             audio=audio, srt=srt, srt_text=srt_text,
             prompts_text=prompts_text, images=images,
             final=final, source_video=source_video, llm_ready=llm_ready,
-            llm_label=llm_label, models=models, hooks=hooks, job=sjob,
+            llm_label=llm_label, providers=providers,
+            default_provider=default_provider, models=models, hooks=hooks,
+            job=sjob,
             msg=request.args.get("msg"), error=request.args.get("error"),
         )
 
@@ -584,19 +594,22 @@ def create_app(cfg) -> Flask:
                 prod = db.get_production(conn, pid)
                 if not prod:
                     return
+                provider = (request.form.get("provider")
+                            or prod["llm_provider"]
+                            or cfg.studio_llm_default)
                 source_text = _source_transcript(prod)
                 prompt = studio.script_prompt(prod["title"], prod["genre"],
                                               source_text)
-                text = studio.llm_generate(cfg, prompt)
+                text = studio.llm_generate(cfg, prompt, provider=provider)
                 if not text:
                     raise RuntimeError("LLM returned an empty script")
                 pdir = studio.prod_dir(cfg, pid)
                 (pdir / "script.md").write_text(text + "\n", encoding="utf-8")
                 ratio = _script_overlap(prod, text)
                 warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
+                db.update_production(conn, pid, llm_provider=provider)
                 db.add_step(conn, pid, "script", "auto",
-                            detail=f"{studio.llm_label(cfg)}, "
-                                   f"overlap {ratio:.1%}{warn}")
+                            detail=f"{provider}, overlap {ratio:.1%}{warn}")
             finally:
                 conn.close()
 
@@ -714,12 +727,16 @@ def create_app(cfg) -> Flask:
                 script = studio.find_script(pdir)
                 if not script:
                     raise RuntimeError("Write the script first")
+                provider = (request.form.get("provider")
+                            or prod["llm_provider"]
+                            or cfg.studio_llm_default)
                 prompt = studio.image_prompts_prompt(
                     script.read_text(encoding="utf-8"), prod["genre"])
-                text = studio.llm_generate(cfg, prompt)
+                text = studio.llm_generate(cfg, prompt, provider=provider)
                 lines = studio.parse_image_prompts(text)
                 if not lines:
                     raise RuntimeError("LLM returned no image prompts")
+                db.update_production(conn, pid, llm_provider=provider)
                 (pdir / "prompts.txt").write_text(
                     "\n".join(lines) + "\n", encoding="utf-8")
             finally:

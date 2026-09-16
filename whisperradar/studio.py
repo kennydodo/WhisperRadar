@@ -80,22 +80,54 @@ def ollama_generate(model: str, prompt: str, timeout: int = 1800) -> str:
 
 
 def openai_generate(cfg, prompt: str, timeout: int = 600) -> str:
-    """Call any OpenAI-compatible chat API (DeepSeek, GLM, OpenAI, ...)."""
+    """Call the configured LLM (provider list or legacy single-LLM config)."""
+    provider = llm_provider(cfg, None)
+    return openai_chat(provider, prompt, timeout=timeout)
+
+
+def _resolve_provider(cfg, name: str | None = None) -> dict:
+    if cfg.studio_llm_providers:
+        name = name or cfg.studio_llm_default
+        for p in cfg.studio_llm_providers:
+            if p["name"] == name:
+                return p
+        raise RuntimeError(f"Unknown LLM provider '{name}'")
+    # legacy single-LLM config
+    if cfg.studio_llm == "openai":
+        return {"name": "llm", "base_url": cfg.studio_llm_base_url,
+                "api_key": cfg.studio_llm_api_key,
+                "model": cfg.studio_llm_model, "env_key": "WR_LLM_API_KEY"}
+    raise RuntimeError("No LLM providers configured (studio.llm_providers)")
+
+
+def _provider_key(p: dict) -> str | None:
     import os
 
-    key = cfg.studio_llm_api_key or os.environ.get("WR_LLM_API_KEY")
+    key = (p.get("api_key") or os.environ.get(p.get("env_key") or "")
+           or os.environ.get("WR_LLM_API_KEY") or "").strip()
+    return key or None
+
+
+def provider_ready(cfg, name: str | None = None) -> bool:
+    try:
+        p = _resolve_provider(cfg, name)
+    except RuntimeError:
+        return False
+    return bool(p["base_url"] and p["model"] and _provider_key(p))
+
+
+def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
+    key = _provider_key(p)
     if not key:
         raise RuntimeError(
-            "No API key: set studio.llm_api_key in config.yaml or the "
-            "WR_LLM_API_KEY environment variable"
+            f"No API key for '{p['name']}' (set api_key in config.yaml or "
+            f"{p['env_key']} env variable)"
         )
-    if not cfg.studio_llm_base_url or not cfg.studio_llm_model:
-        raise RuntimeError(
-            "Set studio.llm_base_url and studio.llm_model in config.yaml"
-        )
-    url = cfg.studio_llm_base_url.rstrip("/") + "/chat/completions"
+    if not p["base_url"] or not p["model"]:
+        raise RuntimeError(f"Provider '{p['name']}' needs base_url and model")
+    url = p["base_url"].rstrip("/") + "/chat/completions"
     payload = {
-        "model": cfg.studio_llm_model,
+        "model": p["model"],
         "stream": False,
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -116,11 +148,13 @@ def openai_generate(cfg, prompt: str, timeout: int = 600) -> str:
         raise RuntimeError(f"Unexpected LLM response: {data}") from exc
 
 
-def llm_generate(cfg, prompt: str, timeout: int = 1800) -> str:
-    """Dispatch to the configured LLM provider."""
-    if cfg.studio_llm == "openai":
-        return openai_generate(cfg, prompt, timeout=timeout)
-    if cfg.studio_llm == "ollama":
+def llm_provider(cfg, name: str | None) -> dict:
+    return _resolve_provider(cfg, name)
+
+
+def llm_generate(cfg, prompt: str, timeout: int = 1800,
+                 provider: str | None = None) -> str:
+    if not cfg.studio_llm_providers and cfg.studio_llm == "ollama":
         models = ollama_models()
         if not models:
             raise RuntimeError("Ollama is not reachable at localhost:11434")
@@ -130,15 +164,17 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800) -> str:
                 model = m
                 break
         return ollama_generate(model, prompt, timeout=timeout)
-    raise RuntimeError("LLM disabled (studio.llm: none in config.yaml)")
+    return openai_chat(_resolve_provider(cfg, provider), prompt, timeout=timeout)
 
 
-def llm_label(cfg) -> str:
-    if cfg.studio_llm == "openai":
-        return cfg.studio_llm_model or "OpenAI-compatible LLM"
-    if cfg.studio_llm == "ollama":
-        return "local LLM (Ollama)"
-    return "LLM disabled"
+def llm_label(cfg, provider: str | None = None) -> str:
+    try:
+        p = _resolve_provider(cfg, provider)
+        return f"{p['name']} ({p['model']})"
+    except RuntimeError:
+        if not cfg.studio_llm_providers and cfg.studio_llm == "ollama":
+            return "local LLM (Ollama)"
+        return "LLM not configured"
 
 
 # ------------------------------------------------------ "not a copycat" ----

@@ -146,13 +146,22 @@
         </div>
       </form>
       <div class="actions">
+        {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
-              onsubmit="return confirm('Generate a script with {{ llm_label }}? Existing script will be overwritten.')">
+              onsubmit="return confirm('Generate a script with the selected LLM? Existing script will be overwritten.')">
+          <select name="provider" title="LLM provider">
+            {% for p in providers %}
+            <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
+            {% endfor %}
+          </select>
           <button type="submit" {{ '' if llm_ready else 'disabled' }}
-                  title="{{ 'Generate with ' + llm_label if llm_ready else 'Configure studio.llm in config.yaml (provider, key, model)' }}">
-            Generate with {{ llm_label }}
+                  title="{{ 'Generate with the selected provider' if llm_ready else 'Add an api_key (or its WR_ env variable) for at least one provider in config.yaml' }}">
+            Generate script
           </button>
         </form>
+        {% else %}
+        <span class="muted">No LLM providers configured (studio.llm_providers in config.yaml) - paste or upload a script instead.</span>
+        {% endif %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/save" enctype="multipart/form-data">
           <input type="file" name="script_file" accept=".txt,.md">
           <button type="submit" class="secondary">Upload script file</button>
@@ -226,12 +235,21 @@
         <textarea name="prompts" style="min-height:120px" placeholder="One IMAGE: prompt per scene...">{{ prompts_text }}</textarea>
         <div class="actions">
           <button type="submit">Save prompts</button>
+          {% if providers %}
           <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/generate">
+            <select name="provider" title="LLM provider">
+              {% for p in providers %}
+              <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }})</option>
+              {% endfor %}
+            </select>
             <button type="submit" class="secondary" {{ '' if llm_ready else 'disabled' }}
-                    title="{{ 'Write one image prompt per scene with ' + llm_label if llm_ready else 'Configure studio.llm in config.yaml' }}">
-              Generate prompts with {{ llm_label }}
+                    title="{{ 'Write one image prompt per scene with the selected provider' if llm_ready else 'Add an api_key for at least one provider in config.yaml' }}">
+              Generate prompts
             </button>
           </form>
+          {% else %}
+          <span class="muted">No LLM providers configured - write prompts by hand or configure studio.llm_providers.</span>
+          {% endif %}
         </div>
       </form>
       <div class="actions" style="margin-top:10px">
