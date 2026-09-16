@@ -41,6 +41,29 @@ CREATE TABLE IF NOT EXISTS runs (
     transcribed INTEGER NOT NULL DEFAULT 0,
     failed INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS productions (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    genre TEXT NOT NULL DEFAULT 'general',
+    source_video_id TEXT,
+    stage TEXT NOT NULL DEFAULT 'script',
+    status TEXT NOT NULL DEFAULT 'active',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS production_steps (
+    id INTEGER PRIMARY KEY,
+    production_id INTEGER NOT NULL REFERENCES productions(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'auto',
+    status TEXT NOT NULL DEFAULT 'done',
+    artifact TEXT,
+    detail TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # Columns of `videos` that set_video() is allowed to update
@@ -280,6 +303,84 @@ def start_run(conn) -> int:
     cur = conn.execute("INSERT INTO runs DEFAULT VALUES")
     conn.commit()
     return cur.lastrowid
+
+
+# ---------------------------------------------------------------- studio ---
+
+STAGES = ["script", "audio", "srt", "images", "merge", "review"]
+
+_PROD_FIELDS = {"title", "genre", "stage", "status", "notes", "source_video_id"}
+
+
+def create_production(conn, title: str, genre: str = "general",
+                      source_video_id: str | None = None) -> int:
+    cur = conn.execute(
+        "INSERT INTO productions (title, genre, source_video_id) VALUES (?, ?, ?)",
+        (title, genre or "general", source_video_id),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def get_production(conn, pid: int):
+    return conn.execute("SELECT * FROM productions WHERE id = ?", (pid,)).fetchone()
+
+
+def list_productions(conn):
+    return conn.execute(
+        "SELECT * FROM productions ORDER BY updated_at DESC, id DESC"
+    ).fetchall()
+
+
+def update_production(conn, pid: int, **fields) -> None:
+    cols, vals = [], []
+    for key, value in fields.items():
+        if key not in _PROD_FIELDS:
+            raise ValueError(f"Unknown production field: {key}")
+        cols.append(f"{key} = ?")
+        vals.append(value)
+    cols.append("updated_at = datetime('now')")
+    vals.append(pid)
+    conn.execute(f"UPDATE productions SET {', '.join(cols)} WHERE id = ?", vals)
+    conn.commit()
+
+
+def delete_production(conn, pid: int) -> None:
+    conn.execute("DELETE FROM productions WHERE id = ?", (pid,))
+    conn.commit()
+
+
+def add_step(conn, pid: int, stage: str, method: str = "auto",
+             artifact: str | None = None, detail: str = "") -> None:
+    conn.execute(
+        "INSERT INTO production_steps (production_id, stage, method, status,"
+        " artifact, detail) VALUES (?, ?, ?, 'done', ?, ?)",
+        (pid, stage, method, artifact, detail),
+    )
+    conn.commit()
+
+
+def latest_steps(conn, pid: int) -> dict:
+    """Map of stage -> most recent done step for that stage."""
+    rows = conn.execute(
+        "SELECT s.* FROM production_steps s"
+        " JOIN (SELECT stage, MAX(id) AS mid FROM production_steps"
+        "       WHERE production_id = ? AND status = 'done' GROUP BY stage) m"
+        " ON s.id = m.mid",
+        (pid,),
+    ).fetchall()
+    return {row["stage"]: row for row in rows}
+
+
+def step_history(conn, pid: int):
+    return conn.execute(
+        "SELECT * FROM production_steps WHERE production_id = ? ORDER BY id DESC",
+        (pid,),
+    ).fetchall()
+
+
+def stage_done(conn, pid: int, stage: str) -> bool:
+    return stage in latest_steps(conn, pid)
 
 
 def finish_run(conn, run_id: int, **counts) -> None:

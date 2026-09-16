@@ -18,6 +18,16 @@ whisper:
   # null = auto-detect language per video, or force e.g. "en"
   language: null
 
+# Studio (video production pipeline) automation hooks.
+# Every stage also works fully by hand (paste text / upload files) - these
+# hooks are optional. {placeholders} are replaced at runtime.
+studio:
+  llm: ollama            # ollama | none  (script + image-prompt writing)
+  ollama_model: null     # null = first installed Ollama model
+  tts_command: null      # e.g. python C:\path\chatterbox\run_tts.py {script} {out}
+  imagegen_command: null # e.g. renderly --prompt-file {prompts} --outdir {outdir}
+  merge_command: null    # e.g. imgtovideo --images {images} --audio {audio} --srt {srt} --out {out}
+
 # Your channels. kind is "primary" or "similar"; active: false pauses a channel.
 channels: []
 #  - name: SomeSimilarChannel

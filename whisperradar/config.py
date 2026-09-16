@@ -34,6 +34,14 @@ class Config:
             )
         self.channels = channels
 
+        studio = raw.get("studio") or {}
+        self.studio_llm = studio.get("llm", "ollama")
+        self.ollama_model = studio.get("ollama_model") or None
+        self.studio_tts_command = studio.get("tts_command") or None
+        self.studio_imagegen_command = studio.get("imagegen_command") or None
+        self.studio_merge_command = studio.get("merge_command") or None
+        self.studio_dir = base_dir / "data" / "studio"
+
 
 def load_config(config_path: str | None = None) -> Config:
     path = (

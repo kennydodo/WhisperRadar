@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio - WhisperRadar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #12151c; --border: #262b36;
+    --text: #e6e9ef; --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f;
+    --amber: #e0a93f; --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px;
+            margin:0 auto; padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; font-size:15px; color:var(--text); }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  h2 { font-size: 15px; margin: 24px 0 10px; color: var(--muted);
+       text-transform: uppercase; letter-spacing: .06em; }
+  button, .btn { background: var(--accent); color: #fff; border: none;
+          border-radius: 7px; padding: 7px 14px; font-size: 13px;
+          font-weight: 600; cursor: pointer; display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button.secondary { background: var(--gray); }
+  button.ghost { background: transparent; border: 1px solid var(--border);
+                 color: var(--muted); padding: 4px 10px; font-weight: 500; }
+  button.ghost:hover { color: var(--red); border-color: var(--red); filter: none; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  input, select, textarea { background: #0c0e12; color: var(--text);
+                  border: 1px solid var(--border); border-radius: 7px;
+                  padding: 7px 10px; font-size: 13px; font-family: inherit; }
+  textarea { width: 100%; min-height: 180px; resize: vertical;
+             font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; }
+  .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .banner.job { background: rgba(224,169,63,.12); color: var(--amber); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.genre { background: rgba(79,140,255,.15); color: var(--accent); }
+  .badge.stage { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.ready { background: rgba(63,185,111,.15); color: var(--green); }
+  .muted { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--border);
+          border-radius: 10px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 4px; font-size: 15px; }
+  .card .meta { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .card .foot { display: flex; justify-content: space-between; align-items: center;
+                margin-top: 12px; }
+  .bar { height: 5px; background: #0c0e12; border-radius: 4px; overflow: hidden;
+         margin: 8px 0 2px; }
+  .bar span { display: block; height: 100%; background: var(--accent); }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/studio" class="active">Studio</a>
+</nav>
+<div class="wrap">
+  <h1>Studio</h1>
+  <p class="sub">turn competitor research into original videos - every stage is yours to run or redo</p>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+  {% if job.running %}<div class="banner job">Working: {{ job.kind }} - <a href="#" onclick="location.reload();return false">refresh</a> to see results</div>{% endif %}
+
+  <div class="panel">
+    <h2 style="margin-top:0">New production</h2>
+    <form class="inline" method="post" action="/studio/new">
+      <div>
+        <label>Title</label>
+        <input type="text" name="title" placeholder="Working title" required style="width:260px">
+      </div>
+      <div>
+        <label>Genre</label>
+        <input type="text" name="genre" placeholder="e.g. lifestyle" style="width:130px">
+      </div>
+      <div>
+        <label>Based on (optional)</label>
+        <select name="source_video_id" style="width:340px">
+          <option value="">- none, fresh topic -</option>
+          {% for v in sources %}
+          <option value="{{ v['video_id'] }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" style="align-self:flex-end">Create</button>
+    </form>
+  </div>
+
+  <h2>Productions</h2>
+  {% if prods %}
+  <div class="grid">
+    {% for item in prods %}
+    <div class="card">
+      <h3><a href="/studio/{{ item.row['id'] }}">{{ item.row["title"] }}</a></h3>
+      <div class="meta">updated {{ item.row["updated_at"] }}</div>
+      <div>
+        <span class="badge genre">{{ item.row["genre"] }}</span>
+        <span class="badge stage">{{ item.row["stage"] }}</span>
+        {% if item.row["status"] == "ready" %}<span class="badge ready">ready</span>{% endif %}
+      </div>
+      <div class="bar"><span style="width: {{ (item.done * 100 // item.total) }}%"></span></div>
+      <div class="meta">{{ item.done }}/{{ item.total }} stages done</div>
+      <div class="foot">
+        <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>
+        <form method="post" action="/studio/{{ item.row['id'] }}/delete"
+              onsubmit="return confirm('Delete production and all its files?')">
+          <button type="submit" class="ghost">delete</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="panel muted">No productions yet. Pick a transcribed video above and create your first one.</div>
+  {% endif %}
+</div>
+</body>
+</html>

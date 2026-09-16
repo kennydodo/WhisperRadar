@@ -132,3 +132,57 @@ def transcribe_audio(
         model, device = _load_model(model_size, device="cpu")
         result = _run(model, audio_path, out_txt, language)
     return {**result, "device": device}
+
+
+def _srt_ts(t: float) -> str:
+    if t < 0:
+        t = 0.0
+    h = int(t // 3600)
+    m = int(t % 3600 // 60)
+    s = int(t % 60)
+    ms = int(round((t - int(t)) * 1000))
+    if ms >= 1000:
+        ms = 999
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def transcribe_to_srt(audio_path: Path, out_srt: Path, model_size: str = "small",
+                      language: str | None = None) -> dict:
+    """Transcribe audio into an .srt file with word-accurate cues."""
+    out_srt.parent.mkdir(parents=True, exist_ok=True)
+    model, device = _load_model(model_size)
+    segments, info = model.transcribe(str(audio_path), language=language,
+                                      vad_filter=True, word_timestamps=True)
+    segs = list(segments)
+
+    cues: list[tuple[float, float, str]] = []
+    words: list[tuple[str, float, float]] = []
+
+    def flush():
+        if words:
+            cues.append((words[0][1], words[-1][2],
+                         " ".join(w[0] for w in words)))
+            words.clear()
+
+    for seg in segs:
+        for w in (seg.words or []):
+            text = (w.word or "").strip()
+            if not text:
+                continue
+            if words and (w.end - words[0][1] > 3.5 or len(words) >= 9
+                          or text[-1] in ".!?"):
+                flush()
+            words.append((text, w.start, w.end))
+        flush()
+    flush()
+
+    if not cues:  # no word timestamps available - fall back to segments
+        cues = [(seg.start, seg.end, seg.text.strip()) for seg in segs
+                if seg.text.strip()]
+
+    blocks = []
+    for i, (start, end, text) in enumerate(cues, 1):
+        blocks.append(f"{i}\n{_srt_ts(start)} --> {_srt_ts(end)}\n{text}\n")
+    out_srt.write_text("\n".join(blocks), encoding="utf-8")
+    return {"language": info.language, "duration": info.duration,
+            "device": device, "cues": len(cues)}

@@ -69,6 +69,18 @@
 </style>
 </head>
 <body>
+<style>
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px; margin:0 auto;
+            padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; color:var(--text); font-size:15px; }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+</style>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/" class="active">Dashboard</a>
+  <a href="/studio">Studio</a>
+</nav>
 {% macro hidden_filters() %}
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if genre %}<input type="hidden" name="genre" value="{{ genre }}">{% endif %}

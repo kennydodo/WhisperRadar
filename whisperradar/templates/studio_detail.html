@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ prod["title"] }} - Studio</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #12151c; --border: #262b36;
+    --text: #e6e9ef; --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f;
+    --amber: #e0a93f; --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px;
+            margin:0 auto; padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; font-size:15px; color:var(--text); }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 22px 0 10px; color: var(--muted);
+       text-transform: uppercase; letter-spacing: .06em; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  button, .btn { background: var(--accent); color: #fff; border: none;
+          border-radius: 7px; padding: 7px 14px; font-size: 13px;
+          font-weight: 600; cursor: pointer; display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button.secondary { background: var(--gray); }
+  button.green { background: var(--green); }
+  button.ghost { background: transparent; border: 1px solid var(--border);
+                 color: var(--muted); padding: 4px 10px; font-weight: 500; }
+  button.ghost:hover { color: var(--red); border-color: var(--red); filter: none; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  input, select, textarea { background: #0c0e12; color: var(--text);
+                  border: 1px solid var(--border); border-radius: 7px;
+                  padding: 7px 10px; font-size: 13px; font-family: inherit; }
+  textarea { width: 100%; min-height: 220px; resize: vertical;
+             font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; }
+  .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .banner.job { background: rgba(224,169,63,.12); color: var(--amber); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; vertical-align: middle; }
+  .badge.genre { background: rgba(79,140,255,.15); color: var(--accent); }
+  .badge.stage { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.ready { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.done { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.pending { background: rgba(86,93,107,.25); color: var(--muted); }
+  .muted { color: var(--muted); }
+  .stepper { display: flex; align-items: flex-start; margin: 18px 0 8px;
+             overflow-x: auto; padding-bottom: 4px; }
+  .step { text-align: center; min-width: 92px; position: relative; }
+  .step .dot { display: inline-flex; width: 30px; height: 30px; border-radius: 50%;
+               align-items: center; justify-content: center; font-size: 12px;
+               font-weight: 700; border: 2px solid var(--border); color: var(--muted);
+               background: var(--panel); }
+  .step .lbl { display: block; font-size: 11px; color: var(--muted); margin-top: 4px;
+               text-transform: uppercase; letter-spacing: .04em; }
+  .step.done .dot { background: var(--green); border-color: var(--green); color: #06280f; }
+  .step.current .dot { border-color: var(--accent); color: var(--accent);
+                       box-shadow: 0 0 0 3px rgba(79,140,255,.2); }
+  .step.sel .lbl { color: var(--text); font-weight: 600; }
+  .step:not(:last-child)::after { content: ""; position: absolute; height: 2px;
+      background: var(--border); top: 14px; left: calc(50% + 20px); width: calc(100% - 40px); }
+  .step.done:not(:last-child)::after { background: var(--green); opacity: .5; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+  .artifact { background: #0a0c10; border: 1px solid var(--border); border-radius: 8px;
+              padding: 12px; margin: 10px 0; }
+  .thumbgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+               gap: 10px; }
+  .thumb { position: relative; border-radius: 8px; overflow: hidden;
+           border: 1px solid var(--border); }
+  .thumb img { width: 100%; height: 90px; object-fit: cover; display: block; }
+  .thumb form { position: absolute; top: 4px; right: 4px; }
+  .thumb button { padding: 1px 8px; font-size: 11px; }
+  .hist { list-style: none; margin: 0; padding: 0; }
+  .hist li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .hist li:last-child { border-bottom: none; }
+  audio, video { width: 100%; border-radius: 8px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/studio" class="active">Studio</a>
+</nav>
+<div class="wrap">
+  <a href="/studio" class="muted" style="font-size:13px">&larr; All productions</a>
+  <h1>{{ prod["title"] }}
+    {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
+  </h1>
+  <div class="sub">
+    <span class="badge genre">{{ prod["genre"] }}</span>
+    <span class="muted"> created {{ prod["created_at"] }}</span>
+    {% if source_video %}
+    <span class="muted">| inspired by</span>
+    <a href="{{ source_video['url'] }}" target="_blank">{{ source_video["title"][:60] }}</a>
+    {% endif %}
+  </div>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+  {% if job.running %}<div class="banner job" id="jobbar">Working: {{ job.kind }} - this page updates when it finishes</div>{% endif %}
+  <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
+
+  <div class="stepper">
+    {% for s in stages %}
+    {% set done = s in steps %}
+    <a class="step {{ 'done' if done else '' }} {{ 'current' if s == prod['stage'] else '' }} {{ 'sel' if s == stage }}"
+       href="/studio/{{ prod['id'] }}?stage={{ s }}">
+      <span class="dot">{{ loop.index }}</span>
+      <span class="lbl">{{ s }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0">Stage: {{ stage }}
+      {% if stage in steps %}
+      <span class="badge done">done ({{ steps[stage]["method"] }})</span>
+      {% else %}<span class="badge pending">not done</span>{% endif %}
+    </h2>
+    {% if steps.get(stage) and steps[stage]["detail"] %}
+    <div class="muted" style="font-size:12px; margin-bottom:8px">{{ steps[stage]["detail"] }}</div>
+    {% endif %}
+
+    {% if stage == "script" %}
+      <form method="post" action="/studio/{{ prod['id'] }}/script/save">
+        <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
+        {% if steps.get("script") and "WARNING" in (steps["script"]["detail"] or "") %}
+        <div class="warn">High overlap with the source transcript - rewrite flagged parts before publishing.</div>
+        {% endif %}
+        <div class="actions">
+          <button type="submit">Save script</button>
+        </div>
+      </form>
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
+              onsubmit="return confirm('Generate a script with the local LLM? Existing script will be overwritten.')">
+          <button type="submit" {{ '' if llm_ready else 'disabled' }}
+                  title="{{ 'Generate with Ollama (' + (models[0] if models else 'no model') + ')' if llm_ready else 'Ollama not reachable or llm: none in config' }}">
+            Generate with local LLM{% if models %} ({{ models[0].split(':')[0] }}){% endif %}
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/save" enctype="multipart/form-data">
+          <input type="file" name="script_file" accept=".txt,.md">
+          <button type="submit" class="secondary">Upload script file</button>
+        </form>
+      </div>
+
+    {% elif stage == "audio" %}
+      {% if audio %}
+      <div class="artifact"><audio controls src="/studio/file/{{ prod['id'] }}/{{ audio.name }}"></audio></div>
+      {% else %}
+      <div class="muted" style="margin-bottom:8px">No audio yet.</div>
+      {% endif %}
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/generate">
+          <button type="submit" {{ '' if hooks.tts else 'disabled' }}
+                  title="{{ 'Run configured TTS command' if hooks.tts else 'Set studio.tts_command in config.yaml (e.g. chatterbox)' }}">
+            Generate with TTS hook
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/upload" enctype="multipart/form-data">
+          <input type="file" name="audio_file" accept="audio/*" required>
+          <button type="submit" class="secondary">Upload audio (11labs, chatterbox, ...)</button>
+        </form>
+      </div>
+
+    {% elif stage == "srt" %}
+      {% if srt %}
+      <div class="artifact" style="max-height:260px; overflow-y:auto"><pre style="margin:0; font-size:12px; white-space:pre-wrap">{{ srt_text[:3000] }}{% if srt_text|length > 3000 %}
+
+... (full file: <a href="/studio/file/{{ prod['id'] }}/subtitles.srt">subtitles.srt</a>){% endif %}</pre></div>
+      {% else %}
+      <div class="muted" style="margin-bottom:8px">No subtitles yet. Generate them from your audio with Whisper (word-accurate), or upload your own.</div>
+      {% endif %}
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/srt/generate">
+          <button type="submit" class="green" {{ '' if audio else 'disabled' }}
+                  title="{{ 'Align your audio with Whisper' if audio else 'Audio required first' }}">
+            Generate SRT from audio
+          </button>
+        </form>
+      </div>
+      <form method="post" action="/studio/{{ prod['id'] }}/srt/save">
+        <textarea name="srt" placeholder="Paste SRT here...">{{ srt_text }}</textarea>
+        <div class="actions">
+          <button type="submit">Save subtitles</button>
+        </div>
+      </form>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/srt/save" enctype="multipart/form-data" style="margin-top:10px">
+        <input type="file" name="srt_file" accept=".srt">
+        <button type="submit" class="secondary">Upload .srt file</button>
+      </form>
+
+    {% elif stage == "images" %}
+      {% if images %}
+      <div class="thumbgrid" style="margin:10px 0">
+        {% for name in images %}
+        <div class="thumb">
+          <img src="/studio/file/{{ prod['id'] }}/images/{{ name }}" alt="{{ name }}">
+          <form method="post" action="/studio/{{ prod['id'] }}/images/delete">
+            <input type="hidden" name="name" value="{{ name }}">
+            <button type="submit" class="ghost">x</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="muted" style="margin-bottom:8px">No images yet.</div>
+      {% endif %}
+      <h2>Image prompts</h2>
+      <form method="post" action="/studio/{{ prod['id'] }}/prompts/save">
+        <textarea name="prompts" style="min-height:120px" placeholder="One IMAGE: prompt per scene...">{{ prompts_text }}</textarea>
+        <div class="actions">
+          <button type="submit">Save prompts</button>
+          <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/generate">
+            <button type="submit" class="secondary" {{ '' if llm_ready else 'disabled' }}
+                    title="{{ 'Write one image prompt per scene with the local LLM' if llm_ready else 'Ollama not reachable' }}">
+              Generate prompts with local LLM
+            </button>
+          </form>
+        </div>
+      </form>
+      <div class="actions" style="margin-top:10px">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/generate">
+          <button type="submit" {{ '' if hooks.imagegen else 'disabled' }}
+                  title="{{ 'Run configured image generation command' if hooks.imagegen else 'Set studio.imagegen_command in config.yaml (e.g. Renderly)' }}">
+            Render images (hook)
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/upload" enctype="multipart/form-data">
+          <input type="file" name="image_files" accept="image/*" multiple required>
+          <button type="submit" class="secondary">Upload images</button>
+        </form>
+      </div>
+
+    {% elif stage == "merge" %}
+      {% if final %}
+      <div class="artifact"><video controls src="/studio/file/{{ prod['id'] }}/final.mp4"></video></div>
+      {% else %}
+      <div class="muted" style="margin-bottom:8px">No final video yet. Merge with your tool or upload the result.</div>
+      {% endif %}
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/generate">
+          <button type="submit" {{ '' if hooks.merge else 'disabled' }}
+                  title="{{ 'Run configured merge command (images + audio + srt)' if hooks.merge else 'Set studio.merge_command in config.yaml (e.g. ImgToVideo)' }}">
+            Merge with hook
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/upload" enctype="multipart/form-data">
+          <input type="file" name="video_file" accept="video/*" required>
+          <button type="submit" class="secondary">Upload final video</button>
+        </form>
+      </div>
+
+    {% elif stage == "review" %}
+      <ul style="margin:8px 0; padding-left:18px">
+        <li>Script: {% if steps.get("script") %}<span class="badge done">done</span> {% if steps["script"]["detail"] %}<span class="muted">{{ steps["script"]["detail"] }}</span>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Audio: {% if steps.get("audio") %}<span class="badge done">done</span> {% if audio %}<a href="/studio/file/{{ prod['id'] }}/{{ audio.name }}">listen</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Subtitles: {% if steps.get("srt") %}<span class="badge done">done</span> {% if srt %}<a href="/studio/file/{{ prod['id'] }}/subtitles.srt">file</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Images: {% if steps.get("images") %}<span class="badge done">done</span> <span class="muted">{{ images|length }} file(s)</span>{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Final video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if final %}<a href="/studio/file/{{ prod['id'] }}/final.mp4">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+      </ul>
+      {% if not steps.get("merge") %}
+      <div class="warn" style="margin:8px 0">The final video is not in the system yet. Upload it or run the merge hook before approving.</div>
+      {% endif %}
+      <div class="actions">
+        <form method="post" action="/studio/{{ prod['id'] }}/review/approve">
+          <button type="submit" class="green">Approve &amp; mark ready to publish</button>
+        </form>
+      </div>
+    {% endif %}
+
+    {% if stage != "review" %}
+    <div class="actions" style="border-top:1px solid var(--border); padding-top:12px; margin-top:14px">
+      {% if stage == prod["stage"] and stage in steps %}
+      <form method="post" action="/studio/{{ prod['id'] }}/advance">
+        <button type="submit" class="green">Approve &amp; advance to {{ stages[stages.index(stage) + 1] if stages.index(stage) + 1 < stages|length else 'publish' }}</button>
+      </form>
+      {% elif stage != prod["stage"] %}
+      <span class="muted">Viewing a later stage. Current stage: <b>{{ prod["stage"] }}</b></span>
+      {% else %}
+      <span class="muted">Finish this stage to unlock &ldquo;approve &amp; advance&rdquo;.</span>
+      {% endif %}
+      {% if stage == prod["stage"] and stages.index(stage) > 0 %}
+      <form method="post" action="/studio/{{ prod['id'] }}/back">
+        <button type="submit" class="ghost">Send back to {{ stages[stages.index(stage) - 1] }}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0">Notes</h2>
+    <form method="post" action="/studio/{{ prod['id'] }}/notes">
+      <textarea name="notes" style="min-height:70px" placeholder="Ideas, reminders, what to change...">{{ prod["notes"] }}</textarea>
+      <div class="actions"><button type="submit" class="secondary">Save notes</button></div>
+    </form>
+  </div>
+
+  <h2>History</h2>
+  <div class="panel">
+    <ul class="hist">
+      {% for h in history %}
+      <li>
+        <span class="badge done">{{ h["stage"] }}</span>
+        <span class="muted">{{ h["method"] }}</span>
+        {{ h["detail"] }}
+        <span class="muted" style="float:right">{{ h["created_at"] }}</span>
+      </li>
+      {% else %}
+      <li class="muted">No steps recorded yet.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+<script>
+  let wasRunning = {{ 'true' if job.running else 'false' }};
+  async function poll() {
+    try {
+      const s = await (await fetch('/studio/job')).json();
+      const box = document.getElementById('jobbox');
+      if (s.running) {
+        const bar = document.getElementById('jobbar');
+        if (bar) { bar.style.display = ''; }
+        if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }
+      } else if (wasRunning) {
+        location.reload();
+        return;
+      }
+      wasRunning = s.running;
+    } catch (e) { /* ignore */ }
+  }
+  setInterval(poll, 2000);
+</script>
+</body>
+</html>

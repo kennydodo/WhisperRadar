@@ -5,6 +5,7 @@ Start with:  python wr.py serve          (http://127.0.0.1:8000)
 
 import io
 import logging
+import shutil
 import threading
 import zipfile
 from collections import deque
@@ -20,7 +21,7 @@ from flask import (
     send_file,
 )
 
-from . import db, pipeline
+from . import db, pipeline, studio, transcribe
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -123,8 +124,10 @@ def _page_list(current: int, total: int) -> list:
 
 def create_app(cfg) -> Flask:
     app = Flask(__name__)
+    app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
     app.jinja_env.filters["dur"] = format_duration
     job = _Job()
+    sjob = _Job()  # studio jobs (LLM generation, SRT alignment)
 
     class _DequeHandler(logging.Handler):
         def emit(self, record):
@@ -378,5 +381,500 @@ def create_app(cfg) -> Flask:
             download_name=f"whisperradar_transcripts{suffix}.zip",
             mimetype="application/zip",
         )
+
+    # ------------------------------------------------------------- studio --
+
+    def _source_transcript(prod) -> str:
+        if not prod["source_video_id"]:
+            return ""
+        conn = db.connect(cfg.db_path)
+        try:
+            row = db.get_video(conn, prod["source_video_id"])
+        finally:
+            conn.close()
+        if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
+            return Path(row["transcript_path"]).read_text(encoding="utf-8")
+        return ""
+
+    def _pick_model() -> str:
+        models = studio.ollama_models()
+        if not models:
+            raise RuntimeError("Ollama is not reachable at localhost:11434")
+        if cfg.ollama_model:
+            for m in models:
+                if m.startswith(cfg.ollama_model):
+                    return m
+            raise RuntimeError(f"Ollama model '{cfg.ollama_model}' not installed")
+        return models[0]
+
+    @app.get("/studio")
+    def studio_list():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        prods = []
+        for p in db.list_productions(conn):
+            steps = db.latest_steps(conn, p["id"])
+            done = sum(1 for s in db.STAGES if s in steps)
+            prods.append({"row": p, "done": done, "total": len(db.STAGES)})
+        sources = db.get_videos(conn, status="transcribed", limit=500)
+        conn.close()
+        return render_template("studio.html", prods=prods, sources=sources,
+                               job=sjob, msg=request.args.get("msg"),
+                               error=request.args.get("error"))
+
+    @app.post("/studio/new")
+    def studio_new():
+        title = (request.form.get("title") or "").strip()
+        genre = (request.form.get("genre") or "").strip() or "general"
+        source = (request.form.get("source_video_id") or "").strip() or None
+        if not title:
+            return redirect("/studio?error=Enter+a+title")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            pid = db.create_production(conn, title, genre, source)
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}")
+
+    @app.get("/studio/<int:pid>")
+    def studio_detail(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                abort(404)
+            steps = db.latest_steps(conn, pid)
+            history = db.step_history(conn, pid)
+            source_video = (db.get_video(conn, prod["source_video_id"])
+                            if prod["source_video_id"] else None)
+        finally:
+            conn.close()
+
+        stage = request.args.get("stage") or prod["stage"]
+        if stage not in db.STAGES:
+            stage = prod["stage"]
+        pdir = studio.prod_dir(cfg, pid)
+
+        script = studio.find_script(pdir)
+        script_text = script.read_text(encoding="utf-8") if script else ""
+        audio = studio.find_audio(pdir)
+        srt = studio.find_srt(pdir)
+        srt_text = srt.read_text(encoding="utf-8") if srt else ""
+        prompts = studio.find_prompts(pdir)
+        prompts_text = prompts.read_text(encoding="utf-8") if prompts else ""
+        images = [i.name for i in studio.find_images(pdir)]
+        final = studio.find_final(pdir)
+
+        models = studio.ollama_models()
+        llm_ready = cfg.studio_llm != "none" and bool(models)
+        hooks = {
+            "tts": bool(cfg.studio_tts_command),
+            "imagegen": bool(cfg.studio_imagegen_command),
+            "merge": bool(cfg.studio_merge_command),
+        }
+        return render_template(
+            "studio_detail.html", prod=prod, steps=steps, history=history,
+            stages=db.STAGES, stage=stage, script_text=script_text,
+            audio=audio, srt=srt, srt_text=srt_text,
+            prompts_text=prompts_text, images=images,
+            final=final, source_video=source_video, llm_ready=llm_ready,
+            models=models, hooks=hooks, job=sjob,
+            msg=request.args.get("msg"), error=request.args.get("error"),
+        )
+
+    @app.post("/studio/<int:pid>/delete")
+    def studio_delete(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.delete_production(conn, pid)
+        finally:
+            conn.close()
+        shutil.rmtree(studio.prod_dir(cfg, pid), ignore_errors=True)
+        return redirect("/studio?msg=Production+deleted")
+
+    @app.post("/studio/<int:pid>/notes")
+    def studio_notes(pid):
+        notes = request.form.get("notes") or ""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.update_production(conn, pid, notes=notes)
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Notes+saved")
+
+    @app.post("/studio/<int:pid>/advance")
+    def studio_advance(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+            if not db.stage_done(conn, pid, prod["stage"]):
+                return redirect(f"/studio/{pid}?error=Finish+the+current+stage+first")
+            idx = db.STAGES.index(prod["stage"])
+            if prod["stage"] == "review":
+                db.update_production(conn, pid, status="ready")
+                msg = "Approved - production is ready"
+            else:
+                db.update_production(conn, pid, stage=db.STAGES[idx + 1])
+                msg = f"Advanced to {db.STAGES[idx + 1]}"
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg={quote(msg)}")
+
+    @app.post("/studio/<int:pid>/back")
+    def studio_back(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+            idx = db.STAGES.index(prod["stage"])
+            if idx == 0:
+                return redirect(f"/studio/{pid}?error=Already+at+the+first+stage")
+            updates = {"stage": db.STAGES[idx - 1]}
+            if prod["status"] == "ready":
+                updates["status"] = "active"
+            db.update_production(conn, pid, **updates)
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Sent+back+for+rework")
+
+    def _script_overlap(prod, script_text: str) -> float:
+        return studio.overlap_ratio(script_text, _source_transcript(prod))
+
+    @app.post("/studio/<int:pid>/script/save")
+    def studio_script_save(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+            pdir = studio.prod_dir(cfg, pid)
+            text = (request.form.get("script") or "").strip()
+            f = request.files.get("script_file")
+            if f and f.filename:
+                text = f.read().decode("utf-8", "ignore").strip()
+            if not text:
+                return redirect(f"/studio/{pid}?error=Nothing+to+save")
+            (pdir / "script.md").write_text(text + "\n", encoding="utf-8")
+            ratio = _script_overlap(prod, text)
+            warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
+            db.add_step(conn, pid, "script", "manual",
+                        detail=f"overlap {ratio:.1%}{warn}")
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Script+saved")
+
+    @app.post("/studio/<int:pid>/script/generate")
+    def studio_script_generate(pid):
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                prod = db.get_production(conn, pid)
+                if not prod:
+                    return
+                model = _pick_model()
+                source_text = _source_transcript(prod)
+                prompt = studio.script_prompt(prod["title"], prod["genre"],
+                                              source_text)
+                text = studio.ollama_generate(model, prompt)
+                if not text:
+                    raise RuntimeError("LLM returned an empty script")
+                pdir = studio.prod_dir(cfg, pid)
+                (pdir / "script.md").write_text(text + "\n", encoding="utf-8")
+                ratio = _script_overlap(prod, text)
+                warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
+                db.add_step(conn, pid, "script", "auto",
+                            detail=f"ollama:{model}, overlap {ratio:.1%}{warn}")
+            finally:
+                conn.close()
+
+        sjob.start(worker, "script generation")
+        return redirect(f"/studio/{pid}?msg=Script+generation+started")
+
+    def _save_upload(file_storage, dest: Path) -> None:
+        file_storage.save(dest)
+
+    @app.post("/studio/<int:pid>/audio/upload")
+    def studio_audio_upload(pid):
+        f = request.files.get("audio_file")
+        if not f or not f.filename:
+            return redirect(f"/studio/{pid}?error=No+audio+file+selected")
+        ext = Path(f.filename).suffix.lower()
+        if ext not in studio.AUDIO_EXTS:
+            ext = ".mp3"
+        pdir = studio.prod_dir(cfg, pid)
+        dest = pdir / f"audio{ext}"
+        _save_upload(f, dest)
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_step(conn, pid, "audio", "manual", detail=dest.name)
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Audio+uploaded")
+
+    @app.post("/studio/<int:pid>/audio/generate")
+    def studio_audio_generate(pid):
+        if not cfg.studio_tts_command:
+            return redirect(f"/studio/{pid}?error=No+tts_command+in+config.yaml")
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                pdir = studio.prod_dir(cfg, pid)
+                script = studio.find_script(pdir)
+                if not script:
+                    raise RuntimeError("Write the script first")
+                out = pdir / "audio.mp3"
+                studio.run_hook(cfg.studio_tts_command,
+                                {"script": script, "out": out})
+                audio = studio.find_audio(pdir)
+                if not audio:
+                    raise RuntimeError("TTS produced no audio file")
+                db.add_step(conn, pid, "audio", "auto", detail=audio.name)
+            finally:
+                conn.close()
+
+        sjob.start(worker, "tts")
+        return redirect(f"/studio/{pid}?msg=TTS+started")
+
+    @app.post("/studio/<int:pid>/srt/generate")
+    def studio_srt_generate(pid):
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                pdir = studio.prod_dir(cfg, pid)
+                audio = studio.find_audio(pdir)
+                if not audio:
+                    raise RuntimeError("Upload or generate the audio first")
+                meta = transcribe.transcribe_to_srt(
+                    audio, pdir / "subtitles.srt",
+                    model_size=cfg.whisper_model,
+                    language=cfg.whisper_language,
+                )
+                db.add_step(
+                    conn, pid, "srt", "auto",
+                    detail=f"{meta['cues']} cues, {meta['device']}, "
+                           f"lang {meta['language']}",
+                )
+            finally:
+                conn.close()
+
+        sjob.start(worker, "srt alignment")
+        return redirect(f"/studio/{pid}?msg=SRT+alignment+started")
+
+    @app.post("/studio/<int:pid>/srt/save")
+    def studio_srt_save(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            pdir = studio.prod_dir(cfg, pid)
+            text = (request.form.get("srt") or "").strip()
+            f = request.files.get("srt_file")
+            if f and f.filename:
+                text = f.read().decode("utf-8", "ignore").strip()
+            if not text:
+                return redirect(f"/studio/{pid}?error=Nothing+to+save")
+            (pdir / "subtitles.srt").write_text(text + "\n", encoding="utf-8")
+            db.add_step(conn, pid, "srt", "manual")
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Subtitles+saved")
+
+    @app.post("/studio/<int:pid>/prompts/generate")
+    def studio_prompts_generate(pid):
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                prod = db.get_production(conn, pid)
+                pdir = studio.prod_dir(cfg, pid)
+                script = studio.find_script(pdir)
+                if not script:
+                    raise RuntimeError("Write the script first")
+                model = _pick_model()
+                prompt = studio.image_prompts_prompt(
+                    script.read_text(encoding="utf-8"), prod["genre"])
+                text = studio.ollama_generate(model, prompt)
+                lines = studio.parse_image_prompts(text)
+                if not lines:
+                    raise RuntimeError("LLM returned no image prompts")
+                (pdir / "prompts.txt").write_text(
+                    "\n".join(lines) + "\n", encoding="utf-8")
+            finally:
+                conn.close()
+
+        sjob.start(worker, "image prompts")
+        return redirect(f"/studio/{pid}?msg=Image+prompts+started")
+
+    @app.post("/studio/<int:pid>/prompts/save")
+    def studio_prompts_save(pid):
+        pdir = studio.prod_dir(cfg, pid)
+        text = (request.form.get("prompts") or "").strip()
+        if not text:
+            return redirect(f"/studio/{pid}?error=Nothing+to+save")
+        (pdir / "prompts.txt").write_text(text + "\n", encoding="utf-8")
+        return redirect(f"/studio/{pid}?msg=Prompts+saved")
+
+    @app.post("/studio/<int:pid>/images/upload")
+    def studio_images_upload(pid):
+        files = [f for f in request.files.getlist("image_files") if f.filename]
+        if not files:
+            return redirect(f"/studio/{pid}?error=No+images+selected")
+        img_dir = studio.prod_dir(cfg, pid) / "images"
+        img_dir.mkdir(parents=True, exist_ok=True)
+        saved = 0
+        for f in files:
+            ext = Path(f.filename).suffix.lower() or ".jpg"
+            if ext not in studio.IMAGE_EXTS:
+                continue
+            _save_upload(f, img_dir / f"{_slugify(Path(f.filename).stem)}{ext}")
+            saved += 1
+        if not saved:
+            return redirect(f"/studio/{pid}?error=No+supported+image+files")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_step(conn, pid, "images", "manual", detail=f"{saved} image(s)")
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg={saved}+image(s)+uploaded")
+
+    @app.post("/studio/<int:pid>/images/generate")
+    def studio_images_generate(pid):
+        if not cfg.studio_imagegen_command:
+            return redirect(f"/studio/{pid}?error=No+imagegen_command+in+config.yaml")
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                pdir = studio.prod_dir(cfg, pid)
+                prompts = studio.find_prompts(pdir)
+                if not prompts:
+                    raise RuntimeError("Generate image prompts first")
+                img_dir = pdir / "images"
+                img_dir.mkdir(parents=True, exist_ok=True)
+                before = {p.name for p in img_dir.iterdir()}
+                studio.run_hook(cfg.studio_imagegen_command,
+                                {"prompts": prompts, "outdir": img_dir})
+                new = [p.name for p in img_dir.iterdir() if p.name not in before]
+                if not new:
+                    raise RuntimeError("imagegen produced no images")
+                db.add_step(conn, pid, "images", "auto",
+                            detail=f"{len(new)} image(s) rendered")
+            finally:
+                conn.close()
+
+        sjob.start(worker, "image generation")
+        return redirect(f"/studio/{pid}?msg=Image+rendering+started")
+
+    @app.post("/studio/<int:pid>/images/delete")
+    def studio_images_delete(pid):
+        name = request.form.get("name") or ""
+        img_dir = studio.prod_dir(cfg, pid) / "images"
+        target = (img_dir / name).resolve()
+        if target.parent == img_dir.resolve() and target.is_file():
+            target.unlink()
+        return redirect(f"/studio/{pid}?msg=Image+removed")
+
+    @app.post("/studio/<int:pid>/merge/upload")
+    def studio_merge_upload(pid):
+        f = request.files.get("video_file")
+        if not f or not f.filename:
+            return redirect(f"/studio/{pid}?error=No+video+file+selected")
+        pdir = studio.prod_dir(cfg, pid)
+        _save_upload(f, pdir / "final.mp4")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_step(conn, pid, "merge", "manual", detail="final.mp4")
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Final+video+uploaded")
+
+    @app.post("/studio/<int:pid>/merge/generate")
+    def studio_merge_generate(pid):
+        if not cfg.studio_merge_command:
+            return redirect(f"/studio/{pid}?error=No+merge_command+in+config.yaml")
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                pdir = studio.prod_dir(cfg, pid)
+                audio = studio.find_audio(pdir)
+                srt = studio.find_srt(pdir)
+                images = studio.find_images(pdir)
+                if not audio or not srt or not images:
+                    raise RuntimeError("Need audio, subtitles and images first")
+                out = pdir / "final.mp4"
+                studio.run_hook(cfg.studio_merge_command, {
+                    "images": pdir / "images", "audio": audio, "srt": srt,
+                    "out": out,
+                }, timeout=7200)
+                if not out.exists():
+                    raise RuntimeError("merge produced no video")
+                db.add_step(conn, pid, "merge", "auto", detail="final.mp4")
+            finally:
+                conn.close()
+
+        sjob.start(worker, "merge")
+        return redirect(f"/studio/{pid}?msg=Merge+started")
+
+    @app.post("/studio/<int:pid>/review/approve")
+    def studio_review_approve(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_step(conn, pid, "review", "manual", detail="approved")
+            db.update_production(conn, pid, status="ready")
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Approved+-+ready+to+publish")
+
+    @app.get("/studio/file/<int:pid>/<path:rel>")
+    def studio_file(pid, rel):
+        pdir = studio.prod_dir(cfg, pid).resolve()
+        target = (pdir / rel).resolve()
+        try:
+            target.relative_to(pdir)
+        except ValueError:
+            abort(404)
+        if not target.is_file():
+            abort(404)
+        return send_file(target)
+
+    @app.get("/studio/job")
+    def studio_job():
+        return {"running": sjob.running, "kind": sjob.kind,
+                "log": list(sjob.log)[-40:]}
 
     return app
