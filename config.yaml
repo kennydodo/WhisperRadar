@@ -32,7 +32,7 @@ studio:
       api_key: null
     - name: deepseek
       base_url: https://api.b.ai/v1
-      model: deepseek-chat
+      model: deepseek-v4.1-flash
       api_key: null
   llm_default: glm-flash
   ollama_model: null     # used when llm: ollama

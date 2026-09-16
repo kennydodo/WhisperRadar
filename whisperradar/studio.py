@@ -140,12 +140,37 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read())
+        return data["choices"][0]["message"]["content"].strip()
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "ignore")[:300]
+        raise RuntimeError(f"LLM API error {e.code}: {body}") from e
     try:
         return data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError) as exc:
         raise RuntimeError(f"Unexpected LLM response: {data}") from exc
+
+
+def openai_chat_raw(p: dict, prompt: str, timeout: int = 600) -> tuple[int, str]:
+    """Like openai_chat but returns (status, body) instead of raising on HTTP errors."""
+    key = _provider_key(p) or ""
+    url = (p.get("base_url") or "").rstrip("/") + "/chat/completions"
+    payload = {"model": p.get("model"), "stream": False,
+               "messages": [{"role": "user", "content": prompt}]}
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {key}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read().decode("utf-8", "ignore")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "ignore")
 
 
 def llm_provider(cfg, name: str | None) -> dict:

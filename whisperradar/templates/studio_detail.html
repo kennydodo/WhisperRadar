@@ -111,6 +111,7 @@
 
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+  {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
   {% if job.running %}<div class="banner job" id="jobbar">Working: {{ job.kind }} - this page updates when it finishes</div>{% endif %}
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
 
@@ -353,13 +354,22 @@
     try {
       const s = await (await fetch('/studio/job')).json();
       const box = document.getElementById('jobbox');
+      const bar = document.getElementById('jobbar');
       if (s.running) {
-        const bar = document.getElementById('jobbar');
-        if (bar) { bar.style.display = ''; }
+        if (bar) bar.style.display = '';
         if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }
       } else if (wasRunning) {
-        location.reload();
-        return;
+        if (s.error) {
+          if (bar) bar.style.display = 'none';
+          if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }
+          const err = document.createElement('div');
+          err.className = 'banner err';
+          err.textContent = 'Job failed: ' + s.error;
+          document.querySelector('.wrap').prepend(err);
+        } else {
+          location.reload();
+          return;
+        }
       }
       wasRunning = s.running;
     } catch (e) { /* ignore */ }

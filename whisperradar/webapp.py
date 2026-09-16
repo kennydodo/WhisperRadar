@@ -49,6 +49,7 @@ class _Job:
     def __init__(self):
         self.running = False
         self.kind = ""
+        self.error = None
         self.log: deque = deque(maxlen=400)
         self._lock = threading.Lock()
 
@@ -58,6 +59,7 @@ class _Job:
                 return False
             self.running = True
             self.kind = kind
+            self.error = None
         self.log.clear()
         self.log.append(f"=== {kind}: started ===")
 
@@ -66,6 +68,7 @@ class _Job:
                 fn()
                 self.log.append(f"=== {kind}: finished ===")
             except Exception as exc:
+                self.error = str(exc)
                 self.log.append(f"=== {kind}: FAILED: {exc} ===")
             finally:
                 self.running = False
@@ -587,19 +590,23 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return redirect(f"/studio/{pid}?error=A+job+is+already+running")
 
+        provider = request.form.get("provider") or cfg.studio_llm_default
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+            source_text = _source_transcript(prod)
+        finally:
+            conn.close()
+        prompt = studio.script_prompt(prod["title"], prod["genre"], source_text)
+
         def worker():
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
                 prod = db.get_production(conn, pid)
-                if not prod:
-                    return
-                provider = (request.form.get("provider")
-                            or prod["llm_provider"]
-                            or cfg.studio_llm_default)
-                source_text = _source_transcript(prod)
-                prompt = studio.script_prompt(prod["title"], prod["genre"],
-                                              source_text)
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 if not text:
                     raise RuntimeError("LLM returned an empty script")
@@ -718,6 +725,8 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return redirect(f"/studio/{pid}?error=A+job+is+already+running")
 
+        provider = request.form.get("provider") or cfg.studio_llm_default
+
         def worker():
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
@@ -727,9 +736,6 @@ def create_app(cfg) -> Flask:
                 script = studio.find_script(pdir)
                 if not script:
                     raise RuntimeError("Write the script first")
-                provider = (request.form.get("provider")
-                            or prod["llm_provider"]
-                            or cfg.studio_llm_default)
                 prompt = studio.image_prompts_prompt(
                     script.read_text(encoding="utf-8"), prod["genre"])
                 text = studio.llm_generate(cfg, prompt, provider=provider)
@@ -890,6 +896,6 @@ def create_app(cfg) -> Flask:
     @app.get("/studio/job")
     def studio_job():
         return {"running": sjob.running, "kind": sjob.kind,
-                "log": list(sjob.log)[-40:]}
+                "error": sjob.error, "log": list(sjob.log)[-40:]}
 
     return app
