@@ -20,6 +20,20 @@ def _slugify(text: str, maxlen: int = 60) -> str:
     return slug[:maxlen].strip("_") or "video"
 
 
+def format_duration(seconds) -> str:
+    """Human-readable duration, e.g. '1h 02m', '12m 30s', '45s'."""
+    if not seconds:
+        return ""
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m:02d}m"
+    if m:
+        return f"{m}m {s:02d}s"
+    return f"{s}s"
+
+
 def _open(cfg):
     conn = db.connect(cfg.db_path)
     db.init_db(conn)
@@ -129,9 +143,11 @@ def cmd_videos(cfg, args):
                   f"{' in genre ' + args.genre if args.genre else ''}.")
             return
         for row in rows:
+            dur = format_duration(row["duration"])
+            dur_part = f"  [{dur}]" if dur else ""
             print(f"{row['status']:<12} {row['published_at'] or '?'}  "
-                  f"[{row['channel_name']}|{row['channel_genre']}] {row['title']}  "
-                  f"({row['video_id']})")
+                  f"[{row['channel_name']}|{row['channel_genre']}] {row['title']}"
+                  f"{dur_part}  ({row['video_id']})")
     finally:
         conn.close()
 

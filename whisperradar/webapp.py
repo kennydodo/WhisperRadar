@@ -9,6 +9,7 @@ import threading
 import zipfile
 from collections import deque
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import (
     Flask,
@@ -20,8 +21,25 @@ from flask import (
 )
 
 from . import db, pipeline
-from .cli import _slugify
+from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
+
+
+def _back(request, msg: str | None = None, error: str | None = None):
+    """Redirect back to the dashboard preserving status/genre/channel filters.
+
+    Filter values come from hidden fields the POST forms carry.
+    """
+    parts = []
+    for key in ("status", "genre", "channel"):
+        val = request.form.get(key)
+        if val:
+            parts.append(f"{key}={quote(val)}")
+    if msg:
+        parts.append(f"msg={quote(msg)}")
+    if error:
+        parts.append(f"error={quote(error)}")
+    return redirect("/" + ("?" + "&".join(parts) if parts else ""))
 
 
 class _Job:
@@ -105,6 +123,7 @@ def _page_list(current: int, total: int) -> list:
 
 def create_app(cfg) -> Flask:
     app = Flask(__name__)
+    app.jinja_env.filters["dur"] = format_duration
     job = _Job()
 
     class _DequeHandler(logging.Handler):
@@ -138,18 +157,16 @@ def create_app(cfg) -> Flask:
                                limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
         genres = sorted({ch["genre"] for ch in channels})
         conn.close()
+        raw_status = request.args.get("status")
 
-        def pager_qs(p: int) -> str:
-            from urllib.parse import quote
-
-            parts = []
-            if status:
-                parts.append(f"status={quote(status)}")
-            if genre:
-                parts.append(f"genre={quote(genre)}")
-            if channel:
-                parts.append(f"channel={quote(channel)}")
-            parts.append(f"page={p}")
+        def qs(**overrides) -> str:
+            """Query string preserving current filters; overrides replace them."""
+            vals = {"status": raw_status, "genre": genre, "channel": channel}
+            page_override = overrides.pop("page", None)
+            vals.update(overrides)
+            parts = [f"{k}={quote(v)}" for k, v in vals.items() if v]
+            if page_override:
+                parts.append(f"page={page_override}")
             return "&".join(parts)
 
         return render_template(
@@ -157,14 +174,14 @@ def create_app(cfg) -> Flask:
             channels=channels,
             videos=videos,
             genres=genres,
-            status=request.args.get("status"),
+            status=raw_status,
             genre=genre,
             channel=channel,
             page=page,
             pages=pages,
             total=total,
             page_list=_page_list(page, pages),
-            pager_qs=pager_qs,
+            qs=qs,
             msg=request.args.get("msg"),
             error=request.args.get("error"),
             job=job,
@@ -190,7 +207,7 @@ def create_app(cfg) -> Flask:
                 pipeline.move_channel_files(cfg, conn, row, genre)
         finally:
             conn.close()
-        return redirect("/?msg=Channel+updated")
+        return _back(request, msg="Channel updated")
 
     @app.get("/status")
     def status():
@@ -222,9 +239,9 @@ def create_app(cfg) -> Flask:
                 kind=kind,
                 genre=genre,
             )
-            return redirect("/")
+            return _back(request, msg="Channel added")
         except Exception as exc:
-            return redirect(f"/?error=Could+not+resolve+channel:+{exc}")
+            return _back(request, error=f"Could not resolve channel: {exc}")
         finally:
             conn.close()
 
@@ -249,10 +266,10 @@ def create_app(cfg) -> Flask:
             "transcribe": lambda: _stage(pipeline.process_transcripts, cfg),
         }
         if kind not in jobs:
-            return redirect("/?error=Unknown+job")
+            return _back(request, error="Unknown job")
         if not job.start(jobs[kind], kind):
-            return redirect("/?error=A+job+is+already+running")
-        return redirect("/")
+            return _back(request, error="A job is already running")
+        return _back(request)
 
     @app.post("/videos/action")
     def videos_action():
@@ -263,7 +280,7 @@ def create_app(cfg) -> Flask:
         try:
             row = db.get_video(conn, video_id)
             if not row:
-                return redirect("/?error=Unknown+video")
+                return _back(request, error="Unknown video")
             if action == "queue":
                 db.set_video(conn, video_id, auto=1, status="new", error=None)
             elif action == "retry":
@@ -273,17 +290,17 @@ def create_app(cfg) -> Flask:
                     db.set_video(conn, video_id, status="new", error=None)
             elif action == "download":
                 if not job.start(lambda: _download_one(cfg, video_id), "download"):
-                    return redirect("/?error=A+job+is+already+running")
+                    return _back(request, error="A job is already running")
             elif action == "transcribe":
                 if not row["audio_path"]:
-                    return redirect("/?error=Audio+not+downloaded+yet")
+                    return _back(request, error="Audio not downloaded yet")
                 if not job.start(lambda: _transcribe_one(cfg, video_id), "transcribe"):
-                    return redirect("/?error=A+job+is+already+running")
+                    return _back(request, error="A job is already running")
             else:
-                return redirect("/?error=Unknown+action")
+                return _back(request, error="Unknown action")
         finally:
             conn.close()
-        return redirect("/?msg=Done")
+        return _back(request, msg="Done")
 
     @app.post("/videos/delete")
     def videos_delete():
@@ -302,8 +319,7 @@ def create_app(cfg) -> Flask:
                 path = row[key]
                 if path:
                     Path(path).unlink(missing_ok=True)
-        return redirect("/?msg=Video+deleted")
-
+        return _back(request, msg="Video deleted")
     @app.get("/transcript/<video_id>")
     def transcript(video_id):
         conn = db.connect(cfg.db_path)

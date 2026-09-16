@@ -69,6 +69,11 @@
 </style>
 </head>
 <body>
+{% macro hidden_filters() %}
+  {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+  {% if genre %}<input type="hidden" name="genre" value="{{ genre }}">{% endif %}
+  {% if channel %}<input type="hidden" name="channel" value="{{ channel }}">{% endif %}
+{% endmacro %}
 <div class="wrap">
   <h1>WhisperRadar</h1>
   <p class="sub">watch YouTube channels &middot; download audio &middot; transcribe with Whisper &middot; export for LLMs</p>
@@ -79,15 +84,15 @@
 
   <div class="panel">
     <div class="actions">
-      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="run">
-        <button type="submit">Run all</button></form>
-      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="watch">
-        <button type="submit" class="secondary">Watch feeds</button></form>
-      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="download">
-        <button type="submit" class="secondary">Download audio</button></form>
-      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="transcribe">
-        <button type="submit" class="secondary">Transcribe</button></form>
-      <a class="btn" href="/export_all" style="background:var(--green)">Export all transcripts (.zip)</a>
+      {% for kind, label in [("run", "Run all"), ("watch", "Watch feeds"),
+                             ("download", "Download audio"), ("transcribe", "Transcribe")] %}
+      <form class="row" method="post" action="/run">
+        <input type="hidden" name="kind" value="{{ kind }}">
+        {{ hidden_filters() }}
+        <button type="submit" {{ 'class="secondary"' if kind != "run" else "" }}>{{ label }}</button>
+      </form>
+      {% endfor %}
+      <a class="btn" style="background:var(--green)" href="/export_all?{{ qs() }}">Export all transcripts (.zip)</a>
     </div>
     <pre class="logbox" id="logbox">{{ log_text }}</pre>
   </div>
@@ -95,6 +100,7 @@
   <h2>Channels</h2>
   <div class="panel">
     <form class="inline" method="post" action="/channels/add">
+      {{ hidden_filters() }}
       <input type="text" name="url" placeholder="https://www.youtube.com/@channel or UC..." required>
       <input type="text" name="name" placeholder="Name (optional)" style="flex:0 0 160px">
       <input type="text" name="genre" placeholder="genre e.g. tech" style="flex:0 0 140px">
@@ -126,6 +132,7 @@
       <tr id="edit-{{ ch['channel_id'] }}" style="display:none">
         <td colspan="6" style="background:#12151c">
           <form class="inline" method="post" action="/channels/edit">
+            {{ hidden_filters() }}
             <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
             <label class="muted" style="font-size:12px">name
               <input type="text" name="name" value="{{ ch["name"] }}" style="width:180px">
@@ -166,17 +173,17 @@
     <noscript><button type="submit" class="secondary">filter</button></noscript>
   </form>
   <div class="filters">
-    <a href="/{% if genre %}?genre={{ genre }}{% endif %}" class="{{ 'active' if not status else '' }}">all</a>
+    <a href="/?{{ qs(status='') }}" class="{{ 'active' if not status else '' }}">all</a>
     {% for s in ['new', 'backlog', 'downloaded', 'transcribed', 'skipped', 'error'] %}
-    <a href="/?status={{ s }}{% if genre %}&amp;genre={{ genre }}{% endif %}" class="{{ 'active' if status == s else '' }}">{{ s }}</a>
+    <a href="/?{{ qs(status=s) }}" class="{{ 'active' if status == s else '' }}">{{ s }}</a>
     {% endfor %}
   </div>
   {% if genres %}
   <div class="filters">
     <span class="muted" style="align-self:center;font-size:12px;margin-left:4px">genre:</span>
-    <a href="/{% if status %}?status={{ status }}{% endif %}" class="{{ 'active' if not genre else '' }}">all</a>
+    <a href="/?{{ qs(genre='') }}" class="{{ 'active' if not genre else '' }}">all</a>
     {% for g in genres %}
-    <a href="/?{% if status %}status={{ status }}&amp;{% endif %}genre={{ g }}" class="{{ 'active' if genre == g else '' }}">{{ g }}</a>
+    <a href="/?{{ qs(genre=g) }}" class="{{ 'active' if genre == g else '' }}">{{ g }}</a>
     {% endfor %}
   </div>
   {% endif %}
@@ -186,14 +193,16 @@
       {% for v in videos %}
       <tr>
         <td class="mono muted">{{ (v["published_at"] or "?")[:10] }}</td>
-        <td class="muted"><a href="/?channel={{ v['channel_id'] }}">{{ v["channel_name"] }}</a></td>
+        <td class="muted"><a href="/?{{ qs(channel=v['channel_id']) }}">{{ v["channel_name"] }}</a></td>
         <td class="muted">{{ v["channel_genre"] }}</td>
         <td><a href="{{ v['url'] }}" target="_blank">{{ v["title"] }}</a>
+            {% if v["duration"] %}<span class="muted">&middot; {{ v["duration"] | dur }}</span>{% endif %}
             {% if v["error"] %}<div class="muted" style="font-size:12px">{{ v["error"][:120] }}</div>{% endif %}</td>
         <td><span class="badge {{ v['status'] }}">{{ v["status"] }}{% if v["auto"] == 0 and v["status"] == "new" %} (backlog){% endif %}</span></td>
         <td style="text-align:right; white-space:nowrap">
           {% if v["auto"] == 0 and v["status"] == "new" %}
           <form class="row" method="post" action="/videos/action">
+            {{ hidden_filters() }}
             <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
             <input type="hidden" name="action" value="queue">
             <button type="submit" class="ghost" style="color:var(--accent);border-color:var(--accent)">queue</button>
@@ -201,6 +210,7 @@
           {% endif %}
           {% if v["status"] == "error" %}
           <form class="row" method="post" action="/videos/action">
+            {{ hidden_filters() }}
             <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
             <input type="hidden" name="action" value="retry">
             <button type="submit" class="ghost" style="color:var(--amber);border-color:var(--amber)">retry</button>
@@ -208,6 +218,7 @@
           {% endif %}
           {% if v["status"] == "downloaded" %}
           <form class="row" method="post" action="/videos/action">
+            {{ hidden_filters() }}
             <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
             <input type="hidden" name="action" value="transcribe">
             <button type="submit" class="ghost" style="color:var(--green);border-color:var(--green)">transcribe</button>
@@ -219,6 +230,7 @@
           {% endif %}
           <form class="row" method="post" action="/videos/delete"
                 onsubmit="return confirm('Delete {{ v["title"] }} and its audio/transcript files?')">
+            {{ hidden_filters() }}
             <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
             <button type="submit" class="ghost" title="remove from library, delete files">del</button>
           </form>
@@ -230,12 +242,12 @@
     </table>
     {% if pages > 1 %}
     <div class="pager">
-      {% if page > 1 %}<a href="/?{{ pager_qs(page - 1) }}">&laquo; prev</a>{% endif %}
+      {% if page > 1 %}<a href="/?{{ qs(page=page - 1) }}">&laquo; prev</a>{% endif %}
       {% for p in page_list %}
-        {% if p %}<a href="/?{{ pager_qs(p) }}" class="{{ 'active' if p == page else '' }}">{{ p }}</a>
+        {% if p %}<a href="/?{{ qs(page=p) }}" class="{{ 'active' if p == page else '' }}">{{ p }}</a>
         {% else %}<span class="muted">&hellip;</span>{% endif %}
       {% endfor %}
-      {% if page < pages %}<a href="/?{{ pager_qs(page + 1) }}">next &raquo;</a>{% endif %}
+      {% if page < pages %}<a href="/?{{ qs(page=page + 1) }}">next &raquo;</a>{% endif %}
       <span class="muted" style="margin-left:auto">{{ total }} video{{ 's' if total != 1 else '' }}</span>
     </div>
     {% endif %}

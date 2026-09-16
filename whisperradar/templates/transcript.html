@@ -26,6 +26,7 @@
 <div class="wrap">
   <h1>{{ row["title"] }}</h1>
   <div class="meta">{{ row["channel_name"] }} &middot; {{ row["channel_genre"] }} &middot; {{ (row["published_at"] or "?")[:10] }}
+     {% if row["duration"] %}&middot; {{ row["duration"] | dur }}{% endif %}
      &middot; {{ row["language"] or "?" }} &middot; <a href="{{ row['url'] }}" target="_blank">open on YouTube</a></div>
   <div class="bar">
     <a class="btn" href="/file/{{ row['video_id'] }}">Download .txt</a>
