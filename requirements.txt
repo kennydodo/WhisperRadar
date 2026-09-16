@@ -1,0 +1,5 @@
+yt-dlp>=2025.1.26
+faster-whisper>=1.1.1
+PyYAML>=6.0
+Flask>=3.0
+waitress>=3.0

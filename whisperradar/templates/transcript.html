@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ row["title"] }} - WhisperRadar</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+          --muted:#8b93a3; --accent:#4f8cff; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.6 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 860px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .meta { color:var(--muted); margin-bottom:16px; }
+  .bar { display:flex; gap:10px; margin-bottom:20px; }
+  button, .btn { background:var(--accent); color:#fff; border:none; border-radius:7px;
+          padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer;
+          text-decoration:none; display:inline-block; }
+  button:hover, .btn:hover { filter:brightness(1.1); }
+  button.secondary { background:#565d6b; }
+  pre { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+        padding:20px; white-space:pre-wrap; word-wrap:break-word; font:14px/1.7 Georgia, serif; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ row["title"] }}</h1>
+  <div class="meta">{{ row["channel_name"] }} &middot; {{ row["channel_genre"] }} &middot; {{ (row["published_at"] or "?")[:10] }}
+     &middot; {{ row["language"] or "?" }} &middot; <a href="{{ row['url'] }}" target="_blank">open on YouTube</a></div>
+  <div class="bar">
+    <a class="btn" href="/file/{{ row['video_id'] }}">Download .txt</a>
+    <a class="btn secondary" href="/">Back to dashboard</a>
+  </div>
+  <pre>{{ text }}</pre>
+</div>
+</body>
+</html>

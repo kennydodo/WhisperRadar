@@ -1,0 +1,26 @@
+# WhisperRadar configuration
+# Paths are relative to the directory containing this file.
+
+db_path: data/whisperradar.db
+audio_dir: data/audio
+transcripts_dir: data/transcripts
+
+# Set to "chrome" / "firefox" / "edge" to reuse browser cookies if YouTube
+# starts bot-checking your requests. null = no cookies.
+cookies_from_browser: null
+
+# Optional: skip videos longer than this many seconds (null = no limit)
+max_video_seconds: null
+
+whisper:
+  # tiny | base | small | medium | large-v3  (bigger = better + slower)
+  model: small
+  # null = auto-detect language per video, or force e.g. "en"
+  language: null
+
+# Your channels. kind is "primary" or "similar"; active: false pauses a channel.
+channels: []
+#  - name: SomeSimilarChannel
+#    id: UCxxxxxxxxxxxxxxxxxxxxxx
+#    kind: similar
+#    active: true

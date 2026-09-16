@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
+    --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f; --amber: #e0a93f;
+    --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; color: var(--muted);
+       text-transform: uppercase; letter-spacing: .06em; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+       text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.transcribed { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.new { background: rgba(79,140,255,.15); color: var(--accent); }
+  .badge.downloading, .badge.transcribing { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.error { background: rgba(224,92,92,.15); color: var(--red); }
+  .badge.skipped, .badge.downloaded { background: rgba(86,93,107,.25); color: var(--muted); }
+  button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
+          padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button.secondary { background: var(--gray); }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted);
+                 padding: 4px 10px; font-weight: 500; }
+  button.ghost:hover { color: var(--red); border-color: var(--red); filter: none; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input, select { background: #0c0e12; color: var(--text); border: 1px solid var(--border);
+                  border-radius: 7px; padding: 7px 10px; font-size: 13px; }
+  input { flex: 1; }
+  form.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  form.row { display: inline; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .banner.job { background: rgba(224,169,63,.12); color: var(--amber); }
+  .filters { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+  .filters a { padding: 3px 12px; border-radius: 20px; border: 1px solid var(--border);
+               color: var(--muted); font-size: 13px; }
+  .filters a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  pre.logbox { background: #0a0c10; border: 1px solid var(--border); border-radius: 8px;
+               padding: 12px; max-height: 260px; overflow-y: auto; font-size: 12px;
+               color: var(--muted); white-space: pre-wrap; margin: 10px 0 0; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .muted { color: var(--muted); }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  .pager { display: flex; gap: 6px; align-items: center; margin: 12px 2px 0; flex-wrap: wrap; }
+  .pager a { padding: 3px 10px; border: 1px solid var(--border); border-radius: 7px;
+             color: var(--muted); font-size: 13px; }
+  .pager a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>WhisperRadar</h1>
+  <p class="sub">watch YouTube channels &middot; download audio &middot; transcribe with Whisper &middot; export for LLMs</p>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+  {% if job.running %}<div class="banner job" id="runbar">Running: {{ job.kind }} &mdash; see log below</div>{% endif %}
+
+  <div class="panel">
+    <div class="actions">
+      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="run">
+        <button type="submit">Run all</button></form>
+      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="watch">
+        <button type="submit" class="secondary">Watch feeds</button></form>
+      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="download">
+        <button type="submit" class="secondary">Download audio</button></form>
+      <form class="row" method="post" action="/run"><input type="hidden" name="kind" value="transcribe">
+        <button type="submit" class="secondary">Transcribe</button></form>
+      <a class="btn" href="/export_all" style="background:var(--green)">Export all transcripts (.zip)</a>
+    </div>
+    <pre class="logbox" id="logbox">{{ log_text }}</pre>
+  </div>
+
+  <h2>Channels</h2>
+  <div class="panel">
+    <form class="inline" method="post" action="/channels/add">
+      <input type="text" name="url" placeholder="https://www.youtube.com/@channel or UC..." required>
+      <input type="text" name="name" placeholder="Name (optional)" style="flex:0 0 160px">
+      <input type="text" name="genre" placeholder="genre e.g. tech" style="flex:0 0 140px">
+      <select name="kind">
+        <option value="primary">primary</option>
+        <option value="similar">similar</option>
+      </select>
+      <button type="submit">Add channel</button>
+    </form>
+    <table style="margin-top:10px">
+      <tr><th>Name</th><th>Channel ID</th><th>Kind</th><th>Genre</th><th>State</th><th></th></tr>
+      {% for ch in channels %}
+      <tr>
+        <td>{{ ch["name"] }}</td>
+        <td class="mono muted">{{ ch["channel_id"] }}</td>
+        <td>{{ ch["kind"] }}</td>
+        <td class="muted">{{ ch["genre"] }}</td>
+        <td>{% if ch["active"] %}<span class="badge transcribed">active</span>
+            {% else %}<span class="badge skipped">paused</span>{% endif %}</td>
+        <td style="text-align:right; white-space:nowrap">
+          <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
+          <form class="row" method="post" action="/channels/remove"
+                onsubmit="return confirm('Remove {{ ch["name"] }} and its video records?')">
+            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
+            <button type="submit" class="ghost">remove</button>
+          </form>
+        </td>
+      </tr>
+      <tr id="edit-{{ ch['channel_id'] }}" style="display:none">
+        <td colspan="6" style="background:#12151c">
+          <form class="inline" method="post" action="/channels/edit">
+            <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
+            <label class="muted" style="font-size:12px">name
+              <input type="text" name="name" value="{{ ch["name"] }}" style="width:180px">
+            </label>
+            <label class="muted" style="font-size:12px">genre
+              <input type="text" name="genre" value="{{ ch["genre"] }}" style="width:120px">
+            </label>
+            <select name="kind">
+              <option value="primary" {{ 'selected' if ch['kind'] == 'primary' else '' }}>primary</option>
+              <option value="similar" {{ 'selected' if ch['kind'] == 'similar' else '' }}>similar</option>
+            </select>
+            <select name="active">
+              <option value="1" {{ 'selected' if ch['active'] else '' }}>active</option>
+              <option value="0" {{ 'selected' if not ch['active'] else '' }}>paused</option>
+            </select>
+            <button type="submit">save</button>
+            <button type="button" class="ghost"
+                    onclick="cancelEdit('{{ ch['channel_id'] }}')">cancel</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No channels yet &mdash; add one above or edit config.yaml</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <h2>Videos</h2>
+  <form method="get" action="/" class="inline" style="margin-bottom:10px">
+    <input type="hidden" name="status" value="{{ status or '' }}">
+    <input type="hidden" name="genre" value="{{ genre or '' }}">
+    <select name="channel" onchange="this.form.submit()">
+      <option value="">all channels</option>
+      {% for ch in channels %}
+      <option value="{{ ch['channel_id'] }}" {{ 'selected' if channel == ch['channel_id'] else '' }}>{{ ch["name"] }} ({{ ch["genre"] }})</option>
+      {% endfor %}
+    </select>
+    <noscript><button type="submit" class="secondary">filter</button></noscript>
+  </form>
+  <div class="filters">
+    <a href="/{% if genre %}?genre={{ genre }}{% endif %}" class="{{ 'active' if not status else '' }}">all</a>
+    {% for s in ['new', 'backlog', 'downloaded', 'transcribed', 'skipped', 'error'] %}
+    <a href="/?status={{ s }}{% if genre %}&amp;genre={{ genre }}{% endif %}" class="{{ 'active' if status == s else '' }}">{{ s }}</a>
+    {% endfor %}
+  </div>
+  {% if genres %}
+  <div class="filters">
+    <span class="muted" style="align-self:center;font-size:12px;margin-left:4px">genre:</span>
+    <a href="/{% if status %}?status={{ status }}{% endif %}" class="{{ 'active' if not genre else '' }}">all</a>
+    {% for g in genres %}
+    <a href="/?{% if status %}status={{ status }}&amp;{% endif %}genre={{ g }}" class="{{ 'active' if genre == g else '' }}">{{ g }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="panel">
+    <table>
+      <tr><th>Published</th><th>Channel</th><th>Genre</th><th>Title</th><th>Status</th><th style="text-align:right">Transcript</th></tr>
+      {% for v in videos %}
+      <tr>
+        <td class="mono muted">{{ (v["published_at"] or "?")[:10] }}</td>
+        <td class="muted"><a href="/?channel={{ v['channel_id'] }}">{{ v["channel_name"] }}</a></td>
+        <td class="muted">{{ v["channel_genre"] }}</td>
+        <td><a href="{{ v['url'] }}" target="_blank">{{ v["title"] }}</a>
+            {% if v["error"] %}<div class="muted" style="font-size:12px">{{ v["error"][:120] }}</div>{% endif %}</td>
+        <td><span class="badge {{ v['status'] }}">{{ v["status"] }}{% if v["auto"] == 0 and v["status"] == "new" %} (backlog){% endif %}</span></td>
+        <td style="text-align:right; white-space:nowrap">
+          {% if v["auto"] == 0 and v["status"] == "new" %}
+          <form class="row" method="post" action="/videos/action">
+            <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+            <input type="hidden" name="action" value="queue">
+            <button type="submit" class="ghost" style="color:var(--accent);border-color:var(--accent)">queue</button>
+          </form>
+          {% endif %}
+          {% if v["status"] == "error" %}
+          <form class="row" method="post" action="/videos/action">
+            <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+            <input type="hidden" name="action" value="retry">
+            <button type="submit" class="ghost" style="color:var(--amber);border-color:var(--amber)">retry</button>
+          </form>
+          {% endif %}
+          {% if v["status"] == "downloaded" %}
+          <form class="row" method="post" action="/videos/action">
+            <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+            <input type="hidden" name="action" value="transcribe">
+            <button type="submit" class="ghost" style="color:var(--green);border-color:var(--green)">transcribe</button>
+          </form>
+          {% endif %}
+          {% if v["status"] == "transcribed" %}
+          <a class="btn" style="background:var(--gray)" href="/transcript/{{ v['video_id'] }}">view</a>
+          <a class="btn" href="/file/{{ v['video_id'] }}">.txt</a>
+          {% endif %}
+          <form class="row" method="post" action="/videos/delete"
+                onsubmit="return confirm('Delete {{ v["title"] }} and its audio/transcript files?')">
+            <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+            <button type="submit" class="ghost" title="remove from library, delete files">del</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No videos{% if status %} with status "{{ status }}"{% endif %}{% if genre %} in genre "{{ genre }}"{% endif %}.</td></tr>
+      {% endfor %}
+    </table>
+    {% if pages > 1 %}
+    <div class="pager">
+      {% if page > 1 %}<a href="/?{{ pager_qs(page - 1) }}">&laquo; prev</a>{% endif %}
+      {% for p in page_list %}
+        {% if p %}<a href="/?{{ pager_qs(p) }}" class="{{ 'active' if p == page else '' }}">{{ p }}</a>
+        {% else %}<span class="muted">&hellip;</span>{% endif %}
+      {% endfor %}
+      {% if page < pages %}<a href="/?{{ pager_qs(page + 1) }}">next &raquo;</a>{% endif %}
+      <span class="muted" style="margin-left:auto">{{ total }} video{{ 's' if total != 1 else '' }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  function toggleEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    row.style.display = row.style.display === 'none' ? '' : 'none';
+  }
+  function cancelEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    const form = row.querySelector('form');
+    if (form) { form.reset(); }
+    row.style.display = 'none';
+  }
+  let wasRunning = {{ 'true' if job.running else 'false' }};
+  async function poll() {
+    try {
+      const s = await (await fetch('/status')).json();
+      const box = document.getElementById('logbox');
+      box.textContent = s.log.join('\n');
+      box.scrollTop = box.scrollHeight;
+      if (wasRunning && !s.running) { location.reload(); return; }
+      wasRunning = s.running;
+    } catch (e) { /* server busy or restarting */ }
+  }
+  setInterval(poll, 2000);
+</script>
+</body>
+</html>
