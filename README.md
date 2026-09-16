@@ -87,6 +87,26 @@ powershell -ExecutionPolicy Bypass -File scripts\autostart.ps1 -Remove  # remove
 Installs a shortcut in your Startup folder: at every login the dashboard
 starts minimized (server + browser). Needs no admin rights.
 
+## Studio (video production pipeline)
+
+The **Studio** tab turns competitor research into original videos. Create a
+production from any transcribed video in your library, then walk its stages:
+**style → script → audio → srt → images → merge → review**.
+
+- **Every stage is flexible**: run the automation (if its hook is configured)
+  or do it by hand - paste a script, upload 11labs audio, your own .srt,
+  images, or the final video. Approve & advance, or send back for rework.
+- **Style guide**: the LLM analyzes the source transcript's writing style
+  (tone, pacing, hooks, structure) into an editable `style.md`, and every
+  script/image generation must match it while using only the facts - original
+  wording, familiar feel. A 5-gram overlap check warns if a script drifts
+  too close to the source.
+- **LLM providers** (`studio.llm_providers` in config.yaml): named
+  OpenAI-compatible providers (GLM, DeepSeek, ...) with separate API keys
+  (or `WR_<NAME>_API_KEY` env variables); pick one per generation.
+- **Tool hooks** (`tts_command`, `imagegen_command`, `merge_command`) plug in
+  chatterbox, Renderly and ImgToVideo when you're ready.
+
 ## Daily usage
 
 Everything at once (what the scheduler runs):

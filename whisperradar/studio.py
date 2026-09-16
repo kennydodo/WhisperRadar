@@ -5,10 +5,14 @@ or by hand (paste text / upload files) - the human stays in charge.
 """
 
 import json
+import logging
 import re
 import subprocess
+import urllib.error
 import urllib.request
 from pathlib import Path
+
+log = logging.getLogger("whisperradar")
 
 OLLAMA_URL = "http://localhost:11434"
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".flac", ".ogg")
@@ -36,6 +40,16 @@ def find_srt(pid_dir: Path) -> Path | None:
 
 def find_script(pid_dir: Path) -> Path | None:
     p = pid_dir / "script.md"
+    return p if p.exists() else None
+
+
+def find_style(pid_dir: Path) -> Path | None:
+    p = pid_dir / "style.md"
+    return p if p.exists() else None
+
+
+def find_source_transcript(pid_dir: Path) -> Path | None:
+    p = pid_dir / "source_transcript.txt"
     return p if p.exists() else None
 
 
@@ -117,6 +131,8 @@ def provider_ready(cfg, name: str | None = None) -> bool:
 
 
 def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
+    import http.client
+
     key = _provider_key(p)
     if not key:
         raise RuntimeError(
@@ -128,7 +144,7 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
     url = p["base_url"].rstrip("/") + "/chat/completions"
     payload = {
         "model": p["model"],
-        "stream": False,
+        "stream": True,  # streaming keeps gateways from timing out long completions
         "messages": [{"role": "user", "content": prompt}],
     }
     req = urllib.request.Request(
@@ -137,16 +153,43 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {key}",
+            "Accept": "text/event-stream",
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read())
-        return data["choices"][0]["message"]["content"].strip()
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "ignore")[:300]
-        raise RuntimeError(f"LLM API error {e.code}: {body}") from e
+
+    last_exc = None
+    for attempt in range(2):
+        try:
+            parts = []
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                ctype = r.headers.get("Content-Type", "")
+                if "event-stream" not in ctype:
+                    data = json.loads(r.read())
+                    return data["choices"][0]["message"]["content"].strip()
+                for raw in r:
+                    line = raw.decode("utf-8", "ignore").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    chunk = line[5:].strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        delta = json.loads(chunk)["choices"][0].get("delta", {})
+                    except (ValueError, KeyError, IndexError):
+                        continue
+                    parts.append(delta.get("content") or "")
+            text = "".join(parts).strip()
+            if text:
+                return text
+            raise RuntimeError("LLM returned an empty response")
+        except RuntimeError:
+            raise
+        except (urllib.error.URLError, http.client.HTTPException,
+                ConnectionError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            log.warning("LLM connection error (attempt %d): %s", attempt + 1, exc)
+    raise RuntimeError(f"LLM connection failed after retry: {last_exc}")
     try:
         return data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError) as exc:
@@ -217,8 +260,40 @@ def overlap_ratio(script: str, source: str) -> float:
     return len(a & b) / len(a)
 
 
+def style_prompt(title: str, genre: str, source_text: str) -> str:
+    text = (source_text or "").strip()
+    if len(text) > 12000:
+        text = text[:12000] + " ..."
+    if not text:
+        raise RuntimeError(
+            "No source transcript available - write the style guide manually"
+        )
+    return f"""You are a writing coach for a {genre} YouTube channel.
+Analyze the WRITING STYLE of the transcript below (from a video titled "{title}").
+
+TRANSCRIPT TO ANALYZE:
+{text}
+
+Produce a STYLE GUIDE in markdown with exactly these sections:
+## Voice & Tone
+## Pacing & Rhythm
+## Sentence Style
+## Hook Pattern
+## Structure (beats in order, with rough timing)
+## CTA Style
+## Vocabulary & Register
+## Things to Avoid
+
+Rules:
+- Describe patterns abstractly (e.g. "short punchy sentences, averages 8-12 words").
+- Do NOT quote, copy, or paraphrase any phrase or sentence from the transcript.
+- Be concrete enough that another writer could imitate the style without ever seeing the transcript.
+
+Output ONLY the style guide markdown."""
+
+
 def script_prompt(title: str, genre: str, source_text: str,
-                  target_words: int = 1200) -> str:
+                  style_guide: str = "", target_words: int = 1200) -> str:
     facts = (source_text or "").strip()
     if len(facts) > 12000:
         facts = facts[:12000] + " ..."
@@ -226,27 +301,44 @@ def script_prompt(title: str, genre: str, source_text: str,
         facts_block = f"FACTS gathered from research (use these, nothing else):\n{facts}"
     else:
         facts_block = "No research transcript available - write from the title alone."
+    style = (style_guide or "").strip()
+    if style:
+        style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
+hook pattern, structure, and CTA style all come from it):
+{style[:6000]}"""
+    else:
+        style_block = "No style guide provided."
     return f"""You are an original YouTube scriptwriter for a {genre} channel.
+
+{style_block}
 
 {facts_block}
 
 TASK: Write an original YouTube script titled "{title}".
 
 Rules:
-- Use ONLY the facts above. Never reuse sentences, phrasing, or the structure of any source material.
-- Hook the viewer in the first 15 seconds.
+- Follow the STYLE GUIDE above precisely. The script must feel like it was
+  written by the writer described there.
+- Use ONLY the facts above. Never reuse sentences, phrasing, or the structure
+  of any source material - only the style is shared.
+- Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words. Conversational, second person, no stage directions, no scene labels.
-- End with a short call to action.
+- End with a short call to action matching the style guide's CTA style.
 
 Output ONLY the script text."""
 
 
-def image_prompts_prompt(script_text: str, genre: str) -> str:
+def image_prompts_prompt(script_text: str, genre: str,
+                         style_guide: str = "") -> str:
+    style = (style_guide or "").strip()
+    style_note = ""
+    if style:
+        style_note = f"\nVisual style should also reflect this writing style guide:\n{style[:3000]}"
     return f"""Break this {genre} YouTube script into scenes for image generation.
 
 Script:
 {script_text[:12000]}
-
+{style_note}
 For each scene output exactly ONE line:
 IMAGE: <detailed image prompt, cinematic 16:9, consistent characters and style, no text inside the image>
 

@@ -131,6 +131,9 @@
       {% if stage in steps %}
       <span class="badge done">done ({{ steps[stage]["method"] }})</span>
       {% else %}<span class="badge pending">not done</span>{% endif %}
+      {% if stage in ("script", "images") and style %}
+      <span class="badge genre" title="Style guide is passed to the LLM">style guide applied</span>
+      {% endif %}
     </h2>
     {% if steps.get(stage) and steps[stage]["detail"] %}
     <div class="muted" style="font-size:12px; margin-bottom:8px">{{ steps[stage]["detail"] }}</div>
@@ -168,6 +171,11 @@
           <button type="submit" class="secondary">Upload script file</button>
         </form>
       </div>
+      {% if style %}
+      <div class="muted" style="font-size:12px; margin-top:8px">Style guide is applied to this generation - <a href="/studio/{{ prod['id'] }}?stage=style">view / edit it</a>.</div>
+      {% else %}
+      <div class="warn" style="font-size:12px; margin-top:8px">No style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the style stage</a> for a consistent voice.</div>
+      {% endif %}
 
     {% elif stage == "audio" %}
       {% if audio %}

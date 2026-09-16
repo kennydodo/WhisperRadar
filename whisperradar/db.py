@@ -310,7 +310,7 @@ def start_run(conn) -> int:
 
 # ---------------------------------------------------------------- studio ---
 
-STAGES = ["script", "audio", "srt", "images", "merge", "review"]
+STAGES = ["style", "script", "audio", "srt", "images", "merge", "review"]
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider"}

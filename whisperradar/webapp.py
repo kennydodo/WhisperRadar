@@ -425,8 +425,12 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             pid = db.create_production(conn, title, genre, source)
+            row = db.get_video(conn, source) if source else None
         finally:
             conn.close()
+        if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
+            pdir = studio.prod_dir(cfg, pid)
+            shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
         return redirect(f"/studio/{pid}")
 
     @app.get("/studio/<int:pid>")
@@ -451,6 +455,18 @@ def create_app(cfg) -> Flask:
 
         script = studio.find_script(pdir)
         script_text = script.read_text(encoding="utf-8") if script else ""
+        style = studio.find_style(pdir)
+        style_text = style.read_text(encoding="utf-8") if style else ""
+        source_tr = studio.find_source_transcript(pdir)
+        if not source_tr and prod["source_video_id"]:
+            conn = db.connect(cfg.db_path)
+            try:
+                row = db.get_video(conn, prod["source_video_id"])
+            finally:
+                conn.close()
+            if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
+                shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
+                source_tr = studio.find_source_transcript(pdir)
         audio = studio.find_audio(pdir)
         srt = studio.find_srt(pdir)
         srt_text = srt.read_text(encoding="utf-8") if srt else ""
@@ -487,6 +503,7 @@ def create_app(cfg) -> Flask:
         return render_template(
             "studio_detail.html", prod=prod, steps=steps, history=history,
             stages=db.STAGES, stage=stage, script_text=script_text,
+            style=style, style_text=style_text, source_tr=source_tr,
             audio=audio, srt=srt, srt_text=srt_text,
             prompts_text=prompts_text, images=images,
             final=final, source_video=source_video, llm_ready=llm_ready,
@@ -585,6 +602,56 @@ def create_app(cfg) -> Flask:
             conn.close()
         return redirect(f"/studio/{pid}?msg=Script+saved")
 
+    @app.post("/studio/<int:pid>/style/generate")
+    def studio_style_generate(pid):
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+        provider = request.form.get("provider") or cfg.studio_llm_default
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                prod = db.get_production(conn, pid)
+                if not prod:
+                    return
+                source_text = _source_transcript(prod)
+                if not source_text:
+                    raise RuntimeError(
+                        "No source transcript - write the style guide manually"
+                    )
+                prompt = studio.style_prompt(prod["title"], prod["genre"],
+                                             source_text)
+                text = studio.llm_generate(cfg, prompt, provider=provider)
+                if not text:
+                    raise RuntimeError("LLM returned an empty style guide")
+                pdir = studio.prod_dir(cfg, pid)
+                (pdir / "style.md").write_text(text + "\n", encoding="utf-8")
+                db.add_step(conn, pid, "style", "auto", detail=provider)
+            finally:
+                conn.close()
+
+        sjob.start(worker, "style analysis")
+        return redirect(f"/studio/{pid}?msg=Style+analysis+started")
+
+    @app.post("/studio/<int:pid>/style/save")
+    def studio_style_save(pid):
+        pdir = studio.prod_dir(cfg, pid)
+        text = (request.form.get("style") or "").strip()
+        f = request.files.get("style_file")
+        if f and f.filename:
+            text = f.read().decode("utf-8", "ignore").strip()
+        if not text:
+            return redirect(f"/studio/{pid}?error=Nothing+to+save")
+        (pdir / "style.md").write_text(text + "\n", encoding="utf-8")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_step(conn, pid, "style", "manual")
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Style+guide+saved")
+
     @app.post("/studio/<int:pid>/script/generate")
     def studio_script_generate(pid):
         if sjob.running:
@@ -600,7 +667,10 @@ def create_app(cfg) -> Flask:
             source_text = _source_transcript(prod)
         finally:
             conn.close()
-        prompt = studio.script_prompt(prod["title"], prod["genre"], source_text)
+        style = studio.find_style(studio.prod_dir(cfg, pid))
+        style_guide = style.read_text(encoding="utf-8") if style else ""
+        prompt = studio.script_prompt(prod["title"], prod["genre"],
+                                      source_text, style_guide)
 
         def worker():
             conn = db.connect(cfg.db_path)
@@ -736,8 +806,11 @@ def create_app(cfg) -> Flask:
                 script = studio.find_script(pdir)
                 if not script:
                     raise RuntimeError("Write the script first")
+                style = studio.find_style(pdir)
+                style_guide = style.read_text(encoding="utf-8") if style else ""
                 prompt = studio.image_prompts_prompt(
-                    script.read_text(encoding="utf-8"), prod["genre"])
+                    script.read_text(encoding="utf-8"), prod["genre"],
+                    style_guide)
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 lines = studio.parse_image_prompts(text)
                 if not lines:
