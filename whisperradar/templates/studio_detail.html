@@ -276,25 +276,6 @@
 
     {% elif stage == "merge" %}
       {% if final %}
-      <div class="artifact"><video controls src="/studio/file/{{ prod['id'] }}/final.mp4"></video></div>
-      {% else %}
-      <div class="muted" style="margin-bottom:8px">No final video yet. Merge with your tool or upload the result.</div>
-      {% endif %}
-      <div class="actions">
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/generate">
-          <button type="submit" {{ '' if hooks.merge else 'disabled' }}
-                  title="{{ 'Run configured merge command (images + audio + srt)' if hooks.merge else 'Set studio.merge_command in config.yaml (e.g. ImgToVideo)' }}">
-            Merge with hook
-          </button>
-        </form>
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/upload" enctype="multipart/form-data">
-          <input type="file" name="video_file" accept="video/*" required>
-          <button type="submit" class="secondary">Upload final video</button>
-        </form>
-      </div>
-
-    {% elif stage == "merge" %}
-      {% if final %}
       <div class="artifact"><video controls src="{{ final_url }}"></video></div>
       {% else %}
       <div class="muted" style="margin-bottom:8px">No final video yet. Render it with ImgToVideo, or upload one.</div>
