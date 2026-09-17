@@ -62,6 +62,11 @@ class Config:
         self.studio_imagegen_command = studio.get("imagegen_command") or None
         self.studio_merge_command = studio.get("merge_command") or None
         self.studio_script_words = studio.get("script_words") or None
+        self.renderly_url = (studio.get("renderly_url") or
+                             "http://127.0.0.1:8022").rstrip("/")
+        self.renderly_channel = studio.get("renderly_channel") or None
+        self.renderly_upscale = studio.get("renderly_upscale") or 4
+        self.imgtovideo_repo = studio.get("imgtovideo_repo") or None
         self.studio_dir = base_dir / "data" / "studio"
 
 

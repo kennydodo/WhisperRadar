@@ -40,8 +40,14 @@ studio:
   script_words: null
   ollama_model: null     # used when llm: ollama
   tts_command: null      # e.g. python C:\path\chatterbox\run_tts.py {script} {out}
-  imagegen_command: null # e.g. renderly --prompt-file {prompts} --outdir {outdir}
-  merge_command: null    # e.g. imgtovideo --images {images} --audio {audio} --srt {srt} --out {out}
+  # Renderly + ImgToVideo integration (images + final render).
+  # renderly_channel: null = auto-create/reuse a "whisperradar" channel.
+  renderly_url: http://127.0.0.1:8022
+  renderly_channel: null
+  renderly_upscale: 4
+  imgtovideo_repo: D:\Repos\ImgToVideo
+  imagegen_command: null # optional override; default routes through Renderly
+  merge_command: null    # optional override; default runs ImgToVideo.Cli
 
 # Your channels. kind is "primary" or "similar"; active: false pauses a channel.
 channels: []

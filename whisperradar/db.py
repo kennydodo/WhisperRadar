@@ -106,6 +106,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(productions)")}
     if "llm_provider" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN llm_provider TEXT")
+    if "extra_prompt" not in cols:
+        conn.execute("ALTER TABLE productions ADD COLUMN extra_prompt TEXT")
 
 
 def add_channel(
@@ -313,7 +315,7 @@ def start_run(conn) -> int:
 STAGES = ["style", "script", "audio", "srt", "images", "merge", "review"]
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
-                "source_video_id", "llm_provider"}
+                "source_video_id", "llm_provider", "extra_prompt"}
 
 
 def create_production(conn, title: str, genre: str = "general",

@@ -7,6 +7,7 @@ or by hand (paste text / upload files) - the human stays in charge.
 import json
 import logging
 import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
@@ -67,8 +68,143 @@ def find_images(pid_dir: Path) -> list[Path]:
 
 
 def find_final(pid_dir: Path) -> Path | None:
-    p = pid_dir / "final.mp4"
-    return p if p.exists() else None
+    for candidate in (pid_dir / "out" / "final" / "final.mp4",
+                      pid_dir / "final.mp4"):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+# ------------------------------------------------- Renderly / ImgToVideo --
+
+def renderly_ready(url: str, timeout: int = 2) -> bool:
+    try:
+        with urllib.request.urlopen(f"{url}/api/channels", timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def ensure_renderly_channel(cfg) -> int:
+    """Find or create the 'whisperradar' channel in Renderly. Returns its id."""
+    if cfg.renderly_channel:
+        return int(cfg.renderly_channel)
+    with urllib.request.urlopen(f"{cfg.renderly_url}/api/channels",
+                                timeout=10) as r:
+        channels = json.loads(r.read())
+    for ch in channels:
+        if ch.get("name") == "whisperradar":
+            return ch["id"]
+    req = urllib.request.Request(
+        f"{cfg.renderly_url}/api/channels",
+        data=json.dumps({"name": "whisperradar",
+                         "description": "Studio batch image generations"}
+                        ).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())["id"]
+
+
+def run_imagegen(cfg, pid_dir: Path) -> int:
+    """Render the production's shotlist images through ImgToVideo.ImageGen
+    in Renderly mode. Returns how many new images landed in images\\."""
+    repo = cfg.imgtovideo_repo
+    if not repo or not Path(repo, "src", "ImgToVideo.ImageGen").exists():
+        raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
+    channel = ensure_renderly_channel(cfg)
+    before = {p.name for p in (pid_dir / "images").iterdir()} \
+        if (pid_dir / "images").exists() else set()
+    cmd = [
+        "dotnet", "run", "--project",
+        str(Path(repo, "src", "ImgToVideo.ImageGen")),
+        "-c", "Release", "--",
+        str(pid_dir),
+        "--renderly", cfg.renderly_url,
+        "--channel", str(channel),
+        "--image-size", "1K",
+        "--upscale", str(cfg.renderly_upscale),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+    if result.returncode != 0:
+        tail = (result.stderr or result.stdout or "")[-500:]
+        raise RuntimeError(f"ImageGen failed (exit {result.returncode}): {tail}")
+    img_dir = pid_dir / "images"
+    new = [p.name for p in img_dir.iterdir() if p.name not in before]
+    return len(new)
+
+
+def sanitize_shotlist(pid_dir: Path) -> int:
+    """Drop shotlist images/shots whose files were never generated
+    (e.g. failed on API quota) so the render can proceed with what exists.
+    Returns how many shots were dropped."""
+    path = pid_dir / "shotlist.json"
+    if not path.exists():
+        return 0
+    data = json.loads(path.read_text(encoding="utf-8"))
+    img_dir = pid_dir / "images"
+    existing = {p.stem.lower() for p in img_dir.iterdir()
+                if p.is_file()} if img_dir.exists() else set()
+    images = [i for i in data.get("images", [])
+              if Path(i.get("file", "")).stem.lower() in existing]
+    dropped = {Path(i["file"]).stem.lower() for i in data.get("images", [])
+               if Path(i.get("file", "")).stem.lower() not in existing}
+    shots = [s for s in data.get("shots", [])
+             if Path(s.get("asset", "")).stem.lower() in existing]
+    if not shots:
+        raise RuntimeError("sanitizing the shotlist would remove every shot")
+    removed = len(data.get("shots", [])) - len(shots)
+    if removed == 0 and len(images) == len(data.get("images", [])):
+        return 0
+    data["images"] = images
+    data["shots"] = shots
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+    log.warning("shotlist sanitized: dropped %d shot(s) with missing images %s",
+                removed, sorted(dropped))
+    return removed
+
+
+def run_merge_render(cfg, pid_dir: Path) -> Path:
+    """Render the final video with ImgToVideo.Cli (headless). Returns final path."""
+    repo = cfg.imgtovideo_repo
+    cli = Path(repo, "src", "ImgToVideo.Cli") if repo else None
+    if not cli or not cli.exists():
+        raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
+
+    # project layout expectations: audio\narration.<ext>, *.srt at root
+    audio_dir = pid_dir / "audio"
+    audio_dir.mkdir(exist_ok=True)
+    audio = find_audio(pid_dir)
+    if audio and not (audio_dir / "narration.mp3").exists():
+        shutil.copy(audio, audio_dir / "narration.mp3")
+    sanitize_shotlist(pid_dir)
+
+    cmd = [
+        "dotnet", "run", "--project", str(cli),
+        "-c", "Release", "--", "render-final", str(pid_dir),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=14400)
+    if result.returncode != 0:
+        tail = ((result.stderr or "") + (result.stdout or ""))[-600:]
+        raise RuntimeError(f"ImgToVideo.Cli failed (exit {result.returncode}): {tail}")
+    final = find_final(pid_dir)
+    if not final:
+        raise RuntimeError("render finished but no final.mp4 found")
+    return final
+
+
+def prepare_project_folder(cfg, pid: int) -> Path:
+    """Make the production folder a valid ImgToVideo project folder."""
+    pdir = prod_dir(cfg, pid)
+    options_file = pdir / "imgtovideo.json"
+    if not options_file.exists():
+        options_file.write_text(json.dumps({
+            "schema_version": 1,
+            "naming": {"image_extensions": [".png", ".jpg", ".jpeg", ".webp"]},
+        }, indent=2), encoding="utf-8")
+    return pdir
 
 
 # ------------------------------------------------------------------ ollama --
@@ -360,6 +496,62 @@ def parse_image_prompts(text: str) -> list[str]:
         if line:
             prompts.append(line)
     return prompts
+
+
+def parse_shotlist_json(text: str) -> dict:
+    """Parse the LLM's shotlist output: strips fences, extracts the object."""
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise RuntimeError("LLM returned no JSON object")
+    data = json.loads(text[start:end + 1])
+    if not isinstance(data.get("images"), list) or not data["images"]:
+        raise RuntimeError("shotlist has no images[] entries")
+    if not isinstance(data.get("shots"), list) or not data["shots"]:
+        raise RuntimeError("shotlist has no shots[] entries")
+    for item in data["images"]:
+        if not isinstance(item, dict) or not item.get("file") or not item.get("prompt"):
+            raise RuntimeError("images[] entries need 'file' and 'prompt'")
+    return data
+
+
+def shotlist_prompt(script_text: str, srt_numbered: str, style_guide: str,
+                    extra_direction: str = "") -> str:
+    style = (style_guide or "").strip()
+    style_block = f"MASTER VISUAL STYLE (put this verbatim in the \"style\" field):\n{style[:4000]}" \
+        if style else "No style guide provided - write a concise master visual style."
+    extra = (extra_direction or "").strip()
+    if extra:
+        extra = f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
+    return f"""You are the shot planner for a faceless YouTube video. Plan the images
+from the script and the subtitle cues below.
+
+Output ONLY a JSON object (no markdown fences) with this exact shape:
+{{
+  "style": "<master visual style for every image>",
+  "images": [ {{ "file": "S01_01_SCN_ST.png", "prompt": "<image prompt>" }} ],
+  "shots": [ {{ "shot_id": "s1", "cues": "1-3", "asset": "S01_01_SCN_ST.png" }} ]
+}}
+
+Rules:
+- "images[]" holds every image: "file" follows the naming convention
+  S##_##_TYPE_MOTION.png (SCN=scene, CU=close-up, INF=infographic, CMP=comparison,
+  PROC=process, HYB=hybrid, OVR=overview; motion ST/ZI/ZO/PL/PR/PD/PV - two digits,
+  uppercase, .png lowercase). Write a rich prompt per image; portrait-quality,
+  cinematic 16:9 composition with 120% overscan margin for the motion.
+- "shots[]" maps each image to subtitle cue ranges ("1-3") so every cue is
+  covered exactly once, in order, with no gaps and no overlaps.
+- "style" is the master visual style shared by all images.
+{extra}
+SCRIPT:
+{script_text[:12000]}
+
+SUBTITLE CUES (index: text):
+{srt_numbered[:12000]}
+
+{style_block}"""
 
 
 # --------------------------------------------------- external tool hooks ---

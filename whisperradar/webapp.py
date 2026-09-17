@@ -4,6 +4,7 @@ Start with:  python wr.py serve          (http://127.0.0.1:8000)
 """
 
 import io
+import json
 import logging
 import shutil
 import threading
@@ -128,6 +129,7 @@ def _page_list(current: int, total: int) -> list:
 def create_app(cfg) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
+    app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live
     app.jinja_env.filters["dur"] = format_duration
     job = _Job()
     sjob = _Job()  # studio jobs (LLM generation, SRT alignment)
@@ -467,6 +469,8 @@ def create_app(cfg) -> Flask:
             if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
                 shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
                 source_tr = studio.find_source_transcript(pdir)
+        shotlist = pdir / "shotlist.json"
+        shotlist_text = shotlist.read_text(encoding="utf-8") if shotlist.exists() else ""
         audio = studio.find_audio(pdir)
         srt = studio.find_srt(pdir)
         srt_text = srt.read_text(encoding="utf-8") if srt else ""
@@ -474,6 +478,8 @@ def create_app(cfg) -> Flask:
         prompts_text = prompts.read_text(encoding="utf-8") if prompts else ""
         images = [i.name for i in studio.find_images(pdir)]
         final = studio.find_final(pdir)
+        final_url = (f"/studio/file/{pid}/"
+                     f"{final.relative_to(pdir).as_posix()}") if final else None
 
         models = studio.ollama_models()
         providers = cfg.studio_llm_providers
@@ -495,21 +501,25 @@ def create_app(cfg) -> Flask:
         else:
             llm_ready = False
             llm_label = studio.llm_label(cfg)
+        renderly_ready = studio.renderly_ready(cfg.renderly_url)
         hooks = {
             "tts": bool(cfg.studio_tts_command),
-            "imagegen": bool(cfg.studio_imagegen_command),
-            "merge": bool(cfg.studio_merge_command),
+            "imagegen": bool(cfg.studio_imagegen_command) or
+                        (bool(cfg.imgtovideo_repo) and renderly_ready),
+            "merge": bool(cfg.studio_merge_command) or
+                     bool(cfg.imgtovideo_repo),
         }
         return render_template(
             "studio_detail.html", prod=prod, steps=steps, history=history,
             stages=db.STAGES, stage=stage, script_text=script_text,
             style=style, style_text=style_text, source_tr=source_tr,
-            audio=audio, srt=srt, srt_text=srt_text,
-            prompts_text=prompts_text, images=images,
-            final=final, source_video=source_video, llm_ready=llm_ready,
+            shotlist_text=shotlist_text, audio=audio, srt=srt,
+            srt_text=srt_text, prompts_text=prompts_text, images=images,
+            final=final, final_url=final_url,
+            source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, models=models, hooks=hooks,
-            job=sjob,
+            renderly_ready=renderly_ready, job=sjob,
             msg=request.args.get("msg"), error=request.args.get("error"),
         )
 
@@ -843,6 +853,137 @@ def create_app(cfg) -> Flask:
             return redirect(f"/studio/{pid}?error=Nothing+to+save")
         (pdir / "prompts.txt").write_text(text + "\n", encoding="utf-8")
         return redirect(f"/studio/{pid}?msg=Prompts+saved")
+
+    @app.post("/studio/<int:pid>/extra/save")
+    def studio_extra_save(pid):
+        extra = (request.form.get("extra_prompt") or "").strip()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.update_production(conn, pid, extra_prompt=extra)
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=Additional+direction+saved")
+
+    @app.post("/studio/<int:pid>/shotlist/generate")
+    def studio_shotlist_generate(pid):
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+        provider = request.form.get("provider") or cfg.studio_llm_default
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                prod = db.get_production(conn, pid)
+                pdir = studio.prod_dir(cfg, pid)
+                script = studio.find_script(pdir)
+                if not script:
+                    raise RuntimeError("Write the script first")
+                srt = studio.find_srt(pdir)
+                if not srt:
+                    raise RuntimeError("Generate or upload the subtitles first")
+                style = studio.find_style(pdir)
+                style_guide = style.read_text(encoding="utf-8") if style else ""
+                srt_text = srt.read_text(encoding="utf-8")
+                numbered = "\n".join(
+                    f"{i}: {line.strip()}"
+                    for i, block in enumerate(
+                        [b for b in srt_text.split("\n\n") if b.strip()], 1)
+                    for line in [block.splitlines()[2] if
+                                 len(block.splitlines()) > 2 else block]
+                    if line.strip()
+                )
+                prompt = studio.shotlist_prompt(
+                    script.read_text(encoding="utf-8"), numbered, style_guide,
+                    prod["extra_prompt"] or "")
+                text = studio.llm_generate(cfg, prompt, provider=provider)
+                data = studio.parse_shotlist_json(text)
+                (pdir / "shotlist.json").write_text(
+                    json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                    encoding="utf-8")
+                db.update_production(conn, pid, llm_provider=provider)
+            finally:
+                conn.close()
+
+        sjob.start(worker, "shotlist planning")
+        return redirect(f"/studio/{pid}?msg=Shotlist+planning+started")
+
+    @app.post("/studio/<int:pid>/shotlist/save")
+    def studio_shotlist_save(pid):
+        pdir = studio.prod_dir(cfg, pid)
+        text = (request.form.get("shotlist") or "").strip()
+        if not text:
+            return redirect(f"/studio/{pid}?error=Nothing+to+save")
+        try:
+            json.loads(text)
+        except ValueError as exc:
+            return redirect(
+                f"/studio/{pid}?error=Invalid+JSON:+{quote(str(exc)[:120])}")
+        (pdir / "shotlist.json").write_text(text + "\n", encoding="utf-8")
+        return redirect(f"/studio/{pid}?msg=Shotlist+saved")
+
+    @app.post("/studio/<int:pid>/images/render")
+    def studio_images_render(pid):
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        if not (pdir / "shotlist.json").exists():
+            return redirect(
+                f"/studio/{pid}?error=Generate+the+shotlist+first")
+
+        def worker():
+            count = studio.run_imagegen(cfg, pdir)
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                db.add_step(conn, pid, "images", "auto",
+                            detail=f"{count} image(s) via Renderly")
+            finally:
+                conn.close()
+
+        sjob.start(worker, "image rendering (Renderly)")
+        return redirect(f"/studio/{pid}?msg=Image+rendering+started")
+
+    @app.post("/studio/<int:pid>/stage/done")
+    def studio_stage_done(pid):
+        """Human override: mark the current stage done even if automation failed."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+            stage = prod["stage"]
+            if stage in db.latest_steps(conn, pid):
+                return redirect(f"/studio/{pid}?error=Stage+is+already+done")
+            db.add_step(conn, pid, stage, "manual",
+                        detail="marked done by human override")
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg={quote(stage)}+marked+done")
+
+    @app.post("/studio/<int:pid>/video/render")
+    def studio_video_render(pid):
+        if sjob.running:
+            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        if not studio.find_audio(pdir) or not studio.find_srt(pdir) \
+                or not studio.find_images(pid_dir=pdir):
+            return redirect(
+                f"/studio/{pid}?error=Need+audio,+subtitles+and+images+first")
+
+        def worker():
+            final = studio.run_merge_render(cfg, pdir)
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                db.add_step(conn, pid, "merge", "auto", detail=final.name)
+            finally:
+                conn.close()
+
+        sjob.start(worker, "final render (ImgToVideo)")
+        return redirect(f"/studio/{pid}?msg=Final+render+started")
 
     @app.post("/studio/<int:pid>/images/upload")
     def studio_images_upload(pid):
