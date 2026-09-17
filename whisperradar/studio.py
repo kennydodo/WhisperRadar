@@ -469,7 +469,8 @@ def overlap_ratio(script: str, source: str) -> float:
 
 
 def style_prompt(title: str, genre: str, source_text: str,
-                 word_count: int | None = None) -> str:
+                 word_count: int | None = None,
+                 extra_direction: str = "") -> str:
     text = (source_text or "").strip()
     if len(text) > 12000:
         text = text[:12000] + " ..."
@@ -482,12 +483,15 @@ def style_prompt(title: str, genre: str, source_text: str,
         length_note = (f"\nThe transcript is about {word_count} words "
                        f"(~{max(1, round(word_count / 150))} minutes of "
                        f"narration) - reflect this in the Structure section.")
+    extra = (extra_direction or "").strip()
+    if extra:
+        extra = f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
     return f"""You are a writing coach for a {genre} YouTube channel.
 Analyze the WRITING STYLE of the transcript below (from a video titled "{title}").
 {length_note}
 TRANSCRIPT TO ANALYZE:
 {text}
-
+{extra}
 Produce a STYLE GUIDE in markdown with exactly these sections:
 ## Voice & Tone
 ## Pacing & Rhythm
@@ -508,7 +512,7 @@ Output ONLY the style guide markdown."""
 
 def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = 1200,
-                  variation: str = "") -> str:
+                  variation: str = "", extra_direction: str = "") -> str:
     facts = (source_text or "").strip()
     if len(facts) > 12000:
         facts = facts[:12000] + " ..."
@@ -524,12 +528,15 @@ hook pattern, structure, and CTA style all come from it):
     else:
         style_block = "No style guide provided."
     var_block = f"\n{variation}" if variation else ""
+    extra = (extra_direction or "").strip()
+    if extra:
+        extra = f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
     return f"""You are an original YouTube scriptwriter for a {genre} channel.
 
 {style_block}
 
 {facts_block}
-
+{extra}
 TASK: Write an original YouTube script titled "{title}".
 {var_block}
 Rules:

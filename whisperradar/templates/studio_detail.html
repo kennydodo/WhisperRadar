@@ -160,7 +160,37 @@
     <div class="muted" style="font-size:12px; margin-bottom:8px">{{ steps[stage]["detail"] }}</div>
     {% endif %}
 
-    {% if stage == "script" %}
+    {% if stage == "style" %}
+      {% if style %}
+      <div class="artifact">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+          <span style="font-weight:600; color:var(--green)">Style guide extracted from the source video - this is passed to the LLM</span>
+        </div>
+        <pre style="margin:0; font-size:12px; white-space:pre-wrap; max-height:340px; overflow-y:auto">{{ style_text }}</pre>
+      </div>
+      {% else %}
+      <div class="muted" style="margin-bottom:8px">No style guide yet. Generate one from the source transcript's writing style, or write your own below - whatever is here gets passed to the LLM for the script and images.</div>
+      {% endif %}
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/generate">
+          <button type="submit" class="green" {{ '' if source_tr and llm_ready else 'disabled' }}
+                  title="{{ 'Analyze the source transcript and extract its style' if source_tr and llm_ready else 'Needs a source video with a transcript and a configured LLM' }}">
+            Generate style guide from source
+          </button>
+        </form>
+      </div>
+      <form method="post" action="/studio/{{ prod['id'] }}/style/save">
+        <textarea name="style" placeholder="Write or paste your own style guide (markdown) - it will be passed to the LLM for the script and images...">{{ style_text }}</textarea>
+        <div class="actions">
+          <button type="submit">Save style guide</button>
+        </div>
+      </form>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/save" enctype="multipart/form-data" style="margin-top:10px">
+        <input type="file" name="style_file" accept=".txt,.md">
+        <button type="submit" class="secondary">Upload style file</button>
+      </form>
+
+    {% elif stage == "script" %}
       {% if style %}
       <div class="artifact">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">

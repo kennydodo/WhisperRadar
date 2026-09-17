@@ -662,12 +662,10 @@ def create_app(cfg) -> Flask:
                     raise RuntimeError(
                         "No source transcript - write the style guide manually"
                     )
-                import re as _re
-
-                word_count = len(_re.findall(r"\w+", source_text))
                 prompt = studio.style_prompt(prod["title"], prod["genre"],
                                              source_text,
-                                             word_count=word_count)
+                                             extra_direction=prod["extra_prompt"]
+                                             or "")
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 if not text:
                     raise RuntimeError("LLM returned an empty style guide")
@@ -724,7 +722,9 @@ def create_app(cfg) -> Flask:
         prompt = studio.script_prompt(prod["title"], prod["genre"],
                                       source_text, style_guide,
                                       target_words=target_words,
-                                      variation=variation)
+                                      variation=variation,
+                                      extra_direction=prod["extra_prompt"]
+                                      or "")
 
         def worker():
             conn = db.connect(cfg.db_path)
