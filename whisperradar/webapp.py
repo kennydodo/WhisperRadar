@@ -8,6 +8,7 @@ import json
 import logging
 import shutil
 import threading
+import time
 import zipfile
 from collections import deque
 from pathlib import Path
@@ -719,9 +720,11 @@ def create_app(cfg) -> Flask:
 
         source_words = len(_re.findall(r"\w+", source_text)) if source_text else 0
         target_words = cfg.studio_script_words or source_words or 1200
+        variation = studio.variation_nudge()
         prompt = studio.script_prompt(prod["title"], prod["genre"],
                                       source_text, style_guide,
-                                      target_words=target_words)
+                                      target_words=target_words,
+                                      variation=variation)
 
         def worker():
             conn = db.connect(cfg.db_path)
@@ -732,7 +735,13 @@ def create_app(cfg) -> Flask:
                 if not text:
                     raise RuntimeError("LLM returned an empty script")
                 pdir = studio.prod_dir(cfg, pid)
-                (pdir / "script.md").write_text(text + "\n", encoding="utf-8")
+                script_path = pdir / "script.md"
+                if script_path.exists():
+                    versions = pdir / "script_versions"
+                    versions.mkdir(exist_ok=True)
+                    stamp = time.strftime("%Y%m%d-%H%M%S")
+                    shutil.copy(script_path, versions / f"script-{stamp}.md")
+                script_path.write_text(text + "\n", encoding="utf-8")
                 ratio = _script_overlap(prod, text)
                 warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
                 db.update_production(conn, pid, llm_provider=provider)

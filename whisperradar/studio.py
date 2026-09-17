@@ -6,6 +6,7 @@ or by hand (paste text / upload files) - the human stays in charge.
 
 import json
 import logging
+import random
 import re
 import shutil
 import subprocess
@@ -16,6 +17,23 @@ from pathlib import Path
 log = logging.getLogger("whisperradar")
 
 OLLAMA_URL = "http://localhost:11434"
+
+# random directives so regenerating a script produces a genuinely fresh take
+VARIATION_ANGLES = [
+    "Take a slightly different narrative angle than any previous version.",
+    "Open with a different hook pattern than a question.",
+    "Lead with the most surprising fact and restructure the beats around it.",
+    "Use a more story-driven approach built on one concrete anecdote.",
+    "Emphasize the practical steps more than the theory.",
+    "Frame the topic as a mistake people make and reverse-engineer the fix.",
+]
+
+
+def variation_nudge() -> str:
+    angle = random.choice(VARIATION_ANGLES)
+    return (f"[VARIATION {random.randint(1000, 9999)}] {angle} "
+            "Produce a fresh take: different wording and rhythm from any "
+            "earlier attempt at this script.")
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".flac", ".ogg")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -273,7 +291,8 @@ def ollama_models(timeout: int = 3) -> list[str]:
 def ollama_generate(model: str, prompt: str, timeout: int = 1800) -> str:
     req = urllib.request.Request(
         f"{OLLAMA_URL}/api/generate",
-        data=json.dumps({"model": model, "prompt": prompt, "stream": False}).encode(),
+        data=json.dumps({"model": model, "prompt": prompt, "stream": False,
+                         "options": {"temperature": 1.0}}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -333,6 +352,7 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
     payload = {
         "model": p["model"],
         "stream": True,  # streaming keeps gateways from timing out long completions
+        "temperature": 1.0,  # creative writing; regenerations must differ
         "messages": [{"role": "user", "content": prompt}],
     }
     req = urllib.request.Request(
@@ -487,7 +507,8 @@ Output ONLY the style guide markdown."""
 
 
 def script_prompt(title: str, genre: str, source_text: str,
-                  style_guide: str = "", target_words: int = 1200) -> str:
+                  style_guide: str = "", target_words: int = 1200,
+                  variation: str = "") -> str:
     facts = (source_text or "").strip()
     if len(facts) > 12000:
         facts = facts[:12000] + " ..."
@@ -502,6 +523,7 @@ hook pattern, structure, and CTA style all come from it):
 {style[:6000]}"""
     else:
         style_block = "No style guide provided."
+    var_block = f"\n{variation}" if variation else ""
     return f"""You are an original YouTube scriptwriter for a {genre} channel.
 
 {style_block}
@@ -509,7 +531,7 @@ hook pattern, structure, and CTA style all come from it):
 {facts_block}
 
 TASK: Write an original YouTube script titled "{title}".
-
+{var_block}
 Rules:
 - Follow the STYLE GUIDE above precisely. The script must feel like it was
   written by the writer described there.

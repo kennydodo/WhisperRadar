@@ -162,11 +162,13 @@
 
     {% if stage == "script" %}
       {% if style %}
-      <details class="artifact" style="max-height:none">
-        <summary style="cursor:pointer; font-weight:600; color:var(--green)">Style guide the LLM follows (from the source video) - click to expand</summary>
-        <pre style="margin:10px 0 0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>
-        <div class="muted" style="font-size:12px; margin-top:8px">Edit it any time at the <a href="/studio/{{ prod['id'] }}?stage=style">style stage</a>.</div>
-      </details>
+      <div class="artifact">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+          <span style="font-weight:600; color:var(--green)">Style guide the LLM follows (extracted from the source video)</span>
+          <a class="muted" style="font-size:12px" href="/studio/{{ prod['id'] }}?stage=style">edit at style stage</a>
+        </div>
+        <pre style="margin:0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>
+      </div>
       {% else %}
       <div class="warn" style="margin-bottom:8px">No style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the style stage</a> so the script matches the source video's voice.</div>
       {% endif %}
