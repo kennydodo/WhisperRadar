@@ -152,7 +152,7 @@
         </form>
         {% endif %}
       {% endif %}
-      {% if stage in ("script", "images") and style %}
+      {% if stage in ("script", "shots", "images") and style %}
       <span class="badge genre" title="Style guide is passed to the LLM">style guide applied</span>
       {% endif %}
     </h2>
@@ -173,9 +173,9 @@
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/generate">
-          <button type="submit" class="green" {{ '' if source_tr and llm_ready else 'disabled' }}
-                  title="{{ 'Analyze the source transcript and extract its style' if source_tr and llm_ready else 'Needs a source video with a transcript and a configured LLM' }}">
-            Generate style guide from source
+          <button type="submit" class="green" {{ 'disabled' if job.running or not (source_tr and llm_ready) else '' }}
+                  title="{{ 'Analyze the source transcript and extract its style' if source_tr and llm_ready and not job.running else 'Needs a source video with a transcript and a configured LLM' }}">
+            {{ 'Working...' if job.running else 'Generate style guide from source' }}
           </button>
         </form>
       </div>
@@ -208,9 +208,34 @@
         <div class="warn">High overlap with the source transcript - rewrite flagged parts before publishing.</div>
         {% endif %}
         <div class="actions">
-          <button type="submit">Save script</button>
+          <button type="submit" {{ 'disabled' if job.running else '' }}>Save script</button>
+          <input type="hidden" name="kind" value="script">
+          <input type="text" name="name" placeholder="version name (e.g. take-2)" style="width:190px"
+                 title="Name used by 'Save as version'">
+          <button type="submit" class="secondary" formaction="/studio/{{ prod['id'] }}/versions/save"
+                  title="Save the current script text as a named version">
+            Save as version
+          </button>
         </div>
       </form>
+      {% if script_versions %}
+      <div class="actions" style="margin-top:4px">
+        <span class="muted" style="font-size:12px">Saved versions (click to load):</span>
+        {% for v in script_versions %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
+              onsubmit="return confirm('Replace the current script with version {{ v }}?')">
+          <input type="hidden" name="kind" value="script">
+          <input type="hidden" name="name" value="{{ v }}">
+          <button type="submit" class="ghost" title="Load this version over the current script">{{ v }}</button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/delete">
+          <input type="hidden" name="kind" value="script">
+          <input type="hidden" name="name" value="{{ v }}">
+          <button type="submit" class="ghost" title="Delete this version">x</button>
+        </form>
+        {% endfor %}
+      </div>
+      {% endif %}
       <div class="actions">
         {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
@@ -220,9 +245,9 @@
             <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
             {% endfor %}
           </select>
-          <button type="submit" {{ '' if llm_ready else 'disabled' }}
-                  title="{{ 'Generate with the selected provider' if llm_ready else 'Add an api_key (or its WR_ env variable) for at least one provider in config.yaml' }}">
-            Generate script
+          <button type="submit" {{ 'disabled' if job.running or not llm_ready else '' }}
+                  title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in config.yaml') }}">
+            {{ 'Working...' if job.running else 'Generate script' }}
           </button>
         </form>
         {% else %}
@@ -247,9 +272,9 @@
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/generate">
-          <button type="submit" {{ '' if hooks.tts else 'disabled' }}
-                  title="{{ 'Run configured TTS command' if hooks.tts else 'Set studio.tts_command in config.yaml (e.g. chatterbox)' }}">
-            Generate with TTS hook
+          <button type="submit" {{ 'disabled' if job.running or not hooks.tts else '' }}
+                  title="{{ 'Run configured TTS command' if hooks.tts and not job.running else ('A job is already running' if job.running else 'Set studio.tts_command in config.yaml (e.g. chatterbox)') }}">
+            {{ 'Working...' if job.running else 'Generate with TTS hook' }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/upload" enctype="multipart/form-data">
@@ -268,9 +293,9 @@
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/srt/generate">
-          <button type="submit" class="green" {{ '' if audio else 'disabled' }}
-                  title="{{ 'Align your audio with Whisper' if audio else 'Audio required first' }}">
-            Generate SRT from audio
+          <button type="submit" class="green" {{ 'disabled' if job.running or not audio else '' }}
+                  title="{{ 'Align your audio with Whisper' if audio and not job.running else ('A job is already running' if job.running else 'Audio required first') }}">
+            {{ 'Working...' if job.running else 'Generate SRT from audio' }}
           </button>
         </form>
       </div>
@@ -283,6 +308,68 @@
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/srt/save" enctype="multipart/form-data" style="margin-top:10px">
         <input type="file" name="srt_file" accept=".srt">
         <button type="submit" class="secondary">Upload .srt file</button>
+      </form>
+
+    {% elif stage == "shots" %}
+      <div class="muted" style="font-size:12px; margin-bottom:8px">
+        Plan the images: the LLM breaks your script into shots mapped to subtitle
+        cue ranges, using the ImgToVideo naming contract (S##_##_TYPE_MOTION.png).
+        Every image in the shotlist carries its own prompt. Note: Renderly does
+        generation + upscale per image, so N images = ~2N operations in its history.
+        {% if cue_count %} This production has <b>{{ cue_count }}</b> subtitle cues.{% endif %}
+        {% if shotlist_count %} Current shotlist: <b>{{ shotlist_count }}</b> images.{% endif %}
+      </div>
+      <div class="actions">
+        {% if providers %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/shotlist/generate">
+          <select name="provider" title="LLM provider">
+            {% for p in providers %}
+            <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and srt) else '' }}
+                  title="{{ 'Plan images from script + subtitles with ' + llm_label if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs script + subtitles done and a configured LLM') }}">
+            {{ 'Working...' if job.running else 'Plan shotlist with ' + llm_label }}
+          </button>
+        </form>
+        {% else %}
+        <span class="muted">No LLM providers configured (studio.llm_providers in config.yaml) - write the shotlist by hand below.</span>
+        {% endif %}
+      </div>
+      <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
+        <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
+        <div class="actions">
+          <button type="submit" {{ 'disabled' if job.running else '' }}>Save shotlist</button>
+        </div>
+      </form>
+      <h2>Image prompts</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">One prompt per line, in shot order - used by the Renderly / imagegen hook. Extract them straight from the shotlist (no LLM call), or generate fresh ones from the script.</div>
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/extract">
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not shotlist_count else '' }}
+                  title="{{ 'Write prompts.txt from the shotlist' if shotlist_count and not job.running else 'Needs a shotlist first' }}">
+            Extract prompts from shotlist
+          </button>
+        </form>
+        {% if providers %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/generate">
+          <select name="provider" title="LLM provider">
+            {% for p in providers %}
+            <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }})</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and script) else '' }}
+                  title="{{ 'Generate prompts from the script with ' + llm_label if llm_ready and script and not job.running else ('A job is already running' if job.running else 'Needs the script done and a configured LLM') }}">
+            Generate with {{ llm_label }}
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      <form method="post" action="/studio/{{ prod['id'] }}/prompts/save">
+        <textarea name="prompts" style="min-height:160px" placeholder="One image prompt per line...">{{ prompts_text }}</textarea>
+        <div class="actions">
+          <button type="submit" {{ 'disabled' if job.running else '' }}>Save prompts</button>
+        </div>
       </form>
 
     {% elif stage == "images" %}
@@ -299,28 +386,14 @@
         {% endfor %}
       </div>
       {% else %}
-      <div class="muted" style="margin-bottom:8px">No images yet. Plan the shots, then render them through Renderly (or upload your own).</div>
+      <div class="muted" style="margin-bottom:8px">No images yet. Render the shotlist through Renderly or upload your own (plan the shots at the shots stage first).</div>
       {% endif %}
-      <h2>Shotlist</h2>
-      <div class="muted" style="font-size:12px; margin-bottom:8px">The LLM plans the images from your script + subtitles using the ImgToVideo naming contract (S##_##_TYPE_MOTION.png). Renderly generates each image; the render skips existing files, so re-running fills only the gaps.</div>
-      <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
-        <textarea name="shotlist" style="min-height:160px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
-        <div class="actions">
-          <button type="submit">Save shotlist</button>
-          <form class="row" method="post" action="/studio/{{ prod['id'] }}/shotlist/generate">
-            <button type="submit" class="secondary" {{ '' if llm_ready and srt else 'disabled' }}
-                    title="{{ 'Plan images from script + subtitles with ' + llm_label if llm_ready and srt else 'Needs script + subtitles done and a configured LLM' }}">
-              Plan shotlist with {{ llm_label }}
-            </button>
-          </form>
-        </div>
-      </form>
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
               onsubmit="return confirm('Render the shotlist images through Renderly now?\n\nThis calls the Gemini/Renderly API once per missing image and consumes your Renderly credits. Existing images are kept, only gaps are filled.\n\nContinue?')">
-          <button type="submit" class="green" {{ '' if renderly_ready else 'disabled' }}
-                  title="{{ 'Run ImgToVideo.ImageGen in Renderly mode' if renderly_ready else 'Start Renderly first (Renderly\\\\start.bat) - its backend must be reachable' }}">
-            Render images (Renderly)
+          <button type="submit" class="green" {{ 'disabled' if job.running or not renderly_ready else '' }}
+                  title="{{ 'Run ImgToVideo.ImageGen in Renderly mode' if renderly_ready and not job.running else ('A job is already running' if job.running else 'Start Renderly first (Renderly\\\\start.bat) - its backend must be reachable') }}">
+            {{ 'Working...' if job.running else 'Render images (Renderly)' }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/upload" enctype="multipart/form-data">
@@ -338,9 +411,9 @@
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render"
               onsubmit="return confirm('Render the final video with ImgToVideo? This runs the full analyze + build + render pipeline.')">
-          <button type="submit" class="green" {{ '' if hooks.merge and audio and srt and images else 'disabled' }}
-                  title="{{ 'Headless render: analyze -> build -> out.final.final.mp4' if hooks.merge and audio and srt and images else 'Needs audio, subtitles and images done (and studio.imgtovideo_repo set)' }}">
-            Render final video (ImgToVideo)
+          <button type="submit" class="green" {{ 'disabled' if job.running or not (hooks.merge and audio and srt and images) else '' }}
+                  title="{{ 'Headless render: analyze -> build -> out.final.final.mp4' if hooks.merge and audio and srt and images and not job.running else ('A job is already running' if job.running else 'Needs audio, subtitles and images done (and studio.imgtovideo_repo set)') }}">
+            {{ 'Working...' if job.running else 'Render final video (ImgToVideo)' }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/upload" enctype="multipart/form-data">
@@ -354,6 +427,7 @@
         <li>Script: {% if steps.get("script") %}<span class="badge done">done</span> {% if steps["script"]["detail"] %}<span class="muted">{{ steps["script"]["detail"] }}</span>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Audio: {% if steps.get("audio") %}<span class="badge done">done</span> {% if audio %}<a href="/studio/file/{{ prod['id'] }}/{{ audio.name }}">listen</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Subtitles: {% if steps.get("srt") %}<span class="badge done">done</span> {% if srt %}<a href="/studio/file/{{ prod['id'] }}/subtitles.srt">file</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Shotlist: {% if steps.get("shots") %}<span class="badge done">done</span> {% if shotlist_count %}<span class="muted">{{ shotlist_count }} image(s) planned</span>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Images: {% if steps.get("images") %}<span class="badge done">done</span> <span class="muted">{{ images|length }} file(s)</span>{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Final video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if final %}<a href="/studio/file/{{ prod['id'] }}/final.mp4">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
       </ul>
@@ -398,9 +472,36 @@
   <div class="panel">
     <h2 style="margin-top:0">Additional direction for the LLM</h2>
     <form method="post" action="/studio/{{ prod['id'] }}/extra/save">
-      <textarea name="extra_prompt" style="min-height:70px" placeholder="Optional: specific angles, must-include points, tone overrides... Injected into every LLM stage (style, script, shotlist) alongside the style guide. Notes above stay private to you.">{{ prod["extra_prompt"] or "" }}</textarea>
-      <div class="actions"><button type="submit" class="secondary">Save direction</button></div>
+      <textarea name="extra_prompt" style="min-height:70px" placeholder="Optional: specific angles, must-include points, tone overrides... Injected into every LLM stage (style, script, shots) alongside the style guide. Notes above stay private to you.">{{ prod["extra_prompt"] or "" }}</textarea>
+      <div class="actions">
+        <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save direction</button>
+        <input type="text" name="name" placeholder="version name (e.g. mystery-angle)" style="width:200px"
+               title="Name used by 'Save as version'">
+        <button type="submit" class="ghost" formaction="/studio/{{ prod['id'] }}/versions/save"
+                title="Save the current direction as a named version">
+          Save as version
+        </button>
+      </div>
+      <input type="hidden" name="kind" value="direction">
     </form>
+    {% if direction_versions %}
+    <div class="actions" style="margin-top:4px">
+      <span class="muted" style="font-size:12px">Saved versions (click to load):</span>
+      {% for v in direction_versions %}
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
+            onsubmit="return confirm('Replace the current direction with version {{ v }}?')">
+        <input type="hidden" name="kind" value="direction">
+        <input type="hidden" name="name" value="{{ v }}">
+        <button type="submit" class="ghost" title="Load this version into the direction box">{{ v }}</button>
+      </form>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/delete">
+        <input type="hidden" name="kind" value="direction">
+        <input type="hidden" name="name" value="{{ v }}">
+        <button type="submit" class="ghost" title="Delete this version">x</button>
+      </form>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
   <h2>History</h2>
@@ -436,8 +537,9 @@
           if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }
           const err = document.createElement('div');
           err.className = 'banner err';
-          err.textContent = 'Job failed: ' + s.error;
+          err.textContent = 'Job failed: ' + s.error + ' - reloading...';
           document.querySelector('.wrap').prepend(err);
+          setTimeout(() => location.reload(), 2500);
         } else {
           location.reload();
           return;

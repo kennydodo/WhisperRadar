@@ -91,11 +91,16 @@ starts minimized (server + browser). Needs no admin rights.
 
 The **Studio** tab turns competitor research into original videos. Create a
 production from any transcribed video in your library, then walk its stages:
-**style → script → audio → srt → images → merge → review**.
+**style → script → audio → srt → shots → images → merge → review**.
 
 - **Every stage is flexible**: run the automation (if its hook is configured)
   or do it by hand - paste a script, upload 11labs audio, your own .srt,
   images, or the final video. Approve & advance, or send back for rework.
+  Script and additional-direction can be saved under names and reloaded as
+  versions to try different takes.
+- **Shots stage**: the LLM plans `shotlist.json` (images + per-image prompts
+  mapped to subtitle cues); prompts can also be extracted from the shotlist or
+  generated fresh, then edited by hand before rendering.
 - **Style guide**: the LLM analyzes the source transcript's writing style
   (tone, pacing, hooks, structure) into an editable `style.md`, and every
   script/image generation must match it while using only the facts - original

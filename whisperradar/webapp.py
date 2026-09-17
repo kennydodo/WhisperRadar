@@ -6,6 +6,7 @@ Start with:  python wr.py serve          (http://127.0.0.1:8000)
 import io
 import json
 import logging
+import re
 import shutil
 import threading
 import time
@@ -43,6 +44,32 @@ def _back(request, msg: str | None = None, error: str | None = None):
     if error:
         parts.append(f"error={quote(error)}")
     return redirect("/" + ("?" + "&".join(parts) if parts else ""))
+
+
+def _studio_url(pid, msg: str | None = None, error: str | None = None):
+    """Redirect back to the production page preserving the ?stage= being viewed.
+
+    The stage comes from the referrer, so every studio action returns to the
+    stage panel the user was working on instead of jumping to the current one.
+    """
+    parts = []
+    m = re.search(r"[?&]stage=(\w+)", request.referrer or "")
+    if m and m.group(1) in db.STAGES:
+        parts.append(f"stage={m.group(1)}")
+    if msg:
+        parts.append(f"msg={quote(msg)}")
+    if error:
+        parts.append(f"error={quote(error)}")
+    return redirect(f"/studio/{pid}" + ("?" + "&".join(parts) if parts else ""))
+
+
+def _version_names(pdir: Path, kind: str) -> list[str]:
+    """Named versions saved for a production (script / direction), newest first."""
+    d = pdir / "versions" / kind
+    if not d.exists():
+        return []
+    return [p.stem for p in
+            sorted(d.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)]
 
 
 class _Job:
@@ -480,6 +507,14 @@ def create_app(cfg) -> Flask:
         srt_text = srt.read_text(encoding="utf-8") if srt else ""
         prompts = studio.find_prompts(pdir)
         prompts_text = prompts.read_text(encoding="utf-8") if prompts else ""
+        shotlist_count = None
+        if shotlist.exists():
+            try:
+                shotlist_count = len(
+                    json.loads(shotlist_text).get("images", []))
+            except ValueError:
+                pass
+        cue_count = len([b for b in srt_text.split("\n\n") if b.strip()])
         images = [i.name for i in studio.find_images(pdir)]
         final = studio.find_final(pdir)
         final_url = (f"/studio/file/{pid}/"
@@ -524,6 +559,9 @@ def create_app(cfg) -> Flask:
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, models=models, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
+            script_versions=_version_names(pdir, "script"),
+            direction_versions=_version_names(pdir, "direction"),
+            shotlist_count=shotlist_count, cue_count=cue_count,
             msg=request.args.get("msg"), error=request.args.get("error"),
         )
 
@@ -563,8 +601,8 @@ def create_app(cfg) -> Flask:
                 conn.close()
             msg = f"Working folder set to {dest} ({moved} item(s) moved)"
         except Exception as exc:
-            return redirect(f"/studio/{pid}?error={quote(str(exc)[:150])}")
-        return redirect(f"/studio/{pid}?msg={quote(msg)}")
+            return _studio_url(pid, error=str(exc)[:150])
+        return _studio_url(pid, msg=msg)
 
     @app.post("/studio/<int:pid>/notes")
     def studio_notes(pid):
@@ -575,7 +613,7 @@ def create_app(cfg) -> Flask:
             db.update_production(conn, pid, notes=notes)
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Notes+saved")
+        return _studio_url(pid, msg="Notes saved")
 
     @app.post("/studio/<int:pid>/advance")
     def studio_advance(pid):
@@ -634,7 +672,7 @@ def create_app(cfg) -> Flask:
             if f and f.filename:
                 text = f.read().decode("utf-8", "ignore").strip()
             if not text:
-                return redirect(f"/studio/{pid}?error=Nothing+to+save")
+                return _studio_url(pid, error="Nothing to save")
             (pdir / "script.md").write_text(text + "\n", encoding="utf-8")
             ratio = _script_overlap(prod, text)
             warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
@@ -642,12 +680,12 @@ def create_app(cfg) -> Flask:
                         detail=f"overlap {ratio:.1%}{warn}")
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Script+saved")
+        return _studio_url(pid, msg="Script saved")
 
     @app.post("/studio/<int:pid>/style/generate")
     def studio_style_generate(pid):
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
         provider = request.form.get("provider") or cfg.studio_llm_default
 
         def worker():
@@ -677,7 +715,7 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         sjob.start(worker, "style analysis")
-        return redirect(f"/studio/{pid}?msg=Style+analysis+started")
+        return _studio_url(pid, msg="Style analysis started")
 
     @app.post("/studio/<int:pid>/style/save")
     def studio_style_save(pid):
@@ -687,7 +725,7 @@ def create_app(cfg) -> Flask:
         if f and f.filename:
             text = f.read().decode("utf-8", "ignore").strip()
         if not text:
-            return redirect(f"/studio/{pid}?error=Nothing+to+save")
+            return _studio_url(pid, error="Nothing to save")
         (pdir / "style.md").write_text(text + "\n", encoding="utf-8")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
@@ -695,12 +733,12 @@ def create_app(cfg) -> Flask:
             db.add_step(conn, pid, "style", "manual")
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Style+guide+saved")
+        return _studio_url(pid, msg="Style guide saved")
 
     @app.post("/studio/<int:pid>/script/generate")
     def studio_script_generate(pid):
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
 
         provider = request.form.get("provider") or cfg.studio_llm_default
         conn = db.connect(cfg.db_path)
@@ -727,6 +765,7 @@ def create_app(cfg) -> Flask:
                                       or "")
 
         def worker():
+            t0 = time.monotonic()
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
@@ -747,12 +786,14 @@ def create_app(cfg) -> Flask:
                 db.update_production(conn, pid, llm_provider=provider)
                 db.add_step(conn, pid, "script", "auto",
                             detail=f"{provider}, overlap {ratio:.1%}, "
-                                   f"target {target_words} words{warn}")
+                                   f"target {target_words} words, "
+                                   f"took {format_duration(time.monotonic() - t0)}"
+                                   f"{warn}")
             finally:
                 conn.close()
 
         sjob.start(worker, "script generation")
-        return redirect(f"/studio/{pid}?msg=Script+generation+started")
+        return _studio_url(pid, msg="Script generation started")
 
     def _save_upload(file_storage, dest: Path) -> None:
         file_storage.save(dest)
@@ -761,7 +802,7 @@ def create_app(cfg) -> Flask:
     def studio_audio_upload(pid):
         f = request.files.get("audio_file")
         if not f or not f.filename:
-            return redirect(f"/studio/{pid}?error=No+audio+file+selected")
+            return _studio_url(pid, error="No audio file selected")
         ext = Path(f.filename).suffix.lower()
         if ext not in studio.AUDIO_EXTS:
             ext = ".mp3"
@@ -783,14 +824,14 @@ def create_app(cfg) -> Flask:
             db.add_step(conn, pid, "audio", "manual", detail=dest.name)
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Audio+uploaded")
+        return _studio_url(pid, msg="Audio uploaded")
 
     @app.post("/studio/<int:pid>/audio/generate")
     def studio_audio_generate(pid):
         if not cfg.studio_tts_command:
-            return redirect(f"/studio/{pid}?error=No+tts_command+in+config.yaml")
+            return _studio_url(pid, error="No tts_command in config.yaml")
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
 
         def worker():
             conn = db.connect(cfg.db_path)
@@ -811,14 +852,15 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         sjob.start(worker, "tts")
-        return redirect(f"/studio/{pid}?msg=TTS+started")
+        return _studio_url(pid, msg="TTS started")
 
     @app.post("/studio/<int:pid>/srt/generate")
     def studio_srt_generate(pid):
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
 
         def worker():
+            t0 = time.monotonic()
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
@@ -834,13 +876,14 @@ def create_app(cfg) -> Flask:
                 db.add_step(
                     conn, pid, "srt", "auto",
                     detail=f"{meta['cues']} cues, {meta['device']}, "
-                           f"lang {meta['language']}",
+                           f"lang {meta['language']}, "
+                           f"took {format_duration(time.monotonic() - t0)}",
                 )
             finally:
                 conn.close()
 
         sjob.start(worker, "srt alignment")
-        return redirect(f"/studio/{pid}?msg=SRT+alignment+started")
+        return _studio_url(pid, msg="SRT alignment started")
 
     @app.post("/studio/<int:pid>/srt/save")
     def studio_srt_save(pid):
@@ -853,21 +896,22 @@ def create_app(cfg) -> Flask:
             if f and f.filename:
                 text = f.read().decode("utf-8", "ignore").strip()
             if not text:
-                return redirect(f"/studio/{pid}?error=Nothing+to+save")
+                return _studio_url(pid, error="Nothing to save")
             (pdir / "subtitles.srt").write_text(text + "\n", encoding="utf-8")
             db.add_step(conn, pid, "srt", "manual")
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Subtitles+saved")
+        return _studio_url(pid, msg="Subtitles saved")
 
     @app.post("/studio/<int:pid>/prompts/generate")
     def studio_prompts_generate(pid):
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
 
         provider = request.form.get("provider") or cfg.studio_llm_default
 
         def worker():
+            t0 = time.monotonic()
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
@@ -888,20 +932,40 @@ def create_app(cfg) -> Flask:
                 db.update_production(conn, pid, llm_provider=provider)
                 (pdir / "prompts.txt").write_text(
                     "\n".join(lines) + "\n", encoding="utf-8")
+                db.add_step(conn, pid, "shots", "manual",
+                            detail=f"{len(lines)} prompt(s) via LLM, "
+                                   f"took {format_duration(time.monotonic() - t0)}")
             finally:
                 conn.close()
 
         sjob.start(worker, "image prompts")
-        return redirect(f"/studio/{pid}?msg=Image+prompts+started")
+        return _studio_url(pid, msg="Image prompts started")
 
     @app.post("/studio/<int:pid>/prompts/save")
     def studio_prompts_save(pid):
         pdir = studio.prod_dir(cfg, pid)
         text = (request.form.get("prompts") or "").strip()
         if not text:
-            return redirect(f"/studio/{pid}?error=Nothing+to+save")
+            return _studio_url(pid, error="Nothing to save")
         (pdir / "prompts.txt").write_text(text + "\n", encoding="utf-8")
-        return redirect(f"/studio/{pid}?msg=Prompts+saved")
+        return _studio_url(pid, msg="Prompts saved")
+
+    @app.post("/studio/<int:pid>/prompts/extract")
+    def studio_prompts_extract(pid):
+        """Write prompts.txt straight from the shotlist (no LLM call)."""
+        pdir = studio.prod_dir(cfg, pid)
+        if not (pdir / "shotlist.json").exists():
+            return _studio_url(pid, error="Generate the shotlist first")
+        try:
+            prompts = studio.shotlist_prompts(pdir)
+        except ValueError as exc:
+            return _studio_url(pid, error=f"Shotlist is not valid JSON: {exc}")
+        if not prompts:
+            return _studio_url(pid, error="Shotlist has no prompts to extract")
+        (pdir / "prompts.txt").write_text(
+            "\n".join(prompts) + "\n", encoding="utf-8")
+        return _studio_url(
+            pid, msg=f"{len(prompts)} prompt(s) extracted from the shotlist")
 
     @app.post("/studio/<int:pid>/extra/save")
     def studio_extra_save(pid):
@@ -912,15 +976,69 @@ def create_app(cfg) -> Flask:
             db.update_production(conn, pid, extra_prompt=extra)
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Additional+direction+saved")
+        return _studio_url(pid, msg="Additional direction saved")
+
+    @app.post("/studio/<int:pid>/versions/save")
+    def studio_versions_save(pid):
+        """Save the current script / direction under a user-chosen name."""
+        kind = request.form.get("kind") or ""
+        name = _slugify(request.form.get("name") or "", 40)
+        if kind == "script":
+            text = (request.form.get("content") or
+                    request.form.get("script") or "").strip()
+        elif kind == "direction":
+            text = (request.form.get("content") or
+                    request.form.get("extra_prompt") or "").strip()
+        else:
+            text = ""
+        if kind not in ("script", "direction") or not name or not text:
+            return _studio_url(pid,
+                               error="A version needs a name and content")
+        dest = studio.prod_dir(cfg, pid) / "versions" / kind / f"{name}.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(text + "\n", encoding="utf-8")
+        return _studio_url(pid, msg=f"Version '{name}' saved")
+
+    @app.post("/studio/<int:pid>/versions/load")
+    def studio_versions_load(pid):
+        kind = request.form.get("kind") or ""
+        name = _slugify(request.form.get("name") or "", 40)
+        f = studio.prod_dir(cfg, pid) / "versions" / kind / f"{name}.md"
+        if kind not in ("script", "direction") or not name or not f.exists():
+            return _studio_url(pid, error="Version not found")
+        text = f.read_text(encoding="utf-8")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if kind == "script":
+                (studio.prod_dir(cfg, pid) / "script.md").write_text(
+                    text, encoding="utf-8")
+                db.add_step(conn, pid, "script", "manual",
+                            detail=f"loaded version '{name}'")
+            else:
+                db.update_production(conn, pid, extra_prompt=text.strip())
+        finally:
+            conn.close()
+        return _studio_url(pid, msg=f"Loaded version '{name}'")
+
+    @app.post("/studio/<int:pid>/versions/delete")
+    def studio_versions_delete(pid):
+        kind = request.form.get("kind") or ""
+        name = _slugify(request.form.get("name") or "", 40)
+        f = studio.prod_dir(cfg, pid) / "versions" / kind / f"{name}.md"
+        if kind in ("script", "direction") and name and f.exists():
+            f.unlink()
+            return _studio_url(pid, msg=f"Version '{name}' deleted")
+        return _studio_url(pid, error="Version not found")
 
     @app.post("/studio/<int:pid>/shotlist/generate")
     def studio_shotlist_generate(pid):
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
         provider = request.form.get("provider") or cfg.studio_llm_default
 
         def worker():
+            t0 = time.monotonic()
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
@@ -952,34 +1070,45 @@ def create_app(cfg) -> Flask:
                     json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")
                 db.update_production(conn, pid, llm_provider=provider)
+                db.add_step(conn, pid, "shots", "auto",
+                            detail=f"{len(data.get('images', []))} image(s) "
+                                   f"planned, took "
+                                   f"{format_duration(time.monotonic() - t0)}")
             finally:
                 conn.close()
 
         sjob.start(worker, "shotlist planning")
-        return redirect(f"/studio/{pid}?msg=Shotlist+planning+started")
+        return _studio_url(pid, msg="Shotlist planning started")
 
     @app.post("/studio/<int:pid>/shotlist/save")
     def studio_shotlist_save(pid):
         pdir = studio.prod_dir(cfg, pid)
         text = (request.form.get("shotlist") or "").strip()
         if not text:
-            return redirect(f"/studio/{pid}?error=Nothing+to+save")
+            return _studio_url(pid, error="Nothing to save")
         try:
-            json.loads(text)
+            data = json.loads(text)
         except ValueError as exc:
-            return redirect(
-                f"/studio/{pid}?error=Invalid+JSON:+{quote(str(exc)[:120])}")
+            return _studio_url(
+                pid, error=f"Invalid JSON: {quote(str(exc)[:120])}")
         (pdir / "shotlist.json").write_text(text + "\n", encoding="utf-8")
-        return redirect(f"/studio/{pid}?msg=Shotlist+saved")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_step(conn, pid, "shots", "manual",
+                        detail=f"edited shotlist "
+                               f"({len(data.get('images', []))} image(s))")
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Shotlist saved")
 
     @app.post("/studio/<int:pid>/images/render")
     def studio_images_render(pid):
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
         pdir = studio.prepare_project_folder(cfg, pid)
         if not (pdir / "shotlist.json").exists():
-            return redirect(
-                f"/studio/{pid}?error=Generate+the+shotlist+first")
+            return _studio_url(pid, error="Generate the shotlist first")
 
         def worker():
             count = studio.run_imagegen(cfg, pdir)
@@ -992,7 +1121,7 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         sjob.start(worker, "image rendering (Renderly)")
-        return redirect(f"/studio/{pid}?msg=Image+rendering+started")
+        return _studio_url(pid, msg="Image rendering started")
 
     @app.post("/studio/<int:pid>/stage/done")
     def studio_stage_done(pid):
@@ -1005,22 +1134,22 @@ def create_app(cfg) -> Flask:
                 return redirect("/studio?error=Unknown+production")
             stage = prod["stage"]
             if stage in db.latest_steps(conn, pid):
-                return redirect(f"/studio/{pid}?error=Stage+is+already+done")
+                return _studio_url(pid, error="Stage is already done")
             db.add_step(conn, pid, stage, "manual",
                         detail="marked done by human override")
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg={quote(stage)}+marked+done")
+        return _studio_url(pid, msg=f"{stage} marked done")
 
     @app.post("/studio/<int:pid>/video/render")
     def studio_video_render(pid):
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
         pdir = studio.prepare_project_folder(cfg, pid)
         if not studio.find_audio(pdir) or not studio.find_srt(pdir) \
                 or not studio.find_images(pid_dir=pdir):
-            return redirect(
-                f"/studio/{pid}?error=Need+audio,+subtitles+and+images+first")
+            return _studio_url(
+                pid, error="Need audio, subtitles and images first")
 
         def worker():
             final = studio.run_merge_render(cfg, pdir)
@@ -1032,13 +1161,13 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         sjob.start(worker, "final render (ImgToVideo)")
-        return redirect(f"/studio/{pid}?msg=Final+render+started")
+        return _studio_url(pid, msg="Final render started")
 
     @app.post("/studio/<int:pid>/images/upload")
     def studio_images_upload(pid):
         files = [f for f in request.files.getlist("image_files") if f.filename]
         if not files:
-            return redirect(f"/studio/{pid}?error=No+images+selected")
+            return _studio_url(pid, error="No images selected")
         img_dir = studio.prod_dir(cfg, pid) / "images"
         img_dir.mkdir(parents=True, exist_ok=True)
         saved = 0
@@ -1056,14 +1185,14 @@ def create_app(cfg) -> Flask:
             db.add_step(conn, pid, "images", "manual", detail=f"{saved} image(s)")
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg={saved}+image(s)+uploaded")
+        return _studio_url(pid, msg=f"{saved} image(s) uploaded")
 
     @app.post("/studio/<int:pid>/images/generate")
     def studio_images_generate(pid):
         if not cfg.studio_imagegen_command:
-            return redirect(f"/studio/{pid}?error=No+imagegen_command+in+config.yaml")
+            return _studio_url(pid, error="No imagegen_command in config.yaml")
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
 
         def worker():
             conn = db.connect(cfg.db_path)
@@ -1087,7 +1216,7 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         sjob.start(worker, "image generation")
-        return redirect(f"/studio/{pid}?msg=Image+rendering+started")
+        return _studio_url(pid, msg="Image rendering started")
 
     @app.post("/studio/<int:pid>/images/delete")
     def studio_images_delete(pid):
@@ -1096,13 +1225,13 @@ def create_app(cfg) -> Flask:
         target = (img_dir / name).resolve()
         if target.parent == img_dir.resolve() and target.is_file():
             target.unlink()
-        return redirect(f"/studio/{pid}?msg=Image+removed")
+        return _studio_url(pid, msg="Image removed")
 
     @app.post("/studio/<int:pid>/merge/upload")
     def studio_merge_upload(pid):
         f = request.files.get("video_file")
         if not f or not f.filename:
-            return redirect(f"/studio/{pid}?error=No+video+file+selected")
+            return _studio_url(pid, error="No video file selected")
         pdir = studio.prod_dir(cfg, pid)
         _save_upload(f, pdir / "final.mp4")
         conn = db.connect(cfg.db_path)
@@ -1111,14 +1240,14 @@ def create_app(cfg) -> Flask:
             db.add_step(conn, pid, "merge", "manual", detail="final.mp4")
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Final+video+uploaded")
+        return _studio_url(pid, msg="Final video uploaded")
 
     @app.post("/studio/<int:pid>/merge/generate")
     def studio_merge_generate(pid):
         if not cfg.studio_merge_command:
-            return redirect(f"/studio/{pid}?error=No+merge_command+in+config.yaml")
+            return _studio_url(pid, error="No merge_command in config.yaml")
         if sjob.running:
-            return redirect(f"/studio/{pid}?error=A+job+is+already+running")
+            return _studio_url(pid, error="A job is already running")
 
         def worker():
             conn = db.connect(cfg.db_path)
@@ -1142,7 +1271,7 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         sjob.start(worker, "merge")
-        return redirect(f"/studio/{pid}?msg=Merge+started")
+        return _studio_url(pid, msg="Merge started")
 
     @app.post("/studio/<int:pid>/review/approve")
     def studio_review_approve(pid):
@@ -1153,7 +1282,7 @@ def create_app(cfg) -> Flask:
             db.update_production(conn, pid, status="ready")
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=Approved+-+ready+to+publish")
+        return _studio_url(pid, msg="Approved - ready to publish")
 
     @app.get("/studio/file/<int:pid>/<path:rel>")
     def studio_file(pid, rel):

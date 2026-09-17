@@ -314,7 +314,7 @@ def start_run(conn) -> int:
 
 # ---------------------------------------------------------------- studio ---
 
-STAGES = ["style", "script", "audio", "srt", "images", "merge", "review"]
+STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review"]
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir"}

@@ -67,7 +67,7 @@ def prod_dir(cfg, pid: int) -> Path:
 
 MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
               "shotlist.json", "imgtovideo.json", "audio", "audio_previous",
-              "images", "out"]
+              "images", "out", "script_versions", "versions"]
 
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
@@ -577,6 +577,20 @@ def parse_image_prompts(text: str) -> list[str]:
         if line:
             prompts.append(line)
     return prompts
+
+
+def shotlist_prompts(pid_dir: Path) -> list[str]:
+    """Extract the image prompts (in shot order) from shotlist.json."""
+    path = pid_dir / "shotlist.json"
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    by_file = {i.get("file"): (i.get("prompt") or "").strip()
+               for i in data.get("images", [])
+               if isinstance(i, dict) and i.get("file")}
+    return [by_file[s["asset"]] for s in data.get("shots", [])
+            if isinstance(s, dict) and s.get("asset") in by_file
+            and by_file[s["asset"]]]
 
 
 def parse_shotlist_json(text: str) -> dict:
