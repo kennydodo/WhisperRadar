@@ -726,6 +726,15 @@ def create_app(cfg) -> Flask:
         if ext not in studio.AUDIO_EXTS:
             ext = ".mp3"
         pdir = studio.prod_dir(cfg, pid)
+        # never destroy a previous upload: archive all existing audio.* files
+        from datetime import datetime
+
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        prev_dir = pdir / "audio_previous"
+        for old in pdir.glob("audio.*"):
+            if old.suffix.lower() in studio.AUDIO_EXTS:
+                prev_dir.mkdir(exist_ok=True)
+                shutil.move(old, prev_dir / f"{stamp}{old.suffix}")
         dest = pdir / f"audio{ext}"
         _save_upload(f, dest)
         conn = db.connect(cfg.db_path)

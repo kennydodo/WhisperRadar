@@ -173,12 +173,16 @@ def run_merge_render(cfg, pid_dir: Path) -> Path:
     if not cli or not cli.exists():
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
 
-    # project layout expectations: audio\narration.<ext>, *.srt at root
+    # project layout expectations: audio\narration.<ext>, *.srt at root.
+    # Always refresh narration from the current audio artifact - a stale copy
+    # here would shadow the real audio (the loader prefers audio\).
     audio_dir = pid_dir / "audio"
     audio_dir.mkdir(exist_ok=True)
+    for old in audio_dir.glob("narration.*"):
+        old.unlink()
     audio = find_audio(pid_dir)
-    if audio and not (audio_dir / "narration.mp3").exists():
-        shutil.copy(audio, audio_dir / "narration.mp3")
+    if audio:
+        shutil.copy(audio, audio_dir / f"narration{audio.suffix}")
     sanitize_shotlist(pid_dir)
 
     cmd = [
