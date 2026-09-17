@@ -108,6 +108,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN llm_provider TEXT")
     if "extra_prompt" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN extra_prompt TEXT")
+    if "work_dir" not in cols:
+        conn.execute("ALTER TABLE productions ADD COLUMN work_dir TEXT")
 
 
 def add_channel(
@@ -315,14 +317,16 @@ def start_run(conn) -> int:
 STAGES = ["style", "script", "audio", "srt", "images", "merge", "review"]
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
-                "source_video_id", "llm_provider", "extra_prompt"}
+                "source_video_id", "llm_provider", "extra_prompt", "work_dir"}
 
 
 def create_production(conn, title: str, genre: str = "general",
-                      source_video_id: str | None = None) -> int:
+                      source_video_id: str | None = None,
+                      work_dir: str | None = None) -> int:
     cur = conn.execute(
-        "INSERT INTO productions (title, genre, source_video_id) VALUES (?, ?, ?)",
-        (title, genre or "general", source_video_id),
+        "INSERT INTO productions (title, genre, source_video_id, work_dir, stage)"
+        " VALUES (?, ?, ?, ?, 'style')",
+        (title, genre or "general", source_video_id, work_dir),
     )
     conn.commit()
     return cur.lastrowid

@@ -21,9 +21,57 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def prod_dir(cfg, pid: int) -> Path:
+    """The production's working folder: a user-selected directory when the
+    production has one, otherwise data\\studio\\<id>."""
+    work_dir = None
+    try:
+        import sqlite3
+
+        conn = sqlite3.connect(cfg.db_path)
+        try:
+            row = conn.execute(
+                "SELECT work_dir FROM productions WHERE id = ?", (pid,)
+            ).fetchone()
+            if row and row[0]:
+                work_dir = row[0]
+        finally:
+            conn.close()
+    except Exception:
+        pass
+    if work_dir:
+        d = Path(work_dir).expanduser()
+        d.mkdir(parents=True, exist_ok=True)
+        return d
     d = cfg.studio_dir / str(pid)
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
+              "shotlist.json", "imgtovideo.json", "audio", "audio_previous",
+              "images", "out"]
+
+
+def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
+    """Move a production's files to new_dir (None = default). Returns
+    (final directory, number of items moved). Existing files at the
+    destination are never overwritten."""
+    old = prod_dir(cfg, prod["id"])
+    if new_dir:
+        dest = Path(new_dir).expanduser().resolve()
+    else:
+        dest = cfg.studio_dir / str(prod["id"])
+    dest.mkdir(parents=True, exist_ok=True)
+    if old.resolve() == dest.resolve():
+        return dest, 0
+    moved = 0
+    for item in MOVE_ITEMS:
+        src = old / item
+        d = dest / item
+        if src.exists() and not d.exists():
+            shutil.move(str(src), str(d))
+            moved += 1
+    return dest, moved
 
 
 def find_audio(pid_dir: Path) -> Path | None:

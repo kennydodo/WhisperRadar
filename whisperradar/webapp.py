@@ -421,12 +421,15 @@ def create_app(cfg) -> Flask:
         title = (request.form.get("title") or "").strip()
         genre = (request.form.get("genre") or "").strip() or "general"
         source = (request.form.get("source_video_id") or "").strip() or None
+        work_dir = (request.form.get("work_dir") or "").strip() or None
+        if work_dir:
+            work_dir = str(Path(work_dir).expanduser().resolve())
         if not title:
             return redirect("/studio?error=Enter+a+title")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            pid = db.create_production(conn, title, genre, source)
+            pid = db.create_production(conn, title, genre, source, work_dir)
             row = db.get_video(conn, source) if source else None
         finally:
             conn.close()
@@ -519,7 +522,7 @@ def create_app(cfg) -> Flask:
             source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, models=models, hooks=hooks,
-            renderly_ready=renderly_ready, job=sjob,
+            renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
             msg=request.args.get("msg"), error=request.args.get("error"),
         )
 
@@ -528,11 +531,39 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+            pdir = studio.prod_dir(cfg, pid)  # resolve BEFORE the row is gone
             db.delete_production(conn, pid)
         finally:
             conn.close()
-        shutil.rmtree(studio.prod_dir(cfg, pid), ignore_errors=True)
+        shutil.rmtree(pdir, ignore_errors=True)
         return redirect("/studio?msg=Production+deleted")
+
+    @app.post("/studio/<int:pid>/workdir")
+    def studio_workdir(pid):
+        new_dir = (request.form.get("work_dir") or "").strip()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+        finally:
+            conn.close()
+        try:
+            dest, moved = studio.move_production_dir(cfg, prod, new_dir or None)
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                db.update_production(conn, pid, work_dir=str(dest) if new_dir else None)
+            finally:
+                conn.close()
+            msg = f"Working folder set to {dest} ({moved} item(s) moved)"
+        except Exception as exc:
+            return redirect(f"/studio/{pid}?error={quote(str(exc)[:150])}")
+        return redirect(f"/studio/{pid}?msg={quote(msg)}")
 
     @app.post("/studio/<int:pid>/notes")
     def studio_notes(pid):

@@ -109,6 +109,20 @@
     {% endif %}
   </div>
 
+  <div class="panel" style="padding:10px 14px">
+    <div class="inline" style="justify-content:space-between">
+      <span class="muted" style="font-size:12px">Working folder: <span class="mono">{{ work_dir }}</span></span>
+      <details style="flex:1">
+        <summary class="muted" style="font-size:12px; cursor:pointer">change folder</summary>
+        <form class="inline" method="post" action="/studio/{{ prod['id'] }}/workdir"
+              onsubmit="return confirm('Move all production files to the new folder?')">
+          <input type="text" name="work_dir" placeholder="D:\VideoProjects\my-video (empty = default)" style="flex:1; min-width:260px">
+          <button type="submit" class="secondary">Move files</button>
+        </form>
+      </details>
+    </div>
+  </div>
+
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
@@ -147,6 +161,15 @@
     {% endif %}
 
     {% if stage == "script" %}
+      {% if style %}
+      <details class="artifact" style="max-height:none">
+        <summary style="cursor:pointer; font-weight:600; color:var(--green)">Style guide the LLM follows (from the source video) - click to expand</summary>
+        <pre style="margin:10px 0 0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>
+        <div class="muted" style="font-size:12px; margin-top:8px">Edit it any time at the <a href="/studio/{{ prod['id'] }}?stage=style">style stage</a>.</div>
+      </details>
+      {% else %}
+      <div class="warn" style="margin-bottom:8px">No style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the style stage</a> so the script matches the source video's voice.</div>
+      {% endif %}
       <form method="post" action="/studio/{{ prod['id'] }}/script/save">
         <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
         {% if steps.get("script") and "WARNING" in (steps["script"]["detail"] or "") %}
@@ -262,9 +285,9 @@
       </form>
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
-              onsubmit="return confirm('Render the shotlist images through Renderly? Missing images are generated; existing ones are kept.')">
+              onsubmit="return confirm('Render the shotlist images through Renderly now?\n\nThis calls the Gemini/Renderly API once per missing image and consumes your Renderly credits. Existing images are kept, only gaps are filled.\n\nContinue?')">
           <button type="submit" class="green" {{ '' if renderly_ready else 'disabled' }}
-                  title="{{ 'Run ImgToVideo.ImageGen in Renderly mode' if renderly_ready else 'Start Renderly first (Renderly\\start.bat) - its backend must be reachable' }}">
+                  title="{{ 'Run ImgToVideo.ImageGen in Renderly mode' if renderly_ready else 'Start Renderly first (Renderly\\\\start.bat) - its backend must be reachable' }}">
             Render images (Renderly)
           </button>
         </form>

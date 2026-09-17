@@ -75,6 +75,7 @@
 <div class="wrap">
   <h1>Studio</h1>
   <p class="sub">turn competitor research into original videos - every stage is yours to run or redo</p>
+  <div class="muted" style="font-size:12px; margin:-10px 0 14px">Productions live in their own working folder (script, style, audio, srt, images, shotlist.json, final render) - leave it empty on create to use <span class="mono">data\studio\&lt;id&gt;</span>.</div>
 
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
@@ -99,6 +100,10 @@
           <option value="{{ v['video_id'] }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div>
+        <label>Working folder (optional)</label>
+        <input type="text" name="work_dir" placeholder="D:\VideoProjects\my-video" style="width:260px">
       </div>
       <button type="submit" style="align-self:flex-end">Create</button>
     </form>
