@@ -119,8 +119,8 @@ MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
     """Move a production's files to new_dir (None = default). Returns
-    (final directory, number of items moved). Existing files at the
-    destination are never overwritten."""
+    (final directory, number of items moved). Aborts with an error when
+    the destination already contains any production artifact."""
     old = prod_dir(cfg, prod["id"])
     if new_dir:
         dest = Path(new_dir).expanduser().resolve()
@@ -134,11 +134,19 @@ def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
     _write_marker(dest)
     if old.resolve() == dest.resolve():
         return dest, 0
+    # refuse partial moves: if any artifact already exists at the destination,
+    # abort with the full list instead of silently stranding items
+    collisions = [item for item in MOVE_ITEMS
+                  if (old / item).exists() and (dest / item).exists()]
+    if collisions:
+        raise RuntimeError(
+            f"{dest} already contains: {', '.join(collisions)} - "
+            "remove or rename those first, then move again")
     moved = 0
     for item in MOVE_ITEMS:
         src = old / item
         d = dest / item
-        if src.exists() and not d.exists():
+        if src.exists():
             shutil.move(str(src), str(d))
             moved += 1
     return dest, moved
