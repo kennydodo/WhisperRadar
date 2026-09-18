@@ -552,16 +552,20 @@ Output ONLY the script text."""
 
 
 def image_prompts_prompt(script_text: str, genre: str,
-                         style_guide: str = "") -> str:
+                         style_guide: str = "",
+                         extra_direction: str = "") -> str:
     style = (style_guide or "").strip()
     style_note = ""
     if style:
         style_note = f"\nVisual style should also reflect this writing style guide:\n{style[:3000]}"
+    extra = (extra_direction or "").strip()
+    if extra:
+        extra = f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
     return f"""Break this {genre} YouTube script into scenes for image generation.
 
 Script:
 {script_text[:12000]}
-{style_note}
+{style_note}{extra}
 For each scene output exactly ONE line:
 IMAGE: <detailed image prompt, cinematic 16:9, consistent characters and style, no text inside the image>
 

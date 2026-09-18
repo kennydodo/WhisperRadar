@@ -470,15 +470,21 @@
   </div>
 
   <div class="panel">
-    <h2 style="margin-top:0">Additional direction for the LLM</h2>
+    <h2 style="margin-top:0">Additional direction for the LLM &mdash; {{ stage }} stage</h2>
+    {% if stage in ("style", "script", "shots") %}
+    <div class="muted" style="font-size:12px; margin-bottom:6px">Injected into the LLM prompt on this stage only. Every stage keeps its own direction - what you write here does not affect the other stages.</div>
+    {% else %}
+    <div class="muted" style="font-size:12px; margin-bottom:6px">This stage doesn't call the LLM, so your direction is stored per stage for reference only.</div>
+    {% endif %}
     <form method="post" action="/studio/{{ prod['id'] }}/extra/save">
-      <textarea name="extra_prompt" style="min-height:70px" placeholder="Optional: specific angles, must-include points, tone overrides... Injected into every LLM stage (style, script, shots) alongside the style guide. Notes above stay private to you.">{{ prod["extra_prompt"] or "" }}</textarea>
+      <input type="hidden" name="stage" value="{{ stage }}">
+      <textarea name="extra_prompt" style="min-height:70px" placeholder="Optional: specific angles, must-include points, tone overrides... Private to the {{ stage }} stage of this production.">{{ stage_direction }}</textarea>
       <div class="actions">
         <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save direction</button>
         <input type="text" name="name" placeholder="version name (e.g. mystery-angle)" style="width:200px"
                title="Name used by 'Save as version'">
         <button type="submit" class="ghost" formaction="/studio/{{ prod['id'] }}/versions/save"
-                title="Save the current direction as a named version">
+                title="Save this stage's direction as a named version">
           Save as version
         </button>
       </div>
@@ -486,16 +492,18 @@
     </form>
     {% if direction_versions %}
     <div class="actions" style="margin-top:4px">
-      <span class="muted" style="font-size:12px">Saved versions (click to load):</span>
+      <span class="muted" style="font-size:12px">Saved versions for {{ stage }} (click to load):</span>
       {% for v in direction_versions %}
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
-            onsubmit="return confirm('Replace the current direction with version {{ v }}?')">
+            onsubmit="return confirm('Replace the {{ stage }} direction with version {{ v }}?')">
         <input type="hidden" name="kind" value="direction">
+        <input type="hidden" name="stage" value="{{ stage }}">
         <input type="hidden" name="name" value="{{ v }}">
         <button type="submit" class="ghost" title="Load this version into the direction box">{{ v }}</button>
       </form>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/delete">
         <input type="hidden" name="kind" value="direction">
+        <input type="hidden" name="stage" value="{{ stage }}">
         <input type="hidden" name="name" value="{{ v }}">
         <button type="submit" class="ghost" title="Delete this version">x</button>
       </form>

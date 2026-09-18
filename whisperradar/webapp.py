@@ -63,13 +63,38 @@ def _studio_url(pid, msg: str | None = None, error: str | None = None):
     return redirect(f"/studio/{pid}" + ("?" + "&".join(parts) if parts else ""))
 
 
-def _version_names(pdir: Path, kind: str) -> list[str]:
-    """Named versions saved for a production (script / direction), newest first."""
-    d = pdir / "versions" / kind
-    if not d.exists():
-        return []
-    return [p.stem for p in
-            sorted(d.glob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True)]
+def _version_names(pdir: Path, kind: str,
+                   stage: str | None = None) -> list[str]:
+    """Named versions saved for a production (script / direction), newest first.
+
+    Direction versions are per stage (versions/direction/<stage>/<name>.md);
+    legacy flat files in versions/direction/ still show up.
+    """
+    base = pdir / "versions" / kind
+    dirs = [base / stage] if stage else [base]
+    if kind == "direction" and stage:
+        dirs.append(base)  # legacy flat files from before per-stage directions
+    names: list[str] = []
+    for d in dirs:
+        if not d.exists():
+            continue
+        for p in sorted(d.glob("*.md"), key=lambda p: p.stat().st_mtime,
+                        reverse=True):
+            if p.is_file() and p.stem not in names:
+                names.append(p.stem)
+    return names
+
+
+def _version_path(pdir: Path, kind: str, stage: str, name: str) -> Path:
+    """Resolve a version file path; direction versions live per stage."""
+    sub = base = pdir / "versions" / kind
+    if kind == "direction":
+        sub = base / stage
+    for d in (sub, base):
+        f = d / f"{name}.md"
+        if f.exists():
+            return f
+    return sub / f"{name}.md"
 
 
 class _Job:
@@ -560,7 +585,8 @@ def create_app(cfg) -> Flask:
             default_provider=default_provider, models=models, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
             script_versions=_version_names(pdir, "script"),
-            direction_versions=_version_names(pdir, "direction"),
+            stage_direction=db.stage_extra(prod, stage),
+            direction_versions=_version_names(pdir, "direction", stage),
             shotlist_count=shotlist_count, cue_count=cue_count,
             msg=request.args.get("msg"), error=request.args.get("error"),
         )
@@ -702,8 +728,8 @@ def create_app(cfg) -> Flask:
                     )
                 prompt = studio.style_prompt(prod["title"], prod["genre"],
                                              source_text,
-                                             extra_direction=prod["extra_prompt"]
-                                             or "")
+                                             extra_direction=db.stage_extra(
+                                                 prod, "style"))
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 if not text:
                     raise RuntimeError("LLM returned an empty style guide")
@@ -761,8 +787,8 @@ def create_app(cfg) -> Flask:
                                       source_text, style_guide,
                                       target_words=target_words,
                                       variation=variation,
-                                      extra_direction=prod["extra_prompt"]
-                                      or "")
+                                      extra_direction=db.stage_extra(
+                                          prod, "script"))
 
         def worker():
             t0 = time.monotonic()
@@ -924,7 +950,7 @@ def create_app(cfg) -> Flask:
                 style_guide = style.read_text(encoding="utf-8") if style else ""
                 prompt = studio.image_prompts_prompt(
                     script.read_text(encoding="utf-8"), prod["genre"],
-                    style_guide)
+                    style_guide, extra_direction=db.stage_extra(prod, "shots"))
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 lines = studio.parse_image_prompts(text)
                 if not lines:
@@ -969,32 +995,45 @@ def create_app(cfg) -> Flask:
 
     @app.post("/studio/<int:pid>/extra/save")
     def studio_extra_save(pid):
+        stage = request.form.get("stage") or ""
         extra = (request.form.get("extra_prompt") or "").strip()
+        if stage not in db.STAGES:
+            return _studio_url(pid, error="Unknown stage")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            db.update_production(conn, pid, extra_prompt=extra)
+            prod = db.get_production(conn, pid)
+            try:
+                data = json.loads(prod["stage_extras"] or "{}")
+            except (ValueError, TypeError):
+                data = {}
+            data = data if isinstance(data, dict) else {}
+            data[stage] = extra
+            db.update_production(conn, pid, stage_extras=json.dumps(data))
         finally:
             conn.close()
-        return _studio_url(pid, msg="Additional direction saved")
+        return _studio_url(pid, msg=f"Direction for '{stage}' saved")
 
     @app.post("/studio/<int:pid>/versions/save")
     def studio_versions_save(pid):
         """Save the current script / direction under a user-chosen name."""
         kind = request.form.get("kind") or ""
         name = _slugify(request.form.get("name") or "", 40)
+        stage = request.form.get("stage") or ""
         if kind == "script":
             text = (request.form.get("content") or
                     request.form.get("script") or "").strip()
         elif kind == "direction":
             text = (request.form.get("content") or
                     request.form.get("extra_prompt") or "").strip()
+            if stage not in db.STAGES:
+                return _studio_url(pid, error="Unknown stage")
         else:
             text = ""
         if kind not in ("script", "direction") or not name or not text:
             return _studio_url(pid,
                                error="A version needs a name and content")
-        dest = studio.prod_dir(cfg, pid) / "versions" / kind / f"{name}.md"
+        dest = _version_path(studio.prod_dir(cfg, pid), kind, stage, name)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text + "\n", encoding="utf-8")
         return _studio_url(pid, msg=f"Version '{name}' saved")
@@ -1003,7 +1042,10 @@ def create_app(cfg) -> Flask:
     def studio_versions_load(pid):
         kind = request.form.get("kind") or ""
         name = _slugify(request.form.get("name") or "", 40)
-        f = studio.prod_dir(cfg, pid) / "versions" / kind / f"{name}.md"
+        stage = request.form.get("stage") or ""
+        if kind == "direction" and stage not in db.STAGES:
+            return _studio_url(pid, error="Unknown stage")
+        f = _version_path(studio.prod_dir(cfg, pid), kind, stage, name)
         if kind not in ("script", "direction") or not name or not f.exists():
             return _studio_url(pid, error="Version not found")
         text = f.read_text(encoding="utf-8")
@@ -1016,7 +1058,14 @@ def create_app(cfg) -> Flask:
                 db.add_step(conn, pid, "script", "manual",
                             detail=f"loaded version '{name}'")
             else:
-                db.update_production(conn, pid, extra_prompt=text.strip())
+                prod = db.get_production(conn, pid)
+                try:
+                    data = json.loads(prod["stage_extras"] or "{}")
+                except (ValueError, TypeError):
+                    data = {}
+                data = data if isinstance(data, dict) else {}
+                data[stage] = text.strip()
+                db.update_production(conn, pid, stage_extras=json.dumps(data))
         finally:
             conn.close()
         return _studio_url(pid, msg=f"Loaded version '{name}'")
@@ -1025,7 +1074,8 @@ def create_app(cfg) -> Flask:
     def studio_versions_delete(pid):
         kind = request.form.get("kind") or ""
         name = _slugify(request.form.get("name") or "", 40)
-        f = studio.prod_dir(cfg, pid) / "versions" / kind / f"{name}.md"
+        stage = request.form.get("stage") or ""
+        f = _version_path(studio.prod_dir(cfg, pid), kind, stage, name)
         if kind in ("script", "direction") and name and f.exists():
             f.unlink()
             return _studio_url(pid, msg=f"Version '{name}' deleted")
@@ -1063,7 +1113,7 @@ def create_app(cfg) -> Flask:
                 )
                 prompt = studio.shotlist_prompt(
                     script.read_text(encoding="utf-8"), numbered, style_guide,
-                    prod["extra_prompt"] or "")
+                    extra_direction=db.stage_extra(prod, "shots"))
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 data = studio.parse_shotlist_json(text)
                 (pdir / "shotlist.json").write_text(

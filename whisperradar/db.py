@@ -1,5 +1,6 @@
 """SQLite storage for channels, videos and run history."""
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -110,6 +111,15 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN extra_prompt TEXT")
     if "work_dir" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN work_dir TEXT")
+    if "stage_extras" not in cols:
+        conn.execute("ALTER TABLE productions ADD COLUMN stage_extras TEXT")
+        # seed per-stage directions from the old shared field (LLM stages only)
+        for pid, old in conn.execute(
+                "SELECT id, extra_prompt FROM productions"
+                " WHERE extra_prompt IS NOT NULL AND TRIM(extra_prompt) != ''"):
+            conn.execute(
+                "UPDATE productions SET stage_extras = ? WHERE id = ?",
+                (json.dumps({"style": old, "script": old, "shots": old}), pid))
 
 
 def add_channel(
@@ -317,7 +327,18 @@ def start_run(conn) -> int:
 STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review"]
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
-                "source_video_id", "llm_provider", "extra_prompt", "work_dir"}
+                "source_video_id", "llm_provider", "extra_prompt", "work_dir",
+                "stage_extras"}
+
+
+def stage_extra(prod, stage: str) -> str:
+    """Per-stage additional direction for the LLM (JSON map in stage_extras)."""
+    try:
+        data = json.loads(prod["stage_extras"] or "{}")
+    except (ValueError, TypeError):
+        data = {}
+    value = data.get(stage) if isinstance(data, dict) else None
+    return value if isinstance(value, str) else ""
 
 
 def create_production(conn, title: str, genre: str = "general",
