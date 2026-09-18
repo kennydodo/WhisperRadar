@@ -112,8 +112,9 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
 
 
 MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
-              "shotlist.json", "imgtovideo.json", "audio", "audio_previous",
-              "images", "out", "script_versions", "versions"]
+              "shotlist.json", "imgtovideo.json", "prompts.txt", "final.mp4",
+              "audio", "audio_previous", "images", "out", "script_versions",
+              "versions"]
 
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
