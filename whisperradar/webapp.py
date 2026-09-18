@@ -971,7 +971,7 @@ def create_app(cfg) -> Flask:
                 db.update_production(conn, pid, llm_provider=provider)
                 (pdir / "prompts.txt").write_text(
                     "\n".join(lines) + "\n", encoding="utf-8")
-                db.add_step(conn, pid, "shots", "manual",
+                db.add_step(conn, pid, "prompts", "manual",
                             detail=f"{len(lines)} prompt(s) via LLM, "
                                    f"took {format_duration(time.monotonic() - t0)}")
             finally:
