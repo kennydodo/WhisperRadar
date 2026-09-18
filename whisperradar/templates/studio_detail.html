@@ -359,8 +359,8 @@
             <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }})</option>
             {% endfor %}
           </select>
-          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and script) else '' }}
-                  title="{{ 'Generate prompts from the script with ' + llm_label if llm_ready and script and not job.running else ('A job is already running' if job.running else 'Needs the script done and a configured LLM') }}">
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and steps.get("script")) else '' }}
+                  title="{{ 'Generate prompts from the script with ' + llm_label if llm_ready and steps.get('script') and not job.running else ('A job is already running' if job.running else 'Needs the script done and a configured LLM') }}">
             Generate with {{ llm_label }}
           </button>
         </form>
