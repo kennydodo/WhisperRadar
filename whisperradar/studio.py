@@ -112,10 +112,10 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
     return p
 
 
-MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
-              "shotlist.json", "shotlist.json.bak", "imgtovideo.json",
-              "prompts.txt", "batch_sheet.txt", "final.mp4", "audio",
-              "audio_previous", "images", "out", "versions"]
+MOVE_ITEMS = ["script.md", "style.md", "bible.md", "source_transcript.txt",
+              "subtitles.srt", "shotlist.json", "shotlist.json.bak",
+              "imgtovideo.json", "prompts.txt", "batch_sheet.txt", "final.mp4",
+              "audio", "audio_previous", "images", "out", "versions"]
 
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
@@ -183,6 +183,11 @@ def find_source_transcript(pid_dir: Path) -> Path | None:
 
 def find_prompts(pid_dir: Path) -> Path | None:
     p = pid_dir / "prompts.txt"
+    return p if p.exists() else None
+
+
+def find_bible(pid_dir: Path) -> Path | None:
+    p = pid_dir / "bible.md"
     return p if p.exists() else None
 
 
@@ -575,38 +580,6 @@ Rules:
 Output ONLY the script text."""
 
 
-def image_prompts_prompt(script_text: str, genre: str,
-                         style_guide: str = "",
-                         extra_direction: str = "") -> str:
-    style = (style_guide or "").strip()
-    style_note = ""
-    if style:
-        style_note = f"\nVisual style should also reflect this writing style guide:\n{style[:3000]}"
-    extra = (extra_direction or "").strip()
-    if extra:
-        extra = f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
-    return f"""Break this {genre} YouTube script into scenes for image generation.
-
-Script:
-{script_text[:12000]}
-{style_note}{extra}
-For each scene output exactly ONE line:
-IMAGE: <detailed image prompt, cinematic 16:9, consistent characters and style, no text inside the image>
-
-Output ONLY the IMAGE: lines, in script order."""
-
-
-def parse_image_prompts(text: str) -> list[str]:
-    prompts = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line.lower().startswith("image:"):
-            line = line[6:].strip()
-        if line:
-            prompts.append(line)
-    return prompts
-
-
 def shotlist_prompts(pid_dir: Path) -> list[str]:
     """Extract the image prompts (in shot order) from shotlist.json."""
     path = pid_dir / "shotlist.json"
@@ -696,19 +669,24 @@ def parse_shotlist_output(text: str) -> tuple[dict, str]:
 
 
 def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
-                    extra_direction: str = "") -> str:
-    """Assemble the manifest-authoring brief with its three inputs:
-    the full narration SRT, the channel visual style, and the creator's
-    per-stage direction."""
+                    extra_direction: str = "", bible: str = "") -> str:
+    """Assemble the manifest-authoring brief with its inputs: the full
+    narration SRT, the channel visual style, the optional character /
+    reference bible, and the creator's per-stage direction."""
     style = (style_guide or "").strip()
     style_block = (
         f"INPUT 2 - CHANNEL VISUAL STYLE INSTRUCTIONS:\n{style}"
         if style else
         "INPUT 2 - CHANNEL VISUAL STYLE INSTRUCTIONS:\n"
         "(none supplied - write a concise master visual style yourself)")
+    bible_block = ""
+    if (bible or "").strip():
+        bible_block = (f"\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE "
+                       f"(preserve these characters, environments and "
+                       f"objects):\n{bible.strip()}")
     extra = (extra_direction or "").strip()
     if extra:
-        extra = f"\n\nINPUT 3 - CREATOR DIRECTION (follow it):\n{extra}"
+        extra = f"\n\nINPUT 4 - CREATOR DIRECTION (follow it):\n{extra}"
     return f"""{brief_text.strip()}
 
 ---
@@ -716,7 +694,7 @@ def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
 INPUT 1 - THE FULL NARRATION SRT:
 {srt_text.strip()}
 
-{style_block}{extra}"""
+{style_block}{bible_block}{extra}"""
 
 
 # --------------------------------------------------- external tool hooks ---

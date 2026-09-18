@@ -343,10 +343,25 @@
         <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
         <div class="actions">
           <button type="submit" {{ 'disabled' if job.running else '' }}>Save shotlist</button>
+          {% if batch_sheet %}
+          <a class="btn secondary" style="font-size:12px" href="/studio/file/{{ prod['id'] }}/batch_sheet.txt" target="_blank">View batch sheet</a>
+          {% endif %}
         </div>
       </form>
+      <h2>Character / reference bible (optional)</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:6px">Recurring characters, environments, wardrobe, objects - kept consistent across all generated images. Passed to the shotlist planner as its reference bible.</div>
+      <form method="post" action="/studio/{{ prod['id'] }}/bible/save">
+        <textarea name="bible" style="min-height:90px" placeholder="e.g. MAYA - woman in her 30s, shoulder-length black hair, olive skin, mustard scarf... The forest god appears as a white stag with antlers of branches.">{{ bible_text }}</textarea>
+        <div class="actions">
+          <button type="submit" {{ 'disabled' if job.running else '' }}>Save bible</button>
+        </div>
+      </form>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/bible/save" enctype="multipart/form-data" style="margin-top:8px">
+        <input type="file" name="bible_file" accept=".txt,.md">
+        <button type="submit" class="secondary">Upload bible file</button>
+      </form>
       <h2>Image prompts</h2>
-      <div class="muted" style="font-size:12px; margin-bottom:8px">One prompt per line, in shot order - used by the Renderly / imagegen hook. Extract them straight from the shotlist (no LLM call), or generate fresh ones from the script.</div>
+      <div class="muted" style="font-size:12px; margin-bottom:8px">One prompt per line, in shot order - used by the Renderly / imagegen hook. Extract them straight from the shotlist (no LLM call), or edit by hand.</div>
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/extract">
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not shotlist_count else '' }}
@@ -354,15 +369,6 @@
             Extract prompts from shotlist
           </button>
         </form>
-        {% if providers %}
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/generate">
-          {{ provider_select() }}
-          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and steps.get("script")) else '' }}
-                  title="{{ 'Generate prompts from the script with ' + llm_label if llm_ready and steps.get('script') and not job.running else ('A job is already running' if job.running else 'Needs the script done and a configured LLM') }}">
-            Generate with {{ llm_label }}
-          </button>
-        </form>
-        {% endif %}
       </div>
       <form method="post" action="/studio/{{ prod['id'] }}/prompts/save">
         <textarea name="prompts" style="min-height:160px" placeholder="One image prompt per line...">{{ prompts_text }}</textarea>

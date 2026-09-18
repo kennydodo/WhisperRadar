@@ -555,6 +555,8 @@ def create_app(cfg) -> Flask:
         script_text = _read_text(script)
         style = studio.find_style(pdir)
         style_text = _read_text(style)
+        bible = studio.find_bible(pdir)
+        bible_text = _read_text(bible)
         source_tr = studio.find_source_transcript(pdir)
         if not source_tr and prod["source_video_id"]:
             conn = db.connect(cfg.db_path)
@@ -621,6 +623,8 @@ def create_app(cfg) -> Flask:
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
+            bible_text=bible_text,
+            batch_sheet=(pdir / "batch_sheet.txt").exists(),
             direction_versions=_version_names(pdir, "direction", stage),
             shotlist_count=shotlist_count, cue_count=cue_count,
             msg=request.args.get("msg"), error=request.args.get("error"),
@@ -982,44 +986,6 @@ def create_app(cfg) -> Flask:
             conn.close()
         return _studio_url(pid, msg="Subtitles saved")
 
-    @app.post("/studio/<int:pid>/prompts/generate")
-    def studio_prompts_generate(pid):
-        if sjob.running:
-            return _studio_url(pid, error="A job is already running")
-
-        provider = request.form.get("provider") or cfg.studio_llm_default
-
-        def worker():
-            t0 = time.monotonic()
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                prod = db.get_production(conn, pid)
-                pdir = studio.prod_dir(cfg, pid)
-                script = studio.find_script(pdir)
-                if not script:
-                    raise RuntimeError("Write the script first")
-                style = studio.find_style(pdir)
-                style_guide = style.read_text(encoding="utf-8") if style else ""
-                prompt = studio.image_prompts_prompt(
-                    script.read_text(encoding="utf-8"), prod["genre"],
-                    style_guide, extra_direction=db.stage_extra(prod, "shots"))
-                text = studio.llm_generate(cfg, prompt, provider=provider)
-                lines = studio.parse_image_prompts(text)
-                if not lines:
-                    raise RuntimeError("LLM returned no image prompts")
-                db.update_production(conn, pid, llm_provider=provider)
-                (pdir / "prompts.txt").write_text(
-                    "\n".join(lines) + "\n", encoding="utf-8")
-                db.add_step(conn, pid, "prompts", "manual",
-                            detail=f"{len(lines)} prompt(s) via LLM, "
-                                   f"took {format_duration(time.monotonic() - t0)}")
-            finally:
-                conn.close()
-
-        sjob.start(worker, "image prompts")
-        return _studio_url(pid, msg="Image prompts started")
-
     @app.post("/studio/<int:pid>/prompts/save")
     def studio_prompts_save(pid):
         pdir = studio.prod_dir(cfg, pid)
@@ -1066,6 +1032,19 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return _studio_url(pid, msg=f"Direction for '{stage}' saved")
+
+    @app.post("/studio/<int:pid>/bible/save")
+    def studio_bible_save(pid):
+        """Optional character / reference bible fed to the shotlist planner."""
+        pdir = studio.prod_dir(cfg, pid)
+        text = (request.form.get("bible") or "").strip()
+        f = request.files.get("bible_file")
+        if f and f.filename:
+            text = f.read().decode("utf-8", "ignore").strip()
+        if not text:
+            return _studio_url(pid, error="Nothing to save")
+        (pdir / "bible.md").write_text(text + "\n", encoding="utf-8")
+        return _studio_url(pid, msg="Character / reference bible saved")
 
     @app.post("/studio/<int:pid>/versions/save")
     def studio_versions_save(pid):
@@ -1155,10 +1134,13 @@ def create_app(cfg) -> Flask:
                     raise RuntimeError("Generate or upload the subtitles first")
                 style = studio.find_style(pdir)
                 style_guide = style.read_text(encoding="utf-8") if style else ""
+                bible = studio.find_bible(pdir)
+                bible_text = bible.read_text(encoding="utf-8") if bible else ""
                 brief = studio.load_manifest_brief(cfg)
                 prompt = studio.shotlist_prompt(
                     brief, srt.read_text(encoding="utf-8"), style_guide,
-                    extra_direction=db.stage_extra(prod, "shots"))
+                    extra_direction=db.stage_extra(prod, "shots"),
+                    bible=bible_text)
                 text = studio.llm_generate(cfg, prompt, provider=provider)
                 data, sheet = studio.parse_shotlist_output(text)
                 (pdir / "shotlist.json").write_text(
