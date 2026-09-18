@@ -312,10 +312,11 @@
 
     {% elif stage == "shots" %}
       <div class="muted" style="font-size:12px; margin-bottom:8px">
-        Plan the images: the LLM breaks your script into shots mapped to subtitle
-        cue ranges, using the ImgToVideo naming contract (S##_##_TYPE_MOTION.png).
-        Every image in the shotlist carries its own prompt. Note: Renderly does
-        generation + upscale per image, so N images = ~2N operations in its history.
+        Plan the shots with ImgToVideo's manifest-authoring brief: the LLM reads
+        your full subtitles (narration is the source of truth - no image-count
+        targets) and returns shotlist.json plus per-image prompts, and a batch
+        sheet for reference. Note: Renderly does generation + upscale per image,
+        so N images = ~2N operations in its history.
         {% if cue_count %} This production has <b>{{ cue_count }}</b> subtitle cues.{% endif %}
         {% if shotlist_count %} Current shotlist: <b>{{ shotlist_count }}</b> images.{% endif %}
       </div>
@@ -328,7 +329,7 @@
             {% endfor %}
           </select>
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and srt) else '' }}
-                  title="{{ 'Plan images from script + subtitles with ' + llm_label if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs script + subtitles done and a configured LLM') }}">
+                  title="{{ 'Plan shots from the subtitles with ' + llm_label if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs subtitles done and a configured LLM') }}">
             {{ 'Working...' if job.running else 'Plan shotlist with ' + llm_label }}
           </button>
         </form>

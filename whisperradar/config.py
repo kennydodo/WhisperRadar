@@ -67,6 +67,7 @@ class Config:
         self.renderly_channel = studio.get("renderly_channel") or None
         self.renderly_upscale = studio.get("renderly_upscale") or 4
         self.imgtovideo_repo = studio.get("imgtovideo_repo") or None
+        self.studio_manifest_brief = studio.get("manifest_brief") or None
         self.studio_dir = base_dir / "data" / "studio"
 
 

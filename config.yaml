@@ -46,6 +46,10 @@ studio:
   renderly_channel: null
   renderly_upscale: 4
   imgtovideo_repo: D:\Repos\ImgToVideo
+  # Path to the master shotlist planning prompt (ImgToVideo's
+  # manifest-authoring-brief.md). Read fresh from disk on every run, so edits
+  # apply immediately. Default: <imgtovideo_repo>\docs\manifest-authoring-brief.md
+  manifest_brief: null
   imagegen_command: null # optional override; default routes through Renderly
   merge_command: null    # optional override; default runs ImgToVideo.Cli
 

@@ -1107,35 +1107,28 @@ def create_app(cfg) -> Flask:
             try:
                 prod = db.get_production(conn, pid)
                 pdir = studio.prod_dir(cfg, pid)
-                script = studio.find_script(pdir)
-                if not script:
-                    raise RuntimeError("Write the script first")
                 srt = studio.find_srt(pdir)
                 if not srt:
                     raise RuntimeError("Generate or upload the subtitles first")
                 style = studio.find_style(pdir)
                 style_guide = style.read_text(encoding="utf-8") if style else ""
-                srt_text = srt.read_text(encoding="utf-8")
-                numbered = "\n".join(
-                    f"{i}: {line.strip()}"
-                    for i, block in enumerate(
-                        [b for b in srt_text.split("\n\n") if b.strip()], 1)
-                    for line in [block.splitlines()[2] if
-                                 len(block.splitlines()) > 2 else block]
-                    if line.strip()
-                )
+                brief = studio.load_manifest_brief(cfg)
                 prompt = studio.shotlist_prompt(
-                    script.read_text(encoding="utf-8"), numbered, style_guide,
+                    brief, srt.read_text(encoding="utf-8"), style_guide,
                     extra_direction=db.stage_extra(prod, "shots"))
                 text = studio.llm_generate(cfg, prompt, provider=provider)
-                data = studio.parse_shotlist_json(text)
+                data, sheet = studio.parse_shotlist_output(text)
                 (pdir / "shotlist.json").write_text(
                     json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")
+                if sheet:
+                    (pdir / "batch_sheet.txt").write_text(
+                        sheet + "\n", encoding="utf-8")
                 db.update_production(conn, pid, llm_provider=provider)
                 db.add_step(conn, pid, "shots", "auto",
-                            detail=f"{len(data.get('images', []))} image(s) "
-                                   f"planned, took "
+                            detail=f"{len(data.get('images', []))} image(s) in "
+                                   f"{len(data.get('shots', []))} shot(s) via "
+                                   f"manifest brief, took "
                                    f"{format_duration(time.monotonic() - t0)}")
             finally:
                 conn.close()

@@ -112,9 +112,9 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
 
 
 MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
-              "shotlist.json", "imgtovideo.json", "prompts.txt", "final.mp4",
-              "audio", "audio_previous", "images", "out", "script_versions",
-              "versions"]
+              "shotlist.json", "imgtovideo.json", "prompts.txt", "batch_sheet.txt",
+              "final.mp4", "audio", "audio_previous", "images", "out",
+              "script_versions", "versions"]
 
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
@@ -649,60 +649,102 @@ def shotlist_prompts(pid_dir: Path) -> list[str]:
             and by_file[s["asset"]]]
 
 
-def parse_shotlist_json(text: str) -> dict:
-    """Parse the LLM's shotlist output: strips fences, extracts the object."""
+def load_manifest_brief(cfg) -> str:
+    """The ImgToVideo manifest-authoring brief: the master planning prompt
+    that turns a narration SRT into shotlist.json + an image batch sheet.
+
+    Loaded from disk on every use so edits to the brief take effect
+    immediately. Path: studio.manifest_brief in config.yaml, or
+    <imgtovideo_repo>\\docs\\manifest-authoring-brief.md by default."""
+    path = None
+    if cfg.studio_manifest_brief:
+        p = Path(cfg.studio_manifest_brief)
+        path = p if p.is_absolute() else cfg.base_dir / p
+    elif cfg.imgtovideo_repo:
+        path = (Path(cfg.imgtovideo_repo) / "docs"
+                / "manifest-authoring-brief.md")
+    if not path or not path.exists():
+        raise RuntimeError(
+            "manifest-authoring-brief.md not found - set studio.imgtovideo_repo "
+            "or studio.manifest_brief in config.yaml")
+    text = path.read_text(encoding="utf-8")
+    if "\n---\n" in text:  # skip the how-to header, keep the prompt itself
+        text = text.split("\n---\n", 1)[1]
+    return text.strip()
+
+
+def _extract_json_object(text: str) -> tuple[dict, str]:
+    """Extract the first balanced JSON object (string-aware) plus the tail
+    after it - tolerant of extra documents following the JSON."""
+    start = text.find("{")
+    if start == -1:
+        raise RuntimeError("LLM returned no JSON object")
+    depth, in_str, esc = 0, False, False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    data = json.loads(text[start:i + 1])
+                except ValueError as exc:
+                    raise RuntimeError(f"shotlist JSON is invalid: {exc}")
+                return data, text[i + 1:]
+    raise RuntimeError("LLM returned an incomplete JSON object")
+
+
+def parse_shotlist_output(text: str) -> tuple[dict, str]:
+    """Parse the LLM's two-document output (manifest-authoring brief):
+    shotlist.json first, optional IMAGE BATCH SHEET second.
+    Returns (shotlist_data, batch_sheet_text)."""
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise RuntimeError("LLM returned no JSON object")
-    data = json.loads(text[start:end + 1])
-    if not isinstance(data.get("images"), list) or not data["images"]:
-        raise RuntimeError("shotlist has no images[] entries")
+    data, tail = _extract_json_object(text)
     if not isinstance(data.get("shots"), list) or not data["shots"]:
         raise RuntimeError("shotlist has no shots[] entries")
+    if not isinstance(data.get("images"), list) or not data["images"]:
+        raise RuntimeError("shotlist has no images[] entries")
     for item in data["images"]:
         if not isinstance(item, dict) or not item.get("file") or not item.get("prompt"):
             raise RuntimeError("images[] entries need 'file' and 'prompt'")
-    return data
+    return data, tail.strip()
 
 
-def shotlist_prompt(script_text: str, srt_numbered: str, style_guide: str,
+def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
                     extra_direction: str = "") -> str:
+    """Assemble the manifest-authoring brief with its three inputs:
+    the full narration SRT, the channel visual style, and the creator's
+    per-stage direction."""
     style = (style_guide or "").strip()
-    style_block = f"MASTER VISUAL STYLE (put this verbatim in the \"style\" field):\n{style[:4000]}" \
-        if style else "No style guide provided - write a concise master visual style."
+    style_block = (
+        f"INPUT 2 - CHANNEL VISUAL STYLE INSTRUCTIONS:\n{style}"
+        if style else
+        "INPUT 2 - CHANNEL VISUAL STYLE INSTRUCTIONS:\n"
+        "(none supplied - write a concise master visual style yourself)")
     extra = (extra_direction or "").strip()
     if extra:
-        extra = f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
-    return f"""You are the shot planner for a faceless YouTube video. Plan the images
-from the script and the subtitle cues below.
+        extra = f"\n\nINPUT 3 - CREATOR DIRECTION (follow it):\n{extra}"
+    return f"""{brief_text.strip()}
 
-Output ONLY a JSON object (no markdown fences) with this exact shape:
-{{
-  "style": "<master visual style for every image>",
-  "images": [ {{ "file": "S01_01_SCN_ST.png", "prompt": "<image prompt>" }} ],
-  "shots": [ {{ "shot_id": "s1", "cues": "1-3", "asset": "S01_01_SCN_ST.png" }} ]
-}}
+---
 
-Rules:
-- "images[]" holds every image: "file" follows the naming convention
-  S##_##_TYPE_MOTION.png (SCN=scene, CU=close-up, INF=infographic, CMP=comparison,
-  PROC=process, HYB=hybrid, OVR=overview; motion ST/ZI/ZO/PL/PR/PD/PV - two digits,
-  uppercase, .png lowercase). Write a rich prompt per image; portrait-quality,
-  cinematic 16:9 composition with 120% overscan margin for the motion.
-- "shots[]" maps each image to subtitle cue ranges ("1-3") so every cue is
-  covered exactly once, in order, with no gaps and no overlaps.
-- "style" is the master visual style shared by all images.
-{extra}
-SCRIPT:
-{script_text[:12000]}
+INPUT 1 - THE FULL NARRATION SRT:
+{srt_text.strip()}
 
-SUBTITLE CUES (index: text):
-{srt_numbered[:12000]}
-
-{style_block}"""
+{style_block}{extra}"""
 
 
 # --------------------------------------------------- external tool hooks ---

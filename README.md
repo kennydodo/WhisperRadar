@@ -98,9 +98,10 @@ production from any transcribed video in your library, then walk its stages:
   images, or the final video. Approve & advance, or send back for rework.
   Script and additional-direction can be saved under names and reloaded as
   versions to try different takes.
-- **Shots stage**: the LLM plans `shotlist.json` (images + per-image prompts
-  mapped to subtitle cues); prompts can also be extracted from the shotlist or
-  generated fresh, then edited by hand before rendering.
+- **Shots stage**: the LLM plans `shotlist.json` + per-image prompts using
+  ImgToVideo's `manifest-authoring-brief.md` (read fresh from the repo on
+  every run, so edits to the brief apply immediately); the batch sheet is kept
+  as `batch_sheet.txt`, and prompts can also be extracted from the shotlist.
 - **Style guide**: the LLM analyzes the source transcript's writing style
   (tone, pacing, hooks, structure) into an editable `style.md`, and every
   script/image generation must match it while using only the facts - original
