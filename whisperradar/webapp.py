@@ -1031,7 +1031,8 @@ def create_app(cfg) -> Flask:
     def studio_versions_save(pid):
         """Save the current script / direction under a user-chosen name."""
         kind = request.form.get("kind") or ""
-        name = _slugify(request.form.get("name") or "", 40)
+        raw_name = (request.form.get("name") or "").strip()
+        name = _slugify(raw_name, 40) if raw_name else ""
         stage = request.form.get("stage") or ""
         if kind == "script":
             text = (request.form.get("content") or
@@ -1054,7 +1055,8 @@ def create_app(cfg) -> Flask:
     @app.post("/studio/<int:pid>/versions/load")
     def studio_versions_load(pid):
         kind = request.form.get("kind") or ""
-        name = _slugify(request.form.get("name") or "", 40)
+        raw_name = (request.form.get("name") or "").strip()
+        name = _slugify(raw_name, 40) if raw_name else ""
         stage = request.form.get("stage") or ""
         if kind == "direction" and stage not in db.STAGES:
             return _studio_url(pid, error="Unknown stage")
@@ -1086,7 +1088,8 @@ def create_app(cfg) -> Flask:
     @app.post("/studio/<int:pid>/versions/delete")
     def studio_versions_delete(pid):
         kind = request.form.get("kind") or ""
-        name = _slugify(request.form.get("name") or "", 40)
+        raw_name = (request.form.get("name") or "").strip()
+        name = _slugify(raw_name, 40) if raw_name else ""
         stage = request.form.get("stage") or ""
         f = _version_path(studio.prod_dir(cfg, pid), kind, stage, name)
         if kind in ("script", "direction") and name and f.exists():
