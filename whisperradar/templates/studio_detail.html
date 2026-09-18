@@ -117,7 +117,10 @@
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/workdir"
               onsubmit="return confirm('Move all production files to the new folder?')">
           <input type="text" name="work_dir" placeholder="D:\VideoProjects\my-video (empty = default)" style="flex:1; min-width:260px">
-          <button type="submit" class="secondary">Move files</button>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
+                  title="{{ 'Move all production files' if not job.running else 'A job is already running' }}">
+            {{ 'Working...' if job.running else 'Move files' }}
+          </button>
         </form>
       </details>
     </div>

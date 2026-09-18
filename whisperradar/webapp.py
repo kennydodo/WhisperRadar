@@ -620,7 +620,14 @@ def create_app(cfg) -> Flask:
 
     @app.post("/studio/<int:pid>/workdir")
     def studio_workdir(pid):
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
         new_dir = (request.form.get("work_dir") or "").strip()
+        if new_dir:
+            try:
+                studio.validate_work_dir(cfg, new_dir)
+            except RuntimeError as exc:
+                return _studio_url(pid, error=str(exc)[:150])
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -629,18 +636,21 @@ def create_app(cfg) -> Flask:
                 return redirect("/studio?error=Unknown+production")
         finally:
             conn.close()
-        try:
+
+        def worker():
             dest, moved = studio.move_production_dir(cfg, prod, new_dir or None)
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
-                db.update_production(conn, pid, work_dir=str(dest) if new_dir else None)
+                db.update_production(
+                    conn, pid, work_dir=str(dest) if new_dir else None)
             finally:
                 conn.close()
-            msg = f"Working folder set to {dest} ({moved} item(s) moved)"
-        except Exception as exc:
-            return _studio_url(pid, error=str(exc)[:150])
-        return _studio_url(pid, msg=msg)
+            sjob.log.append(f"Working folder set to {dest} "
+                            f"({moved} item(s) moved)")
+
+        sjob.start(worker, "working-folder move")
+        return _studio_url(pid, msg="Working folder move started")
 
     @app.post("/studio/<int:pid>/notes")
     def studio_notes(pid):
