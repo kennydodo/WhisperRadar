@@ -96,6 +96,13 @@
   <a href="/studio" class="active">Studio</a>
 </nav>
 <div class="wrap">
+  {% macro provider_select() %}
+  <select name="provider" title="LLM provider">
+    {% for p in providers %}
+    <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
+    {% endfor %}
+  </select>
+  {% endmacro %}
   <a href="/studio" class="muted" style="font-size:13px">&larr; All productions</a>
   <h1>{{ prod["title"] }}
     {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
@@ -243,11 +250,7 @@
         {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
               onsubmit="return confirm('Generate a script with the selected LLM? Existing script will be overwritten.')">
-          <select name="provider" title="LLM provider">
-            {% for p in providers %}
-            <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
-            {% endfor %}
-          </select>
+          {{ provider_select() }}
           <button type="submit" {{ 'disabled' if job.running or not llm_ready else '' }}
                   title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in config.yaml') }}">
             {{ 'Working...' if job.running else 'Generate script' }}
@@ -326,11 +329,7 @@
       <div class="actions">
         {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/shotlist/generate">
-          <select name="provider" title="LLM provider">
-            {% for p in providers %}
-            <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
-            {% endfor %}
-          </select>
+          {{ provider_select() }}
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and srt) else '' }}
                   title="{{ 'Plan shots from the subtitles with ' + llm_label if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs subtitles done and a configured LLM') }}">
             {{ 'Working...' if job.running else 'Plan shotlist with ' + llm_label }}
@@ -357,11 +356,7 @@
         </form>
         {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/prompts/generate">
-          <select name="provider" title="LLM provider">
-            {% for p in providers %}
-            <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }})</option>
-            {% endfor %}
-          </select>
+          {{ provider_select() }}
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and steps.get("script")) else '' }}
                   title="{{ 'Generate prompts from the script with ' + llm_label if llm_ready and steps.get('script') and not job.running else ('A job is already running' if job.running else 'Needs the script done and a configured LLM') }}">
             Generate with {{ llm_label }}
