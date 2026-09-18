@@ -573,8 +573,7 @@ def create_app(cfg) -> Flask:
         renderly_ready = studio.renderly_ready(cfg.renderly_url)
         hooks = {
             "tts": bool(cfg.studio_tts_command),
-            "imagegen": bool(cfg.studio_imagegen_command) or
-                        (bool(cfg.imgtovideo_repo) and renderly_ready),
+            "imagegen": bool(cfg.studio_imagegen_command),
             "merge": bool(cfg.studio_merge_command) or
                      bool(cfg.imgtovideo_repo),
         }

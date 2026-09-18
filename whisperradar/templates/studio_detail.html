@@ -400,6 +400,13 @@
             {{ 'Working...' if job.running else 'Render images (Renderly)' }}
           </button>
         </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/generate"
+              onsubmit="return confirm('Run the configured imagegen command now? It reads prompts.txt and fills the images folder.')">
+          <button type="submit" class="green" {{ 'disabled' if job.running or not hooks.imagegen else '' }}
+                  title="{{ 'Run studio.imagegen_command (uses prompts.txt)' if hooks.imagegen and not job.running else ('A job is already running' if job.running else 'Set studio.imagegen_command in config.yaml') }}">
+            {{ 'Working...' if job.running else 'Generate images (hook)' }}
+          </button>
+        </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/upload" enctype="multipart/form-data">
           <input type="file" name="image_files" accept="image/*" multiple required>
           <button type="submit" class="secondary">Upload images</button>
