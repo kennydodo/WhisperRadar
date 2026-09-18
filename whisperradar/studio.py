@@ -112,9 +112,9 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
 
 
 MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
-              "shotlist.json", "imgtovideo.json", "prompts.txt", "batch_sheet.txt",
-              "final.mp4", "audio", "audio_previous", "images", "out",
-              "script_versions", "versions"]
+              "shotlist.json", "shotlist.json.bak", "imgtovideo.json",
+              "prompts.txt", "batch_sheet.txt", "final.mp4", "audio",
+              "audio_previous", "images", "out", "script_versions", "versions"]
 
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
@@ -274,13 +274,17 @@ def sanitize_shotlist(pid_dir: Path) -> int:
     if not shots:
         raise RuntimeError("sanitizing the shotlist would remove every shot")
     removed = len(data.get("shots", [])) - len(shots)
-    if removed == 0 and len(images) == len(data.get("images", [])):
+    if removed == 0 and len(images) == len(imgs):
         return 0
+    backup = path.with_suffix(".json.bak")
+    if not backup.exists():  # keep the user's full plan recoverable
+        shutil.copy(path, backup)
     data["images"] = images
     data["shots"] = shots
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n",
                     encoding="utf-8")
-    log.warning("shotlist sanitized: dropped %d shot(s) with missing images %s",
+    log.warning("shotlist sanitized: dropped %d shot(s) with missing images %s "
+                "(original kept at shotlist.json.bak)",
                 removed, sorted(dropped))
     return removed
 
