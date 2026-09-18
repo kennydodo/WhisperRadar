@@ -10,8 +10,10 @@ import random
 import re
 import shutil
 import subprocess
+import time
 import urllib.error
 import urllib.request
+
 from pathlib import Path
 
 log = logging.getLogger("whisperradar")
@@ -204,11 +206,29 @@ def find_final(pid_dir: Path) -> Path | None:
 # ------------------------------------------------- Renderly / ImgToVideo --
 
 def renderly_ready(url: str, timeout: int = 2) -> bool:
-    try:
-        with urllib.request.urlopen(f"{url}/api/channels", timeout=timeout):
-            return True
-    except Exception:
-        return False
+    def probe() -> bool:
+        try:
+            with urllib.request.urlopen(f"{url}/api/channels", timeout=timeout):
+                return True
+        except Exception:
+            return False
+    return _cached_probe(f"renderly:{url}", probe)
+
+
+# readiness probes hit services that are usually DOWN; on some machines a
+# refused loopback connect costs seconds, so cache results briefly
+_PROBE_TTL = 60.0
+_probe_cache: dict = {}
+
+
+def _cached_probe(key: str, fn):
+    now = time.monotonic()
+    hit = _probe_cache.get(key)
+    if hit and now - hit[0] < _PROBE_TTL:
+        return hit[1]
+    value = fn()
+    _probe_cache[key] = (now, value)
+    return value
 
 
 def ensure_renderly_channel(cfg) -> int:
@@ -345,12 +365,15 @@ def prepare_project_folder(cfg, pid: int) -> Path:
 # ------------------------------------------------------------------ ollama --
 
 def ollama_models(timeout: int = 3) -> list[str]:
-    try:
-        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=timeout) as r:
-            data = json.loads(r.read())
-        return [m["name"] for m in data.get("models", [])]
-    except Exception:
-        return []
+    def probe() -> list[str]:
+        try:
+            with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags",
+                                        timeout=timeout) as r:
+                data = json.loads(r.read())
+            return [m["name"] for m in data.get("models", [])]
+        except Exception:
+            return []
+    return _cached_probe("ollama", probe)
 
 
 def ollama_generate(model: str, prompt: str, timeout: int = 1800) -> str:
