@@ -40,7 +40,10 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 def prod_dir(cfg, pid: int) -> Path:
     """The production's working folder: a user-selected directory when the
-    production has one, otherwise data\\studio\\<id>."""
+    production has one, otherwise data\\studio\\<id>.
+
+    Folders the app creates (or adopts while empty) get a marker file so
+    delete knows they are safe to remove."""
     work_dir = None
     try:
         import sqlite3
@@ -56,13 +59,56 @@ def prod_dir(cfg, pid: int) -> Path:
             conn.close()
     except Exception:
         pass
-    if work_dir:
-        d = Path(work_dir).expanduser()
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-    d = cfg.studio_dir / str(pid)
+    d = (Path(work_dir).expanduser() if work_dir
+         else cfg.studio_dir / str(pid))
+    created = not d.exists()
     d.mkdir(parents=True, exist_ok=True)
+    if created or not any(d.iterdir()):
+        _write_marker(d)
     return d
+
+
+MARKER = ".whisperradar-production"
+
+
+def _write_marker(d: Path) -> None:
+    try:
+        (d / MARKER).touch(exist_ok=True)
+    except OSError:
+        pass
+
+
+def is_managed_dir(cfg, pdir: Path) -> bool:
+    """True when the production folder was created/adopted by WhisperRadar."""
+    try:
+        pdir.resolve().relative_to(cfg.studio_dir.resolve())
+        return True
+    except ValueError:
+        return (pdir / MARKER).exists()
+
+
+def validate_work_dir(cfg, new_dir: str | Path) -> Path:
+    """Reject work_dir values that would let production delete wipe
+    unrelated folders (drive roots, the program folder, non-empty
+    folders WhisperRadar did not create)."""
+    p = Path(new_dir).expanduser().resolve()
+    if p.parent == p:
+        raise RuntimeError(
+            f"{p} is a drive root - pick a folder inside it instead")
+    base = cfg.base_dir.resolve()
+    if p == base:
+        raise RuntimeError("work_dir cannot be the WhisperRadar folder")
+    try:
+        base.relative_to(p)
+        raise RuntimeError(
+            f"{p} contains the WhisperRadar program folder - not allowed")
+    except ValueError:
+        pass
+    if p.exists() and any(p.iterdir()) and not (p / MARKER).exists():
+        raise RuntimeError(
+            f"{p} is not empty and is not a WhisperRadar production folder - "
+            "pick an empty folder (or one WhisperRadar created before)")
+    return p
 
 
 MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
@@ -77,9 +123,14 @@ def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
     old = prod_dir(cfg, prod["id"])
     if new_dir:
         dest = Path(new_dir).expanduser().resolve()
+        if dest.resolve() != old.resolve():
+            dest = validate_work_dir(cfg, dest)
+        else:
+            _write_marker(dest)  # adopt the current folder as managed
     else:
         dest = cfg.studio_dir / str(prod["id"])
     dest.mkdir(parents=True, exist_ok=True)
+    _write_marker(dest)
     if old.resolve() == dest.resolve():
         return dest, 0
     moved = 0

@@ -479,6 +479,11 @@ def create_app(cfg) -> Flask:
             work_dir = str(Path(work_dir).expanduser().resolve())
         if not title:
             return redirect("/studio?error=Enter+a+title")
+        if work_dir:
+            try:
+                work_dir = str(studio.validate_work_dir(cfg, work_dir))
+            except RuntimeError as exc:
+                return redirect(f"/studio?error={quote(str(exc)[:150])}")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -600,11 +605,18 @@ def create_app(cfg) -> Flask:
             if not prod:
                 return redirect("/studio?error=Unknown+production")
             pdir = studio.prod_dir(cfg, pid)  # resolve BEFORE the row is gone
+            # only wipe folders WhisperRadar created or explicitly adopted
+            managed = studio.is_managed_dir(cfg, pdir)
             db.delete_production(conn, pid)
         finally:
             conn.close()
-        shutil.rmtree(pdir, ignore_errors=True)
-        return redirect("/studio?msg=Production+deleted")
+        if managed:
+            shutil.rmtree(pdir, ignore_errors=True)
+            return redirect("/studio?msg=Production+deleted")
+        return redirect(
+            "/studio?error=" + quote(
+                f"Production deleted - files kept at {pdir} "
+                "(folder was not created by WhisperRadar)"))
 
     @app.post("/studio/<int:pid>/workdir")
     def studio_workdir(pid):
@@ -726,6 +738,7 @@ def create_app(cfg) -> Flask:
                     raise RuntimeError(
                         "No source transcript - write the style guide manually"
                     )
+                word_count = len(re.findall(r"\w+", source_text))
                 prompt = studio.style_prompt(prod["title"], prod["genre"],
                                              source_text,
                                              extra_direction=db.stage_extra(
