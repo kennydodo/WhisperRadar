@@ -264,12 +264,13 @@ def sanitize_shotlist(pid_dir: Path) -> int:
     img_dir = pid_dir / "images"
     existing = {p.stem.lower() for p in img_dir.iterdir()
                 if p.is_file()} if img_dir.exists() else set()
-    images = [i for i in data.get("images", [])
+    imgs = [i for i in data.get("images", []) if isinstance(i, dict)]
+    images = [i for i in imgs
               if Path(i.get("file", "")).stem.lower() in existing]
-    dropped = {Path(i["file"]).stem.lower() for i in data.get("images", [])
+    dropped = {Path(i.get("file", "")).stem.lower() for i in imgs
                if Path(i.get("file", "")).stem.lower() not in existing}
-    shots = [s for s in data.get("shots", [])
-             if Path(s.get("asset", "")).stem.lower() in existing]
+    shots = [s for s in data.get("shots", []) if isinstance(s, dict)
+             and Path(s.get("asset", "")).stem.lower() in existing]
     if not shots:
         raise RuntimeError("sanitizing the shotlist would remove every shot")
     removed = len(data.get("shots", [])) - len(shots)
