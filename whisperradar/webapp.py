@@ -560,7 +560,6 @@ def create_app(cfg) -> Flask:
         final_url = (f"/studio/file/{pid}/"
                      f"{final.relative_to(pdir).as_posix()}") if final else None
 
-        models = studio.ollama_models()
         providers = cfg.studio_llm_providers
         default_provider = prod["llm_provider"] or cfg.studio_llm_default
         if providers:
@@ -573,9 +572,6 @@ def create_app(cfg) -> Flask:
             llm_ready = bool(cfg.studio_llm_model and
                              (cfg.studio_llm_api_key or
                               os.environ.get("WR_LLM_API_KEY")))
-            llm_label = studio.llm_label(cfg)
-        elif cfg.studio_llm == "ollama":
-            llm_ready = bool(models)
             llm_label = studio.llm_label(cfg)
         else:
             llm_ready = False
@@ -1379,4 +1375,7 @@ def create_app(cfg) -> Flask:
         return {"running": sjob.running, "kind": sjob.kind,
                 "error": sjob.error, "log": list(sjob.log)[-40:]}
 
+    # warm the Renderly readiness probe so the first page load is fast too
+    threading.Thread(target=lambda: studio.renderly_ready(cfg.renderly_url),
+                     daemon=True).start()
     return app

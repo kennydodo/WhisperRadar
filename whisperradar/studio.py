@@ -10,6 +10,7 @@ import random
 import re
 import shutil
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -17,8 +18,6 @@ import urllib.request
 from pathlib import Path
 
 log = logging.getLogger("whisperradar")
-
-OLLAMA_URL = "http://localhost:11434"
 
 # random directives so regenerating a script produces a genuinely fresh take
 VARIATION_ANGLES = [
@@ -216,7 +215,8 @@ def renderly_ready(url: str, timeout: int = 2) -> bool:
 
 
 # readiness probes hit services that are usually DOWN; on some machines a
-# refused loopback connect costs seconds, so cache results briefly
+# refused loopback connect costs seconds, so results are cached and refreshed
+# in the background - page loads never wait on a probe (except the first)
 _PROBE_TTL = 60.0
 _probe_cache: dict = {}
 
@@ -224,10 +224,18 @@ _probe_cache: dict = {}
 def _cached_probe(key: str, fn):
     now = time.monotonic()
     hit = _probe_cache.get(key)
-    if hit and now - hit[0] < _PROBE_TTL:
-        return hit[1]
-    value = fn()
-    _probe_cache[key] = (now, value)
+    if hit is None:
+        value = fn()
+        _probe_cache[key] = (value, now)
+        return value
+    value, stamped = hit
+    if now - stamped >= _PROBE_TTL:
+        def refresh():
+            try:
+                _probe_cache[key] = (fn(), time.monotonic())
+            except Exception:
+                _probe_cache[key] = (value, time.monotonic())
+        threading.Thread(target=refresh, daemon=True).start()
     return value
 
 
@@ -362,32 +370,6 @@ def prepare_project_folder(cfg, pid: int) -> Path:
     return pdir
 
 
-# ------------------------------------------------------------------ ollama --
-
-def ollama_models(timeout: int = 3) -> list[str]:
-    def probe() -> list[str]:
-        try:
-            with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags",
-                                        timeout=timeout) as r:
-                data = json.loads(r.read())
-            return [m["name"] for m in data.get("models", [])]
-        except Exception:
-            return []
-    return _cached_probe("ollama", probe)
-
-
-def ollama_generate(model: str, prompt: str, timeout: int = 1800) -> str:
-    req = urllib.request.Request(
-        f"{OLLAMA_URL}/api/generate",
-        data=json.dumps({"model": model, "prompt": prompt, "stream": False,
-                         "options": {"temperature": 1.0}}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read()).get("response", "").strip()
-
-
 def _resolve_provider(cfg, name: str | None = None) -> dict:
     if cfg.studio_llm_providers:
         name = name or cfg.studio_llm_default
@@ -484,16 +466,6 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
 
 def llm_generate(cfg, prompt: str, timeout: int = 1800,
                  provider: str | None = None) -> str:
-    if not cfg.studio_llm_providers and cfg.studio_llm == "ollama":
-        models = ollama_models()
-        if not models:
-            raise RuntimeError("Ollama is not reachable at localhost:11434")
-        model = models[0]
-        for m in models:
-            if cfg.ollama_model and m.startswith(cfg.ollama_model):
-                model = m
-                break
-        return ollama_generate(model, prompt, timeout=timeout)
     return openai_chat(_resolve_provider(cfg, provider), prompt, timeout=timeout)
 
 
@@ -502,8 +474,6 @@ def llm_label(cfg, provider: str | None = None) -> str:
         p = _resolve_provider(cfg, provider)
         return f"{p['name']} ({p['model']})"
     except RuntimeError:
-        if not cfg.studio_llm_providers and cfg.studio_llm == "ollama":
-            return "local LLM (Ollama)"
         return "LLM not configured"
 
 

@@ -38,7 +38,6 @@ studio:
   # Target script length in words. null = match the source transcript's
   # length automatically; set a number to force a fixed target (e.g. 1200).
   script_words: null
-  ollama_model: null     # used when llm: ollama
   tts_command: null      # e.g. python C:\path\chatterbox\run_tts.py {script} {out}
   # Renderly + ImgToVideo integration (images + final render).
   # renderly_channel: null = auto-create/reuse a "whisperradar" channel.
