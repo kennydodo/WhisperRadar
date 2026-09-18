@@ -516,10 +516,20 @@ def create_app(cfg) -> Flask:
             stage = prod["stage"]
         pdir = studio.prod_dir(cfg, pid)
 
+        def _read_text(path: Path | None) -> str:
+            # a background working-folder move can make files vanish between
+            # the exists() check and the read - treat that as empty
+            if not path:
+                return ""
+            try:
+                return path.read_text(encoding="utf-8")
+            except OSError:
+                return ""
+
         script = studio.find_script(pdir)
-        script_text = script.read_text(encoding="utf-8") if script else ""
+        script_text = _read_text(script)
         style = studio.find_style(pdir)
-        style_text = style.read_text(encoding="utf-8") if style else ""
+        style_text = _read_text(style)
         source_tr = studio.find_source_transcript(pdir)
         if not source_tr and prod["source_video_id"]:
             conn = db.connect(cfg.db_path)
@@ -531,12 +541,12 @@ def create_app(cfg) -> Flask:
                 shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
                 source_tr = studio.find_source_transcript(pdir)
         shotlist = pdir / "shotlist.json"
-        shotlist_text = shotlist.read_text(encoding="utf-8") if shotlist.exists() else ""
+        shotlist_text = _read_text(shotlist if shotlist.exists() else None)
         audio = studio.find_audio(pdir)
         srt = studio.find_srt(pdir)
-        srt_text = srt.read_text(encoding="utf-8") if srt else ""
+        srt_text = _read_text(srt)
         prompts = studio.find_prompts(pdir)
-        prompts_text = prompts.read_text(encoding="utf-8") if prompts else ""
+        prompts_text = _read_text(prompts)
         shotlist_count = None
         if shotlist.exists():
             try:
