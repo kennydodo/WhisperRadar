@@ -763,10 +763,13 @@ INPUT 1 - THE FULL NARRATION SRT:
 # --------------------------------------------------- external tool hooks ---
 
 def run_hook(command: str, subs: dict, timeout: int = 3600) -> None:
-    """Run a configured external command, substituting {placeholders}."""
+    """Run a configured external command, substituting {placeholders}.
+    Every value is command-line quoted, so working folders or filenames
+    containing spaces, & , ^ or % cannot inject extra commands."""
     cmd = command
     for key, val in subs.items():
-        cmd = cmd.replace("{" + key + "}", str(val))
+        cmd = cmd.replace("{" + key + "}",
+                          subprocess.list2cmdline([str(val)]))
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True,
                             timeout=timeout)
     if result.returncode != 0:
