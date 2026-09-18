@@ -392,8 +392,8 @@
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
               onsubmit="return confirm('Render the shotlist images through Renderly now?\n\nThis calls the Gemini/Renderly API once per missing image and consumes your Renderly credits. Existing images are kept, only gaps are filled.\n\nContinue?')">
-          <button type="submit" class="green" {{ 'disabled' if job.running or not renderly_ready else '' }}
-                  title="{{ 'Run ImgToVideo.ImageGen in Renderly mode' if renderly_ready and not job.running else ('A job is already running' if job.running else 'Start Renderly first (Renderly\\\\start.bat) - its backend must be reachable') }}">
+          <button type="submit" class="green" {{ 'disabled' if job.running or not renderly_ready or not shotlist_count else '' }}
+                  title="{{ 'Run ImgToVideo.ImageGen in Renderly mode' if renderly_ready and shotlist_count and not job.running else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'Start Renderly first (Renderly\\\\start.bat) - its backend must be reachable')) }}">
             {{ 'Working...' if job.running else 'Render images (Renderly)' }}
           </button>
         </form>
