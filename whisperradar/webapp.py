@@ -586,7 +586,7 @@ def create_app(cfg) -> Flask:
             final=final, final_url=final_url,
             source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
-            default_provider=default_provider, models=models, hooks=hooks,
+            default_provider=default_provider, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
@@ -824,10 +824,10 @@ def create_app(cfg) -> Flask:
                 pdir = studio.prod_dir(cfg, pid)
                 script_path = pdir / "script.md"
                 if script_path.exists():
-                    versions = pdir / "script_versions"
-                    versions.mkdir(exist_ok=True)
+                    auto_dir = pdir / "versions" / "script"
+                    auto_dir.mkdir(parents=True, exist_ok=True)
                     stamp = time.strftime("%Y%m%d-%H%M%S")
-                    shutil.copy(script_path, versions / f"script-{stamp}.md")
+                    shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
                 script_path.write_text(text + "\n", encoding="utf-8")
                 ratio = _script_overlap(prod, text)
                 warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""

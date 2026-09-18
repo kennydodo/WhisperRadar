@@ -114,7 +114,7 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
 MOVE_ITEMS = ["script.md", "style.md", "source_transcript.txt", "subtitles.srt",
               "shotlist.json", "shotlist.json.bak", "imgtovideo.json",
               "prompts.txt", "batch_sheet.txt", "final.mp4", "audio",
-              "audio_previous", "images", "out", "script_versions", "versions"]
+              "audio_previous", "images", "out", "versions"]
 
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
@@ -365,12 +365,6 @@ def ollama_generate(model: str, prompt: str, timeout: int = 1800) -> str:
         return json.loads(r.read()).get("response", "").strip()
 
 
-def openai_generate(cfg, prompt: str, timeout: int = 600) -> str:
-    """Call the configured LLM (provider list or legacy single-LLM config)."""
-    provider = llm_provider(cfg, None)
-    return openai_chat(provider, prompt, timeout=timeout)
-
-
 def _resolve_provider(cfg, name: str | None = None) -> dict:
     if cfg.studio_llm_providers:
         name = name or cfg.studio_llm_default
@@ -463,34 +457,6 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
             last_exc = exc
             log.warning("LLM connection error (attempt %d): %s", attempt + 1, exc)
     raise RuntimeError(f"LLM connection failed after retry: {last_exc}")
-    try:
-        return data["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError(f"Unexpected LLM response: {data}") from exc
-
-
-def openai_chat_raw(p: dict, prompt: str, timeout: int = 600) -> tuple[int, str]:
-    """Like openai_chat but returns (status, body) instead of raising on HTTP errors."""
-    key = _provider_key(p) or ""
-    url = (p.get("base_url") or "").rstrip("/") + "/chat/completions"
-    payload = {"model": p.get("model"), "stream": False,
-               "messages": [{"role": "user", "content": prompt}]}
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json",
-                 "Authorization": f"Bearer {key}"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status, r.read().decode("utf-8", "ignore")
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode("utf-8", "ignore")
-
-
-def llm_provider(cfg, name: str | None) -> dict:
-    return _resolve_provider(cfg, name)
 
 
 def llm_generate(cfg, prompt: str, timeout: int = 1800,
