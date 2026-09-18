@@ -176,7 +176,7 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
           <span style="font-weight:600; color:var(--green)">Style guide extracted from the source video - this is passed to the LLM</span>
         </div>
-        <pre style="margin:0; font-size:12px; white-space:pre-wrap; max-height:340px; overflow-y:auto">{{ style_text }}</pre>
+        <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:340px; overflow-y:auto">{{ style_text }}</pre>
       </div>
       {% else %}
       <div class="muted" style="margin-bottom:8px">No style guide yet. Generate one from the source transcript's writing style, or write your own below - whatever is here gets passed to the LLM for the script and images.</div>
@@ -207,7 +207,7 @@
           <span style="font-weight:600; color:var(--green)">Style guide the LLM follows (extracted from the source video)</span>
           <a class="muted" style="font-size:12px" href="/studio/{{ prod['id'] }}?stage=style">edit at style stage</a>
         </div>
-        <pre style="margin:0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>
+        <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>
       </div>
       {% else %}
       <div class="warn" style="margin-bottom:8px">No style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the style stage</a> so the script matches the source video's voice.</div>
@@ -291,7 +291,7 @@
 
     {% elif stage == "srt" %}
       {% if srt %}
-      <div class="artifact" style="max-height:260px; overflow-y:auto"><pre style="margin:0; font-size:12px; white-space:pre-wrap">{{ srt_text[:3000] }}{% if srt_text|length > 3000 %}
+      <div class="artifact" style="max-height:260px; overflow-y:auto"><pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap">{{ srt_text[:3000] }}{% if srt_text|length > 3000 %}
 
 ... (full file: <a href="/studio/file/{{ prod['id'] }}/subtitles.srt">subtitles.srt</a>){% endif %}</pre></div>
       {% else %}
@@ -569,6 +569,47 @@
     } catch (e) { /* ignore */ }
   }
   setInterval(poll, 2000);
+</script>
+<script>
+  // Copy button on every textarea and read-only text block
+  (function () {
+    var s = document.createElement('style');
+    s.textContent = '.copywrap{position:relative}' +
+      '.copybtn{position:absolute;top:6px;right:6px;z-index:5;background:#565d6b;' +
+      'color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:11px;' +
+      'cursor:pointer;opacity:.85}' +
+      '.copybtn:hover{opacity:1}';
+    document.head.appendChild(s);
+    function copyText(txt, btn) {
+      var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1200); };
+      var fallback = function () {
+        var ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Ctrl+C'; }
+        ta.remove();
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
+      else fallback();
+    }
+    document.querySelectorAll('textarea, pre.copyable').forEach(function (el) {
+      if (el.dataset.copyReady) return;
+      el.dataset.copyReady = '1';
+      var wrap = document.createElement('div');
+      wrap.className = 'copywrap';
+      el.parentNode.insertBefore(wrap, el);
+      wrap.appendChild(el);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copybtn';
+      btn.textContent = 'Copy';
+      btn.title = 'Copy contents to clipboard';
+      btn.addEventListener('click', function () {
+        copyText(('value' in el) ? el.value : el.innerText, btn);
+      });
+      wrap.appendChild(btn);
+    });
+  })();
 </script>
 </body>
 </html>

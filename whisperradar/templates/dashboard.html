@@ -106,7 +106,7 @@
       {% endfor %}
       <a class="btn" style="background:var(--green)" href="/export_all?{{ qs() }}">Export all transcripts (.zip)</a>
     </div>
-    <pre class="logbox" id="logbox">{{ log_text }}</pre>
+    <pre class="logbox copyable" id="logbox">{{ log_text }}</pre>
   </div>
 
   <h2>Channels</h2>
@@ -289,6 +289,47 @@
     } catch (e) { /* server busy or restarting */ }
   }
   setInterval(poll, 2000);
+</script>
+<script>
+  // Copy button on text blocks and textareas
+  (function () {
+    var s = document.createElement('style');
+    s.textContent = '.copywrap{position:relative}' +
+      '.copybtn{position:absolute;top:6px;right:6px;z-index:5;background:#565d6b;' +
+      'color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:11px;' +
+      'cursor:pointer;opacity:.85}' +
+      '.copybtn:hover{opacity:1}';
+    document.head.appendChild(s);
+    function copyText(txt, btn) {
+      var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1200); };
+      var fallback = function () {
+        var ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Ctrl+C'; }
+        ta.remove();
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
+      else fallback();
+    }
+    document.querySelectorAll('textarea, pre.copyable').forEach(function (el) {
+      if (el.dataset.copyReady) return;
+      el.dataset.copyReady = '1';
+      var wrap = document.createElement('div');
+      wrap.className = 'copywrap';
+      el.parentNode.insertBefore(wrap, el);
+      wrap.appendChild(el);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copybtn';
+      btn.textContent = 'Copy';
+      btn.title = 'Copy contents to clipboard';
+      btn.addEventListener('click', function () {
+        copyText(('value' in el) ? el.value : el.innerText, btn);
+      });
+      wrap.appendChild(btn);
+    });
+  })();
 </script>
 </body>
 </html>

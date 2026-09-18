@@ -32,7 +32,45 @@
     <a class="btn" href="/file/{{ row['video_id'] }}">Download .txt</a>
     <a class="btn secondary" href="/">Back to dashboard</a>
   </div>
-  <pre>{{ text }}</pre>
+  <pre class="copyable">{{ text }}</pre>
 </div>
+<script>
+  (function () {
+    var s = document.createElement('style');
+    s.textContent = '.copywrap{position:relative}' +
+      '.copybtn{position:absolute;top:10px;right:10px;z-index:5;background:#565d6b;' +
+      'color:#fff;border:none;border-radius:6px;padding:3px 10px;font-size:11px;' +
+      'cursor:pointer;opacity:.85}' +
+      '.copybtn:hover{opacity:1}';
+    document.head.appendChild(s);
+    function copyText(txt, btn) {
+      var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1200); };
+      var fallback = function () {
+        var ta = document.createElement('textarea');
+        ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { btn.textContent = 'Ctrl+C'; }
+        ta.remove();
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
+      else fallback();
+    }
+    document.querySelectorAll('textarea, pre.copyable').forEach(function (el) {
+      var wrap = document.createElement('div');
+      wrap.className = 'copywrap';
+      el.parentNode.insertBefore(wrap, el);
+      wrap.appendChild(el);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'copybtn';
+      btn.textContent = 'Copy';
+      btn.title = 'Copy contents to clipboard';
+      btn.addEventListener('click', function () {
+        copyText(('value' in el) ? el.value : el.innerText, btn);
+      });
+      wrap.appendChild(btn);
+    });
+  })();
+</script>
 </body>
 </html>
