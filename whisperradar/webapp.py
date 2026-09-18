@@ -13,7 +13,7 @@ import time
 import zipfile
 from collections import deque
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from flask import (
     Flask,
@@ -184,6 +184,31 @@ def create_app(cfg) -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live
     app.jinja_env.filters["dur"] = format_duration
+
+    @app.before_request
+    def _block_cross_origin_posts():
+        """CSRF guard for a token-free local app: browsers always attach an
+        Origin header to cross-site form POSTs, so a drive-by webpage cannot
+        trigger jobs, deletes or channel changes against 127.0.0.1. Requests
+        without Origin/Referer (local scripts, curl) still work."""
+        if request.method != "POST":
+            return None
+
+        def same_site(url: str) -> bool:
+            try:
+                p = urlparse(url)
+            except ValueError:
+                return False
+            return p.scheme in ("http", "https") and p.netloc == request.host
+
+        origin = request.headers.get("Origin") or ""
+        referer = request.headers.get("Referer") or ""
+        if origin and not same_site(origin):
+            return "Blocked: cross-origin request", 403
+        if not origin and referer and not same_site(referer):
+            return "Blocked: cross-origin request", 403
+        return None
+
     job = _Job()
     sjob = _Job()  # studio jobs (LLM generation, SRT alignment)
 
