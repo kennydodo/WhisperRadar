@@ -478,6 +478,14 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         while seen < len(lines):
             log(lines[seen])
             seen += 1
+        # collapse duplicates as they appear (flow.js versions before the
+        # in-place upscale wrote "-upscaled.png" copies alongside)
+        for up in img_dir.glob("*-upscaled.png"):
+            base = up.with_name(up.name.replace("-upscaled.png", ".png"))
+            try:
+                up.replace(base)
+            except OSError:
+                pass
         if not st.get("running"):
             break
     upscaled = 0
