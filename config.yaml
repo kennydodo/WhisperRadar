@@ -49,6 +49,9 @@ studio:
   # driver (D:\Repos\Renderly\extension-v2). Needs `npm install` there once
   # and a signed-in Google session in its profile. Requires node on PATH.
   flow_driver_dir: D:\Repos\Renderly\extension-v2
+  # Flow Driver service URL (extension-v2\server.js; started automatically
+  # when a Flow render needs it, or by Renderly's start.bat).
+  flow_driver_url: http://127.0.0.1:8030
   # Path to the master shotlist planning prompt (ImgToVideo's
   # manifest-authoring-brief.md). Read fresh from disk on every run, so edits
   # apply immediately. Default: <imgtovideo_repo>\docs\manifest-authoring-brief.md

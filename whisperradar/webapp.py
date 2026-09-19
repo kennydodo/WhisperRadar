@@ -622,6 +622,9 @@ def create_app(cfg) -> Flask:
             default_provider=default_provider, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
             flow_ready=studio.flow_driver_ready(cfg),
+            flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
+                       if p.is_file()] if (pdir / "refs").exists() else [],
+            flow_upscale_default=cfg.renderly_upscale or 2,
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
             bible_text=bible_text,
@@ -987,6 +990,47 @@ def create_app(cfg) -> Flask:
             conn.close()
         return _studio_url(pid, msg="Subtitles saved")
 
+    @app.post("/studio/<int:pid>/refs/upload")
+    def studio_refs_upload(pid):
+        """Upload character/reference images used by the Flow Driver."""
+        pdir = studio.prod_dir(cfg, pid)
+        rdir = pdir / "refs"
+        rdir.mkdir(exist_ok=True)
+        files = [f for f in request.files.getlist("ref_files") if f.filename]
+        if not files:
+            return _studio_url(pid, error="No reference images selected")
+        saved = 0
+        for f in files:
+            ext = Path(f.filename).suffix.lower()
+            if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                continue
+            name = _slugify(Path(f.filename).stem, 60) + ext
+            f.save(rdir / name)
+            saved += 1
+        if not saved:
+            return _studio_url(pid, error="Only .png/.jpg/.jpeg/.webp refs")
+        return _studio_url(pid, msg=f"{saved} reference image(s) added")
+
+    @app.post("/studio/<int:pid>/refs/delete")
+    def studio_refs_delete(pid):
+        name = _slugify(request.form.get("name") or "", 60)
+        rdir = studio.prod_dir(cfg, pid) / "refs"
+        if name:
+            for f in sorted(rdir.glob(f"{name}.*")) if rdir.exists() else []:
+                if f.is_file() and f.suffix.lower() in (
+                        ".png", ".jpg", ".jpeg", ".webp"):
+                    f.unlink()
+                    return _studio_url(pid, msg="Reference image removed")
+        return _studio_url(pid, error="Reference image not found")
+
+    @app.post("/studio/<int:pid>/flow/stop")
+    def studio_flow_stop(pid):
+        stopped = studio.flow_stop(cfg)
+        if stopped:
+            return _studio_url(pid, msg="Flow Driver batch stopped")
+        return _studio_url(
+            pid, error="Nothing to stop (service down or batch not running)")
+
     @app.post("/studio/<int:pid>/prompts/save")
     def studio_prompts_save(pid):
         pdir = studio.prod_dir(cfg, pid)
@@ -1194,6 +1238,13 @@ def create_app(cfg) -> Flask:
         mode = request.form.get("render_mode") or "api"
         if mode not in ("api", "flow"):
             mode = "api"
+        flow_channel = (request.form.get("flow_channel") or "whisperradar").strip()
+        try:
+            flow_upscale = max(0, min(4, int(request.form.get("flow_upscale")
+                                             or (cfg.renderly_upscale or 0))))
+        except ValueError:
+            flow_upscale = cfg.renderly_upscale or 0
+        flow_master = (request.form.get("flow_master") or "").strip()
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -1204,8 +1255,13 @@ def create_app(cfg) -> Flask:
         def worker():
             t0 = time.monotonic()
             if mode == "flow":
+                refs = [str(p) for p in sorted(
+                    (pdir / "refs").glob("*"))
+                    if p.is_file()] if (pdir / "refs").exists() else []
                 count = studio.run_imagegen_flow(
-                    cfg, pdir, log=lambda m: sjob.log.append(str(m)))
+                    cfg, pdir, refs=refs, channel=flow_channel,
+                    upscale=flow_upscale, master=flow_master,
+                    log=lambda m: sjob.log.append(str(m)))
                 source = "Flow Driver (Google Flow)"
             else:
                 count = studio.run_imagegen(cfg, pdir)

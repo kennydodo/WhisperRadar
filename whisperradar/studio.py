@@ -115,7 +115,7 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
 MOVE_ITEMS = ["script.md", "style.md", "bible.md", "source_transcript.txt",
               "subtitles.srt", "shotlist.json", "shotlist.json.bak",
               "imgtovideo.json", "prompts.txt", "batch_sheet.txt", "final.mp4",
-              "audio", "audio_previous", "images", "out", "versions"]
+              "audio", "audio_previous", "images", "refs", "out", "versions"]
 
 
 def move_production_dir(cfg, prod, new_dir: str | None) -> tuple[Path, int]:
@@ -333,11 +333,103 @@ def prepare_flow_batch(cfg, pid_dir: Path) -> tuple[Path, int]:
     return batch_path, len(todo)
 
 
-def run_imagegen_flow(cfg, pid_dir: Path, log=print) -> int:
-    """Render missing shotlist images through Google Flow via the Renderly
-    extension-v2 Playwright driver. Results land in images\\ under the exact
-    shotlist names; when the Renderly backend is up, generations are also
-    imported + upscaled there (upscaled copies adopted as the shotlist files).
+def flow_service_url(cfg) -> str:
+    return (cfg.flow_driver_url or "http://127.0.0.1:8030").rstrip("/")
+
+
+def _driver_api(cfg, path: str, method: str = "GET", body=None,
+                timeout: int = 8):
+    """Call the Flow Driver service (extension-v2\\server.js)."""
+    req = urllib.request.Request(
+        flow_service_url(cfg) + path,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Content-Type": "application/json"} if body is not None else {},
+        method=method,
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def flow_service_status(cfg, timeout: int = 4) -> dict | None:
+    """Service status dict, or None when the service is not reachable."""
+    try:
+        return _driver_api(cfg, "/api/status", timeout=timeout)
+    except Exception:
+        return None
+
+
+def _backend_up(cfg) -> bool:
+    try:
+        with urllib.request.urlopen(cfg.renderly_url + "/api/channels",
+                                    timeout=2):
+            return True
+    except Exception:
+        return False
+
+
+def _spawn_detached(cmd: list, cwd: Path, logfile: str | None = None) -> None:
+    flags = 0
+    if hasattr(subprocess, "DETACHED_PROCESS"):
+        flags |= subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    out = open(cwd / logfile, "ab") if logfile else subprocess.DEVNULL
+    subprocess.Popen(cmd, cwd=str(cwd), stdout=out, stderr=out,
+                     stdin=subprocess.DEVNULL, creationflags=flags,
+                     close_fds=True)
+
+
+def ensure_flow_services(cfg, log=print) -> None:
+    """Make sure the Flow Driver service (8030) is up, and - because imports
+    and upscales need it - the Renderly backend (8022) via start.bat."""
+    driver_up = flow_service_status(cfg) is not None
+    backend_up = _backend_up(cfg)
+    if driver_up and backend_up:
+        return
+    d = flow_driver_dir(cfg)
+    start_bat = (d.parent / "start.bat") if d else None
+    if not backend_up and start_bat and start_bat.exists():
+        log("Renderly backend not running - launching start.bat "
+            "(backend + frontend + Flow driver windows)...")
+        flags = subprocess.CREATE_NEW_CONSOLE \
+            if hasattr(subprocess, "CREATE_NEW_CONSOLE") else 0
+        subprocess.Popen(["cmd", "/c", str(start_bat)],
+                         cwd=str(start_bat.parent), creationflags=flags)
+        for _ in range(120):
+            if _backend_up(cfg):
+                log("Renderly backend is up")
+                backend_up = True
+                break
+            time.sleep(1)
+        else:
+            log("Renderly backend did not come up in time - images will "
+                "keep Flow's native size (no import/upscale)")
+    if not driver_up:
+        if not d or not (d / "server.js").exists():
+            raise RuntimeError(
+                "Flow Driver service is not running and studio.flow_driver_dir "
+                "is not configured")
+        if not (d / "node_modules" / "playwright").exists():
+            raise RuntimeError(
+                f"Playwright not installed - run: cd {d} && npm install")
+        log("Flow Driver service not running - starting it...")
+        _spawn_detached(["node", "server.js"], d, logfile="driver-service.log")
+        for _ in range(20):
+            if flow_service_status(cfg, timeout=2) is not None:
+                break
+            time.sleep(0.5)
+        else:
+            raise RuntimeError("Flow Driver service did not come up on "
+                               + flow_service_url(cfg))
+    if not backend_up:
+        log("Renderly backend still down - images will keep Flow's native "
+            "size (no import/upscale)")
+
+
+def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperradar",
+                      upscale: int | None = None, master: str = "",
+                      log=print) -> int:
+    """Render missing shotlist images through Google Flow via the Flow Driver
+    service. Results land in images\\ under the exact shotlist names; upscaled
+    copies produced via Renderly are adopted as the shotlist files.
     Returns the new image count."""
     d = flow_driver_dir(cfg)
     if not d or not (d / "flow.js").exists():
@@ -350,28 +442,44 @@ def run_imagegen_flow(cfg, pid_dir: Path, log=print) -> int:
     batch_path, todo = prepare_flow_batch(cfg, pid_dir)
     img_dir = pid_dir / "images"
     before = {p.name for p in img_dir.iterdir() if p.is_file()}
+    ensure_flow_services(cfg, log=log)
+    if flow_service_status(cfg) is None:
+        raise RuntimeError("Flow Driver service is not reachable on "
+                           + flow_service_url(cfg))
+    refs = [str(r).strip() for r in (refs or []) if str(r).strip()]
+    config = {
+        "shotlistPath": str(batch_path),
+        "outPath": str(img_dir),
+        "channel": str(channel or "whisperradar").strip(),
+        "refs": ",".join(refs),
+        "master": (master or "").strip(),
+        "upscale": max(0, min(4, int(upscale if upscale is not None
+                                    else (cfg.renderly_upscale or 0)))),
+    }
     log(f"Flow Driver: rendering {todo} missing image(s) via Google Flow "
         f"(a Chrome window will open - leave it running)")
-    cmd = ["node", str(d / "flow.js"),
-           "--file", str(batch_path),
-           "--out", str(img_dir),
-           "--timeout", "300000"]
+    _driver_api(cfg, "/api/config", method="POST", body=config, timeout=15)
     try:
-        channel = ensure_renderly_channel(cfg)
-        cmd += ["--channel", str(channel),
-                "--upscale", str(cfg.renderly_upscale or 0),
-                "--backend", cfg.renderly_url]
+        _driver_api(cfg, "/api/start", method="POST", body={}, timeout=15)
     except Exception as exc:
-        log(f"Renderly backend not reachable ({exc}) - rendering without "
-            f"import/upscale; images keep Flow's native size")
-    result = subprocess.run(cmd, cwd=str(d), capture_output=True, text=True,
-                            timeout=14400)
-    for line in (result.stdout or "").splitlines():
-        if line.strip():
-            log(line)
-    tail = ((result.stderr or "") + (result.stdout or ""))[-400:]
-    if result.returncode != 0:
-        raise RuntimeError(f"Flow Driver failed (exit {result.returncode}): {tail}")
+        raise RuntimeError(f"Flow Driver rejected the batch: {exc}")
+    seen = 0
+    deadline = time.monotonic() + 14400
+    while True:
+        if time.monotonic() > deadline:
+            raise RuntimeError("Flow Driver batch timed out after 4h")
+        time.sleep(3)
+        st = flow_service_status(cfg, timeout=10)
+        if st is None:
+            continue
+        lines = st.get("log") or []
+        if len(lines) < seen:  # service log window wrapped
+            seen = 0
+        while seen < len(lines):
+            log(lines[seen])
+            seen += 1
+        if not st.get("running"):
+            break
     upscaled = 0
     for up in img_dir.glob("*-upscaled.png"):
         base = up.with_name(up.name.replace("-upscaled.png", ".png"))
@@ -380,7 +488,20 @@ def run_imagegen_flow(cfg, pid_dir: Path, log=print) -> int:
     if upscaled:
         log(f"Adopted {upscaled} upscaled image(s) as the shotlist files")
     new = len({p.name for p in img_dir.iterdir() if p.is_file()} - before)
+    if not new:
+        raise RuntimeError("Flow Driver finished but produced no new images "
+                           "- check the log")
     return new
+
+
+def flow_stop(cfg) -> bool:
+    """Stop a running Flow Driver batch. Returns True when one was stopped."""
+    try:
+        result = _driver_api(cfg, "/api/stop", method="POST", body={},
+                             timeout=8)
+        return bool(result.get("stopped"))
+    except Exception:
+        return False
 
 
 def sanitize_shotlist(pid_dir: Path) -> int:

@@ -68,6 +68,8 @@ class Config:
         self.imgtovideo_repo = studio.get("imgtovideo_repo") or None
         self.studio_manifest_brief = studio.get("manifest_brief") or None
         self.flow_driver_dir = studio.get("flow_driver_dir") or None
+        self.flow_driver_url = studio.get("flow_driver_url") \
+            or "http://127.0.0.1:8030"
         self.studio_dir = base_dir / "data" / "studio"
 
 
