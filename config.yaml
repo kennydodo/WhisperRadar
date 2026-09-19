@@ -45,6 +45,10 @@ studio:
   renderly_channel: null
   renderly_upscale: 4
   imgtovideo_repo: D:\Repos\ImgToVideo
+  # Google Flow image generation via Renderly's extension-v2 Playwright
+  # driver (D:\Repos\Renderly\extension-v2). Needs `npm install` there once
+  # and a signed-in Google session in its profile. Requires node on PATH.
+  flow_driver_dir: D:\Repos\Renderly\extension-v2
   # Path to the master shotlist planning prompt (ImgToVideo's
   # manifest-authoring-brief.md). Read fresh from disk on every run, so edits
   # apply immediately. Default: <imgtovideo_repo>\docs\manifest-authoring-brief.md

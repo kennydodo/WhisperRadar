@@ -294,6 +294,95 @@ def run_imagegen(cfg, pid_dir: Path) -> int:
     return len(new)
 
 
+def flow_driver_dir(cfg) -> Path | None:
+    """The Renderly extension-v2 folder (Playwright driver for Google Flow)."""
+    if not cfg.flow_driver_dir:
+        return None
+    p = Path(cfg.flow_driver_dir)
+    return p if p.is_absolute() else cfg.base_dir / p
+
+
+def flow_driver_ready(cfg) -> bool:
+    d = flow_driver_dir(cfg)
+    return bool(d) and (d / "flow.js").exists() \
+        and (d / "node_modules" / "playwright").exists()
+
+
+def prepare_flow_batch(cfg, pid_dir: Path) -> tuple[Path, int]:
+    """Build the Flow Driver batch from the production's shotlist: only the
+    images missing from images\\ (flow.js itself has no skip-existing).
+    Returns (batch file, number of images to render)."""
+    shotlist_path = pid_dir / "shotlist.json"
+    if not shotlist_path.exists():
+        raise RuntimeError("Generate the shotlist first")
+    data = json.loads(shotlist_path.read_text(encoding="utf-8"))
+    img_dir = pid_dir / "images"
+    img_dir.mkdir(exist_ok=True)
+    existing = {p.name for p in img_dir.iterdir() if p.is_file()}
+    todo = [i for i in data.get("images", [])
+            if isinstance(i, dict) and i.get("file") and i.get("prompt")
+            and i["file"] not in existing]
+    if not todo:
+        raise RuntimeError(
+            "All shotlist images already exist - nothing to render")
+    batch_path = pid_dir / "flow_batch.json"
+    batch_path.write_text(
+        json.dumps({"style": data.get("style", ""), "images": todo},
+                   indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8")
+    return batch_path, len(todo)
+
+
+def run_imagegen_flow(cfg, pid_dir: Path, log=print) -> int:
+    """Render missing shotlist images through Google Flow via the Renderly
+    extension-v2 Playwright driver. Results land in images\\ under the exact
+    shotlist names; when the Renderly backend is up, generations are also
+    imported + upscaled there (upscaled copies adopted as the shotlist files).
+    Returns the new image count."""
+    d = flow_driver_dir(cfg)
+    if not d or not (d / "flow.js").exists():
+        raise RuntimeError(
+            "Set studio.flow_driver_dir in config.yaml to the Renderly "
+            "extension-v2 folder")
+    if not (d / "node_modules" / "playwright").exists():
+        raise RuntimeError(
+            f"Playwright not installed - run: cd {d} && npm install")
+    batch_path, todo = prepare_flow_batch(cfg, pid_dir)
+    img_dir = pid_dir / "images"
+    before = {p.name for p in img_dir.iterdir() if p.is_file()}
+    log(f"Flow Driver: rendering {todo} missing image(s) via Google Flow "
+        f"(a Chrome window will open - leave it running)")
+    cmd = ["node", str(d / "flow.js"),
+           "--file", str(batch_path),
+           "--out", str(img_dir),
+           "--timeout", "300000"]
+    try:
+        channel = ensure_renderly_channel(cfg)
+        cmd += ["--channel", str(channel),
+                "--upscale", str(cfg.renderly_upscale or 0),
+                "--backend", cfg.renderly_url]
+    except Exception as exc:
+        log(f"Renderly backend not reachable ({exc}) - rendering without "
+            f"import/upscale; images keep Flow's native size")
+    result = subprocess.run(cmd, cwd=str(d), capture_output=True, text=True,
+                            timeout=14400)
+    for line in (result.stdout or "").splitlines():
+        if line.strip():
+            log(line)
+    tail = ((result.stderr or "") + (result.stdout or ""))[-400:]
+    if result.returncode != 0:
+        raise RuntimeError(f"Flow Driver failed (exit {result.returncode}): {tail}")
+    upscaled = 0
+    for up in img_dir.glob("*-upscaled.png"):
+        base = up.with_name(up.name.replace("-upscaled.png", ".png"))
+        up.replace(base)  # keep the ImgToVideo naming contract
+        upscaled += 1
+    if upscaled:
+        log(f"Adopted {upscaled} upscaled image(s) as the shotlist files")
+    new = len({p.name for p in img_dir.iterdir() if p.is_file()} - before)
+    return new
+
+
 def sanitize_shotlist(pid_dir: Path) -> int:
     """Drop shotlist images/shots whose files were never generated
     (e.g. failed on API quota) so the render can proceed with what exists.

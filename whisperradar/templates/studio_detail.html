@@ -393,12 +393,24 @@
       {% else %}
       <div class="muted" style="margin-bottom:8px">No images yet. Render the shotlist through Renderly or upload your own (plan the shots at the shots stage first).</div>
       {% endif %}
+      <div class="muted" style="font-size:12px; margin-bottom:8px">
+        Render the missing shotlist images with the <b>Renderly API</b> (Gemini via
+        the Renderly backend) or the <b>Flow Driver</b> (extension-v2 automates
+        Google Flow in a real Chrome window - needs a signed-in profile; images
+        are imported + upscaled through Renderly when the backend is running).
+        Your choice is remembered per production. Existing images are kept, only
+        gaps are rendered. Upload your own images anytime.
+      </div>
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
-              onsubmit="return confirm('Render the shotlist images through Renderly now?\n\nThis calls the Gemini/Renderly API once per missing image and consumes your Renderly credits. Existing images are kept, only gaps are filled.\n\nContinue?')">
-          <button type="submit" class="green" {{ 'disabled' if job.running or not renderly_ready or not shotlist_count else '' }}
-                  title="{{ 'Run ImgToVideo.ImageGen in Renderly mode' if renderly_ready and shotlist_count and not job.running else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'Start Renderly first (Renderly\\\\start.bat) - its backend must be reachable')) }}">
-            {{ 'Working...' if job.running else 'Render images (Renderly)' }}
+              onsubmit="return confirm('Render the missing shotlist images now?\n\nRenderly API: consumes your Renderly/Gemini credits.\nFlow Driver: opens a Chrome window and drives Google Flow with your account - keep it running until the job finishes.')">
+          <select name="render_mode" title="Image source">
+            <option value="api" {{ 'selected' if (prod['render_mode'] or 'api') == 'api' else '' }}>Renderly API</option>
+            <option value="flow" {{ 'selected' if prod['render_mode'] == 'flow' else '' }} {{ 'disabled' if not flow_ready else '' }}>Flow Driver (Google Flow){{ '' if flow_ready else ' - not installed' }}</option>
+          </select>
+          <button type="submit" class="green" {{ 'disabled' if job.running or not shotlist_count or (not renderly_ready and not flow_ready) else '' }}
+                  title="{{ 'Render the missing shotlist images' if shotlist_count and not job.running and (renderly_ready or flow_ready) else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'No image source reachable - start Renderly (start.bat) or install the Flow Driver')) }}">
+            {{ 'Working...' if job.running else 'Render images' }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/generate"

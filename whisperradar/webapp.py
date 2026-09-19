@@ -621,6 +621,7 @@ def create_app(cfg) -> Flask:
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
+            flow_ready=studio.flow_driver_ready(cfg),
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
             bible_text=bible_text,
@@ -1182,26 +1183,43 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return _studio_url(pid, msg="Shotlist saved")
-
     @app.post("/studio/<int:pid>/images/render")
     def studio_images_render(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
+
         pdir = studio.prepare_project_folder(cfg, pid)
         if not (pdir / "shotlist.json").exists():
             return _studio_url(pid, error="Generate the shotlist first")
+        mode = request.form.get("render_mode") or "api"
+        if mode not in ("api", "flow"):
+            mode = "api"
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.update_production(conn, pid, render_mode=mode)
+        finally:
+            conn.close()
 
         def worker():
-            count = studio.run_imagegen(cfg, pdir)
+            t0 = time.monotonic()
+            if mode == "flow":
+                count = studio.run_imagegen_flow(
+                    cfg, pdir, log=lambda m: sjob.log.append(str(m)))
+                source = "Flow Driver (Google Flow)"
+            else:
+                count = studio.run_imagegen(cfg, pdir)
+                source = "Renderly"
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
                 db.add_step(conn, pid, "images", "auto",
-                            detail=f"{count} image(s) via Renderly")
+                            detail=f"{count} image(s) via {source}, "
+                                   f"took {format_duration(time.monotonic() - t0)}")
             finally:
                 conn.close()
 
-        sjob.start(worker, "image rendering (Renderly)")
+        sjob.start(worker, f"image rendering ({'Flow Driver' if mode == 'flow' else 'Renderly'})")
         return _studio_url(pid, msg="Image rendering started")
 
     @app.post("/studio/<int:pid>/stage/done")

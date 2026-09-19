@@ -102,6 +102,11 @@ production from any transcribed video in your library, then walk its stages:
   ImgToVideo's `manifest-authoring-brief.md` (read fresh from the repo on
   every run, so edits to the brief apply immediately); the batch sheet is kept
   as `batch_sheet.txt`, and prompts can also be extracted from the shotlist.
+  A character/reference bible can be provided for recurring characters.
+- **Images stage**: render the missing shotlist images via the **Renderly API**
+  (Gemini backend) or the **Flow Driver** (Renderly's extension-v2 drives
+  Google Flow in a real Chrome window; import + upscale via Renderly). The
+  choice is remembered per production; upload your own images anytime.
 - **Style guide**: the LLM analyzes the source transcript's writing style
   (tone, pacing, hooks, structure) into an editable `style.md`, and every
   script/image generation must match it while using only the facts - original
