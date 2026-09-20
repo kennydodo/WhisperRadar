@@ -357,6 +357,9 @@
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/generate">
+          <input type="search" id="voice_search" placeholder="Search voices - name, language, provider..."
+                 style="width:230px" autocomplete="off"
+                 onkeydown="if(event.key==='Enter')event.preventDefault()">
           <select name="voice" id="voice_select" style="max-width:360px"
                   title="Narration voice (OpenSpeaker/ai33.pro)">
             {% if prod_voice %}
@@ -382,13 +385,35 @@
           var sel = document.getElementById('voice_select');
           var status = document.getElementById('voice_status');
           var preview = document.getElementById('voice_preview');
+          var search = document.getElementById('voice_search');
           var pid = {{ prod['id'] }};
+          var optIndex = [];   // {opt, og, haystack} snapshot for filtering
+          var ogIndex = [];    // [{og, items}] for hiding empty groups
+          var baseStatus = '';
           function setPreview() {
             var opt = sel.options[sel.selectedIndex];
             var url = opt ? opt.dataset.preview : '';
             if (url) { preview.href = url; preview.style.display = ''; }
             else { preview.style.display = 'none'; }
           }
+          function applyFilter() {
+            var q = search.value.trim().toLowerCase();
+            var shown = 0;
+            ogIndex.forEach(function (g) {
+              var visible = 0;
+              g.items.forEach(function (item) {
+                var match = !q || item.haystack.indexOf(q) !== -1;
+                item.opt.style.display = match ? '' : 'none';
+                if (match) visible++;
+              });
+              g.og.style.display = visible ? '' : 'none';
+              shown += visible;
+            });
+            status.textContent = q
+              ? shown + ' voice(s) match "' + search.value.trim() + '"'
+              : baseStatus;
+          }
+          search.addEventListener('input', applyFilter);
           sel.addEventListener('change', function () {
             setPreview();
             var val = sel.value;
@@ -400,6 +425,7 @@
             }).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
               .then(function () {
                 status.textContent = val ? 'Voice saved: ' + (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : val) : 'Voice saved: default';
+                baseStatus = status.textContent;
               })
               .catch(function (e) { status.textContent = 'Could not save voice (' + e + ')'; });
           });
@@ -421,6 +447,7 @@
               Object.keys(groups).sort().forEach(function (p) {
                 var og = document.createElement('optgroup');
                 og.label = p.charAt(0).toUpperCase() + p.slice(1);
+                var items = [];
                 groups[p].forEach(function (v) {
                   var o = document.createElement('option');
                   o.value = v.voice_id;
@@ -429,11 +456,20 @@
                     + (v.gender ? ' (' + v.gender + ')' : '');
                   if (v.voice_id === sel.value) o.selected = true;
                   og.appendChild(o);
+                  items.push({
+                    opt: o,
+                    haystack: (v.voice_id + ' ' + v.name + ' '
+                      + (v.language || '') + ' ' + (v.gender || '')
+                      + ' ' + p).toLowerCase()
+                  });
                 });
                 sel.appendChild(og);
+                ogIndex.push({og: og, items: items});
               });
               setPreview();
-              status.textContent = data.voices.length + ' voices loaded - pick one, it is saved per production and used by Run till finish too.';
+              baseStatus = data.voices.length + ' voices loaded - type above to search, pick one, it is saved per production and used by Run till finish too.';
+              status.textContent = baseStatus;
+              if (search.value.trim()) applyFilter();
             })
             .catch(function (e) {
               status.textContent = 'Could not load voices (' + e + ')';

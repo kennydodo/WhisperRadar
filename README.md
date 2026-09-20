@@ -144,7 +144,8 @@ The default `tts_command` hook generates the audio stage automatically with
    dashboard afterwards).
 2. Pick the narration voice in the **audio stage dropdown** on the production
    page (525+ voices across edge / minimax / elevenlabs / kokoro / vbee /
-   fishaudio, with sample previews). It is saved per production and used by
+   fishaudio, with sample previews). The search box filters by name,
+   language, gender or provider. It is saved per production and used by
    both **Run till finish** and the manual **Generate with TTS hook** button.
    CLI alternative: `python scripts\ai33_tts.py --voices --provider minimax`.
 
