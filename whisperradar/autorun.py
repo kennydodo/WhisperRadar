@@ -296,7 +296,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
 def _run_images(cfg, pid: int, mode: str | None = None,
                 flow_channel: str = "whisperradar",
                 flow_project: str = "", flow_upscale: int | None = None,
-                flow_master: str = "", log=None) -> None:
+                flow_master: str = "", log=None, cancel=None) -> None:
     t0 = time.monotonic()
     pdir = studio.prepare_project_folder(cfg, pid)
     if not (pdir / "shotlist.json").exists():
@@ -320,7 +320,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         # file globally would blow past Flow's 3-ingredient limit
         count = studio.run_imagegen_flow(
             cfg, pdir, channel=flow_channel, project=flow_project,
-            upscale=flow_upscale, master=flow_master, log=log)
+            upscale=flow_upscale, master=flow_master, log=log,
+            cancel=cancel)
         source = "Flow Driver (Google Flow)"
     else:
         count = studio.run_imagegen(cfg, pdir)
@@ -389,7 +390,7 @@ _RUNNERS = {
 
 
 def run_stage(cfg, pid: int, stage: str, params: dict | None = None) -> str:
-    """Execute one stage. Returns 'ok', 'paused:<reason>' or
+    """Execute one stage. Returns 'ok', 'paused:<reason>', 'stopped' or
     'failed:<error>' - failures are caught here so the pipeline runner can
     log them and stop cleanly."""
     runner = _RUNNERS.get(stage)
@@ -400,6 +401,8 @@ def run_stage(cfg, pid: int, stage: str, params: dict | None = None) -> str:
         return "ok"
     except _Paused as exc:
         return f"paused:{exc}"
+    except studio.BatchCancelled:
+        return "stopped"
     except Exception as exc:
         return f"failed:{exc}"
 
@@ -521,7 +524,7 @@ def build_plan(cfg, pid: int) -> list[dict]:
 
 # --------------------------------------------------------- the runner ---
 
-def _stage_params(cfg, pid: int, stage: str, log) -> dict:
+def _stage_params(cfg, pid: int, stage: str, log, cancel=None) -> dict:
     """Auto-run parameters per stage: the production's saved LLM provider
     for LLM stages, the saved render mode for images."""
     if stage in ("style", "script", "shots"):
@@ -530,7 +533,7 @@ def _stage_params(cfg, pid: int, stage: str, log) -> dict:
         prod = _get_prod(cfg, pid)
         mode = _default_render_mode(cfg, prod)
         return {"mode": mode, "flow_channel": "whisperradar",
-                "flow_project": "", "log": log}
+                "flow_project": "", "log": log, "cancel": cancel}
     return {}
 
 
@@ -553,6 +556,7 @@ def run_pipeline(cfg, pid: int, job=None, log=None) -> str:
         job.autorun_plan = snapshot
     total = len(RUN_STAGES)
     ran = 0
+    cancel_check = lambda: job is not None and bool(job.cancel)
     for i, stage in enumerate(RUN_STAGES, 1):
         if job is not None and job.cancel:
             log(f"[auto-run] stopped by user before stage {i}/{total}: "
@@ -579,7 +583,14 @@ def run_pipeline(cfg, pid: int, job=None, log=None) -> str:
         if job is not None:
             job.stage = stage
         result = run_stage(cfg, pid, stage,
-                           params=_stage_params(cfg, pid, stage, log))
+                           params=_stage_params(cfg, pid, stage, log,
+                                                cancel=cancel_check))
+        if result == "stopped":
+            log(f"[auto-run] stopped by user during stage {i}/{total}: "
+                f"{stage} - rendered images are kept, re-run to fill the gaps")
+            if job is not None:
+                job.resume = True
+            return "stopped"
         if result.startswith("paused:"):
             reason = result.split(":", 1)[1]
             log(f"[auto-run] paused at stage {i}/{total}: {stage} - "

@@ -147,8 +147,8 @@
     </span>
     {% if job.running and job.kind == 'auto-run' %}
     <form method="post" action="/studio/{{ prod['id'] }}/auto-run/stop"
-          onsubmit="return confirm('Stop the auto-run? The current stage finishes first, the remaining stages are cancelled.')">
-      <button type="submit" class="secondary" title="Cancel the remaining stages">■ Stop auto-run</button>
+          onsubmit="return confirm('Stop the auto-run? The current card finishes first, then the run stops - already rendered images are kept.')">
+      <button type="submit" class="secondary" title="Stop after the current card (or stage) finishes">■ Stop auto-run</button>
     </form>
     {% elif not job.running %}
     <form method="post" action="/studio/{{ prod['id'] }}/start-over"
