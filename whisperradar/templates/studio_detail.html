@@ -136,9 +136,9 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
-  {% if job.pause_reason and not job.running %}<div class="banner job">Auto-run paused: {{ job.pause_reason }} - handle it, then click Resume.</div>{% endif %}
-  {% if job.summary and not job.running %}<div class="banner ok">{{ job.summary }}</div>{% endif %}
-  {% if job.running %}<div class="banner job" id="jobbar">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</div>{% endif %}
+  {% if job.pause_reason and not job.running and job.pid == prod['id'] %}<div class="banner job">Auto-run paused: {{ job.pause_reason }} - handle it, then click Resume.</div>{% endif %}
+  {% if job.summary and not job.running and job.pid == prod['id'] %}<div class="banner ok">{{ job.summary }}</div>{% endif %}
+  <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</div>
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
 
   <div class="inline" style="justify-content:space-between; margin-top:14px">
@@ -159,7 +159,7 @@
     </form>
     <button type="button" class="green" onclick="openAutorunModal()"
             title="Run all remaining pipeline stages automatically (stops before review)">
-      {{ '▶ Resume' if (job.pause_reason or job.resume) else '▶ Run till finish' }}
+      {{ '▶ Resume' if (job.pid == prod['id'] and (job.pause_reason or job.resume)) else '▶ Run till finish' }}
     </button>
     {% endif %}
   </div>
@@ -795,18 +795,37 @@
 
 <script>
   let wasRunning = {{ 'true' if job.running else 'false' }};
+  let lastSeq = {{ job.seq }};
+  function reloadWhenSafe() {
+    const dirty = [...document.querySelectorAll('textarea, input')]
+      .some((el) => el.type !== 'checkbox' && el.type !== 'radio' &&
+                     el.value !== el.defaultValue);
+    if (!dirty || window.confirm('A background job finished - reload the page? Unsaved edits will be lost.')) {
+      location.reload();
+    }
+  }
   async function poll() {
     try {
       const s = await (await fetch('/studio/job')).json();
       const box = document.getElementById('jobbox');
       const bar = document.getElementById('jobbar');
+      // a job can start and finish between two polls - its seq bump gives
+      // it away even when we never saw it running
+      if (s.seq !== lastSeq) {
+        lastSeq = s.seq;
+        if (!s.running) wasRunning = true;
+      }
       if (s.running) {
         if (bar) {
           bar.style.display = '';
-          bar.textContent = 'Working: ' + s.kind + (s.stage ? ' - stage: ' + s.stage : '') + ' - this page updates when it finishes';
+          const ours = !s.pid || s.pid === {{ prod['id'] }};
+          bar.textContent = 'Working: ' + s.kind +
+            (ours && s.stage ? ' - stage: ' + s.stage : '') +
+            ' - this page updates when it finishes';
         }
         if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }
       } else if (wasRunning) {
+        wasRunning = false;
         if (s.error) {
           if (bar) bar.style.display = 'none';
           if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }
@@ -814,13 +833,12 @@
           err.className = 'banner err';
           err.textContent = 'Job failed: ' + s.error + ' - reloading...';
           document.querySelector('.wrap').prepend(err);
-          setTimeout(() => location.reload(), 2500);
+          setTimeout(reloadWhenSafe, 2500);
         } else {
-          location.reload();
+          reloadWhenSafe();
           return;
         }
       }
-      wasRunning = s.running;
     } catch (e) { /* ignore */ }
   }
   setInterval(poll, 2000);

@@ -491,6 +491,9 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
             raise BatchCancelled(
                 "stop requested during the images stage")
         if time.monotonic() > deadline:
+            # do not abandon the batch: it would keep spending credits on
+            # cards nobody is waiting for anymore
+            flow_stop(cfg)
             raise RuntimeError("Flow Driver batch timed out after 4h")
         time.sleep(3)
         st = flow_service_status(cfg, timeout=10)

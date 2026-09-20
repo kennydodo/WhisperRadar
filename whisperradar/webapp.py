@@ -4,10 +4,12 @@ Start with:  python wr.py serve          (http://127.0.0.1:8000)
 """
 
 import io
+import ipaddress
 import json
 import logging
 import re
 import shutil
+import socket
 import threading
 import zipfile
 from collections import deque
@@ -105,6 +107,8 @@ class _Job:
         self.error = None
         self.log: deque = deque(maxlen=400)
         self._lock = threading.Lock()
+        self.seq = 0               # increments per job start (poll reloads)
+        self.pid = None            # production the current/last auto-run belongs to
         # auto-run (pipeline mode) state
         self.stage = None          # stage currently being executed
         self.pipeline = False      # True while an auto-run is active
@@ -121,11 +125,15 @@ class _Job:
             self.running = True
             self.kind = kind
             self.error = None
+            self.seq += 1
+            self.pid = None
             self.stage = None
             self.pipeline = False
             self.cancel = False
             self.pause_reason = None
+            self.resume = False
             self.summary = None
+            self.autorun_plan = None
         self.log.clear()
         self.log.append(f"=== {kind}: started ===")
 
@@ -217,7 +225,10 @@ def create_app(cfg) -> Flask:
         """CSRF guard for a token-free local app: browsers always attach an
         Origin header to cross-site form POSTs, so a drive-by webpage cannot
         trigger jobs, deletes or channel changes against 127.0.0.1. Requests
-        without Origin/Referer (local scripts, curl) still work."""
+        without Origin/Referer (local scripts, curl) still work. The Host
+        header must also name the address the browser actually connected to,
+        which defeats DNS rebinding (attacker hostname resolving to the
+        local machine)."""
         if request.method != "POST":
             return None
 
@@ -228,6 +239,24 @@ def create_app(cfg) -> Flask:
                 return False
             return p.scheme in ("http", "https") and p.netloc == request.host
 
+        def host_matches_connection() -> bool:
+            """DNS-rebinding defense: the Host header must be a local
+            address, an IP literal (LAN access), or this machine's own
+            hostname - never an attacker-chosen domain resolving to the
+            local machine."""
+            raw = request.host or ""
+            host = (raw[1:raw.index("]")] if raw.startswith("[")
+                    else raw.split(":")[0]).lower()
+            if host in ("127.0.0.1", "localhost", "::1"):
+                return True
+            try:
+                ipaddress.ip_address(host)
+                return True
+            except ValueError:
+                return host == socket.gethostname().lower()
+
+        if not host_matches_connection():
+            return "Blocked: host header mismatch", 403
         origin = request.headers.get("Origin") or ""
         referer = request.headers.get("Referer") or ""
         if origin and not same_site(origin):
@@ -701,34 +730,38 @@ def create_app(cfg) -> Flask:
         try:
             if not db.get_production(conn, pid):
                 return redirect("/studio?error=Unknown+production")
-            reset = db.STAGES[db.STAGES.index(from_stage):]
-            if with_audio and "audio" not in reset:
-                reset = ["audio"] + reset
-            pdir = studio.prod_dir(cfg, pid)
-            removed = []
-            for stage in reset:
-                for name in RESET_FILES.get(stage, []):
-                    f = pdir / name
-                    if f.exists():
-                        f.unlink()
-                        removed.append(name)
-                if stage == "images":
-                    img_dir = pdir / "images"
-                    if img_dir.exists():
-                        for f in img_dir.iterdir():
-                            if f.is_file():
-                                f.unlink(missing_ok=True)
-                            elif f.is_dir():
-                                shutil.rmtree(f, ignore_errors=True)
-                        removed.append("images/*")
-                if stage == "merge":
-                    out_dir = pdir / "out"
-                    if out_dir.exists():
-                        shutil.rmtree(out_dir, ignore_errors=True)
-                        removed.append("out/")
-            db.delete_steps(conn, pid, reset)
-            db.update_production(conn, pid, stage=from_stage,
-                                 status="active")
+            reset = [s for s in db.STAGES[db.STAGES.index(from_stage):]
+                     if s != "audio"]
+            if with_audio:
+                reset.append("audio")
+            # a live Flow batch would repopulate images\ while we delete it
+            studio.flow_stop(cfg)
+            with sjob._lock:
+                if sjob.running:  # re-check under the lock (check-then-act)
+                    return _studio_url(pid, error="A job is already running")
+                pdir = studio.prod_dir(cfg, pid)
+                removed = []
+                for stage in reset:
+                    for name in RESET_FILES.get(stage, []):
+                        f = pdir / name
+                        if f.exists():
+                            f.unlink()
+                            removed.append(name)
+                    if stage == "images":
+                        img_dir = pdir / "images"
+                        if img_dir.exists():
+                            for f in img_dir.iterdir():
+                                if f.is_file():
+                                    f.unlink(missing_ok=True)
+                            removed.append("images/*")
+                    if stage == "merge":
+                        out_dir = pdir / "out"
+                        if out_dir.exists():
+                            shutil.rmtree(out_dir, ignore_errors=True)
+                            removed.append("out/")
+                db.delete_steps(conn, pid, reset)
+                db.update_production(conn, pid, stage=from_stage,
+                                     status="active")
         finally:
             conn.close()
         detail = ", ".join(removed) if removed else "nothing on disk"
@@ -1413,7 +1446,8 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return {"plan": autorun.build_plan(cfg, pid),
-                "running": sjob.running, "paused": sjob.pause_reason}
+                "running": sjob.running,
+                "paused": sjob.pause_reason if sjob.pid == pid else None}
 
     @app.post("/studio/<int:pid>/auto-run")
     def studio_autorun(pid):
@@ -1446,6 +1480,7 @@ def create_app(cfg) -> Flask:
 
         if not sjob.start(worker, "auto-run"):
             return _studio_url(pid, error="A job is already running")
+        sjob.pid = pid  # pause/summary state belongs to this production
         return _studio_url(pid, msg="Auto-run started")
 
     @app.post("/studio/<int:pid>/auto-run/stop")
@@ -1461,7 +1496,8 @@ def create_app(cfg) -> Flask:
         return {"running": sjob.running, "kind": sjob.kind,
                 "error": sjob.error, "log": list(sjob.log)[-40:],
                 "stage": sjob.stage, "pipeline": sjob.pipeline,
-                "paused": sjob.pause_reason}
+                "paused": sjob.pause_reason, "pid": sjob.pid,
+                "seq": sjob.seq}
 
     # warm the Renderly readiness probe so the first page load is fast too
     threading.Thread(target=lambda: studio.renderly_ready(cfg.renderly_url),

@@ -416,8 +416,9 @@ def step_history(conn, pid: int):
 
 def delete_steps(conn, pid: int, stages: list[str] | None = None) -> int:
     """Remove a production's step history - all of it, or per stage.
-    Used by the studio start-over reset."""
-    if stages:
+    Used by the studio start-over reset. An explicit empty list deletes
+    nothing; None deletes everything."""
+    if stages is not None:
         marks = ",".join("?" for _ in stages)
         cur = conn.execute(
             f"DELETE FROM production_steps"

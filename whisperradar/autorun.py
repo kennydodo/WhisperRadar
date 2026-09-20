@@ -101,7 +101,12 @@ def _default_render_mode(cfg, prod) -> str:
 
 
 def _missing_images(pdir: Path) -> list[str]:
-    """Shotlist image files that have not been rendered yet."""
+    """Shotlist image files that have not been rendered yet.
+
+    Matches sanitize_shotlist semantics: entries are compared by
+    case-folded stem (NTFS is case-insensitive, drivers may save a
+    different extension), and promptless entries are skipped because they
+    can never be rendered."""
     path = pdir / "shotlist.json"
     if not path.exists():
         return []
@@ -110,17 +115,40 @@ def _missing_images(pdir: Path) -> list[str]:
     except (ValueError, OSError):
         return []
     img_dir = pdir / "images"
-    existing = ({p.name for p in img_dir.iterdir() if p.is_file()}
+    existing = ({p.stem.lower() for p in img_dir.iterdir() if p.is_file()}
                 if img_dir.exists() else set())
-    return [i["file"] for i in data.get("images", [])
-            if isinstance(i, dict) and i.get("file")
-            and i["file"] not in existing]
+    out = []
+    for i in data.get("images", []):
+        if not (isinstance(i, dict) and i.get("file") and i.get("prompt")):
+            continue
+        if Path(i["file"]).stem.lower() not in existing:
+            out.append(i["file"])
+    return out
 
 
 def _shotlist_image_count(pdir: Path) -> int:
     path = pdir / "shotlist.json"
     if not path.exists():
         return 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return len(data.get("images", []))
+    except (ValueError, OSError):
+        return 0
+
+
+def _merge_pause_reason(cfg, pid: int) -> str | None:
+    """Why auto-run must not merge yet, or None. An unattended merge must
+    never silently sanitize unrendered shots away (that permanently drops
+    them from the plan) - a human decides instead."""
+    pdir = studio.prod_dir(cfg, pid)
+    total = _shotlist_image_count(pdir)
+    missing = len(_missing_images(pdir))
+    if total and missing:
+        return (f"only {total - missing} of {total} shotlist images rendered "
+                f"- resume the images stage first (or mark it done by hand "
+                f"to merge with what exists)")
+    return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return len(data.get("images", []))
@@ -346,15 +374,12 @@ def _run_merge(cfg, pid: int, mode: str | None = None) -> None:
     if not audio or not srt or not images:
         raise RuntimeError("Need audio, subtitles and images first")
     if mode is None:
-        # unattended merge must never silently render a sanitized 1-image
-        # video (the batch may have been stopped mid-way) - pause instead
-        total = _shotlist_image_count(pdir)
-        missing = len(_missing_images(pdir))
-        if total and missing > 0 and missing * 2 > total:
-            raise _Paused(
-                f"only {total - missing} of {total} shotlist images rendered "
-                f"- resume the images stage first (or mark it done by hand "
-                f"to merge with what exists)")
+        # unattended merge must never silently render a sanitized video
+        # (the batch may have been stopped mid-way) - pause instead, on ANY
+        # missing image: a sanitized gap can never be filled afterwards
+        reason = _merge_pause_reason(cfg, pid)
+        if reason:
+            raise _Paused(reason)
     if mode == "hook":
         if not cfg.studio_merge_command:
             raise RuntimeError("No merge_command in config.yaml")
@@ -614,4 +639,5 @@ def run_pipeline(cfg, pid: int, job=None, log=None) -> str:
     log(f"[auto-run] pipeline finished - {summary}")
     if job is not None:
         job.summary = summary
+        job.resume = False  # a completed run needs no Resume offer
     return "ok"
