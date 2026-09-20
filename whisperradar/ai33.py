@@ -108,6 +108,23 @@ def _fetch_voices(cfg, provider: str, limit: int) -> list[dict]:
     return voices
 
 
+def _fetch_all_providers(cfg, limit: int) -> list[dict]:
+    """Fetch every provider in parallel - a cold cache fills in ~1-2s
+    instead of ~10s of sequential calls."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    all_voices: list[dict] = []
+    with ThreadPoolExecutor(max_workers=len(PROVIDERS)) as pool:
+        futures = {prov: pool.submit(_fetch_voices, cfg, prov, limit)
+                   for prov in PROVIDERS}
+        for prov, fut in futures.items():
+            try:
+                all_voices.extend(fut.result())
+            except RuntimeError as exc:
+                _log(f"skipping provider '{prov}': {exc}")
+    return all_voices
+
+
 def voices(cfg, provider: str | None = None, limit: int = 100,
            refresh: bool = False) -> list[dict]:
     """Voice catalog (cached ~10 min). provider=None fetches every known
@@ -118,15 +135,27 @@ def voices(cfg, provider: str | None = None, limit: int = 100,
     if not refresh and _voices_cache["data"] and \
             now - _voices_cache["at"] < VOICES_CACHE_TTL:
         return _voices_cache["data"]
-    all_voices: list[dict] = []
-    for prov in PROVIDERS:
-        try:
-            all_voices.extend(_fetch_voices(cfg, prov, limit))
-        except RuntimeError as exc:
-            _log(f"skipping provider '{prov}': {exc}")
+    all_voices = _fetch_all_providers(cfg, limit)
     _voices_cache["at"] = now
     _voices_cache["data"] = all_voices
     return all_voices
+
+
+def warm_cache(cfg) -> None:
+    """Prefetch the voice catalog in the background (no-op without an API
+    key; errors are ignored)."""
+    import threading
+
+    if not api_key(cfg):
+        return
+
+    def run():
+        try:
+            voices(cfg)
+        except Exception:  # noqa: BLE001 - warming must never crash anything
+            pass
+
+    threading.Thread(target=run, daemon=True, name="ai33-voice-warm").start()
 
 
 def generate(cfg, text: str, voice_id: str | None, *, speed: float = 1.0,

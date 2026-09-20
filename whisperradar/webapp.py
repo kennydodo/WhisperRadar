@@ -210,6 +210,7 @@ def create_app(cfg) -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live
     app.jinja_env.filters["dur"] = format_duration
+    ai33.warm_cache(cfg)  # background prefetch so the voice picker is instant
 
     @app.before_request
     def _block_cross_origin_posts():

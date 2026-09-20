@@ -358,7 +358,7 @@
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/generate">
           <select name="voice" id="voice_select" style="max-width:360px"
-                  title="Narration voice (OpenSpeaker/ai33.pro)" {{ 'disabled' if job.running else '' }}>
+                  title="Narration voice (OpenSpeaker/ai33.pro)">
             {% if prod_voice %}
             <option value="{{ prod_voice }}" selected>{{ prod_voice }}</option>
             {% endif %}
