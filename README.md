@@ -100,17 +100,21 @@ production from any transcribed video in your library, then walk its stages:
   versions to try different takes.
 - **Shots stage**: the LLM plans `shotlist.json` + per-image prompts using
   ImgToVideo's `manifest-authoring-brief.md` (read fresh from the repo on
-  every run, so edits to the brief apply immediately); the batch sheet is kept
-  as `batch_sheet.txt`, and prompts can also be extracted from the shotlist.
-  A character/reference bible can be provided for recurring characters.
-- **Images stage**: render the missing shotlist images via the **Renderly API**
-  (Gemini backend) or the **Flow Driver** (Renderly's extension-v2 drives
-  Google Flow in a real Chrome window; import + upscale via Renderly). The
-  choice is remembered per production. Flow mode adds per-production reference
-  images (refs\\ folder - uploaded on the images stage, attached to every
-  generation), channel/upscale/master controls like the Flow Driver page, and
-  auto-starts the driver service and Renderly's start.bat when needed. Upload
-  your own images anytime.
+  every run, so edits to the brief apply immediately). The brief's bible gate
+  requires a character/reference bible before planning - write or upload one
+  in the bible box (auto-run pauses there until you do). The batch sheet is
+  kept as `batch_sheet.txt`, and prompts can also be extracted from the
+  shotlist. Per-image `refs` entries in the shotlist resolve against the
+  production's `refs\` folder in the Flow Driver.
+- **Images stage**: render the missing shotlist images via the **Flow Driver**
+  (default - Renderly's extension-v2 drives Google Flow in a real Chrome
+  window; import + upscale via Renderly) or the **Renderly API** (Gemini
+  backend). The choice is remembered per production. Flow mode adds
+  per-production reference images (refs\\ folder - uploaded on the images
+  stage, attached where the shotlist's per-image refs name them), channel /
+  upscale / master controls like the Flow Driver page, and auto-starts the
+  driver service and Renderly's start.bat when needed. Upload your own images
+  anytime.
 - **Style guide**: the LLM analyzes the source transcript's writing style
   (tone, pacing, hooks, structure) into an editable `style.md`, and every
   script/image generation must match it while using only the facts - original
@@ -119,8 +123,35 @@ production from any transcribed video in your library, then walk its stages:
 - **LLM providers** (`studio.llm_providers` in config.yaml): named
   OpenAI-compatible providers (GLM, DeepSeek, ...) with separate API keys
   (or `WR_<NAME>_API_KEY` env variables); pick one per generation.
+- **Run till finish**: one button at the top of the production page executes
+  every remaining stage in order - done stages are skipped, the confirm modal
+  shows the exact plan (hooks used, image credits warning, merge duration).
+  The run pauses when a stage needs manual input (e.g. no audio and no TTS
+  hook - upload audio, then click **Resume**) and stops with the normal error
+  banner on failures (the button becomes Resume). It always stops before
+  **review**: publishing stays a human decision. Stop cancels the remaining
+  stages after the current one finishes; restarting the server cancels a run.
 - **Tool hooks** (`tts_command`, `imagegen_command`, `merge_command`) plug in
   chatterbox, Renderly and ImgToVideo when you're ready.
+
+### Narration audio via OpenSpeaker (ai33.pro)
+
+The default `tts_command` hook generates the audio stage automatically with
+[OpenSpeaker](https://ai33.pro/app) - no more manual uploads. One-time setup:
+
+1. Get an API key from the OpenSpeaker app (API section) and set it once:
+   `setx WR_AI33_API_KEY "your-key"` (new terminals pick it up).
+2. Pick a voice (voice IDs carry a provider prefix - `edge_*` is the cheap
+   default, `minimax_*`, `elevenlabs_*`, `kokoro_*`, `fishaudio_*` also work):
+   `python scripts\ai33_tts.py --voices --provider minimax`
+3. Override the default voice via `AI33_VOICE` env var or by adding
+   `--voice <id>` to the `tts_command` line in config.yaml.
+
+With the hook configured, **Run till finish** covers
+style → script → audio → srt → shots → images → merge and stops before
+review. The manual **Generate with TTS hook** button on the audio stage uses
+the same command. Scripts are sent as-is (max 1,000,000 chars), `--speed`
+accepts 0.5-1.5.
 
 ## Daily usage
 

@@ -38,7 +38,10 @@ studio:
   # Target script length in words. null = match the source transcript's
   # length automatically; set a number to force a fixed target (e.g. 1200).
   script_words: null
-  tts_command: null      # e.g. python C:\path\chatterbox\run_tts.py {script} {out}
+  # OpenSpeaker (ai33.pro) narration: script -> API -> audio.mp3.
+  # Needs the WR_AI33_API_KEY env var (key from the OpenSpeaker app).
+  # Pick a voice: python scripts\ai33_tts.py --voices --provider minimax
+  tts_command: python D:\Repos\WhisperRadar\scripts\ai33_tts.py {script} {out}
   # Renderly + ImgToVideo integration (images + final render).
   # renderly_channel: null = auto-create/reuse a "whisperradar" channel.
   renderly_url: http://127.0.0.1:8022
