@@ -362,10 +362,7 @@
                  onkeydown="if(event.key==='Enter')event.preventDefault()">
           <select name="voice" id="voice_select" style="max-width:360px"
                   title="Narration voice (OpenSpeaker/ai33.pro)">
-            {% if prod_voice %}
-            <option value="{{ prod_voice }}" selected>{{ prod_voice }}</option>
-            {% endif %}
-            <option value="" {{ 'selected' if not prod_voice else '' }}>Default voice (edge_en-US-BrianMultilingualNeural)</option>
+            <option value="">Default voice (edge_en-US-BrianMultilingualNeural)</option>
           </select>
           <a id="voice_preview" href="#" target="_blank" rel="noopener" class="ghost"
              style="display:none; text-decoration:none" title="Play the selected voice's sample">▶ sample</a>
@@ -387,8 +384,9 @@
           var preview = document.getElementById('voice_preview');
           var search = document.getElementById('voice_search');
           var pid = {{ prod['id'] }};
-          var optIndex = [];   // {opt, og, haystack} snapshot for filtering
-          var ogIndex = [];    // [{og, items}] for hiding empty groups
+          var savedVoice = {{ (prod_voice or '')|tojson }};
+          var selectedVoice = savedVoice;
+          var voiceData = [];   // all voices from /studio/voices.json
           var baseStatus = '';
           function setPreview() {
             var opt = sel.options[sel.selectedIndex];
@@ -396,35 +394,51 @@
             if (url) { preview.href = url; preview.style.display = ''; }
             else { preview.style.display = 'none'; }
           }
+          // Rebuild the option list from voiceData keeping only matches -
+          // hiding <option>s via CSS is unreliable inside native popups.
           function applyFilter() {
             var q = search.value.trim().toLowerCase();
+            sel.querySelectorAll('optgroup').forEach(function (g) { g.remove(); });
             var shown = 0;
-            ogIndex.forEach(function (g) {
-              var visible = 0;
-              g.items.forEach(function (item) {
-                var match = !q || item.haystack.indexOf(q) !== -1;
-                item.opt.style.display = match ? '' : 'none';
-                if (match) visible++;
-              });
-              g.og.style.display = visible ? '' : 'none';
-              shown += visible;
+            var groups = {};
+            voiceData.forEach(function (v) {
+              var hay = (v.voice_id + ' ' + v.name + ' ' + (v.language || '')
+                + ' ' + (v.gender || '') + ' ' + v.provider).toLowerCase();
+              if (q && hay.indexOf(q) === -1) return;
+              shown++;
+              (groups[v.provider] = groups[v.provider] || []).push(v);
             });
+            Object.keys(groups).sort().forEach(function (p) {
+              var og = document.createElement('optgroup');
+              og.label = p.charAt(0).toUpperCase() + p.slice(1);
+              groups[p].forEach(function (v) {
+                og.appendChild(v._el);
+              });
+              sel.appendChild(og);
+            });
+            // keep the chosen voice selected when it survived the filter
+            sel.value = (selectedVoice &&
+                         sel.querySelector('option[value="' + selectedVoice + '"]'))
+                        ? selectedVoice : '';
             status.textContent = q
               ? shown + ' voice(s) match "' + search.value.trim() + '"'
               : baseStatus;
+            setPreview();
           }
           search.addEventListener('input', applyFilter);
           sel.addEventListener('change', function () {
+            selectedVoice = sel.value;
             setPreview();
-            var val = sel.value;
             status.textContent = 'Saving voice...';
             fetch('/studio/' + pid + '/voice', {
               method: 'POST',
               headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-              body: new URLSearchParams({voice: val}).toString()
+              body: new URLSearchParams({voice: sel.value}).toString()
             }).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
               .then(function () {
-                status.textContent = val ? 'Voice saved: ' + (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : val) : 'Voice saved: default';
+                status.textContent = sel.value
+                  ? 'Voice saved: ' + sel.options[sel.selectedIndex].textContent
+                  : 'Voice saved: default';
                 baseStatus = status.textContent;
               })
               .catch(function (e) { status.textContent = 'Could not save voice (' + e + ')'; });
@@ -439,37 +453,18 @@
                 status.textContent = 'No voices: ' + (data.error || 'empty catalog');
                 return;
               }
-              var groups = {};
-              data.voices.forEach(function (v) {
-                var p = v.provider || (v.voice_id.split('_')[0] || 'other');
-                (groups[p] = groups[p] || []).push(v);
+              voiceData = data.voices.map(function (v) {
+                var o = document.createElement('option');
+                o.value = v.voice_id;
+                o.dataset.preview = v.preview_url || '';
+                o.textContent = v.name + (v.language ? ' - ' + v.language : '')
+                  + (v.gender ? ' (' + v.gender + ')' : '');
+                v._el = o;
+                return v;
               });
-              Object.keys(groups).sort().forEach(function (p) {
-                var og = document.createElement('optgroup');
-                og.label = p.charAt(0).toUpperCase() + p.slice(1);
-                var items = [];
-                groups[p].forEach(function (v) {
-                  var o = document.createElement('option');
-                  o.value = v.voice_id;
-                  o.dataset.preview = v.preview_url || '';
-                  o.textContent = v.name + (v.language ? ' - ' + v.language : '')
-                    + (v.gender ? ' (' + v.gender + ')' : '');
-                  if (v.voice_id === sel.value) o.selected = true;
-                  og.appendChild(o);
-                  items.push({
-                    opt: o,
-                    haystack: (v.voice_id + ' ' + v.name + ' '
-                      + (v.language || '') + ' ' + (v.gender || '')
-                      + ' ' + p).toLowerCase()
-                  });
-                });
-                sel.appendChild(og);
-                ogIndex.push({og: og, items: items});
-              });
-              setPreview();
-              baseStatus = data.voices.length + ' voices loaded - type above to search, pick one, it is saved per production and used by Run till finish too.';
+              applyFilter();
+              baseStatus = voiceData.length + ' voices loaded - type above to search, pick one, it is saved per production and used by Run till finish too.';
               status.textContent = baseStatus;
-              if (search.value.trim()) applyFilter();
             })
             .catch(function (e) {
               status.textContent = 'Could not load voices (' + e + ')';
