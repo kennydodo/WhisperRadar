@@ -136,8 +136,87 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
-  {% if job.running %}<div class="banner job" id="jobbar">Working: {{ job.kind }} - this page updates when it finishes</div>{% endif %}
+  {% if job.pause_reason and not job.running %}<div class="banner job">Auto-run paused: {{ job.pause_reason }} - handle it, then click Resume.</div>{% endif %}
+  {% if job.summary and not job.running %}<div class="banner ok">{{ job.summary }}</div>{% endif %}
+  {% if job.running %}<div class="banner job" id="jobbar">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</div>{% endif %}
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
+
+  <div class="inline" style="justify-content:space-between; margin-top:14px">
+    <span class="muted" style="font-size:12px">
+      {% if job.running and job.kind == 'auto-run' %}Auto-run in progress - it always stops before review{% else %}Auto-run executes every remaining stage in order - it always stops before review{% endif %}
+    </span>
+    {% if job.running and job.kind == 'auto-run' %}
+    <form method="post" action="/studio/{{ prod['id'] }}/auto-run/stop"
+          onsubmit="return confirm('Stop the auto-run? The current stage finishes first, the remaining stages are cancelled.')">
+      <button type="submit" class="secondary" title="Cancel the remaining stages">■ Stop auto-run</button>
+    </form>
+    {% elif not job.running %}
+    <form method="post" action="/studio/{{ prod['id'] }}/start-over"
+          onsubmit="return confirmStartOver(this)">
+      <input type="hidden" name="from" id="resetfrom" value="images">
+      <input type="hidden" name="with_audio" id="resetaudiofield" value="0">
+      <button type="submit" class="ghost" title="Reset progress from a chosen stage and delete the generated files, so the pipeline runs again">↺ Start over</button>
+    </form>
+    <button type="button" class="green" onclick="openAutorunModal()"
+            title="Run all remaining pipeline stages automatically (stops before review)">
+      {{ '▶ Resume' if (job.pause_reason or job.resume) else '▶ Run till finish' }}
+    </button>
+    {% endif %}
+  </div>
+
+  <div id="resetmodal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:61; align-items:center; justify-content:center">
+    <div style="background:var(--panel); border:1px solid var(--border); border-radius:10px; max-width:560px; width:94%; padding:18px 20px">
+      <h2 style="margin-top:0">Start over</h2>
+      <div class="muted" style="font-size:13px; margin-bottom:10px">Resets progress from the chosen stage onward: the generated files and the step history of those stages are deleted, and auto-run will execute them again. Inputs are kept: source transcript, bible, refs, named versions, notes.</div>
+      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="images" checked> From the <b>images</b> stage &mdash; deletes the rendered images and the final video, then re-renders everything (fills the gaps)</label>
+      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="script"> From the <b>script</b> stage &mdash; also deletes the script, subtitles and shotlist (a new script is generated; kept audio will no longer match it)</label>
+      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="style"> From the <b>beginning</b> (style) &mdash; everything re-runs, starting from a fresh style guide</label>
+      <label style="display:block; margin:10px 0; color:var(--amber)" id="resetaudiolabel"><input type="checkbox" id="resetaudiobox"> Also delete the audio (you will need to upload new audio)</label>
+      <div class="warn" id="resetwarn" style="display:none">Kept files mean those stages are skipped by auto-run - make sure they still match what will be regenerated.</div>
+      <div class="inline" style="justify-content:flex-end; margin-top:14px">
+        <button type="button" class="secondary" onclick="closeResetModal()">Cancel</button>
+        <button type="button" class="green" onclick="submitReset()">Start over</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    function closeResetModal() {
+      document.getElementById('resetmodal').style.display = 'none';
+    }
+    function openResetModal() {
+      document.getElementById('resetmodal').style.display = 'flex';
+    }
+    function confirmStartOver(form) {
+      openResetModal();
+      return false; // the modal submits the form instead
+    }
+    (function () {
+      const radios = document.getElementsByName('resetfrom');
+      const box = document.getElementById('resetaudiobox');
+      const label = document.getElementById('resetaudiolabel');
+      function sync() {
+        const from = [...radios].find((r) => r.checked).value;
+        const audioRelevant = from !== 'images';
+        label.style.display = audioRelevant ? '' : 'none';
+        if (!audioRelevant) box.checked = false;
+      }
+      [...radios].forEach((r) => r.addEventListener('change', sync));
+      sync();
+    })();
+    function submitReset() {
+      const from = [...document.getElementsByName('resetfrom')].find((r) => r.checked).value;
+      document.getElementById('resetfrom').value = from;
+      document.getElementById('resetaudiofield').value =
+        document.getElementById('resetaudiobox').checked ? '1' : '0';
+      closeResetModal();
+      const msg = from === 'images'
+        ? 'Delete all rendered images and the final video, then re-render everything?'
+        : 'Delete the generated files from ' + (from === 'style' ? 'the beginning' : 'the script stage') + ' onward? This cannot be undone.';
+      if (!window.confirm(msg)) return;
+      const forms = document.querySelectorAll('form[action*="/start-over"]');
+      forms[0].submit();
+    }
+  </script>
 
   <div class="stepper">
     {% for s in stages %}
@@ -404,9 +483,10 @@
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
               onsubmit="return confirm('Render the missing shotlist images now?\n\nRenderly API: consumes your Renderly/Gemini credits.\nFlow Driver: opens a Chrome window and drives Google Flow with your account - keep it running until the job finishes.')">
+          {% set default_mode = prod['render_mode'] or ('flow' if flow_ready else 'api') %}
           <select name="render_mode" id="rendermode" title="Image source">
-            <option value="api" {{ 'selected' if (prod['render_mode'] or 'api') == 'api' else '' }}>Renderly API</option>
-            <option value="flow" {{ 'selected' if prod['render_mode'] == 'flow' else '' }} {{ 'disabled' if not flow_ready else '' }}>Flow Driver (Google Flow){{ '' if flow_ready else ' - not installed' }}</option>
+            <option value="api" {{ 'selected' if default_mode == 'api' else '' }}>Renderly API</option>
+            <option value="flow" {{ 'selected' if default_mode == 'flow' else '' }} {{ 'disabled' if not flow_ready else '' }}>Flow Driver (Google Flow){{ '' if flow_ready else ' - not installed' }}</option>
           </select>
           <button type="submit" class="green" {{ 'disabled' if job.running or not shotlist_count or (not renderly_ready and not flow_ready) else '' }}
                   title="{{ 'Render the missing shotlist images' if shotlist_count and not job.running and (renderly_ready or flow_ready) else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'No image source reachable - start Renderly (start.bat) or install the Flow Driver')) }}">
@@ -433,7 +513,7 @@
           <label style="min-width:130px; font-size:12px; margin-top:6px" class="muted">Master prompt override</label>
           <textarea name="flow_master" style="min-height:44px; flex:1" placeholder="Optional - empty = use the shotlist's style field (recommended)"></textarea>
         </div>
-        <div style="font-weight:600; margin:10px 0 6px">Reference images <span class="muted" style="font-weight:400">(attached to every image; Flow allows up to 3)</span></div>
+        <div style="font-weight:600; margin:10px 0 6px">Reference images <span class="muted" style="font-weight:400">(the production's ref library - per-image refs in the shotlist resolve against it; Flow allows up to 3 per generation)</span></div>
         {% if flow_refs %}
         <div class="actions" style="margin-bottom:6px; flex-wrap:wrap">
           {% for name in flow_refs %}
@@ -617,7 +697,10 @@
       const box = document.getElementById('jobbox');
       const bar = document.getElementById('jobbar');
       if (s.running) {
-        if (bar) bar.style.display = '';
+        if (bar) {
+          bar.style.display = '';
+          bar.textContent = 'Working: ' + s.kind + (s.stage ? ' - stage: ' + s.stage : '') + ' - this page updates when it finishes';
+        }
         if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }
       } else if (wasRunning) {
         if (s.error) {
@@ -678,6 +761,97 @@
       wrap.appendChild(btn);
     });
   })();
+</script>
+<div id="autorunmodal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:60; align-items:center; justify-content:center">
+  <div style="background:var(--panel); border:1px solid var(--border); border-radius:10px; max-width:600px; width:94%; max-height:85vh; overflow-y:auto; padding:18px 20px">
+    <h2 style="margin-top:0" id="autoruntitle">Run till finish</h2>
+    <div id="autorunbody" style="font-size:13px"></div>
+    <div class="inline" style="justify-content:flex-end; margin-top:16px">
+      <button type="button" class="secondary" onclick="closeAutorunModal()">Cancel</button>
+      <button type="button" class="green" id="autorungo">Start</button>
+    </div>
+  </div>
+</div>
+<script>
+  const AR_PID = {{ prod['id'] }};
+  function closeAutorunModal() {
+    document.getElementById('autorunmodal').style.display = 'none';
+  }
+  async function renderAutorunModal() {
+    let data;
+    try {
+      data = await (await fetch('/studio/' + AR_PID + '/auto-run/plan')).json();
+    } catch (e) { alert('Could not load the auto-run plan: ' + e); return; }
+    const body = document.getElementById('autorunbody');
+    const icons = { run: '▶', skip: '✓', pause: '⏸' };
+    const colors = { run: 'var(--accent)', skip: 'var(--green)', pause: 'var(--amber)' };
+    let html = '<div class="muted" style="margin-bottom:8px">Executes every remaining stage in order (done ones are skipped) and always stops before review:</div><ul style="margin:0 0 10px; padding-left:4px; list-style:none">';
+    let credits = 0, hasMerge = false;
+    for (const e of data.plan) {
+      html += '<li style="padding:5px 0; border-bottom:1px solid var(--border)">' +
+        '<span style="color:' + colors[e.action] + '; font-weight:700; display:inline-block; width:22px">' + icons[e.action] + '</span>' +
+        '<b>' + e.stage + '</b>' +
+        (e.action === 'pause' ? ' <span class="warn" style="display:inline">' + e.detail + '</span>'
+                              : ' <span class="muted">' + e.detail + '</span>') +
+        '</li>';
+      if (e.stage === 'audio' && e.action === 'pause') {
+        html += '<li style="padding:6px 0 10px 22px"><label>Upload the missing audio now:</label>' +
+          '<div class="row"><input type="file" id="ar_audio_file" accept="audio/*">' +
+          '<button type="button" class="secondary" onclick="arUploadAudio()">Upload audio</button></div></li>';
+      }
+      if (e.stage === 'shots' && e.action === 'pause' && e.detail.indexOf('bible') !== -1) {
+        html += '<li style="padding:6px 0 10px 22px"><label>Write the character/reference bible now (recurring characters, environments, wardrobe, objects):</label>' +
+          '<textarea id="ar_bible_text" style="min-height:70px" placeholder="e.g. MAYA - woman in her 30s, black hair, mustard scarf..."></textarea>' +
+          '<div class="row" style="margin-top:6px"><button type="button" class="secondary" onclick="arSaveBible()">Save bible</button>' +
+          '<a class="muted" style="font-size:12px; align-self:center" href="/studio/' + AR_PID + '?stage=shots" onclick="closeAutorunModal()">open the shots stage instead</a></div></li>';
+      }
+      if (e.action === 'pause' && e.stage !== 'audio' &&
+          !(e.stage === 'shots' && e.detail.indexOf('bible') !== -1)) {
+        html += '<li style="padding:2px 0 8px 22px"><a class="muted" style="font-size:12px" href="/studio/' + AR_PID + '?stage=' + e.stage + '" onclick="closeAutorunModal()">open the ' + e.stage + ' stage to resolve this</a></li>';
+      }
+      if (e.stage === 'images' && e.action === 'run') {
+        const m = e.detail.match(/(\d+) missing image/);
+        if (m) credits = parseInt(m[1], 10);
+      }
+      if (e.stage === 'merge' && e.action === 'run') hasMerge = true;
+    }
+    html += '</ul>';
+    if (credits > 0) {
+      html += '<div class="warn">⚠ The images stage will render ' + credits + ' image(s) - this consumes your Renderly / Flow credits.</div>';
+    }
+    if (hasMerge) {
+      html += '<div class="warn">⚠ The final render (merge) can take a long time.</div>';
+    }
+    html += '<div class="muted" style="font-size:12px; margin-top:8px">Fixes made here count immediately (the plan refreshes). Anything left over pauses the run mid-way - handle it, then click Resume. A server restart cancels a running auto-run.</div>';
+    body.innerHTML = html;
+    document.getElementById('autoruntitle').textContent = data.paused ? 'Resume auto-run' : 'Run till finish';
+    document.getElementById('autorungo').textContent = data.paused ? 'Resume' : 'Start';
+    document.getElementById('autorunmodal').style.display = 'flex';
+  }
+  function openAutorunModal() { renderAutorunModal(); }
+  async function arUploadAudio() {
+    const el = document.getElementById('ar_audio_file');
+    if (!el || !el.files.length) { alert('Choose an audio file first'); return; }
+    const fd = new FormData();
+    fd.append('audio_file', el.files[0]);
+    await fetch('/studio/' + AR_PID + '/audio/upload', { method: 'POST', body: fd });
+    renderAutorunModal();
+  }
+  async function arSaveBible() {
+    const el = document.getElementById('ar_bible_text');
+    if (!el || !el.value.trim()) { alert('Write the bible first'); return; }
+    const fd = new FormData();
+    fd.append('bible', el.value);
+    await fetch('/studio/' + AR_PID + '/bible/save', { method: 'POST', body: fd });
+    renderAutorunModal();
+  }
+  document.getElementById('autorungo').addEventListener('click', function () {
+    const f = document.createElement('form');
+    f.method = 'post';
+    f.action = '/studio/' + AR_PID + '/auto-run';
+    document.body.appendChild(f);
+    f.submit();
+  });
 </script>
 </body>
 </html>

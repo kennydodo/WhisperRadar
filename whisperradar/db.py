@@ -412,6 +412,24 @@ def step_history(conn, pid: int):
     ).fetchall()
 
 
+def delete_steps(conn, pid: int, stages: list[str] | None = None) -> int:
+    """Remove a production's step history - all of it, or per stage.
+    Used by the studio start-over reset."""
+    if stages:
+        marks = ",".join("?" for _ in stages)
+        cur = conn.execute(
+            f"DELETE FROM production_steps"
+            f" WHERE production_id = ? AND stage IN ({marks})",
+            (pid, *stages),
+        )
+    else:
+        cur = conn.execute(
+            "DELETE FROM production_steps WHERE production_id = ?", (pid,)
+        )
+    conn.commit()
+    return cur.rowcount
+
+
 def stage_done(conn, pid: int, stage: str) -> bool:
     return stage in latest_steps(conn, pid)
 

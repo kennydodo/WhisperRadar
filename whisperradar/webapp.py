@@ -9,7 +9,6 @@ import logging
 import re
 import shutil
 import threading
-import time
 import zipfile
 from collections import deque
 from pathlib import Path
@@ -24,7 +23,7 @@ from flask import (
     send_file,
 )
 
-from . import db, pipeline, studio, transcribe
+from . import autorun, db, pipeline, studio
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -106,6 +105,14 @@ class _Job:
         self.error = None
         self.log: deque = deque(maxlen=400)
         self._lock = threading.Lock()
+        # auto-run (pipeline mode) state
+        self.stage = None          # stage currently being executed
+        self.pipeline = False      # True while an auto-run is active
+        self.cancel = False        # stop requested - honored between stages
+        self.pause_reason = None   # why the last auto-run paused
+        self.resume = False        # last auto-run did not finish: offer Resume
+        self.summary = None        # completion note from the last auto-run
+        self.autorun_plan = None   # the plan the current/last auto-run used
 
     def start(self, fn, kind: str) -> bool:
         with self._lock:
@@ -114,6 +121,11 @@ class _Job:
             self.running = True
             self.kind = kind
             self.error = None
+            self.stage = None
+            self.pipeline = False
+            self.cancel = False
+            self.pause_reason = None
+            self.summary = None
         self.log.clear()
         self.log.append(f"=== {kind}: started ===")
 
@@ -163,6 +175,20 @@ def _transcribe_one(cfg, video_id: str):
 
 
 PAGE_SIZE = 50
+
+
+# Generated artifacts per stage, deleted by the start-over reset. Named
+# version libraries, refs, the bible and notes are inputs - kept.
+RESET_FILES = {
+    "style": ["style.md"],
+    "script": ["script.md"],
+    "audio": ["audio.mp3", "audio.wav", "audio.m4a", "audio.flac",
+              "audio.ogg"],
+    "srt": ["subtitles.srt"],
+    "shots": ["shotlist.json", "shotlist.json.bak", "batch_sheet.txt"],
+    "images": ["flow_batch.json"],
+    "merge": ["final.mp4"],
+}
 
 
 def _page_list(current: int, total: int) -> list:
@@ -656,6 +682,57 @@ def create_app(cfg) -> Flask:
                 f"Production deleted - files kept at {pdir} "
                 "(folder was not created by WhisperRadar)"))
 
+    @app.post("/studio/<int:pid>/start-over")
+    def studio_start_over(pid):
+        """Start over: reset progress from a chosen stage onward - deletes
+        that stage's generated artifacts and step history so auto-run (or
+        the manual buttons) re-executes it. Inputs like the bible, refs,
+        named versions and notes are kept."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        from_stage = request.form.get("from") or ""
+        if from_stage not in ("style", "script", "images"):
+            return _studio_url(pid, error="Unknown start-over scope")
+        with_audio = request.form.get("with_audio") == "1"
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/studio?error=Unknown+production")
+            reset = db.STAGES[db.STAGES.index(from_stage):]
+            if with_audio and "audio" not in reset:
+                reset = ["audio"] + reset
+            pdir = studio.prod_dir(cfg, pid)
+            removed = []
+            for stage in reset:
+                for name in RESET_FILES.get(stage, []):
+                    f = pdir / name
+                    if f.exists():
+                        f.unlink()
+                        removed.append(name)
+                if stage == "images":
+                    img_dir = pdir / "images"
+                    if img_dir.exists():
+                        for f in img_dir.iterdir():
+                            if f.is_file():
+                                f.unlink(missing_ok=True)
+                            elif f.is_dir():
+                                shutil.rmtree(f, ignore_errors=True)
+                        removed.append("images/*")
+                if stage == "merge":
+                    out_dir = pdir / "out"
+                    if out_dir.exists():
+                        shutil.rmtree(out_dir, ignore_errors=True)
+                        removed.append("out/")
+            db.delete_steps(conn, pid, reset)
+            db.update_production(conn, pid, stage=from_stage,
+                                 status="active")
+        finally:
+            conn.close()
+        detail = ", ".join(removed) if removed else "nothing on disk"
+        return _studio_url(
+            pid, msg=f"Start over from '{from_stage}' - cleared: {detail}")
+
     @app.post("/studio/<int:pid>/workdir")
     def studio_workdir(pid):
         if sjob.running:
@@ -775,31 +852,8 @@ def create_app(cfg) -> Flask:
         provider = request.form.get("provider") or cfg.studio_llm_default
 
         def worker():
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                prod = db.get_production(conn, pid)
-                if not prod:
-                    return
-                source_text = _source_transcript(prod)
-                if not source_text:
-                    raise RuntimeError(
-                        "No source transcript - write the style guide manually"
-                    )
-                word_count = len(re.findall(r"\w+", source_text))
-                prompt = studio.style_prompt(prod["title"], prod["genre"],
-                                             source_text,
-                                             extra_direction=db.stage_extra(
-                                                 prod, "style"))
-                text = studio.llm_generate(cfg, prompt, provider=provider)
-                if not text:
-                    raise RuntimeError("LLM returned an empty style guide")
-                pdir = studio.prod_dir(cfg, pid)
-                (pdir / "style.md").write_text(text + "\n", encoding="utf-8")
-                db.add_step(conn, pid, "style", "auto",
-                            detail=f"{provider}, source ~{word_count} words")
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(
+                cfg, pid, "style", {"provider": provider}))
 
         sjob.start(worker, "style analysis")
         return _studio_url(pid, msg="Style analysis started")
@@ -834,50 +888,12 @@ def create_app(cfg) -> Flask:
             prod = db.get_production(conn, pid)
             if not prod:
                 return redirect("/studio?error=Unknown+production")
-            source_text = _source_transcript(prod)
         finally:
             conn.close()
-        style = studio.find_style(studio.prod_dir(cfg, pid))
-        style_guide = style.read_text(encoding="utf-8") if style else ""
-        import re as _re
-
-        source_words = len(_re.findall(r"\w+", source_text)) if source_text else 0
-        target_words = cfg.studio_script_words or source_words or 1200
-        variation = studio.variation_nudge()
-        prompt = studio.script_prompt(prod["title"], prod["genre"],
-                                      source_text, style_guide,
-                                      target_words=target_words,
-                                      variation=variation,
-                                      extra_direction=db.stage_extra(
-                                          prod, "script"))
 
         def worker():
-            t0 = time.monotonic()
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                prod = db.get_production(conn, pid)
-                text = studio.llm_generate(cfg, prompt, provider=provider)
-                if not text:
-                    raise RuntimeError("LLM returned an empty script")
-                pdir = studio.prod_dir(cfg, pid)
-                script_path = pdir / "script.md"
-                if script_path.exists():
-                    auto_dir = pdir / "versions" / "script"
-                    auto_dir.mkdir(parents=True, exist_ok=True)
-                    stamp = time.strftime("%Y%m%d-%H%M%S")
-                    shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
-                script_path.write_text(text + "\n", encoding="utf-8")
-                ratio = _script_overlap(prod, text)
-                warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
-                db.update_production(conn, pid, llm_provider=provider)
-                db.add_step(conn, pid, "script", "auto",
-                            detail=f"{provider}, overlap {ratio:.1%}, "
-                                   f"target {target_words} words, "
-                                   f"took {format_duration(time.monotonic() - t0)}"
-                                   f"{warn}")
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(
+                cfg, pid, "script", {"provider": provider}))
 
         sjob.start(worker, "script generation")
         return _studio_url(pid, msg="Script generation started")
@@ -921,22 +937,7 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
 
         def worker():
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                pdir = studio.prod_dir(cfg, pid)
-                script = studio.find_script(pdir)
-                if not script:
-                    raise RuntimeError("Write the script first")
-                out = pdir / "audio.mp3"
-                studio.run_hook(cfg.studio_tts_command,
-                                {"script": script, "out": out})
-                audio = studio.find_audio(pdir)
-                if not audio:
-                    raise RuntimeError("TTS produced no audio file")
-                db.add_step(conn, pid, "audio", "auto", detail=audio.name)
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(cfg, pid, "audio"))
 
         sjob.start(worker, "tts")
         return _studio_url(pid, msg="TTS started")
@@ -947,27 +948,7 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
 
         def worker():
-            t0 = time.monotonic()
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                pdir = studio.prod_dir(cfg, pid)
-                audio = studio.find_audio(pdir)
-                if not audio:
-                    raise RuntimeError("Upload or generate the audio first")
-                meta = transcribe.transcribe_to_srt(
-                    audio, pdir / "subtitles.srt",
-                    model_size=cfg.whisper_model,
-                    language=cfg.whisper_language,
-                )
-                db.add_step(
-                    conn, pid, "srt", "auto",
-                    detail=f"{meta['cues']} cues, {meta['device']}, "
-                           f"lang {meta['language']}, "
-                           f"took {format_duration(time.monotonic() - t0)}",
-                )
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(cfg, pid, "srt"))
 
         sjob.start(worker, "srt alignment")
         return _studio_url(pid, msg="SRT alignment started")
@@ -1165,43 +1146,18 @@ def create_app(cfg) -> Flask:
     def studio_shotlist_generate(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
+        # the manifest-authoring brief's bible gate: the LLM refuses to plan
+        # without a reference bible, so require it up front
+        if not studio.find_bible(studio.prod_dir(cfg, pid)):
+            return _studio_url(
+                pid,
+                error="The planning brief requires a character/reference "
+                      "bible - write or upload one below first")
         provider = request.form.get("provider") or cfg.studio_llm_default
 
         def worker():
-            t0 = time.monotonic()
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                prod = db.get_production(conn, pid)
-                pdir = studio.prod_dir(cfg, pid)
-                srt = studio.find_srt(pdir)
-                if not srt:
-                    raise RuntimeError("Generate or upload the subtitles first")
-                style = studio.find_style(pdir)
-                style_guide = style.read_text(encoding="utf-8") if style else ""
-                bible = studio.find_bible(pdir)
-                bible_text = bible.read_text(encoding="utf-8") if bible else ""
-                brief = studio.load_manifest_brief(cfg)
-                prompt = studio.shotlist_prompt(
-                    brief, srt.read_text(encoding="utf-8"), style_guide,
-                    extra_direction=db.stage_extra(prod, "shots"),
-                    bible=bible_text)
-                text = studio.llm_generate(cfg, prompt, provider=provider)
-                data, sheet = studio.parse_shotlist_output(text)
-                (pdir / "shotlist.json").write_text(
-                    json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-                    encoding="utf-8")
-                if sheet:
-                    (pdir / "batch_sheet.txt").write_text(
-                        sheet + "\n", encoding="utf-8")
-                db.update_production(conn, pid, llm_provider=provider)
-                db.add_step(conn, pid, "shots", "auto",
-                            detail=f"{len(data.get('images', []))} image(s) in "
-                                   f"{len(data.get('shots', []))} shot(s) via "
-                                   f"manifest brief, took "
-                                   f"{format_duration(time.monotonic() - t0)}")
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(
+                cfg, pid, "shots", {"provider": provider}))
 
         sjob.start(worker, "shotlist planning")
         return _studio_url(pid, msg="Shotlist planning started")
@@ -1235,7 +1191,8 @@ def create_app(cfg) -> Flask:
         pdir = studio.prepare_project_folder(cfg, pid)
         if not (pdir / "shotlist.json").exists():
             return _studio_url(pid, error="Generate the shotlist first")
-        mode = request.form.get("render_mode") or "api"
+        mode = request.form.get("render_mode") or (
+            "flow" if studio.flow_driver_ready(cfg) else "api")
         if mode not in ("api", "flow"):
             mode = "api"
         flow_channel = (request.form.get("flow_channel") or "whisperradar").strip()
@@ -1246,36 +1203,14 @@ def create_app(cfg) -> Flask:
         except ValueError:
             flow_upscale = cfg.renderly_upscale or 0
         flow_master = (request.form.get("flow_master") or "").strip()
-        conn = db.connect(cfg.db_path)
-        db.init_db(conn)
-        try:
-            db.update_production(conn, pid, render_mode=mode)
-        finally:
-            conn.close()
 
         def worker():
-            t0 = time.monotonic()
-            if mode == "flow":
-                refs = [str(p) for p in sorted(
-                    (pdir / "refs").glob("*"))
-                    if p.is_file()] if (pdir / "refs").exists() else []
-                count = studio.run_imagegen_flow(
-                    cfg, pdir, refs=refs, channel=flow_channel,
-                    project=flow_project, upscale=flow_upscale,
-                    master=flow_master,
-                    log=lambda m: sjob.log.append(str(m)))
-                source = "Flow Driver (Google Flow)"
-            else:
-                count = studio.run_imagegen(cfg, pdir)
-                source = "Renderly"
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                db.add_step(conn, pid, "images", "auto",
-                            detail=f"{count} image(s) via {source}, "
-                                   f"took {format_duration(time.monotonic() - t0)}")
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(cfg, pid, "images", {
+                "mode": mode, "flow_channel": flow_channel,
+                "flow_project": flow_project,
+                "flow_upscale": flow_upscale, "flow_master": flow_master,
+                "log": sjob.log.append,
+            }))
 
         sjob.start(worker, f"image rendering ({'Flow Driver' if mode == 'flow' else 'Renderly'})")
         return _studio_url(pid, msg="Image rendering started")
@@ -1309,13 +1244,8 @@ def create_app(cfg) -> Flask:
                 pid, error="Need audio, subtitles and images first")
 
         def worker():
-            final = studio.run_merge_render(cfg, pdir)
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                db.add_step(conn, pid, "merge", "auto", detail=final.name)
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(
+                cfg, pid, "merge", {"mode": "cli"}))
 
         sjob.start(worker, "final render (ImgToVideo)")
         return _studio_url(pid, msg="Final render started")
@@ -1407,25 +1337,8 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
 
         def worker():
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            try:
-                pdir = studio.prod_dir(cfg, pid)
-                audio = studio.find_audio(pdir)
-                srt = studio.find_srt(pdir)
-                images = studio.find_images(pdir)
-                if not audio or not srt or not images:
-                    raise RuntimeError("Need audio, subtitles and images first")
-                out = pdir / "final.mp4"
-                studio.run_hook(cfg.studio_merge_command, {
-                    "images": pdir / "images", "audio": audio, "srt": srt,
-                    "out": out,
-                }, timeout=7200)
-                if not out.exists():
-                    raise RuntimeError("merge produced no video")
-                db.add_step(conn, pid, "merge", "auto", detail="final.mp4")
-            finally:
-                conn.close()
+            autorun.raise_result(autorun.run_stage(
+                cfg, pid, "merge", {"mode": "hook"}))
 
         sjob.start(worker, "merge")
         return _studio_url(pid, msg="Merge started")
@@ -1453,10 +1366,66 @@ def create_app(cfg) -> Flask:
             abort(404)
         return send_file(target)
 
+    @app.get("/studio/<int:pid>/auto-run/plan")
+    def studio_autorun_plan(pid):
+        """Dry-run: what auto-run would do from the current state."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                abort(404)
+        finally:
+            conn.close()
+        return {"plan": autorun.build_plan(cfg, pid),
+                "running": sjob.running, "paused": sjob.pause_reason}
+
+    @app.post("/studio/<int:pid>/auto-run")
+    def studio_autorun(pid):
+        """Run every remaining pipeline stage in order, skipping the done
+        ones, pausing on missing manual input, and always stopping before
+        review."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/studio?error=Unknown+production")
+        finally:
+            conn.close()
+        plan = autorun.build_plan(cfg, pid)
+        if not any(e["action"] == "run" for e in plan):
+            pause = next((e for e in plan if e["action"] == "pause"), None)
+            if pause:
+                return _studio_url(pid,
+                                   error=f"Nothing to run - {pause['detail']}")
+            return _studio_url(
+                pid, error="Every stage up to review is already done")
+
+        def worker():
+            result = autorun.run_pipeline(cfg, pid, job=sjob,
+                                          log=sjob.log.append)
+            if result.startswith("failed:"):
+                raise RuntimeError(result.split(":", 1)[1])
+
+        if not sjob.start(worker, "auto-run"):
+            return _studio_url(pid, error="A job is already running")
+        return _studio_url(pid, msg="Auto-run started")
+
+    @app.post("/studio/<int:pid>/auto-run/stop")
+    def studio_autorun_stop(pid):
+        if not sjob.running or sjob.kind != "auto-run":
+            return _studio_url(pid, error="No auto-run is running")
+        sjob.cancel = True
+        return _studio_url(pid,
+                           msg="Stopping after the current stage finishes")
+
     @app.get("/studio/job")
     def studio_job():
         return {"running": sjob.running, "kind": sjob.kind,
-                "error": sjob.error, "log": list(sjob.log)[-40:]}
+                "error": sjob.error, "log": list(sjob.log)[-40:],
+                "stage": sjob.stage, "pipeline": sjob.pipeline,
+                "paused": sjob.pause_reason}
 
     # warm the Renderly readiness probe so the first page load is fast too
     threading.Thread(target=lambda: studio.renderly_ready(cfg.renderly_url),

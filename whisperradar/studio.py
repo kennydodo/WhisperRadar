@@ -311,17 +311,30 @@ def flow_driver_ready(cfg) -> bool:
 def prepare_flow_batch(cfg, pid_dir: Path) -> tuple[Path, int]:
     """Build the Flow Driver batch from the production's shotlist: only the
     images missing from images\\ (flow.js itself has no skip-existing).
+    Per-image ref names are resolved through the shotlist's top-level refs
+    registry (name -> path) so a channel-level ref library works without
+    copying files next to the batch.
     Returns (batch file, number of images to render)."""
     shotlist_path = pid_dir / "shotlist.json"
     if not shotlist_path.exists():
         raise RuntimeError("Generate the shotlist first")
     data = json.loads(shotlist_path.read_text(encoding="utf-8"))
+    registry = data.get("refs")
+    registry = (registry if isinstance(registry, dict) else {})
+    registry = {k: v for k, v in registry.items() if isinstance(v, str)}
     img_dir = pid_dir / "images"
     img_dir.mkdir(exist_ok=True)
     existing = {p.name for p in img_dir.iterdir() if p.is_file()}
-    todo = [i for i in data.get("images", [])
-            if isinstance(i, dict) and i.get("file") and i.get("prompt")
-            and i["file"] not in existing]
+    todo = []
+    for i in data.get("images", []):
+        if not (isinstance(i, dict) and i.get("file") and i.get("prompt")
+                and i["file"] not in existing):
+            continue
+        entry = dict(i)
+        if entry.get("refs"):
+            entry["refs"] = [registry.get(str(r), str(r))
+                             for r in entry["refs"]]
+        todo.append(entry)
     if not todo:
         raise RuntimeError(
             "All shotlist images already exist - nothing to render")
@@ -501,6 +514,9 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
     if not new:
         raise RuntimeError("Flow Driver finished but produced no new images "
                            "- check the log")
+    if new < todo:
+        log(f"⚠ only {new} of {todo} expected image(s) rendered - the batch "
+            f"was stopped or some cards failed; re-run to fill the gaps")
     return new
 
 
