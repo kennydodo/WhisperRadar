@@ -357,6 +357,15 @@
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/generate">
+          <select name="voice" id="voice_select" style="max-width:360px"
+                  title="Narration voice (OpenSpeaker/ai33.pro)" {{ 'disabled' if job.running else '' }}>
+            {% if prod_voice %}
+            <option value="{{ prod_voice }}" selected>{{ prod_voice }}</option>
+            {% endif %}
+            <option value="" {{ 'selected' if not prod_voice else '' }}>Default voice (edge_en-US-BrianMultilingualNeural)</option>
+          </select>
+          <a id="voice_preview" href="#" target="_blank" rel="noopener" class="ghost"
+             style="display:none; text-decoration:none" title="Play the selected voice's sample">▶ sample</a>
           <button type="submit" {{ 'disabled' if job.running or not hooks.tts else '' }}
                   title="{{ 'Run configured TTS command' if hooks.tts and not job.running else ('A job is already running' if job.running else 'Set studio.tts_command in config.yaml (e.g. chatterbox)') }}">
             {{ 'Working...' if job.running else 'Generate with TTS hook' }}
@@ -367,6 +376,70 @@
           <button type="submit" class="secondary">Upload audio (11labs, chatterbox, ...)</button>
         </form>
       </div>
+      <div id="voice_status" class="muted" style="font-size:12px; margin-bottom:8px">Loading voices...</div>
+      <script>
+        (function () {
+          var sel = document.getElementById('voice_select');
+          var status = document.getElementById('voice_status');
+          var preview = document.getElementById('voice_preview');
+          var pid = {{ prod['id'] }};
+          function setPreview() {
+            var opt = sel.options[sel.selectedIndex];
+            var url = opt ? opt.dataset.preview : '';
+            if (url) { preview.href = url; preview.style.display = ''; }
+            else { preview.style.display = 'none'; }
+          }
+          sel.addEventListener('change', function () {
+            setPreview();
+            var val = sel.value;
+            status.textContent = 'Saving voice...';
+            fetch('/studio/' + pid + '/voice', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+              body: new URLSearchParams({voice: val}).toString()
+            }).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
+              .then(function () {
+                status.textContent = val ? 'Voice saved: ' + (sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : val) : 'Voice saved: default';
+              })
+              .catch(function (e) { status.textContent = 'Could not save voice (' + e + ')'; });
+          });
+          fetch('/studio/voices.json').then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (!data.ready) {
+                status.textContent = 'No OpenSpeaker API key - set WR_AI33_API_KEY (or studio.ai33_api_key) and restart to browse voices.';
+                return;
+              }
+              if (!data.voices.length) {
+                status.textContent = 'No voices: ' + (data.error || 'empty catalog');
+                return;
+              }
+              var groups = {};
+              data.voices.forEach(function (v) {
+                var p = v.provider || (v.voice_id.split('_')[0] || 'other');
+                (groups[p] = groups[p] || []).push(v);
+              });
+              Object.keys(groups).sort().forEach(function (p) {
+                var og = document.createElement('optgroup');
+                og.label = p.charAt(0).toUpperCase() + p.slice(1);
+                groups[p].forEach(function (v) {
+                  var o = document.createElement('option');
+                  o.value = v.voice_id;
+                  o.dataset.preview = v.preview_url || '';
+                  o.textContent = v.name + (v.language ? ' - ' + v.language : '')
+                    + (v.gender ? ' (' + v.gender + ')' : '');
+                  if (v.voice_id === sel.value) o.selected = true;
+                  og.appendChild(o);
+                });
+                sel.appendChild(og);
+              });
+              setPreview();
+              status.textContent = data.voices.length + ' voices loaded - pick one, it is saved per production and used by Run till finish too.';
+            })
+            .catch(function (e) {
+              status.textContent = 'Could not load voices (' + e + ')';
+            });
+        })();
+      </script>
 
     {% elif stage == "srt" %}
       {% if srt %}

@@ -210,17 +210,20 @@ def _run_audio(cfg, pid: int) -> None:
                       "then Resume")
     conn = _connect(cfg)
     try:
+        prod = db.get_production(conn, pid)
         pdir = studio.prod_dir(cfg, pid)
         script = studio.find_script(pdir)
         if not script:
             raise RuntimeError("Write the script first")
         out = pdir / "audio.mp3"
+        voice = (prod["voice"] if prod else None) or None
         studio.run_hook(cfg.studio_tts_command,
-                        {"script": script, "out": out})
+                        {"script": script, "out": out, "voice": voice or ""})
         audio = studio.find_audio(pdir)
         if not audio:
             raise RuntimeError("TTS produced no audio file")
-        db.add_step(conn, pid, "audio", "auto", detail=audio.name)
+        db.add_step(conn, pid, "audio", "auto",
+                    detail=audio.name + (f", voice {voice}" if voice else ""))
     finally:
         conn.close()
 
@@ -439,8 +442,16 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
             return {"stage": stage, "action": "skip",
                     "detail": "audio file already exists"}
         if cfg.studio_tts_command:
+            conn = _connect(cfg)
+            try:
+                prod = db.get_production(conn, pid)
+                voice = (prod["voice"] if prod else None) or None
+            finally:
+                conn.close()
             return {"stage": stage, "action": "run",
-                    "detail": "narration via the configured TTS hook"}
+                    "detail": "narration via the configured TTS hook"
+                              + (f" (voice {voice})" if voice
+                                 else " (default voice)")}
         return {"stage": stage, "action": "pause",
                 "detail": "no audio and no TTS hook configured - upload "
                           "audio, then Resume"}

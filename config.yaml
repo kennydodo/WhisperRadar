@@ -40,8 +40,11 @@ studio:
   script_words: null
   # OpenSpeaker (ai33.pro) narration: script -> API -> audio.mp3.
   # Needs the WR_AI33_API_KEY env var (key from the OpenSpeaker app).
-  # Pick a voice: python scripts\ai33_tts.py --voices --provider minimax
-  tts_command: python D:\Repos\WhisperRadar\scripts\ai33_tts.py {script} {out}
+  # {voice} is the voice picked in the dashboard's audio stage (per
+  # production); empty = AI33_VOICE env var or the built-in edge default.
+  tts_command: python D:\Repos\WhisperRadar\scripts\ai33_tts.py {script} {out} --voice {voice}
+  # Optional overrides: ai33_api_key, ai33_voice, ai33_base_url
+  ai33_api_key: null
   # Renderly + ImgToVideo integration (images + final render).
   # renderly_channel: null = auto-create/reuse a "whisperradar" channel.
   renderly_url: http://127.0.0.1:8022

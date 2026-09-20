@@ -122,6 +122,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
                 (json.dumps({"style": old, "script": old, "shots": old}), pid))
     if "render_mode" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN render_mode TEXT")
+    if "voice" not in cols:
+        conn.execute("ALTER TABLE productions ADD COLUMN voice TEXT")
 
 
 def add_channel(
@@ -330,7 +332,7 @@ STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
-                "stage_extras", "render_mode"}
+                "stage_extras", "render_mode", "voice"}
 
 
 def stage_extra(prod, stage: str) -> str:

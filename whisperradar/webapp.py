@@ -23,7 +23,7 @@ from flask import (
     send_file,
 )
 
-from . import autorun, db, pipeline, studio
+from . import ai33, autorun, db, pipeline, studio
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -647,6 +647,7 @@ def create_app(cfg) -> Flask:
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
+            prod_voice=prod["voice"], ai33_ready=bool(ai33.api_key(cfg)),
             flow_ready=studio.flow_driver_ready(cfg),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
@@ -929,12 +930,46 @@ def create_app(cfg) -> Flask:
             conn.close()
         return _studio_url(pid, msg="Audio uploaded")
 
+    @app.get("/studio/voices.json")
+    def studio_voices():
+        """Voice catalog for the Studio audio stage - fetched server-side
+        with the OpenSpeaker API key, cached ~10 min in the ai33 module."""
+        provider = (request.args.get("provider") or "").strip() or None
+        try:
+            items = ai33.voices(cfg, provider=provider)
+            return {"ready": True, "voices": items}
+        except RuntimeError as exc:
+            return {"ready": bool(ai33.api_key(cfg)), "voices": [],
+                    "error": str(exc)}
+
+    @app.post("/studio/<int:pid>/voice")
+    def studio_voice_save(pid):
+        voice = (request.form.get("voice") or "").strip()[:300] or None
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return _studio_url(pid, error="Unknown production")
+            db.update_production(conn, pid, voice=voice)
+        finally:
+            conn.close()
+        return _studio_url(pid, msg=f"Narration voice: {voice or 'default'}")
+
     @app.post("/studio/<int:pid>/audio/generate")
     def studio_audio_generate(pid):
         if not cfg.studio_tts_command:
             return _studio_url(pid, error="No tts_command in config.yaml")
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
+
+        voice = (request.form.get("voice") or "").strip()[:300] or None
+        if voice:
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                db.update_production(conn, pid, voice=voice)
+            finally:
+                conn.close()
 
         def worker():
             autorun.raise_result(autorun.run_stage(cfg, pid, "audio"))

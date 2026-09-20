@@ -58,6 +58,11 @@ class Config:
             names[0] if names else None)
 
         self.studio_tts_command = studio.get("tts_command") or None
+        # OpenSpeaker (ai33.pro) narration: optional config key/voice; the
+        # key can also come from the WR_AI33_API_KEY env variable.
+        self.studio_ai33_api_key = studio.get("ai33_api_key") or None
+        self.studio_ai33_voice = studio.get("ai33_voice") or None
+        self.studio_ai33_base_url = studio.get("ai33_base_url") or None
         self.studio_imagegen_command = studio.get("imagegen_command") or None
         self.studio_merge_command = studio.get("merge_command") or None
         self.studio_script_words = studio.get("script_words") or None

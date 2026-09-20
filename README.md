@@ -140,18 +140,19 @@ The default `tts_command` hook generates the audio stage automatically with
 [OpenSpeaker](https://ai33.pro/app) - no more manual uploads. One-time setup:
 
 1. Get an API key from the OpenSpeaker app (API section) and set it once:
-   `setx WR_AI33_API_KEY "your-key"` (new terminals pick it up).
-2. Pick a voice (voice IDs carry a provider prefix - `edge_*` is the cheap
-   default, `minimax_*`, `elevenlabs_*`, `kokoro_*`, `fishaudio_*` also work):
-   `python scripts\ai33_tts.py --voices --provider minimax`
-3. Override the default voice via `AI33_VOICE` env var or by adding
-   `--voice <id>` to the `tts_command` line in config.yaml.
+   `setx WR_AI33_API_KEY "your-key"` (new terminals pick it up; restart the
+   dashboard afterwards).
+2. Pick the narration voice in the **audio stage dropdown** on the production
+   page (525+ voices across edge / minimax / elevenlabs / kokoro / vbee /
+   fishaudio, with sample previews). It is saved per production and used by
+   both **Run till finish** and the manual **Generate with TTS hook** button.
+   CLI alternative: `python scripts\ai33_tts.py --voices --provider minimax`.
 
 With the hook configured, **Run till finish** covers
 style → script → audio → srt → shots → images → merge and stops before
-review. The manual **Generate with TTS hook** button on the audio stage uses
-the same command. Scripts are sent as-is (max 1,000,000 chars), `--speed`
-accepts 0.5-1.5.
+review. Scripts are sent as-is (max 1,000,000 chars), `--speed` accepts
+0.5-1.5. Optional config overrides: `studio.ai33_api_key`, `ai33_voice`,
+`ai33_base_url`.
 
 ## Daily usage
 
