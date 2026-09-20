@@ -447,6 +447,10 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
     """Render missing shotlist images through Google Flow via the Flow Driver
     service. Results land in images\\ under the exact shotlist names; upscaled
     copies produced via Renderly are adopted as the shotlist files.
+
+    The batch is always built from the CURRENT shotlist.json - and if the
+    shotlist is edited while the batch runs, the batch is stopped and
+    re-prepared from the new plan instead of rendering stale prompts.
     Returns the new image count."""
     d = flow_driver_dir(cfg)
     if not d or not (d / "flow.js").exists():
@@ -456,8 +460,8 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
     if not (d / "node_modules" / "playwright").exists():
         raise RuntimeError(
             f"Playwright not installed - run: cd {d} && npm install")
-    batch_path, todo = prepare_flow_batch(cfg, pid_dir)
     img_dir = pid_dir / "images"
+    img_dir.mkdir(exist_ok=True)
     before = {p.name for p in img_dir.iterdir() if p.is_file()}
     ensure_flow_services(cfg, log=log)
     if flow_service_status(cfg) is None:
@@ -466,7 +470,7 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
     refs = [str(r).strip() for r in (refs or []) if str(r).strip()]
     project = str(project or "").strip()
     config = {
-        "shotlistPath": str(batch_path),
+        "shotlistPath": str(pid_dir / "shotlist.json"),
         "outPath": str(img_dir),
         "channel": str(channel or "whisperradar").strip(),
         "project": project,
@@ -475,46 +479,79 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         "upscale": max(0, min(4, int(upscale if upscale is not None
                                     else (cfg.renderly_upscale or 0)))),
     }
-    log(f"Flow Driver: rendering {todo} missing image(s) via Google Flow "
-        f"(a Chrome window will open - leave it running)")
-    _driver_api(cfg, "/api/config", method="POST", body=config, timeout=15)
-    try:
-        _driver_api(cfg, "/api/start", method="POST", body={}, timeout=15)
-    except Exception as exc:
-        raise RuntimeError(f"Flow Driver rejected the batch: {exc}")
-    seen = 0
-    deadline = time.monotonic() + 14400
-    while True:
-        if cancel and cancel():
-            log("cancel requested - stopping the Flow Driver batch")
-            flow_stop(cfg)
-            raise BatchCancelled(
-                "stop requested during the images stage")
-        if time.monotonic() > deadline:
-            # do not abandon the batch: it would keep spending credits on
-            # cards nobody is waiting for anymore
-            flow_stop(cfg)
-            raise RuntimeError("Flow Driver batch timed out after 4h")
-        time.sleep(3)
-        st = flow_service_status(cfg, timeout=10)
-        if st is None:
-            continue
-        lines = st.get("log") or []
-        if len(lines) < seen:  # service log window wrapped
-            seen = 0
-        while seen < len(lines):
-            log(lines[seen])
-            seen += 1
-        # collapse duplicates as they appear (flow.js versions before the
-        # in-place upscale wrote "-upscaled.png" copies alongside)
-        for up in img_dir.glob("*-upscaled.png"):
-            base = up.with_name(up.name.replace("-upscaled.png", ".png"))
+    shotlist_file = pid_dir / "shotlist.json"
+    todo = 0
+    rounds = 0
+    while True:  # batch rounds - re-prepared whenever shotlist.json changes
+        rounds += 1
+        try:
+            batch_path, todo = prepare_flow_batch(cfg, pid_dir)
+        except RuntimeError as exc:
+            if "nothing to render" in str(exc) and rounds > 1:
+                todo = 0  # the edited shotlist is fully rendered already
+                break
+            raise
+        if rounds > 1:
+            log(f"Flow Driver: batch re-read from the current shotlist - "
+                f"{todo} image(s) left to render")
+        log(f"Flow Driver: rendering {todo} missing image(s) via Google Flow "
+            f"(a Chrome window will open - leave it running)")
+        _driver_api(cfg, "/api/config", method="POST", body=config, timeout=15)
+        try:
+            _driver_api(cfg, "/api/start", method="POST", body={}, timeout=15)
+        except Exception as exc:
+            raise RuntimeError(f"Flow Driver rejected the batch: {exc}")
+        seen = 0
+        deadline = time.monotonic() + 14400
+        restarted = False
+        shotlist_mtime = shotlist_file.stat().st_mtime
+        while True:
+            if cancel and cancel():
+                log("cancel requested - stopping the Flow Driver batch")
+                flow_stop(cfg)
+                raise BatchCancelled(
+                    "stop requested during the images stage")
+            if time.monotonic() > deadline:
+                # do not abandon the batch: it would keep spending credits on
+                # cards nobody is waiting for anymore
+                flow_stop(cfg)
+                raise RuntimeError("Flow Driver batch timed out after 4h")
+            time.sleep(3)
             try:
-                up.replace(base)
+                mtime_now = shotlist_file.stat().st_mtime
             except OSError:
-                pass
-        if not st.get("running"):
-            break
+                mtime_now = shotlist_mtime
+            if mtime_now != shotlist_mtime:
+                # the user re-planned mid-batch: drop this batch and read
+                # the current shotlist instead of rendering stale prompts
+                log("shotlist.json changed since the batch started - "
+                    "stopping the batch and re-reading the current plan "
+                    "(delete an image file to force its re-render)")
+                flow_stop(cfg)
+                restarted = True
+                break
+            st = flow_service_status(cfg, timeout=10)
+            if st is None:
+                continue
+            lines = st.get("log") or []
+            if len(lines) < seen:  # service log window wrapped
+                seen = 0
+            while seen < len(lines):
+                log(lines[seen])
+                seen += 1
+            # collapse duplicates as they appear (flow.js versions before the
+            # in-place upscale wrote "-upscaled.png" copies alongside)
+            for up in img_dir.glob("*-upscaled.png"):
+                base = up.with_name(up.name.replace("-upscaled.png", ".png"))
+                try:
+                    up.replace(base)
+                except OSError:
+                    pass
+            if not st.get("running"):
+                break
+        if restarted:
+            continue
+        break
     upscaled = 0
     for up in img_dir.glob("*-upscaled.png"):
         base = up.with_name(up.name.replace("-upscaled.png", ".png"))
