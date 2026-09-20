@@ -422,6 +422,10 @@
           <input type="text" name="flow_channel" value="whisperradar" title="Channel images are imported into (auto-created)">
         </div>
         <div class="row" style="margin-bottom:6px">
+          <label style="min-width:130px; font-size:12px" class="muted">Renderly project</label>
+          <input type="text" name="flow_project" value="" title="Optional project id or name inside the channel — blank = channel default (Unsorted)">
+        </div>
+        <div class="row" style="margin-bottom:6px">
           <label style="min-width:130px; font-size:12px" class="muted">Upscale (0 = off)</label>
           <input type="number" name="flow_upscale" min="0" max="4" value="{{ flow_upscale_default }}" style="width:80px">
         </div>

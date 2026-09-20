@@ -1239,6 +1239,7 @@ def create_app(cfg) -> Flask:
         if mode not in ("api", "flow"):
             mode = "api"
         flow_channel = (request.form.get("flow_channel") or "whisperradar").strip()
+        flow_project = (request.form.get("flow_project") or "").strip()
         try:
             flow_upscale = max(0, min(4, int(request.form.get("flow_upscale")
                                              or (cfg.renderly_upscale or 0))))
@@ -1260,7 +1261,8 @@ def create_app(cfg) -> Flask:
                     if p.is_file()] if (pdir / "refs").exists() else []
                 count = studio.run_imagegen_flow(
                     cfg, pdir, refs=refs, channel=flow_channel,
-                    upscale=flow_upscale, master=flow_master,
+                    project=flow_project, upscale=flow_upscale,
+                    master=flow_master,
                     log=lambda m: sjob.log.append(str(m)))
                 source = "Flow Driver (Google Flow)"
             else:

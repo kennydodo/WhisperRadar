@@ -425,8 +425,8 @@ def ensure_flow_services(cfg, log=print) -> None:
 
 
 def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperradar",
-                      upscale: int | None = None, master: str = "",
-                      log=print) -> int:
+                      project: str = "", upscale: int | None = None,
+                      master: str = "", log=print) -> int:
     """Render missing shotlist images through Google Flow via the Flow Driver
     service. Results land in images\\ under the exact shotlist names; upscaled
     copies produced via Renderly are adopted as the shotlist files.
@@ -447,10 +447,12 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         raise RuntimeError("Flow Driver service is not reachable on "
                            + flow_service_url(cfg))
     refs = [str(r).strip() for r in (refs or []) if str(r).strip()]
+    project = str(project or "").strip()
     config = {
         "shotlistPath": str(batch_path),
         "outPath": str(img_dir),
         "channel": str(channel or "whisperradar").strip(),
+        "project": project,
         "refs": ",".join(refs),
         "master": (master or "").strip(),
         "upscale": max(0, min(4, int(upscale if upscale is not None
