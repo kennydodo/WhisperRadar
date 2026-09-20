@@ -143,11 +143,12 @@ The default `tts_command` hook generates the audio stage automatically with
    `setx WR_AI33_API_KEY "your-key"` (new terminals pick it up; restart the
    dashboard afterwards).
 2. Pick the narration voice in the **audio stage dropdown** on the production
-   page (525+ voices across edge / minimax / elevenlabs / kokoro / vbee /
-   fishaudio, with sample previews). The search box filters by name,
-   language, gender or provider. It is saved per production and used by
-   both **Run till finish** and the manual **Generate with TTS hook** button.
-   CLI alternative: `python scripts\ai33_tts.py --voices --provider minimax`.
+   page, with sample previews. By default it lists the voices shortlisted in
+   `studio.ai33_voices` (config.yaml); leave that empty to browse the full
+   catalog instead - the search box filters by name, language, gender or
+   provider. The picked voice is saved per production and used by both
+   **Run till finish** and the manual **Generate with TTS hook** button.
+   Find voice ids: `python scripts\ai33_tts.py --voices --search vanessa`.
 
 With the hook configured, **Run till finish** covers
 style → script → audio → srt → shots → images → merge and stops before
