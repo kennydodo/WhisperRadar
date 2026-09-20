@@ -63,6 +63,10 @@ class Config:
         self.studio_ai33_api_key = studio.get("ai33_api_key") or None
         self.studio_ai33_voice = studio.get("ai33_voice") or None
         self.studio_ai33_base_url = studio.get("ai33_base_url") or None
+        # Shortlist shown in the audio-stage dropdown; empty = full catalog
+        self.studio_ai33_voices = [str(v).strip()
+                                   for v in (studio.get("ai33_voices") or [])
+                                   if str(v).strip()]
         self.studio_imagegen_command = studio.get("imagegen_command") or None
         self.studio_merge_command = studio.get("merge_command") or None
         self.studio_script_words = studio.get("script_words") or None

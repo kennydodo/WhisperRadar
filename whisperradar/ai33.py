@@ -12,6 +12,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API_BASE = "https://api.ai33.pro"
@@ -19,8 +20,65 @@ PROVIDERS = ("edge", "minimax", "kokoro", "elevenlabs", "vbee", "fishaudio",
              "clone")
 REQUEST_TIMEOUT = 60
 VOICES_CACHE_TTL = 600
+VOICES_MAX_PAGES = 40  # safety cap: 40 pages x page_size per provider
 
 _voices_cache: dict = {"at": 0.0, "data": []}
+_curated_cache: dict = {"key": None, "at": 0.0, "data": []}
+
+
+def curated_ids(cfg) -> list[str]:
+    ids = getattr(cfg, "studio_ai33_voices", None) if cfg else None
+    return [str(v).strip() for v in (ids or []) if str(v).strip()]
+
+
+def _normalize(v: dict, provider: str) -> dict:
+    return {
+        "voice_id": str(v["voice_id"]),
+        "name": str(v.get("name") or v["voice_id"]),
+        "provider": provider,
+        "language": str(v.get("language") or "") or None,
+        "gender": str(v.get("gender") or "") or None,
+        "accent": str(v.get("accent") or "") or None,
+        "preview_url": v.get("preview_url") or None,
+    }
+
+
+def resolve_voice(cfg, voice_id: str) -> dict | None:
+    """Resolve one voice_id to its metadata via the API's id-aware search.
+    Returns None when the voice cannot be found."""
+    key = api_key(cfg)
+    if not key:
+        raise RuntimeError("no OpenSpeaker API key - set WR_AI33_API_KEY "
+                           "(or studio.ai33_api_key in config.yaml)")
+    provider, _, bare = voice_id.partition("_")
+    if provider not in PROVIDERS or not bare:
+        return None
+    resp = _json(_request(
+        f"{base_url(cfg)}/v3/voices?provider={provider}"
+        f"&search={urllib.parse.quote(bare)}&page_size=10", key))
+    for v in resp.get("data") or []:
+        if isinstance(v, dict) and v.get("voice_id") == voice_id:
+            return _normalize(v, provider)
+    return None
+
+
+def _resolve_curated(cfg, ids: list[str]) -> list[dict]:
+    from concurrent.futures import ThreadPoolExecutor
+
+    def one(vid: str) -> dict:
+        try:
+            found = resolve_voice(cfg, vid)
+        except RuntimeError:
+            found = None
+        if found:
+            return found
+        provider = vid.partition("_")[0]
+        return {"voice_id": vid, "name": vid, "provider": provider,
+                "language": None, "gender": None, "accent": None,
+                "preview_url": None}
+
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(ids)))) as pool:
+        return list(pool.map(one, ids))
 
 
 def api_key(cfg=None) -> str | None:
@@ -83,39 +141,44 @@ def _multipart(fields: dict) -> tuple[bytes, str]:
     return body, f"multipart/form-data; boundary={boundary}"
 
 
-def _fetch_voices(cfg, provider: str, limit: int) -> list[dict]:
+def _fetch_voices(cfg, provider: str, page_size: int,
+                  search: str | None = None) -> list[dict]:
+    """All voices of one provider - follows pagination.has_more up to a
+    sane cap so catalogs larger than one page are fully loaded."""
     key = api_key(cfg)
     if not key:
         raise RuntimeError("no OpenSpeaker API key - set WR_AI33_API_KEY "
                            "(or studio.ai33_api_key in config.yaml)")
-    resp = _json(_request(
-        f"{base_url(cfg)}/v3/voices?provider={provider}&page_size={limit}",
-        key))
-    raw = resp.get("data") if isinstance(resp.get("data"), list) else []
     voices = []
-    for v in raw:
-        if not isinstance(v, dict) or not v.get("voice_id"):
-            continue
-        voices.append({
-            "voice_id": str(v["voice_id"]),
-            "name": str(v.get("name") or v["voice_id"]),
-            "provider": provider,
-            "language": str(v.get("language") or "") or None,
-            "gender": str(v.get("gender") or "") or None,
-            "accent": str(v.get("accent") or "") or None,
-            "preview_url": v.get("preview_url") or None,
-        })
+    page = 1
+    while True:
+        resp = _json(_request(
+            f"{base_url(cfg)}/v3/voices?provider={provider}"
+            f"&page_size={page_size}&page={page}"
+            + (f"&search={urllib.parse.quote(search)}" if search else ""), key))
+        raw = resp.get("data") if isinstance(resp.get("data"), list) else []
+        for v in raw:
+            if not isinstance(v, dict) or not v.get("voice_id"):
+                continue
+            voices.append(_normalize(v, provider))
+        pagination = resp.get("pagination") or {}
+        if not raw or not pagination.get("has_more") \
+                or page >= VOICES_MAX_PAGES:
+            break
+        page += 1
     return voices
 
 
-def _fetch_all_providers(cfg, limit: int) -> list[dict]:
-    """Fetch every provider in parallel - a cold cache fills in ~1-2s
-    instead of ~10s of sequential calls."""
+def _fetch_all_providers(cfg, page_size: int,
+                         search: str | None = None) -> list[dict]:
+    """Fetch every provider in parallel - a cold cache fills in a few
+    seconds instead of tens of seconds of sequential calls."""
     from concurrent.futures import ThreadPoolExecutor
 
     all_voices: list[dict] = []
     with ThreadPoolExecutor(max_workers=len(PROVIDERS)) as pool:
-        futures = {prov: pool.submit(_fetch_voices, cfg, prov, limit)
+        futures = {prov: pool.submit(_fetch_voices, cfg, prov, page_size,
+                                     search)
                    for prov in PROVIDERS}
         for prov, fut in futures.items():
             try:
@@ -125,25 +188,41 @@ def _fetch_all_providers(cfg, limit: int) -> list[dict]:
     return all_voices
 
 
-def voices(cfg, provider: str | None = None, limit: int = 100,
-           refresh: bool = False) -> list[dict]:
-    """Voice catalog (cached ~10 min). provider=None fetches every known
-    provider; each voice_id already carries its provider prefix."""
+def voices(cfg, provider: str | None = None, page_size: int = 100,
+           refresh: bool = False, search: str | None = None) -> list[dict]:
+    """Voice list for the picker. When `studio.ai33_voices` is configured,
+    only those voices are returned (in config order, metadata resolved via
+    the API's id search). Otherwise the full catalog is fetched (cached
+    ~10 min, providers in parallel). provider + search narrow the raw
+    catalog; each voice_id carries its provider prefix."""
+    ids = curated_ids(cfg)
+    if provider is None and search is None and ids:
+        key = tuple(ids)
+        now = time.monotonic()
+        if refresh or not _curated_cache["data"] \
+                or _curated_cache["key"] != key \
+                or now - _curated_cache["at"] >= VOICES_CACHE_TTL:
+            _curated_cache["key"] = key
+            _curated_cache["data"] = _resolve_curated(cfg, ids)
+            _curated_cache["at"] = now
+        return _curated_cache["data"]
     if provider:
-        return _fetch_voices(cfg, provider, limit)
+        return _fetch_voices(cfg, provider, page_size, search=search)
     now = time.monotonic()
-    if not refresh and _voices_cache["data"] and \
+    if not refresh and not search and _voices_cache["data"] and \
             now - _voices_cache["at"] < VOICES_CACHE_TTL:
         return _voices_cache["data"]
-    all_voices = _fetch_all_providers(cfg, limit)
-    _voices_cache["at"] = now
-    _voices_cache["data"] = all_voices
+    all_voices = _fetch_all_providers(cfg, page_size, search=search)
+    if not search:
+        _voices_cache["at"] = now
+        _voices_cache["data"] = all_voices
     return all_voices
 
 
 def warm_cache(cfg) -> None:
-    """Prefetch the voice catalog in the background (no-op without an API
-    key; errors are ignored)."""
+    """Prefetch voice metadata in the background (no-op without an API
+    key; errors are ignored). Curated shortlists are resolved with a few
+    cheap id searches; otherwise the full catalog is fetched."""
     import threading
 
     if not api_key(cfg):

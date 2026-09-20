@@ -45,6 +45,13 @@ studio:
   tts_command: python D:\Repos\WhisperRadar\scripts\ai33_tts.py {script} {out} --voice {voice}
   # Optional overrides: ai33_api_key, ai33_voice, ai33_base_url
   ai33_api_key: null
+  # Shortlist shown in the audio-stage dropdown (order kept). Find ids with
+  #   python scripts\ai33_tts.py --voices --search <name>
+  # Leave empty to browse the full catalog instead.
+  ai33_voices:
+    - elevenlabs_9BYUod15YOH2aePSd97v   # Vanessa Voyce - Warm & Relatable
+    - minimax_209533299589191           # Bossy Lady
+    - elevenlabs_1inhdZEdtH9n8sjwar16   # Charles - British
   # Renderly + ImgToVideo integration (images + final render).
   # renderly_channel: null = auto-create/reuse a "whisperradar" channel.
   renderly_url: http://127.0.0.1:8022

@@ -58,8 +58,9 @@ def main() -> int:
                         "(elevenlabs/minimax/clone/edge/kokoro/vbee/"
                         "fishaudio; default: all)")
     parser.add_argument("--search", default=None, help="filter --voices")
-    parser.add_argument("--limit", type=int, default=30,
-                        help="max voices per provider to list (default: 30)")
+    parser.add_argument("--limit", type=int, default=100,
+                        help="API page size when listing voices (max 100, "
+                        "default: 100) - the full catalog is listed")
     args = parser.parse_args()
 
     api_key = args.api_key or os.environ.get("WR_AI33_API_KEY") \
@@ -78,7 +79,8 @@ def main() -> int:
         for prov in providers:
             print(f"--- {prov} ---", file=sys.stderr, flush=True)
             try:
-                items = ai33.voices(cfg, provider=prov, limit=args.limit)
+                items = ai33.voices(cfg, provider=prov, page_size=args.limit,
+                                    search=args.search)
             except RuntimeError as exc:
                 print(f"[ai33] ERROR: {exc}", file=sys.stderr, flush=True)
                 continue
