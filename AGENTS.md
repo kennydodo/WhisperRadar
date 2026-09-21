@@ -7,6 +7,47 @@ Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `
 
 ## Feature: Studio "Run till finish" automation (implemented 2026-09)
 
+### NEXT SESSION HANDOFF (2026-09-21) - image attribution debugging, ~90% done
+
+State: production 4 ("These 10 Things", work_dir E:\YOUTUBE\PERSONAL FINANCE\These 10 Things...)
+is re-rendering all 85 images from the current shotlist.json. A batch with the latest
+flow.js was restarted ~08:40 local and left running. VERIFY FIRST: /studio/job on :8540,
+then VIEW the newest images in images\ next to their shotlist prompts (I read the .png
+files directly - the mismatch was visual, not metadata).
+
+The bug that was killing renders: gallery asset previews (uploaded ref plates -
+BG_CLOSET/ KITCHEN/ LAUNDRY etc., 5504x3072) mount in the ingredient picker as fresh
+flow-content.google URLs, indistinguishable from generation results by host alone.
+flow.js adopted them as card results → plates/ref-sheets saved under card names
+(S01_02 was literally Maya.png upscaled). Fixes now in extension-v2/flow.js:
+1. Refs pre-uploaded ONCE per batch before any card (ensureRefsInGallery, chunked
+   drops of 3 - 11 full-res files in one drop crashed the tab).
+2. sessionSeen set: a flow-content URL is acceptable as a result exactly once per
+   session; baseline-swept after load, after preupload, and on every panel open
+   (harvestAssetPanel - panel tiles are gallery assets, never results).
+3. Ingredient-echo guard in runVersion: if the candidate image's dimensions match ANY
+   batch ref file (imageDimensions helper), it is an echo - mark seen, refill prompt,
+   re-trigger (an echo can fake "auto-generation already started" and skip the real
+   trigger), full timeout window restarts. Max 2 echo cycles per card.
+4. waitForIdle sweeps straggler results of failed cards into sessionSeen.
+NOT YET VALIDATED LIVE: fix 3's refill+re-trigger path (the batch was restarted right
+after implementing it). If echoes still win: check the driver log (8030/api/status),
+and consider comparing pixel data, not just dimensions.
+
+Also this session: images stage re-reads shotlist.json mid-batch (round loop in
+run_imagegen_flow - a shotlist edit stops the batch and restarts from the new plan);
+start-over endpoint (style/script/images scopes; audio only with the checkbox);
+merge guard pauses auto-run on ANY unrendered shotlist image (sanitize would drop
+them forever); fast-stop cancels the Flow batch mid-images-stage; Flow Driver as
+default image source; harness at C:\Users\Kehinde\AppData\Local\Temp\kilo\
+wr_autorun_test\run_tests.py (64/64 + T7 mid-stage cancel + T8 merge guard + T9
+shotlist hot-reload, with a mock driver on :8050 and real-DB-untouched assertion).
+REMOVED as landmines: extension-v2\shotlist.json + prompts.json (generate.bat
+fallbacks pointed at other productions' plans) - generate.bat also hardcodes 2 old
+character refs on every card, don't use it for these renders. NOTE: driver-page runs
+render ALL images (no skip-existing) - always render through WhisperRadar.
+
+
 Goal: one button on the Studio production page that automatically executes all remaining
 pipeline stages in order, so the user can do manual steps (e.g. upload audio) mid-pipeline,
 click the button, and everything after runs by itself.
