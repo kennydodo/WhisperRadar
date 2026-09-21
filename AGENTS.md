@@ -7,7 +7,74 @@ Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `
 
 ## Feature: Studio "Run till finish" automation (implemented 2026-09)
 
-### NEXT SESSION HANDOFF (2026-09-21) - image attribution debugging, ~90% done
+### ALSO NEXT SESSION — OpenSpeaker favorites for the voice picker (user approved)
+
+Goal: dropdown shows the voices the user starred in OpenSpeaker. API exists
+(found in the app JS bundle, same base `https://api.ai33.pro` + `xi-api-key`,
+NOT in published docs - verify with one read-only GET first):
+- `GET /v3/favorites?provider=<p>` -> `{favorites: [{voice_data: {voice_id, name, ...}}]}` (try without provider for all)
+- `POST /v3/favorites` `{provider, voice_id, voice_data}`; `DELETE /v3/favorites/<id>`; `POST /v3/favorites/bulk`
+Plan: in `ai33.voices()` add a mode when `studio.ai33_voices == ["favorites"]`
+(or a new config flag): fetch favorites, normalize with `_normalize`, keep
+config-order/curated fallback; UI option "Sync favorites into shortlist".
+Current curated mechanism lives in `ai33.curated_ids` / `_resolve_curated`.
+
+### NEXT SESSION HANDOFF (2026-09-21, ~13:00) — driver rebuilt; blocked by Google abuse filter
+
+Root causes found & FIXED in Renderly\extension-v2\flow.js (all proven live):
+1. Trigger never clicked: synthetic Enter + `clicked: true` without a click.
+   Now: trusted typing (click composer coords + Ctrl+A + type via Playwright),
+   then trusted click on the composer arrow (aria-label exactly "Start
+   generation", 90s enabled-wait), then trusted Enter fallback; every trigger
+   is VERIFIED (busy or fresh result) and failures dump a button inventory +
+   screenshot (trigger-fail.png / timeout-<card>.png in extension-v2).
+2. Harvester discarded real results: finished images render as
+   flow.google.com/asb/... URLs now; isFinalResultUrl accepts both hosts.
+3. URL identity is unreliable: Flow re-signs tile URLs (whole-grid re-sign =
+   24 "fresh" URLs) and old tiles load full-res variants progressively.
+   Freshness is now CONTENT-based: every candidate is fetched, sha1-hashed
+   (sessionHashes), skipped if seen; PLUS ownership check - a candidate is
+   only adopted when its tile's prompt-derived aria-label contains the
+   prompt's first 30 chars (H.tileLabelForSrc). Misattributions (house/
+   living-room plates saved as card images) came from exactly this.
+4. Echo-cure killed cards: refill+retrigger on echo aborted running
+   generations and their results got swept as seen and lost. Echoes are now
+   ignored; one late re-trigger at 60s only when submit is idle-enabled.
+5. generationBusy false-busy: disabled submit == idle-empty composer too;
+   now requires composer text.
+6. Stale ingredient chips survive cards/runs and hijack generations
+   (rendered BG_LIVING_ROOM instead of the prompt - user had noticed "more
+   refs in the composer than the array"): H.clearComposerChips runs before
+   every fill and runVersion HARD-FAILS if chips remain (chip count > the
+   card's refs array must be impossible). --refs-mode none added for
+   stepwise testing (run flow.js directly, no channel => no import).
+7. Policy/abuse rejections detected via H.policyRejected (the Failed panel);
+   2 auto-retries then a clear failure. NOT YET RELIABLE LIVE (see below).
+
+THE REMAINING WALL - NOT CODE: Google is anti-automation-blocking the
+driver's account/profile. Screenshot proof (extension-v2\trigger-fail.png):
+"Failed - We noticed some unusual activity. Please visit the Help Center...
+You have not been charged." Earlier failures said "might violate our
+policies" - same soft-block, other flavor. Every generation attempt gets
+rejected pre-charge; the submit arrow stays disabled; composer input is
+dropped. All of today's 0/85 runs were this, not the (now fixed) code bugs.
+Verified working end-to-end when a generation DOES pass: prompt -> trigger
+-> content-hash harvest -> save (NOREF_S01_01.png in
+C:\Users\Kehinde\AppData\Local\Temp\kilo\noref-test).
+
+NEXT STEPS (user agreed, one at a time):
+1. Wait out the abuse block (hours/day), then test step 1 = prompt only
+   (no refs): node flow.js --file <one-card-batch> --out <tmp> --refs-mode
+   none. Manual test in the same automated Chrome first to see if manual
+   passes while automation doesn't. If manual also blocked: Help Center
+   appeal. Test batch: Temp\kilo\noref-test\batch.json (S01_01 prompt).
+2. Step 2 = exactly ONE ref; step 3 = 2-3 refs. Chip count must equal the
+   refs array length - assert before trigger (already hard-fails on extras).
+3. Only then restart the WhisperRadar auto-run for production 4 (85 cards,
+   work_dir E:\YOUTUBE\PERSONAL FINANCE\These 10 Things At Home Worth
+   Serious Money; images dir currently EMPTY). Old handoff notes below.
+
+### PREVIOUS HANDOFF (2026-09-21 ~09:00) - superseded by the above
 
 State: production 4 ("These 10 Things", work_dir E:\YOUTUBE\PERSONAL FINANCE\These 10 Things...)
 is re-rendering all 85 images from the current shotlist.json. A batch with the latest
