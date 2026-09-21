@@ -7,6 +7,41 @@ Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `
 
 ## Feature: Studio "Run till finish" automation (implemented 2026-09)
 
+### BACKLOG — fully automated producer (user approved design 2026-09-21; BUILD ONLY WHEN the Google Flow abuse-block is resolved or with renderly default)
+
+One button/schedule: WhisperRadar looks at followed channels, picks a topic
+from each, and creates + runs a production by itself. All pieces exist except
+orchestration:
+
+1. PICK: per active channel, newest transcribed video not already a
+   production source (source_video_id NOT IN productions).
+2. CREATE: LLM-crafted title (fallback video title), genre = channel's genre
+   (reuse POST /studio/new logic + db.create_production).
+3. SEED: per-genre default bible.md + refs/ copied into the production
+   (without a bible auto-run PAUSES at shots - blocker for unattended runs).
+4. DEFAULTS: narration voice + render_mode per production (see settings below).
+5. QUEUE: sequential auto-runs (job system is single-flight), daily cap
+   (e.g. per_day 1-2) as a cost guard - images cost credits.
+6. TRIGGER: `python wr.py produce` (scheduler) + "Produce from channels"
+   button on the Studio page.
+7. Review stays human (never auto-approve).
+
+USER REQUIREMENTS (their words, expanded):
+- PER-CHANNEL settings: each channel has its OWN default voice (e.g. Alicia
+  Invest videos use one voice, InkExplainer another) - all settable.
+- A SETTINGS PAGE in the dashboard that persists all of this into the DB
+  (new settings storage: channel columns like default_voice, and/or a
+  key-value settings table; producer config: per_day cap, default render
+  mode, per-genre bible/refs folders).
+- "We still need to iron out so many things later" - treat details as open;
+  confirm with the user before building (schema, UI layout, topic-pick
+  logic: newest vs LLM-chosen best topic).
+
+Image-stage reality check when building: Flow driver was abuse-blocked by
+Google (see handoff above); unattended runs should default to Renderly API
+(headless, credit cost) until Flow is stable, or make render_mode a
+per-channel setting on the settings page.
+
 ### ALSO NEXT SESSION — OpenSpeaker favorites for the voice picker (user approved)
 
 Goal: dropdown shows the voices the user starred in OpenSpeaker. API exists
