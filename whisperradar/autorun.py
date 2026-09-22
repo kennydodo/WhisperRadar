@@ -518,15 +518,14 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
             return {"stage": stage, "action": "skip",
                     "detail": "audio file already exists"}
         if cfg.studio_tts_command:
-            conn = _connect(cfg)
-            try:
-                prod = db.get_production(conn, pid)
-                voice = (prod["voice"] if prod else None) or None
-            finally:
-                conn.close()
+            eff = _effective(cfg, pid)
+            voice = eff["voice"]
+            source = ("production" if _get_prod(cfg, pid) is not None
+                      and settings.row_get(_get_prod(cfg, pid), "voice")
+                      else (eff["own_channel_name"] or "global"))
             return {"stage": stage, "action": "run",
                     "detail": "narration via the configured TTS hook"
-                              + (f" (voice {voice})" if voice
+                              + (f" (voice {voice} from {source})" if voice
                                  else " (default voice)")}
         return {"stage": stage, "action": "pause",
                 "detail": "no audio and no TTS hook configured - upload "

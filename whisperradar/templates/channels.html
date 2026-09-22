@@ -76,10 +76,17 @@
   <div class="panel">
     <div class="muted" style="font-size:12px; margin-bottom:10px">
       These are your own channels, not the ones you monitor for ideas - those
-      stay on the <a href="/">Dashboard</a>. Creating or linking here creates
-      the channel in Renderly at <span class="mono">{{ renderly_url }}</span>
-      when needed; it never deletes anything there. Auto Run criteria for new
-      productions are on <a href="/settings">Settings</a>.
+      stay on the <a href="/">Dashboard</a>. Each channel carries its OWN
+      production defaults - narration voice, image engine, render mode,
+      upscale, auto-run, per-day cap, seed folders and Flow project - via
+      <b>edit / defaults</b>; anything left on "inherit" uses the global value
+      from <a href="/settings">Settings</a>. Auto Run uses the channel's values
+      for the productions it creates.
+    </div>
+    <div class="muted" style="font-size:12px; margin-bottom:10px">
+      Creating or linking here creates the channel in Renderly at
+      <span class="mono">{{ renderly_url }}</span> when needed; it never
+      deletes anything there.
     </div>
     <form class="inline" method="post" action="/my-channels/add">
       <input type="text" name="name" placeholder="Channel name (unique)" required
@@ -120,7 +127,8 @@
           <div class="muted" style="font-size:12px">{{ link.detail if link else "" }}</div>
         </td>
         <td style="text-align:right; white-space:nowrap">
-          <button type="button" class="ghost" onclick="toggleEdit({{ ch['id'] }})">edit</button>
+          <button type="button" class="ghost" onclick="toggleEdit({{ ch['id'] }})"
+                  title="Edit this channel and its production defaults (voice, image engine, render mode, upscale, auto-run, caps, seed folders, Flow project)">edit / defaults</button>
           <form class="row" method="post" action="/my-channels/sync" style="display:inline">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
             <button type="submit" class="ghost"

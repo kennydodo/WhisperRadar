@@ -97,6 +97,28 @@ STILL OPEN (next steps, in order):
 2. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
 
+### Per-channel vs global settings — map (2026-09-22)
+
+The Settings page holds GLOBALS; every channel can override the production
+ones on My Channels ("edit / defaults"). Resolution is always
+**global <- own channel <- production** via `settings.for_production`.
+
+Per channel (own_channels): narration voice, image engine, render mode,
+upscale, auto-run on/off, per-day cap, topic pick, bible folder, refs folder,
+Google Flow project URL, plus the Renderly channel mirror.
+
+Global only (Settings): run window, candidate window, producer LLM, scheduler
+on/off + interval, notifications, "stop services after images", and the
+per-genre seed_dirs fallback.
+
+Two bugs found 2026-09-22 and fixed - both places had ignored the channel:
+- the audio-stage picker passed only `prod["voice"]`, so it showed the
+  placeholder even though the run used the channel's voice. It now preselects
+  the effective voice and shows "Voice inherited from channel: X" (or
+  "this production").
+- `stage_action("audio")` reported "(default voice)" regardless of the
+  channel; it now names the voice and where it came from.
+
 ### Per-stage service management — DONE (2026-09-22)
 
 `whisperradar/services.py` (`MANAGER`) owns the external services the images

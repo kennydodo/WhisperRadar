@@ -404,6 +404,12 @@
         </form>
       </div>
       <div id="voice_status" class="muted" style="font-size:12px; margin-bottom:8px">Loading voices...</div>
+      {% if voice_from %}
+      <div class="muted" style="font-size:12px; margin-bottom:8px; border-left:2px solid var(--accent); padding-left:8px">
+        Voice inherited from <b>{{ voice_from }}</b>. Pick another to override it
+        for this production only.
+      </div>
+      {% endif %}
       <script>
         (function () {
           var sel = document.getElementById('voice_select');

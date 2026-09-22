@@ -894,7 +894,11 @@ def create_app(cfg) -> Flask:
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
-            prod_voice=prod["voice"], ai33_ready=bool(ai33.api_key(cfg)),
+            prod_voice=prod["voice"] or eff["voice"],
+            voice_from=("this production" if prod["voice"]
+                        else f"channel: {eff['own_channel_name']}"
+                        if eff["own_channel_name"] and eff["voice"]
+                        else "Settings" if eff["voice"] else ""), ai33_ready=bool(ai33.api_key(cfg)),
             flow_ready=studio.flow_driver_ready(cfg),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
