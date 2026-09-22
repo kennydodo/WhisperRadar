@@ -32,11 +32,12 @@ SPEC: list[dict] = [
                 "API + Flow driver; FlowImagesGen = the standalone Flow CLI.",
     },
     {
-        "key": "default_render_mode", "type": "choice", "default": "flow",
-        "choices": ["flow", "api"],
+        "key": "default_render_mode", "type": "choice", "default": "auto",
+        "choices": ["auto", "flow", "api"],
         "label": "Render mode",
         "help": "flow = drive Google Flow; api = the engine's direct API "
-                "(Gemini). Only meaningful for the Renderly engine.",
+                "(Gemini); auto = Flow when its driver is installed, "
+                "otherwise the API. Only meaningful for the Renderly engine.",
     },
     {
         "key": "default_upscale", "type": "int", "default": 2, "min": 0, "max": 4,
@@ -155,6 +156,54 @@ def load(conn) -> dict:
     for entry in SPEC:
         out[entry["key"]] = _coerce(entry, stored.get(entry["key"]))
     return out
+
+
+def row_get(row, key, default=None):
+    """sqlite3.Row lookup that tolerates a missing column or a NULL."""
+    if row is None:
+        return default
+    try:
+        value = row[key]
+    except (IndexError, KeyError):
+        return default
+    return default if value is None or value == "" else value
+
+
+def for_production(conn, prod) -> dict:
+    """Effective values for a production, most specific wins:
+    global settings <- the production's own channel <- the production.
+
+    Per-channel fields are NULL/empty when the channel inherits the global,
+    so a value only overrides when it is actually set. Returns the resolved
+    dict plus the own-channel row and its Renderly mirror name.
+    """
+    from . import db
+
+    glob = load(conn)
+    own = db.get_own_channel(conn, row_get(prod, "own_channel_id")) \
+        if prod is not None else None
+    own_upscale = row_get(own, "default_upscale", glob["default_upscale"])
+    own_per_day = row_get(own, "per_day")
+    return {
+        "voice": (row_get(prod, "voice") or row_get(own, "default_voice")
+                  or glob["default_voice"] or None),
+        "engine": row_get(own, "default_engine", glob["default_engine"]),
+        "render_mode": (row_get(prod, "render_mode")
+                        or row_get(own, "default_render_mode")
+                        or glob["default_render_mode"]),
+        "upscale": int(own_upscale),
+        "per_day": (int(own_per_day) if own_per_day is not None
+                    else int(glob["per_day"])),
+        "topic_pick": row_get(own, "topic_pick", glob["topic_pick"]),
+        "autorun_enabled": bool(glob["autorun_enabled"])
+                           and bool(row_get(own, "autorun_enabled", 1)),
+        "bible_dir": row_get(own, "bible_dir"),
+        "refs_dir": row_get(own, "refs_dir"),
+        "own_channel": own,
+        "own_channel_name": row_get(own, "name"),
+        "renderly_channel_name": (row_get(own, "renderly_channel_name")
+                                  or row_get(own, "name") or "whisperradar"),
+    }
 
 
 def save(conn, form: dict) -> tuple[dict, list[str]]:

@@ -87,15 +87,45 @@ MIRROR RULES (agreed with the user - do not break these):
    an own channel never moves/renames the Renderly channel.
 
 STILL OPEN (next steps, in order):
-1. Wire `productions.own_channel_id` into the pipeline: the images/merge
-   stages still use the legacy hardcoded "whisperradar" channel
-   (`autorun.py` `_stage_params`, `studio.run_imagegen`, `run_imagegen_flow`).
-   Per-channel default_voice/engine/render_mode/upscale/per_day/topic_pick are
-   stored but NOT consumed yet.
+1. `default_engine` is stored (global + per channel) but NOT consumed - there
+   is no FlowImagesGen engine yet. Render mode IS wired (below).
 2. Auto Run producer loop itself (pick -> create -> seed -> queue) - the
    settings page only defines the criteria.
-3. `seed_dirs` seeding (copy bible.md + refs\ per genre into a new production).
-4. Create a production for a chosen own channel from the Studio page.
+3. `seed_dirs` / per-channel bible_dir+refs_dir seeding (copy bible.md + refs\
+   into a new production) - stored, not consumed.
+4. Create a production for a chosen own channel from the Studio list form
+   (assignment exists on the production page: "change channel").
+
+### Per-channel defaults wired into the pipeline — DONE (2026-09-22)
+
+Resolution order is **global setting <- own channel <- production**, in
+`settings.for_production(conn, prod)` (returns voice, engine, render_mode,
+upscale, per_day, topic_pick, autorun_enabled, bible_dir, refs_dir, the
+own-channel row and its Renderly mirror name). A NULL/empty per-channel field
+means "inherit the global".
+
+- `own_channels` columns are now NULLABLE (the first shape had NOT NULL
+  defaults, which made "inherit" impossible). `db._migrate_own_channels`
+  rebuilds the old table in place, preserving rows.
+- `autorun._effective(cfg, pid)` wraps it; `_default_render_mode` resolves to
+  flow/api ('auto' = Flow when the driver is installed, else API).
+- images stage: flow mode passes the own channel's mirror NAME, api mode
+  resolves its Renderly channel ID (`studio.resolve_renderly_channel(...,
+  create=True)`) and passes it + the effective upscale to
+  `studio.run_imagegen(cfg, pdir, channel=, upscale=)`.
+- audio stage: TTS voice = production.voice -> channel.default_voice ->
+  global.default_voice.
+- `/my-channels` edit row now exposes voice, engine, render mode, upscale,
+  auto-run on/off, per-day cap, topic pick, bible folder, refs folder; empty =
+  inherit. A compact summary line shows the resolved choices.
+- Production page: "My Channel: X" / "no own channel" badge, a "change
+  channel" control (`POST /studio/<pid>/own-channel`), and the images-stage
+  Flow channel + upscale fields default from the channel.
+- `default_render_mode` gained an "auto" choice (now the default) so a fresh
+  install keeps the old "Flow when installed, else API" behaviour.
+
+Unassigned productions keep the legacy behaviour (Renderly channel
+"whisperradar"), so existing productions are unaffected.
 
 ### OpenSpeaker favorites for the voice picker — DONE (2026-09-22)
 

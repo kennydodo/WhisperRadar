@@ -21,7 +21,7 @@ import time
 
 from pathlib import Path
 
-from . import db, studio, transcribe
+from . import db, settings, studio, transcribe
 from .cli import format_duration
 
 
@@ -91,13 +91,32 @@ def _source_transcript_text(cfg, pid: int) -> str:
     return ""
 
 
+def _effective(cfg, pid: int) -> dict:
+    """Effective production/auto-run values for a production: global settings
+    <- its own channel <- the production itself (see settings.for_production)."""
+    conn = _connect(cfg)
+    try:
+        return settings.for_production(conn, db.get_production(conn, pid))
+    finally:
+        conn.close()
+
+
 def _default_render_mode(cfg, prod) -> str:
-    """Flow Driver is the default image source when it is installed;
-    otherwise fall back to the Renderly API. A production's saved choice
-    always wins."""
-    if prod and prod["render_mode"]:
-        return prod["render_mode"]
-    return "flow" if studio.flow_driver_ready(cfg) else "api"
+    """Resolve the image source to 'flow' or 'api': the production's saved
+    choice wins, then its own channel's default, then the global setting.
+    'auto' (the global default) means Flow when its driver is installed,
+    otherwise the Renderly API."""
+    if prod is not None and settings.row_get(prod, "render_mode"):
+        mode = prod["render_mode"]
+    else:
+        conn = _connect(cfg)
+        try:
+            mode = settings.for_production(conn, prod)["render_mode"]
+        finally:
+            conn.close()
+    if mode not in ("flow", "api"):
+        mode = "flow" if studio.flow_driver_ready(cfg) else "api"
+    return mode
 
 
 def _missing_images(pdir: Path) -> list[str]:
@@ -238,13 +257,12 @@ def _run_audio(cfg, pid: int) -> None:
                       "then Resume")
     conn = _connect(cfg)
     try:
-        prod = db.get_production(conn, pid)
         pdir = studio.prod_dir(cfg, pid)
         script = studio.find_script(pdir)
         if not script:
             raise RuntimeError("Write the script first")
         out = pdir / "audio.mp3"
-        voice = (prod["voice"] if prod else None) or None
+        voice = _effective(cfg, pid)["voice"]
         studio.run_hook(cfg.studio_tts_command,
                         {"script": script, "out": out, "voice": voice or ""})
         audio = studio.find_audio(pdir)
@@ -324,7 +342,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
 def _run_images(cfg, pid: int, mode: str | None = None,
                 flow_channel: str = "whisperradar",
                 flow_project: str = "", flow_upscale: int | None = None,
-                flow_master: str = "", log=None, cancel=None) -> None:
+                flow_master: str = "", renderly_channel=None,
+                log=None, cancel=None) -> None:
     t0 = time.monotonic()
     pdir = studio.prepare_project_folder(cfg, pid)
     if not (pdir / "shotlist.json").exists():
@@ -352,7 +371,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
             cancel=cancel)
         source = "Flow Driver (Google Flow)"
     else:
-        count = studio.run_imagegen(cfg, pdir)
+        count = studio.run_imagegen(cfg, pdir, channel=renderly_channel,
+                                    upscale=flow_upscale)
         source = "Renderly"
     conn = _connect(cfg)
     try:
@@ -513,15 +533,18 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
                     "detail": "all shotlist images already rendered"}
         prod = _get_prod(cfg, pid)
         mode = _default_render_mode(cfg, prod)
+        eff = _effective(cfg, pid)
         if mode == "flow":
             refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
                     if (pdir / "refs").exists() else 0)
             detail = (f"{len(missing)} missing image(s) via Flow Driver "
-                      f"(channel whisperradar, default project, upscale "
-                      f"{cfg.renderly_upscale or 0}"
+                      f"(channel {eff['renderly_channel_name']}, default "
+                      f"project, upscale {eff['upscale']}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
         else:
-            detail = f"{len(missing)} missing image(s) via Renderly API"
+            detail = (f"{len(missing)} missing image(s) via Renderly API "
+                      f"(channel {eff['renderly_channel_name']}, upscale "
+                      f"{eff['upscale']})")
         return {"stage": stage, "action": "run", "detail": detail}
     if stage == "merge":
         if studio.find_final(pdir):
@@ -555,10 +578,16 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None) -> dict:
     if stage in ("style", "script", "shots"):
         return {"provider": _default_provider(cfg, pid)}
     if stage == "images":
-        prod = _get_prod(cfg, pid)
-        mode = _default_render_mode(cfg, prod)
-        return {"mode": mode, "flow_channel": "whisperradar",
-                "flow_project": "", "log": log, "cancel": cancel}
+        eff = _effective(cfg, pid)
+        mode = _default_render_mode(cfg, _get_prod(cfg, pid))
+        params = {"mode": mode, "flow_project": "",
+                  "flow_upscale": eff["upscale"], "log": log, "cancel": cancel}
+        if mode == "flow":
+            params["flow_channel"] = eff["renderly_channel_name"]
+        else:
+            params["renderly_channel"] = studio.resolve_renderly_channel(
+                cfg, eff["own_channel"], create=True)
+        return params
     return {}
 
 

@@ -76,15 +76,15 @@ CREATE TABLE IF NOT EXISTS own_channels (
     genre TEXT NOT NULL DEFAULT 'general',
     youtube_handle TEXT,
     active INTEGER NOT NULL DEFAULT 1,
-    -- production defaults
+    -- production defaults; NULL/'' means "inherit the global setting"
     default_voice TEXT,
-    default_engine TEXT NOT NULL DEFAULT 'renderly',
-    default_render_mode TEXT NOT NULL DEFAULT 'flow',
-    default_upscale INTEGER NOT NULL DEFAULT 2,
+    default_engine TEXT,
+    default_render_mode TEXT,
+    default_upscale INTEGER,
     bible_dir TEXT,
     refs_dir TEXT,
     -- auto-run criteria (NULL = inherit the global setting)
-    autorun_enabled INTEGER NOT NULL DEFAULT 1,
+    autorun_enabled INTEGER,
     per_day INTEGER,
     topic_pick TEXT,
     -- Renderly mirror (soft reference: never a FK, always re-resolved)
@@ -160,6 +160,49 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN voice TEXT")
     if "own_channel_id" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN own_channel_id INTEGER")
+    _migrate_own_channels(conn)
+
+
+def _migrate_own_channels(conn: sqlite3.Connection) -> None:
+    """own_channels shipped with NOT NULL defaults, which made "inherit the
+    global setting" impossible. Rebuild it with nullable columns, preserving
+    any rows (the table is new, so it is normally empty)."""
+    info = {row[1]: row for row in conn.execute("PRAGMA table_info(own_channels)")}
+    if not info or info["default_engine"][3] == 0:  # notnull flag clear
+        return
+    conn.executescript("""
+        ALTER TABLE own_channels RENAME TO own_channels_old;
+        CREATE TABLE own_channels (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            description TEXT NOT NULL DEFAULT '',
+            genre TEXT NOT NULL DEFAULT 'general',
+            youtube_handle TEXT,
+            active INTEGER NOT NULL DEFAULT 1,
+            default_voice TEXT,
+            default_engine TEXT,
+            default_render_mode TEXT,
+            default_upscale INTEGER,
+            bible_dir TEXT,
+            refs_dir TEXT,
+            autorun_enabled INTEGER,
+            per_day INTEGER,
+            topic_pick TEXT,
+            renderly_channel_id INTEGER,
+            renderly_channel_name TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO own_channels (id, name, description, genre, youtube_handle,
+            active, default_voice, default_engine, default_render_mode,
+            default_upscale, bible_dir, refs_dir, autorun_enabled, per_day,
+            topic_pick, renderly_channel_id, renderly_channel_name, created_at)
+        SELECT id, name, description, genre, youtube_handle, active,
+            default_voice, default_engine, default_render_mode,
+            default_upscale, bible_dir, refs_dir, autorun_enabled, per_day,
+            topic_pick, renderly_channel_id, renderly_channel_name, created_at
+        FROM own_channels_old;
+        DROP TABLE own_channels_old;
+    """)
 
 
 def add_channel(

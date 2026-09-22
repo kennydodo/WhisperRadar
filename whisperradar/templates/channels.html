@@ -101,6 +101,12 @@
       <tr>
         <td>{{ ch["name"] }}
           {% if ch["description"] %}<div class="muted" style="font-size:12px">{{ ch["description"] }}</div>{% endif %}
+          <div class="muted mono" style="font-size:11px">
+            {{ ch["default_engine"] or "inherit" }} &middot; {{ ch["default_render_mode"] or "inherit" }} &middot; upscale {{ ch["default_upscale"] if ch["default_upscale"] is not none else "inherit" }}
+            {%- if ch["default_voice"] %} &middot; {{ ch["default_voice"] }}{% endif %}
+            {%- if ch["per_day"] is not none %} &middot; {{ ch["per_day"] }}/day{% endif %}
+            {%- if ch["autorun_enabled"] == 0 %} &middot; auto-run off{% endif %}
+          </div>
         </td>
         <td class="muted">{{ ch["genre"] }}</td>
         <td class="muted mono">{{ ch["youtube_handle"] or "" }}</td>
@@ -129,33 +135,100 @@
       </tr>
       <tr id="edit-{{ ch['id'] }}" style="display:none">
         <td colspan="6" style="background:var(--panel2)">
-          <form class="inline" method="post" action="/my-channels/edit">
+          <form method="post" action="/my-channels/edit">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
-            <label>name
-              <input type="text" name="name" value="{{ ch['name'] }}" style="width:180px">
-            </label>
-            <label>description
-              <input type="text" name="description" value="{{ ch['description'] }}" style="width:200px">
-            </label>
-            <label>genre
-              <input type="text" name="genre" value="{{ ch['genre'] }}" style="width:150px">
-            </label>
-            <label>handle
-              <input type="text" name="youtube_handle" value="{{ ch['youtube_handle'] or '' }}" style="width:140px">
-            </label>
-            <label>state
-              <select name="active">
-                <option value="1" {{ 'selected' if ch['active'] else '' }}>active</option>
-                <option value="0" {{ 'selected' if not ch['active'] else '' }}>paused</option>
-              </select>
-            </label>
-            <button type="submit">save</button>
-            <button type="button" class="ghost" onclick="cancelEdit({{ ch['id'] }})">cancel</button>
+            <div class="inline">
+              <label>name
+                <input type="text" name="name" value="{{ ch['name'] }}" style="width:180px">
+              </label>
+              <label>description
+                <input type="text" name="description" value="{{ ch['description'] }}" style="width:200px">
+              </label>
+              <label>genre
+                <input type="text" name="genre" value="{{ ch['genre'] }}" style="width:150px">
+              </label>
+              <label>handle
+                <input type="text" name="youtube_handle" value="{{ ch['youtube_handle'] or '' }}" style="width:140px">
+              </label>
+              <label>state
+                <select name="active">
+                  <option value="1" {{ 'selected' if ch['active'] else '' }}>active</option>
+                  <option value="0" {{ 'selected' if not ch['active'] else '' }}>paused</option>
+                </select>
+              </label>
+            </div>
+            <div class="muted" style="font-size:12px; margin:10px 0 6px">
+              Production defaults - "inherit" uses the global value from
+              <a href="/settings">Settings</a>.
+            </div>
+            <div class="inline">
+              <label>narration voice
+                <input type="text" name="default_voice"
+                       value="{{ ch['default_voice'] or '' }}" placeholder="inherit"
+                       style="width:230px">
+              </label>
+              <label>image engine
+                <select name="default_engine">
+                  <option value="">inherit</option>
+                  {% for opt in ['renderly', 'flowimagesgen'] %}
+                  <option value="{{ opt }}" {{ 'selected' if ch['default_engine'] == opt else '' }}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>render mode
+                <select name="default_render_mode">
+                  <option value="">inherit</option>
+                  {% for opt in ['auto', 'flow', 'api'] %}
+                  <option value="{{ opt }}" {{ 'selected' if ch['default_render_mode'] == opt else '' }}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>upscale
+                <select name="default_upscale">
+                  <option value="">inherit</option>
+                  {% for opt in [0, 1, 2, 3, 4] %}
+                  <option value="{{ opt }}" {{ 'selected' if ch['default_upscale'] == opt else '' }}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>auto run
+                <select name="autorun_enabled">
+                  <option value="">inherit</option>
+                  <option value="1" {{ 'selected' if ch['autorun_enabled'] == 1 else '' }}>on</option>
+                  <option value="0" {{ 'selected' if ch['autorun_enabled'] == 0 else '' }}>off</option>
+                </select>
+              </label>
+              <label>per-day cap
+                <input type="number" name="per_day" min="0" max="50"
+                       value="{{ ch['per_day'] if ch['per_day'] is not none else '' }}"
+                       placeholder="inherit" style="width:90px">
+              </label>
+              <label>topic pick
+                <select name="topic_pick">
+                  <option value="">inherit</option>
+                  {% for opt in ['newest', 'llm'] %}
+                  <option value="{{ opt }}" {{ 'selected' if ch['topic_pick'] == opt else '' }}>{{ opt }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="inline" style="margin-top:8px">
+              <label>bible folder
+                <input type="text" name="bible_dir"
+                       value="{{ ch['bible_dir'] or '' }}" placeholder="folder holding bible.md"
+                       style="width:330px">
+              </label>
+              <label>refs folder
+                <input type="text" name="refs_dir"
+                       value="{{ ch['refs_dir'] or '' }}" placeholder="folder copied into refs\"
+                       style="width:330px">
+              </label>
+            </div>
+            <div style="margin-top:10px">
+              <button type="submit">save</button>
+              <button type="button" class="ghost" onclick="cancelEdit({{ ch['id'] }})">cancel</button>
+            </div>
           </form>
-          <div class="muted" style="font-size:12px; margin-top:6px">
-            Per-channel defaults (voice, image engine, render mode, upscale,
-            per-day cap) come next - see AGENTS.md.
-          </div>
         </td>
       </tr>
       {% else %}

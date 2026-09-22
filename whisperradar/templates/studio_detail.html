@@ -111,6 +111,12 @@
   </h1>
   <div class="sub">
     <span class="badge genre">{{ prod["genre"] }}</span>
+    {% if own_channel_name %}
+    <span class="badge stage" title="The channel this production is for">My Channel: {{ own_channel_name }}</span>
+    {% else %}
+    <span class="badge stage" style="background:rgba(224,169,63,.15);color:var(--amber)"
+          title="Not assigned to one of your channels - using the legacy whisperradar Renderly channel">no own channel</span>
+    {% endif %}
     <span class="muted"> created {{ prod["created_at"] }}</span>
     {% if source_video %}
     <span class="muted">| inspired by</span>
@@ -121,6 +127,23 @@
   <div class="panel" style="padding:10px 14px">
     <div class="inline" style="justify-content:space-between">
       <span class="muted" style="font-size:12px">Working folder: <span class="mono">{{ work_dir }}</span></span>
+      <details style="flex:1">
+        <summary class="muted" style="font-size:12px; cursor:pointer">change channel</summary>
+        <form class="inline" method="post" action="/studio/{{ prod['id'] }}/own-channel">
+          <select name="own_channel_id" style="min-width:220px">
+            <option value="">(none - legacy whisperradar channel)</option>
+            {% for oc in own_channels %}
+            <option value="{{ oc['id'] }}"
+                    {{ 'selected' if prod['own_channel_id'] == oc['id'] else '' }}>{{ oc['name'] }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Assign</button>
+          {% if not own_channels %}
+          <span class="muted" style="font-size:12px">No own channels yet - create one on
+            <a href="/my-channels">My Channels</a>.</span>
+          {% endif %}
+        </form>
+      </details>
       <details style="flex:1">
         <summary class="muted" style="font-size:12px; cursor:pointer">change folder</summary>
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/workdir"
@@ -612,7 +635,8 @@
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
               onsubmit="return confirm('Render the missing shotlist images now?\n\nRenderly API: consumes your Renderly/Gemini credits.\nFlow Driver: opens a Chrome window and drives Google Flow with your account - keep it running until the job finishes.')">
-          {% set default_mode = prod['render_mode'] or ('flow' if flow_ready else 'api') %}
+          {% set dm = prod['render_mode'] or default_render_mode %}
+          {% set default_mode = dm if dm in ('flow', 'api') else ('flow' if flow_ready else 'api') %}
           <select name="render_mode" id="rendermode" title="Image source">
             <option value="api" {{ 'selected' if default_mode == 'api' else '' }}>Renderly API</option>
             <option value="flow" {{ 'selected' if default_mode == 'flow' else '' }} {{ 'disabled' if not flow_ready else '' }}>Flow Driver (Google Flow){{ '' if flow_ready else ' - not installed' }}</option>
@@ -628,7 +652,7 @@
         <div style="font-weight:600; margin-bottom:6px">Flow Driver settings <span class="muted" style="font-weight:400">(same controls as the Flow Driver page in Renderly)</span></div>
         <div class="row" style="margin-bottom:6px">
           <label style="min-width:130px; font-size:12px" class="muted">Renderly channel</label>
-          <input type="text" name="flow_channel" value="whisperradar" title="Channel images are imported into (auto-created)">
+          <input type="text" name="flow_channel" value="{{ flow_channel_default }}" title="Channel images are imported into (auto-created){% if own_channel_name %} - from My Channels: {{ own_channel_name }}{% endif %}">
         </div>
         <div class="row" style="margin-bottom:6px">
           <label style="min-width:130px; font-size:12px" class="muted">Renderly project</label>

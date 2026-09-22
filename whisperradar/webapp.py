@@ -500,6 +500,31 @@ def create_app(cfg) -> Flask:
         if "active" in request.form:
             fields["active"] = 1 if request.form.get("active") in ("1", "on",
                                                                   "true") else 0
+        # per-channel production defaults; empty means "inherit the global"
+        for key in ("default_voice", "bible_dir", "refs_dir"):
+            if key in request.form:
+                fields[key] = (request.form.get(key) or "").strip() or None
+        for key in ("default_engine", "default_render_mode", "topic_pick"):
+            if key in request.form:
+                fields[key] = (request.form.get(key) or "").strip() or None
+        if "default_upscale" in request.form:
+            raw = (request.form.get("default_upscale") or "").strip()
+            try:
+                fields["default_upscale"] = (max(0, min(4, int(raw)))
+                                             if raw else None)
+            except ValueError:
+                fields["default_upscale"] = None
+        if "per_day" in request.form:
+            raw = (request.form.get("per_day") or "").strip()
+            try:
+                fields["per_day"] = max(0, min(50, int(raw))) if raw else None
+            except ValueError:
+                fields["per_day"] = None
+        if "autorun_enabled" in request.form:
+            raw = (request.form.get("autorun_enabled") or "").strip()
+            fields["autorun_enabled"] = (None if raw == ""
+                                         else 1 if raw in ("1", "on", "true")
+                                         else 0)
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -729,6 +754,8 @@ def create_app(cfg) -> Flask:
             prod = db.get_production(conn, pid)
             if not prod:
                 abort(404)
+            eff = settings.for_production(conn, prod)
+            own_channels = db.list_own_channels(conn)
             steps = db.latest_steps(conn, pid)
             history = db.step_history(conn, pid)
             source_video = (db.get_video(conn, prod["source_video_id"])
@@ -825,7 +852,11 @@ def create_app(cfg) -> Flask:
             flow_ready=studio.flow_driver_ready(cfg),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
-            flow_upscale_default=cfg.renderly_upscale or 2,
+            flow_upscale_default=eff["upscale"],
+            flow_channel_default=eff["renderly_channel_name"],
+            default_render_mode=eff["render_mode"],
+            own_channel_name=eff["own_channel_name"],
+            own_channels=own_channels,
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
             bible_text=bible_text,
@@ -911,6 +942,29 @@ def create_app(cfg) -> Flask:
         detail = ", ".join(removed) if removed else "nothing on disk"
         return _studio_url(
             pid, msg=f"Start over from '{from_stage}' - cleared: {detail}")
+
+    @app.post("/studio/<int:pid>/own-channel")
+    def studio_own_channel(pid):
+        """Assign (or clear) the production's own channel. Its per-channel
+        defaults then drive the images/audio stages."""
+        raw = (request.form.get("own_channel_id") or "").strip()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return _studio_url(pid, error="Unknown production")
+            if not raw:
+                db.update_production(conn, pid, own_channel_id=None)
+                return _studio_url(
+                    pid, msg="Channel cleared - using the legacy whisperradar "
+                             "Renderly channel")
+            ch = db.get_own_channel(conn, raw)
+            if not ch:
+                return _studio_url(pid, error="Unknown channel")
+            db.update_production(conn, pid, own_channel_id=ch["id"])
+        finally:
+            conn.close()
+        return _studio_url(pid, msg=f"Production assigned to '{ch['name']}'")
 
     @app.post("/studio/<int:pid>/workdir")
     def studio_workdir(pid):
@@ -1406,24 +1460,35 @@ def create_app(cfg) -> Flask:
         pdir = studio.prepare_project_folder(cfg, pid)
         if not (pdir / "shotlist.json").exists():
             return _studio_url(pid, error="Generate the shotlist first")
-        mode = request.form.get("render_mode") or (
-            "flow" if studio.flow_driver_ready(cfg) else "api")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+        finally:
+            conn.close()
+        mode = request.form.get("render_mode") or eff["render_mode"]
         if mode not in ("api", "flow"):
-            mode = "api"
-        flow_channel = (request.form.get("flow_channel") or "whisperradar").strip()
+            mode = "flow" if studio.flow_driver_ready(cfg) else "api"
+        flow_channel = (request.form.get("flow_channel")
+                        or eff["renderly_channel_name"]).strip()
         flow_project = (request.form.get("flow_project") or "").strip()
         try:
             flow_upscale = max(0, min(4, int(request.form.get("flow_upscale")
-                                             or (cfg.renderly_upscale or 0))))
+                                             or eff["upscale"])))
         except ValueError:
-            flow_upscale = cfg.renderly_upscale or 0
+            flow_upscale = eff["upscale"]
         flow_master = (request.form.get("flow_master") or "").strip()
+        renderly_channel = None
+        if mode == "api":
+            renderly_channel = studio.resolve_renderly_channel(
+                cfg, eff["own_channel"], create=True)
 
         def worker():
             autorun.raise_result(autorun.run_stage(cfg, pid, "images", {
                 "mode": mode, "flow_channel": flow_channel,
                 "flow_project": flow_project,
                 "flow_upscale": flow_upscale, "flow_master": flow_master,
+                "renderly_channel": renderly_channel,
                 "log": sjob.log.append,
             }))
 

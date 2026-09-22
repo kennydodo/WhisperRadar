@@ -379,13 +379,18 @@ def sync_renderly_channel(cfg, conn, own_channel, create: bool = True) -> dict:
     return {"ok": True, "id": channel_id, "name": name, "created": created}
 
 
-def run_imagegen(cfg, pid_dir: Path) -> int:
+def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
     """Render the production's shotlist images through ImgToVideo.ImageGen
-    in Renderly mode. Returns how many new images landed in images\\."""
+    in Renderly mode. `channel` is the target Renderly channel id (the
+    production's own channel mirror); None falls back to the legacy
+    'whisperradar' channel. Returns how many new images landed in images\\."""
     repo = cfg.imgtovideo_repo
     if not repo or not Path(repo, "src", "ImgToVideo.ImageGen").exists():
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
-    channel = ensure_renderly_channel(cfg)
+    if channel is None:
+        channel = ensure_renderly_channel(cfg)
+    if upscale is None:
+        upscale = cfg.renderly_upscale
     before = {p.name for p in (pid_dir / "images").iterdir()} \
         if (pid_dir / "images").exists() else set()
     cmd = [
@@ -396,7 +401,7 @@ def run_imagegen(cfg, pid_dir: Path) -> int:
         "--renderly", cfg.renderly_url,
         "--channel", str(channel),
         "--image-size", "1K",
-        "--upscale", str(cfg.renderly_upscale),
+        "--upscale", str(upscale or 0),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
     if result.returncode != 0:
