@@ -42,19 +42,78 @@ Google (see handoff above); unattended runs should default to Renderly API
 (headless, credit cost) until Flow is stable, or make render_mode a
 per-channel setting on the settings page.
 
-### ALSO NEXT SESSION — OpenSpeaker favorites for the voice picker (user approved)
+### OpenSpeaker favorites for the voice picker — DONE (2026-09-22)
 
-Goal: dropdown shows the voices the user starred in OpenSpeaker. API exists
-(found in the app JS bundle, same base `https://api.ai33.pro` + `xi-api-key`,
-NOT in published docs - verify with one read-only GET first):
-- `GET /v3/favorites?provider=<p>` -> `{favorites: [{voice_data: {voice_id, name, ...}}]}` (try without provider for all)
-- `POST /v3/favorites` `{provider, voice_id, voice_data}`; `DELETE /v3/favorites/<id>`; `POST /v3/favorites/bulk`
-Plan: in `ai33.voices()` add a mode when `studio.ai33_voices == ["favorites"]`
-(or a new config flag): fetch favorites, normalize with `_normalize`, keep
-config-order/curated fallback; UI option "Sync favorites into shortlist".
-Current curated mechanism lives in `ai33.curated_ids` / `_resolve_curated`.
+The audio-stage picker can now list the voices starred in OpenSpeaker
+(ai33.pro). The endpoint was NOT in the docs and was verified live with a
+read-only GET before wiring it:
 
-### NEXT SESSION HANDOFF (2026-09-21, ~13:00) — driver rebuilt; blocked by Google abuse filter
+- `GET /v3/favorites` -> `{success, favorites: [{created_at, provider,
+  voice_id, voice_data}]}`. `provider` there is a generic "v3" — the real
+  provider is the `voice_id` prefix. `voice_data` carries name/gender/
+  language/accent/preview_url. 9 favorites on this account.
+- `POST /v3/favorites` `{provider, voice_id, voice_data}`;
+  `DELETE /v3/favorites/<id>`; `POST /v3/favorites/bulk` — NOT used yet.
+
+Implementation:
+- `ai33.favorites(cfg, refresh=False)` — fetch + `_normalize` + 10 min cache
+  (`_favorites_cache`); dedupes by voice_id; provider from the prefix.
+- `ai33.wants_favorites(cfg)` / `ai33.voices(cfg, source=...)` — favorites
+  mode when `studio.ai33_voice_source: favorites` OR the sentinel
+  `studio.ai33_voices: ["favorites"]`; an empty favorites list falls back to
+  the shortlist/catalog. The sentinel is stripped before the curated branch.
+- `GET /studio/voices.json?source=favorites` (+ `source` echoed in the JSON).
+- Audio stage: a "☆/★ Favorites" toggle next to the voice search reloads the
+  picker from favorites (`loadVoices(source)` in studio_detail.html).
+
+DEFERRED: "Sync favorites into shortlist" (persisting the starred ids as a
+shortlist) needs a settings store — it belongs with the Auto Run settings
+page, not a config.yaml rewrite (WhisperRadar never writes config.yaml; a
+dump would strip its comments). Channels/settings live in SQLite.
+
+
+### NEXT SESSION HANDOFF (2026-09-21, ~21:40) — STEP 1 GREEN on the second account
+
+flow-simple.js (extension-v2) is the minimal no-reference driver and it
+PASSED step 1: S01_01 prompt (truncated master, no refs) rendered the
+correct scene end-to-end on profile-b (second Google account, free tier,
+Nano Banana 2 Lite) — 1/1, saved to Temp\kilo\noref-test. What made it work:
+1. Prompt length: composed master+prompt of ~2500 chars keeps the submit
+   arrow DISABLED. --maxchars (default 2400) trims the MASTER portion at a
+   word boundary; card prompt always intact.
+2. Submit arrow identity: aria-label "Start generation" in some views, a
+   bare "arrow_forward" icon button in others — findArrow matches both.
+3. View targeting: only the FEED ("What do you want to create?") hosts the
+   create composer. Batch DETAIL views host "What do you want to change?"
+   (edits an existing image!) — ensureComposeSurface navigates Back from
+   detail views, never types into a change composer.
+4. Harvest: FIRST grid tile (newest) + sha1 content-hash. Old tiles
+   re-signing URLs / loading full-res variants keep their positions, so
+   position 0 + new bytes = the result. Verify visually before trusting.
+
+Run: node flow-simple.js --file <batch> --out <dir> --profile <dir>
+     [--limit N] [--maxchars 2400] [--timeout ms]
+batch.json: { style, images: [{file, prompt}] } — UTF-8 no BOM (PowerShell
+5.1 Set-Content adds a BOM that breaks JSON.parse; node writes are clean).
+
+The OLD flagged profile (extension-v2\profile, first Google account) is
+still abuse-blocked ("unusual activity"). profile-b is clean. Do not
+rotate profiles to dodge flags — the second account is the user's choice.
+
+NEXT (agreed, one at a time):
+1. STEP 2 — one reference: upload the image to Flow's gallery ONCE, then
+   attach via the composer's "+" menu → gallery selection (NEVER disk
+   drops into the composer). Assert: exactly ONE ingredient chip before
+   triggering (chip count must equal the refs array length — user caught
+   Flow stacking extra chips). Verify the render is on-model.
+2. STEP 3 — two to three refs, same assertion, then re-add echo/label
+   protections from flow.js only as needed.
+3. Then point WhisperRadar's images stage at the proven script and restart
+   the production-4 auto-run (85 cards, images dir empty).
+4. Backlog (automated producer) stays parked until the Flow path is stable.
+   (OpenSpeaker favorites shipped 2026-09-22 - see above.)
+
+### HANDOFF (2026-09-21, ~13:00) — superseded, kept for the fix history
 
 Root causes found & FIXED in Renderly\extension-v2\flow.js (all proven live):
 1. Trigger never clicked: synthetic Enter + `clicked: true` without a click.
@@ -96,6 +155,24 @@ dropped. All of today's 0/85 runs were this, not the (now fixed) code bugs.
 Verified working end-to-end when a generation DOES pass: prompt -> trigger
 -> content-hash harvest -> save (NOREF_S01_01.png in
 C:\Users\Kehinde\AppData\Local\Temp\kilo\noref-test).
+
+USER'S KEY EXPERIMENT (2026-09-21 ~11:00): the FULL master prompt (style.md
+- esp. "Recurring character identity must be preserved exactly from the
+supplied reference: mixed-race half-Asian woman..." + the long "no
+photorealism/no Pixar..." list) trips the violation filter MANUALLY TOO.
+The TRUNCATED master (cut at "Recurring character identity must be
+preserved") passes manually - user rendered the correct S01_01 scene
+(woman at grandma's cabinet, tea set, collector plates, bubble wrap) 4+
+times. shotlist.json style field TRUNCATED accordingly
+(shotlist.json.bak-full-master holds the original).
+
+Automation profile status: flagged. The driver's composer refuses to ARM
+(disabled=true) for ANY input method - trusted typing, execCommand
+insertText, clipboard paste - even when the text verifiably lands in the
+focused bottom-area editable (screenshots prove the visible pill empty /
+arrow disabled). Manual use in the user's own browser passes normally.
+Do NOT rotate profiles to dodge the flag - let it rest (24-48h) and retry,
+or resolve via the Help Center link in the failure panel.
 
 NEXT STEPS (user agreed, one at a time):
 1. Wait out the abuse block (hours/day), then test step 1 = prompt only
