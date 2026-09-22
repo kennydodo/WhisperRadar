@@ -23,7 +23,7 @@ import json
 import re
 from datetime import datetime
 
-from . import db, settings, studio
+from . import db, notify, settings, studio
 
 
 def _in_window(vals: dict, now: datetime | None = None) -> bool:
@@ -270,4 +270,45 @@ def run(cfg, log=None, job=None) -> dict:
             log(f"[produce] stopping: production {item['pid']} returned "
                 f"{result}")
             break
+    _notify_outcome(cfg, created, skipped, result, log)
     return {"created": created, "skipped": skipped, "result": result}
+
+
+def _notify_outcome(cfg, created, skipped, result, log) -> None:
+    """Tell the user about an unattended outcome. Never raises."""
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            conf = notify.config_for(conn)
+            if not (conf["desktop"] or conf["url"]):
+                return
+            if result == "ok":
+                if not conf["on_success"]:
+                    return
+                title = "WhisperRadar: Auto Run finished"
+                message = (f"{len(created)} production(s) created and run; "
+                           f"{len(skipped)} channel(s) skipped. They are "
+                           f"waiting at review.")
+                if not created:
+                    title = "WhisperRadar: Auto Run found nothing to do"
+                    message = (skipped[0]["detail"] if skipped
+                               else "no channels to produce for")
+            else:
+                paused = result.startswith("paused")
+                title = ("WhisperRadar: Auto Run paused"
+                         if paused else "WhisperRadar: Auto Run failed")
+                detail = result.split(":", 1)[1].strip() if ":" in result \
+                    else result
+                last = created[-1] if created else None
+                where = (f"production #{last['pid']} '{last['title']}'"
+                         if last else "the run")
+                message = (f"{where} needs attention: {detail}\n"
+                           f"{len(created)} created, {len(skipped)} skipped.")
+            used = notify.notify(conn, title, message)
+            if used:
+                log(f"[produce] notified via {', '.join(used)}")
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - notifications are best effort
+        log(f"[produce] notification skipped: {exc}")

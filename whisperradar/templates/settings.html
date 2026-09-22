@@ -126,7 +126,15 @@
             {% else %}
               <input type="text" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      value="{{ values[entry.key] }}">
-            {% endif %}
+    {% endif %}
+    <div class="muted" style="font-size:12px; margin-bottom:12px; border-left:2px solid var(--border); padding-left:8px">
+      <b>Notifications</b>:
+      {% set targets = [] %}
+      {% if values["notify_desktop"] %}{% set _ = targets.append("desktop") %}{% endif %}
+      {% if values["notify_webhook_url"] %}{% set _ = targets.append(values["notify_webhook_kind"]) %}{% endif %}
+      {% if targets %}{{ targets|join(" + ") }} on problems{% if values["notify_on_success"] %} and on success{% endif %}
+      {% else %}off - unattended pauses and failures are only visible in the dashboard{% endif %}
+    </div>
           {% endif %}
           <div class="help">{{ entry.help }}</div>
         </div>

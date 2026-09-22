@@ -100,6 +100,25 @@ STILL OPEN (next steps, in order):
 4. Per-stage service supervisor (original item 4) - lowest value; services are
    already started on demand.
 
+### Unattended-run notifications — DONE (2026-09-22)
+
+`whisperradar/notify.py`, called from `producer._notify_outcome` at the end of
+every `producer.run`. An unattended run that pauses at 3am is useless if nobody
+hears about it.
+
+Targets (both optional, configured in Settings, read fresh each time):
+- **desktop**: a Windows balloon tip via PowerShell NotifyIcon - no modules
+  needed (`notify.desktop_command`); fired detached with CREATE_NO_WINDOW.
+- **webhook**: `notify_webhook_kind` = discord | slack | ntfy | json.
+  ntfy takes the raw message + a Title header; the others POST JSON.
+
+Policy: always notify on paused/failed; notify on success only when
+`notify_on_success` is on. A run that finishes cleanly but produces nothing
+reports why (e.g. "daily cap reached"). `notify.notify` and the whole
+`_notify_outcome` are best-effort - a failing notification is logged and
+swallowed so it can never fail a production. Settings shows the active targets
+as a status line.
+
 ### Auto Run scheduler — DONE (2026-09-22)
 
 `whisperradar/scheduler.py` - a thin ticker thread started by `create_app`.

@@ -19,6 +19,32 @@ SPEC: list[dict] = [
                 "runs by itself.",
     },
     {
+        "key": "notify_desktop", "type": "bool", "default": False,
+        "label": "Desktop notification",
+        "help": "Show a Windows balloon tip when an unattended run pauses or "
+                "fails (and on success if enabled below).",
+    },
+    {
+        "key": "notify_webhook_url", "type": "str", "default": "",
+        "label": "Notification webhook URL",
+        "help": "Optional. A Discord/Slack webhook, an ntfy URL (e.g. "
+                "https://ntfy.sh/your-topic), or any endpoint that accepts a "
+                "JSON POST. Empty = no webhook.",
+    },
+    {
+        "key": "notify_webhook_kind", "type": "choice", "default": "discord",
+        "choices": ["discord", "slack", "ntfy", "json"],
+        "label": "Webhook format",
+        "help": "How to shape the payload for the URL above. ntfy takes the "
+                "message as the body; the others POST JSON.",
+    },
+    {
+        "key": "notify_on_success", "type": "bool", "default": False,
+        "label": "Notify on success too",
+        "help": "Also notify when an unattended run finishes cleanly. Off = "
+                "you only hear about pauses and failures.",
+    },
+    {
         "key": "scheduler_enabled", "type": "bool", "default": False,
         "label": "Scheduler",
         "help": "Let the running dashboard start Auto Run on its own every "
