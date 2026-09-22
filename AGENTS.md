@@ -89,8 +89,37 @@ MIRROR RULES (agreed with the user - do not break these):
 STILL OPEN (next steps, in order):
 1. `default_engine` is stored (global + per channel) but NOT consumed - there
    is no FlowImagesGen engine yet. Render mode IS wired (below).
-2. Auto Run producer loop itself (pick -> create -> seed -> queue) - the
-   settings page only defines the criteria. Seeding (item 3) is DONE.
+2. FlowImagesGen vendoring + the submodule work for ImgToVideo/Renderly.
+
+### Auto Run producer — DONE (2026-09-22)
+
+`whisperradar/producer.py` + `python wr.py produce [--plan]` + the Studio
+"Produce from channels" button + `GET /studio/produce/plan` (dry run, JSON,
+free - no LLM calls) and `POST /studio/produce`.
+
+AGREED DESIGN (do not change without the user):
+- Monitored source channels map to an own channel by GENRE.
+- Candidates: `videos.status='transcribed'`, monitored channel genre = the own
+  channel's genre, `video_id NOT IN (SELECT source_video_id FROM productions)`,
+  published within `candidate_window_days` (0 = no limit), newest first.
+- `topic_pick`: 'newest' = most recent candidate; 'llm' = the producer LLM
+  picks among candidates AND writes the production title. A returned id that
+  is not in the candidate list falls back to newest (never trust the model).
+- Caps: `per_day` (global + per channel) counts productions CREATED today
+  (`date(created_at) = date('now')`). Run window is local time; start > end
+  means an overnight window.
+- After create + seed, each production runs `autorun.run_pipeline` and STOPS
+  before review. The producer stops the whole run on the first pause/failure.
+- Skips are logged per channel (no candidates / cap / auto-run off).
+
+LLM PROVIDER SEAM: providers now carry `api` (default "openai"); only the
+OpenAI-compatible `/chat/completions` adapter exists, in `CHAT_APIS`
+(studio.py). `llm_generate` dispatches on it and raises a clear error for an
+unimplemented api; `provider_ready` returns False for one, so the UI shows it
+as not ready. Adding Claude/GPT: config-only through any OpenAI-compatible
+gateway, or a new `*_chat` function + one CHAT_APIS entry for a native API.
+New settings: `producer_llm_provider` (empty = studio.llm_default) and
+`candidate_window_days` (default 90).
 
 ### Seeding + create-form channel picker — DONE (2026-09-22)
 

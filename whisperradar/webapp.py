@@ -25,7 +25,7 @@ from flask import (
     send_file,
 )
 
-from . import ai33, autorun, db, pipeline, settings, studio
+from . import ai33, autorun, db, pipeline, producer, settings, studio
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -413,6 +413,7 @@ def create_app(cfg) -> Flask:
         return render_template(
             "settings.html", values=values, spec=settings.SPEC,
             seed_dirs_text=settings.format_seed_dirs(values.get("seed_dirs")),
+            providers=[p["name"] for p in cfg.studio_llm_providers],
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/settings/save")
@@ -1697,6 +1698,35 @@ def create_app(cfg) -> Flask:
         if not target.is_file():
             abort(404)
         return send_file(target)
+
+    @app.get("/studio/produce/plan")
+    def studio_produce_plan():
+        """Dry-run: what the Auto Run producer would create right now. Makes
+        no LLM calls and spends nothing."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            plan = producer.build_plan(cfg, conn)
+        finally:
+            conn.close()
+        return {"plan": plan, "running": sjob.running}
+
+    @app.post("/studio/produce")
+    def studio_produce():
+        """Create + run a production per runnable own channel (Auto Run)."""
+        if sjob.running:
+            return redirect("/studio?error=A+job+is+already+running")
+
+        def worker():
+            result = producer.run(cfg, log=sjob.log.append, job=sjob)
+            sjob.log.append(
+                f"=== produce: {len(result['created'])} created, "
+                f"{len(result['skipped'])} skipped, result={result['result']} ===")
+            if result["result"].startswith(("paused:", "failed:")):
+                raise RuntimeError(result["result"].split(":", 1)[1])
+
+        sjob.start(worker, "auto-run producer")
+        return redirect("/studio?msg=Producer+started")
 
     @app.get("/studio/<int:pid>/auto-run/plan")
     def studio_autorun_plan(pid):

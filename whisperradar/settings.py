@@ -25,6 +25,20 @@ SPEC: list[dict] = [
                 "day, across all channels. 0 = no cap.",
     },
     {
+        "key": "producer_llm_provider", "type": "provider", "default": "",
+        "label": "Producer LLM",
+        "help": "Which configured LLM provider picks the topic and writes the "
+                "title for Auto Run. Empty = studio.llm_default. Providers are "
+                "declared in config.yaml (studio.llm_providers).",
+    },
+    {
+        "key": "candidate_window_days", "type": "int", "default": 90,
+        "min": 0, "max": 3650,
+        "label": "Candidate window (days)",
+        "help": "Only source videos published within this many days are "
+                "considered for a new production. 0 = no limit.",
+    },
+    {
         "key": "default_engine", "type": "choice", "default": "renderly",
         "choices": ["renderly", "flowimagesgen"],
         "label": "Image engine",

@@ -857,7 +857,8 @@ def _resolve_provider(cfg, name: str | None = None) -> dict:
     if cfg.studio_llm == "openai":
         return {"name": "llm", "base_url": cfg.studio_llm_base_url,
                 "api_key": cfg.studio_llm_api_key,
-                "model": cfg.studio_llm_model, "env_key": "WR_LLM_API_KEY"}
+                "model": cfg.studio_llm_model, "api": "openai",
+                "env_key": "WR_LLM_API_KEY"}
     raise RuntimeError("No LLM providers configured (studio.llm_providers)")
 
 
@@ -874,7 +875,8 @@ def provider_ready(cfg, name: str | None = None) -> bool:
         p = _resolve_provider(cfg, name)
     except RuntimeError:
         return False
-    return bool(p["base_url"] and p["model"] and _provider_key(p))
+    return bool(p["base_url"] and p["model"] and _provider_key(p)
+                and provider_api_ready(p))
 
 
 def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
@@ -940,9 +942,30 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
     raise RuntimeError(f"LLM connection failed after retry: {last_exc}")
 
 
+# Wire protocols an LLM provider can speak, selected per provider with the
+# `api` config key. Only OpenAI-compatible /chat/completions is implemented
+# today; adding Claude's Messages API or Gemini's generateContent later is a
+# new function plus one entry here - no caller changes.
+CHAT_APIS = {"openai": openai_chat}
+
+
 def llm_generate(cfg, prompt: str, timeout: int = 1800,
                  provider: str | None = None) -> str:
-    return openai_chat(_resolve_provider(cfg, provider), prompt, timeout=timeout)
+    p = _resolve_provider(cfg, provider)
+    api = (p.get("api") or "openai").lower()
+    fn = CHAT_APIS.get(api)
+    if fn is None:
+        raise RuntimeError(
+            f"LLM provider '{p['name']}' uses api '{api}', which is not "
+            f"implemented yet (available: {', '.join(sorted(CHAT_APIS))}). "
+            f"Add an adapter to CHAT_APIS in studio.py.")
+    return fn(p, prompt, timeout=timeout)
+
+
+def provider_api_ready(p: dict) -> bool:
+    """True when the provider's wire protocol has an adapter (so the UI can
+    disable a provider whose api is not implemented yet)."""
+    return (p.get("api") or "openai").lower() in CHAT_APIS
 
 
 def llm_label(cfg, provider: str | None = None) -> str:

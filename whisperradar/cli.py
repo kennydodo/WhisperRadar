@@ -340,6 +340,31 @@ def cmd_export(cfg, args):
         conn.close()
 
 
+def cmd_produce(cfg, args):
+    from . import producer
+
+    if args.plan:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            plan = producer.build_plan(cfg, conn)
+        finally:
+            conn.close()
+        for entry in plan:
+            name = entry.get("own_channel", "-")
+            print(f"[{entry['action']:5}] {name}: {entry['detail']}")
+        return 0
+    result = producer.run(cfg, log=print)
+    for item in result["created"]:
+        print(f"created #{item['pid']}: {item['title']} "
+              f"({item['own_channel']})")
+    for entry in result["skipped"]:
+        print(f"skipped {entry.get('own_channel', '-')}: {entry['detail']}")
+    print(f"produce: {len(result['created'])} created, "
+          f"{len(result['skipped'])} skipped, result={result['result']}")
+    return 0 if result["result"] == "ok" else 1
+
+
 def cmd_serve(cfg, args):
     from .webapp import create_app
 
@@ -458,6 +483,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("reset", help="delete a video's files and re-queue it", parents=[common])
     p.add_argument("video", help="video id")
     p.set_defaults(func=cmd_reset)
+
+    p = sub.add_parser("produce", help="auto-run: create + run a production "
+                                       "per own channel (see Settings)",
+                       parents=[common])
+    p.add_argument("--plan", action="store_true",
+                   help="dry run: show what would be created, spend nothing")
+    p.set_defaults(func=cmd_produce)
 
     p = sub.add_parser("serve", help="start the local web dashboard", parents=[common])
     p.add_argument("--host", default="127.0.0.1")

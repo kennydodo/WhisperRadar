@@ -100,6 +100,13 @@
             {% elif entry.type == 'map' %}
               <textarea name="{{ entry.key }}" id="f-{{ entry.key }}"
                         placeholder="personal-finance = E:\YOUTUBE\PERSONAL FINANCE\seed">{{ seed_dirs_text }}</textarea>
+            {% elif entry.type == 'provider' %}
+              <select name="{{ entry.key }}" id="f-{{ entry.key }}">
+                <option value="">(default)</option>
+                {% for p in providers %}
+                <option value="{{ p }}" {{ 'selected' if values[entry.key] == p else '' }}>{{ p }}</option>
+                {% endfor %}
+              </select>
             {% else %}
               <input type="text" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      value="{{ values[entry.key] }}">

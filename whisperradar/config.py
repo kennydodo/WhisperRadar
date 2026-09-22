@@ -41,7 +41,10 @@ class Config:
         self.studio_llm_api_key = studio.get("llm_api_key") or None
         self.studio_llm_model = studio.get("llm_model") or None
 
-        # named providers: each has its own base_url / key / model
+        # named providers: each has its own base_url / key / model.
+        # `api` selects the wire protocol: only "openai" (OpenAI-compatible
+        # /chat/completions) is implemented today; anthropic/google/... can be
+        # added later as new adapters without touching callers.
         self.studio_llm_providers = []
         for i, prov in enumerate(studio.get("llm_providers") or []):
             name = (prov.get("name") or f"provider-{i + 1}").strip()
@@ -50,6 +53,7 @@ class Config:
                 "base_url": (prov.get("base_url") or "").strip() or None,
                 "api_key": (prov.get("api_key") or "").strip() or None,
                 "model": (prov.get("model") or "").strip() or None,
+                "api": (prov.get("api") or "openai").strip().lower(),
                 "env_key": "WR_" + re.sub(r"[^A-Z0-9]", "_", name.upper()) + "_API_KEY",
             })
         names = [p["name"] for p in self.studio_llm_providers]
