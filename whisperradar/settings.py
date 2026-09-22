@@ -19,6 +19,20 @@ SPEC: list[dict] = [
                 "runs by itself.",
     },
     {
+        "key": "scheduler_enabled", "type": "bool", "default": False,
+        "label": "Scheduler",
+        "help": "Let the running dashboard start Auto Run on its own every "
+                "N minutes. It still obeys the run window and the caps above. "
+                "Off = you press Produce from channels yourself.",
+    },
+    {
+        "key": "scheduler_interval_minutes", "type": "int", "default": 60,
+        "min": 5, "max": 1440,
+        "label": "Scheduler interval (minutes)",
+        "help": "How often the scheduler checks whether there is anything to "
+                "produce. 60 = hourly.",
+    },
+    {
         "key": "per_day", "type": "int", "default": 1, "min": 0, "max": 50,
         "label": "Productions per day (cap)",
         "help": "Cost guard: the most productions auto-run may create in a "

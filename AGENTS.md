@@ -87,9 +87,39 @@ MIRROR RULES (agreed with the user - do not break these):
    an own channel never moves/renames the Renderly channel.
 
 STILL OPEN (next steps, in order):
-1. Renderly's FlowImagesGen mirror? No - both engines are done; see below.
-2. Unattended scheduling for `wr.py produce` (Task Scheduler), and per-channel
-   `flowimagesgen_project_url` (currently one global URL in config.yaml).
+1. **Prompt-length bug on the Renderly Flow path (NOT fixed yet).** The driver
+   prepends the shotlist `style` to every prompt (`extension-v2/flow.js:155-159`
+   + `:222-224` reads `style` as the master), and the real style is 4000 chars,
+   so every card is sent ~4400 chars - over Flow's ~2450 ceiling, which Flow
+   refuses with the SAME message as rate limiting. FlowImagesGen dodges this
+   because we omit the style there; the Renderly path still does not. This is
+   very likely the cause of the recent Flow batch failures.
+2. Notifications when an unattended run pauses/fails (a 3am pause goes
+   unnoticed otherwise).
+3. Per-channel Flow project URL (`flowimagesgen_project_url` is global today).
+4. Per-stage service supervisor (original item 4) - lowest value; services are
+   already started on demand.
+
+### Auto Run scheduler — DONE (2026-09-22)
+
+`whisperradar/scheduler.py` - a thin ticker thread started by `create_app`.
+Every 30s it checks `scheduler_enabled` + `scheduler_interval_minutes`, then
+asks `producer.build_plan()` whether anything is runnable. It owns NO policy of
+its own (no window/cap logic duplicated), so it can never disagree with the
+Studio button. Runs go into the studio job slot, so a scheduled run and a
+manual one cannot overlap and progress shows in the UI.
+
+- Settings: `scheduler_enabled` (off by default) and
+  `scheduler_interval_minutes` (60, min 5). Status (last attempt, last result,
+  next run, whether a job is running) is shown on the Settings page.
+- Runtime state lives in the settings table under `scheduler_last_attempt` /
+  `scheduler_last_result` - NOT in the SPEC, so they never appear as fields and
+  `settings.save` never touches them.
+- `Scheduler.tick(now)` takes an explicit clock so tests drive it
+  deterministically instead of waiting an hour.
+- With the dashboard closed, use Windows Task Scheduler instead (it still
+  honours the run window and caps, so a frequent trigger is safe):
+  `schtasks /Create /TN "WhisperRadar Auto Run" /SC MINUTE /MO 30 /TR "\"D:\Repos\WhisperRadar\.venv\Scripts\python.exe\" \"D:\Repos\WhisperRadar\wr.py\" produce"`
 
 ### FlowImagesGen as a second image engine — DONE (2026-09-22)
 

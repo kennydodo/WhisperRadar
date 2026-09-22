@@ -71,6 +71,22 @@
       These are the global producer defaults. Per-channel overrides live on
       <a href="/my-channels">My Channels</a>.
     </div>
+    {% if scheduler %}
+    <div class="muted" style="font-size:12px; margin-bottom:12px; border-left:2px solid var(--accent); padding-left:8px">
+      <b>Scheduler</b>:
+      {% if scheduler.enabled %}
+        on, every {{ scheduler.interval }} min &middot;
+        last attempt {{ scheduler.last_attempt or "never" }}
+        {%- if scheduler.last_result %} ({{ scheduler.last_result }}){% endif %} &middot;
+        next {{ scheduler.next_run or "soon" }}
+        {%- if scheduler.job_running %} &middot; <span class="badge warn">a job is running</span>{% endif %}
+      {% else %}
+        off - runs only when you press <b>Produce from channels</b> in the Studio.
+        To run it with the dashboard closed, point Windows Task Scheduler at
+        <span class="mono">python wr.py produce</span> (see AGENTS.md).
+      {% endif %}
+    </div>
+    {% endif %}
     <form method="post" action="/settings/save">
       <div class="grid2">
         {% for entry in spec %}

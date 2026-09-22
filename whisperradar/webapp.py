@@ -25,7 +25,8 @@ from flask import (
     send_file,
 )
 
-from . import ai33, autorun, db, pipeline, producer, settings, studio
+from . import (ai33, autorun, db, pipeline, producer, scheduler, settings,
+               studio)
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -277,6 +278,23 @@ def create_app(cfg) -> Flask:
     if not any(isinstance(h, _DequeHandler) for h in root.handlers):
         root.addHandler(_DequeHandler(level=logging.INFO))
 
+    def _start_producer(channels: int, log_fn) -> None:
+        """Start an Auto Run in the studio job slot (used by the scheduler)."""
+        if sjob.running:
+            log_fn("producer: a job is already running - skipping")
+            return
+
+        def worker():
+            result = producer.run(cfg, log=sjob.log.append, job=sjob)
+            sjob.log.append(
+                f"=== scheduled produce: {len(result['created'])} created, "
+                f"{len(result['skipped'])} skipped, result={result['result']} ===")
+
+        sjob.start(worker, f"scheduled auto-run ({channels} channel(s))")
+
+    sched = scheduler.Scheduler(cfg, sjob, _start_producer)
+    sched.start()
+
     @app.get("/")
     def index():
         conn = db.connect(cfg.db_path)
@@ -414,6 +432,7 @@ def create_app(cfg) -> Flask:
             "settings.html", values=values, spec=settings.SPEC,
             seed_dirs_text=settings.format_seed_dirs(values.get("seed_dirs")),
             providers=[p["name"] for p in cfg.studio_llm_providers],
+            scheduler=sched.status(),
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/settings/save")
