@@ -112,6 +112,9 @@
             {{ ch["default_engine"] or "inherit" }} &middot; {{ ch["default_render_mode"] or "inherit" }} &middot; upscale {{ ch["default_upscale"] if ch["default_upscale"] is not none else "inherit" }}
             {%- if ch["default_voice"] %} &middot; {{ ch["default_voice"] }}{% endif %}
             {%- if ch["per_day"] is not none %} &middot; {{ ch["per_day"] }}/day{% endif %}
+            {%- if ch["run_window_start"] and ch["run_window_end"] %} &middot; runs {{ ch["run_window_start"] }}-{{ ch["run_window_end"] }}{% endif %}
+            {%- if ch["candidate_window_days"] is not none %} &middot; {{ ch["candidate_window_days"] }}d window{% endif %}
+            {%- if ch["producer_llm_provider"] %} &middot; {{ ch["producer_llm_provider"] }}{% endif %}
             {%- if ch["autorun_enabled"] == 0 %} &middot; auto-run off{% endif %}
           </div>
         </td>
@@ -275,7 +278,14 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">No own channels yet - create one above.</td></tr>
+      <tr><td colspan="6" class="muted">
+        No own channels yet. Create one above, then click
+        <b>edit / defaults</b> on its row - that is where its narration voice,
+        image engine, render mode, upscale, Auto Run window, candidate window,
+        producer LLM, per-day cap, seed folders and Flow project URL live.
+        Everything left on "inherit" uses the global value from
+        <a href="/settings">Settings</a>.
+      </td></tr>
       {% endfor %}
     </table>
   </div>
