@@ -25,7 +25,7 @@ from flask import (
     send_file,
 )
 
-from . import ai33, autorun, db, pipeline, studio
+from . import ai33, autorun, db, pipeline, settings, studio
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -397,6 +397,150 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return redirect("/?msg=Channel+removed")
+
+    # ---------------------------------------------------------- settings ---
+    # Global Auto Run criteria. Own channels live on /my-channels; monitored
+    # source channels stay on / (Dashboard).
+
+    @app.get("/settings")
+    def settings_page():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            values = settings.load(conn)
+        finally:
+            conn.close()
+        return render_template(
+            "settings.html", values=values, spec=settings.SPEC,
+            seed_dirs_text=settings.format_seed_dirs(values.get("seed_dirs")),
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/settings/save")
+    def settings_save():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            form = dict(request.form)
+            form["autorun_enabled"] = ("1" if request.form.get("autorun_enabled")
+                                       else "0")
+            _, warnings = settings.save(conn, form)
+        finally:
+            conn.close()
+        msg = "Settings saved"
+        if warnings:
+            msg += " - " + "; ".join(warnings)
+        return redirect("/settings?msg=" + quote(msg))
+
+    # ------------------------------------------------------- my channels ---
+    # The channels the user publishes on - mirrored into Renderly lazily.
+
+    def _own_channel_id():
+        try:
+            return int(request.form.get("id") or 0)
+        except ValueError:
+            return 0
+
+    @app.get("/my-channels")
+    def my_channels_page():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            own_channels = db.list_own_channels(conn)
+            links = {ch["id"]: studio.renderly_channel_status(cfg, ch)
+                     for ch in own_channels}
+        finally:
+            conn.close()
+        return render_template(
+            "channels.html", own_channels=own_channels, links=links,
+            renderly_url=cfg.renderly_url,
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/my-channels/add")
+    def my_channels_add():
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            return redirect("/my-channels?error="
+                            + quote("Channel name is required"))
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if db.get_own_channel(conn, name):
+                return redirect("/my-channels?error=" + quote(
+                    f"A channel named '{name}' already exists"))
+            oc_id = db.create_own_channel(
+                conn, name,
+                description=(request.form.get("description") or "").strip(),
+                genre=(request.form.get("genre") or "").strip() or "general",
+                youtube_handle=(request.form.get("youtube_handle") or "").strip(),
+            )
+            created = db.get_own_channel(conn, oc_id)
+            result = studio.sync_renderly_channel(cfg, conn, created)
+        finally:
+            conn.close()
+        if result.get("ok"):
+            where = ("created in Renderly" if result.get("created")
+                     else "linked to the existing Renderly channel")
+            msg = f"Channel '{name}' saved - {where} (id {result['id']})"
+        else:
+            msg = (f"Channel '{name}' saved - Renderly link pending: "
+                   f"{result.get('error')}")
+        return redirect("/my-channels?msg=" + quote(msg))
+
+    @app.post("/my-channels/edit")
+    def my_channels_edit():
+        oc_id = _own_channel_id()
+        if not oc_id:
+            return redirect("/my-channels?error=Unknown+channel")
+        fields = {}
+        for key in ("name", "description", "genre", "youtube_handle"):
+            if key in request.form:
+                fields[key] = (request.form.get(key) or "").strip()
+        if "genre" in fields and not fields["genre"]:
+            fields["genre"] = "general"
+        if "active" in request.form:
+            fields["active"] = 1 if request.form.get("active") in ("1", "on",
+                                                                  "true") else 0
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_own_channel(conn, oc_id):
+                return redirect("/my-channels?error=Unknown+channel")
+            db.update_own_channel(conn, oc_id, **fields)
+        finally:
+            conn.close()
+        return redirect("/my-channels?msg=" + quote("Channel updated"))
+
+    @app.post("/my-channels/sync")
+    def my_channels_sync():
+        oc_id = _own_channel_id()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            ch = db.get_own_channel(conn, oc_id)
+            if not ch:
+                return redirect("/my-channels?error=Unknown+channel")
+            result = studio.sync_renderly_channel(cfg, conn, ch)
+        finally:
+            conn.close()
+        if result.get("ok"):
+            action = "created" if result.get("created") else "linked"
+            msg = f"Renderly channel {action} (id {result['id']})"
+        else:
+            msg = f"Renderly sync failed: {result.get('error')}"
+        return redirect("/my-channels?msg=" + quote(msg))
+
+    @app.post("/my-channels/remove")
+    def my_channels_remove():
+        oc_id = _own_channel_id()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.remove_own_channel(conn, oc_id)
+        finally:
+            conn.close()
+        return redirect("/my-channels?msg=" + quote(
+            "Channel removed from WhisperRadar - the Renderly channel was "
+            "left untouched"))
 
     @app.post("/run")
     def run():

@@ -1,0 +1,191 @@
+"""Global Auto Run / producer settings, stored in the `settings` table.
+
+One spec drives everything: the settings page renders the fields from it, the
+producer loop and the CLI read typed values through load(), and save()
+validates and coerces the posted form. Per-channel overrides live on
+own_channels and are NULL when the channel inherits these globals.
+"""
+
+import json
+import re
+
+# Each entry: key, label, type, default, plus type-specific extras.
+# type is one of: bool | int | str | choice | time | map
+SPEC: list[dict] = [
+    {
+        "key": "autorun_enabled", "type": "bool", "default": False,
+        "label": "Enable Auto Run",
+        "help": "Master switch for the unattended producer. Off = nothing "
+                "runs by itself.",
+    },
+    {
+        "key": "per_day", "type": "int", "default": 1, "min": 0, "max": 50,
+        "label": "Productions per day (cap)",
+        "help": "Cost guard: the most productions auto-run may create in a "
+                "day, across all channels. 0 = no cap.",
+    },
+    {
+        "key": "default_engine", "type": "choice", "default": "renderly",
+        "choices": ["renderly", "flowimagesgen"],
+        "label": "Image engine",
+        "help": "Which image pipeline new productions use. Renderly = its "
+                "API + Flow driver; FlowImagesGen = the standalone Flow CLI.",
+    },
+    {
+        "key": "default_render_mode", "type": "choice", "default": "flow",
+        "choices": ["flow", "api"],
+        "label": "Render mode",
+        "help": "flow = drive Google Flow; api = the engine's direct API "
+                "(Gemini). Only meaningful for the Renderly engine.",
+    },
+    {
+        "key": "default_upscale", "type": "int", "default": 2, "min": 0, "max": 4,
+        "label": "Upscale tier",
+        "help": "0 = off, 1-4 = upscale the rendered images.",
+    },
+    {
+        "key": "default_voice", "type": "str", "default": "",
+        "label": "Narration voice",
+        "help": "OpenSpeaker voice id used for TTS unless a channel or "
+                "production overrides it. Empty = the built-in default.",
+    },
+    {
+        "key": "topic_pick", "type": "choice", "default": "newest",
+        "choices": ["newest", "llm"],
+        "label": "Topic pick",
+        "help": "newest = the latest un-produced source video; llm = let the "
+                "model choose the best topic among the un-produced ones.",
+    },
+    {
+        "key": "run_window_start", "type": "time", "default": "09:00",
+        "label": "Run window start",
+        "help": "Auto-run may only start between these times (local).",
+    },
+    {
+        "key": "run_window_end", "type": "time", "default": "23:00",
+        "label": "Run window end",
+        "help": "End of the daily auto-run window.",
+    },
+    {
+        "key": "seed_dirs", "type": "map", "default": {},
+        "label": "Per-genre bible/refs folders",
+        "help": "One per line: genre = folder. A new production copies that "
+                "folder's bible.md and refs\\ into its working directory.",
+    },
+]
+
+SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
+
+_TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+
+
+def defaults() -> dict:
+    return {entry["key"]: entry["default"] for entry in SPEC}
+
+
+def _coerce(entry: dict, raw):
+    """Turn one posted/stored raw value into its typed form. Invalid input
+    falls back to the spec default (save() reports it separately)."""
+    kind = entry["type"]
+    if raw is None:
+        return entry["default"]
+    text = raw if isinstance(raw, str) else str(raw)
+    text = text.strip()
+    if kind == "bool":
+        return text.lower() in ("1", "true", "on", "yes")
+    if kind == "int":
+        if text == "":
+            return entry["default"]
+        try:
+            value = int(float(text))
+        except ValueError:
+            return entry["default"]
+        if "min" in entry:
+            value = max(entry["min"], value)
+        if "max" in entry:
+            value = min(entry["max"], value)
+        return value
+    if kind == "choice":
+        return text if text in entry["choices"] else entry["default"]
+    if kind == "time":
+        return text if _TIME_RE.match(text) else entry["default"]
+    if kind == "map":
+        return parse_seed_dirs(text)
+    return text
+
+
+def parse_seed_dirs(text) -> dict:
+    """'genre = folder' lines -> {genre: folder}. A stored JSON object is
+    also accepted (settings are persisted as JSON)."""
+    if isinstance(text, dict):
+        return {str(k): str(v) for k, v in text.items()}
+    text = (text or "").strip()
+    if not text:
+        return {}
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return {}
+        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        genre, sep, folder = line.partition("=")
+        genre, folder = genre.strip(), folder.strip()
+        if sep and genre and folder:
+            out[genre] = folder
+    return out
+
+
+def format_seed_dirs(mapping) -> str:
+    if isinstance(mapping, str):
+        mapping = parse_seed_dirs(mapping)
+    return "\n".join(f"{k} = {v}" for k, v in sorted((mapping or {}).items()))
+
+
+def load(conn) -> dict:
+    """Typed settings: stored values with the spec defaults filled in."""
+    from . import db
+
+    stored = db.all_settings(conn)
+    out = {}
+    for entry in SPEC:
+        out[entry["key"]] = _coerce(entry, stored.get(entry["key"]))
+    return out
+
+
+def save(conn, form: dict) -> tuple[dict, list[str]]:
+    """Validate + persist a posted form. Returns (values, warnings).
+
+    Absent keys are left untouched, so a partial form never wipes settings.
+    """
+    from . import db
+
+    values: dict = {}
+    warnings: list[str] = []
+    for entry in SPEC:
+        key = entry["key"]
+        if key not in form:
+            continue
+        raw = form[key]
+        values[key] = _coerce(entry, raw)
+        if entry["type"] == "time" and not _TIME_RE.match((raw or "").strip()):
+            warnings.append(f"{entry['label']}: expected HH:MM - kept "
+                            f"{entry['default']}")
+        elif entry["type"] == "int" and (raw or "").strip() != "":
+            try:
+                int(float(raw))
+            except ValueError:
+                warnings.append(f"{entry['label']}: not a number - kept "
+                                f"{entry['default']}")
+    for key, value in values.items():
+        entry = SPEC_BY_KEY[key]
+        stored = (json.dumps(value, ensure_ascii=False)
+                  if entry["type"] == "map" else
+                  ("1" if value else "0") if entry["type"] == "bool" else
+                  str(value))
+        db.set_setting(conn, key, stored)
+    return values, warnings

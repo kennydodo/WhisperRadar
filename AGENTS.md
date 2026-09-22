@@ -42,6 +42,61 @@ Google (see handoff above); unattended runs should default to Renderly API
 (headless, credit cost) until Flow is stable, or make render_mode a
 per-channel setting on the settings page.
 
+### Settings page: own channels + global Auto Run criteria — DONE (2026-09-22)
+
+Two pages, both on the normal dashboard port (no extra service):
+- `/settings` - global Auto Run criteria only.
+- `/my-channels` - the channels the USER publishes on, with add/edit/remove
+  and a per-channel Renderly sync.
+
+`channels` (Dashboard, unchanged) = competitor/source channels you monitor for
+ideas. `own_channels` (My Channels, new) = the channels you publish on.
+
+Schema (all in WhisperRadar's DB - Renderly keeps its own `renderly.db`; we
+only store soft references, never its tables):
+- `own_channels`: name (COLLATE NOCASE UNIQUE), description, genre,
+  youtube_handle, active, default_voice, default_engine, default_render_mode,
+  default_upscale, bible_dir, refs_dir, autorun_enabled, per_day, topic_pick,
+  renderly_channel_id, renderly_channel_name.
+- `settings` (key/value TEXT): global criteria, spec-driven.
+- `productions.own_channel_id` (nullable, migration in `_migrate`).
+
+Code:
+- `whisperradar/settings.py` - SPEC drives the page, load() returns typed
+  values, save() coerces/validates (int clamps, HH:MM check, seed_dirs parsed
+  from "genre = folder" lines). Absent keys are left untouched.
+- `db.py` - own-channel CRUD + settings get/set/all.
+- `studio.py` - `renderly_channels()`, `resolve_renderly_channel()`,
+  `renderly_channel_status()`, `sync_renderly_channel()`. `ensure_renderly_channel`
+  now delegates to the resolver (legacy "whisperradar" channel).
+- `webapp.py` - `/settings` + `/settings/save`; `/my-channels` +
+  `/my-channels/{add,edit,sync,remove}`; `templates/settings.html` +
+  `templates/channels.html`; nav link "My Channels" + "Settings" on all pages.
+
+MIRROR RULES (agreed with the user - do not break these):
+1. NAME is the identity; `renderly_channel_id` is only a cache. Resolve:
+   stored id still exists -> adopt by name -> create (only when create=True).
+   This self-heals stale ids and channels made by hand in Renderly.
+2. Never block a save on Renderly: if it is down the channel is saved
+   unlinked and the page shows "Renderly unreachable". Link lazily.
+3. No reverse sync engine. Adopt by name; do not mirror Renderly -> WR.
+4. NEVER auto-delete in Renderly. Removing an own channel clears the link only
+   (Renderly's channel delete cascades assets/generations/storage).
+5. Case-insensitive uniqueness in WR (Renderly's is effectively case-sensitive).
+6. Renames: the mirror name is STABLE (`renderly_channel_name`), so renaming
+   an own channel never moves/renames the Renderly channel.
+
+STILL OPEN (next steps, in order):
+1. Wire `productions.own_channel_id` into the pipeline: the images/merge
+   stages still use the legacy hardcoded "whisperradar" channel
+   (`autorun.py` `_stage_params`, `studio.run_imagegen`, `run_imagegen_flow`).
+   Per-channel default_voice/engine/render_mode/upscale/per_day/topic_pick are
+   stored but NOT consumed yet.
+2. Auto Run producer loop itself (pick -> create -> seed -> queue) - the
+   settings page only defines the criteria.
+3. `seed_dirs` seeding (copy bible.md + refs\ per genre into a new production).
+4. Create a production for a chosen own channel from the Studio page.
+
 ### OpenSpeaker favorites for the voice picker — DONE (2026-09-22)
 
 The audio-stage picker can now list the voices starred in OpenSpeaker

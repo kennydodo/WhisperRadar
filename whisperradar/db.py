@@ -65,6 +65,40 @@ CREATE TABLE IF NOT EXISTS production_steps (
     detail TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- The channels the USER publishes on (distinct from `channels`, which are the
+-- competitor/source channels being monitored for ideas). Mirrored into
+-- Renderly lazily: renderly_channel_id is a cache, the name is the identity.
+CREATE TABLE IF NOT EXISTS own_channels (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    genre TEXT NOT NULL DEFAULT 'general',
+    youtube_handle TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    -- production defaults
+    default_voice TEXT,
+    default_engine TEXT NOT NULL DEFAULT 'renderly',
+    default_render_mode TEXT NOT NULL DEFAULT 'flow',
+    default_upscale INTEGER NOT NULL DEFAULT 2,
+    bible_dir TEXT,
+    refs_dir TEXT,
+    -- auto-run criteria (NULL = inherit the global setting)
+    autorun_enabled INTEGER NOT NULL DEFAULT 1,
+    per_day INTEGER,
+    topic_pick TEXT,
+    -- Renderly mirror (soft reference: never a FK, always re-resolved)
+    renderly_channel_id INTEGER,
+    renderly_channel_name TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Global key-value settings (Auto Run criteria and friends). Values are
+-- stored as TEXT; settings.py owns their types/defaults.
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 # Columns of `videos` that set_video() is allowed to update
@@ -124,6 +158,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN render_mode TEXT")
     if "voice" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN voice TEXT")
+    if "own_channel_id" not in cols:
+        conn.execute("ALTER TABLE productions ADD COLUMN own_channel_id INTEGER")
 
 
 def add_channel(
@@ -332,7 +368,7 @@ STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
-                "stage_extras", "render_mode", "voice"}
+                "stage_extras", "render_mode", "voice", "own_channel_id"}
 
 
 def stage_extra(prod, stage: str) -> str:
@@ -448,5 +484,97 @@ def finish_run(conn, run_id: int, **counts) -> None:
             counts.get("failed", 0),
             run_id,
         ),
+    )
+    conn.commit()
+
+
+# ------------------------------------------------------- own channels ---
+# The channels the user publishes on. Kept separate from `channels` (the
+# monitored competitor/source channels) so the two never mix.
+
+_OWN_CHANNEL_FIELDS = {
+    "name", "description", "genre", "youtube_handle", "active",
+    "default_voice", "default_engine", "default_render_mode",
+    "default_upscale", "bible_dir", "refs_dir",
+    "autorun_enabled", "per_day", "topic_pick",
+    "renderly_channel_id", "renderly_channel_name",
+}
+
+
+def list_own_channels(conn, active_only: bool = False):
+    sql = "SELECT * FROM own_channels"
+    if active_only:
+        sql += " WHERE active = 1"
+    sql += " ORDER BY name COLLATE NOCASE"
+    return conn.execute(sql).fetchall()
+
+
+def get_own_channel(conn, key):
+    """Look up an own channel by numeric id or by name (case-insensitive)."""
+    if key is None or key == "":
+        return None
+    try:
+        return conn.execute("SELECT * FROM own_channels WHERE id = ?",
+                            (int(key),)).fetchone()
+    except (TypeError, ValueError):
+        return conn.execute(
+            "SELECT * FROM own_channels WHERE name = ? COLLATE NOCASE",
+            (str(key),)).fetchone()
+
+
+def create_own_channel(conn, name: str, **fields) -> int:
+    values = {k: v for k, v in fields.items() if k in _OWN_CHANNEL_FIELDS}
+    cols = ["name", *values]
+    marks = ",".join("?" for _ in cols)
+    cur = conn.execute(
+        f"INSERT INTO own_channels ({', '.join(cols)}) VALUES ({marks})",
+        [name, *values.values()],
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def update_own_channel(conn, oc_id: int, **fields) -> None:
+    cols, vals = [], []
+    for key, value in fields.items():
+        if key not in _OWN_CHANNEL_FIELDS:
+            raise ValueError(f"Unknown own_channel field: {key}")
+        cols.append(f"{key} = ?")
+        vals.append(value)
+    if not cols:
+        return
+    vals.append(oc_id)
+    conn.execute(f"UPDATE own_channels SET {', '.join(cols)} WHERE id = ?", vals)
+    conn.commit()
+
+
+def remove_own_channel(conn, oc_id: int) -> bool:
+    """Delete an own channel from WhisperRadar only - the Renderly mirror is
+    deliberately left alone (deleting there cascades assets/generations)."""
+    cur = conn.execute("DELETE FROM own_channels WHERE id = ?", (oc_id,))
+    conn.execute("UPDATE productions SET own_channel_id = NULL"
+                 " WHERE own_channel_id = ?", (oc_id,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+# ----------------------------------------------------------- settings ---
+
+def all_settings(conn) -> dict:
+    return {row["key"]: row["value"] for row in
+            conn.execute("SELECT key, value FROM settings")}
+
+
+def get_setting(conn, key: str, default=None):
+    row = conn.execute("SELECT value FROM settings WHERE key = ?",
+                       (key,)).fetchone()
+    return default if row is None else row["value"]
+
+
+def set_setting(conn, key: str, value) -> None:
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, None if value is None else str(value)),
     )
     conn.commit()

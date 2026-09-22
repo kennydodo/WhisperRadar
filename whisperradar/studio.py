@@ -245,25 +245,138 @@ def _cached_probe(key: str, fn):
 
 
 def ensure_renderly_channel(cfg) -> int:
-    """Find or create the 'whisperradar' channel in Renderly. Returns its id."""
+    """Find or create the legacy 'whisperradar' channel in Renderly.
+
+    Kept for productions with no own channel; own channels resolve their own
+    mirror through resolve_renderly_channel(). Returns the Renderly id."""
     if cfg.renderly_channel:
         return int(cfg.renderly_channel)
+    channel_id = resolve_renderly_channel(cfg, None, create=True)
+    if channel_id is None:
+        raise RuntimeError("could not resolve the Renderly 'whisperradar' "
+                           "channel - is Renderly running?")
+    return channel_id
+
+
+def renderly_channels(cfg, timeout: int = 10) -> list[dict]:
+    """Every Renderly channel (id + name) - the mirror lookup source."""
     with urllib.request.urlopen(f"{cfg.renderly_url}/api/channels",
-                                timeout=10) as r:
-        channels = json.loads(r.read())
-    for ch in channels:
-        if ch.get("name") == "whisperradar":
-            return ch["id"]
+                                timeout=timeout) as r:
+        data = json.loads(r.read())
+    return data if isinstance(data, list) else []
+
+
+def _renderly_create_channel(cfg, name: str, description: str = "") -> dict:
     req = urllib.request.Request(
         f"{cfg.renderly_url}/api/channels",
-        data=json.dumps({"name": "whisperradar",
-                         "description": "Studio batch image generations"}
-                        ).encode(),
+        data=json.dumps({"name": name, "description": description}).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=10) as r:
-        return json.loads(r.read())["id"]
+        return json.loads(r.read())
+
+
+def _own_channel_name(own_channel) -> str:
+    return ((own_channel["renderly_channel_name"] if own_channel else None)
+            or (own_channel["name"] if own_channel else None)
+            or "whisperradar").strip()
+
+
+def resolve_renderly_channel(cfg, own_channel=None, create: bool = False):
+    """The Renderly channel id for an own channel.
+
+    Identity is the NAME; the stored id is only a cache, so this self-heals
+    a stale id, a channel renamed in Renderly, and a channel created there by
+    hand. Order: stored id still exists -> adopt by name -> create (only when
+    create=True). Returns None when Renderly is unreachable or the channel is
+    absent and create is False. Never deletes anything in Renderly.
+    """
+    if cfg.renderly_channel and own_channel is None:
+        return int(cfg.renderly_channel)
+    name = _own_channel_name(own_channel)
+    stored_id = own_channel["renderly_channel_id"] if own_channel else None
+    try:
+        channels = renderly_channels(cfg)
+    except Exception as exc:  # noqa: BLE001 - never block on a down service
+        log.info("Renderly unreachable (%s) - channel '%s' not resolved",
+                 exc, name)
+        return None
+    if stored_id and any(c.get("id") == stored_id for c in channels):
+        return stored_id
+    match = next((c for c in channels
+                  if (c.get("name") or "").lower() == name.lower()), None)
+    if match:
+        return match["id"]
+    if not create:
+        return None
+    try:
+        return _renderly_create_channel(
+            cfg, name, "WhisperRadar own channel")["id"]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("could not create Renderly channel '%s': %s", name, exc)
+        return None
+
+
+def renderly_channel_status(cfg, own_channel) -> dict:
+    """Read-only link state for the settings page - never creates."""
+    if own_channel is None:
+        return {"linked": False, "detail": "no own channel"}
+    try:
+        channels = renderly_channels(cfg)
+    except Exception as exc:  # noqa: BLE001
+        return {"linked": False, "detail": f"Renderly unreachable ({exc})"}
+    name = _own_channel_name(own_channel)
+    stored_id = own_channel["renderly_channel_id"]
+    if stored_id and any(c.get("id") == stored_id for c in channels):
+        return {"linked": True, "id": stored_id, "name": name,
+                "detail": f"linked (id {stored_id})"}
+    match = next((c for c in channels
+                  if (c.get("name") or "").lower() == name.lower()), None)
+    if match:
+        return {"linked": False, "id": match["id"], "name": name,
+                "detail": f"exists in Renderly (id {match['id']}) - click "
+                          f"Link to adopt it"}
+    return {"linked": False, "detail": "not in Renderly yet - click Link to "
+                                       "create it"}
+
+
+def sync_renderly_channel(cfg, conn, own_channel, create: bool = True) -> dict:
+    """Resolve the own channel's Renderly mirror and persist the link.
+
+    Returns {ok, id, name, created, error}. Safe to call repeatedly; it is
+    idempotent and adopts an existing channel of the same name.
+    """
+    if own_channel is None:
+        return {"ok": False, "error": "unknown own channel"}
+    name = _own_channel_name(own_channel)
+    try:
+        channels = renderly_channels(cfg)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": f"Renderly unreachable: {exc}"}
+    stored_id = own_channel["renderly_channel_id"]
+    if stored_id and any(c.get("id") == stored_id for c in channels):
+        return {"ok": True, "id": stored_id, "name": name, "created": False}
+    match = next((c for c in channels
+                  if (c.get("name") or "").lower() == name.lower()), None)
+    created = False
+    if match:
+        channel_id = match["id"]
+    elif create:
+        try:
+            channel_id = _renderly_create_channel(
+                cfg, name, "WhisperRadar own channel")["id"]
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"could not create channel: {exc}"}
+        created = True
+    else:
+        return {"ok": False, "error": "not linked"}
+    from . import db
+
+    db.update_own_channel(conn, own_channel["id"],
+                          renderly_channel_id=channel_id,
+                          renderly_channel_name=name)
+    return {"ok": True, "id": channel_id, "name": name, "created": created}
 
 
 def run_imagegen(cfg, pid_dir: Path) -> int:

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Channels - WhisperRadar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #12151c; --border: #262b36;
+    --text: #e6e9ef; --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f;
+    --amber: #e0a93f; --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px;
+            margin:0 auto; padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; font-size:15px; color:var(--text); }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  button, .btn { background: var(--accent); color: #fff; border: none;
+          border-radius: 7px; padding: 7px 14px; font-size: 13px;
+          font-weight: 600; cursor: pointer; display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button.secondary { background: var(--gray); }
+  button.ghost { background: transparent; border: 1px solid var(--border);
+                 color: var(--muted); padding: 4px 10px; font-weight: 500; }
+  button.ghost:hover { color: var(--red); border-color: var(--red); filter: none; }
+  input, select, textarea { background: #0c0e12; color: var(--text);
+                  border: 1px solid var(--border); border-radius: 7px;
+                  padding: 7px 10px; font-size: 13px; font-family: inherit; }
+  textarea { width: 100%; min-height: 70px; resize: vertical;
+             font-family: Consolas, monospace; font-size: 13px; }
+  .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.on { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.off { background: rgba(86,93,107,.25); color: var(--muted); }
+  .badge.warn { background: rgba(224,169,63,.15); color: var(--amber); }
+  .muted { color: var(--muted); }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+       text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  label { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/studio">Studio</a>
+  <a href="/my-channels" class="active">My Channels</a>
+  <a href="/settings">Settings</a>
+</nav>
+<div class="wrap">
+  <h1>My Channels</h1>
+  <p class="sub">the YouTube channels <strong>you</strong> publish on &middot; each one is mirrored into Renderly</p>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <div class="muted" style="font-size:12px; margin-bottom:10px">
+      These are your own channels, not the ones you monitor for ideas - those
+      stay on the <a href="/">Dashboard</a>. Creating or linking here creates
+      the channel in Renderly at <span class="mono">{{ renderly_url }}</span>
+      when needed; it never deletes anything there. Auto Run criteria for new
+      productions are on <a href="/settings">Settings</a>.
+    </div>
+    <form class="inline" method="post" action="/my-channels/add">
+      <input type="text" name="name" placeholder="Channel name (unique)" required
+             style="flex:1 1 200px">
+      <input type="text" name="description" placeholder="Description (optional)"
+             style="flex:1 1 200px">
+      <input type="text" name="genre" placeholder="genre e.g. personal-finance"
+             style="flex:0 0 180px">
+      <input type="text" name="youtube_handle" placeholder="@handle (optional)"
+             style="flex:0 0 160px">
+      <button type="submit">Create channel</button>
+    </form>
+    <table style="margin-top:12px">
+      <tr>
+        <th>Name</th><th>Genre</th><th>Handle</th><th>State</th>
+        <th>Renderly</th><th></th>
+      </tr>
+      {% for ch in own_channels %}
+      <tr>
+        <td>{{ ch["name"] }}
+          {% if ch["description"] %}<div class="muted" style="font-size:12px">{{ ch["description"] }}</div>{% endif %}
+        </td>
+        <td class="muted">{{ ch["genre"] }}</td>
+        <td class="muted mono">{{ ch["youtube_handle"] or "" }}</td>
+        <td>{% if ch["active"] %}<span class="badge on">active</span>
+            {% else %}<span class="badge off">paused</span>{% endif %}</td>
+        <td>
+          {% set link = links.get(ch["id"]) %}
+          {% if link and link.linked %}<span class="badge on">linked</span>
+          {% elif link and link.id %}<span class="badge warn">adoptable</span>
+          {% else %}<span class="badge off">unlinked</span>{% endif %}
+          <div class="muted" style="font-size:12px">{{ link.detail if link else "" }}</div>
+        </td>
+        <td style="text-align:right; white-space:nowrap">
+          <button type="button" class="ghost" onclick="toggleEdit({{ ch['id'] }})">edit</button>
+          <form class="row" method="post" action="/my-channels/sync" style="display:inline">
+            <input type="hidden" name="id" value="{{ ch['id'] }}">
+            <button type="submit" class="ghost"
+                    style="color:var(--accent);border-color:var(--accent)">sync</button>
+          </form>
+          <form class="row" method="post" action="/my-channels/remove" style="display:inline"
+                onsubmit="return confirm('Remove {{ ch['name'] }} from WhisperRadar? The Renderly channel is left untouched.')">
+            <input type="hidden" name="id" value="{{ ch['id'] }}">
+            <button type="submit" class="ghost">remove</button>
+          </form>
+        </td>
+      </tr>
+      <tr id="edit-{{ ch['id'] }}" style="display:none">
+        <td colspan="6" style="background:var(--panel2)">
+          <form class="inline" method="post" action="/my-channels/edit">
+            <input type="hidden" name="id" value="{{ ch['id'] }}">
+            <label>name
+              <input type="text" name="name" value="{{ ch['name'] }}" style="width:180px">
+            </label>
+            <label>description
+              <input type="text" name="description" value="{{ ch['description'] }}" style="width:200px">
+            </label>
+            <label>genre
+              <input type="text" name="genre" value="{{ ch['genre'] }}" style="width:150px">
+            </label>
+            <label>handle
+              <input type="text" name="youtube_handle" value="{{ ch['youtube_handle'] or '' }}" style="width:140px">
+            </label>
+            <label>state
+              <select name="active">
+                <option value="1" {{ 'selected' if ch['active'] else '' }}>active</option>
+                <option value="0" {{ 'selected' if not ch['active'] else '' }}>paused</option>
+              </select>
+            </label>
+            <button type="submit">save</button>
+            <button type="button" class="ghost" onclick="cancelEdit({{ ch['id'] }})">cancel</button>
+          </form>
+          <div class="muted" style="font-size:12px; margin-top:6px">
+            Per-channel defaults (voice, image engine, render mode, upscale,
+            per-day cap) come next - see AGENTS.md.
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No own channels yet - create one above.</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<script>
+  function toggleEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    row.style.display = row.style.display === 'none' ? '' : 'none';
+  }
+  function cancelEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    const form = row.querySelector('form');
+    if (form) { form.reset(); }
+    row.style.display = 'none';
+  }
+</script>
+</body>
+</html>

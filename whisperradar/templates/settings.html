@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings - WhisperRadar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #12151c; --border: #262b36;
+    --text: #e6e9ef; --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f;
+    --amber: #e0a93f; --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px;
+            margin:0 auto; padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; font-size:15px; color:var(--text); }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 18px; }
+  h2 { font-size: 15px; margin: 26px 0 10px; color: var(--muted);
+       text-transform: uppercase; letter-spacing: .06em; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  button, .btn { background: var(--accent); color: #fff; border: none;
+          border-radius: 7px; padding: 7px 14px; font-size: 13px;
+          font-weight: 600; cursor: pointer; display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  input, select, textarea { background: #0c0e12; color: var(--text);
+                  border: 1px solid var(--border); border-radius: 7px;
+                  padding: 7px 10px; font-size: 13px; font-family: inherit; }
+  textarea { width: 100%; min-height: 90px; resize: vertical;
+             font-family: Consolas, monospace; font-size: 13px; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .muted { color: var(--muted); }
+  label.field { display: block; font-size: 12px; color: var(--muted);
+                margin-bottom: 4px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+           gap: 14px; }
+  .fieldwrap { margin-bottom: 12px; }
+  .help { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .fieldwrap input[type=text], .fieldwrap input[type=number],
+  .fieldwrap input[type=time], .fieldwrap select { width: 100%; }
+  .checkrow { display: flex; gap: 8px; align-items: center; }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/studio">Studio</a>
+  <a href="/my-channels">My Channels</a>
+  <a href="/settings" class="active">Settings</a>
+</nav>
+<div class="wrap">
+  <h1>Settings</h1>
+  <p class="sub">Auto Run criteria &middot; applied to every channel unless it overrides them</p>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <div class="muted" style="font-size:12px; margin-bottom:12px">
+      These are the global producer defaults. Per-channel overrides live on
+      <a href="/my-channels">My Channels</a>.
+    </div>
+    <form method="post" action="/settings/save">
+      <div class="grid2">
+        {% for entry in spec %}
+        <div class="fieldwrap">
+          {% if entry.type == 'bool' %}
+            <div class="checkrow">
+              <input type="checkbox" name="{{ entry.key }}" id="f-{{ entry.key }}"
+                     {{ 'checked' if values[entry.key] else '' }}>
+              <label class="field" style="margin:0" for="f-{{ entry.key }}">{{ entry.label }}</label>
+            </div>
+          {% else %}
+            <label class="field" for="f-{{ entry.key }}">{{ entry.label }}</label>
+            {% if entry.type == 'choice' %}
+              <select name="{{ entry.key }}" id="f-{{ entry.key }}">
+                {% for opt in entry.choices %}
+                <option value="{{ opt }}" {{ 'selected' if values[entry.key] == opt else '' }}>{{ opt }}</option>
+                {% endfor %}
+              </select>
+            {% elif entry.type == 'int' %}
+              <input type="number" name="{{ entry.key }}" id="f-{{ entry.key }}"
+                     value="{{ values[entry.key] }}"
+                     {% if entry.min is defined %}min="{{ entry.min }}"{% endif %}
+                     {% if entry.max is defined %}max="{{ entry.max }}"{% endif %}>
+            {% elif entry.type == 'time' %}
+              <input type="time" name="{{ entry.key }}" id="f-{{ entry.key }}"
+                     value="{{ values[entry.key] }}">
+            {% elif entry.type == 'map' %}
+              <textarea name="{{ entry.key }}" id="f-{{ entry.key }}"
+                        placeholder="personal-finance = E:\YOUTUBE\PERSONAL FINANCE\seed">{{ seed_dirs_text }}</textarea>
+            {% else %}
+              <input type="text" name="{{ entry.key }}" id="f-{{ entry.key }}"
+                     value="{{ values[entry.key] }}">
+            {% endif %}
+          {% endif %}
+          <div class="help">{{ entry.help }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="submit">Save settings</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>
