@@ -87,9 +87,47 @@ MIRROR RULES (agreed with the user - do not break these):
    an own channel never moves/renames the Renderly channel.
 
 STILL OPEN (next steps, in order):
-1. `default_engine` is stored (global + per channel) but NOT consumed - there
-   is no FlowImagesGen engine yet. Render mode IS wired (below).
-2. FlowImagesGen vendoring + the submodule work for ImgToVideo/Renderly.
+1. Renderly's FlowImagesGen mirror? No - both engines are done; see below.
+2. Unattended scheduling for `wr.py produce` (Task Scheduler), and per-channel
+   `flowimagesgen_project_url` (currently one global URL in config.yaml).
+
+### FlowImagesGen as a second image engine — DONE (2026-09-22)
+
+`default_engine` (global in Settings, per channel on My Channels, overridable
+on the images stage) now actually switches the images stage:
+- `renderly` - the existing path (Flow Driver or Renderly API + Renderly
+  upscale), unchanged.
+- `flowimagesgen` - the standalone Playwright Flow CLI, consumed IN PLACE
+  from `studio.flowimagesgen_repo` (never vendored: its Google session lives
+  in a gitignored `profile\`, and a fresh profile means a new Google login,
+  which is exactly where the Flow abuse-block lives).
+
+Code: `studio.flowimagesgen_ready()`, `prepare_flowimagesgen_job()`,
+`set_flowimagesgen_tier()`, `_adopt_flowimagesgen_outputs()`,
+`run_imagegen_flowimagesgen()`; `autorun._run_images` dispatches on
+`eff["engine"]`; the images panel has an Engine select.
+
+DECISIONS worth keeping:
+1. **The shotlist `style` is usually NOT sent.** Flow refuses prompts over
+   ~2450 chars with the SAME message as rate limiting, and WhisperRadar's
+   shotlist style alone measured 4000 chars - sending it would fail every
+   item. The per-image prompts already carry the art direction. The style is
+   sent only when `longest prompt + style <= 2420`.
+2. **Refs are passed as NAMES**, with the shotlist `refs` registry plus every
+   file in the production's `refs\` (keyed by stem) as the job's name -> path
+   map, and `refMode: reuse` - so FlowImagesGen attaches existing Flow project
+   assets by name instead of re-uploading (its README: uploads duplicate
+   project assets).
+3. **Outputs go to `flow_images\` and are adopted into `images\`**, preferring
+   the upscaled `<stem>_<tier>.png` over the 720p master, so `images\` never
+   holds two graded copies of the same shot.
+4. **Upscale tier** is written to FlowImagesGen's own
+   `config/upscale.local.json` via `upscale --set-tier` (what its UI does).
+   Mapping: upscale 0-4 -> off/1k/2k/3k/4k.
+5. **Job name is `wr-<pid>`**, so FlowImagesGen's `state\wr-<pid>.json` makes
+   a re-run resume the items that are still missing.
+6. Rate limiting is waited out by FlowImagesGen itself (cooldown 180s, up to
+   10 waits); cancel kills the whole process tree with taskkill /T /F.
 
 ### Auto Run producer — DONE (2026-09-22)
 
@@ -141,6 +179,14 @@ GOTCHA for tests: `studio.prod_dir()` reads `work_dir` from `cfg.db_path`, so
 a test using a TEMP DB still resolves the REAL production's working folder by
 id - it will write into the user's real folders. Patch `studio.prod_dir` or
 pass an explicit `work_dir` when exercising anything that writes files.
+
+TOOLS ARE CONSUMED IN PLACE - do not vendor them. Renderly (stateful service:
+own DB, storage, venv, signed-in Chrome profile), ImgToVideo (.NET, invoked as
+a subprocess) and FlowImagesGen (CLI, Google session in a gitignored profile)
+are all used from their own checkouts via config paths. A submodule copy would
+strand Renderly's database/storage/profile and add a second login for
+FlowImagesGen. Paths live in config.yaml: `imgtovideo_repo`, `renderly_url`,
+`flow_driver_dir`, `flowimagesgen_repo`.
 
 ### Per-channel defaults wired into the pipeline — DONE (2026-09-22)
 

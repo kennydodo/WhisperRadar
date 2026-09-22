@@ -630,29 +630,36 @@
       <div class="muted" style="margin-bottom:8px">No images yet. Render the shotlist through Renderly or upload your own (plan the shots at the shots stage first).</div>
       {% endif %}
       <div class="muted" style="font-size:12px; margin-bottom:8px">
-        Render the missing shotlist images with the <b>Renderly API</b> (Gemini via
-        the Renderly backend) or the <b>Flow Driver</b> (extension-v2 automates
-        Google Flow in a real Chrome window - needs a signed-in profile; images
-        are imported + upscaled through Renderly when the backend is running).
-        Your choice is remembered per production. Existing images are kept, only
-        gaps are rendered. Upload your own images anytime.
+        Render the missing shotlist images with the <b>Renderly</b> engine
+        (its API / Gemini, or the Flow Driver that automates Google Flow in a
+        real Chrome window) or <b>FlowImagesGen</b> (the standalone Flow CLI,
+        which drives Flow in its own signed-in profile and upscales on the way
+        out). Your choice is remembered per production. Existing images are
+        kept, only gaps are rendered. Upload your own images anytime.
       </div>
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
-              onsubmit="return confirm('Render the missing shotlist images now?\n\nRenderly API: consumes your Renderly/Gemini credits.\nFlow Driver: opens a Chrome window and drives Google Flow with your account - keep it running until the job finishes.')">
+              onsubmit="return confirmRender()">
           {% set dm = prod['render_mode'] or default_render_mode %}
           {% set default_mode = dm if dm in ('flow', 'api') else ('flow' if flow_ready else 'api') %}
+          <select name="engine" id="engine" title="Image engine">
+            <option value="renderly" {{ 'selected' if default_engine != 'flowimagesgen' else '' }}>Renderly</option>
+            <option value="flowimagesgen" {{ 'selected' if default_engine == 'flowimagesgen' else '' }} {{ 'disabled' if not flowimagesgen_ready else '' }}>FlowImagesGen{{ '' if flowimagesgen_ready else ' - not installed' }}</option>
+          </select>
+          <span id="modewrap">
           <select name="render_mode" id="rendermode" title="Image source">
             <option value="api" {{ 'selected' if default_mode == 'api' else '' }}>Renderly API</option>
             <option value="flow" {{ 'selected' if default_mode == 'flow' else '' }} {{ 'disabled' if not flow_ready else '' }}>Flow Driver (Google Flow){{ '' if flow_ready else ' - not installed' }}</option>
           </select>
-          <button type="submit" class="green" {{ 'disabled' if job.running or not shotlist_count or (not renderly_ready and not flow_ready) else '' }}
-                  title="{{ 'Render the missing shotlist images' if shotlist_count and not job.running and (renderly_ready or flow_ready) else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'No image source reachable - start Renderly (start.bat) or install the Flow Driver')) }}">
+          </span>
+          <button type="submit" class="green" {{ 'disabled' if job.running or not shotlist_count or (not renderly_ready and not flow_ready and not flowimagesgen_ready) else '' }}
+                  title="{{ 'Render the missing shotlist images' if shotlist_count and not job.running and (renderly_ready or flow_ready or flowimagesgen_ready) else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'No image source reachable - start Renderly (start.bat), install the Flow Driver, or set studio.flowimagesgen_repo')) }}">
             {{ 'Working...' if job.running else 'Render images' }}
           </button>
           <button type="button" class="ghost" onclick="stopFlow()" title="Stop a running Flow Driver batch">Stop Flow batch</button>
         </form>
       </div>
+      <div id="enginenote" class="muted" style="display:none; font-size:12px; margin-top:8px; border-left:2px solid var(--accent); padding-left:8px"></div>
       <div id="flowpanel" style="display:none; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:12px">
         <div style="font-weight:600; margin-bottom:6px">Flow Driver settings <span class="muted" style="font-weight:400">(same controls as the Flow Driver page in Renderly)</span></div>
         <div class="row" style="margin-bottom:6px">
@@ -689,15 +696,48 @@
           <input type="file" name="ref_files" accept=".png,.jpg,.jpeg,.webp" multiple required>
           <button type="submit" class="secondary">Add reference images</button>
         </form>
-        <div class="muted" style="font-size:12px; margin-top:8px">When you render, WhisperRadar starts what is missing: the Flow Driver service, and Renderly's start.bat (backend + frontend) so imports and upscaling work.</div>
+        <div class="muted" style="font-size:12px; margin-top:8px">With the Renderly engine, WhisperRadar starts what is missing: the Flow Driver service, and Renderly's start.bat (backend + frontend) so imports and upscaling work.</div>
       </div>
       <script>
-        (function () {
-          var sel = document.getElementById('rendermode');
+        var ENGINE_NOTE = {
+          renderly: '',
+          flowimagesgen: 'FlowImagesGen drives Google Flow in its own signed-in Chrome profile (separate from Renderly) and upscales the results itself. It waits out Flow rate limits, so a batch can take a long time.'
+        };
+        function currentEngine() {
+          var e = document.getElementById('engine');
+          return e ? e.value : 'renderly';
+        }
+        function syncEngine() {
+          var engine = currentEngine();
+          var modeWrap = document.getElementById('modewrap');
           var panel = document.getElementById('flowpanel');
-          function sync() { if (sel && panel) panel.style.display = sel.value === 'flow' ? '' : 'none'; }
-          if (sel) sel.addEventListener('change', sync);
-          sync();
+          var note = document.getElementById('enginenote');
+          var isFig = engine === 'flowimagesgen';
+          if (modeWrap) modeWrap.style.display = isFig ? 'none' : '';
+          if (note) {
+            note.textContent = ENGINE_NOTE[engine] || '';
+            note.style.display = note.textContent ? '' : 'none';
+          }
+          var sel = document.getElementById('rendermode');
+          if (panel) {
+            panel.style.display = (!isFig && sel && sel.value === 'flow') ? '' : 'none';
+          }
+        }
+        function confirmRender() {
+          var engine = currentEngine();
+          var what = engine === 'flowimagesgen'
+            ? 'FlowImagesGen will open Chrome, drive Google Flow with your account and upscale the results.\nKeep the machine running until the batch finishes.'
+            : (document.getElementById('rendermode') || {}).value === 'flow'
+              ? 'Flow Driver will open a Chrome window and drive Google Flow with your account - keep it running until the job finishes.'
+              : 'Renderly API consumes your Renderly/Gemini credits.';
+          return confirm('Render the missing shotlist images now?\n\n' + what);
+        }
+        (function () {
+          var engine = document.getElementById('engine');
+          var sel = document.getElementById('rendermode');
+          if (engine) engine.addEventListener('change', syncEngine);
+          if (sel) sel.addEventListener('change', syncEngine);
+          syncEngine();
         })();
         function stopFlow() {
           var f = document.createElement('form');
@@ -993,7 +1033,10 @@
     }
     html += '</ul>';
     if (credits > 0) {
-      html += '<div class="warn">⚠ The images stage will render ' + credits + ' image(s) - this consumes your Renderly / Flow credits.</div>';
+        html += '<div class="warn">⚠ The images stage will render ' + credits + ' image(s) - ' +
+          (currentEngine() === 'flowimagesgen'
+            ? 'FlowImagesGen drives Google Flow with your account and can take a long time.'
+            : 'this consumes your Renderly / Flow credits.') + '</div>';
     }
     if (hasMerge) {
       html += '<div class="warn">⚠ The final render (merge) can take a long time.</div>';

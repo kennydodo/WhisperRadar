@@ -346,6 +346,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
 
 
 def _run_images(cfg, pid: int, mode: str | None = None,
+                engine: str | None = None,
                 flow_channel: str = "whisperradar",
                 flow_project: str = "", flow_upscale: int | None = None,
                 flow_master: str = "", renderly_channel=None,
@@ -355,6 +356,9 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     if not (pdir / "shotlist.json").exists():
         raise _Paused("shotlist.json is missing - plan or save a shotlist, "
                       "then Resume")
+    eff = _effective(cfg, pid)
+    if engine is None:
+        engine = eff["engine"]
     if mode is None:
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
     if mode not in ("api", "flow"):
@@ -366,7 +370,13 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         db.update_production(conn, pid, render_mode=mode)
     finally:
         conn.close()
-    if mode == "flow":
+    if engine == "flowimagesgen":
+        # FlowImagesGen drives Flow itself and upscales on the way out, so
+        # the Renderly channel/project and the Flow Driver do not apply.
+        count = studio.run_imagegen_flowimagesgen(
+            cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel)
+        source = "FlowImagesGen"
+    elif mode == "flow":
         # per-image refs come from the shotlist (resolved through its refs
         # registry by prepare_flow_batch); the production refs\ folder is
         # just the library flow.js resolves names against - attaching every
@@ -540,7 +550,13 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
         prod = _get_prod(cfg, pid)
         mode = _default_render_mode(cfg, prod)
         eff = _effective(cfg, pid)
-        if mode == "flow":
+        if eff["engine"] == "flowimagesgen":
+            refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
+                    if (pdir / "refs").exists() else 0)
+            detail = (f"{len(missing)} missing image(s) via FlowImagesGen "
+                      f"(upscale {eff['upscale']}"
+                      + (f", {refs} ref image(s)" if refs else "") + ")")
+        elif mode == "flow":
             refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
                     if (pdir / "refs").exists() else 0)
             detail = (f"{len(missing)} missing image(s) via Flow Driver "
@@ -586,9 +602,11 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None) -> dict:
     if stage == "images":
         eff = _effective(cfg, pid)
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
-        params = {"mode": mode, "flow_project": "",
+        params = {"mode": mode, "engine": eff["engine"], "flow_project": "",
                   "flow_upscale": eff["upscale"], "log": log, "cancel": cancel}
-        if mode == "flow":
+        if eff["engine"] == "flowimagesgen":
+            pass  # drives Flow itself; no Renderly channel/project involved
+        elif mode == "flow":
             params["flow_channel"] = eff["renderly_channel_name"]
         else:
             params["renderly_channel"] = studio.resolve_renderly_channel(

@@ -86,6 +86,15 @@ studio:
   # Flow Driver service URL (extension-v2\server.js; started automatically
   # when a Flow render needs it, or by Renderly's start.bat).
   flow_driver_url: http://127.0.0.1:8030
+  # FlowImagesGen - the standalone Playwright Flow CLI, used when a channel or
+  # production picks the "flowimagesgen" image engine (Settings > Image engine,
+  # or per channel on My Channels). Consumed IN PLACE from its own checkout -
+  # never vendored, because its signed-in Google session lives in the
+  # gitignored profile\ folder. Run `npm install` there once and `npm run login`.
+  flowimagesgen_repo: D:\Repos\FlowImagesGen
+  # Default Google Flow project URL for its jobs. Empty = FlowImagesGen's own
+  # config/settings.json projectUrl, else Flow's most recent project.
+  flowimagesgen_project_url: null
   # Path to the master shotlist planning prompt (ImgToVideo's
   # manifest-authoring-brief.md). Read fresh from disk on every run, so edits
   # apply immediately. Default: <imgtovideo_repo>\docs\manifest-authoring-brief.md

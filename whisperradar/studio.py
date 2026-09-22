@@ -6,6 +6,7 @@ or by hand (paste text / upload files) - the human stays in charge.
 
 import json
 import logging
+import os
 import random
 import re
 import shutil
@@ -535,6 +536,207 @@ def prepare_flow_batch(cfg, pid_dir: Path) -> tuple[Path, int]:
 def flow_service_url(cfg) -> str:
     return (cfg.flow_driver_url or "http://127.0.0.1:8030").rstrip("/")
 
+
+# ------------------------------------------- FlowImagesGen (2nd engine) --
+# The standalone Playwright Flow CLI, consumed in place from its own
+# checkout (like ImgToVideo and Renderly - never vendored: its Google
+# session lives in a gitignored profile\ folder). Invoked as:
+#   node src/cli.js generate --job <job.json> --output <dir> ...
+
+# WhisperRadar's upscale 0-4 -> FlowImagesGen's resolution tier names.
+FLOWIMAGESGEN_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "3k", 4: "4k"}
+
+# Flow refuses prompts over roughly 2450 characters with the SAME message it
+# uses for rate limiting, so the job-wide style is only sent when it fits.
+FLOWIMAGESGEN_MAX_PROMPT_CHARS = 2420
+
+
+def flowimagesgen_dir(cfg) -> Path | None:
+    if not cfg.flowimagesgen_repo:
+        return None
+    d = Path(cfg.flowimagesgen_repo).expanduser()
+    return d if d.exists() else None
+
+
+def flowimagesgen_ready(cfg) -> bool:
+    d = flowimagesgen_dir(cfg)
+    return bool(d) and (d / "src" / "cli.js").exists() \
+        and (d / "node_modules" / "playwright").exists() \
+        and shutil.which("node") is not None
+
+
+def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int) -> tuple[Path, list[str]]:
+    """Build a FlowImagesGen job from the production's shotlist: only the
+    images still missing from images\\.
+
+    Per-image refs stay as NAMES and the shotlist's refs registry becomes the
+    job's name -> path map, so FlowImagesGen's default refMode "reuse" attaches
+    existing Flow project assets by name instead of re-uploading (its own
+    README: repeated uploads duplicate project assets). Files in the
+    production's refs\\ folder are exposed under their stem, matching how the
+    shotlist references them.
+    Returns (job file, the output file names to expect)."""
+    shotlist_path = pid_dir / "shotlist.json"
+    if not shotlist_path.exists():
+        raise RuntimeError("Generate the shotlist first")
+    data = json.loads(shotlist_path.read_text(encoding="utf-8"))
+    registry = {k: v for k, v in (data.get("refs") or {}).items()
+                if isinstance(v, str)} if isinstance(data.get("refs"), dict) \
+        else {}
+    refs_dir = pid_dir / "refs"
+    if refs_dir.exists():
+        for p in sorted(refs_dir.iterdir()):
+            if p.is_file():
+                registry.setdefault(p.stem, str(p))
+    img_dir = pid_dir / "images"
+    img_dir.mkdir(exist_ok=True)
+    existing = {p.name for p in img_dir.iterdir() if p.is_file()}
+    todo = []
+    for item in data.get("images", []):
+        if not (isinstance(item, dict) and item.get("file")
+                and item.get("prompt") and item["file"] not in existing):
+            continue
+        entry = {"file": item["file"], "prompt": item["prompt"]}
+        if item.get("refs"):
+            entry["refs"] = [str(r) for r in item["refs"]]
+        todo.append(entry)
+    if not todo:
+        raise RuntimeError(
+            "All shotlist images already exist - nothing to render")
+
+    out_dir = pid_dir / "flow_images"
+    job: dict = {
+        "name": f"wr-{pid}",
+        "outputsDir": str(out_dir),
+        "refMode": "reuse",
+        "refs": registry,
+        "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
+                     "outputs": 1, "refMode": "reuse"},
+        "images": todo,
+    }
+    if cfg.flowimagesgen_project_url:
+        job["projectUrl"] = cfg.flowimagesgen_project_url
+    # The shotlist's `style` is a Flow "master prompt" for the Renderly
+    # driver; here the per-image prompts already carry the art direction and
+    # the style alone can exceed Flow's limit, so it is only sent when the
+    # whole prompt would still fit.
+    style = (data.get("style") or "").strip()
+    longest = max((len(i["prompt"]) for i in todo), default=0)
+    if style and longest + len(style) + 1 <= FLOWIMAGESGEN_MAX_PROMPT_CHARS:
+        job["style"] = style
+    elif style:
+        log.info("FlowImagesGen: omitting the %d-char style - prompts would "
+                 "exceed Flow's %d-char limit (longest prompt %d)",
+                 len(style), FLOWIMAGESGEN_MAX_PROMPT_CHARS, longest)
+    job_path = pid_dir / "flowimagesgen.json"
+    job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8")
+    return job_path, [i["file"] for i in todo]
+
+
+def _flowimagesgen_cmd(args: list[str]) -> list[str]:
+    return ["node", "src/cli.js", *args]
+
+
+def set_flowimagesgen_tier(cfg, upscale: int) -> str | None:
+    """Remember the upscale tier in FlowImagesGen's own local config (the
+    same thing its web UI does). Returns the tier name."""
+    d = flowimagesgen_dir(cfg)
+    if not d:
+        return None
+    tier = FLOWIMAGESGEN_TIERS.get(int(upscale or 0), "off")
+    try:
+        subprocess.run(_flowimagesgen_cmd(["upscale", "--set-tier", tier]),
+                       cwd=str(d), capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning("FlowImagesGen: could not set upscale tier %s: %s",
+                    tier, exc)
+    return tier
+
+
+def _adopt_flowimagesgen_outputs(pdir: Path, names: list[str],
+                                 tier: str) -> list[str]:
+    """Copy FlowImagesGen's results into images\\ under the shotlist's own
+    file names, preferring the upscaled <stem>_<tier>.png over the master
+    (both are written, so the pipeline would otherwise see duplicates)."""
+    out_dir = pdir / "flow_images"
+    img_dir = pdir / "images"
+    img_dir.mkdir(exist_ok=True)
+    adopted = []
+    for name in names:
+        stem, dot, ext = name.rpartition(".")
+        stem = stem or name
+        ext = ext if dot else ""
+        candidates = []
+        if tier and tier != "off":
+            candidates += [f"{stem}_{tier}.{ext}" if ext else f"{stem}_{tier}"]
+        candidates += [name]
+        candidates += sorted(p.name for p in out_dir.glob(f"{stem}*")
+                             if p.is_file()) if out_dir.exists() else []
+        for cand in candidates:
+            src = out_dir / cand
+            if src.is_file():
+                shutil.copy(src, img_dir / name)
+                adopted.append(name)
+                break
+    return adopted
+
+
+def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
+                               upscale: int | None = None, log=None,
+                               cancel=None) -> int:
+    """Render the production's missing shotlist images with FlowImagesGen.
+
+    Returns how many new images landed in images\\. Long-running by design:
+    Flow rate-limits automation and the CLI waits it out, so the timeout is
+    generous and `cancel` kills the whole process tree."""
+    if not flowimagesgen_ready(cfg):
+        raise RuntimeError("Set studio.flowimagesgen_repo in config.yaml to "
+                           "your FlowImagesGen checkout (and run npm install)")
+    repo = flowimagesgen_dir(cfg)
+    job_path, names = prepare_flowimagesgen_job(cfg, pid_dir, pid)
+    tier = set_flowimagesgen_tier(cfg, cfg.renderly_upscale if upscale is None
+                                  else upscale)
+    cmd = _flowimagesgen_cmd(["generate", "--job", str(job_path),
+                              "--output", str(pid_dir / "flow_images"),
+                              "--no-color"])
+    if cfg.flowimagesgen_project_url:
+        cmd += ["--project-url", cfg.flowimagesgen_project_url]
+    if log:
+        log(f"FlowImagesGen: {len(names)} image(s), upscale tier {tier}")
+        log("$ " + " ".join(cmd))
+    proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace")
+    try:
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            if log:
+                log(line)
+            if cancel is not None and cancel():
+                raise RuntimeError("stopped by user")
+    finally:
+        if proc.poll() is None:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                               capture_output=True)
+            else:
+                proc.kill()
+        proc.wait(timeout=30)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"FlowImagesGen failed (exit {proc.returncode}) - see the log "
+            f"above; state is kept in its state\\wr-{pid}.json so a re-run "
+            f"resumes")
+    names = [json.loads(job_path.read_text(encoding="utf-8"))["images"][i]["file"]
+             for i in range(count)]
+    adopted = _adopt_flowimagesgen_outputs(pid_dir, names, tier or "off")
+    if not adopted:
+        raise RuntimeError("FlowImagesGen produced no images - check the log "
+                           "and its debug\\ folder")
+    return len(adopted)
 
 def _driver_api(cfg, path: str, method: str = "GET", body=None,
                 timeout: int = 8):

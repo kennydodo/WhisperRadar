@@ -84,6 +84,11 @@ class Config:
         self.renderly_channel = studio.get("renderly_channel") or None
         self.renderly_upscale = studio.get("renderly_upscale") or 4
         self.imgtovideo_repo = studio.get("imgtovideo_repo") or None
+        # FlowImagesGen (the standalone Playwright Flow CLI) - consumed in
+        # place from its own checkout, like ImgToVideo and Renderly.
+        self.flowimagesgen_repo = studio.get("flowimagesgen_repo") or None
+        self.flowimagesgen_project_url = \
+            (studio.get("flowimagesgen_project_url") or "").strip() or None
         self.studio_manifest_brief = studio.get("manifest_brief") or None
         self.flow_driver_dir = studio.get("flow_driver_dir") or None
         self.flow_driver_url = studio.get("flow_driver_url") \

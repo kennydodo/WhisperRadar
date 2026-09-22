@@ -881,7 +881,9 @@ def create_app(cfg) -> Flask:
             flow_upscale_default=eff["upscale"],
             flow_channel_default=eff["renderly_channel_name"],
             default_render_mode=eff["render_mode"],
+            default_engine=eff["engine"],
             own_channel_name=eff["own_channel_name"],
+            flowimagesgen_ready=studio.flowimagesgen_ready(cfg),
             own_channels=own_channels,
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
@@ -1522,6 +1524,9 @@ def create_app(cfg) -> Flask:
         mode = request.form.get("render_mode") or eff["render_mode"]
         if mode not in ("api", "flow"):
             mode = "flow" if studio.flow_driver_ready(cfg) else "api"
+        engine = (request.form.get("engine") or eff["engine"] or "renderly")
+        if engine not in ("renderly", "flowimagesgen"):
+            engine = "renderly"
         flow_channel = (request.form.get("flow_channel")
                         or eff["renderly_channel_name"]).strip()
         flow_project = (request.form.get("flow_project") or "").strip()
@@ -1532,21 +1537,23 @@ def create_app(cfg) -> Flask:
             flow_upscale = eff["upscale"]
         flow_master = (request.form.get("flow_master") or "").strip()
         renderly_channel = None
-        if mode == "api":
+        if engine == "renderly" and mode == "api":
             renderly_channel = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
 
         def worker():
             autorun.raise_result(autorun.run_stage(cfg, pid, "images", {
-                "mode": mode, "flow_channel": flow_channel,
+                "mode": mode, "engine": engine, "flow_channel": flow_channel,
                 "flow_project": flow_project,
                 "flow_upscale": flow_upscale, "flow_master": flow_master,
                 "renderly_channel": renderly_channel,
                 "log": sjob.log.append,
             }))
 
-        sjob.start(worker, f"image rendering ({'Flow Driver' if mode == 'flow' else 'Renderly'})")
-        return _studio_url(pid, msg="Image rendering started")
+        label = ("FlowImagesGen" if engine == "flowimagesgen"
+                 else "Flow Driver" if mode == "flow" else "Renderly")
+        sjob.start(worker, f"image rendering ({label})")
+        return _studio_url(pid, msg=f"Image rendering started ({label})")
 
     @app.post("/studio/<int:pid>/stage/done")
     def studio_stage_done(pid):
