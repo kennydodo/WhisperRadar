@@ -257,6 +257,15 @@ def for_production(conn, prod) -> dict:
         "per_day": (int(own_per_day) if own_per_day is not None
                     else int(glob["per_day"])),
         "topic_pick": row_get(own, "topic_pick", glob["topic_pick"]),
+        # the rest of the auto-run criteria are per channel too
+        "run_window_start": row_get(own, "run_window_start",
+                                    glob["run_window_start"]),
+        "run_window_end": row_get(own, "run_window_end",
+                                  glob["run_window_end"]),
+        "candidate_window_days": int(row_get(own, "candidate_window_days",
+                                             glob["candidate_window_days"]) or 0),
+        "producer_llm_provider": (row_get(own, "producer_llm_provider")
+                                  or glob["producer_llm_provider"] or None),
         "autorun_enabled": bool(glob["autorun_enabled"])
                            and bool(row_get(own, "autorun_enabled", 1)),
         "bible_dir": row_get(own, "bible_dir"),

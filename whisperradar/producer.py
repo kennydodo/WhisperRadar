@@ -28,7 +28,8 @@ from . import db, notify, settings, studio
 
 def _in_window(vals: dict, now: datetime | None = None) -> bool:
     """True when `now` (local) is inside the configured run window. A start
-    later than the end means an overnight window."""
+    later than the end means an overnight window. `vals` may be the global
+    settings or one channel's effective values."""
     now = now or datetime.now()
     start = vals.get("run_window_start") or "00:00"
     end = vals.get("run_window_end") or "23:59"
@@ -153,25 +154,28 @@ def build_plan(cfg, conn) -> list[dict]:
     plan: list[dict] = []
     if not vals["autorun_enabled"]:
         return [{"action": "pause", "detail": "Auto Run is off in Settings"}]
-    if not _in_window(vals):
-        return [{"action": "pause",
-                 "detail": f"outside the run window "
-                           f"({vals['run_window_start']}-{vals['run_window_end']})"}]
     global_cap = int(vals["per_day"] or 0)
     made_today = _created_today(conn)
     if global_cap and made_today >= global_cap:
         return [{"action": "pause",
                  "detail": f"daily cap reached ({made_today}/{global_cap} "
                            f"created today)"}]
-    window = int(vals.get("candidate_window_days") or 0)
+    now = datetime.now()
     for oc in db.list_own_channels(conn, active_only=True):
         eff = settings.for_production(conn, {"own_channel_id": oc["id"]})
         entry = {"own_channel_id": oc["id"], "own_channel": oc["name"],
                  "genre": oc["genre"], "engine": eff["engine"],
-                 "topic_pick": eff["topic_pick"], "per_day": eff["per_day"]}
+                 "topic_pick": eff["topic_pick"], "per_day": eff["per_day"],
+                 "window": f"{eff['run_window_start']}-{eff['run_window_end']}"}
         if not eff["autorun_enabled"]:
             plan.append({**entry, "action": "skip",
                          "detail": "auto-run is off for this channel"})
+            continue
+        if not _in_window(eff, now):
+            plan.append({**entry, "action": "skip",
+                         "detail": f"outside this channel's run window "
+                                   f"({eff['run_window_start']}-"
+                                   f"{eff['run_window_end']})"})
             continue
         cap = int(eff["per_day"] or 0)
         made_here = _created_today(conn, oc["id"])
@@ -185,7 +189,7 @@ def build_plan(cfg, conn) -> list[dict]:
             plan.append({**entry, "action": "skip",
                          "detail": "global daily cap reached"})
             continue
-        cands = candidates(conn, oc, window)
+        cands = candidates(conn, oc, int(eff["candidate_window_days"] or 0))
         if not cands:
             plan.append({**entry, "action": "skip",
                          "detail": f"no un-produced transcribed video in "
@@ -220,8 +224,7 @@ def run(cfg, log=None, job=None) -> dict:
     try:
         vals = settings.load(conn)
         plan = build_plan(cfg, conn)
-        provider = vals.get("producer_llm_provider") or None
-        window = int(vals.get("candidate_window_days") or 0)
+        global_provider = vals.get("producer_llm_provider") or None
         created: list[dict] = []
         skipped: list[dict] = []
         for entry in plan:
@@ -234,10 +237,12 @@ def run(cfg, log=None, job=None) -> dict:
                     f"{entry['detail']}")
                 continue
             oc = db.get_own_channel(conn, entry["own_channel_id"])
-            cands = candidates(conn, oc, window)
+            eff = settings.for_production(conn, {"own_channel_id": oc["id"]})
+            # each channel may pick its own topic and LLM
+            provider = eff["producer_llm_provider"] or global_provider
+            cands = candidates(conn, oc, int(eff["candidate_window_days"] or 0))
             if not cands:
                 continue
-            eff = settings.for_production(conn, {"own_channel_id": oc["id"]})
             choice = choose_topic(cfg, conn, oc, cands, provider,
                                   eff["topic_pick"])
             video = choice["video"]

@@ -473,6 +473,7 @@ def create_app(cfg) -> Flask:
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
             renderly_url=cfg.renderly_url,
+            providers=[p["name"] for p in cfg.studio_llm_providers],
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/my-channels/add")
@@ -528,6 +529,23 @@ def create_app(cfg) -> Flask:
         for key in ("default_engine", "default_render_mode", "topic_pick"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip() or None
+        if "producer_llm_provider" in request.form:
+            # only a configured provider is meaningful; anything else inherits
+            raw = (request.form.get("producer_llm_provider") or "").strip()
+            known = {p["name"] for p in cfg.studio_llm_providers}
+            fields["producer_llm_provider"] = raw if raw in known else None
+        for key in ("run_window_start", "run_window_end"):
+            if key in request.form:
+                raw = (request.form.get(key) or "").strip()
+                fields[key] = raw if re.match(r"^([01]?\d|2[0-3]):[0-5]\d$",
+                                              raw) else None
+        if "candidate_window_days" in request.form:
+            raw = (request.form.get("candidate_window_days") or "").strip()
+            try:
+                fields["candidate_window_days"] = (max(0, min(3650, int(raw)))
+                                                   if raw else None)
+            except ValueError:
+                fields["candidate_window_days"] = None
         if "default_upscale" in request.form:
             raw = (request.form.get("default_upscale") or "").strip()
             try:

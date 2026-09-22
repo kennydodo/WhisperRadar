@@ -89,6 +89,10 @@ CREATE TABLE IF NOT EXISTS own_channels (
     autorun_enabled INTEGER,
     per_day INTEGER,
     topic_pick TEXT,
+    run_window_start TEXT,
+    run_window_end TEXT,
+    candidate_window_days INTEGER,
+    producer_llm_provider TEXT,
     -- Renderly mirror (soft reference: never a FK, always re-resolved)
     renderly_channel_id INTEGER,
     renderly_channel_name TEXT,
@@ -163,7 +167,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "own_channel_id" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN own_channel_id INTEGER")
     _migrate_own_channels(conn)
-    _add_column_if_missing(conn, "own_channels", "flow_project_url", "TEXT")
+    for column, decl in (("flow_project_url", "TEXT"),
+                         ("run_window_start", "TEXT"),
+                         ("run_window_end", "TEXT"),
+                         ("candidate_window_days", "INTEGER"),
+                         ("producer_llm_provider", "TEXT")):
+        _add_column_if_missing(conn, "own_channels", column, decl)
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str,
@@ -550,6 +559,8 @@ _OWN_CHANNEL_FIELDS = {
     "default_voice", "default_engine", "default_render_mode",
     "default_upscale", "bible_dir", "refs_dir", "flow_project_url",
     "autorun_enabled", "per_day", "topic_pick",
+    "run_window_start", "run_window_end", "candidate_window_days",
+    "producer_llm_provider",
     "renderly_channel_id", "renderly_channel_name",
 }
 

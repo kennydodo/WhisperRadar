@@ -240,6 +240,33 @@
                        style="width:430px">
               </label>
             </div>
+            <div class="muted" style="font-size:12px; margin:10px 0 6px">
+              Auto Run for this channel - "inherit" uses the global value from
+              <a href="/settings">Settings</a>.
+            </div>
+            <div class="inline">
+              <label>run window start
+                <input type="time" name="run_window_start"
+                       value="{{ ch['run_window_start'] or '' }}">
+              </label>
+              <label>run window end
+                <input type="time" name="run_window_end"
+                       value="{{ ch['run_window_end'] or '' }}">
+              </label>
+              <label>candidate window (days)
+                <input type="number" name="candidate_window_days" min="0" max="3650"
+                       value="{{ ch['candidate_window_days'] if ch['candidate_window_days'] is not none else '' }}"
+                       placeholder="inherit" style="width:110px">
+              </label>
+              <label>producer LLM
+                <select name="producer_llm_provider">
+                  <option value="">inherit</option>
+                  {% for p in providers %}
+                  <option value="{{ p }}" {{ 'selected' if ch['producer_llm_provider'] == p else '' }}>{{ p }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
             <div style="margin-top:10px">
               <button type="submit">save</button>
               <button type="button" class="ghost" onclick="cancelEdit({{ ch['id'] }})">cancel</button>

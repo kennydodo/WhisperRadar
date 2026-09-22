@@ -104,12 +104,21 @@ ones on My Channels ("edit / defaults"). Resolution is always
 **global <- own channel <- production** via `settings.for_production`.
 
 Per channel (own_channels): narration voice, image engine, render mode,
-upscale, auto-run on/off, per-day cap, topic pick, bible folder, refs folder,
-Google Flow project URL, plus the Renderly channel mirror.
+upscale, auto-run on/off, per-day cap, topic pick, run window start/end,
+candidate window (days), producer LLM, bible folder, refs folder, Google Flow
+project URL, plus the Renderly channel mirror.
 
-Global only (Settings): run window, candidate window, producer LLM, scheduler
-on/off + interval, notifications, "stop services after images", and the
-per-genre seed_dirs fallback.
+Global only (Settings): the Auto Run master switch (`autorun_enabled`), the
+global per-day cap, scheduler on/off + interval, notifications, "stop services
+after images", and the per-genre seed_dirs fallback. These are process-level,
+not per-channel.
+
+The producer evaluates the run window, candidate window, topic pick and LLM
+PER CHANNEL (`settings.for_production`), so one channel can run at 02:00-03:00
+with a 7-day window and DeepSeek while another inherits the globals. The
+scheduler calls `producer.build_plan`, so it inherits all of that for free.
+An unknown `producer_llm_provider` on a channel is stored as NULL (inherit)
+rather than kept, so a stale provider name cannot silently break picking.
 
 Two bugs found 2026-09-22 and fixed - both places had ignored the channel:
 - the audio-stage picker passed only `prod["voice"]`, so it showed the
