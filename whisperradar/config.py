@@ -67,6 +67,11 @@ class Config:
         self.studio_ai33_voices = [str(v).strip()
                                    for v in (studio.get("ai33_voices") or [])
                                    if str(v).strip()]
+        # Voice picker source: "favorites" lists the voices starred in the
+        # OpenSpeaker app; anything else/absent uses the shortlist above
+        # (or the full catalog when the shortlist is empty).
+        self.studio_ai33_voice_source = (
+            (studio.get("ai33_voice_source") or "").strip().lower() or None)
         self.studio_imagegen_command = studio.get("imagegen_command") or None
         self.studio_merge_command = studio.get("merge_command") or None
         self.studio_script_words = studio.get("script_words") or None

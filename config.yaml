@@ -52,6 +52,11 @@ studio:
     - elevenlabs_9BYUod15YOH2aePSd97v   # Vanessa Voyce - Warm & Relatable
     - minimax_209533299589191           # Bossy Lady
     - elevenlabs_1inhdZEdtH9n8sjwar16   # Charles - British
+  # Which voices the picker offers: "favorites" = the voices you starred in
+  # the OpenSpeaker app (GET /v3/favorites). Absent = the shortlist above
+  # (or the full catalog when it is empty). The audio stage also has a
+  # "★ Favorites" toggle that switches the list for the current page.
+  ai33_voice_source: favorites
   # Renderly + ImgToVideo integration (images + final render).
   # renderly_channel: null = auto-create/reuse a "whisperradar" channel.
   renderly_url: http://127.0.0.1:8022

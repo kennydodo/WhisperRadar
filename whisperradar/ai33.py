@@ -22,13 +22,36 @@ REQUEST_TIMEOUT = 60
 VOICES_CACHE_TTL = 600
 VOICES_MAX_PAGES = 40  # safety cap: 40 pages x page_size per provider
 
+# studio.ai33_voice_source / the studio.ai33_voices sentinel that makes the
+# picker show the voices starred in the OpenSpeaker app instead of a
+# hand-written shortlist.
+FAVORITES = "favorites"
+
 _voices_cache: dict = {"at": 0.0, "data": []}
 _curated_cache: dict = {"key": None, "at": 0.0, "data": []}
+_favorites_cache: dict = {"at": 0.0, "data": []}
 
 
 def curated_ids(cfg) -> list[str]:
     ids = getattr(cfg, "studio_ai33_voices", None) if cfg else None
     return [str(v).strip() for v in (ids or []) if str(v).strip()]
+
+
+def wants_favorites(cfg) -> bool:
+    """True when the picker should list the OpenSpeaker favorites: either
+    studio.ai33_voice_source: favorites, or ["favorites"] as the whole
+    studio.ai33_voices shortlist."""
+    src = (getattr(cfg, "studio_ai33_voice_source", None) or "").strip().lower()
+    if src:
+        return src == FAVORITES
+    ids = curated_ids(cfg)
+    return len(ids) == 1 and ids[0].lower() == FAVORITES
+
+
+def _provider_of(voice_id: str) -> str:
+    """The provider prefix of a voice_id ('elevenlabs_xxx' -> 'elevenlabs')."""
+    provider, _, bare = str(voice_id).partition("_")
+    return provider if bare else ""
 
 
 def _normalize(v: dict, provider: str) -> dict:
@@ -79,6 +102,42 @@ def _resolve_curated(cfg, ids: list[str]) -> list[dict]:
 
     with ThreadPoolExecutor(max_workers=min(8, max(1, len(ids)))) as pool:
         return list(pool.map(one, ids))
+
+
+def favorites(cfg, refresh: bool = False) -> list[dict]:
+    """The voices starred in the OpenSpeaker app (GET /v3/favorites).
+
+    The response is {success, favorites: [{voice_id, provider, voice_data}]};
+    `provider` there is a generic "v3", so the real provider comes from the
+    voice_id prefix. Metadata is normalized like the catalog and cached for
+    VOICES_CACHE_TTL seconds. Undocumented endpoint - verified 2026-09-22.
+    """
+    key = api_key(cfg)
+    if not key:
+        raise RuntimeError("no OpenSpeaker API key - set WR_AI33_API_KEY "
+                           "(or studio.ai33_api_key in config.yaml)")
+    now = time.monotonic()
+    if not refresh and _favorites_cache["data"] \
+            and now - _favorites_cache["at"] < VOICES_CACHE_TTL:
+        return _favorites_cache["data"]
+    resp = _json(_request(f"{base_url(cfg)}/v3/favorites", key))
+    out: list[dict] = []
+    seen: set[str] = set()
+    for fav in resp.get("favorites") or []:
+        if not isinstance(fav, dict):
+            continue
+        data = fav.get("voice_data")
+        if not isinstance(data, dict):
+            data = {"voice_id": fav.get("voice_id"), "name": fav.get("name")}
+        vid = str(data.get("voice_id") or fav.get("voice_id") or "").strip()
+        if not vid or vid in seen:
+            continue
+        provider = _provider_of(vid) or str(fav.get("provider") or "").strip()
+        seen.add(vid)
+        out.append(_normalize({**data, "voice_id": vid}, provider))
+    _favorites_cache["at"] = now
+    _favorites_cache["data"] = out
+    return out
 
 
 def api_key(cfg=None) -> str | None:
@@ -189,13 +248,28 @@ def _fetch_all_providers(cfg, page_size: int,
 
 
 def voices(cfg, provider: str | None = None, page_size: int = 100,
-           refresh: bool = False, search: str | None = None) -> list[dict]:
-    """Voice list for the picker. When `studio.ai33_voices` is configured,
-    only those voices are returned (in config order, metadata resolved via
-    the API's id search). Otherwise the full catalog is fetched (cached
-    ~10 min, providers in parallel). provider + search narrow the raw
-    catalog; each voice_id carries its provider prefix."""
-    ids = curated_ids(cfg)
+           refresh: bool = False, search: str | None = None,
+           source: str | None = None) -> list[dict]:
+    """Voice list for the picker.
+
+    source='favorites' (or studio.ai33_voice_source: favorites, or the
+    ["favorites"] sentinel in studio.ai33_voices) returns the voices starred
+    in OpenSpeaker; an empty favorites list falls back to the shortlist /
+    full catalog. Otherwise: when `studio.ai33_voices` is configured, only
+    those voices are returned (in config order, metadata resolved via the
+    API's id search). Otherwise the full catalog is fetched (cached ~10 min,
+    providers in parallel). provider + search narrow the raw catalog; each
+    voice_id carries its provider prefix."""
+    if source is None and wants_favorites(cfg):
+        source = FAVORITES
+    if source and source.strip().lower() == FAVORITES \
+            and provider is None and search is None:
+        starred = favorites(cfg, refresh=refresh)
+        if starred:
+            return starred
+        _log("no OpenSpeaker favorites - falling back to the shortlist/catalog")
+    # the sentinel is a mode switch, never a real voice id
+    ids = [i for i in curated_ids(cfg) if i.lower() != FAVORITES]
     if provider is None and search is None and ids:
         key = tuple(ids)
         now = time.monotonic()

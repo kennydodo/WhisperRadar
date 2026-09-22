@@ -366,6 +366,8 @@
           </select>
           <a id="voice_preview" href="#" target="_blank" rel="noopener" class="ghost"
              style="display:none; text-decoration:none" title="Play the selected voice's sample">▶ sample</a>
+          <a id="voice_fav" href="#" class="ghost" style="text-decoration:none"
+             title="Show the voices you starred in the OpenSpeaker app (ai33.pro)">☆ Favorites</a>
           <button type="submit" {{ 'disabled' if job.running or not hooks.tts else '' }}
                   title="{{ 'Run configured TTS command' if hooks.tts and not job.running else ('A job is already running' if job.running else 'Set studio.tts_command in config.yaml (e.g. chatterbox)') }}">
             {{ 'Working...' if job.running else 'Generate with TTS hook' }}
@@ -383,11 +385,13 @@
           var status = document.getElementById('voice_status');
           var preview = document.getElementById('voice_preview');
           var search = document.getElementById('voice_search');
+          var favLink = document.getElementById('voice_fav');
           var pid = {{ prod['id'] }};
           var savedVoice = {{ (prod_voice or '')|tojson }};
           var selectedVoice = savedVoice;
           var voiceData = [];   // all voices from /studio/voices.json
           var baseStatus = '';
+          var source = '';      // '' = shortlist/catalog, 'favorites' = starred
           function setPreview() {
             var opt = sel.options[sel.selectedIndex];
             var url = opt ? opt.dataset.preview : '';
@@ -443,32 +447,51 @@
               })
               .catch(function (e) { status.textContent = 'Could not save voice (' + e + ')'; });
           });
-          fetch('/studio/voices.json').then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (!data.ready) {
-                status.textContent = 'No OpenSpeaker API key - set WR_AI33_API_KEY (or studio.ai33_api_key) and restart to browse voices.';
-                return;
-              }
-              if (!data.voices.length) {
-                status.textContent = 'No voices: ' + (data.error || 'empty catalog');
-                return;
-              }
-              voiceData = data.voices.map(function (v) {
-                var o = document.createElement('option');
-                o.value = v.voice_id;
-                o.dataset.preview = v.preview_url || '';
-                o.textContent = v.name + (v.language ? ' - ' + v.language : '')
-                  + (v.gender ? ' (' + v.gender + ')' : '');
-                v._el = o;
-                return v;
+          function setFavState() {
+            favLink.textContent = source === 'favorites' ? '★ Favorites' : '☆ Favorites';
+            favLink.style.fontWeight = source === 'favorites' ? 'bold' : '';
+          }
+          function loadVoices(src) {
+            source = src || '';
+            setFavState();
+            status.textContent = source === 'favorites'
+              ? 'Loading your OpenSpeaker favorites...' : 'Loading voices...';
+            fetch('/studio/voices.json' + (source ? '?source=' + source : ''))
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (!data.ready) {
+                  status.textContent = 'No OpenSpeaker API key - set WR_AI33_API_KEY (or studio.ai33_api_key) and restart to browse voices.';
+                  return;
+                }
+                if (!data.voices.length) {
+                  status.textContent = (source === 'favorites' ? 'No starred voices: ' : 'No voices: ')
+                    + (data.error || 'empty list');
+                  return;
+                }
+                voiceData = data.voices.map(function (v) {
+                  var o = document.createElement('option');
+                  o.value = v.voice_id;
+                  o.dataset.preview = v.preview_url || '';
+                  o.textContent = v.name + (v.language ? ' - ' + v.language : '')
+                    + (v.gender ? ' (' + v.gender + ')' : '');
+                  v._el = o;
+                  return v;
+                });
+                applyFilter();
+                baseStatus = voiceData.length
+                  + (source === 'favorites' ? ' favorite voice(s)' : ' voices loaded')
+                  + ' - type above to search, pick one, it is saved per production and used by Run till finish too.';
+                status.textContent = baseStatus;
+              })
+              .catch(function (e) {
+                status.textContent = 'Could not load voices (' + e + ')';
               });
-              applyFilter();
-              baseStatus = voiceData.length + ' voices loaded - type above to search, pick one, it is saved per production and used by Run till finish too.';
-              status.textContent = baseStatus;
-            })
-            .catch(function (e) {
-              status.textContent = 'Could not load voices (' + e + ')';
-            });
+          }
+          favLink.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            loadVoices(source === 'favorites' ? '' : 'favorites');
+          });
+          loadVoices('');
         })();
       </script>
 

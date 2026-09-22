@@ -967,14 +967,16 @@ def create_app(cfg) -> Flask:
     @app.get("/studio/voices.json")
     def studio_voices():
         """Voice catalog for the Studio audio stage - fetched server-side
-        with the OpenSpeaker API key, cached ~10 min in the ai33 module."""
+        with the OpenSpeaker API key, cached ~10 min in the ai33 module.
+        ?source=favorites lists the voices starred in the OpenSpeaker app."""
         provider = (request.args.get("provider") or "").strip() or None
+        source = (request.args.get("source") or "").strip() or None
         try:
-            items = ai33.voices(cfg, provider=provider)
-            return {"ready": True, "voices": items}
+            items = ai33.voices(cfg, provider=provider, source=source)
+            return {"ready": True, "voices": items, "source": source}
         except RuntimeError as exc:
             return {"ready": bool(ai33.api_key(cfg)), "voices": [],
-                    "error": str(exc)}
+                    "source": source, "error": str(exc)}
 
     @app.post("/studio/<int:pid>/voice")
     def studio_voice_save(pid):
