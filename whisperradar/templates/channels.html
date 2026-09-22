@@ -224,6 +224,14 @@
                        style="width:330px">
               </label>
             </div>
+            <div class="inline" style="margin-top:8px">
+              <label>Google Flow project URL
+                <input type="text" name="flow_project_url"
+                       value="{{ ch['flow_project_url'] or '' }}"
+                       placeholder="https://flow.google.com/project/... (FlowImagesGen engine)"
+                       style="width:430px">
+              </label>
+            </div>
             <div style="margin-top:10px">
               <button type="submit">save</button>
               <button type="button" class="ghost" onclick="cancelEdit({{ ch['id'] }})">cancel</button>

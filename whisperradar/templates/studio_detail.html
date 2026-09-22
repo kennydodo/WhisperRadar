@@ -652,6 +652,11 @@
             <option value="flow" {{ 'selected' if default_mode == 'flow' else '' }} {{ 'disabled' if not flow_ready else '' }}>Flow Driver (Google Flow){{ '' if flow_ready else ' - not installed' }}</option>
           </select>
           </span>
+          <span id="figwrap" style="display:none">
+            <input type="text" name="flow_project_url" value="{{ flow_project_url_default }}"
+                   placeholder="Google Flow project URL (optional)" style="width:300px"
+                   title="The Flow project FlowImagesGen should open. Empty = this channel's URL, else the global studio.flowimagesgen_project_url.">
+          </span>
           <button type="submit" class="green" {{ 'disabled' if job.running or not shotlist_count or (not renderly_ready and not flow_ready and not flowimagesgen_ready) else '' }}
                   title="{{ 'Render the missing shotlist images' if shotlist_count and not job.running and (renderly_ready or flow_ready or flowimagesgen_ready) else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'No image source reachable - start Renderly (start.bat), install the Flow Driver, or set studio.flowimagesgen_repo')) }}">
             {{ 'Working...' if job.running else 'Render images' }}
@@ -710,10 +715,12 @@
         function syncEngine() {
           var engine = currentEngine();
           var modeWrap = document.getElementById('modewrap');
+          var figWrap = document.getElementById('figwrap');
           var panel = document.getElementById('flowpanel');
           var note = document.getElementById('enginenote');
           var isFig = engine === 'flowimagesgen';
           if (modeWrap) modeWrap.style.display = isFig ? 'none' : '';
+          if (figWrap) figWrap.style.display = isFig ? '' : 'none';
           if (note) {
             note.textContent = ENGINE_NOTE[engine] || '';
             note.style.display = note.textContent ? '' : 'none';

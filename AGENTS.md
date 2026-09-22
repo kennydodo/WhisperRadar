@@ -96,9 +96,18 @@ STILL OPEN (next steps, in order):
    very likely the cause of the recent Flow batch failures.
 2. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
-3. Per-channel Flow project URL (`flowimagesgen_project_url` is global today).
-4. Per-stage service supervisor (original item 4) - lowest value; services are
+3. Per-stage service supervisor (original item 4) - lowest value; services are
    already started on demand.
+
+### Per-channel Flow project URL — DONE (2026-09-22)
+
+`own_channels.flow_project_url` (nullable, added by
+`db._add_column_if_missing`). Resolution order for the FlowImagesGen engine:
+the images-stage field, then the channel's URL, then the global
+`studio.flowimagesgen_project_url`; when all are empty the job simply omits
+`projectUrl` so FlowImagesGen falls back to its own `config/settings.json` or
+Flow's most recent project. Editable on My Channels, and the images stage
+shows a URL box only while the FlowImagesGen engine is selected.
 
 ### Unattended-run notifications — DONE (2026-09-22)
 

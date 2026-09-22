@@ -521,7 +521,8 @@ def create_app(cfg) -> Flask:
             fields["active"] = 1 if request.form.get("active") in ("1", "on",
                                                                   "true") else 0
         # per-channel production defaults; empty means "inherit the global"
-        for key in ("default_voice", "bible_dir", "refs_dir"):
+        for key in ("default_voice", "bible_dir", "refs_dir",
+                    "flow_project_url"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip() or None
         for key in ("default_engine", "default_render_mode", "topic_pick"):
@@ -902,6 +903,8 @@ def create_app(cfg) -> Flask:
             default_render_mode=eff["render_mode"],
             default_engine=eff["engine"],
             own_channel_name=eff["own_channel_name"],
+            flow_project_url_default=(eff["flow_project_url"]
+                                      or cfg.flowimagesgen_project_url or ""),
             flowimagesgen_ready=studio.flowimagesgen_ready(cfg),
             own_channels=own_channels,
             script_versions=_version_names(pdir, "script"),
@@ -1555,6 +1558,7 @@ def create_app(cfg) -> Flask:
         except ValueError:
             flow_upscale = eff["upscale"]
         flow_master = (request.form.get("flow_master") or "").strip()
+        flow_project_url = (request.form.get("flow_project_url") or "").strip()
         renderly_channel = None
         if engine == "renderly" and mode == "api":
             renderly_channel = studio.resolve_renderly_channel(
@@ -1565,6 +1569,7 @@ def create_app(cfg) -> Flask:
                 "mode": mode, "engine": engine, "flow_channel": flow_channel,
                 "flow_project": flow_project,
                 "flow_upscale": flow_upscale, "flow_master": flow_master,
+                "flow_project_url": flow_project_url,
                 "renderly_channel": renderly_channel,
                 "log": sjob.log.append,
             }))

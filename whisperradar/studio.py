@@ -565,7 +565,8 @@ def flowimagesgen_ready(cfg) -> bool:
         and shutil.which("node") is not None
 
 
-def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int) -> tuple[Path, list[str]]:
+def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int,
+                              project_url: str | None = None) -> tuple[Path, list[str]]:
     """Build a FlowImagesGen job from the production's shotlist: only the
     images still missing from images\\.
 
@@ -614,8 +615,8 @@ def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int) -> tuple[Path, list[
                      "outputs": 1, "refMode": "reuse"},
         "images": todo,
     }
-    if cfg.flowimagesgen_project_url:
-        job["projectUrl"] = cfg.flowimagesgen_project_url
+    if project_url or cfg.flowimagesgen_project_url:
+        job["projectUrl"] = project_url or cfg.flowimagesgen_project_url
     # The shotlist's `style` is a Flow "master prompt" for the Renderly
     # driver; here the per-image prompts already carry the art direction and
     # the style alone can exceed Flow's limit, so it is only sent when the
@@ -684,7 +685,7 @@ def _adopt_flowimagesgen_outputs(pdir: Path, names: list[str],
 
 def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
-                               cancel=None) -> int:
+                               cancel=None, project_url: str | None = None) -> int:
     """Render the production's missing shotlist images with FlowImagesGen.
 
     Returns how many new images landed in images\\. Long-running by design:
@@ -694,14 +695,15 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
         raise RuntimeError("Set studio.flowimagesgen_repo in config.yaml to "
                            "your FlowImagesGen checkout (and run npm install)")
     repo = flowimagesgen_dir(cfg)
-    job_path, names = prepare_flowimagesgen_job(cfg, pid_dir, pid)
+    job_path, names = prepare_flowimagesgen_job(cfg, pid_dir, pid, project_url)
     tier = set_flowimagesgen_tier(cfg, cfg.renderly_upscale if upscale is None
                                   else upscale)
     cmd = _flowimagesgen_cmd(["generate", "--job", str(job_path),
                               "--output", str(pid_dir / "flow_images"),
                               "--no-color"])
-    if cfg.flowimagesgen_project_url:
-        cmd += ["--project-url", cfg.flowimagesgen_project_url]
+    resolved_url = project_url or cfg.flowimagesgen_project_url
+    if resolved_url:
+        cmd += ["--project-url", resolved_url]
     if log:
         log(f"FlowImagesGen: {len(names)} image(s), upscale tier {tier}")
         log("$ " + " ".join(cmd))

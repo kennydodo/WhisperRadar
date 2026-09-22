@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS own_channels (
     default_upscale INTEGER,
     bible_dir TEXT,
     refs_dir TEXT,
+    -- Google Flow project URL used by the FlowImagesGen engine
+    flow_project_url TEXT,
     -- auto-run criteria (NULL = inherit the global setting)
     autorun_enabled INTEGER,
     per_day INTEGER,
@@ -161,6 +163,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "own_channel_id" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN own_channel_id INTEGER")
     _migrate_own_channels(conn)
+    _add_column_if_missing(conn, "own_channels", "flow_project_url", "TEXT")
+
+
+def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str,
+                           decl: str) -> None:
+    cols = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 def _migrate_own_channels(conn: sqlite3.Connection) -> None:
@@ -538,7 +548,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 _OWN_CHANNEL_FIELDS = {
     "name", "description", "genre", "youtube_handle", "active",
     "default_voice", "default_engine", "default_render_mode",
-    "default_upscale", "bible_dir", "refs_dir",
+    "default_upscale", "bible_dir", "refs_dir", "flow_project_url",
     "autorun_enabled", "per_day", "topic_pick",
     "renderly_channel_id", "renderly_channel_name",
 }

@@ -350,6 +350,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                 flow_channel: str = "whisperradar",
                 flow_project: str = "", flow_upscale: int | None = None,
                 flow_master: str = "", renderly_channel=None,
+                flow_project_url: str | None = None,
                 log=None, cancel=None) -> None:
     t0 = time.monotonic()
     pdir = studio.prepare_project_folder(cfg, pid)
@@ -374,7 +375,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         # FlowImagesGen drives Flow itself and upscales on the way out, so
         # the Renderly channel/project and the Flow Driver do not apply.
         count = studio.run_imagegen_flowimagesgen(
-            cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel)
+            cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel,
+            project_url=flow_project_url or eff["flow_project_url"])
         source = "FlowImagesGen"
     elif mode == "flow":
         # per-image refs come from the shotlist (resolved through its refs
