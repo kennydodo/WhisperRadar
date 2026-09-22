@@ -90,11 +90,28 @@ STILL OPEN (next steps, in order):
 1. `default_engine` is stored (global + per channel) but NOT consumed - there
    is no FlowImagesGen engine yet. Render mode IS wired (below).
 2. Auto Run producer loop itself (pick -> create -> seed -> queue) - the
-   settings page only defines the criteria.
-3. `seed_dirs` / per-channel bible_dir+refs_dir seeding (copy bible.md + refs\
-   into a new production) - stored, not consumed.
-4. Create a production for a chosen own channel from the Studio list form
-   (assignment exists on the production page: "change channel").
+   settings page only defines the criteria. Seeding (item 3) is DONE.
+
+### Seeding + create-form channel picker — DONE (2026-09-22)
+
+- `studio.seed_production(cfg, conn, prod)` copies `bible.md` and `refs\`
+  into a production folder. Source order: the production's own channel
+  (bible_dir / refs_dir), then the global per-genre `seed_dirs[genre]`
+  (a single folder holding bible.md + a refs\ subfolder). Idempotent - it
+  never overwrites existing files. Returns {bible, refs, source}; source ''
+  means nothing was configured, so no writes happen.
+- Called on `/studio/new` (when an own channel is picked) and at the start of
+  the shots stage in `autorun._run_shots`, so an unattended run does not pause
+  at the bible gate. Manual re-seed: `POST /studio/<pid>/seed` + the
+  "Seed bible + refs from channel" button on the shots stage.
+- Studio create form gained a "My channel" picker; the chosen channel also
+  supplies the genre when the form's genre is blank. Production cards and the
+  production header show the owning channel.
+
+GOTCHA for tests: `studio.prod_dir()` reads `work_dir` from `cfg.db_path`, so
+a test using a TEMP DB still resolves the REAL production's working folder by
+id - it will write into the user's real folders. Patch `studio.prod_dir` or
+pass an explicit `work_dir` when exercising anything that writes files.
 
 ### Per-channel defaults wired into the pipeline — DONE (2026-09-22)
 

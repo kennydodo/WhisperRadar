@@ -191,6 +191,74 @@ def find_bible(pid_dir: Path) -> Path | None:
     return p if p.exists() else None
 
 
+def seed_production(cfg, conn, prod, log=None) -> dict:
+    """Copy the channel's bible.md and refs\\ into a production folder.
+
+    Source order: the production's own channel (bible_dir / refs_dir), then
+    the global per-genre `seed_dirs` entry for the production's genre. This
+    is what keeps an unattended run from pausing at the shots stage, whose
+    planning brief refuses to plan without a bible.
+
+    Idempotent: existing files are never overwritten. Returns
+    {bible, refs, source} - source is '' when there is nothing to seed.
+    """
+    from . import settings
+
+    log = log or (lambda m: None)
+    if prod is None:
+        return {"bible": False, "refs": 0, "source": ""}
+    pdir = prod_dir(cfg, prod["id"])
+    eff = settings.for_production(conn, prod)
+    genre = (prod["genre"] if "genre" in prod.keys() else None) or "general"
+    seed = (settings.load(conn).get("seed_dirs") or {}).get(genre)
+
+    bible_dir: Path | None = None
+    refs_dir: Path | None = None
+    if eff["bible_dir"] or eff["refs_dir"]:
+        source = eff["own_channel_name"] or "own channel"
+        if eff["bible_dir"]:
+            bible_dir = Path(eff["bible_dir"]).expanduser()
+        if eff["refs_dir"]:
+            refs_dir = Path(eff["refs_dir"]).expanduser()
+    elif seed:
+        # a per-genre seed folder holds bible.md and a refs\ subfolder; leave
+        # refs_dir unset so the normalization below picks up seed\refs
+        bible_dir = Path(seed).expanduser()
+        source = f"seed_dirs[{genre}]"
+    else:
+        return {"bible": False, "refs": 0, "source": ""}
+
+    # a single seed folder keeps the refs in a refs\ subfolder
+    if refs_dir is None and bible_dir is not None \
+            and (bible_dir / "refs").is_dir():
+        refs_dir = bible_dir / "refs"
+
+    copied_bible = False
+    bible_src = bible_dir / "bible.md" if bible_dir else None
+    if bible_src and bible_src.is_file() and not (pdir / "bible.md").exists():
+        pdir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(bible_src, pdir / "bible.md")
+        copied_bible = True
+        log(f"seeded bible.md from {bible_src}")
+
+    copied_refs = 0
+    if refs_dir and refs_dir.is_dir():
+        dest = pdir / "refs"
+        for src in sorted(refs_dir.iterdir()):
+            if not src.is_file():
+                continue
+            target = dest / src.name
+            if target.exists():
+                continue
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copy(src, target)
+            copied_refs += 1
+        if copied_refs:
+            log(f"seeded {copied_refs} ref image(s) from {refs_dir}")
+
+    return {"bible": copied_bible, "refs": copied_refs, "source": source}
+
+
 def find_images(pid_dir: Path) -> list[Path]:
     img_dir = pid_dir / "images"
     if not img_dir.exists():

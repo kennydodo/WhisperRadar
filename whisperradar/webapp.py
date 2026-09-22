@@ -708,14 +708,19 @@ def create_app(cfg) -> Flask:
     def studio_list():
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
+        own_channels = db.list_own_channels(conn)
+        own_by_id = {c["id"]: c["name"] for c in own_channels}
         prods = []
         for p in db.list_productions(conn):
             steps = db.latest_steps(conn, p["id"])
             done = sum(1 for s in db.STAGES if s in steps)
-            prods.append({"row": p, "done": done, "total": len(db.STAGES)})
+            prods.append({"row": p, "done": done, "total": len(db.STAGES),
+                          "own_channel": own_by_id.get(p["own_channel_id"])})
         sources = db.get_videos(conn, status="transcribed", limit=500)
         conn.close()
         return render_template("studio.html", prods=prods, sources=sources,
+                               own_channels=[c for c in own_channels
+                                             if c["active"]],
                                job=sjob, msg=request.args.get("msg"),
                                error=request.args.get("error"))
 
@@ -725,6 +730,7 @@ def create_app(cfg) -> Flask:
         genre = (request.form.get("genre") or "").strip() or "general"
         source = (request.form.get("source_video_id") or "").strip() or None
         work_dir = (request.form.get("work_dir") or "").strip() or None
+        own_channel = (request.form.get("own_channel_id") or "").strip() or None
         if work_dir:
             work_dir = str(Path(work_dir).expanduser().resolve())
         if not title:
@@ -739,12 +745,31 @@ def create_app(cfg) -> Flask:
         try:
             pid = db.create_production(conn, title, genre, source, work_dir)
             row = db.get_video(conn, source) if source else None
+            seeded = {"source": "", "bible": False, "refs": 0}
+            if own_channel:
+                oc = db.get_own_channel(conn, own_channel)
+                if oc:
+                    # the channel's genre is the production's genre unless the
+                    # form said otherwise
+                    if not (request.form.get("genre") or "").strip():
+                        db.update_production(conn, pid, genre=oc["genre"])
+                    db.update_production(conn, pid, own_channel_id=oc["id"])
+                    prod = db.get_production(conn, pid)
+                    seeded = studio.seed_production(cfg, conn, prod)
         finally:
             conn.close()
         if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
             pdir = studio.prod_dir(cfg, pid)
             shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
-        return redirect(f"/studio/{pid}")
+        msg = ""
+        if seeded["bible"] or seeded["refs"]:
+            bits = []
+            if seeded["bible"]:
+                bits.append("bible.md")
+            if seeded["refs"]:
+                bits.append(f"{seeded['refs']} ref image(s)")
+            msg = (f"?msg={quote('Seeded ' + ' + '.join(bits) + ' from ' + seeded['source'])}")
+        return redirect(f"/studio/{pid}{msg}")
 
     @app.get("/studio/<int:pid>")
     def studio_detail(pid):
@@ -965,6 +990,33 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return _studio_url(pid, msg=f"Production assigned to '{ch['name']}'")
+
+    @app.post("/studio/<int:pid>/seed")
+    def studio_seed(pid):
+        """Copy the channel's bible.md + refs into the production (idempotent)."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return _studio_url(pid, error="Unknown production")
+            result = studio.seed_production(cfg, conn, prod)
+        finally:
+            conn.close()
+        if not result["source"]:
+            return _studio_url(
+                pid, error="No seed source - set a bible/refs folder on My "
+                           "Channels, or a per-genre seed folder in Settings")
+        bits = []
+        if result["bible"]:
+            bits.append("bible.md")
+        if result["refs"]:
+            bits.append(f"{result['refs']} ref image(s)")
+        if not bits:
+            return _studio_url(pid, msg="Nothing to seed - bible.md and refs "
+                                        "already exist")
+        return _studio_url(
+            pid, msg=f"Seeded {' + '.join(bits)} from {result['source']}")
 
     @app.post("/studio/<int:pid>/workdir")
     def studio_workdir(pid):

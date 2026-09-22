@@ -95,6 +95,15 @@
         <input type="text" name="genre" placeholder="e.g. lifestyle" style="width:130px">
       </div>
       <div>
+        <label>My channel</label>
+        <select name="own_channel_id" style="width:180px">
+          <option value="">- none -</option>
+          {% for oc in own_channels %}
+          <option value="{{ oc['id'] }}">{{ oc['name'] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
         <label>Based on (optional)</label>
         <select name="source_video_id" style="width:340px">
           <option value="">- none, fresh topic -</option>
@@ -121,6 +130,7 @@
       <div>
         <span class="badge genre">{{ item.row["genre"] }}</span>
         <span class="badge stage">{{ item.row["stage"] }}</span>
+        {% if item.own_channel %}<span class="badge stage" title="The channel this production is for">{{ item.own_channel }}</span>{% endif %}
         {% if item.row["status"] == "ready" %}<span class="badge ready">ready</span>{% endif %}
       </div>
       <div class="bar"><span style="width: {{ (item.done * 100 // item.total) }}%"></span></div>

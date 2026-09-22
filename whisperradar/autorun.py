@@ -308,6 +308,12 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
             raise RuntimeError("Generate or upload the subtitles first")
         bible = studio.find_bible(pdir)
         if not bible:
+            # seed from the own channel / per-genre seed folder first, so an
+            # unattended run does not have to pause at the bible gate
+            seeded = studio.seed_production(cfg, conn, prod)
+            if seeded["source"]:
+                bible = studio.find_bible(pdir)
+        if not bible:
             # the manifest-authoring brief's bible gate: the LLM will refuse
             # to plan without one (it just asks for the bible instead)
             raise _Paused("no character/reference bible - the planning brief "

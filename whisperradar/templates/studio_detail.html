@@ -591,6 +591,11 @@
         <input type="file" name="bible_file" accept=".txt,.md">
         <button type="submit" class="secondary">Upload bible file</button>
       </form>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/seed" style="margin-top:8px">
+        <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
+                title="Copy bible.md + refs\ from this production's channel (or the per-genre seed folder in Settings)">Seed bible + refs from channel</button>
+        <span class="muted" style="font-size:12px">Existing files are kept.</span>
+      </form>
       <h2>Image prompts</h2>
       <div class="muted" style="font-size:12px; margin-bottom:8px">One prompt per line, in shot order - used by the Renderly / imagegen hook. Extract them straight from the shotlist (no LLM call), or edit by hand.</div>
       <div class="actions">
