@@ -19,6 +19,14 @@ SPEC: list[dict] = [
                 "runs by itself.",
     },
     {
+        "key": "services_managed", "type": "bool", "default": False,
+        "label": "Stop services after the images stage",
+        "help": "WhisperRadar starts what the images stage needs and, with this "
+                "on, stops the ones it started when the stage finishes (the "
+                "Flow Driver; the Renderly backend is shared and left alone). "
+                "Services you started yourself are never touched.",
+    },
+    {
         "key": "notify_desktop", "type": "bool", "default": False,
         "label": "Desktop notification",
         "help": "Show a Windows balloon tip when an unattended run pauses or "

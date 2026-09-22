@@ -96,8 +96,30 @@ STILL OPEN (next steps, in order):
    very likely the cause of the recent Flow batch failures.
 2. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
-3. Per-stage service supervisor (original item 4) - lowest value; services are
-   already started on demand.
+
+### Per-stage service management — DONE (2026-09-22)
+
+`whisperradar/services.py` (`MANAGER`) owns the external services the images
+stage needs. `services_for(engine, mode)` says what a run requires:
+renderly+flow -> backend + Flow Driver; renderly+api -> backend;
+flowimagesgen -> nothing (a CLI that starts/stops its own browser).
+
+Conservative rules - keep them:
+- A service that already answers is YOURS: never tracked, never stopped, so a
+  Renderly/Flow Driver you started by hand is safe.
+- Only processes this module spawned are stopped, and only when
+  `services_managed` is on (Settings, default OFF).
+- The Renderly backend is shared and is deliberately never killed (`release`
+  logs "leaving the Renderly backend running"); only the Flow Driver is stopped
+  with `taskkill /T /F`.
+- Starting Renderly prefers a direct
+  `backend\.venv\Scripts\python.exe -m uvicorn main:app --port <port>`
+  (trackable, no stray consoles) and falls back to start.bat, which is marked
+  UNMANAGED because killing it would close windows you may be using.
+- `studio.ensure_flow_services` now just delegates to `MANAGER.ensure`, so
+  there is one implementation.
+- `_run_images` wraps the engine calls in try/finally and calls
+  `MANAGER.release(cfg, managed)`.
 
 ### Per-channel Flow project URL — DONE (2026-09-22)
 

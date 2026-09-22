@@ -782,49 +782,13 @@ def _spawn_detached(cmd: list, cwd: Path, logfile: str | None = None) -> None:
 
 def ensure_flow_services(cfg, log=print) -> None:
     """Make sure the Flow Driver service (8030) is up, and - because imports
-    and upscales need it - the Renderly backend (8022) via start.bat."""
-    driver_up = flow_service_status(cfg) is not None
-    backend_up = _backend_up(cfg)
-    if driver_up and backend_up:
-        return
-    d = flow_driver_dir(cfg)
-    start_bat = (d.parent / "start.bat") if d else None
-    if not backend_up and start_bat and start_bat.exists():
-        log("Renderly backend not running - launching start.bat "
-            "(backend + frontend + Flow driver windows)...")
-        flags = subprocess.CREATE_NEW_CONSOLE \
-            if hasattr(subprocess, "CREATE_NEW_CONSOLE") else 0
-        subprocess.Popen(["cmd", "/c", str(start_bat)],
-                         cwd=str(start_bat.parent), creationflags=flags)
-        for _ in range(120):
-            if _backend_up(cfg):
-                log("Renderly backend is up")
-                backend_up = True
-                break
-            time.sleep(1)
-        else:
-            log("Renderly backend did not come up in time - images will "
-                "keep Flow's native size (no import/upscale)")
-    if not driver_up:
-        if not d or not (d / "server.js").exists():
-            raise RuntimeError(
-                "Flow Driver service is not running and studio.flow_driver_dir "
-                "is not configured")
-        if not (d / "node_modules" / "playwright").exists():
-            raise RuntimeError(
-                f"Playwright not installed - run: cd {d} && npm install")
-        log("Flow Driver service not running - starting it...")
-        _spawn_detached(["node", "server.js"], d, logfile="driver-service.log")
-        for _ in range(20):
-            if flow_service_status(cfg, timeout=2) is not None:
-                break
-            time.sleep(0.5)
-        else:
-            raise RuntimeError("Flow Driver service did not come up on "
-                               + flow_service_url(cfg))
-    if not backend_up:
-        log("Renderly backend still down - images will keep Flow's native "
-            "size (no import/upscale)")
+    and upscales need it - the Renderly backend (8022).
+
+    Delegates to the service manager, which starts only what is missing and
+    tracks what it started so the images stage can stop it again."""
+    from . import services
+
+    services.MANAGER.ensure(cfg, ["renderly", "flow-driver"], log_fn=log)
 
 
 class BatchCancelled(RuntimeError):

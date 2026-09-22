@@ -21,7 +21,7 @@ import time
 
 from pathlib import Path
 
-from . import db, settings, studio, transcribe
+from . import db, services, settings, studio, transcribe
 from .cli import format_duration
 
 
@@ -369,29 +369,39 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     conn = _connect(cfg)
     try:
         db.update_production(conn, pid, render_mode=mode)
+        managed = bool(settings.load(conn).get("services_managed"))
     finally:
         conn.close()
-    if engine == "flowimagesgen":
-        # FlowImagesGen drives Flow itself and upscales on the way out, so
-        # the Renderly channel/project and the Flow Driver do not apply.
-        count = studio.run_imagegen_flowimagesgen(
-            cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel,
-            project_url=flow_project_url or eff["flow_project_url"])
-        source = "FlowImagesGen"
-    elif mode == "flow":
-        # per-image refs come from the shotlist (resolved through its refs
-        # registry by prepare_flow_batch); the production refs\ folder is
-        # just the library flow.js resolves names against - attaching every
-        # file globally would blow past Flow's 3-ingredient limit
-        count = studio.run_imagegen_flow(
-            cfg, pdir, channel=flow_channel, project=flow_project,
-            upscale=flow_upscale, master=flow_master, log=log,
-            cancel=cancel)
-        source = "Flow Driver (Google Flow)"
-    else:
-        count = studio.run_imagegen(cfg, pdir, channel=renderly_channel,
-                                    upscale=flow_upscale)
-        source = "Renderly"
+    # bring up only what this engine/mode needs; a service that already
+    # answers is the user's and is left alone
+    try:
+        services.MANAGER.ensure(cfg, services.services_for(engine, mode),
+                                log_fn=log)
+        if engine == "flowimagesgen":
+            # FlowImagesGen drives Flow itself and upscales on the way out, so
+            # the Renderly channel/project and the Flow Driver do not apply.
+            count = studio.run_imagegen_flowimagesgen(
+                cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel,
+                project_url=flow_project_url or eff["flow_project_url"])
+            source = "FlowImagesGen"
+        elif mode == "flow":
+            # per-image refs come from the shotlist (resolved through its refs
+            # registry by prepare_flow_batch); the production refs\ folder is
+            # just the library flow.js resolves names against - attaching every
+            # file globally would blow past Flow's 3-ingredient limit
+            count = studio.run_imagegen_flow(
+                cfg, pdir, channel=flow_channel, project=flow_project,
+                upscale=flow_upscale, master=flow_master, log=log,
+                cancel=cancel)
+            source = "Flow Driver (Google Flow)"
+        else:
+            count = studio.run_imagegen(cfg, pdir, channel=renderly_channel,
+                                        upscale=flow_upscale)
+            source = "Renderly"
+    finally:
+        # stop what we started, if the user opted in; never a service that was
+        # already running
+        services.MANAGER.release(cfg, managed, log_fn=log)
     conn = _connect(cfg)
     try:
         db.add_step(conn, pid, "images", "auto",
