@@ -120,6 +120,23 @@ Measured on a real 156-image batch (production #5, The Nature Made Us):
   upscale tier via `upscale --set-tier`. Pacing is the user's call in
   FlowImagesGen's own config.
 
+### Restart the dashboard after Python changes (2026-09-23)
+
+Flask auto-reloads TEMPLATES but not Python, so after committing a change the
+running dashboard can render the NEW form fields while its OLD route code
+silently drops the new form keys - the symptom is "I set values, saved, and
+they are gone when I reopen", with some fields (added earlier) still saving
+fine. Check the listener's start time against `git log` before debugging the
+code:
+
+    Get-NetTCPConnection -LocalPort 8540 -State Listen |
+      ForEach-Object { Get-Process -Id $_.OwningProcess } |
+      Select-Object Id, StartTime
+
+Restart with `.venv\Scripts\python.exe wr.py serve --port 8540` (run it
+persistent so it survives the session). This bit the per-channel gate fields
+on 2026-09-23: server from 07:50, fields committed 13:20/13:59.
+
 ### Genre is the join key - keep it forgiving (2026-09-23)
 
 Monitored channels feed an own channel through `genre`, and it is free text on
