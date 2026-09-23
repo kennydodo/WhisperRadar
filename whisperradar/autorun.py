@@ -853,6 +853,16 @@ def run_pipeline(cfg, pid: int, job=None, log=None) -> str:
             return result
         ran += 1
         _advance(cfg, pid, stage)
+        # A stage that failed on an earlier attempt leaves the production
+        # marked failed; once it succeeds here that is stale, and the
+        # production would look broken after a fully successful run.
+        conn = _connect(cfg)
+        try:
+            prod = db.get_production(conn, pid)
+            if prod and prod["status"] == "failed":
+                db.update_production(conn, pid, status="active")
+        finally:
+            conn.close()
         log(f"[auto-run] stage {i}/{total}: {stage} - done")
     summary = (f"Auto-run complete: {ran} stage(s) executed, "
                f"{total - ran} skipped - ready for review")
