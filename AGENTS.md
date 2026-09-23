@@ -120,6 +120,22 @@ Measured on a real 156-image batch (production #5, The Nature Made Us):
   upscale tier via `upscale --set-tier`. Pacing is the user's call in
   FlowImagesGen's own config.
 
+### Where Flow references must live (2026-09-23)
+
+A shotlist can declare a refs registry (`{"hero_kimono_woman":
+"refs/hero_kimono_woman.png"}`) and per-image `refs: ["hero_kimono_woman"]`.
+On the RENDERLY engine the Flow Driver resolves those by BARE NAME against its
+own folder - `D:\Repos\Renderly\extension-v2\<name>.png` - not against the
+production's `refs\`. When they are absent it logs
+`⚠ reference not found, skipping: <path>` per card and generates the image
+without any reference, so consistency rests on the text bible alone.
+
+So for Renderly-engine runs: put the reference images in `extension-v2\` under
+the exact names the shotlist uses, or give the channel a `refs_dir` and copy
+them there (seeding fills the production's `refs\`, which the driver does not
+read). Text-only consistency is fine for test runs; add real refs before
+publishing.
+
 ### Restart the dashboard after Python changes (2026-09-23)
 
 Flask auto-reloads TEMPLATES but not Python, so after committing a change the
