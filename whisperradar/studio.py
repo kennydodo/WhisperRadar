@@ -850,6 +850,14 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
         proc.wait(timeout=30)
     if proc.returncode != 0:
         text = " ".join(tail).lower()
+        if "rate limit" in text or "refused the generation" in text:
+            raise RuntimeError(
+                "Flow refused the generation (a reCAPTCHA score on this "
+                "browser profile, not a temporary limit). FlowImagesGen stops "
+                "the batch on purpose rather than lowering the score further. "
+                "Wait a while, then Resume - finished images are kept in its "
+                f"state\\wr-{pid}.json. Raising delayBetweenItemsMs in "
+                "FlowImagesGen's config/settings.json lowers the risk.")
         if "already in use" in text or "existing browser session" in text:
             raise RuntimeError(
                 "FlowImagesGen could not open its browser profile because "
