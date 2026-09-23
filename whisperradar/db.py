@@ -176,8 +176,13 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("candidate_window_days", "INTEGER"),
                          ("producer_llm_provider", "TEXT"),
                          ("style", "TEXT"),
-                         ("bible", "TEXT")):
+                         ("bible", "TEXT"),
+                         ("script_min_rating", "REAL"),
+                         ("script_max_overlap", "REAL"),
+                         ("script_max_attempts", "INTEGER"),
+                         ("script_judge_provider", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
+    _add_column_if_missing(conn, "productions", "warning", "TEXT")
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str,
@@ -435,7 +440,8 @@ STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
-                "stage_extras", "render_mode", "voice", "own_channel_id"}
+                "stage_extras", "render_mode", "voice", "own_channel_id",
+                "warning"}
 
 
 def stage_extra(prod, stage: str) -> str:
@@ -571,6 +577,8 @@ _OWN_CHANNEL_FIELDS = {
     "autorun_enabled", "per_day", "topic_pick",
     "run_window_start", "run_window_end", "candidate_window_days",
     "producer_llm_provider",
+    "script_min_rating", "script_max_overlap", "script_max_attempts",
+    "script_judge_provider",
     "renderly_channel_id", "renderly_channel_name",
 }
 

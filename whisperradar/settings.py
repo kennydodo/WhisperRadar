@@ -80,6 +80,43 @@ SPEC: list[dict] = [
                 "day, across all channels. 0 = no cap.",
     },
     {
+        "key": "script_min_rating", "type": "float", "default": 9.0,
+        "min": 1.0, "max": 10.0,
+        "label": "Script: minimum rating",
+        "help": "The script stage rates each draft 1-10 by rubric and only "
+                "accepts one at or above this. Below it, the draft is "
+                "regenerated with the judge's feedback.",
+    },
+    {
+        "key": "script_max_overlap", "type": "float", "default": 0.12,
+        "min": 0.0, "max": 1.0,
+        "label": "Script: target overlap",
+        "help": "Share of the script's 5-word sequences allowed to also "
+                "appear in the source transcript. 0.12 = 12%. Facts and names "
+                "set a floor, so 0 is not realistic.",
+    },
+    {
+        "key": "script_hard_overlap", "type": "float", "default": 0.20,
+        "min": 0.0, "max": 1.0,
+        "label": "Script: hard overlap limit",
+        "help": "A draft above this is regenerated no matter how well it "
+                "rated - at this level large runs are copied verbatim.",
+    },
+    {
+        "key": "script_max_attempts", "type": "int", "default": 3,
+        "min": 1, "max": 10,
+        "label": "Script: max attempts",
+        "help": "How many drafts to generate before settling for the best "
+                "one. Each attempt is one script call plus one rating call.",
+    },
+    {
+        "key": "script_judge_provider", "type": "provider", "default": "",
+        "label": "Script: judge LLM",
+        "help": "Which provider rates the script. Empty = automatically a "
+                "DIFFERENT provider from the one that wrote it, to avoid "
+                "self-preference bias.",
+    },
+    {
         "key": "producer_llm_provider", "type": "provider", "default": "",
         "label": "Producer LLM",
         "help": "Which configured LLM provider picks the topic and writes the "
@@ -175,6 +212,18 @@ def _coerce(entry: dict, raw):
         if "max" in entry:
             value = min(entry["max"], value)
         return value
+    if kind == "float":
+        if text == "":
+            return entry["default"]
+        try:
+            value = float(text)
+        except ValueError:
+            return entry["default"]
+        if "min" in entry:
+            value = max(entry["min"], value)
+        if "max" in entry:
+            value = min(entry["max"], value)
+        return round(value, 3)
     if kind == "choice":
         return text if text in entry["choices"] else entry["default"]
     if kind == "time":
@@ -273,6 +322,16 @@ def for_production(conn, prod) -> dict:
                                              glob["candidate_window_days"]) or 0),
         "producer_llm_provider": (row_get(own, "producer_llm_provider")
                                   or glob["producer_llm_provider"] or None),
+        # script quality gate (see the SPEC help text for the semantics)
+        "script_min_rating": float(row_get(own, "script_min_rating",
+                                           glob["script_min_rating"])),
+        "script_max_overlap": float(row_get(own, "script_max_overlap",
+                                            glob["script_max_overlap"])),
+        "script_hard_overlap": float(glob["script_hard_overlap"]),
+        "script_max_attempts": int(row_get(own, "script_max_attempts",
+                                           glob["script_max_attempts"])),
+        "script_judge_provider": (row_get(own, "script_judge_provider")
+                                  or glob["script_judge_provider"] or None),
         "autorun_enabled": bool(glob["autorun_enabled"])
                            and bool(row_get(own, "autorun_enabled", 1)),
         "bible_dir": row_get(own, "bible_dir"),

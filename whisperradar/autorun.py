@@ -15,6 +15,7 @@ human decision.
 """
 
 import json
+import logging
 import re
 import shutil
 import time
@@ -214,6 +215,7 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         if not prod:
             raise RuntimeError("Unknown production")
         source_text = _source_transcript_text(cfg, pid)
+        eff = _effective(cfg, pid)
     finally:
         conn.close()
     pdir = studio.prod_dir(cfg, pid)
@@ -221,34 +223,97 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     style_guide = style.read_text(encoding="utf-8") if style else ""
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
     target_words = cfg.studio_script_words or source_words or 1200
-    variation = studio.variation_nudge()
-    prompt = studio.script_prompt(prod["title"], prod["genre"], source_text,
-                                  style_guide, target_words=target_words,
-                                  variation=variation,
-                                  extra_direction=db.stage_extra(
-                                      prod, "script"))
-    conn = _connect(cfg)
-    try:
+    min_rating = eff["script_min_rating"]
+    max_overlap = eff["script_max_overlap"]
+    hard_overlap = eff["script_hard_overlap"]
+    attempts_allowed = max(1, int(eff["script_max_attempts"]))
+    judge = studio.judge_provider(cfg, provider, eff["script_judge_provider"])
+    script_path = pdir / "script.md"
+    auto_dir = pdir / "versions" / "script"
+    auto_dir.mkdir(parents=True, exist_ok=True)
+
+    attempts: list[dict] = []
+    previous: dict | None = None
+    text = ""
+    for attempt in range(1, attempts_allowed + 1):
+        variation = studio.variation_nudge(
+            attempt=attempt,
+            overlap=previous["overlap"] if previous else None,
+            runs=previous["runs"] if previous else None,
+            feedback=previous["feedback"] if previous else None)
+        prompt = studio.script_prompt(
+            prod["title"], prod["genre"], source_text, style_guide,
+            target_words=target_words, variation=variation,
+            extra_direction=db.stage_extra(prod, "script"))
         text = studio.llm_generate(cfg, prompt, provider=provider)
         if not text:
             raise RuntimeError("LLM returned an empty script")
-        script_path = pdir / "script.md"
-        if script_path.exists():
-            auto_dir = pdir / "versions" / "script"
-            auto_dir.mkdir(parents=True, exist_ok=True)
-            stamp = time.strftime("%Y%m%d-%H%M%S")
-            shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
-        script_path.write_text(text + "\n", encoding="utf-8")
-        ratio = studio.overlap_ratio(text, source_text)
-        warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
+        overlap = studio.overlap_ratio(text, source_text)
+        runs = studio.overlap_runs(text, source_text) if overlap > 0 else []
+        rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
+                                    source_text, style_guide, judge)
+        score = rating["score"]
+        passed = (overlap <= max_overlap and overlap <= hard_overlap
+                  and score is not None and score >= min_rating)
+        (auto_dir / f"attempt-{attempt}.md").write_text(text + "\n",
+                                                        encoding="utf-8")
+        attempts.append({"attempt": attempt, "text": text, "overlap": overlap,
+                         "runs": runs, "score": score, "rating": rating,
+                         "passed": passed})
+        log_attempt = (f"attempt {attempt}: rating "
+                       f"{score if score is not None else 'n/a'}, overlap "
+                       f"{overlap:.1%}")
+        if passed:
+            _log_line(log_attempt + " - accepted")
+            break
+        why = []
+        if score is not None and score < min_rating:
+            why.append(f"rating {score} < {min_rating}")
+        if overlap > hard_overlap:
+            why.append(f"overlap {overlap:.1%} over the hard "
+                       f"{hard_overlap:.0%} limit")
+        elif overlap > max_overlap:
+            why.append(f"overlap {overlap:.1%} over the {max_overlap:.0%} "
+                       f"target")
+        _log_line(log_attempt + " - rejected (" + "; ".join(why) + ")")
+        previous = {"overlap": overlap, "runs": runs,
+                    "feedback": rating["feedback"] or rating["weak_spans"]}
+
+    # settle for the best draft rather than shipping a rejected one blindly
+    best = max(attempts, key=lambda a: ((a["score"] or 0), -a["overlap"]))
+    text = best["text"]
+    passed = best["passed"]
+    if script_path.exists():
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
+    script_path.write_text(text + "\n", encoding="utf-8")
+
+    conn = _connect(cfg)
+    try:
+        detail = (f"{provider}, best of {len(attempts)} attempt(s): rating "
+                  f"{best['score'] if best['score'] is not None else 'n/a'}, "
+                  f"overlap {best['overlap']:.1%}, target {target_words} words, "
+                  f"judged by {judge}, "
+                  f"took {format_duration(time.monotonic() - t0)}")
         db.update_production(conn, pid, llm_provider=provider)
-        db.add_step(conn, pid, "script", "auto",
-                    detail=f"{provider}, overlap {ratio:.1%}, "
-                           f"target {target_words} words, "
-                           f"took {format_duration(time.monotonic() - t0)}"
-                           f"{warn}")
+        if passed:
+            db.add_step(conn, pid, "script", "auto", detail=detail)
+        else:
+            warning = (f"script gate failed after {len(attempts)} attempt(s) - "
+                       f"kept the best: rating "
+                       f"{best['score'] if best['score'] is not None else 'n/a'} "
+                       f"(min {min_rating}), overlap {best['overlap']:.1%} "
+                       f"(target {max_overlap:.0%})")
+            db.update_production(conn, pid, warning=warning)
+            db.add_step(conn, pid, "script", "auto", status="failed",
+                        detail=detail + " | " + warning)
     finally:
         conn.close()
+
+
+def _log_line(message: str) -> None:
+    """Script-attempt progress goes to the job log and the server log."""
+    logging.getLogger("whisperradar").info("[script] %s", message)
 
 
 def _run_audio(cfg, pid: int) -> None:

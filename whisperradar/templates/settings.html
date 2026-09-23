@@ -158,6 +158,11 @@
                      value="{{ values[entry.key] }}"
                      {% if entry.min is defined %}min="{{ entry.min }}"{% endif %}
                      {% if entry.max is defined %}max="{{ entry.max }}"{% endif %}>
+            {% elif entry.type == 'float' %}
+              <input type="number" step="0.01" name="{{ entry.key }}"
+                     id="f-{{ entry.key }}" value="{{ values[entry.key] }}"
+                     {% if entry.min is defined %}min="{{ entry.min }}"{% endif %}
+                     {% if entry.max is defined %}max="{{ entry.max }}"{% endif %}>
             {% elif entry.type == 'time' %}
               <input type="time" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      value="{{ values[entry.key] }}">

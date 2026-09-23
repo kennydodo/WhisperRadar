@@ -605,6 +605,26 @@ def create_app(cfg) -> Flask:
                                                    if raw else None)
             except ValueError:
                 fields["candidate_window_days"] = None
+        # script quality gate overrides
+        for key, lo, hi in (("script_min_rating", 1.0, 10.0),
+                            ("script_max_overlap", 0.0, 1.0)):
+            if key in request.form:
+                raw = (request.form.get(key) or "").strip()
+                try:
+                    fields[key] = max(lo, min(hi, float(raw))) if raw else None
+                except ValueError:
+                    fields[key] = None
+        if "script_max_attempts" in request.form:
+            raw = (request.form.get("script_max_attempts") or "").strip()
+            try:
+                fields["script_max_attempts"] = (max(1, min(10, int(raw)))
+                                                 if raw else None)
+            except ValueError:
+                fields["script_max_attempts"] = None
+        if "script_judge_provider" in request.form:
+            raw = (request.form.get("script_judge_provider") or "").strip()
+            known = {p["name"] for p in cfg.studio_llm_providers}
+            fields["script_judge_provider"] = raw if raw in known else None
         if "default_upscale" in request.form:
             raw = (request.form.get("default_upscale") or "").strip()
             try:

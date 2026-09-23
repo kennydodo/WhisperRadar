@@ -117,6 +117,12 @@
     <span class="badge stage" style="background:rgba(224,169,63,.15);color:var(--amber)"
           title="Not assigned to one of your channels - using the legacy whisperradar Renderly channel">no own channel</span>
     {% endif %}
+    {% if prod["warning"] %}
+    <div class="badge warn" title="{{ prod['warning'] }}"
+         style="background:rgba(224,169,63,.15);color:var(--amber)">
+      ⚠ script gate failed - see the script stage
+    </div>
+    {% endif %}
     <span class="muted"> created {{ prod["created_at"] }}</span>
     {% if source_video %}
     <span class="muted">| inspired by</span>

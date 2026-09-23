@@ -31,11 +31,31 @@ VARIATION_ANGLES = [
 ]
 
 
-def variation_nudge() -> str:
+def variation_nudge(attempt: int = 1, overlap: float | None = None,
+                    runs: list[str] | None = None,
+                    feedback: list[str] | None = None) -> str:
+    """The variation instruction. On a retry it carries the previous
+    attempt's measured overlap, the passages that were lifted, and the
+    judge's notes - a bare 'be more original' changes nothing."""
     angle = random.choice(VARIATION_ANGLES)
-    return (f"[VARIATION {random.randint(1000, 9999)}] {angle} "
-            "Produce a fresh take: different wording and rhythm from any "
-            "earlier attempt at this script.")
+    parts = [f"[VARIATION {random.randint(1000, 9999)}] {angle}",
+             "Produce a fresh take: different wording, sentence order and "
+             "rhythm from any earlier attempt."]
+    if attempt > 1:
+        parts.append(f"This is attempt {attempt}; earlier drafts were rejected.")
+    if overlap is not None:
+        parts.append(f"Your previous draft shared {overlap:.1%} of its "
+                     f"5-word sequences with the source transcript.")
+    if runs:
+        shown = "\n".join(f'  - "{r}"' for r in runs[:8])
+        parts.append("These passages were lifted almost verbatim - rewrite "
+                     f"them from scratch with new wording and structure:\n{shown}")
+    if feedback:
+        notes = "\n".join(f"  - {f}" for f in feedback[:6])
+        parts.append(f"The editor asked for these fixes:\n{notes}")
+    parts.append("Reuse only facts, names and numbers - never the source's "
+                 "phrasing or sentence structure.")
+    return " ".join(parts)
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".flac", ".ogg")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -1239,6 +1259,107 @@ def overlap_ratio(script: str, source: str) -> float:
     if not a:
         return 0.0
     return len(a & b) / len(a)
+
+
+def overlap_runs(script: str, source: str, n: int = 5,
+                 limit: int = 12) -> list[str]:
+    """The longest shared 5-gram runs, so a retry can be told exactly which
+    passages were lifted instead of just 'be more original'."""
+    src = _ngrams(source or "", n)
+    if not src:
+        return []
+    words = re.findall(r"\w+", (script or "").lower())
+    runs: list[str] = []
+    current: list[str] = []
+    for i in range(max(0, len(words) - n + 1)):
+        gram = tuple(words[i:i + n])
+        if gram in src:
+            current.append(words[i + n - 1])
+            if len(current) == 1:
+                current[:0] = list(gram[:n - 1])
+        elif current:
+            runs.append(" ".join(current))
+            current = []
+    if current:
+        runs.append(" ".join(current))
+    runs.sort(key=len, reverse=True)
+    return runs[:limit]
+
+
+RATING_RUBRIC = [
+    ("hook", "Does the first 15 seconds earn attention without clickbait?"),
+    ("originality", "Is it a genuine rewrite, not a reworded copy?"),
+    ("accuracy", "Are the claims supported by the source and not invented?"),
+    ("structure", "Clear beats, logical order, no filler or repetition?"),
+    ("pacing", "Does it hold attention to the end at a spoken pace?"),
+    ("style_fit", "Does it obey the channel's style guide and tone?"),
+    ("ending", "Does it land a payoff rather than trailing off?"),
+]
+
+
+def rating_prompt(title: str, genre: str, script: str, source: str,
+                  style_guide: str, overlap: float) -> str:
+    rubric = "\n".join(f"- {name}: {desc}" for name, desc in RATING_RUBRIC)
+    return (
+        f"You are a ruthless YouTube script editor for the channel genre "
+        f"'{genre}'. Score this script for the video \"{title}\".\n\n"
+        f"Score each criterion 1-10:\n{rubric}\n\n"
+        f"Measured 5-gram overlap with the source transcript: {overlap:.1%}. "
+        f"Treat high overlap as an originality failure.\n\n"
+        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:1500]}\n\n"
+        f"SCRIPT:\n{(script or '')[:12000]}\n\n"
+        f"Reply with ONLY a JSON object:\n"
+        f'{{"score": <1-10 overall, one decimal>, '
+        f'"criteria": {{"hook": <n>, "originality": <n>, "accuracy": <n>, '
+        f'"structure": <n>, "pacing": <n>, "style_fit": <n>, "ending": <n>}}, '
+        f'"feedback": ["<specific, actionable fix>", ...], '
+        f'"weak_spans": ["<a passage that reads copied or weak>", ...]}}'
+    )
+
+
+def _parse_json_object(text: str) -> dict:
+    match = re.search(r"\{.*\}", text or "", re.S)
+    if not match:
+        return {}
+    try:
+        data = json.loads(match.group(0))
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def rate_script(cfg, title: str, genre: str, script: str, source: str,
+                style_guide: str, provider: str | None) -> dict:
+    """LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
+    Never raises: a judge failure must not lose a usable draft."""
+    overlap = overlap_ratio(script, source)
+    prompt = rating_prompt(title, genre, script, source, style_guide, overlap)
+    try:
+        reply = _parse_json_object(
+            llm_generate(cfg, prompt, provider=provider))
+    except Exception as exc:  # noqa: BLE001
+        return {"score": None, "criteria": {}, "feedback": [],
+                "weak_spans": [], "error": str(exc)[:200]}
+    try:
+        score = round(float(reply.get("score")), 1)
+    except (TypeError, ValueError):
+        score = None
+    criteria = reply.get("criteria") if isinstance(reply.get("criteria"),
+                                                  dict) else {}
+    feedback = [str(f) for f in (reply.get("feedback") or []) if str(f).strip()]
+    weak = [str(s) for s in (reply.get("weak_spans") or []) if str(s).strip()]
+    return {"score": score, "criteria": criteria, "feedback": feedback,
+            "weak_spans": weak, "error": None}
+
+
+def judge_provider(cfg, writer: str | None, preferred: str | None) -> str | None:
+    """Which provider rates the script: an explicit choice, else any configured
+    provider that is not the one that wrote it (self-scoring is biased)."""
+    if preferred:
+        return preferred
+    names = [p["name"] for p in cfg.studio_llm_providers]
+    others = [n for n in names if n != writer and provider_ready(cfg, n)]
+    return others[0] if others else writer
 
 
 def style_prompt(title: str, genre: str, source_text: str,
