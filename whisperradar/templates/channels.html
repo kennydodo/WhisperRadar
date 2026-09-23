@@ -93,8 +93,12 @@
              style="flex:1 1 200px">
       <input type="text" name="description" placeholder="Description (optional)"
              style="flex:1 1 200px">
-      <input type="text" name="genre" placeholder="genre e.g. personal-finance"
-             style="flex:0 0 180px">
+      <input type="text" name="genre" list="genre-list"
+             placeholder="genre e.g. Human &amp; Animal"
+             style="flex:0 0 200px">
+      <datalist id="genre-list">
+        {% for g in genres %}<option value="{{ g }}"></option>{% endfor %}
+      </datalist>
       <input type="text" name="youtube_handle" placeholder="@handle (optional)"
              style="flex:0 0 160px">
       <button type="submit">Create channel</button>
@@ -118,7 +122,14 @@
             {%- if ch["autorun_enabled"] == 0 %} &middot; auto-run off{% endif %}
           </div>
         </td>
-        <td class="muted">{{ ch["genre"] }}</td>
+        <td class="muted">{{ ch["genre"] }}
+          {% if ch["genre"] and ch["genre"]|lower not in source_genres %}
+          <div style="color:var(--amber); font-size:12px"
+               title="Auto Run picks source videos whose monitored channel has this genre. None do, so this channel will find no candidates.">
+            no monitored channel has this genre
+          </div>
+          {% endif %}
+        </td>
         <td class="muted mono">{{ ch["youtube_handle"] or "" }}</td>
         <td>{% if ch["active"] %}<span class="badge on">active</span>
             {% else %}<span class="badge off">paused</span>{% endif %}</td>
@@ -156,7 +167,7 @@
                 <input type="text" name="description" value="{{ ch['description'] }}" style="width:200px">
               </label>
               <label>genre
-                <input type="text" name="genre" value="{{ ch['genre'] }}" style="width:150px">
+                <input type="text" name="genre" list="genre-list" value="{{ ch['genre'] }}" style="width:170px">
               </label>
               <label>handle
                 <input type="text" name="youtube_handle" value="{{ ch['youtube_handle'] or '' }}" style="width:140px">

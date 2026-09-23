@@ -54,12 +54,16 @@ def _created_today(conn, own_channel_id=None) -> int:
 def candidates(conn, own_channel, window_days: int = 90,
                limit: int = 40):
     """Transcribed source videos of the own channel's genre that no
-    production has used yet, newest first."""
+    production has used yet, newest first.
+
+    Genre is matched case-insensitively: it is free text on both sides, and an
+    exact-match join silently produced zero candidates for a channel whose
+    genre differed only in case."""
     genre = own_channel["genre"] or "general"
     sql = (
         "SELECT v.*, c.name AS channel_name, c.genre AS channel_genre"
         " FROM videos v JOIN channels c ON c.channel_id = v.channel_id"
-        " WHERE v.status = 'transcribed' AND c.genre = ?"
+        " WHERE v.status = 'transcribed' AND LOWER(c.genre) = LOWER(?)"
         "   AND v.video_id NOT IN (SELECT source_video_id FROM productions"
         "                          WHERE source_video_id IS NOT NULL)"
     )

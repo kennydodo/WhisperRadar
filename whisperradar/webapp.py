@@ -516,11 +516,19 @@ def create_app(cfg) -> Flask:
             links = {ch["id"]: studio.renderly_channel_status(
                 cfg, ch, channels, chan_error, known)
                 for ch in own_channels}
+            # genres that actually exist on monitored channels, so a channel
+            # can be pointed at real sources instead of guessing the spelling
+            genres = [r["genre"] for r in conn.execute(
+                "SELECT DISTINCT genre FROM channels"
+                " WHERE genre IS NOT NULL AND genre <> ''"
+                " ORDER BY genre COLLATE NOCASE")]
+            source_genres = {g.lower() for g in genres}
         finally:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
-            renderly_url=cfg.renderly_url,
+            renderly_url=cfg.renderly_url, genres=genres,
+            source_genres=source_genres,
             providers=[p["name"] for p in cfg.studio_llm_providers],
             msg=request.args.get("msg"), error=request.args.get("error"))
 

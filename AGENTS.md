@@ -97,6 +97,22 @@ STILL OPEN (next steps, in order):
 2. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
 
+### Genre is the join key - keep it forgiving (2026-09-23)
+
+Monitored channels feed an own channel through `genre`, and it is free text on
+both sides. Two guards, both added after both of the user's channels sat on
+`genre = general` and silently found zero candidates:
+
+- `producer.candidates` matches with `LOWER(c.genre) = LOWER(?)`, so
+  `Human & Animal`, `human & animal` and `HUMAN & ANIMAL` all work.
+- The own-channel genre input is a `<datalist>` of the genres that actually
+  exist on monitored channels (free text still allowed for a new genre), and
+  My Channels shows "no monitored channel has this genre" when a channel's
+  genre matches nothing - that warning is the difference between "Auto Run
+  does nothing" and knowing why.
+- `studio.seed_production` also falls back to a case-insensitive `seed_dirs`
+  lookup for the same reason.
+
 ### Fewer ports: the dashboard is the control surface (2026-09-23)
 
 The pain was operational sprawl, not the HTTP boundary (the 4s My Channels

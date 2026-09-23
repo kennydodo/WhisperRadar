@@ -211,7 +211,11 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
     pdir = prod_dir(cfg, prod["id"])
     eff = settings.for_production(conn, prod)
     genre = (prod["genre"] if "genre" in prod.keys() else None) or "general"
-    seed = (settings.load(conn).get("seed_dirs") or {}).get(genre)
+    seed_map = settings.load(conn).get("seed_dirs") or {}
+    seed = seed_map.get(genre)
+    if seed is None:  # genres are free text: fall back to a case-insensitive hit
+        seed = next((v for k, v in seed_map.items()
+                     if k.lower() == genre.lower()), None)
 
     bible_dir: Path | None = None
     refs_dir: Path | None = None
