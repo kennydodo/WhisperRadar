@@ -550,6 +550,22 @@ def sync_renderly_channel(cfg, conn, own_channel, create: bool = True) -> dict:
     return {"ok": True, "id": channel_id, "name": name, "created": created}
 
 
+def renderly_upscale(value) -> int:
+    """Map WhisperRadar's 0-4 upscale tier onto Renderly's upscale API.
+
+    Renderly accepts only scale 2 or 4 - asking for 1 or 3 returns
+    HTTP 400 {"detail":"Scale must be 2 or 4"} and the upscale is silently
+    skipped for every image, so map the odd tiers onto the nearest valid one.
+    """
+    try:
+        tier = max(0, min(4, int(value or 0)))
+    except (TypeError, ValueError):
+        return 0
+    if tier == 0:
+        return 0
+    return 2 if tier <= 2 else 4
+
+
 def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
     """Render the production's shotlist images through ImgToVideo.ImageGen
     in Renderly mode. `channel` is the target Renderly channel id (the
@@ -572,7 +588,8 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
         "--renderly", cfg.renderly_url,
         "--channel", str(channel),
         "--image-size", "1K",
-        "--upscale", str(upscale or 0),
+        "--upscale", str(renderly_upscale(upscale if upscale is not None
+                                         else cfg.renderly_upscale)),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
     if result.returncode != 0:
@@ -1003,8 +1020,8 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         "project": project,
         "refs": ",".join(refs),
         "master": (master or "").strip(),
-        "upscale": max(0, min(4, int(upscale if upscale is not None
-                                    else (cfg.renderly_upscale or 0)))),
+        "upscale": renderly_upscale(upscale if upscale is not None
+                                    else (cfg.renderly_upscale or 0)),
     }
     shotlist_file = pid_dir / "shotlist.json"
     todo = 0
