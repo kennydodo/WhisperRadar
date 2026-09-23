@@ -1046,7 +1046,7 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
             if len(lines) < seen:  # service log window wrapped
                 seen = 0
             while seen < len(lines):
-                log(lines[seen])
+                _safe_log(log, lines[seen])
                 seen += 1
             # collapse duplicates as they appear (flow.js versions before the
             # in-place upscale wrote "-upscaled.png" copies alongside)

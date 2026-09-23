@@ -14,6 +14,21 @@ from .watch import CHANNEL_ID_RE, resolve_channel
 log = logging.getLogger("whisperradar")
 
 
+def _utf8_console() -> None:
+    """Make stdout/stderr survive non-ASCII output.
+
+    Stage logs carry text from other tools (the Flow Driver prints warnings
+    with U+26A0, FlowImagesGen prints box drawing), and a Windows console is
+    cp1252 by default, so a plain print() raises UnicodeEncodeError and kills
+    the stage. Replacing unencodable characters is always better than dying.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def _slugify(text: str, maxlen: int = 60) -> str:
     slug = re.sub(r"[^\w\s-]", "", text).strip()
     slug = re.sub(r"[\s_]+", "_", slug)
@@ -500,6 +515,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    _utf8_console()
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)-7s %(message)s",
