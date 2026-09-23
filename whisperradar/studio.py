@@ -327,6 +327,50 @@ def find_final(pid_dir: Path) -> Path | None:
     return None
 
 
+# The merge stage builds a fast preview draft, then exports an NLE project
+# for the configured target. RENDER_TARGETS is the closed set; the label is
+# shown in the dashboard and the settings page.
+RENDER_TARGETS = ("premiere", "capcut")
+RENDER_TARGET_LABELS = {"premiere": "Premiere Pro", "capcut": "Final Cut (CapCut)"}
+
+
+def find_preview(pid_dir: Path) -> Path | None:
+    """The merge stage's fast draft (out\\preview.mp4)."""
+    p = pid_dir / "out" / "preview.mp4"
+    return p if p.exists() else None
+
+
+def nle_project(pid_dir: Path, target: str) -> Path | None:
+    """The exported NLE project for `target`, or None when it is absent.
+    premiere = an FCP7 XML file; capcut = a draft folder."""
+    if target == "capcut":
+        p = pid_dir / "out" / "capcut" / pid_dir.name
+    else:
+        p = pid_dir / "out" / "premiere.xml"
+    return p if p.exists() else None
+
+
+def find_nle_projects(pid_dir: Path) -> list[tuple[str, Path]]:
+    """[(target, path)] for every NLE export present in the production."""
+    out = []
+    for target in RENDER_TARGETS:
+        p = nle_project(pid_dir, target)
+        if p is not None:
+            out.append((target, p))
+    return out
+
+
+def find_review_video(pid_dir: Path) -> Path | None:
+    """The playable artifact for review: a rendered/uploaded final video,
+    else the merge stage's preview draft."""
+    return find_final(pid_dir) or find_preview(pid_dir)
+
+
+def merge_done(pid_dir: Path) -> bool:
+    """True once the merge stage has left anything reviewable behind."""
+    return bool(find_review_video(pid_dir) or find_nle_projects(pid_dir))
+
+
 # ------------------------------------------------- Renderly / ImgToVideo --
 
 def renderly_ready(url: str, timeout: int = 2) -> bool:
@@ -1383,12 +1427,34 @@ def sanitize_shotlist(pid_dir: Path) -> int:
     return removed
 
 
-def run_merge_render(cfg, pid_dir: Path) -> Path:
-    """Render the final video with ImgToVideo.Cli (headless). Returns final path."""
+def _imgtovideo_cli(cfg) -> Path | None:
     repo = cfg.imgtovideo_repo
     cli = Path(repo, "src", "ImgToVideo.Cli") if repo else None
-    if not cli or not cli.exists():
+    return cli if cli and cli.exists() else None
+
+
+def _run_imgtovideo_cli(cli: Path, args: list[str], timeout: int = 14400):
+    """Run ImgToVideo.Cli headless; raise with the tail on a non-zero exit."""
+    cmd = ["dotnet", "run", "--project", str(cli),
+           "-c", "Release", "--", *args]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if result.returncode != 0:
+        tail = ((result.stderr or "") + (result.stdout or ""))[-600:]
+        raise RuntimeError(
+            f"ImgToVideo.Cli {args[0]} failed (exit {result.returncode}): {tail}")
+    return result
+
+
+def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
+    """Merge with ImgToVideo.Cli (headless): build the fast preview draft,
+    then export the NLE project for `target`. Returns
+    {preview, target, project} - preview is the playable out\\preview.mp4,
+    project is the exported XML/draft folder."""
+    cli = _imgtovideo_cli(cfg)
+    if not cli:
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
+    if target not in RENDER_TARGETS:
+        target = RENDER_TARGETS[0]
 
     # project layout expectations: audio\narration.<ext>, *.srt at root.
     # Always refresh narration from the current audio artifact - a stale copy
@@ -1402,18 +1468,20 @@ def run_merge_render(cfg, pid_dir: Path) -> Path:
         shutil.copy(audio, audio_dir / f"narration{audio.suffix}")
     sanitize_shotlist(pid_dir)
 
-    cmd = [
-        "dotnet", "run", "--project", str(cli),
-        "-c", "Release", "--", "render-final", str(pid_dir),
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=14400)
-    if result.returncode != 0:
-        tail = ((result.stderr or "") + (result.stdout or ""))[-600:]
-        raise RuntimeError(f"ImgToVideo.Cli failed (exit {result.returncode}): {tail}")
-    final = find_final(pid_dir)
-    if not final:
-        raise RuntimeError("render finished but no final.mp4 found")
-    return final
+    # 1. fast preview draft - the reviewable cut
+    _run_imgtovideo_cli(cli, ["render-final", str(pid_dir), "--preview"])
+    preview = find_preview(pid_dir)
+    if not preview:
+        raise RuntimeError("preview build finished but no preview.mp4 found")
+
+    # 2. NLE project for the chosen target
+    _run_imgtovideo_cli(cli, [f"export-{target}", str(pid_dir)])
+    project = nle_project(pid_dir, target)
+    if not project:
+        raise RuntimeError(
+            f"{RENDER_TARGET_LABELS[target]} export finished but no project "
+            f"file was found")
+    return {"preview": preview, "target": target, "project": project}
 
 
 def prepare_project_folder(cfg, pid: int) -> Path:

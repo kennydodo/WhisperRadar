@@ -7,27 +7,42 @@ Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `
 
 ## NEXT SESSION — handoff (written 2026-09-23, end of day)
 
-### 1. Video render: preview / NLE export instead of always full-rendering
+### 1. Video render: preview + NLE export — DONE (2026-09-23)
 
-The merge stage always runs `ImgToVideo.Cli render-final`, which leaves a lot of
-files and a big video — production #5 produced 182 `seg_*.mp4` + 181
-`join_*.mp4` + `final.mp4` (499 MB for 20m44s). ImgToVideo already supports
-lighter targets, so make the merge target CONFIGURABLE (global + per channel):
+The merge stage no longer full-renders `final.mp4` by default. It now builds a
+fast **preview draft** and then exports an **NLE project**, matching
+ImgToVideo's app flow (Build Preview -> Export to NLE):
 
 ```
-render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [what we do now]
-render-final <folder> --preview    -> out\preview.mp4                        [fast draft]
-export-premiere <folder>           -> out\premiere.xml   (FCP7 XML + motion keyframes, File > Import)
-export-capcut <folder>             -> out\capcut\<name>\ (copy into CapCut's draft root, CapCut closed)
+render-final <folder> --preview    -> out\preview.mp4                        [fast draft, always]
+export-premiere <folder>           -> out\premiere.xml   (FCP7 XML, File > Import)
+export-capcut <folder>             -> out\capcut\<name>\ (copy into CapCut's draft root)
+render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [legacy/hook/upload only]
 ```
 
-Proposed setting `render_target`: `final` (default = unchanged) | `preview` |
-`premiere` | `capcut`. Note `premiere`/`capcut` produce an NLE PROJECT, not a
-video, so review/publish then happens after editing in the NLE. Tuning knobs
-live in ImgToVideo's own render config: `PreviewWidth/PreviewHeight`,
-`PreviewPreset`, `PreviewCrf`, `FinalPreset`, `FinalCrf`, `Output.Width/Height`,
-`FfmpegPath`. Measure what each target leaves in `out\` before claiming the
-"fewer files / smaller" win.
+- Global setting `render_target` in its OWN Settings category **"Video render"**
+  (`whisperradar/settings.py` SPEC + GROUPS), choices `premiere` (DEFAULT) |
+  `capcut`, friendly labels via the new generic `choice_labels` extra rendered
+  by `templates/settings.html`. Global only (the user asked for global); it is
+  surfaced through `settings.for_production` as `render_target`.
+- `studio.run_merge_render(cfg, pid_dir, target)` returns
+  `{preview, target, project}` and runs BOTH commands. Helpers:
+  `find_preview`, `nle_project`, `find_nle_projects`, `find_review_video`
+  (final -> preview), `merge_done`. `RENDER_TARGETS`/`RENDER_TARGET_LABELS`.
+- `autorun._run_merge` resolves the target from `_effective(...)["render_target"]`
+  on the `cli` path; `stage_action("merge")` uses `studio.merge_done` and names
+  the target. The hook path and the manual `final.mp4` upload are unchanged.
+- Dashboard: merge stage plays the preview and links the export (Premiere XML
+  file; CapCut draft `.zip` via `GET /studio/<pid>/capcut.zip`), review stage
+  lists "Preview / final video" + "NLE export". Button/confirm modal text now
+  names the target.
+- NOT auto-copied: the CapCut draft stays in `out\capcut\<name>\` (download or
+  copy it into `%LOCALAPPDATA%\CapCut\User Data\Projects\com.lveditor.draft`
+  with CapCut closed) - matching the CLI's own behaviour.
+- STILL TO MEASURE: what each target leaves in `out\` (the "fewer files /
+  smaller" claim). Tuning knobs live in ImgToVideo's own `imgtovideo.json`:
+  `PreviewWidth/Height`, `PreviewPreset`, `PreviewCrf`, `FinalPreset`,
+  `FinalCrf`, `Output.Width/Height`, `FfmpegPath`.
 
 ### 2. FlowImagesGen `prepare --report` — RECEIVING END DONE (2026-09-23)
 

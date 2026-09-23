@@ -199,7 +199,7 @@
     <div style="background:var(--panel); border:1px solid var(--border); border-radius:10px; max-width:560px; width:94%; padding:18px 20px">
       <h2 style="margin-top:0">Start over</h2>
       <div class="muted" style="font-size:13px; margin-bottom:10px">Resets progress from the chosen stage onward: the generated files and the step history of those stages are deleted, and auto-run will execute them again. Inputs are kept: source transcript, bible, refs, named versions, notes.</div>
-      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="images" checked> From the <b>images</b> stage &mdash; deletes the rendered images and the final video, then re-renders everything (fills the gaps)</label>
+      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="images" checked> From the <b>images</b> stage &mdash; deletes the rendered images and the merge output (preview + NLE export), then re-renders everything (fills the gaps)</label>
       <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="script"> From the <b>script</b> stage &mdash; also deletes the script, subtitles and shotlist (a new script is generated; kept audio will no longer match it)</label>
       <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="style"> From the <b>beginning</b> (style) &mdash; everything re-runs, starting from a fresh style guide</label>
       <label style="display:block; margin:10px 0; color:var(--amber)" id="resetaudiolabel"><input type="checkbox" id="resetaudiobox"> Also delete the audio (you will need to upload new audio)</label>
@@ -241,7 +241,7 @@
         document.getElementById('resetaudiobox').checked ? '1' : '0';
       closeResetModal();
       const msg = from === 'images'
-        ? 'Delete all rendered images and the final video, then re-render everything?'
+        ? 'Delete all rendered images and the merge output (preview + NLE export), then re-render everything?'
         : 'Delete the generated files from ' + (from === 'style' ? 'the beginning' : 'the script stage') + ' onward? This cannot be undone.';
       if (!window.confirm(msg)) return;
       const forms = document.querySelectorAll('form[action*="/start-over"]');
@@ -780,17 +780,32 @@
       </div>
 
     {% elif stage == "merge" %}
-      {% if final %}
-      <div class="artifact"><video controls src="{{ final_url }}"></video></div>
-      {% else %}
-      <div class="muted" style="margin-bottom:8px">No final video yet. Render it with ImgToVideo, or upload one.</div>
+      {% if review_video %}
+      <div class="artifact"><video controls src="{{ review_video_url }}"></video></div>
+      {% elif not nle_projects %}
+      <div class="muted" style="margin-bottom:8px">No preview yet. Build the preview draft + {{ render_target_label }} project with ImgToVideo, or upload a final video.</div>
+      {% endif %}
+      {% if nle_projects %}
+      <div class="muted" style="margin:8px 0">
+        NLE export:
+        {% for n in nle_projects %}
+          {% if n.url %}<a href="{{ n.url }}">{{ n.label }} project</a>
+          {%- elif n.zip_url %}<a href="{{ n.zip_url }}">{{ n.label }} draft (.zip)</a>
+          {%- else %}<span class="mono">{{ n.rel }}</span>{% endif %}
+          {%- if not loop.last %} &middot; {% endif %}
+        {% endfor %}
+      </div>
+      {% if render_target == "capcut" %}
+      <div class="help" style="margin-bottom:8px">Unzip the draft into CapCut's draft root
+        (<span class="mono">%LOCALAPPDATA%\CapCut\User Data\Projects\com.lveditor.draft</span>) with CapCut closed, then open it in CapCut.</div>
+      {% endif %}
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render"
-              onsubmit="return confirm('Render the final video with ImgToVideo? This runs the full analyze + build + render pipeline.')">
+              onsubmit="return confirm('Build the preview draft and export the {{ render_target_label }} project with ImgToVideo?')">
           <button type="submit" class="green" {{ 'disabled' if job.running or not (hooks.merge and audio and srt and images) else '' }}
-                  title="{{ 'Headless render: analyze -> build -> out.final.final.mp4' if hooks.merge and audio and srt and images and not job.running else ('A job is already running' if job.running else 'Needs audio, subtitles and images done (and studio.imgtovideo_repo set)') }}">
-            {{ 'Working...' if job.running else 'Render final video (ImgToVideo)' }}
+                  title="{{ 'Headless: analyze -> plan -> out.preview.mp4 + ' ~ render_target_label ~ ' project' if hooks.merge and audio and srt and images and not job.running else ('A job is already running' if job.running else 'Needs audio, subtitles and images done (and studio.imgtovideo_repo set)') }}">
+            {{ 'Working...' if job.running else 'Build preview + export to ' ~ render_target_label }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/upload" enctype="multipart/form-data">
@@ -806,10 +821,11 @@
         <li>Subtitles: {% if steps.get("srt") %}<span class="badge done">done</span> {% if srt %}<a href="/studio/file/{{ prod['id'] }}/subtitles.srt">file</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Shotlist: {% if steps.get("shots") %}<span class="badge done">done</span> {% if shotlist_count %}<span class="muted">{{ shotlist_count }} image(s) planned</span>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Images: {% if steps.get("images") %}<span class="badge done">done</span> <span class="muted">{{ images|length }} file(s)</span>{% else %}<span class="badge pending">missing</span>{% endif %}</li>
-        <li>Final video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if final %}<a href="/studio/file/{{ prod['id'] }}/final.mp4">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Preview / final video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if review_video %}<a href="{{ review_video_url }}">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>NLE export: {% if nle_projects %}{% for n in nle_projects %}{% if n.url %}<a href="{{ n.url }}">{{ n.label }}</a>{% elif n.zip_url %}<a href="{{ n.zip_url }}">{{ n.label }} (.zip)</a>{% else %}<span class="mono">{{ n.rel }}</span>{% endif %}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
       </ul>
       {% if not steps.get("merge") %}
-      <div class="warn" style="margin:8px 0">The final video is not in the system yet. Upload it or run the merge hook before approving.</div>
+      <div class="warn" style="margin:8px 0">The merge stage is not in the system yet. Build the preview + NLE export, or upload a final video, before approving.</div>
       {% endif %}
       <div class="actions">
         <form method="post" action="/studio/{{ prod['id'] }}/review/approve">
@@ -1058,7 +1074,7 @@
             : 'this consumes your Renderly / Flow credits.') + '</div>';
     }
     if (hasMerge) {
-      html += '<div class="warn">⚠ The final render (merge) can take a long time.</div>';
+      html += '<div class="warn">⚠ The merge stage builds a preview draft + NLE export and can take a long time.</div>';
     }
     html += '<div class="muted" style="font-size:12px; margin-top:8px">Fixes made here count immediately (the plan refreshes). Anything left over pauses the run mid-way - handle it, then click Resume. A server restart cancels a running auto-run.</div>';
     body.innerHTML = html;

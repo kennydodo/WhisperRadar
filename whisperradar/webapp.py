@@ -976,8 +976,26 @@ def create_app(cfg) -> Flask:
         cue_count = len([b for b in srt_text.split("\n\n") if b.strip()])
         images = [i.name for i in studio.find_images(pdir)]
         final = studio.find_final(pdir)
-        final_url = (f"/studio/file/{pid}/"
-                     f"{final.relative_to(pdir).as_posix()}") if final else None
+        preview = studio.find_preview(pdir)
+        review_video = studio.find_review_video(pdir)
+
+        def _rel_url(path: Path | None) -> str | None:
+            return (f"/studio/file/{pid}/{path.relative_to(pdir).as_posix()}"
+                    if path else None)
+
+        final_url = _rel_url(final)
+        preview_url = _rel_url(preview)
+        review_video_url = _rel_url(review_video)
+        nle_projects = []
+        for target, path in studio.find_nle_projects(pdir):
+            nle_projects.append({
+                "target": target,
+                "label": studio.RENDER_TARGET_LABELS[target],
+                "rel": path.relative_to(pdir).as_posix(),
+                "url": _rel_url(path) if path.is_file() else None,
+                "zip_url": (f"/studio/{pid}/capcut.zip"
+                            if target == "capcut" else None),
+            })
 
         providers = cfg.studio_llm_providers
         default_provider = prod["llm_provider"] or cfg.studio_llm_default
@@ -1009,6 +1027,11 @@ def create_app(cfg) -> Flask:
             shotlist_text=shotlist_text, audio=audio, srt=srt,
             srt_text=srt_text, prompts_text=prompts_text, images=images,
             final=final, final_url=final_url,
+            preview=preview, preview_url=preview_url,
+            review_video=review_video, review_video_url=review_video_url,
+            nle_projects=nle_projects,
+            render_target=eff["render_target"],
+            render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
             source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, hooks=hooks,
@@ -1736,8 +1759,15 @@ def create_app(cfg) -> Flask:
             autorun.raise_result(autorun.run_stage(
                 cfg, pid, "merge", {"mode": "cli"}))
 
-        sjob.start(worker, "final render (ImgToVideo)")
-        return _studio_url(pid, msg="Final render started")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            target = settings.load(conn)["render_target"]
+        finally:
+            conn.close()
+        label = studio.RENDER_TARGET_LABELS[target]
+        sjob.start(worker, f"preview + {label} export (ImgToVideo)")
+        return _studio_url(pid, msg=f"Preview build + {label} export started")
 
     @app.post("/studio/<int:pid>/images/upload")
     def studio_images_upload(pid):
@@ -1854,6 +1884,27 @@ def create_app(cfg) -> Flask:
         if not target.is_file():
             abort(404)
         return send_file(target)
+
+    @app.get("/studio/<int:pid>/capcut.zip")
+    def studio_capcut_zip(pid):
+        """Download the exported CapCut draft folder as a zip. CapCut wants
+        the folder (not a file), so this is how it leaves the dashboard."""
+        pdir = studio.prod_dir(cfg, pid).resolve()
+        src = (pdir / "out" / "capcut" / pdir.name).resolve()
+        try:
+            src.relative_to(pdir)
+        except ValueError:
+            abort(404)
+        if not src.is_dir():
+            abort(404)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in sorted(src.rglob("*")):
+                if f.is_file():
+                    zf.write(f, f.relative_to(src.parent))
+        buf.seek(0)
+        return send_file(buf, mimetype="application/zip", as_attachment=True,
+                         download_name=f"{pdir.name}-capcut.zip")
 
     @app.get("/studio/produce/plan")
     def studio_produce_plan():

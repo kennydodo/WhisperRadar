@@ -183,6 +183,18 @@ SPEC: list[dict] = [
                 "production overrides it. Empty = the built-in default.",
     },
     {
+        "key": "render_target", "type": "choice", "default": "premiere",
+        "choices": ["premiere", "capcut"],
+        "choice_labels": {"premiere": "Premiere Pro",
+                          "capcut": "Final Cut (CapCut)"},
+        "label": "Render target",
+        "help": "What the merge stage exports to. Both targets first build a "
+                "fast preview draft (out\\preview.mp4) you can watch in the "
+                "dashboard, then write an NLE project: Premiere Pro = an FCP7 "
+                "XML to import (File > Import); Final Cut (CapCut) = a CapCut "
+                "draft folder to copy into CapCut's draft root.",
+    },
+    {
         "key": "topic_pick", "type": "choice", "default": "newest",
         "choices": ["newest", "llm"],
         "label": "Topic pick",
@@ -228,6 +240,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "default_engine", "default_render_mode", "default_upscale",
         "default_voice", "seed_dirs",
     ]),
+    ("Video render", ["render_target"]),
     ("Scheduler", ["scheduler_enabled", "scheduler_interval_minutes"]),
     ("Notifications", [
         "notify_desktop", "notify_webhook_url", "notify_webhook_kind",
@@ -417,6 +430,8 @@ def for_production(conn, prod) -> dict:
         # Google Flow project URL for the FlowImagesGen engine, when the
         # channel sets one (callers fall back to the global config value).
         "flow_project_url": row_get(own, "flow_project_url"),
+        # global-only: which NLE the merge stage exports to (premiere|capcut)
+        "render_target": glob["render_target"],
         "own_channel": own,
         "own_channel_name": row_get(own, "name"),
         "renderly_channel_name": (row_get(own, "renderly_channel_name")

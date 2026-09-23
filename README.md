@@ -131,6 +131,14 @@ production from any transcribed video in your library, then walk its stages:
   banner on failures (the button becomes Resume). It always stops before
   **review**: publishing stays a human decision. Stop cancels the remaining
   stages after the current one finishes; restarting the server cancels a run.
+- **Merge / NLE export**: the merge stage builds a fast **preview draft**
+  (`out\preview.mp4`, playable on the production page) and then exports an
+  **NLE project** with ImgToVideo - either **Premiere Pro** (an FCP7 XML to
+  import, File > Import) or **Final Cut (CapCut)** (a draft folder to copy
+  into CapCut's draft root, downloadable as a zip). The target is a global
+  setting (**Settings > Video render**, default Premiere Pro). Review and
+  publishing then happen after editing in the NLE. You can also upload a
+  finished `final.mp4`, or configure `merge_command` to run your own hook.
 - **Tool hooks** (`tts_command`, `imagegen_command`, `merge_command`) plug in
   chatterbox, Renderly and ImgToVideo when you're ready.
 

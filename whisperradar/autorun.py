@@ -572,7 +572,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
 
 def _run_merge(cfg, pid: int, mode: str | None = None) -> None:
     """mode: 'hook' = studio.merge_command only (merge route),
-    'cli' = ImgToVideo.Cli headless render (video/render route),
+    'cli' = ImgToVideo.Cli preview build + NLE export (video/render route),
     None = whatever is configured (auto-run)."""
     pdir = studio.prepare_project_folder(cfg, pid)
     audio = studio.find_audio(pdir)
@@ -601,8 +601,10 @@ def _run_merge(cfg, pid: int, mode: str | None = None) -> None:
             raise RuntimeError("merge produced no video")
         detail = "final.mp4"
     else:
-        final = studio.run_merge_render(cfg, pdir)
-        detail = final.name
+        # preview draft + NLE project for the global render target
+        target = _effective(cfg, pid)["render_target"]
+        result = studio.run_merge_render(cfg, pdir, target)
+        detail = (f"preview + {studio.RENDER_TARGET_LABELS[target]} project")
     conn = _connect(cfg)
     try:
         db.add_step(conn, pid, "merge", "auto", detail=detail)
@@ -739,13 +741,18 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
                       f"{eff['upscale']})")
         return {"stage": stage, "action": "run", "detail": detail}
     if stage == "merge":
-        if studio.find_final(pdir):
+        if studio.merge_done(pdir):
             return {"stage": stage, "action": "skip",
-                    "detail": "final video already exists"}
-        hook = "the configured merge hook" if cfg.studio_merge_command \
-            else "ImgToVideo (headless render)"
+                    "detail": "preview/NLE export already exists"}
+        if cfg.studio_merge_command:
+            return {"stage": stage, "action": "run",
+                    "detail": "final render via the configured merge hook "
+                              "- can take a long time"}
+        target = _effective(cfg, pid)["render_target"]
         return {"stage": stage, "action": "run",
-                "detail": f"final render via {hook} - can take a long time"}
+                "detail": f"preview build + "
+                          f"{studio.RENDER_TARGET_LABELS[target]} export via "
+                          f"ImgToVideo - can take a long time"}
     return {"stage": stage, "action": "pause",
             "detail": f"unknown stage '{stage}'"}
 

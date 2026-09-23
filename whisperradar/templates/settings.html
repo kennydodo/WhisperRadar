@@ -142,6 +142,15 @@
       that must pass.
     </div>
     {% endif %}
+    {% if group_name == "Video render" %}
+    <div class="muted" style="font-size:12px; margin-bottom:12px">
+      The merge stage builds a fast <b>preview draft</b>
+      (<span class="mono">out\preview.mp4</span>, playable on the production
+      page) and then exports the NLE project for the target below. Review and
+      publishing happen after editing in that app, so the export is the
+      deliverable - not a rendered MP4.
+    </div>
+    {% endif %}
     {% if group_name == "Scheduler" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
       {% if scheduler %}
@@ -184,7 +193,7 @@
             {% if entry.type == 'choice' %}
               <select name="{{ entry.key }}" id="f-{{ entry.key }}">
                 {% for opt in entry.choices %}
-                <option value="{{ opt }}" {{ 'selected' if values[entry.key] == opt else '' }}>{{ opt }}</option>
+                <option value="{{ opt }}" {{ 'selected' if values[entry.key] == opt else '' }}>{{ entry.choice_labels[opt] if entry.choice_labels is defined and opt in entry.choice_labels else opt }}</option>
                 {% endfor %}
               </select>
             {% elif entry.type == 'int' %}
