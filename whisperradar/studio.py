@@ -897,15 +897,33 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
 
 def _driver_api(cfg, path: str, method: str = "GET", body=None,
                 timeout: int = 8):
-    """Call the Flow Driver service (extension-v2\\server.js)."""
+    """Call the Flow Driver service (extension-v2\\server.js).
+
+    On an error response the body is included: the driver explains rejections
+    in JSON (`{"error": "channel ... does not exist - available: ..."}`), and
+    discarding it turned a precise message into a bare "HTTP Error 400"."""
     req = urllib.request.Request(
         flow_service_url(cfg) + path,
         data=json.dumps(body).encode() if body is not None else None,
         headers={"Content-Type": "application/json"} if body is not None else {},
         method=method,
     )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            raw = exc.read().decode("utf-8", "replace").strip()
+            if raw:
+                try:
+                    detail = json.loads(raw).get("error") or raw
+                except ValueError:
+                    detail = raw
+        except Exception:  # noqa: BLE001
+            pass
+        raise RuntimeError(f"HTTP {exc.code} from {path}"
+                           + (f": {detail[:300]}" if detail else "")) from exc
 
 
 def flow_service_status(cfg, timeout: int = 4) -> dict | None:
@@ -1005,11 +1023,24 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
                 f"{todo} image(s) left to render")
         log(f"Flow Driver: rendering {todo} missing image(s) via Google Flow "
             f"(a Chrome window will open - leave it running)")
-        _driver_api(cfg, "/api/config", method="POST", body=config, timeout=15)
-        try:
-            _driver_api(cfg, "/api/start", method="POST", body={}, timeout=15)
-        except Exception as exc:
-            raise RuntimeError(f"Flow Driver rejected the batch: {exc}")
+        # The driver owns the batch state: if one is already running (e.g. a
+        # previous poller died but Chrome kept rendering) attach to it instead
+        # of posting config and starting a second one, which it rejects with
+        # "a batch is already running". Do not touch a running batch's config.
+        status = flow_service_status(cfg) or {}
+        if status.get("running"):
+            counts = status.get("counts") or {}
+            log(f"Flow Driver: attaching to the batch already running "
+                f"({counts.get('ok', 0)}/{counts.get('total', todo)} done, "
+                f"{counts.get('failed', 0)} failed) - not starting another")
+        else:
+            _driver_api(cfg, "/api/config", method="POST", body=config,
+                        timeout=15)
+            try:
+                _driver_api(cfg, "/api/start", method="POST", body={},
+                            timeout=15)
+            except Exception as exc:
+                raise RuntimeError(f"Flow Driver rejected the batch: {exc}")
         seen = 0
         deadline = time.monotonic() + 14400
         restarted = False
