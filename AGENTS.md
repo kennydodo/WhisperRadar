@@ -97,6 +97,29 @@ STILL OPEN (next steps, in order):
 2. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
 
+### FlowImagesGen pacing and the assetTile trap (2026-09-23)
+
+Measured on a real 156-image batch (production #5, The Nature Made Us):
+
+- `config/settings.json` `generation.delayBetweenItemsMs: 20000` - a deliberate
+  20s pause between items, plus ~40-60s of actual generation. So ~70s/item is
+  the floor and 156 images is ~3h minimum.
+- **The real cost is asset-tile detection, not generation.** FlowImagesGen
+  waits for a NEW asset tile to appear; when it misses one it times out after
+  `timeouts.generationMs` (300s), then the retry succeeds in under a minute.
+  Observed: item 2 wasted 300s for a 38s generation. The error says "calibrate
+  assetTile" and dumps debug\error-<item>-<stamp>.png - that screenshot plus
+  `npm run discover` is the fix.
+- **`generation.maxCooldowns: 0` disables waiting on a rate-limit refusal**
+  (`src/runner/run.js:345` requires maxCooldowns > 0). The batch then STOPS,
+  deliberately: the block is a reCAPTCHA score on the profile and grinding
+  lowers it further. Resuming later continues from `state\wr-<pid>.json`.
+- **`retries: 1` is a hard-stop risk** - a second consecutive detection failure
+  is non-retryable and stops the batch. Raise it to 3 for long batches.
+- WhisperRadar does NOT manage the `generation` block; it only writes the
+  upscale tier via `upscale --set-tier`. Pacing is the user's call in
+  FlowImagesGen's own config.
+
 ### Genre is the join key - keep it forgiving (2026-09-23)
 
 Monitored channels feed an own channel through `genre`, and it is free text on
