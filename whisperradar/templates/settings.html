@@ -133,9 +133,13 @@
     {% if group_name == "Shotlist gate" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
       After the shotlist is planned and <b>before any image is rendered</b>,
-      every shot is checked against the narration at its SRT cues. Structural
-      faults (coverage, order, orphan assets, duplicate prompts) must be zero;
-      <b>minimum alignment</b> is the share of shots that must match.
+      each shot's prompt is audited against the narration at its SRT cues: does
+      it state everything that scene needs (who, doing what, where, which
+      props, the specific information)? Under-specified prompts are rewritten,
+      because rendering is slow and a vague prompt means a hand regeneration
+      later. Structural faults (coverage, order, orphan assets, duplicate
+      prompts) must be zero; <b>minimum prompt detail</b> is the share of shots
+      that must pass.
     </div>
     {% endif %}
     {% if group_name == "Scheduler" %}
