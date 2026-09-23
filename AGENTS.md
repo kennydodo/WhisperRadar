@@ -5,7 +5,112 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: none form
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
-## Feature: Studio "Run till finish" automation (implemented 2026-09)
+## NEXT SESSION — handoff (written 2026-09-23, end of day)
+
+### 1. Video render: preview / NLE export instead of always full-rendering
+
+The merge stage always runs `ImgToVideo.Cli render-final`, which leaves a lot of
+files and a big video — production #5 produced 182 `seg_*.mp4` + 181
+`join_*.mp4` + `final.mp4` (499 MB for 20m44s). ImgToVideo already supports
+lighter targets, so make the merge target CONFIGURABLE (global + per channel):
+
+```
+render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [what we do now]
+render-final <folder> --preview    -> out\preview.mp4                        [fast draft]
+export-premiere <folder>           -> out\premiere.xml   (FCP7 XML + motion keyframes, File > Import)
+export-capcut <folder>             -> out\capcut\<name>\ (copy into CapCut's draft root, CapCut closed)
+```
+
+Proposed setting `render_target`: `final` (default = unchanged) | `preview` |
+`premiere` | `capcut`. Note `premiere`/`capcut` produce an NLE PROJECT, not a
+video, so review/publish then happens after editing in the NLE. Tuning knobs
+live in ImgToVideo's own render config: `PreviewWidth/PreviewHeight`,
+`PreviewPreset`, `PreviewCrf`, `FinalPreset`, `FinalCrf`, `Output.Width/Height`,
+`FfmpegPath`. Measure what each target leaves in `out\` before claiming the
+"fewer files / smaller" win.
+
+### 2. FlowImagesGen `prepare --report` integration (contract FROZEN — see below)
+
+Done: `productions.flow_project_url` / `flow_project_id`, `flow_project_url_for()`
+(precedence production -> channel -> global), and `prepare_flowimagesgen_job`
+writes `projectUrl` FROM THE DB (it used to rebuild the job wholesale and lose
+it). Still to do:
+
+- invoke `node src/cli.js prepare --job <job.json> --report <prod dir>\flow_prepare.json`
+  before generating; read the report defensively (retry once; malformed/absent =
+  "no project yet")
+- persist `projectUrl`/`projectId` from the report onto the production row
+- run generation with `refMode: "assets"` when every ref reports present,
+  else `reuse`
+- FlowImagesGen side: the `prepare` command itself (create-or-open project,
+  ensure refs in the gallery), the `FLOW_PROJECT_URL=` stdout marker, and the
+  atomic report write
+
+### 3. Reference generation stage (optional per channel) + naming
+
+Agreed design: an optional stage BETWEEN shots and images that gets every
+reference into the Flow project gallery once, so the image batch never uploads
+(FlowImagesGen `refMode: assets`) and never duplicates project assets.
+
+- Shotlist refs registry must widen from `name -> path` to carry
+  `{kind, prompt, provided}` so the stage can: `provided` -> ensure the file,
+  otherwise GENERATE it from its prompt and save as `<name>.png`.
+- Naming convention (user-specified, now enforced by the shots gate):
+  `CH_*` characters, `BG_*` backgrounds, `OBJ_*` objects, e.g. `CH_MAYA`,
+  `BG_BATHROOM_01`. Rule: `^(CH|BG|OBJ)_[A-Z0-9]+(_[0-9]{2})?$`.
+- Per-channel opt-in flag (e.g. `generate_references`).
+- CONSEQUENCE: existing shotlists use names like `hero_kimono_woman` /
+  `traditional_japanese_home`, which the new gate REJECTS. They must be renamed
+  before a re-run.
+- Renderly side: its driver resolves refs to LOCAL FILES and uploads them (no
+  attach-by-name), so it only gets correctness from this stage, not the
+  no-upload benefit. Attaching by name there is a Renderly change.
+
+### 4. `flow_batch.json` is dead — decide
+
+`prepare_flow_batch()` (pre-existing) writes `data\studio\<n>\flow_batch.json`
+with ref names resolved through the registry, but `run_imagegen_flow` never uses
+the returned path — the driver config points `shotlistPath` at `shotlist.json`,
+so the driver resolves refs itself and the file is rewritten for nothing.
+Either pass `flow_batch.json` to the driver (making registry resolution
+authoritative) or stop writing it and return only the count.
+
+### 5. Production #6 — finish by hand, then Resume
+
+To Live and More, Renderly flow engine. Script gate failed (rating 5.5 vs the
+channel's 9.4; overlap 6.2% passed), shots gate PASSED (113/119 prompts detailed
+enough, 0 structural faults). Images stopped at **98 of 118** — Flow began
+reporting "still busy" and every card after ~98 timed out. The batch and the
+poller are stopped; the 98 images are kept. Upload the remaining 20 into
+`data\studio\6\images\` (the upload preserves filenames), then Resume: the
+images stage now treats "everything already present" as success and advances to
+merge.
+
+### 6. Script rating gap — diagnose on the next run
+
+The judge (glm-flash, deliberately a different provider from the deepseek
+writer) scored the best of 3 drafts 5.5 against a 9.4 bar. `versions\script\review.json`
+now persists per-attempt score, criteria, feedback and weak spans (added this
+session), so the next run tells us whether the judge is harsh or the drafts are
+genuinely weak — which decides whether to adjust the rubric or the bar.
+
+### 7. Flow reliability after ~98 images (both engines)
+
+FlowImagesGen hit a refusal loop at item ~82 ("might violate our policies" /
+"you have not been charged"), and Renderly's driver hit "still busy" timeouts
+from ~98. In both cases the first ~80-100 items rendered fine, so this looks
+session/account-level rather than per-prompt. Worth investigating before
+trusting unattended batches of 100+ images.
+
+### 8. Loose ends from this session
+
+- Auto Run's master switch is still ON and the global `per_day` is 2 (both set
+  for the #2 validation run).
+- `D:\Repos\FlowImagesGen\NEXT_SESSION.md` is modified but uncommitted (the
+  frozen contract + the download/policy-refusal write-up).
+- `CombineAll` is ahead of `origin/CombineAll`; merge to `master` when ready.
+
+
 
 ### BACKLOG — fully automated producer (user approved design 2026-09-21; BUILD ONLY WHEN the Google Flow abuse-block is resolved or with renderly default)
 
