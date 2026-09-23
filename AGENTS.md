@@ -120,6 +120,35 @@ Measured on a real 156-image batch (production #5, The Nature Made Us):
   upscale tier via `upscale --set-tier`. Pacing is the user's call in
   FlowImagesGen's own config.
 
+### FROZEN CONTRACT with FlowImagesGen (do not change silently)
+
+Agreed 2026-09-23. Changing the marker or the report schema means updating BOTH
+sides and both handover notes.
+
+1. **Marker** (convenience only, for manual runs): one un-prefixed stdout line
+   `FLOW_PROJECT_URL=https://flow.google.com/project/<uuid>`. Never the
+   contract - it couples us to log formatting and is lost if the process dies.
+2. **Report file is the contract**: we pass `--report
+   <production dir>\flow_prepare.json` to `node src/cli.js prepare --job
+   <job.json> --report <path>`, and it is written ATOMICALLY as soon as the
+   project exists (not at exit). Schema: `schemaVersion`, `projectUrl`,
+   `projectId`, `project`, `created`, `jobName`, `preparedAt`, and
+   `refs: [{name, kind, status, path}]` with `status ∈ uploaded | reused |
+   generated | missing`. Read it defensively (retry once; a malformed or
+   absent report is treated as "no project yet").
+3. **Ownership**: the report is the INTERFACE, the DB is the TRUTH. Persist
+   `projectUrl`/`projectId` on the production row and mirror `projectUrl` into
+   the job we own. `prepare_flowimagesgen_job` must write projectUrl FROM THE
+   DB - today it rebuilds the job wholesale and would lose it.
+4. **Ref mode**: every ref present -> generation runs `refMode: "assets"`
+   (attach by name, never upload, no duplicate project assets); otherwise
+   `reuse`. `refs[].status: missing` replaces scraping `⚠ reference not found`
+   out of the log.
+5. **Precedence** for the project URL: production row -> channel
+   `flow_project_url` -> global `studio.flowimagesgen_project_url` -> none. With
+   none, log LOUDLY and set a production warning; Flow's "most recent project"
+   fallback must never be silent.
+
 ### Where Flow references must live (2026-09-23)
 
 A shotlist can declare a refs registry (`{"hero_kimono_woman":
