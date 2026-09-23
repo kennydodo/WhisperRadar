@@ -466,8 +466,12 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             own_channels = db.list_own_channels(conn)
-            links = {ch["id"]: studio.renderly_channel_status(cfg, ch)
-                     for ch in own_channels}
+            # one shared lookup for every row: never one Renderly request per
+            # channel, and never a blocking one
+            channels, chan_error, known = studio.renderly_channel_list(cfg)
+            links = {ch["id"]: studio.renderly_channel_status(
+                cfg, ch, channels, chan_error, known)
+                for ch in own_channels}
         finally:
             conn.close()
         return render_template(

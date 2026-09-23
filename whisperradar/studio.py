@@ -335,6 +335,38 @@ def renderly_channels(cfg, timeout: int = 10) -> list[dict]:
     return data if isinstance(data, list) else []
 
 
+# The My Channels page needs the channel list ONCE per load, not once per
+# channel. It is also refreshed in the background (stale-while-revalidate) so
+# an unreachable or slow Renderly can never stall a page render.
+_channel_cache: dict = {"at": 0.0, "data": [], "error": None, "loading": False}
+
+
+def _refresh_channel_cache(cfg, timeout: int = 4) -> None:
+    try:
+        data = renderly_channels(cfg, timeout=timeout)
+        _channel_cache.update({"at": time.monotonic(), "data": data,
+                               "error": None})
+    except Exception as exc:  # noqa: BLE001 - status display is best effort
+        _channel_cache.update({"at": time.monotonic(), "data": [],
+                               "error": str(exc)[:120]})
+    finally:
+        _channel_cache["loading"] = False
+
+
+def renderly_channel_list(cfg, ttl: int = 30):
+    """(channels, error, known) from the cache, kicking off a background
+    refresh when stale. Never blocks: on the first call it returns
+    known=False while the refresh runs."""
+    now = time.monotonic()
+    known = bool(_channel_cache["data"] or _channel_cache["error"])
+    if not known or now - _channel_cache["at"] >= ttl:
+        if not _channel_cache["loading"]:
+            _channel_cache["loading"] = True
+            threading.Thread(target=_refresh_channel_cache, args=(cfg,),
+                             daemon=True).start()
+    return _channel_cache["data"], _channel_cache["error"], known
+
+
 def _renderly_create_channel(cfg, name: str, description: str = "") -> dict:
     req = urllib.request.Request(
         f"{cfg.renderly_url}/api/channels",
@@ -387,16 +419,30 @@ def resolve_renderly_channel(cfg, own_channel=None, create: bool = False):
         return None
 
 
-def renderly_channel_status(cfg, own_channel) -> dict:
-    """Read-only link state for the settings page - never creates."""
+def renderly_channel_status(cfg, own_channel, channels=None, error=None,
+                            known: bool = True) -> dict:
+    """Read-only link state for My Channels - never creates, never blocks.
+
+    `channels`/`error`/`known` come from renderly_channel_list() so one page
+    render makes at most one (background) Renderly request."""
     if own_channel is None:
         return {"linked": False, "detail": "no own channel"}
-    try:
-        channels = renderly_channels(cfg)
-    except Exception as exc:  # noqa: BLE001
-        return {"linked": False, "detail": f"Renderly unreachable ({exc})"}
+    if channels is None and known:
+        channels, error, known = renderly_channel_list(cfg)
     name = _own_channel_name(own_channel)
     stored_id = own_channel["renderly_channel_id"]
+    if error:
+        if stored_id:
+            return {"linked": True, "id": stored_id, "name": name,
+                    "detail": f"linked (id {stored_id}) - Renderly "
+                              f"unreachable, not verified"}
+        return {"linked": False,
+                "detail": f"Renderly unreachable ({error[:60]})"}
+    if not known:
+        if stored_id:
+            return {"linked": True, "id": stored_id, "name": name,
+                    "detail": f"linked (id {stored_id}) - checking Renderly..."}
+        return {"linked": False, "detail": "checking Renderly..."}
     if stored_id and any(c.get("id") == stored_id for c in channels):
         return {"linked": True, "id": stored_id, "name": name,
                 "detail": f"linked (id {stored_id})"}
