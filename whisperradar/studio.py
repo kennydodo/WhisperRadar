@@ -785,6 +785,22 @@ def _adopt_flowimagesgen_outputs(pdir: Path, names: list[str],
     return adopted
 
 
+def _safe_log(log, message) -> None:
+    """Log a child process line without ever raising. FlowImagesGen prints
+    non-ASCII (checkmarks, box drawing) and a cp1252 console raises
+    UnicodeEncodeError on write - which used to kill the whole stage and hide
+    the real error."""
+    if not log:
+        return
+    try:
+        log(message)
+    except Exception:  # noqa: BLE001
+        try:
+            log(str(message).encode("ascii", "replace").decode("ascii"))
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
                                cancel=None, project_url: str | None = None) -> int:
@@ -807,18 +823,21 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
     if resolved_url:
         cmd += ["--project-url", resolved_url]
     if log:
-        log(f"FlowImagesGen: {len(names)} image(s), upscale tier {tier}")
-        log("$ " + " ".join(cmd))
+        _safe_log(log, f"FlowImagesGen: {len(names)} image(s), "
+                       f"upscale tier {tier}")
+        _safe_log(log, "$ " + " ".join(cmd))
     proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True,
                             encoding="utf-8", errors="replace")
+    tail: list[str] = []
     try:
         for line in proc.stdout:
             line = line.rstrip()
             if not line:
                 continue
-            if log:
-                log(line)
+            tail.append(line)
+            del tail[:-40]
+            _safe_log(log, line)
             if cancel is not None and cancel():
                 raise RuntimeError("stopped by user")
     finally:
@@ -830,12 +849,24 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
                 proc.kill()
         proc.wait(timeout=30)
     if proc.returncode != 0:
+        text = " ".join(tail).lower()
+        if "already in use" in text or "existing browser session" in text:
+            raise RuntimeError(
+                "FlowImagesGen could not open its browser profile because "
+                "another Chrome is already using it - close the FlowImagesGen "
+                "UI / that Chrome window, then Resume. (state is kept in its "
+                f"state\\wr-{pid}.json)")
+        if "executable doesn't exist" in text and "ms-playwright" in text:
+            raise RuntimeError(
+                "Playwright's browser is not installed - run "
+                f"`npx playwright install chromium` in {repo}, or configure "
+                "FlowImagesGen to use your system Chrome. (exit "
+                f"{proc.returncode})")
         raise RuntimeError(
-            f"FlowImagesGen failed (exit {proc.returncode}) - see the log "
-            f"above; state is kept in its state\\wr-{pid}.json so a re-run "
-            f"resumes")
-    names = [json.loads(job_path.read_text(encoding="utf-8"))["images"][i]["file"]
-             for i in range(count)]
+            f"FlowImagesGen failed (exit {proc.returncode}): "
+            + " | ".join(tail[-4:])[:400]
+            + f" - state is kept in its state\\wr-{pid}.json so a re-run "
+              f"resumes")
     adopted = _adopt_flowimagesgen_outputs(pid_dir, names, tier or "off")
     if not adopted:
         raise RuntimeError("FlowImagesGen produced no images - check the log "
