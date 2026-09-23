@@ -614,42 +614,28 @@ def flow_driver_ready(cfg) -> bool:
         and (d / "node_modules" / "playwright").exists()
 
 
-def prepare_flow_batch(cfg, pid_dir: Path) -> tuple[Path, int]:
-    """Build the Flow Driver batch from the production's shotlist: only the
-    images missing from images\\ (flow.js itself has no skip-existing).
-    Per-image ref names are resolved through the shotlist's top-level refs
-    registry (name -> path) so a channel-level ref library works without
-    copying files next to the batch.
-    Returns (batch file, number of images to render)."""
+def missing_flow_images(cfg, pid_dir: Path) -> int:
+    """How many shotlist images are still missing from images\\.
+
+    The Flow Driver reads shotlist.json itself (config `shotlistPath`) and
+    resolves per-image ref names on its own, so there is nothing to prepare
+    here - this used to also write a `flow_batch.json` that nothing consumed
+    (flow.js only ever saw shotlist.json). flow.js has no skip-existing, so the
+    caller needs the count to know how much is left."""
     shotlist_path = pid_dir / "shotlist.json"
     if not shotlist_path.exists():
         raise RuntimeError("Generate the shotlist first")
     data = json.loads(shotlist_path.read_text(encoding="utf-8"))
-    registry = data.get("refs")
-    registry = (registry if isinstance(registry, dict) else {})
-    registry = {k: v for k, v in registry.items() if isinstance(v, str)}
     img_dir = pid_dir / "images"
     img_dir.mkdir(exist_ok=True)
     existing = {p.name for p in img_dir.iterdir() if p.is_file()}
-    todo = []
-    for i in data.get("images", []):
-        if not (isinstance(i, dict) and i.get("file") and i.get("prompt")
-                and i["file"] not in existing):
-            continue
-        entry = dict(i)
-        if entry.get("refs"):
-            entry["refs"] = [registry.get(str(r), str(r))
-                             for r in entry["refs"]]
-        todo.append(entry)
+    todo = [i for i in data.get("images", [])
+            if isinstance(i, dict) and i.get("file") and i.get("prompt")
+            and i["file"] not in existing]
     if not todo:
         raise RuntimeError(
             "All shotlist images already exist - nothing to render")
-    batch_path = pid_dir / "flow_batch.json"
-    batch_path.write_text(
-        json.dumps({"style": data.get("style", ""), "images": todo},
-                   indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8")
-    return batch_path, len(todo)
+    return len(todo)
 
 
 def flow_service_url(cfg) -> str:
@@ -1087,7 +1073,7 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
     while True:  # batch rounds - re-prepared whenever shotlist.json changes
         rounds += 1
         try:
-            batch_path, todo = prepare_flow_batch(cfg, pid_dir)
+            todo = missing_flow_images(cfg, pid_dir)
         except RuntimeError as exc:
             if "nothing to render" in str(exc):
                 if rounds > 1:

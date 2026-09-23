@@ -195,7 +195,7 @@ RESET_FILES = {
               "audio.ogg"],
     "srt": ["subtitles.srt"],
     "shots": ["shotlist.json", "shotlist.json.bak", "batch_sheet.txt"],
-    "images": ["flow_batch.json"],
+    "images": [],
     "merge": ["final.mp4"],
 }
 

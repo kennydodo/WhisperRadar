@@ -544,10 +544,10 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                 project_url=flow_project_url or eff["flow_project_url"])
             source = "FlowImagesGen"
         elif mode == "flow":
-            # per-image refs come from the shotlist (resolved through its refs
-            # registry by prepare_flow_batch); the production refs\ folder is
-            # just the library flow.js resolves names against - attaching every
-            # file globally would blow past Flow's 3-ingredient limit
+            # per-image refs come from the shotlist's own refs registry, which
+            # flow.js resolves itself; the production refs\ folder is just the
+            # library it resolves names against - attaching every file globally
+            # would blow past Flow's 3-ingredient limit
             count = studio.run_imagegen_flow(
                 cfg, pdir, channel=flow_channel, project=flow_project,
                 upscale=flow_upscale, master=flow_master, log=log,

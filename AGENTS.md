@@ -66,14 +66,15 @@ reference into the Flow project gallery once, so the image batch never uploads
   attach-by-name), so it only gets correctness from this stage, not the
   no-upload benefit. Attaching by name there is a Renderly change.
 
-### 4. `flow_batch.json` is dead — decide
+### 4. `flow_batch.json` — REMOVED (2026-09-23)
 
-`prepare_flow_batch()` (pre-existing) writes `data\studio\<n>\flow_batch.json`
-with ref names resolved through the registry, but `run_imagegen_flow` never uses
-the returned path — the driver config points `shotlistPath` at `shotlist.json`,
-so the driver resolves refs itself and the file is rewritten for nothing.
-Either pass `flow_batch.json` to the driver (making registry resolution
-authoritative) or stop writing it and return only the count.
+`prepare_flow_batch()` wrote `data\studio\<n>\flow_batch.json` with ref names
+resolved through the registry, but nothing consumed it: `run_imagegen_flow`
+never used the returned path and the driver config points `shotlistPath` at
+`shotlist.json`, so flow.js resolves refs itself. Its only other reference was
+`RESET_FILES` in webapp.py. The function is now `missing_flow_images()`, which
+returns just the count of images still missing, and the stray file in
+`data\studio\6\` was deleted.
 
 ### 5. Production #6 — finish by hand, then Resume
 
@@ -795,8 +796,9 @@ are unrendered instead of letting sanitize_shotlist shrink the plan.
   without a character/reference bible, so shots PAUSES (auto-run) / errors
   (manual route) when pdir/bible.md is missing. The brief now outputs
   shotlist.json FIRST and the batch sheet second - parse_shotlist_output is
-  already order-agnostic. Per-image "refs" entries pass straight through
-  prepare_flow_batch to flow.js, which resolves bare names against pdir/refs.
+  already order-agnostic. Per-image "refs" entries are resolved by flow.js
+  itself against the production's refs\ folder (the old flow_batch.json that
+  pre-resolved them was unused and has been removed).
 - images: render missing shotlist images via the saved render_mode, defaulting to
   the Flow Driver (falls back to Renderly API only when the Flow Driver is not
   installed) + saved flow_channel/flow_project/upscale — reuse the images-stage form fields.
