@@ -186,6 +186,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("shotlist_judge_provider", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
+    _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
+    _add_column_if_missing(conn, "productions", "flow_project_id", "TEXT")
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str,
@@ -444,7 +446,7 @@ STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
                 "stage_extras", "render_mode", "voice", "own_channel_id",
-                "warning"}
+                "warning", "flow_project_url", "flow_project_id"}
 
 
 def stage_extra(prod, stage: str) -> str:

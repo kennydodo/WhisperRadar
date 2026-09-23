@@ -684,6 +684,39 @@ def flowimagesgen_ready(cfg) -> bool:
         and shutil.which("node") is not None
 
 
+def flow_project_url_for(cfg, pid: int,
+                         override: str | None = None) -> tuple[str | None, str]:
+    """(url, source) for a production's Flow project.
+
+    Precedence: production row -> channel default -> global config. The DB is
+    the truth so that regenerating the job cannot lose the URL and make Flow
+    create a second project for the same video (see AGENTS.md)."""
+    from . import db, settings
+
+    if override and str(override).strip():
+        return str(override).strip(), "explicit"
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if prod is not None:
+                url = (settings.row_get(prod, "flow_project_url")
+                       or "").strip() or None
+                if url:
+                    return url, "production"
+                eff = settings.for_production(conn, prod)
+                url = (eff["flow_project_url"] or "").strip() or None
+                if url:
+                    return url, "channel"
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - never block generation on this
+        log.debug("could not read the production's Flow project: %s", exc)
+    url = (cfg.flowimagesgen_project_url or "").strip() or None
+    return url, "config" if url else "none"
+
+
 def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int,
                               project_url: str | None = None) -> tuple[Path, list[str]]:
     """Build a FlowImagesGen job from the production's shotlist: only the
@@ -734,8 +767,33 @@ def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int,
                      "outputs": 1, "refMode": "reuse"},
         "images": todo,
     }
-    if project_url or cfg.flowimagesgen_project_url:
-        job["projectUrl"] = project_url or cfg.flowimagesgen_project_url
+    url, source = flow_project_url_for(cfg, pid, project_url)
+    if url:
+        job["projectUrl"] = url
+        log.info("FlowImagesGen: Flow project from %s", source)
+    else:
+        # Never silent: without a URL Flow opens its landing page and uses the
+        # most recent project, which may belong to another video.
+        log.warning("FlowImagesGen: no Flow project URL for production %s - "
+                    "Flow will fall back to its most recent project, which may "
+                    "be the wrong one. Set one on the channel, or run the "
+                    "prepare step to create a project for this production.",
+                    pid)
+        from . import db, settings as _settings
+
+        try:
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                if db.get_production(conn, pid) is not None:
+                    db.update_production(
+                        conn, pid,
+                        warning="no Flow project URL - Flow may have used the "
+                                "wrong project for this production's images")
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            pass
     # The shotlist's `style` is a Flow "master prompt" for the Renderly
     # driver; here the per-image prompts already carry the art direction and
     # the style alone can exceed Flow's limit, so it is only sent when the
@@ -1121,8 +1179,27 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         raise RuntimeError("Flow Driver finished but produced no new images "
                            "- check the log")
     if new < todo:
-        log(f"⚠ only {new} of {todo} expected image(s) rendered - the batch "
-            f"was stopped or some cards failed; re-run to fill the gaps")
+        # Everything rendered is already in images\, so nothing is lost. Stop
+        # here rather than reporting success: the merge would otherwise run on
+        # an incomplete set with no visible reason (this is what a stalled
+        # batch - "Flow still busy" timeouts - looks like).
+        try:
+            shotlist = json.loads((pid_dir / "shotlist.json")
+                                  .read_text(encoding="utf-8"))
+            expected = [str(i.get("file")) for i in (shotlist.get("images") or [])
+                        if i.get("file")]
+        except (OSError, ValueError):
+            expected = []
+        missing = [n for n in expected if not (img_dir / n).exists()] or \
+            [f"{todo - new} unnamed card(s)"]
+        raise RuntimeError(
+            f"{len(missing)} of {len(expected) or todo} image(s) were not "
+            f"produced - the batch was stopped or cards failed (Flow reports "
+            f"'still busy' timeouts when this happens). The {new} that "
+            f"succeeded are kept. Fill the gaps - render them, or upload them "
+            f"on the production page (filenames must match) - then Resume. "
+            f"Missing: " + ", ".join(missing[:12])
+            + (" ..." if len(missing) > 12 else ""))
     return new
 
 
@@ -1700,10 +1777,52 @@ def cue_range(text: str) -> tuple[int, int] | None:
     return (start, end) if end >= start else (start, start)
 
 
+# Reference names ARE the identity: FlowImagesGen attaches project assets by
+# name, Renderly resolves them as filenames, and Flow's own card matching is
+# fuzzy. So the shape is enforced, not hoped for.
+REF_NAME_RE = re.compile(r"^(CH|BG|OBJ)_[A-Z0-9]+(?:_[0-9]{2})?$")
+
+
+def ref_name(value) -> str:
+    """The bare reference name for a registry key or an image's ref entry.
+
+    Accepts a name ('CH_MAYA') or a path ('refs/CH_MAYA.png') and returns the
+    stem, so the legacy name -> path registry keeps working."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if "/" in text or "\\" in text or "." in text:
+        return Path(text).stem
+    return text
+
+
+def declared_refs(data: dict) -> dict:
+    """{name: entry} for the shotlist's refs registry, whatever its shape."""
+    refs = data.get("refs")
+    out: dict = {}
+    if isinstance(refs, dict):
+        for key, entry in refs.items():
+            name = ref_name(key)
+            if name:
+                out[name] = entry
+    elif isinstance(refs, list):
+        for entry in refs:
+            if isinstance(entry, str):
+                name = ref_name(entry)
+            elif isinstance(entry, dict):
+                name = ref_name(entry.get("name"))
+            else:
+                continue
+            if name:
+                out[name] = entry
+    return out
+
+
 def shotlist_structural_faults(data: dict, cue_count: int,
                                limit: int = 12) -> list[str]:
     """Objective faults in a shotlist - no LLM, so these must always be zero:
-    cue coverage, ordering, ranges, orphan assets and duplicate prompts."""
+    cue coverage, ordering, ranges, orphan assets, duplicate prompts, and the
+    reference registry (naming convention + every used name declared)."""
     faults: list[str] = []
     shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
     images = [i for i in (data.get("images") or []) if isinstance(i, dict)]
@@ -1767,6 +1886,26 @@ def shotlist_structural_faults(data: dict, cue_count: int,
     if dupes:
         faults.append(f"{len(dupes)} image prompt(s) are exact duplicates: "
                       f"{'; '.join(dupes[:4])}")
+
+    # Reference registry: the names are the contract with Flow, so a bad or
+    # undeclared name must fail here rather than become "reference not found,
+    # skipping" on every rendered image.
+    declared = declared_refs(data)
+    bad = sorted(n for n in declared if not REF_NAME_RE.match(n))
+    if bad:
+        faults.append(f"{len(bad)} reference name(s) break the CH_/BG_/OBJ_ "
+                      f"convention: {', '.join(bad[:6])}")
+    used: set[str] = set()
+    for i in images:
+        for r in (i.get("refs") or []):
+            name = ref_name(r)
+            if name:
+                used.add(name)
+    undeclared = sorted(used - set(declared))
+    if undeclared:
+        faults.append(f"{len(undeclared)} reference name(s) are used by an "
+                      f"image but not declared in the shotlist's refs: "
+                      f"{', '.join(undeclared[:6])}")
     return faults[:limit]
 
 
