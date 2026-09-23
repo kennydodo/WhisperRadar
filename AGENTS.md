@@ -29,22 +29,30 @@ live in ImgToVideo's own render config: `PreviewWidth/PreviewHeight`,
 `FfmpegPath`. Measure what each target leaves in `out\` before claiming the
 "fewer files / smaller" win.
 
-### 2. FlowImagesGen `prepare --report` integration (contract FROZEN — see below)
+### 2. FlowImagesGen `prepare --report` — RECEIVING END DONE (2026-09-23)
 
-Done: `productions.flow_project_url` / `flow_project_id`, `flow_project_url_for()`
-(precedence production -> channel -> global), and `prepare_flowimagesgen_job`
-writes `projectUrl` FROM THE DB (it used to rebuild the job wholesale and lose
-it). Still to do:
+WhisperRadar side is implemented (`c130b5e`), so FlowImagesGen only has to
+WRITE the report:
 
-- invoke `node src/cli.js prepare --job <job.json> --report <prod dir>\flow_prepare.json`
-  before generating; read the report defensively (retry once; malformed/absent =
-  "no project yet")
-- persist `projectUrl`/`projectId` from the report onto the production row
-- run generation with `refMode: "assets"` when every ref reports present,
-  else `reuse`
-- FlowImagesGen side: the `prepare` command itself (create-or-open project,
-  ensure refs in the gallery), the `FLOW_PROJECT_URL=` stdout marker, and the
-  atomic report write
+- `run_flowimagesgen_prepare()` runs `prepare --job <job> --report <prod
+  dir>\flow_prepare.json` before generating, echoes the `FLOW_PROJECT_URL=`
+  marker if printed, and reads the report back defensively (atomic write, so a
+  malformed file is retried; absent = "no project yet").
+- `_apply_prepare_report()` persists `projectUrl`/`projectId` onto the
+  production row, writes `projectUrl` into the job, and switches the job to
+  `refMode: "assets"` when every ref reports uploaded/reused/generated (a
+  `missing` ref warns and falls back to `reuse`). A report with
+  `created: true` while the production already had a different URL warns loudly
+  - that is the duplicate-project signal.
+- Optional throughout: a missing `prepare` command (detected from its usage
+  output), a failure, or an absent report all return `{}` and generation
+  proceeds on the stored URL.
+
+STILL TO DO on the FlowImagesGen side: the `prepare` command itself
+(create-or-open the project, get the refs into the gallery), the
+`FLOW_PROJECT_URL=` marker, and the atomic report write. Also: the refs
+GENERATION (item 3) is what makes `refMode: assets` useful - until refs exist in
+the gallery the report will keep saying `missing`.
 
 ### 3. Reference generation stage (optional per channel) + naming
 
