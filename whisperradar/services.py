@@ -30,9 +30,18 @@ READY_TIMEOUT = 120
 
 
 def _up(url: str, timeout: int = 4) -> bool:
+    """True when something is listening and speaking HTTP at `url`.
+
+    A 4xx/5xx still proves the service is up, and urllib RAISES HTTPError for
+    those, so an error response must not be read as "down" - that mistake made
+    the manager start a second Flow Driver, which died with EADDRINUSE and
+    failed the images stage.
+    """
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
             return 200 <= r.status < 500
+    except urllib.error.HTTPError as exc:
+        return 200 <= exc.code < 600
     except (urllib.error.URLError, OSError):
         return False
 
@@ -42,7 +51,8 @@ def _backend_url(cfg) -> str:
 
 
 def _driver_url(cfg) -> str:
-    return (cfg.flow_driver_url or "http://127.0.0.1:8030").rstrip("/") + "/status"
+    # the driver exposes /api/status (server.js), not /status
+    return (cfg.flow_driver_url or "http://127.0.0.1:8030").rstrip("/") + "/api/status"
 
 
 def _renderly_dir(cfg) -> Path | None:
