@@ -362,8 +362,13 @@ def renderly_channel_list(cfg, ttl: int = 30):
     if not known or now - _channel_cache["at"] >= ttl:
         if not _channel_cache["loading"]:
             _channel_cache["loading"] = True
-            threading.Thread(target=_refresh_channel_cache, args=(cfg,),
-                             daemon=True).start()
+            try:
+                threading.Thread(target=_refresh_channel_cache, args=(cfg,),
+                                 daemon=True).start()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("could not start the Renderly channel probe: %s",
+                            exc)
+                _channel_cache["loading"] = False
     return _channel_cache["data"], _channel_cache["error"], known
 
 

@@ -25,8 +25,8 @@ from flask import (
     send_file,
 )
 
-from . import (ai33, autorun, db, pipeline, producer, scheduler, settings,
-               studio)
+from . import (ai33, autorun, db, pipeline, producer, scheduler, services,
+               settings, studio)
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -295,6 +295,27 @@ def create_app(cfg) -> Flask:
     sched = scheduler.Scheduler(cfg, sjob, _start_producer)
     sched.start()
 
+    def _autostart_services() -> None:
+        """Optionally bring the engine's services up with the dashboard, so
+        there is no .bat to remember."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not settings.load(conn).get("services_autostart"):
+                return
+        finally:
+            conn.close()
+        try:
+            services.MANAGER.ensure(cfg, ["renderly", "flow-driver"],
+                                    log_fn=lambda m: logging.getLogger(
+                                        "whisperradar").info("autostart: %s", m))
+        except Exception as exc:  # noqa: BLE001 - never block the dashboard
+            logging.getLogger("whisperradar").warning(
+                "service autostart failed: %s", exc)
+
+    threading.Thread(target=_autostart_services, name="wr-autostart",
+                     daemon=True).start()
+
     @app.get("/")
     def index():
         conn = db.connect(cfg.db_path)
@@ -433,7 +454,30 @@ def create_app(cfg) -> Flask:
             seed_dirs_text=settings.format_seed_dirs(values.get("seed_dirs")),
             providers=[p["name"] for p in cfg.studio_llm_providers],
             scheduler=sched.status(),
+            services=services.MANAGER.status_cached(cfg),
+            flowimagesgen_ready=studio.flowimagesgen_ready(cfg),
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/services/<name>/<action>")
+    def services_control(name, action):
+        """Start/stop one external tool from the dashboard, so no .bat file is
+        needed. Stop only ever touches a service WhisperRadar started."""
+        if name not in ("renderly", "flow-driver"):
+            return redirect("/settings?error=Unknown+service")
+        log = logging.getLogger("whisperradar")
+        notes: list[str] = []
+        if action == "start":
+            services.MANAGER.start(cfg, name, log_fn=notes.append)
+            msg = f"{name}: " + (notes[-1] if notes else "started")
+        elif action == "stop":
+            ok = services.MANAGER.stop(cfg, name, log_fn=notes.append,
+                                       force=bool(request.form.get("force")))
+            msg = f"{name}: " + (notes[-1] if notes
+                                 else ("stopped" if ok else "not stopped"))
+        else:
+            return redirect("/settings?error=Unknown+action")
+        log.info("services: %s", msg)
+        return redirect("/settings?msg=" + quote(msg))
 
     @app.post("/settings/save")
     def settings_save():

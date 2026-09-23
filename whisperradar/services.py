@@ -18,6 +18,7 @@ Rules, deliberately conservative:
 
 import logging
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -64,19 +65,121 @@ def _driver_dir(cfg) -> Path | None:
 class ServiceManager:
     def __init__(self):
         self._started: dict[str, subprocess.Popen] = {}
+        self._probe_cache: dict = {"at": 0.0, "data": {}, "loading": False}
 
     # ---------------------------------------------------------- probes --
 
     def status(self, cfg) -> dict:
+        """Live probes - only use where a small wait is acceptable."""
         return {
             "renderly": _up(_backend_url(cfg)),
             "flow-driver": _up(_driver_url(cfg)),
             "managed": [n for n in self._started if self._alive(n)],
         }
 
+    def _refresh_probe_cache(self, cfg) -> None:
+        try:
+            data = {"renderly": _up(_backend_url(cfg)),
+                    "flow-driver": _up(_driver_url(cfg))}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("service probe failed: %s", exc)
+            data = {}
+        self._probe_cache.update({"at": time.monotonic(), "data": data,
+                                  "loading": False})
+
+    def _refresh_in_background(self, cfg) -> None:
+        """Spawn the refresh without ever leaving `loading` stuck on."""
+        try:
+            threading.Thread(target=self._refresh_probe_cache, args=(cfg,),
+                             daemon=True).start()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("could not start the service probe: %s", exc)
+            self._probe_cache["loading"] = False
+
+    def status_cached(self, cfg, ttl: int = 15) -> dict:
+        """Status for a page render: never blocks. Refreshes in the
+        background when stale, and reports `checking` until it has data."""
+        now = time.monotonic()
+        data = self._probe_cache["data"]
+        known = bool(data)
+        if not known or now - self._probe_cache["at"] >= ttl:
+            if not self._probe_cache["loading"]:
+                self._probe_cache["loading"] = True
+                self._refresh_in_background(cfg)
+        managed = [n for n in self._started if self._alive(n)]
+        return {"renderly": data.get("renderly"),
+                "flow-driver": data.get("flow-driver"),
+                "known": known, "managed": managed}
+
     def _alive(self, name: str) -> bool:
         proc = self._started.get(name)
         return bool(proc and proc.poll() is None)
+
+    # ------------------------------------------------------- manual use --
+
+    def start(self, cfg, name: str, log_fn=None) -> bool:
+        """Explicit Start button: bring one service up now."""
+        log_fn = log_fn or (lambda m: None)
+        if name in self._started and self._alive(name):
+            return True
+        if name == "renderly":
+            if _up(_backend_url(cfg)):
+                log_fn("Renderly backend is already running (not managed)")
+                return True
+            return self._start_renderly(cfg, log_fn)
+        if name == "flow-driver":
+            if _up(_driver_url(cfg)):
+                log_fn("Flow Driver is already running (not managed)")
+                return True
+            return self._start_driver(cfg, log_fn)
+        raise ValueError(f"unknown service '{name}'")
+
+    def stop(self, cfg, name: str, log_fn=None, force: bool = False) -> bool:
+        """Stop a service. Only ever stops one WE started, unless force."""
+        log_fn = log_fn or (lambda m: None)
+        proc = self._started.get(name)
+        if proc is None or proc.poll() is not None:
+            if not force:
+                log_fn(f"{name} was not started by WhisperRadar - left alone")
+                return False
+            return self._kill_by_name(cfg, name, log_fn)
+        log_fn(f"stopping the {name} service")
+        self._kill(proc)
+        self._started.pop(name, None)
+        return True
+
+    def _kill(self, proc) -> None:
+        try:
+            if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                               capture_output=True, timeout=30)
+            else:
+                proc.terminate()
+        except (OSError, subprocess.SubprocessError) as exc:
+            log.warning("could not stop pid %s: %s", proc.pid, exc)
+
+    def _kill_by_name(self, cfg, name: str, log_fn) -> bool:
+        """Force-stop a service we did not start (the pid is unknown, so this
+        matches on the listening port)."""
+        url = _backend_url(cfg) if name == "renderly" else _driver_url(cfg)
+        port = url.rsplit(":", 1)[-1].split("/")[0]
+        if not hasattr(subprocess, "CREATE_NO_WINDOW"):
+            log_fn(f"force stop is Windows-only - use your own tool for {name}")
+            return False
+        try:
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-NetTCPConnection -LocalPort {port} -State Listen"
+                 f" -ErrorAction SilentlyContinue).OwningProcess"],
+                capture_output=True, text=True, timeout=30).stdout.split()
+            for pid in {p.strip() for p in out if p.strip().isdigit()}:
+                subprocess.run(["taskkill", "/T", "/F", "/PID", pid],
+                               capture_output=True, timeout=30)
+            log_fn(f"force-stopped whatever listened on :{port}")
+            return True
+        except (OSError, subprocess.SubprocessError) as exc:
+            log_fn(f"could not force-stop {name}: {exc}")
+            return False
 
     # ---------------------------------------------------------- start ---
 
@@ -186,16 +289,8 @@ class ServiceManager:
                 self._started.pop(name, None)
                 continue
             log_fn(f"stopping the {name} service (started by WhisperRadar)")
-            try:
-                if hasattr(subprocess, "CREATE_NO_WINDOW"):
-                    subprocess.run(["taskkill", "/T", "/F", "/PID",
-                                    str(proc.pid)], capture_output=True,
-                                   timeout=30)
-                else:
-                    proc.terminate()
-                stopped.append(name)
-            except (OSError, subprocess.SubprocessError) as exc:
-                log.warning("could not stop %s: %s", name, exc)
+            self._kill(proc)
+            stopped.append(name)
             self._started.pop(name, None)
         return stopped
 

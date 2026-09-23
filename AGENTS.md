@@ -97,6 +97,39 @@ STILL OPEN (next steps, in order):
 2. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
 
+### Fewer ports: the dashboard is the control surface (2026-09-23)
+
+The pain was operational sprawl, not the HTTP boundary (the 4s My Channels
+load was a per-channel blocking call - fixed in 504cb7d). What is actually
+needed, and when:
+
+| Tool | Port | Needed when |
+| --- | --- | --- |
+| WhisperRadar dashboard | 8540 | always |
+| Renderly backend | 8022 | Renderly engine only (Gemini, imports, upscale) |
+| Renderly frontend (Vite) | 5173 | NEVER - WhisperRadar uses the backend API |
+| Flow Driver (extension-v2) | 8030 | Renderly engine + flow mode only |
+| FlowImagesGen | none | FlowImagesGen engine only (CLI spawns its own Chrome) |
+| FlowImagesGen UI | 8787 | NEVER - optional frontend |
+
+So the FlowImagesGen engine needs no extra service at all. Renderly's
+start.bat is the main source of sprawl (it opens backend + frontend + driver
+consoles); WhisperRadar starts the backend directly with uvicorn instead.
+
+- **Settings > Tools** lists Renderly backend / Flow Driver / FlowImagesGen
+  with status and Start/Stop buttons (`POST /services/<name>/start|stop`), so
+  no .bat needs to stay open. Status uses `services.MANAGER.status_cached`
+  (stale-while-revalidate, never blocks a page render).
+- **Stop only ever touches a service WhisperRadar started.** Stopping an
+  untracked one returns "left alone". A force stop exists in the API
+  (`force=1`, matches the listening port) but is deliberately NOT in the UI.
+- `services_autostart` (Settings, default off) brings the backend + driver up
+  with the dashboard, in a background thread so boot stays instant.
+- Keep the thread-spawn pattern defensive: set the `loading` flag, spawn, and
+  reset the flag if the spawn raises - a stuck flag silently disables the
+  cache forever (that bug bit both `services.status_cached` and
+  `studio.renderly_channel_list`; `threading` was also missing from services).
+
 ### Per-channel vs global settings — map (2026-09-22)
 
 The Settings page holds GLOBALS; every channel can override the production

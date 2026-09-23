@@ -19,6 +19,13 @@ SPEC: list[dict] = [
                 "runs by itself.",
     },
     {
+        "key": "services_autostart", "type": "bool", "default": False,
+        "label": "Start tools with the dashboard",
+        "help": "Bring Renderly's backend and the Flow Driver up when the "
+                "dashboard starts, so there is no .bat to run. Off = they are "
+                "started on demand by the images stage.",
+    },
+    {
         "key": "services_managed", "type": "bool", "default": False,
         "label": "Stop services after the images stage",
         "help": "WhisperRadar starts what the images stage needs and, with this "

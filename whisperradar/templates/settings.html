@@ -66,6 +66,54 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
+  <h2>Tools</h2>
+  <div class="panel">
+    <div class="muted" style="font-size:12px; margin-bottom:10px">
+      External tools are consumed in place from their own checkouts. Start and
+      stop them here instead of keeping .bat windows open - WhisperRadar only
+      ever stops a service it started itself. The <b>FlowImagesGen</b> engine
+      needs no service at all: it is a CLI that drives its own browser.
+    </div>
+    {% macro svc(name, label, up, port, note) %}
+    <div class="inline" style="justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border)">
+      <div>
+        <b>{{ label }}</b>
+        <span class="mono muted" style="font-size:12px">:{{ port }}</span>
+        {% if up is none %}<span class="badge warn">checking</span>
+        {% elif up %}<span class="badge on">running</span>
+        {% else %}<span class="badge off">stopped</span>{% endif %}
+        <div class="muted" style="font-size:12px">{{ note }}</div>
+      </div>
+      <div style="white-space:nowrap">
+        <form method="post" action="/services/{{ name }}/start" style="display:inline">
+          <button type="submit" class="secondary" {{ 'disabled' if up else '' }}>Start</button>
+        </form>
+        <form method="post" action="/services/{{ name }}/stop" style="display:inline">
+          <button type="submit" class="ghost" {{ 'disabled' if not up else '' }}>Stop</button>
+        </form>
+      </div>
+    </div>
+    {% endmacro %}
+    {{ svc("renderly", "Renderly backend", services.renderly, "8022",
+           "Gemini image API, imports and upscaling - needed by the Renderly engine") }}
+    {{ svc("flow-driver", "Flow Driver", services["flow-driver"], "8030",
+           "extension-v2 - drives Google Flow for the Renderly engine's flow mode") }}
+    <div class="inline" style="justify-content:space-between; padding:6px 0">
+      <div>
+        <b>FlowImagesGen</b>
+        <span class="muted mono" style="font-size:12px">no port</span>
+        {% if flowimagesgen_ready %}<span class="badge on">installed</span>
+        {% else %}<span class="badge off">not configured</span>{% endif %}
+        <div class="muted" style="font-size:12px">
+          Standalone Flow CLI (studio.flowimagesgen_repo). Spawns its own
+          browser per batch; nothing to keep running.
+        </div>
+      </div>
+      <div></div>
+    </div>
+  </div>
+
+  <h2>Auto Run criteria</h2>
   <div class="panel">
     <div class="muted" style="font-size:12px; margin-bottom:12px">
       These are the global producer defaults. Per-channel overrides live on
