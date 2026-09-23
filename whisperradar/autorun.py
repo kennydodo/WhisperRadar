@@ -287,6 +287,18 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         stamp = time.strftime("%Y%m%d-%H%M%S")
         shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
     script_path.write_text(text + "\n", encoding="utf-8")
+    # Persist the judge's per-attempt scores, criteria and feedback. Without
+    # this the only trace of WHY a draft was rejected is the log line, and a
+    # "rating 5.5 vs min 9.4" warning is unactionable.
+    (auto_dir / "review.json").write_text(
+        json.dumps([{"attempt": a["attempt"], "score": a["score"],
+                     "overlap": round(a["overlap"], 4), "passed": a["passed"],
+                     "criteria": a["rating"].get("criteria") or {},
+                     "feedback": a["rating"].get("feedback") or [],
+                     "weak_spans": a["rating"].get("weak_spans") or [],
+                     "judge_error": a["rating"].get("error")}
+                    for a in attempts], indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8")
 
     conn = _connect(cfg)
     try:
@@ -773,7 +785,8 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None) -> dict:
     return {}
 
 
-def run_pipeline(cfg, pid: int, job=None, log=None) -> str:
+def run_pipeline(cfg, pid: int, job=None, log=None,
+                 stop_before: str | None = None) -> str:
     """Run every remaining stage in order, skipping the ones that are
     already done and pausing when manual input is missing.
 
@@ -794,6 +807,16 @@ def run_pipeline(cfg, pid: int, job=None, log=None) -> str:
     ran = 0
     cancel_check = lambda: job is not None and bool(job.cancel)
     for i, stage in enumerate(RUN_STAGES, 1):
+        if stop_before and stage == stop_before:
+            # a deliberate halt (e.g. "plan the script and shotlist, but do
+            # not spend image credits yet") - not a failure, so the run is
+            # resumable and no problem notification is sent
+            log(f"[auto-run] stopping before stage {i}/{total}: {stage} "
+                f"(requested)")
+            _set_stage(cfg, pid, stage)
+            if job is not None:
+                job.resume = True
+            return "stopped"
         if job is not None and job.cancel:
             log(f"[auto-run] stopped by user before stage {i}/{total}: "
                 f"{stage}")

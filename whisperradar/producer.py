@@ -213,8 +213,12 @@ def build_plan(cfg, conn) -> list[dict]:
     return plan
 
 
-def run(cfg, log=None, job=None) -> dict:
+def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
     """Create + queue a production per runnable channel, then run each one.
+
+    `stop_before` halts each production's pipeline at that stage (e.g.
+    "images"), so a run can plan the script and shotlist without spending
+    image credits.
 
     Returns {created: [...], skipped: [...], result: 'ok'|'paused:...'|
     'failed:...'}. Stops the whole run on the first pause/failure - a paused
@@ -274,7 +278,8 @@ def run(cfg, log=None, job=None) -> dict:
             result = "stopped"
             break
         log(f"[produce] running production {item['pid']}: {item['title']}")
-        result = autorun.run_pipeline(cfg, item["pid"], job=job, log=log)
+        result = autorun.run_pipeline(cfg, item["pid"], job=job, log=log,
+                                      stop_before=stop_before)
         if result != "ok":
             log(f"[produce] stopping: production {item['pid']} returned "
                 f"{result}")
@@ -291,6 +296,10 @@ def _notify_outcome(cfg, created, skipped, result, log) -> None:
         try:
             conf = notify.config_for(conn)
             if not (conf["desktop"] or conf["url"]):
+                return
+            if result == "stopped":
+                # a deliberate halt (stop_before, or the user cancelling) is
+                # not a problem - do not cry wolf
                 return
             if result == "ok":
                 if not conf["on_success"]:
