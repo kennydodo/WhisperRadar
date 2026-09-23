@@ -582,6 +582,9 @@ def create_app(cfg) -> Flask:
                     "flow_project_url"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip() or None
+        for key in ("style", "bible"):   # multi-line text: keep newlines
+            if key in request.form:
+                fields[key] = (request.form.get(key) or "").strip() or None
         for key in ("default_engine", "default_render_mode", "topic_pick"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip() or None
@@ -857,10 +860,12 @@ def create_app(cfg) -> Flask:
             pdir = studio.prod_dir(cfg, pid)
             shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
         msg = ""
-        if seeded["bible"] or seeded["refs"]:
+        if seeded["bible"] or seeded["style"] or seeded["refs"]:
             bits = []
             if seeded["bible"]:
                 bits.append("bible.md")
+            if seeded["style"]:
+                bits.append("style.md")
             if seeded["refs"]:
                 bits.append(f"{seeded['refs']} ref image(s)")
             msg = (f"?msg={quote('Seeded ' + ' + '.join(bits) + ' from ' + seeded['source'])}")
@@ -1113,11 +1118,13 @@ def create_app(cfg) -> Flask:
         bits = []
         if result["bible"]:
             bits.append("bible.md")
+        if result.get("style"):
+            bits.append("style.md")
         if result["refs"]:
             bits.append(f"{result['refs']} ref image(s)")
         if not bits:
-            return _studio_url(pid, msg="Nothing to seed - bible.md and refs "
-                                        "already exist")
+            return _studio_url(pid, msg="Nothing to seed - bible.md, style.md "
+                                        "and refs already exist")
         return _studio_url(
             pid, msg=f"Seeded {' + '.join(bits)} from {result['source']}")
 

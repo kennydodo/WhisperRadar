@@ -692,6 +692,15 @@ def run_pipeline(cfg, pid: int, job=None, log=None) -> str:
         if result.startswith("failed:"):
             error = result.split(":", 1)[1]
             log(f"[auto-run] stage {i}/{total}: {stage} - FAILED: {error}")
+            # persist it: a CLI/auto-run failure used to leave no trace once
+            # the process exited, so the reason vanished with the log
+            conn = _connect(cfg)
+            try:
+                db.add_step(conn, pid, stage, "auto", status="failed",
+                            detail=f"FAILED: {error}"[:500])
+                db.update_production(conn, pid, status="failed")
+            finally:
+                conn.close()
             if job is not None:
                 job.resume = True
             return result

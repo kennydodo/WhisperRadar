@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS own_channels (
     default_upscale INTEGER,
     bible_dir TEXT,
     refs_dir TEXT,
+    -- text defaults seeded into a new production's style.md / bible.md
+    style TEXT,
+    bible TEXT,
     -- Google Flow project URL used by the FlowImagesGen engine
     flow_project_url TEXT,
     -- auto-run criteria (NULL = inherit the global setting)
@@ -171,7 +174,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("run_window_start", "TEXT"),
                          ("run_window_end", "TEXT"),
                          ("candidate_window_days", "INTEGER"),
-                         ("producer_llm_provider", "TEXT")):
+                         ("producer_llm_provider", "TEXT"),
+                         ("style", "TEXT"),
+                         ("bible", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
 
 
@@ -484,11 +489,15 @@ def delete_production(conn, pid: int) -> None:
 
 
 def add_step(conn, pid: int, stage: str, method: str = "auto",
-             artifact: str | None = None, detail: str = "") -> None:
+             artifact: str | None = None, detail: str = "",
+             status: str = "done") -> None:
+    """Record a step. `status='failed'` is used for a stage that errored:
+    latest_steps() only counts 'done', so a failure never looks like
+    completion and the stage is retried on resume."""
     conn.execute(
         "INSERT INTO production_steps (production_id, stage, method, status,"
-        " artifact, detail) VALUES (?, ?, ?, 'done', ?, ?)",
-        (pid, stage, method, artifact, detail),
+        " artifact, detail) VALUES (?, ?, ?, ?, ?, ?)",
+        (pid, stage, method, status, artifact, detail),
     )
     conn.commit()
 
@@ -557,7 +566,8 @@ def finish_run(conn, run_id: int, **counts) -> None:
 _OWN_CHANNEL_FIELDS = {
     "name", "description", "genre", "youtube_handle", "active",
     "default_voice", "default_engine", "default_render_mode",
-    "default_upscale", "bible_dir", "refs_dir", "flow_project_url",
+    "default_upscale", "bible_dir", "refs_dir", "style", "bible",
+    "flow_project_url",
     "autorun_enabled", "per_day", "topic_pick",
     "run_window_start", "run_window_end", "candidate_window_days",
     "producer_llm_provider",

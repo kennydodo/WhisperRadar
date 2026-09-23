@@ -193,21 +193,23 @@ def find_bible(pid_dir: Path) -> Path | None:
 
 
 def seed_production(cfg, conn, prod, log=None) -> dict:
-    """Copy the channel's bible.md and refs\\ into a production folder.
+    """Seed a production folder with the channel's art direction.
 
-    Source order: the production's own channel (bible_dir / refs_dir), then
-    the global per-genre `seed_dirs` entry for the production's genre. This
-    is what keeps an unattended run from pausing at the shots stage, whose
-    planning brief refuses to plan without a bible.
+    Text: the channel's `bible` and `style` are written straight into
+    bible.md / style.md. Folders: `bible_dir` (holding bible.md) and
+    `refs_dir` (copied into refs\\), else the global per-genre `seed_dirs`
+    entry for the production's genre. This is what keeps an unattended run
+    from pausing at the shots stage, whose planning brief refuses to plan
+    without a bible.
 
     Idempotent: existing files are never overwritten. Returns
-    {bible, refs, source} - source is '' when there is nothing to seed.
+    {bible, style, refs, source} - source is '' when there is nothing to seed.
     """
     from . import settings
 
     log = log or (lambda m: None)
     if prod is None:
-        return {"bible": False, "refs": 0, "source": ""}
+        return {"bible": False, "style": False, "refs": 0, "source": ""}
     pdir = prod_dir(cfg, prod["id"])
     eff = settings.for_production(conn, prod)
     genre = (prod["genre"] if "genre" in prod.keys() else None) or "general"
@@ -219,7 +221,7 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
 
     bible_dir: Path | None = None
     refs_dir: Path | None = None
-    if eff["bible_dir"] or eff["refs_dir"]:
+    if eff["bible_dir"] or eff["refs_dir"] or eff["bible"] or eff["style"]:
         source = eff["own_channel_name"] or "own channel"
         if eff["bible_dir"]:
             bible_dir = Path(eff["bible_dir"]).expanduser()
@@ -231,7 +233,7 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
         bible_dir = Path(seed).expanduser()
         source = f"seed_dirs[{genre}]"
     else:
-        return {"bible": False, "refs": 0, "source": ""}
+        return {"bible": False, "style": False, "refs": 0, "source": ""}
 
     # a single seed folder keeps the refs in a refs\ subfolder
     if refs_dir is None and bible_dir is not None \
@@ -239,6 +241,30 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
         refs_dir = bible_dir / "refs"
 
     copied_bible = False
+    copied_style = False
+    # a channel's text bible/style is written straight into the production,
+    # so an unattended run is not left without the art direction
+    if eff["bible"] and not (pdir / "bible.md").exists():
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "bible.md").write_text(str(eff["bible"]).strip() + "\n",
+                                       encoding="utf-8")
+        copied_bible = True
+        log("seeded bible.md from the channel's bible text")
+    if eff["style"] and not (pdir / "style.md").exists():
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "style.md").write_text(str(eff["style"]).strip() + "\n",
+                                       encoding="utf-8")
+        copied_style = True
+        log("seeded style.md from the channel's style text")
+    elif eff["bible"] and not eff["style"] and not (pdir / "style.md").exists():
+        # a channel that only wrote one art bible should not have to repeat it:
+        # the shots stage reads style.md for art direction and bible.md for
+        # consistency rules, so seed both from the same text
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "style.md").write_text(str(eff["bible"]).strip() + "\n",
+                                       encoding="utf-8")
+        copied_style = True
+        log("seeded style.md from the channel's bible text")
     bible_src = bible_dir / "bible.md" if bible_dir else None
     if bible_src and bible_src.is_file() and not (pdir / "bible.md").exists():
         pdir.mkdir(parents=True, exist_ok=True)
@@ -261,7 +287,8 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
         if copied_refs:
             log(f"seeded {copied_refs} ref image(s) from {refs_dir}")
 
-    return {"bible": copied_bible, "refs": copied_refs, "source": source}
+    return {"bible": copied_bible, "style": copied_style,
+            "refs": copied_refs, "source": source}
 
 
 def find_images(pid_dir: Path) -> list[Path]:

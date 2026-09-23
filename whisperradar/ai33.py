@@ -22,6 +22,16 @@ REQUEST_TIMEOUT = 60
 VOICES_CACHE_TTL = 600
 VOICES_MAX_PAGES = 40  # safety cap: 40 pages x page_size per provider
 
+# cdn.ai33.pro rejects requests without a browser-like User-Agent (Cloudflare
+# error 1010), so every call sends one.
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
 # studio.ai33_voice_source / the studio.ai33_voices sentinel that makes the
 # picker show the voices starred in the OpenSpeaker app instead of a
 # hand-written shortlist.
@@ -158,6 +168,11 @@ def _log(msg: str) -> None:
 def _request(url: str, api_key: str, *, data: bytes | None = None,
              headers: dict | None = None, method: str = "GET") -> bytes:
     req = urllib.request.Request(url, data=data, method=method)
+    # cdn.ai33.pro sits behind Cloudflare, which bans urllib's default
+    # "Python-urllib/3.x" signature with error 1010 - the API host does not
+    # care, but the mp3 download does. Send a browser-like agent everywhere.
+    for key, val in DEFAULT_HEADERS.items():
+        req.add_header(key, val)
     req.add_header("xi-api-key", api_key)
     for key, val in (headers or {}).items():
         req.add_header(key, val)

@@ -235,14 +235,24 @@
               </label>
             </div>
             <div class="inline" style="margin-top:8px">
+              <label style="flex:1 1 45%">style guide (seeds style.md)
+                <textarea name="style" style="min-height:90px"
+                          placeholder="Art direction applied to every image prompt, e.g. Flat 2D vector illustration, thick hand-drawn outlines, flat single-colour fills, no gradients...">{{ ch['style'] or '' }}</textarea>
+              </label>
+              <label style="flex:1 1 45%">bible (seeds bible.md)
+                <textarea name="bible" style="min-height:90px"
+                          placeholder="Recurring characters, environments, wardrobe, props - kept identical across images. Required before planning; a run pauses at the shots stage without it.">{{ ch['bible'] or '' }}</textarea>
+              </label>
+            </div>
+            <div class="inline" style="margin-top:8px">
               <label>bible folder
                 <input type="text" name="bible_dir"
-                       value="{{ ch['bible_dir'] or '' }}" placeholder="folder holding bible.md"
+                       value="{{ ch['bible_dir'] or '' }}" placeholder="folder holding bible.md (optional)"
                        style="width:330px">
               </label>
               <label>refs folder
                 <input type="text" name="refs_dir"
-                       value="{{ ch['refs_dir'] or '' }}" placeholder="folder copied into refs\"
+                       value="{{ ch['refs_dir'] or '' }}" placeholder="folder copied into refs\ (optional)"
                        style="width:330px">
               </label>
             </div>

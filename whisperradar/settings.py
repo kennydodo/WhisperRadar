@@ -277,6 +277,9 @@ def for_production(conn, prod) -> dict:
                            and bool(row_get(own, "autorun_enabled", 1)),
         "bible_dir": row_get(own, "bible_dir"),
         "refs_dir": row_get(own, "refs_dir"),
+        # text defaults seeded into a new production's style.md / bible.md
+        "style": row_get(own, "style"),
+        "bible": row_get(own, "bible"),
         # Google Flow project URL for the FlowImagesGen engine, when the
         # channel sets one (callers fall back to the global config value).
         "flow_project_url": row_get(own, "flow_project_url"),
