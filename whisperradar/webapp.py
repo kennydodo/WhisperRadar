@@ -625,6 +625,25 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("script_judge_provider") or "").strip()
             known = {p["name"] for p in cfg.studio_llm_providers}
             fields["script_judge_provider"] = raw if raw in known else None
+        # shotlist gate overrides
+        if "shotlist_min_alignment" in request.form:
+            raw = (request.form.get("shotlist_min_alignment") or "").strip()
+            try:
+                fields["shotlist_min_alignment"] = (max(0.0, min(1.0, float(raw)))
+                                                    if raw else None)
+            except ValueError:
+                fields["shotlist_min_alignment"] = None
+        if "shotlist_max_attempts" in request.form:
+            raw = (request.form.get("shotlist_max_attempts") or "").strip()
+            try:
+                fields["shotlist_max_attempts"] = (max(1, min(5, int(raw)))
+                                                   if raw else None)
+            except ValueError:
+                fields["shotlist_max_attempts"] = None
+        if "shotlist_judge_provider" in request.form:
+            raw = (request.form.get("shotlist_judge_provider") or "").strip()
+            known = {p["name"] for p in cfg.studio_llm_providers}
+            fields["shotlist_judge_provider"] = raw if raw in known else None
         if "default_upscale" in request.form:
             raw = (request.form.get("default_upscale") or "").strip()
             try:

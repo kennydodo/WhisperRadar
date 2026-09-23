@@ -80,6 +80,28 @@ SPEC: list[dict] = [
                 "day, across all channels. 0 = no cap.",
     },
     {
+        "key": "shotlist_min_alignment", "type": "float", "default": 0.90,
+        "min": 0.0, "max": 1.0,
+        "label": "Shotlist: minimum alignment",
+        "help": "Share of shots whose image prompt must depict what the "
+                "narration says at their cues. Checked after the shotlist is "
+                "planned and BEFORE any image is rendered. 0.90 = 90%.",
+    },
+    {
+        "key": "shotlist_max_attempts", "type": "int", "default": 2,
+        "min": 1, "max": 5,
+        "label": "Shotlist: max attempts",
+        "help": "How many times to re-plan the shotlist with the mismatch "
+                "list fed back. Structural faults (coverage, order, orphan "
+                "assets, duplicates) must always be zero.",
+    },
+    {
+        "key": "shotlist_judge_provider", "type": "provider", "default": "",
+        "label": "Shotlist: judge LLM",
+        "help": "Which provider checks shot-to-narration alignment. Empty = "
+                "automatically a different provider from the planner.",
+    },
+    {
         "key": "script_min_rating", "type": "float", "default": 9.0,
         "min": 1.0, "max": 10.0,
         "label": "Script: minimum rating",
@@ -332,6 +354,13 @@ def for_production(conn, prod) -> dict:
                                            glob["script_max_attempts"])),
         "script_judge_provider": (row_get(own, "script_judge_provider")
                                   or glob["script_judge_provider"] or None),
+        # shotlist gate
+        "shotlist_min_alignment": float(row_get(own, "shotlist_min_alignment",
+                                                glob["shotlist_min_alignment"])),
+        "shotlist_max_attempts": int(row_get(own, "shotlist_max_attempts",
+                                             glob["shotlist_max_attempts"])),
+        "shotlist_judge_provider": (row_get(own, "shotlist_judge_provider")
+                                    or glob["shotlist_judge_provider"] or None),
         "autorun_enabled": bool(glob["autorun_enabled"])
                            and bool(row_get(own, "autorun_enabled", 1)),
         "bible_dir": row_get(own, "bible_dir"),

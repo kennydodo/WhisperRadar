@@ -299,13 +299,18 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         if passed:
             db.add_step(conn, pid, "script", "auto", detail=detail)
         else:
+            # "accept best and continue" means the draft IS this stage's
+            # artifact, so the step counts as done. Recording it as failed
+            # would make a later resume regenerate the script - and the audio
+            # and subtitles were already built from this one. The warning
+            # column is what flags it to the user.
             warning = (f"script gate failed after {len(attempts)} attempt(s) - "
                        f"kept the best: rating "
                        f"{best['score'] if best['score'] is not None else 'n/a'} "
                        f"(min {min_rating}), overlap {best['overlap']:.1%} "
                        f"(target {max_overlap:.0%})")
             db.update_production(conn, pid, warning=warning)
-            db.add_step(conn, pid, "script", "auto", status="failed",
+            db.add_step(conn, pid, "script", "auto",
                         detail=detail + " | " + warning)
     finally:
         conn.close()
@@ -388,26 +393,93 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         style_guide = style.read_text(encoding="utf-8") if style else ""
         bible_text = bible.read_text(encoding="utf-8")
         brief = studio.load_manifest_brief(cfg)
-        prompt = studio.shotlist_prompt(
-            brief, srt.read_text(encoding="utf-8"), style_guide,
-            extra_direction=db.stage_extra(prod, "shots"),
-            bible=bible_text)
-        text = studio.llm_generate(cfg, prompt, provider=provider)
-        data, sheet = studio.parse_shotlist_output(text)
+        srt_text = srt.read_text(encoding="utf-8")
+        cues = studio.parse_srt_cues(srt_text)
+        eff = _effective(cfg, pid)
+        min_align = eff["shotlist_min_alignment"]
+        attempts_allowed = max(1, int(eff["shotlist_max_attempts"]))
+        judge = studio.judge_provider(cfg, provider,
+                                      eff["shotlist_judge_provider"])
+        feedback = ""
+        attempts: list[dict] = []
+        data: dict = {}
+        sheet = ""
+        for attempt in range(1, attempts_allowed + 1):
+            prompt = studio.shotlist_prompt(
+                brief, srt_text, style_guide,
+                extra_direction=db.stage_extra(prod, "shots"),
+                bible=bible_text, feedback=feedback)
+            text = studio.llm_generate(cfg, prompt, provider=provider)
+            data, sheet = studio.parse_shotlist_output(text)
+            review = studio.review_shotlist(cfg, data, cues, judge)
+            passed = (not review["faults"] and review["ratio"] >= min_align)
+            attempts.append({**review, "attempt": attempt, "data": data,
+                             "sheet": sheet})
+            _log_line(f"shotlist attempt {attempt}: "
+                      f"{review['matched']}/{review['total']} shots match "
+                      f"({review['ratio']:.0%}), "
+                      f"{len(review['faults'])} structural fault(s)")
+            if passed:
+                break
+            feedback = _shotlist_feedback(review, min_align)
+
+        best = max(attempts, key=lambda a: (not a["faults"], a["ratio"]))
+        data, sheet = best["data"], best["sheet"]
+        passed = not best["faults"] and best["ratio"] >= min_align
         (pdir / "shotlist.json").write_text(
             json.dumps(data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
         if sheet:
             (pdir / "batch_sheet.txt").write_text(
                 sheet + "\n", encoding="utf-8")
+        review_dir = pdir / "versions" / "shotlist"
+        review_dir.mkdir(parents=True, exist_ok=True)
+        (review_dir / "review.json").write_text(
+            json.dumps([{k: v for k, v in a.items()
+                         if k not in ("data", "sheet")} for a in attempts],
+                       indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         db.update_production(conn, pid, llm_provider=provider)
-        db.add_step(conn, pid, "shots", "auto",
-                    detail=f"{len(data.get('images', []))} image(s) in "
-                           f"{len(data.get('shots', []))} shot(s) via "
-                           f"manifest brief, took "
-                           f"{format_duration(time.monotonic() - t0)}")
+        detail = (f"{len(data.get('images', []))} image(s) in "
+                  f"{len(data.get('shots', []))} shot(s) via manifest brief, "
+                  f"best of {len(attempts)} attempt(s): alignment "
+                  f"{best['matched']}/{best['total']} ({best['ratio']:.0%}, "
+                  f"min {min_align:.0%}), {len(best['faults'])} structural "
+                  f"fault(s), judged by {judge}, "
+                  f"took {format_duration(time.monotonic() - t0)}")
+        if passed:
+            db.add_step(conn, pid, "shots", "auto", detail=detail)
+        else:
+            # same reasoning as the script gate: we keep the best shotlist and
+            # carry on to images, so it IS this stage's artifact. Marking it
+            # failed would re-plan it on a resume and orphan the rendered
+            # images. The warning flags it instead.
+            warning = _shotlist_feedback(best, min_align)[:900]
+            db.update_production(conn, pid, warning=warning)
+            db.add_step(conn, pid, "shots", "auto",
+                        detail=detail + " | " + warning)
     finally:
         conn.close()
+
+
+def _shotlist_feedback(review: dict, min_align: float) -> str:
+    """The correction list fed into the next shotlist attempt."""
+    parts = []
+    if review["faults"]:
+        parts.append("STRUCTURAL FAULTS (must be zero):\n"
+                     + "\n".join(f"- {f}" for f in review["faults"]))
+    if review["ratio"] < min_align:
+        parts.append(f"Only {review['matched']}/{review['total']} shots "
+                     f"({review['ratio']:.0%}) depict what the narration says "
+                     f"at their cues; {min_align:.0%} is required. Re-plan the "
+                     f"shots below so each image matches the narration at its "
+                     f"cue range:")
+        for m in review["mismatched"][:10]:
+            parts.append(f"- {m['asset']}: {m['reason']}")
+    if not parts:
+        return ""
+    parts.append("Keep everything that already passed; change only what is "
+                 "listed. Return the complete shotlist again.")
+    return "\n".join(parts)
 
 
 def _run_images(cfg, pid: int, mode: str | None = None,

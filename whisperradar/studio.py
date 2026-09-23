@@ -1573,7 +1573,8 @@ def parse_shotlist_output(text: str) -> tuple[dict, str]:
 
 
 def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
-                    extra_direction: str = "", bible: str = "") -> str:
+                    extra_direction: str = "", bible: str = "",
+                    feedback: str = "") -> str:
     """Assemble the manifest-authoring brief with its inputs: the full
     narration SRT, the channel visual style, the optional character /
     reference bible, and the creator's per-stage direction."""
@@ -1591,6 +1592,11 @@ def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
     extra = (extra_direction or "").strip()
     if extra:
         extra = f"\n\nINPUT 4 - CREATOR DIRECTION (follow it):\n{extra}"
+    fix_block = ""
+    if (feedback or "").strip():
+        fix_block = (f"\n\nINPUT 5 - FIXES REQUIRED IN THIS REVISION "
+                     f"(the previous shotlist was rejected - address every "
+                     f"point):\n{feedback.strip()}")
     return f"""{brief_text.strip()}
 
 ---
@@ -1598,7 +1604,171 @@ def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
 INPUT 1 - THE FULL NARRATION SRT:
 {srt_text.strip()}
 
-{style_block}{bible_block}{extra}"""
+{style_block}{bible_block}{extra}{fix_block}"""
+
+
+# ------------------------------------------- shotlist review (shots gate) ---
+# The shotlist declares which SRT cues each shot illustrates (`cues: "3-9"`),
+# so alignment is verifiable BEFORE any image is rendered. Structural faults
+# are objective (coverage, order, ranges, orphan assets) and are checked for
+# free; whether a prompt actually depicts its narration needs the LLM.
+
+_CUE_RANGE_RE = re.compile(r"^\s*(\d+)\s*(?:-\s*(\d+))?\s*$")
+_SRT_BLOCK_RE = re.compile(
+    r"(\d+)\s*\n\s*(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*"
+    r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*\n(.*?)(?=\n\s*\n|\Z)", re.S)
+
+
+def parse_srt_cues(srt_text: str) -> list[dict]:
+    """[{index, start, end, text}] for every cue in an SRT."""
+    cues = []
+    for m in _SRT_BLOCK_RE.finditer(srt_text or ""):
+        cues.append({"index": int(m.group(1)), "start": m.group(2),
+                     "end": m.group(3),
+                     "text": " ".join(m.group(4).split())})
+    return cues
+
+
+def cue_range(text: str) -> tuple[int, int] | None:
+    m = _CUE_RANGE_RE.match(str(text or ""))
+    if not m:
+        return None
+    start = int(m.group(1))
+    end = int(m.group(2)) if m.group(2) else start
+    return (start, end) if end >= start else (start, start)
+
+
+def shotlist_structural_faults(data: dict, cue_count: int,
+                               limit: int = 12) -> list[str]:
+    """Objective faults in a shotlist - no LLM, so these must always be zero:
+    cue coverage, ordering, ranges, orphan assets and duplicate prompts."""
+    faults: list[str] = []
+    shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
+    images = [i for i in (data.get("images") or []) if isinstance(i, dict)]
+    if not shots:
+        return ["no shots in the shotlist"]
+    if not images:
+        faults.append("no images in the shotlist")
+
+    ranges: list[tuple[int, int]] = []
+    for s in shots:
+        rng = cue_range(s.get("cues"))
+        if rng is None:
+            faults.append(f"shot {s.get('asset') or '?'} has no usable "
+                          f"'cues' range ({s.get('cues')!r})")
+            continue
+        ranges.append(rng)
+
+    if ranges:
+        covered: set[int] = set()
+        for start, end in ranges:
+            covered.update(range(start, end + 1))
+        missing = sorted(set(range(1, cue_count + 1)) - covered)
+        if missing:
+            shown = ", ".join(str(c) for c in missing[:limit])
+            faults.append(f"{len(missing)} narration cue(s) have no shot: "
+                          f"{shown}{' …' if len(missing) > limit else ''}")
+        beyond = sorted(c for c in covered if c > cue_count)
+        if beyond:
+            faults.append(f"{len(beyond)} cue number(s) exceed the SRT "
+                          f"({cue_count} cues): {beyond[:5]}")
+        for i in range(1, len(ranges)):
+            if ranges[i][0] < ranges[i - 1][0]:
+                faults.append(f"shots are out of narration order at shot "
+                              f"{i + 1} (cue {ranges[i][0]} after "
+                              f"{ranges[i - 1][0]})")
+                break
+        for i in range(1, len(ranges)):
+            if ranges[i][0] <= ranges[i - 1][1]:
+                faults.append(f"overlapping cue ranges at shot {i + 1} "
+                              f"({ranges[i - 1][0]}-{ranges[i - 1][1]} then "
+                              f"{ranges[i][0]}-{ranges[i][1]})")
+                break
+
+    names = {str(i.get("file")) for i in images if i.get("file")}
+    orphans = sorted({str(s.get("asset")) for s in shots if s.get("asset")}
+                     - names)
+    if orphans:
+        faults.append(f"{len(orphans)} shot(s) reference an asset that is not "
+                      f"in images: {', '.join(orphans[:5])}")
+
+    seen: dict[str, str] = {}
+    dupes = []
+    for i in images:
+        prompt = " ".join(str(i.get("prompt") or "").lower().split())
+        if not prompt:
+            continue
+        if prompt in seen:
+            dupes.append(f"{i.get('file')} duplicates {seen[prompt]}")
+        else:
+            seen[prompt] = str(i.get("file"))
+    if dupes:
+        faults.append(f"{len(dupes)} image prompt(s) are exact duplicates: "
+                      f"{'; '.join(dupes[:4])}")
+    return faults[:limit]
+
+
+def alignment_prompt(chunk: list[dict], cues: dict[int, str]) -> str:
+    items = []
+    for s in chunk:
+        rng = cue_range(s.get("cues")) or (0, 0)
+        narration = " ".join(cues.get(c, "") for c in range(rng[0], rng[1] + 1))
+        items.append(f'- asset: {s.get("asset")}\n'
+                     f'  cues {rng[0]}-{rng[1]} say: "{narration[:600]}"\n'
+                     f'  image prompt: "{str(s.get("prompt"))[:600]}"')
+    return (
+        "You are checking a video's shotlist against its narration. For each "
+        "shot, decide whether the IMAGE PROMPT depicts what the NARRATION at "
+        "that point actually says. A shot fails if it shows something the "
+        "narration does not mention at that moment, illustrates the wrong "
+        "beat, is a generic filler image, or contradicts the narration. "
+        "Stylistic differences are fine; wrong subject matter is not.\n\n"
+        + "\n".join(items) +
+        "\n\nReply with ONLY a JSON object:\n"
+        '{"mismatched": [{"asset": "<asset>", "reason": "<what the narration '
+        'says vs what the image shows>"}], "matched": <count of shots that '
+        'are correct>}'
+    )
+
+
+def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
+                    chunk_size: int = 20) -> dict:
+    """Structural faults + LLM content match. Returns
+    {faults, matched, total, mismatched, ratio, error}. Never raises."""
+    faults = shotlist_structural_faults(data, len(cues))
+    cue_text = {c["index"]: c["text"] for c in cues}
+    shots = []
+    prompt_by_file = {str(i.get("file")): i.get("prompt")
+                      for i in (data.get("images") or [])
+                      if isinstance(i, dict)}
+    for s in (data.get("shots") or []):
+        if isinstance(s, dict) and s.get("asset"):
+            shots.append({**s, "prompt": prompt_by_file.get(str(s["asset"]), "")})
+    total = len(shots)
+    if not shots:
+        return {"faults": faults, "matched": 0, "total": 0, "mismatched": [],
+                "ratio": 0.0, "error": None}
+    mismatched: list[dict] = []
+    matched = 0
+    error = None
+    for i in range(0, len(shots), chunk_size):
+        chunk = shots[i:i + chunk_size]
+        try:
+            reply = _parse_json_object(llm_generate(
+                cfg, alignment_prompt(chunk, cue_text), provider=provider))
+        except Exception as exc:  # noqa: BLE001 - a judge failure must not
+            error = str(exc)[:200]          # lose an otherwise usable shotlist
+            continue
+        bad = reply.get("mismatched") if isinstance(reply.get("mismatched"),
+                                                    list) else []
+        bad_assets = {str(b.get("asset")) for b in bad if isinstance(b, dict)}
+        mismatched += [{"asset": str(b.get("asset")),
+                        "reason": str(b.get("reason") or "")[:200]}
+                       for b in bad if isinstance(b, dict)]
+        matched += sum(1 for s in chunk if str(s.get("asset")) not in bad_assets)
+    ratio = (matched / total) if total else 0.0
+    return {"faults": faults, "matched": matched, "total": total,
+            "mismatched": mismatched[:20], "ratio": ratio, "error": error}
 
 
 # --------------------------------------------------- external tool hooks ---
