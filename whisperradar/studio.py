@@ -1089,9 +1089,17 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         try:
             batch_path, todo = prepare_flow_batch(cfg, pid_dir)
         except RuntimeError as exc:
-            if "nothing to render" in str(exc) and rounds > 1:
-                todo = 0  # the edited shotlist is fully rendered already
-                break
+            if "nothing to render" in str(exc):
+                if rounds > 1:
+                    todo = 0  # the edited shotlist is fully rendered already
+                    break
+                # Every image already exists - that is success, not failure.
+                # This is the path taken after filling gaps by hand (uploading
+                # the missing images) or re-running a finished production, and
+                # it used to fail the stage instead of moving on to merge.
+                log("Flow Driver: every shotlist image already exists - "
+                    "nothing to render")
+                return 0
             raise
         if rounds > 1:
             log(f"Flow Driver: batch re-read from the current shotlist - "
