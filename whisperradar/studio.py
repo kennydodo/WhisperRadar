@@ -862,6 +862,138 @@ def _safe_log(log, message) -> None:
             pass
 
 
+FLOW_PREPARE_REPORT = "flow_prepare.json"
+
+
+def _read_json_retry(path: Path, attempts: int = 3, delay: float = 1.5):
+    """Read a JSON file another process writes atomically. A missing file means
+    "not written"; a malformed one is retried so a slow rename cannot look
+    like corruption."""
+    for i in range(attempts):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError):
+            if i == attempts - 1:
+                return None
+            time.sleep(delay)
+    return None
+
+
+def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
+                              log=None) -> dict:
+    """Ask FlowImagesGen to create-or-open this production's Flow project and
+    get its references into the project gallery, then read back the report.
+
+    The report is the frozen contract (see AGENTS.md): projectUrl, projectId,
+    created, and per-ref {name, kind, status, path}. This is the receiving end,
+    so FlowImagesGen only has to write it. It is OPTIONAL: a missing `prepare`
+    command, a failure, or an absent report all return {} and generation
+    proceeds with the stored URL - preparation must never block a batch."""
+    log = log or (lambda m: None)
+    report_path = pid_dir / FLOW_PREPARE_REPORT
+    repo = flowimagesgen_dir(cfg)
+    cmd = _flowimagesgen_cmd(["prepare", "--job", str(job_path),
+                              "--report", str(report_path), "--no-color"])
+    _safe_log(log, "$ " + " ".join(cmd))
+    try:
+        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=3600)
+    except (OSError, subprocess.SubprocessError) as exc:
+        _safe_log(log, f"FlowImagesGen prepare could not run: {exc}")
+        return {}
+    out = (proc.stdout or "") + (proc.stderr or "")
+    for line in out.splitlines():
+        if line.strip().startswith("FLOW_PROJECT_URL="):
+            _safe_log(log, line.strip())
+    if proc.returncode != 0:
+        low = out.lower()
+        if ("unknown command" in low or "unknown argument" in low
+                or "usage:" in low):
+            _safe_log(log, "FlowImagesGen has no 'prepare' command yet - "
+                           "skipping project preparation; the Flow project "
+                           "still comes from the DB/job")
+        else:
+            _safe_log(log, f"FlowImagesGen prepare failed (exit "
+                           f"{proc.returncode}): "
+                           + " | ".join(out.strip().splitlines()[-4:])[:280])
+        return {}
+    report = _read_json_retry(report_path)
+    if not isinstance(report, dict) or not report:
+        _safe_log(log, "FlowImagesGen prepare wrote no readable report - "
+                       "continuing with the stored project URL")
+        return {}
+    return report
+
+
+def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
+                          report: dict, log=None) -> None:
+    """Persist what prepare reported, and switch the job to refMode 'assets'
+    when every reference is already in the project gallery (attach by name,
+    never upload)."""
+    from . import db, settings
+
+    log = log or (lambda m: None)
+    if not report:
+        return
+    url = (report.get("projectUrl") or "").strip() or None
+    project_id = (report.get("projectId") or "").strip() or None
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if prod is not None and url:
+                had = (settings.row_get(prod, "flow_project_url")
+                       or "").strip()
+                db.update_production(conn, pid, flow_project_url=url,
+                                     flow_project_id=project_id)
+                if report.get("created") and had and had != url:
+                    log(f"FlowImagesGen CREATED a new Flow project ({url}) "
+                        f"even though production {pid} already had {had} - "
+                        f"check for a duplicate project")
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - never block a batch
+        log(f"could not persist the Flow project: {exc}")
+
+    try:
+        job = json.loads(Path(job_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    changed = False
+    if url and job.get("projectUrl") != url:
+        job["projectUrl"] = url
+        changed = True
+    refs = report.get("refs")
+    if isinstance(refs, list) and refs:
+        present = {"uploaded", "reused", "generated"}
+        ok = all(str(r.get("status") or "").lower() in present
+                 for r in refs if isinstance(r, dict))
+        mode = "assets" if ok else "reuse"
+        if job.get("refMode") != mode:
+            job["refMode"] = mode
+            changed = True
+        if isinstance(job.get("defaults"), dict) \
+                and job["defaults"].get("refMode") != mode:
+            job["defaults"]["refMode"] = mode
+            changed = True
+        missing = [str(r.get("name")) for r in refs if isinstance(r, dict)
+                   and str(r.get("status") or "").lower() == "missing"]
+        if ok:
+            log(f"FlowImagesGen: all {len(refs)} reference(s) are in the "
+                f"project - refMode 'assets' (no uploads)")
+        elif missing:
+            log(f"FlowImagesGen: {len(missing)} reference(s) missing from the "
+                f"project: {', '.join(missing[:8])}")
+    if changed:
+        Path(job_path).write_text(
+            json.dumps(job, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+
+
 def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
                                cancel=None, project_url: str | None = None) -> int:
@@ -875,14 +1007,22 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
                            "your FlowImagesGen checkout (and run npm install)")
     repo = flowimagesgen_dir(cfg)
     job_path, names = prepare_flowimagesgen_job(cfg, pid_dir, pid, project_url)
+    # create-or-open this production's Flow project and get its references into
+    # the project gallery before generating (optional: {} when FlowImagesGen
+    # has no prepare command yet, or the report is absent)
+    report = run_flowimagesgen_prepare(cfg, pid_dir, job_path, log)
+    _apply_prepare_report(cfg, pid_dir, pid, job_path, report, log)
     tier = set_flowimagesgen_tier(cfg, cfg.renderly_upscale if upscale is None
                                   else upscale)
     cmd = _flowimagesgen_cmd(["generate", "--job", str(job_path),
                               "--output", str(pid_dir / "flow_images"),
                               "--no-color"])
-    resolved_url = project_url or cfg.flowimagesgen_project_url
+    # prefer whatever prepare learned, then the DB/job resolution
+    resolved_url, source = flow_project_url_for(cfg, pid, project_url)
     if resolved_url:
         cmd += ["--project-url", resolved_url]
+        if log:
+            _safe_log(log, f"FlowImagesGen: Flow project from {source}")
     if log:
         _safe_log(log, f"FlowImagesGen: {len(names)} image(s), "
                        f"upscale tier {tier}")
