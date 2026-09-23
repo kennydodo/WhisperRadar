@@ -451,6 +451,7 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "settings.html", values=values, spec=settings.SPEC,
+            groups=settings.grouped_spec(),
             seed_dirs_text=settings.format_seed_dirs(values.get("seed_dirs")),
             providers=[p["name"] for p in cfg.studio_llm_providers],
             scheduler=sched.status(),

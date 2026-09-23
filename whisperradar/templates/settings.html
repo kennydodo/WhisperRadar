@@ -113,14 +113,34 @@
     </div>
   </div>
 
-  <h2>Auto Run criteria</h2>
+  <form method="post" action="/settings/save">
+  {% for group_name, group_spec in groups %}
+  <h2>{{ group_name }}</h2>
   <div class="panel">
+    {% if group_name == "Auto Run" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
       These are the global producer defaults. Per-channel overrides live on
       <a href="/my-channels">My Channels</a>.
     </div>
-    {% if scheduler %}
-    <div class="muted" style="font-size:12px; margin-bottom:12px; border-left:2px solid var(--accent); padding-left:8px">
+    {% endif %}
+    {% if group_name == "Script quality gate" %}
+    <div class="muted" style="font-size:12px; margin-bottom:12px">
+      A script draft must rate at least <b>minimum rating</b> and overlap no
+      more than <b>target overlap</b>, or it is rewritten (best of N is kept).
+      Anything over <b>hard overlap</b> is rejected regardless of rating.
+    </div>
+    {% endif %}
+    {% if group_name == "Shotlist gate" %}
+    <div class="muted" style="font-size:12px; margin-bottom:12px">
+      After the shotlist is planned and <b>before any image is rendered</b>,
+      every shot is checked against the narration at its SRT cues. Structural
+      faults (coverage, order, orphan assets, duplicate prompts) must be zero;
+      <b>minimum alignment</b> is the share of shots that must match.
+    </div>
+    {% endif %}
+    {% if group_name == "Scheduler" %}
+    <div class="muted" style="font-size:12px; margin-bottom:12px">
+      {% if scheduler %}
       <b>Scheduler</b>:
       {% if scheduler.enabled %}
         on, every {{ scheduler.interval }} min &middot;
@@ -133,11 +153,21 @@
         To run it with the dashboard closed, point Windows Task Scheduler at
         <span class="mono">python wr.py produce</span> (see AGENTS.md).
       {% endif %}
+      {% endif %}
     </div>
     {% endif %}
-    <form method="post" action="/settings/save">
-      <div class="grid2">
-        {% for entry in spec %}
+    {% if group_name == "Notifications" %}
+    <div class="muted" style="font-size:12px; margin-bottom:12px">
+      {% set targets = [] %}
+      {% if values["notify_desktop"] %}{% set _ = targets.append("desktop") %}{% endif %}
+      {% if values["notify_webhook_url"] %}{% set _ = targets.append(values["notify_webhook_kind"]) %}{% endif %}
+      <b>Notifications</b>:
+      {% if targets %}{{ targets|join(" + ") }} on problems{% if values["notify_on_success"] %} and on success{% endif %}
+      {% else %}off - unattended pauses and failures are only visible in the dashboard{% endif %}
+    </div>
+    {% endif %}
+    <div class="grid2">
+      {% for entry in group_spec %}
         <div class="fieldwrap">
           {% if entry.type == 'bool' %}
             <div class="checkrow">
@@ -179,23 +209,18 @@
             {% else %}
               <input type="text" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      value="{{ values[entry.key] }}">
-    {% endif %}
-    <div class="muted" style="font-size:12px; margin-bottom:12px; border-left:2px solid var(--border); padding-left:8px">
-      <b>Notifications</b>:
-      {% set targets = [] %}
-      {% if values["notify_desktop"] %}{% set _ = targets.append("desktop") %}{% endif %}
-      {% if values["notify_webhook_url"] %}{% set _ = targets.append(values["notify_webhook_kind"]) %}{% endif %}
-      {% if targets %}{{ targets|join(" + ") }} on problems{% if values["notify_on_success"] %} and on success{% endif %}
-      {% else %}off - unattended pauses and failures are only visible in the dashboard{% endif %}
-    </div>
+            {% endif %}
           {% endif %}
           <div class="help">{{ entry.help }}</div>
         </div>
         {% endfor %}
-      </div>
-      <button type="submit">Save settings</button>
-    </form>
+    </div>
   </div>
+  {% endfor %}
+  <div class="panel">
+    <button type="submit">Save settings</button>
+  </div>
+  </form>
 </div>
 </body>
 </html>

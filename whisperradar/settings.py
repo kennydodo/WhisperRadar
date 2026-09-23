@@ -205,6 +205,48 @@ SPEC: list[dict] = [
 
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 
+# The settings page renders these groups in order; a key missing from every
+# group lands in "Other", so adding a SPEC entry can never hide it.
+GROUPS: list[tuple[str, list[str]]] = [
+    ("Auto Run", [
+        "autorun_enabled", "per_day", "run_window_start", "run_window_end",
+        "candidate_window_days", "topic_pick", "producer_llm_provider",
+    ]),
+    ("Script quality gate", [
+        "script_min_rating", "script_max_overlap", "script_hard_overlap",
+        "script_max_attempts", "script_judge_provider",
+    ]),
+    ("Shotlist gate", [
+        "shotlist_min_alignment", "shotlist_max_attempts",
+        "shotlist_judge_provider",
+    ]),
+    ("Production defaults", [
+        "default_engine", "default_render_mode", "default_upscale",
+        "default_voice", "seed_dirs",
+    ]),
+    ("Scheduler", ["scheduler_enabled", "scheduler_interval_minutes"]),
+    ("Notifications", [
+        "notify_desktop", "notify_webhook_url", "notify_webhook_kind",
+        "notify_on_success",
+    ]),
+    ("Service handling", ["services_autostart", "services_managed"]),
+]
+
+
+def grouped_spec() -> list[tuple[str, list[dict]]]:
+    """[(group name, [spec entries])] for the settings page."""
+    seen: set[str] = set()
+    out: list[tuple[str, list[dict]]] = []
+    for name, keys in GROUPS:
+        entries = [SPEC_BY_KEY[k] for k in keys if k in SPEC_BY_KEY]
+        seen.update(k for k in keys if k in SPEC_BY_KEY)
+        if entries:
+            out.append((name, entries))
+    rest = [e for e in SPEC if e["key"] not in seen]
+    if rest:
+        out.append(("Other", rest))
+    return out
+
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
