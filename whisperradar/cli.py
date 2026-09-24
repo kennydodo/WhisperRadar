@@ -400,6 +400,28 @@ def cmd_serve(cfg, args):
         app.run(host=args.host, port=args.port, debug=False)
 
 
+def cmd_test(cfg, args):
+    """Run the test suite: this repo's unit tests, plus the Renderly driver
+    suite when --renderly DIR is given (that repo's test.bat)."""
+    import subprocess
+    import unittest
+
+    root = Path(__file__).resolve().parents[1]
+    result = unittest.TextTestRunner(verbosity=2).run(
+        unittest.TestLoader().discover(str(root / "tests"),
+                                       top_level_dir=str(root)))
+    ok = result.wasSuccessful()
+    if getattr(args, "renderly", None):
+        bat = Path(args.renderly) / "test.bat"
+        if bat.exists():
+            print(f"\nRunning the Renderly suite: {bat}")
+            ok = subprocess.call(["cmd", "/c", str(bat)]) == 0 and ok
+        else:
+            print(f"\nNo test.bat found in {args.renderly}")
+            ok = False
+    raise SystemExit(0 if ok else 1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     # lets `--config` be given before or after the subcommand
     common = argparse.ArgumentParser(add_help=False)
@@ -514,6 +536,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8540)
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("test", parents=[common],
+                       help="run the test suite (unit tests; "
+                            "--renderly DIR also runs the driver suite)")
+    p.add_argument("--renderly", default=None, metavar="DIR",
+                   help="also run DIR\\test.bat (the Renderly suite)")
+    p.set_defaults(func=cmd_test)
 
     return parser
 

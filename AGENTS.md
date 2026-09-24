@@ -5,6 +5,72 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: none form
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## NEXT SESSION — RETEST the refs productions (written 2026-09-24, end of day)
+
+BLOCKED until: (a) FlowImagesGen fixes the refs-stage issues in
+`D:\Repos\FlowImagesGen\NEXT_SESSION.md` (assetTile detection with refs attached;
+prepare/generate ref-presence agreement; promptReferenceChip confirmation), and (b) Renderly
+implements the prepare/project-URL handover in `D:\Repos\Renderly\NEXT_SESSION.md`
+(`prepare` + `FLOW_PROJECT_URL` + atomic report, per-ref status, and a signed-in driver profile).
+
+Then: **retest the two failed productions and add two new ones.**
+
+### State of the three test productions (`data\studio\7|8|9`)
+- **pid 7 "ZZTEST refs To Live and More"** - channel 1, renderly/flow, upscale 2.
+  shots DONE (4 images; ON-THE-FLY refs `CH_HOST, BG_KITCHEN, BG_OFFICE, BG_TATAMI`);
+  refs DONE (all 4 generated via FlowImagesGen into project `7585c0da`);
+  images NOT done - forced through FlowImagesGen, renders happened but `assetTile` detection timed
+  out, **0/4 local**. RETEST images on the renderly engine once Renderly's handover lands.
+- **pid 8 "ZZTEST refs The Nature Made Us"** - channel 2, flowimagesgen, upscale 0.
+  DONE end to end: shots (6 images, NO refs) + refs skipped + images **6/6 rendered**. Keep as the
+  no-refs reference.
+- **pid 9 "ZZTEST refs Kenny Invest"** - channel 3, flowimagesgen, upscale 2.
+  shots DONE (6 images; SUPPLIED refs `MAYA`, `BG_LIVING_ROOM_01`, `BG_KITCHEN_01` with paths into
+  `refs\`); refs skipped ("all 3 supplied"); images FAILED (prepare/generate ref disagreement +
+  promptReferenceChip). RETEST images after the FlowImagesGen fixes.
+
+### Retest plan — see `RETEST_RUNBOOK.md`
+1. **DONE (2026-09-24):** pid 7 images rendered 4/4 on the renderly engine.
+2. **DONE (2026-09-24):** pid 9 images rendered 6/6 on flowimagesgen.
+3. **READY:** two new full-pipeline productions were created for the retest —
+   **pid 10** (Kenny Invest, flowimagesgen, SUPPLIED refs, glm-flash -> exercises the stall
+   fallback) and **pid 11** (To Live and More, renderly, ON-THE-FLY refs, deepseek). Run them
+   stage by stage with `python scripts/run_stage.py <pid> <stage>`; details in `RETEST_RUNBOOK.md`.
+4. Re-confirm the three ref modes end to end: ON-THE-FLY (pid 7 / 11), SUPPLIED (pid 9 / 10),
+   none (pid 8).
+
+### How the stages were driven (reuse this)
+- Shots: `autorun.run_stage(cfg, pid, "shots", params={"provider": "deepseek"})`.
+- Refs: `autorun.run_stage(cfg, pid, "refs", params={"log": print, "cancel": None})`.
+- Images: `params = autorun._stage_params(cfg, pid, "images", log)` then
+  `autorun.run_stage(cfg, pid, "images", params=params)`. Force an engine with
+  `params["engine"] = "flowimagesgen"` and pin a project with `params["flow_project_url"] = <url>`.
+- Python: `D:\Repos\WhisperRadar\.venv\Scripts\python.exe`.
+
+### WhisperRadar bugs to fix (found 2026-09-24)
+1. **`glm-flash` hangs on large shotlist prompts.** The shots prompt is ~38.5k chars (19.3k brief +
+   a big channel bible, e.g. 16.8k). `glm-5.3-flash` never returned (the streaming read ignores the
+   1800s timeout); `deepseek` returned in ~100s and passed the gate. Big-bible channels (1 and 3)
+   will hang - add a provider fallback, a real request timeout, or a size guard in `openai_chat`.
+2. **`_run_images` lets the CHANNEL `flow_project_url` override the PRODUCTION row.**
+   `_run_images` passes `flow_project_url or eff["flow_project_url"]` into
+   `run_imagegen_flowimagesgen`, bypassing the documented precedence (production -> channel ->
+   global) in `flow_project_url_for`; pinning `productions.flow_project_url` had no effect on the
+   images stage. In the same run pid 9's `prepare` reported project `4e8cbaa4` while `generate` was
+   handed `89e82620`. Make the prepare report's URL authoritative for the generate it precedes.
+3. **`renderly_upscale: 4`** in `config.yaml` made the refs job upscale to 4K (`_4k` variants), not
+   the 2K the tier doc states. Confirm the intended default.
+4. Ref-generation state resume (FlowImagesGen side): a `done` item whose files were deleted is not
+   re-generated (`state/wr-7-refs.json` skipped `CH_HOST`). Also noted in FlowImagesGen's file.
+
+### Notes
+- No channel settings or repo source were modified. Productions 7-9 and their folders are left in
+  place; do not touch productions 1-6.
+- Renderly backend (:8022) + Flow Driver (:8030) were started as managed services during testing;
+  FlowImagesGen uses `profile-renderly` (koogunyemi@gmail.com), **agent mode OFF** (never turn it
+  on), and `japanliveshealthy@gmail.com` must not be used.
+- Channel engines: 1 = renderly/flow, 2 = flowimagesgen upscale 0, 3 = flowimagesgen upscale 2.
+
 ## NEXT SESSION — handoff (written 2026-09-23, end of day)
 
 ### 1. Video render: preview + NLE export — DONE (2026-09-23)
