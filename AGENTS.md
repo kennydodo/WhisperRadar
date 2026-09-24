@@ -77,6 +77,22 @@ render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [le
   more - and prod1 (the "smooth" reference) was all-STATIC clips, so it never
   exercised motion. The real remaining lever is a sub-pixel motion filter, not
   resolution.
+- RESOLUTION ALIGNMENT (2026-09-24): all three generators now deliver
+  **2560x1440 16:9**, which meets ImgToVideo's 2304x1296 canvas spec ("larger
+  same-aspect is fine") and matches its default output. Renderly `4e9f02c`:
+  generation stays native Gemini 1K (cost unchanged), the local Real-ESRGAN
+  step targets the 2K preset, `DEFAULT_RESOLUTION` 2K, legacy scale 0 rejected;
+  the Flow Driver's `driver-config.json` upscale 1 -> "2K" (gitignored, local).
+  FlowImagesGen: tiers were already 1k/2k/4k (`d1c1922`); the local override
+  flipped off -> 2k (gitignored). WhisperRadar: tier 0 omits `--upscale`
+  (ImageGen rejects 0 and the whole run failed), tier 3 -> 2k ("3k" was dropped
+  upstream and normalizeTier throws), config `renderly_upscale` default 4 -> 2
+  and a configured 0 no longer collapses to 4. TIER GUIDE: 0 = native 1K below
+  spec, 1 = HD 1920x1080 below spec, 2 = 2K 2560x1440 RECOMMENDED, 3 = 2K,
+  4 = 4K over-spec. REMAINING: PL/PR/PU/PD/PV overscan needs non-16:9 canvases
+  no generator can produce (Gemini 1:1/16:9/9:16/4:3/3:4, Flow 16:9) - those
+  shots keep the planner's fallback framing; PU/PD could get real vertical
+  overscan later via 1:1 generation on Renderly.
 
 ### 2. FlowImagesGen `prepare --report` — RECEIVING END DONE (2026-09-23)
 

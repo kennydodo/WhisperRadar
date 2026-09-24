@@ -196,7 +196,11 @@ SPEC: list[dict] = [
     {
         "key": "default_upscale", "type": "int", "default": 2, "min": 0, "max": 4,
         "label": "Upscale tier",
-        "help": "0 = off, 1-4 = upscale the rendered images.",
+        "help": "Delivered image size. 0 = off (native 1K, 1376x768 - below "
+                "ImgToVideo's 2304x1296 canvas spec), 1 = HD 1920x1080 (also "
+                "below spec), 2 = 2K 2560x1440 (recommended - meets the spec "
+                "and matches ImgToVideo's default output), 3 = 2K, "
+                "4 = 4K 3840x2160 (over-spec, slower).",
     },
     {
         "key": "default_voice", "type": "str", "default": "",

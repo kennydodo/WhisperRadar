@@ -82,7 +82,11 @@ class Config:
         self.renderly_url = (studio.get("renderly_url") or
                              "http://127.0.0.1:8022").rstrip("/")
         self.renderly_channel = studio.get("renderly_channel") or None
-        self.renderly_upscale = studio.get("renderly_upscale") or 4
+        # 2 = the 2K preset (2560x1440), the smallest tier that meets
+        # ImgToVideo's 2304x1296 canvas spec. A configured 0 (off) must
+        # survive the lookup, so no truthiness shortcut here.
+        self.renderly_upscale = 2 if studio.get("renderly_upscale") is None \
+            else studio.get("renderly_upscale")
         self.imgtovideo_repo = studio.get("imgtovideo_repo") or None
         # FlowImagesGen (the standalone Playwright Flow CLI) - consumed in
         # place from its own checkout, like ImgToVideo and Renderly.

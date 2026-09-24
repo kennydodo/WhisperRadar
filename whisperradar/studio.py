@@ -603,9 +603,10 @@ def sync_renderly_channel(cfg, conn, own_channel, create: bool = True) -> dict:
 def renderly_upscale(value) -> int:
     """Map WhisperRadar's 0-4 upscale tier onto Renderly's upscale API.
 
-    Renderly accepts only scale 2 or 4 - asking for 1 or 3 returns
-    HTTP 400 {"detail":"Scale must be 2 or 4"} and the upscale is silently
-    skipped for every image, so map the odd tiers onto the nearest valid one.
+    Renderly's resolve_tier understands the legacy 2x/4x scale (1 -> HD,
+    2 -> 2K, 3 -> 2K, 4 -> 4K) and rejects 0, so tier 0 maps to 0 and the
+    callers omit the upscale entirely (native 1K, below ImgToVideo's canvas
+    spec).
     """
     try:
         tier = max(0, min(4, int(value or 0)))
@@ -630,6 +631,10 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
         upscale = cfg.renderly_upscale
     before = {p.name for p in (pid_dir / "images").iterdir()} \
         if (pid_dir / "images").exists() else set()
+    # Renderly's upscale API rejects 0 and ImageGen's --upscale only accepts
+    # 2 or 4, so tier 0 (off: keep the native 1K render) omits the flag.
+    scale = renderly_upscale(upscale if upscale is not None
+                             else cfg.renderly_upscale)
     cmd = [
         "dotnet", "run", "--project",
         str(Path(repo, "src", "ImgToVideo.ImageGen")),
@@ -638,9 +643,9 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
         "--renderly", cfg.renderly_url,
         "--channel", str(channel),
         "--image-size", "1K",
-        "--upscale", str(renderly_upscale(upscale if upscale is not None
-                                         else cfg.renderly_upscale)),
     ]
+    if scale:
+        cmd += ["--upscale", str(scale)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
     if result.returncode != 0:
         tail = (result.stderr or result.stdout or "")[-500:]
@@ -699,7 +704,10 @@ def flow_service_url(cfg) -> str:
 #   node src/cli.js generate --job <job.json> --output <dir> ...
 
 # WhisperRadar's upscale 0-4 -> FlowImagesGen's resolution tier names.
-FLOWIMAGESGEN_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "3k", 4: "4k"}
+# 3k does not exist there (off/1k/2k/4k) and normalizeTier throws on unknown
+# tiers, so tier 3 collapses to 2k - the same legacy mapping Renderly's
+# resolve_tier applies.
+FLOWIMAGESGEN_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "2k", 4: "4k"}
 
 # Flow refuses prompts over roughly 2450 characters with the SAME message it
 # uses for rate limiting, so the job-wide style is only sent when it fits.
