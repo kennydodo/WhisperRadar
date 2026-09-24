@@ -59,6 +59,12 @@ def variation_nudge(attempt: int = 1, overlap: float | None = None,
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".flac", ".ogg")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
+# How much of a source transcript reaches the LLM. It used to be 12k, which
+# silently cut a 23k transcript in half: the script writer is told to use ONLY
+# the facts it is given, so the drop surfaced as accuracy failures in the rating
+# gate. 60k chars (~15k tokens) fits every configured model.
+SOURCE_FACTS_MAX_CHARS = 60000
+
 
 def prod_dir(cfg, pid: int) -> Path:
     """The production's working folder: a user-selected directory when the
@@ -1793,8 +1799,7 @@ def overlap_runs(script: str, source: str, n: int = 5,
     return runs[:limit]
 
 
-RATING_RUBRIC = [
-    ("hook", "Does the first 15 seconds earn attention without clickbait?"),
+RATING_RUBRIC = [    ("hook", "Does the first 15 seconds earn attention without clickbait?"),
     ("originality", "Is it a genuine rewrite, not a reworded copy?"),
     ("accuracy", "Are the claims supported by the source and not invented?"),
     ("structure", "Clear beats, logical order, no filler or repetition?"),
@@ -1813,8 +1818,8 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"Score each criterion 1-10:\n{rubric}\n\n"
         f"Measured 5-gram overlap with the source transcript: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
-        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:1500]}\n\n"
-        f"SCRIPT:\n{(script or '')[:12000]}\n\n"
+        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:3000]}\n\n"
+        f"SCRIPT:\n{script or ''}\n\n"
         f"Reply with ONLY a JSON object:\n"
         f'{{"score": <1-10 overall, one decimal>, '
         f'"criteria": {{"hook": <n>, "originality": <n>, "accuracy": <n>, '
@@ -1873,8 +1878,10 @@ def style_prompt(title: str, genre: str, source_text: str,
                  word_count: int | None = None,
                  extra_direction: str = "") -> str:
     text = (source_text or "").strip()
-    if len(text) > 12000:
-        text = text[:12000] + " ..."
+    if len(text) > SOURCE_FACTS_MAX_CHARS:
+        log.warning("style: source transcript is %d chars - using the first "
+                    "%d", len(text), SOURCE_FACTS_MAX_CHARS)
+        text = text[:SOURCE_FACTS_MAX_CHARS] + " ..."
     if not text:
         raise RuntimeError(
             "No source transcript available - write the style guide manually"
@@ -1915,8 +1922,14 @@ def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = 1200,
                   variation: str = "", extra_direction: str = "") -> str:
     facts = (source_text or "").strip()
-    if len(facts) > 12000:
-        facts = facts[:12000] + " ..."
+    # The writer is told to use ONLY these facts, so silently dropping half the
+    # research shows up as accuracy failures. 60k chars (~15k tokens) fits every
+    # configured model; anything beyond that is logged rather than hidden.
+    if len(facts) > SOURCE_FACTS_MAX_CHARS:
+        log.warning("script: source transcript is %d chars - using the first "
+                    "%d (raise SOURCE_FACTS_MAX_CHARS if the model allows)",
+                    len(facts), SOURCE_FACTS_MAX_CHARS)
+        facts = facts[:SOURCE_FACTS_MAX_CHARS] + " ..."
     if facts:
         facts_block = f"FACTS gathered from research (use these, nothing else):\n{facts}"
     else:
