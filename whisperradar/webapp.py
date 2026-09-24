@@ -533,6 +533,8 @@ def create_app(cfg) -> Flask:
             providers=[p["name"] for p in cfg.studio_llm_providers],
             render_targets=studio.RENDER_TARGETS,
             render_target_labels=studio.RENDER_TARGET_LABELS,
+            render_resolutions=studio.RENDER_RESOLUTIONS,
+            render_resolution_labels=studio.RENDER_RESOLUTION_LABELS,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/my-channels/add")
@@ -632,6 +634,10 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("render_target") or "").strip().lower()
             fields["render_target"] = (raw if raw in studio.RENDER_TARGETS
                                        else None)   # empty = inherit
+        if "render_resolution" in request.form:
+            raw = (request.form.get("render_resolution") or "").strip().lower()
+            fields["render_resolution"] = (raw if raw in studio.RENDER_RESOLUTIONS
+                                           else None)   # empty = inherit
         # shotlist gate overrides
         if "shotlist_min_alignment" in request.form:
             raw = (request.form.get("shotlist_min_alignment") or "").strip()

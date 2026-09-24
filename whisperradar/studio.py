@@ -1484,6 +1484,63 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
     return {"preview": preview, "target": target, "project": project}
 
 
+# Output resolution presets written into the production's imgtovideo.json as
+# output.width/height (ImgToVideo uses SnakeCaseLower). The project default is
+# 2560x1440, so "2k" keeps today's behaviour. The PREVIEW stays at ImgToVideo's
+# 960x540 draft - the shimmer seen on productions 5/6 was low-resolution
+# B-frames, fixed in ImgToVideo by preview_bframes=0, not a resolution problem.
+RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2k": (2560, 1440),
+                      "4k": (3840, 2160)}
+RENDER_RESOLUTION_LABELS = {"1080p": "1920x1080 (Full HD)",
+                            "2k": "2560x1440 (2K)",
+                            "4k": "3840x2160 (4K)"}
+
+
+def apply_render_resolution(cfg, pid: int) -> None:
+    """Write the production's effective render resolution into imgtovideo.json.
+
+    Read-modify-write, never a fresh file: ImgToVideo's options are a shared
+    contract and it may hold keys we do not own (the same rule as the
+    FlowImagesGen job)."""
+    from . import db, settings
+
+    pdir = prod_dir(cfg, pid)
+    options_file = pdir / "imgtovideo.json"
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - never block a stage
+        log.debug("could not resolve the render resolution: %s", exc)
+        return
+    size = RENDER_RESOLUTIONS.get(str(eff.get("render_resolution") or "").lower())
+    if not size:
+        return
+    try:
+        data = (json.loads(options_file.read_text(encoding="utf-8"))
+                if options_file.exists() else {})
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    output = data.get("output")
+    if not isinstance(output, dict):
+        output = {}
+    if output.get("width") == size[0] and output.get("height") == size[1]:
+        return
+    output["width"], output["height"] = size
+    data["output"] = output
+    data.setdefault("schema_version", 1)
+    data.setdefault("naming", {"image_extensions": [".png", ".jpg", ".jpeg",
+                                                   ".webp"]})
+    options_file.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    log.info("render resolution %sx%s written to imgtovideo.json",
+             size[0], size[1])
+
+
 def prepare_project_folder(cfg, pid: int) -> Path:
     """Make the production folder a valid ImgToVideo project folder."""
     pdir = prod_dir(cfg, pid)
@@ -1493,6 +1550,7 @@ def prepare_project_folder(cfg, pid: int) -> Path:
             "schema_version": 1,
             "naming": {"image_extensions": [".png", ".jpg", ".jpeg", ".webp"]},
         }, indent=2), encoding="utf-8")
+    apply_render_resolution(cfg, pid)
     return pdir
 
 

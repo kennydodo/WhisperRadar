@@ -354,6 +354,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>render resolution
+                <select name="render_resolution">
+                  <option value="">inherit</option>
+                  {% for r in render_resolutions %}
+                  <option value="{{ r }}" {{ 'selected' if ch['render_resolution'] == r else '' }}>{{ render_resolution_labels[r] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
             </div>
             <div style="margin-top:10px">
               <button type="submit">save</button>

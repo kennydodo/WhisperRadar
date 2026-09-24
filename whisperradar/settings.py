@@ -183,6 +183,18 @@ SPEC: list[dict] = [
                 "production overrides it. Empty = the built-in default.",
     },
     {
+        "key": "render_resolution", "type": "choice", "default": "2k",
+        "choices": ["1080p", "2k", "4k"],
+        "choice_labels": {"1080p": "1920x1080 (Full HD)",
+                          "2k": "2560x1440 (2K)",
+                          "4k": "3840x2160 (4K)"},
+        "label": "Render resolution",
+        "help": "Output resolution written into the production's "
+                "imgtovideo.json (output.width/height) for the preview build "
+                "and the NLE export. 2K is ImgToVideo's own default. The "
+                "preview draft stays at 960x540 for speed.",
+    },
+    {
         "key": "render_target", "type": "choice", "default": "premiere",
         "choices": ["premiere", "capcut"],
         "choice_labels": {"premiere": "Premiere Pro",
@@ -240,7 +252,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "default_engine", "default_render_mode", "default_upscale",
         "default_voice", "seed_dirs",
     ]),
-    ("Video render", ["render_target"]),
+    ("Video render", ["render_target", "render_resolution"]),
     ("Scheduler", ["scheduler_enabled", "scheduler_interval_minutes"]),
     ("Notifications", [
         "notify_desktop", "notify_webhook_url", "notify_webhook_kind",
@@ -432,6 +444,8 @@ def for_production(conn, prod) -> dict:
         "flow_project_url": row_get(own, "flow_project_url"),
         # global-only: which NLE the merge stage exports to (premiere|capcut)
         "render_target": row_get(own, "render_target", glob["render_target"]),
+        "render_resolution": row_get(own, "render_resolution",
+                                     glob["render_resolution"]),
         "own_channel": own,
         "own_channel_name": row_get(own, "name"),
         "renderly_channel_name": (row_get(own, "renderly_channel_name")
