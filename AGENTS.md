@@ -126,6 +126,16 @@ from ~98. In both cases the first ~80-100 items rendered fine, so this looks
 session/account-level rather than per-prompt. Worth investigating before
 trusting unattended batches of 100+ images.
 
+### 9. Settings page needs tabs (user request 2026-09-24)
+
+`/settings` now renders 28+ fields in seven sections on one long page (Auto Run,
+Script quality gate, Shotlist gate, Production defaults, Scheduler,
+Notifications, Service handling, plus the Tools status panel). The user wants it
+as TABS - one tab per group, with the Tools panel as its own tab. `settings.py`
+already exposes `grouped_spec()` returning `[(group, [entries])]`, so the
+template only needs to render tab headers + one panel at a time (no server-side
+change needed beyond passing the active tab, or a small JS switcher).
+
 ### 8. Loose ends from this session
 
 - Auto Run's master switch is still ON and the global `per_day` is 2 (both set
