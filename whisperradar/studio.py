@@ -965,11 +965,14 @@ def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
             _safe_log(log, "FlowImagesGen has no 'prepare' command yet - "
                            "skipping project preparation; the Flow project "
                            "still comes from the DB/job")
-        else:
-            _safe_log(log, f"FlowImagesGen prepare failed (exit "
-                           f"{proc.returncode}): "
-                           + " | ".join(out.strip().splitlines()[-4:])[:280])
-        return {}
+            return {}
+        detail = " | ".join(out.strip().splitlines()[-4:])[:280]
+        _safe_log(log, f"FlowImagesGen prepare failed (exit "
+                       f"{proc.returncode}): {detail}")
+        # a real failure, not "unsupported": the caller needs to know, because
+        # a stored project URL that prepare could not open is probably dead and
+        # generation will fail on it too
+        return {"error": detail}
     report = _read_json_retry(report_path)
     if not isinstance(report, dict) or not report:
         _safe_log(log, "FlowImagesGen prepare wrote no readable report - "
@@ -1084,6 +1087,29 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
     # the project gallery before generating (optional: {} when FlowImagesGen
     # has no prepare command yet, or the report is absent)
     report = run_flowimagesgen_prepare(cfg, pid_dir, job_path, log)
+    if report.get("error") and not report.get("projectUrl"):
+        # prepare could not open the project. If we already had a URL it is
+        # probably dead (Flow projects get deleted), and generation would fail
+        # the same way - so say it now instead of failing mid-batch.
+        stored, source = flow_project_url_for(cfg, pid, project_url)
+        if stored and source == "production":
+            msg = (f"the stored Flow project {stored} could not be opened "
+                   f"(prepare failed) - if it was deleted, set a new one on "
+                   f"the channel or run prepare with --project-url; generation "
+                   f"will fail on this URL")
+            log(f"FlowImagesGen: {msg}")
+            from . import db as _db
+
+            try:
+                conn = _db.connect(cfg.db_path)
+                _db.init_db(conn)
+                try:
+                    if _db.get_production(conn, pid) is not None:
+                        _db.update_production(conn, pid, warning=msg)
+                finally:
+                    conn.close()
+            except Exception:  # noqa: BLE001
+                pass
     _apply_prepare_report(cfg, pid_dir, pid, job_path, report, log)
     tier = set_flowimagesgen_tier(cfg, cfg.renderly_upscale if upscale is None
                                   else upscale)
