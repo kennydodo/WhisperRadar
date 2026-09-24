@@ -1121,6 +1121,7 @@ def _safe_log(log, message) -> None:
 
 
 FLOW_PREPARE_REPORT = "flow_prepare.json"
+FLOW_DRIVER_PREPARE_REPORT = "flow_driver_prepare.json"
 
 
 def _read_json_retry(path: Path, attempts: int = 3, delay: float = 1.5):
@@ -1255,6 +1256,128 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
             encoding="utf-8")
 
 
+def _flowdriver_prepare_call(cfg, pid_dir: Path, log, flow_project: str) -> dict:
+    """One Flow Driver /api/prepare call: POST, wait for the run to finish, read
+    the schema-1 report. An explicit empty flow_project means CREATE a new one."""
+    report_path = pid_dir / FLOW_DRIVER_PREPARE_REPORT
+    try:
+        report_path.unlink()
+    except OSError:
+        pass
+    body = {"shotlistPath": str(pid_dir / "shotlist.json"),
+            "reportPath": str(report_path),
+            "flowProject": flow_project or ""}
+    try:
+        _driver_api(cfg, "/api/prepare", method="POST", body=body, timeout=20)
+    except Exception as exc:  # noqa: BLE001 - never block a batch
+        _safe_log(log, f"Flow Driver prepare could not start: {exc}")
+        return {}
+    status: dict = {}
+    deadline = time.monotonic() + 1800
+    while time.monotonic() < deadline:
+        status = flow_service_status(cfg) or {}
+        if not status.get("running"):
+            break
+        time.sleep(2)
+    for line in (status.get("log") or []):
+        if isinstance(line, str) and line.strip().startswith("FLOW_PROJECT_URL="):
+            _safe_log(log, line.strip())
+    report = _read_json_retry(report_path)
+    return report if isinstance(report, dict) else {}
+
+
+def _usable_flow_project(report) -> str:
+    """The projectUrl from a prepare report, or "" when it is missing or a dead
+    page - Flow redirects a deleted (or other-account) project to
+    .../404?reason=project."""
+    url = (report.get("projectUrl") or "").strip() if isinstance(report, dict) else ""
+    if not url or "404" in url or "/project/" not in url:
+        return ""
+    return url
+
+
+def _strip_job_project_url(job_path: Path) -> None:
+    """Drop a job's stored Flow project so the next prepare CREATES a new one."""
+    try:
+        job = json.loads(Path(job_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(job, dict) or "projectUrl" not in job:
+        return
+    job.pop("projectUrl", None)
+    try:
+        Path(job_path).write_text(
+            json.dumps(job, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def run_flowdriver_prepare(cfg, pid_dir: Path, pid: int,
+                           project_url: str | None = None, log=None) -> dict:
+    """Call the Flow Driver's prepare endpoint - the Renderly half of the frozen
+    handshake. It opens or creates the production's Flow project and gets its
+    references into the project gallery WITHOUT generating, then writes the same
+    schema-1 report as FlowImagesGen.
+
+    When the stored project is gone (Flow answers .../404?reason=project, e.g.
+    it was deleted or the driver now signs in as a different account) the
+    handshake comes back empty - so prepare is called a SECOND time with no
+    project URL, which makes it create a fresh project. Preparation must never
+    block a batch: a failure returns {} and generation proceeds."""
+    log = log or (lambda m: None)
+    url, source = flow_project_url_for(cfg, pid, project_url)
+    if url:
+        _safe_log(log, f"Flow Driver: Flow project from {source}")
+    report = _flowdriver_prepare_call(cfg, pid_dir, log, url)
+    if _usable_flow_project(report):
+        return report
+    if not url:
+        _safe_log(log, "Flow Driver prepare wrote no usable report - "
+                       "continuing with the stored project URL")
+        return report
+    _safe_log(log, "Flow Driver: the stored Flow project is not usable - "
+                   "asking prepare to create a new one")
+    report = _flowdriver_prepare_call(cfg, pid_dir, log, "")
+    if not _usable_flow_project(report):
+        _safe_log(log, "Flow Driver prepare could not create a Flow project - "
+                       "continuing with the stored project URL")
+    return report
+
+
+def _apply_flowdriver_report(cfg, pid: int, report: dict, log=None) -> None:
+    """Persist the Flow project prepare reported, and say which references are
+    NOT in the project gallery (the driver uploads them itself on generate)."""
+    from . import db
+
+    log = log or (lambda m: None)
+    if not report:
+        return
+    url = (report.get("projectUrl") or "").strip() or None
+    project_id = (report.get("projectId") or "").strip() or None
+    if not url:
+        return
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if db.get_production(conn, pid) is not None:
+                db.update_production(conn, pid, flow_project_url=url,
+                                     flow_project_id=project_id)
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - never block a batch
+        log(f"could not persist the Flow project: {exc}")
+    refs = report.get("refs")
+    if isinstance(refs, list) and refs:
+        missing = [str(r.get("name")) for r in refs if isinstance(r, dict)
+                   and str(r.get("status") or "").lower() == "missing"]
+        if not missing:
+            log(f"Flow Driver: all {len(refs)} reference(s) are in the project")
+        else:
+            log(f"Flow Driver: {len(missing)} reference(s) missing from the "
+                f"project: {', '.join(missing[:8])}")
+
+
 def image_batch_limits(cfg, pid: int) -> tuple[int, bool]:
     """(chunk_size, stop_on_failure) for the images stage.
 
@@ -1295,17 +1418,25 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
     # the project gallery before generating (optional: {} when FlowImagesGen
     # has no prepare command yet, or the report is absent)
     report = run_flowimagesgen_prepare(cfg, pid_dir, job_path, log)
-    if report.get("error") and not report.get("projectUrl"):
-        # prepare could not open the project. If we already had a URL it is
-        # probably dead (Flow projects get deleted), and generation would fail
-        # the same way - so say it now instead of failing mid-batch.
+    if not _usable_flow_project(report):
+        # Empty handshake: the job's stored project is missing or dead (Flow
+        # answers .../404?reason=project for a deleted or other-account
+        # project). Ask prepare again with NO project URL so it CREATES one.
         stored, source = flow_project_url_for(cfg, pid, project_url)
-        if stored and source == "production":
-            msg = (f"the stored Flow project {stored} could not be opened "
-                   f"(prepare failed) - if it was deleted, set a new one on "
-                   f"the channel or run prepare with --project-url; generation "
-                   f"will fail on this URL")
-            log(f"FlowImagesGen: {msg}")
+        if stored:
+            _safe_log(log, f"FlowImagesGen: the stored Flow project ({source}) "
+                           f"is not usable - asking prepare to create a new one")
+            _strip_job_project_url(job_path)
+            report = run_flowimagesgen_prepare(cfg, pid_dir, job_path, log)
+    if report.get("error") and not _usable_flow_project(report):
+        # Still nothing: warn and carry on - generation will surface the failure
+        # the same way instead of failing silently mid-batch.
+        stored, source = flow_project_url_for(cfg, pid, project_url)
+        if stored:
+            msg = (f"the stored Flow project {stored} could not be opened and "
+                   f"prepare could not create a new one - generation will fail "
+                   f"on this URL")
+            _safe_log(log, f"FlowImagesGen: {msg}")
             from . import db as _db
 
             try:
@@ -1517,6 +1648,16 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
     if flow_service_status(cfg) is None:
         raise RuntimeError("Flow Driver service is not reachable on "
                            + flow_service_url(cfg))
+    # Frozen handshake: prepare opens/creates this production's Flow project and
+    # gets its references into the gallery before any card is generated; the
+    # loaded project is then the one every card renders into.
+    flow_project = ""
+    if pid is not None:
+        report = run_flowdriver_prepare(cfg, pid_dir, pid, log=log)
+        _apply_flowdriver_report(cfg, pid, report, log=log)
+        flow_project, flow_source = flow_project_url_for(cfg, pid)
+        if flow_project:
+            _safe_log(log, f"Flow Driver: Flow project from {flow_source}")
     refs = [str(r).strip() for r in (refs or []) if str(r).strip()]
     project = str(project or "").strip()
     config = {
@@ -1524,6 +1665,7 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         "outPath": str(img_dir),
         "channel": str(channel or "whisperradar").strip(),
         "project": project,
+        "flowProject": flow_project or "",
         "refs": ",".join(refs),
         "master": (master or "").strip(),
         "upscale": renderly_upscale(upscale if upscale is not None

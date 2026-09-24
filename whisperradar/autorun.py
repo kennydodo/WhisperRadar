@@ -602,7 +602,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
             # the Renderly channel/project and the Flow Driver do not apply.
             count = studio.run_imagegen_flowimagesgen(
                 cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel,
-                project_url=flow_project_url or eff["flow_project_url"])
+                project_url=flow_project_url)
             source = "FlowImagesGen"
         elif mode == "flow":
             # per-image refs come from the shotlist's own refs registry, which
