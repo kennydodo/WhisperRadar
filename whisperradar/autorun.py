@@ -543,6 +543,13 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
                        f"cannot be attached: {', '.join(stranded[:6])}")
         _step(detail)
         return
+    if len(todo) > studio.REFS_ON_THE_FLY_CAP:
+        # The shotlist gate should have caught this; the cap is the guard so a
+        # bad plan can never burn unbounded generations.
+        log(f"[auto-run] refs: capping generation at "
+            f"{studio.REFS_ON_THE_FLY_CAP} of {len(todo)} planned reference "
+            f"image(s)")
+        todo = dict(list(todo.items())[:studio.REFS_ON_THE_FLY_CAP])
     log(f"[auto-run] refs: generating {len(todo)} reference image(s): "
         f"{', '.join(list(todo)[:6])}")
     result = studio.run_flowimagesgen_refs(cfg, pdir, pid, todo, log=log,

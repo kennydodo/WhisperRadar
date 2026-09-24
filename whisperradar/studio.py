@@ -2358,6 +2358,11 @@ def cue_range(text: str) -> tuple[int, int] | None:
 # fuzzy. So the shape is enforced, not hoped for.
 REF_NAME_RE = re.compile(r"^(CH|BG|OBJ)_[A-Z0-9]+(?:_[0-9]{2})?$")
 
+# Refs a plan INVENTS for on-the-fly generation are capped: each one is a Flow
+# generation (credits), and a plan that leans on invented refs instead of the
+# supplied bible is a planning smell. Refs the user PROVIDES do not count.
+REFS_ON_THE_FLY_CAP = 20
+
 
 def ref_name(value) -> str:
     """The bare reference name for a registry key or an image's ref entry.
@@ -2465,18 +2470,33 @@ def shotlist_structural_faults(data: dict, cue_count: int,
 
     # Reference registry: the names are the contract with Flow, so a bad or
     # undeclared name must fail here rather than become "reference not found,
-    # skipping" on every rendered image.
+    # skipping" on every rendered image. The CH_/BG_/OBJ_ convention is
+    # mandatory only for refs the plan INVENTS for on-the-fly generation (no
+    # supplied path, but a refPrompts entry): refs the user PROVIDES keep
+    # whatever name they were given - renaming a supplied file's identity
+    # would break the path it points at.
     declared = declared_refs(data)
-    bad = sorted(n for n in declared if not REF_NAME_RE.match(n))
-    if bad:
-        faults.append(f"{len(bad)} reference name(s) break the CH_/BG_/OBJ_ "
-                      f"convention: {', '.join(bad[:6])}")
+    prompts = data.get("refPrompts")
+    prompts = prompts if isinstance(prompts, dict) else {}
     used: set[str] = set()
     for i in images:
         for r in (i.get("refs") or []):
             name = ref_name(r)
             if name:
                 used.add(name)
+    generated = sorted(
+        n for n in used
+        if not (isinstance(declared.get(n), str) and declared.get(n).strip())
+        and str(prompts.get(n) or "").strip())
+    bad = sorted(n for n in generated if not REF_NAME_RE.match(n))
+    if bad:
+        faults.append(f"{len(bad)} generated reference name(s) break the "
+                      f"CH_/BG_/OBJ_ convention (provided refs may keep their "
+                      f"own names): {', '.join(bad[:6])}")
+    if len(generated) > REFS_ON_THE_FLY_CAP:
+        faults.append(f"{len(generated)} references would be generated on the "
+                      f"fly - the cap is {REFS_ON_THE_FLY_CAP}: "
+                      f"{', '.join(generated[:8])}")
     undeclared = sorted(used - set(declared))
     if undeclared:
         faults.append(f"{len(undeclared)} reference name(s) are used by an "
@@ -2486,8 +2506,6 @@ def shotlist_structural_faults(data: dict, cue_count: int,
     # would have nothing to generate it from, so the image would silently lose
     # its subject. (A path that exists on disk is checked by the refs stage,
     # which can see the filesystem.)
-    prompts = data.get("refPrompts")
-    prompts = prompts if isinstance(prompts, dict) else {}
     stranded = sorted(
         n for n in used
         if not (isinstance(declared.get(n), str) and declared.get(n).strip())

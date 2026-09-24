@@ -233,8 +233,10 @@ SPEC: list[dict] = [
         "help": "Before rendering the shotlist images, generate the reference "
                 "images it needs but has no supplied file for (using each "
                 "ref's prompt) and put them where the engine can use them. "
-                "Refs you DO supply are used as-is. Off = the refs stage is "
-                "skipped and those refs are simply not attached.",
+                "Refs you DO supply are used as-is, with whatever name they "
+                "have; generated ones are named per the CH_/BG_/OBJ_ "
+                "convention, capped at 20 per production. Off = the refs "
+                "stage is skipped and those refs are simply not attached.",
     },
     {
         "key": "render_resolution", "type": "choice", "default": "2k",
