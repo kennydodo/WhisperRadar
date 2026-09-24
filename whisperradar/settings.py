@@ -224,6 +224,15 @@ SPEC: list[dict] = [
                 "resumable either way.",
     },
     {
+        "key": "generate_references", "type": "bool", "default": True,
+        "label": "Generate missing references",
+        "help": "Before rendering the shotlist images, generate the reference "
+                "images it needs but has no supplied file for (using each "
+                "ref's prompt) and put them where the engine can use them. "
+                "Refs you DO supply are used as-is. Off = the refs stage is "
+                "skipped and those refs are simply not attached.",
+    },
+    {
         "key": "render_resolution", "type": "choice", "default": "2k",
         "choices": ["1080p", "2k", "4k"],
         "choice_labels": {"1080p": "1920x1080 (Full HD)",
@@ -294,7 +303,8 @@ GROUPS: list[tuple[str, list[str]]] = [
         "default_engine", "default_render_mode", "default_upscale",
         "default_voice", "seed_dirs",
     ]),
-    ("Image rendering", ["images_chunk_size", "images_stop_on_failure"]),
+    ("Image rendering", ["images_chunk_size", "images_stop_on_failure",
+                         "generate_references"]),
     ("Video render", ["render_target", "render_resolution"]),
     ("Scheduler", ["scheduler_enabled", "scheduler_interval_minutes"]),
     ("Notifications", [
@@ -492,6 +502,9 @@ def for_production(conn, prod) -> dict:
         # image-batch guards (global only - operational, not per production)
         "images_chunk_size": int(glob["images_chunk_size"]),
         "images_stop_on_failure": bool(glob["images_stop_on_failure"]),
+        # the refs stage is per channel (a channel may have no refs at all)
+        "generate_references": bool(row_get(own, "generate_references",
+                                            int(glob["generate_references"]))),
         "own_channel": own,
         "own_channel_name": row_get(own, "name"),
         "renderly_channel_name": (row_get(own, "renderly_channel_name")

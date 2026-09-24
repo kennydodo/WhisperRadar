@@ -362,6 +362,13 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>missing references
+                <select name="generate_references">
+                  <option value="">inherit</option>
+                  <option value="1" {{ 'selected' if ch['generate_references'] == 1 else '' }}>generate them</option>
+                  <option value="0" {{ 'selected' if ch['generate_references'] == 0 else '' }}>skip the refs stage</option>
+                </select>
+              </label>
             </div>
             <div style="margin-top:10px">
               <button type="submit">save</button>

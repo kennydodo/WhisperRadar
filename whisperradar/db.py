@@ -185,7 +185,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("shotlist_max_attempts", "INTEGER"),
                          ("shotlist_judge_provider", "TEXT"),
                          ("render_target", "TEXT"),
-                         ("render_resolution", "TEXT")):
+                         ("render_resolution", "TEXT"),
+                         ("generate_references", "INTEGER")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
@@ -447,7 +448,8 @@ def start_run(conn) -> int:
 
 # ---------------------------------------------------------------- studio ---
 
-STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review"]
+STAGES = ["style", "script", "audio", "srt", "shots", "refs", "images",
+          "merge", "review"]
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
@@ -593,6 +595,7 @@ _OWN_CHANNEL_FIELDS = {
     "script_judge_provider",
     "shotlist_min_alignment", "shotlist_max_attempts",
     "shotlist_judge_provider", "render_target", "render_resolution",
+    "generate_references",
     "renderly_channel_id", "renderly_channel_name",
 }
 

@@ -625,6 +625,48 @@
         </div>
       </form>
 
+    {% elif stage == "refs" %}
+      <div class="muted" style="font-size:12px; margin-bottom:8px">
+        Reference images the shotlist attaches, generated <b>before</b> the
+        image batch so every shot can attach them by name (no uploads during
+        the batch, no duplicate Flow project assets). A ref you supplied is used
+        as-is; a ref with no file is generated from its own prompt and saved to
+        this production's <span class="mono">refs\</span> folder.
+        {% if not generate_references %}
+        <b>Reference generation is off for this channel</b> - the stage is
+        skipped and missing refs are simply not attached.
+        {% endif %}
+      </div>
+      {% if refs %}
+      <table>
+        <tr><th>Ref</th><th>State</th><th>Prompt (used when generating)</th></tr>
+        {% for name, r in refs.items() %}
+        <tr>
+          <td class="mono">{{ name }}</td>
+          <td>
+            {% if r.provided %}<span class="badge on">supplied</span>
+            {% elif r.prompt %}<span class="badge warn">will be generated</span>
+            {% else %}<span class="badge off">no file, no prompt</span>{% endif %}
+          </td>
+          <td class="muted" style="font-size:12px">
+            {{ (r.prompt or '-')[:140] }}{% if r.prompt and r.prompt|length > 140 %}...{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="actions" style="margin-top:10px">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/auto-run"
+              onsubmit="return confirm('Run the refs stage now? Supplied refs are left alone; refs with no file are generated from their prompts.')">
+          <input type="hidden" name="from_stage" value="refs">
+          <button type="submit" class="green" {{ 'disabled' if job.running else '' }}>
+            Run refs stage
+          </button>
+        </form>
+      </div>
+      {% else %}
+      <div class="muted">This shotlist declares no references - nothing to do here; continue to the images stage.</div>
+      {% endif %}
+
     {% elif stage == "images" %}
       {% if images %}
       <div class="thumbgrid" style="margin:10px 0">

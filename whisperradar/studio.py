@@ -753,6 +753,206 @@ def flow_project_url_for(cfg, pid: int,
     return url, "config" if url else "none"
 
 
+REFS_GENERATED_MANIFEST = "refs_generated.json"
+
+
+def shotlist_refs(pdir: Path) -> dict:
+    """The refs the shotlist USES, as {name: {"path": str|None,
+    "prompt": str|None, "file": Path|None, "provided": bool}}.
+
+    Only refs an image actually attaches are returned - a bible entry no shot
+    uses does not need to exist, and generating it would waste a generation.
+    A ref is 'provided' when its registry path resolves to a file (relative
+    paths are resolved against the production folder)."""
+    shotlist_path = pdir / "shotlist.json"
+    if not shotlist_path.exists():
+        return {}
+    try:
+        data = json.loads(shotlist_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    registry = data.get("refs")
+    prompts = data.get("refPrompts")
+    prompts = prompts if isinstance(prompts, dict) else {}
+    used: list[str] = []
+    for image in (data.get("images") or []):
+        if not isinstance(image, dict):
+            continue
+        for entry in (image.get("refs") or []):
+            name = ref_name(entry)
+            if name and name not in used:
+                used.append(name)
+    out: dict = {}
+    for name in used:
+        raw = registry.get(name) if isinstance(registry, dict) else None
+        raw = raw if isinstance(raw, str) else None
+        path = None
+        if raw:
+            candidate = Path(raw)
+            if not candidate.is_absolute():
+                candidate = pdir / candidate
+            path = candidate if candidate.is_file() else None
+        prompt = prompts.get(name)
+        out[name] = {"path": raw, "prompt": (str(prompt).strip()
+                                             if prompt else None),
+                     "file": path, "provided": path is not None}
+    return out
+
+
+def refs_to_generate(pdir: Path) -> dict:
+    """The used refs that have no usable file but do have a prompt."""
+    return {n: r for n, r in shotlist_refs(pdir).items()
+            if not r["provided"] and r["prompt"]}
+
+
+def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
+    """A FlowImagesGen job that renders one image per reference, named exactly
+    after the ref, so the result can be attached by name later."""
+    # the same style source the main job uses: the shotlist's style field, then
+    # style.md - the refs should be drawn in the channel's art direction too
+    style = ""
+    try:
+        style = str(json.loads((pdir / "shotlist.json")
+                               .read_text(encoding="utf-8")).get("style") or "")
+    except (OSError, ValueError):
+        style = ""
+    if not style.strip():
+        style_path = find_style(pdir)
+        style = style_path.read_text(encoding="utf-8") if style_path else ""
+    style = style.strip()
+    longest = max((len(r["prompt"]) for r in refs.values()), default=0)
+    job: dict = {
+        "name": f"wr-{pid}-refs",
+        "outputsDir": str(pdir / "flow_refs"),
+        "refMode": "reuse",
+        "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
+                     "outputs": 1, "refMode": "reuse"},
+        "images": [{"file": f"{name}.png", "prompt": r["prompt"]}
+                   for name, r in refs.items()],
+    }
+    url, _ = flow_project_url_for(cfg, pid)
+    if url:
+        job["projectUrl"] = url
+    # the channel's art direction, when it fits Flow's prompt ceiling
+    if style and longest + len(style) + 1 <= FLOWIMAGESGEN_MAX_PROMPT_CHARS:
+        job["style"] = style
+    elif style:
+        log.info("refs: omitting the %d-char style - ref prompts would exceed "
+                 "Flow's %d-char limit", len(style),
+                 FLOWIMAGESGEN_MAX_PROMPT_CHARS)
+    job_path = pdir / "flowimagesgen_refs.json"
+    job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8")
+    return job_path
+
+
+def run_flowimagesgen_refs(cfg, pdir: Path, pid: int, refs: dict,
+                           log=None, cancel=None) -> dict:
+    """Render the missing reference images with FlowImagesGen, then place them
+    so BOTH engines can use them: as files in the production's refs\\ (the
+    Renderly driver resolves names there) and with the shotlist's registry
+    path filled in (so FlowImagesGen's prepare uploads them by name into the
+    Flow project gallery).
+
+    Returns {generated: [names], missing: [names]} - nothing raises for a ref
+    that could not be made; the caller reports it."""
+    log = log or (lambda m: None)
+    if not refs:
+        return {"generated": [], "missing": []}
+    if not flowimagesgen_ready(cfg):
+        raise RuntimeError(
+            "reference generation needs FlowImagesGen - set "
+            "studio.flowimagesgen_repo in config.yaml")
+    repo = flowimagesgen_dir(cfg)
+    job_path = _write_refs_job(cfg, pdir, pid, refs)
+    tier = set_flowimagesgen_tier(cfg, cfg.renderly_upscale)
+    cmd = _flowimagesgen_cmd(["generate", "--job", str(job_path),
+                              "--output", str(pdir / "flow_refs"),
+                              "--no-color"])
+    url, _ = flow_project_url_for(cfg, pid)
+    if url:
+        cmd += ["--project-url", url]
+    _safe_log(log, f"refs: generating {len(refs)} reference image(s) "
+                   f"(upscale tier {tier})")
+    _safe_log(log, "$ " + " ".join(cmd))
+    proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace")
+    tail: list[str] = []
+    try:
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            tail.append(line)
+            del tail[:-40]
+            _safe_log(log, line)
+            if cancel is not None and cancel():
+                raise RuntimeError("stopped by user")
+    finally:
+        if proc.poll() is None:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                               capture_output=True)
+            else:
+                proc.kill()
+        proc.wait(timeout=30)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"reference generation failed (exit {proc.returncode}): "
+            + " | ".join(tail[-4:])[:300])
+
+    # adopt: flow_refs\<name>.png -> refs\<name>.png, and point the registry at
+    # the local file so prepare uploads it under the ref's own name
+    out_dir = pdir / "flow_refs"
+    refs_dir = pdir / "refs"
+    refs_dir.mkdir(parents=True, exist_ok=True)
+    generated, missing = [], []
+    for name in refs:
+        src = next((p for p in (out_dir / f"{name}.png",
+                                out_dir / f"{name}.jpg",
+                                out_dir / f"{name}.jpeg") if p.is_file()), None)
+        if src is None:
+            missing.append(name)
+            continue
+        shutil.copy(src, refs_dir / f"{name}.png")
+        generated.append(name)
+    if generated:
+        (pdir / REFS_GENERATED_MANIFEST).write_text(
+            json.dumps(sorted(generated), indent=2) + "\n", encoding="utf-8")
+        _update_ref_paths(pdir, generated)
+        log(f"refs: {len(generated)} reference image(s) ready in refs\\ - "
+            f"{', '.join(generated[:6])}")
+    if missing:
+        log(f"refs: {len(missing)} could not be generated: "
+            f"{', '.join(missing[:8])}")
+    return {"generated": generated, "missing": missing}
+
+
+def _update_ref_paths(pdir: Path, names: list[str]) -> None:
+    """Point the shotlist registry at the generated files (read-modify-write)."""
+    shotlist_path = pdir / "shotlist.json"
+    try:
+        data = json.loads(shotlist_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    registry = data.get("refs")
+    if not isinstance(registry, dict):
+        registry = {}
+    changed = False
+    for name in names:
+        current = registry.get(name)
+        wanted = f"refs/{name}.png"
+        if not (isinstance(current, str) and current.strip()):
+            registry[name] = wanted
+            changed = True
+    if changed:
+        data["refs"] = registry
+        shotlist_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+
+
 def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int,
                               project_url: str | None = None) -> tuple[Path, list[str]]:
     """Build a FlowImagesGen job from the production's shotlist: only the
@@ -2274,6 +2474,20 @@ def shotlist_structural_faults(data: dict, cue_count: int,
         faults.append(f"{len(undeclared)} reference name(s) are used by an "
                       f"image but not declared in the shotlist's refs: "
                       f"{', '.join(undeclared[:6])}")
+    # A ref with no path AND no prompt can never be produced: the refs stage
+    # would have nothing to generate it from, so the image would silently lose
+    # its subject. (A path that exists on disk is checked by the refs stage,
+    # which can see the filesystem.)
+    prompts = data.get("refPrompts")
+    prompts = prompts if isinstance(prompts, dict) else {}
+    stranded = sorted(
+        n for n in used
+        if not (isinstance(declared.get(n), str) and declared.get(n).strip())
+        and not str(prompts.get(n) or "").strip())
+    if stranded:
+        faults.append(f"{len(stranded)} reference name(s) have no supplied "
+                      f"path and no prompt, so they cannot be generated: "
+                      f"{', '.join(stranded[:6])}")
     return faults[:limit]
 
 

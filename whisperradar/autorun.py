@@ -504,6 +504,60 @@ def _shotlist_feedback(review: dict, min_align: float) -> str:
     return "\n".join(parts)
 
 
+def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
+    """Generate the reference images the shotlist needs but has no file for.
+
+    Optional per channel. A ref you SUPPLY is used as-is; a ref with no usable
+    file is generated from its own prompt and placed in the production's refs\\
+    folder, with the shotlist registry path filled in - so the images stage can
+    upload it to the Flow project under the ref's own name (FlowImagesGen) or
+    resolve it as a local file (the Renderly driver)."""
+    t0 = time.monotonic()
+    log = log or (lambda m: None)
+    pdir = studio.prepare_project_folder(cfg, pid)
+    eff = _effective(cfg, pid)
+
+    def _step(detail, status="done"):
+        conn = _connect(cfg)
+        try:
+            db.add_step(conn, pid, "refs", "auto", detail=detail,
+                        status=status)
+        finally:
+            conn.close()
+
+    if not eff["generate_references"]:
+        _step("skipped - reference generation is off for this channel")
+        return
+    used = studio.shotlist_refs(pdir)
+    if not used:
+        _step("the shotlist declares no references")
+        return
+    provided = [n for n, r in used.items() if r["provided"]]
+    stranded = [n for n, r in used.items()
+                if not r["provided"] and not r["prompt"]]
+    todo = studio.refs_to_generate(pdir)
+    if not todo:
+        detail = f"{len(provided)} supplied reference(s), nothing to generate"
+        if stranded:
+            detail += (f" | {len(stranded)} have no file AND no prompt and "
+                       f"cannot be attached: {', '.join(stranded[:6])}")
+        _step(detail)
+        return
+    log(f"[auto-run] refs: generating {len(todo)} reference image(s): "
+        f"{', '.join(list(todo)[:6])}")
+    result = studio.run_flowimagesgen_refs(cfg, pdir, pid, todo, log=log,
+                                           cancel=cancel)
+    made = result["generated"]
+    failed = result["missing"] + stranded
+    detail = (f"{len(made)} reference image(s) generated "
+              f"({', '.join(made[:6])})" if made else "no references generated")
+    if failed:
+        detail += (f" | {len(failed)} still missing: "
+                   f"{', '.join(failed[:6])}")
+    detail += f", took {format_duration(time.monotonic() - t0)}"
+    _step(detail)
+
+
 def _run_images(cfg, pid: int, mode: str | None = None,
                 engine: str | None = None,
                 flow_channel: str = "whisperradar",
@@ -618,6 +672,7 @@ _RUNNERS = {
     "audio": _run_audio,
     "srt": _run_srt,
     "shots": _run_shots,
+    "refs": _run_refs,
     "images": _run_images,
     "merge": _run_merge,
 }
@@ -710,6 +765,23 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
         return {"stage": stage, "action": "run",
                 "detail": f"shotlist planned via LLM "
                           f"({studio.llm_label(cfg, provider)})"}
+    if stage == "refs":
+        eff = _effective(cfg, pid)
+        if not eff["generate_references"]:
+            return {"stage": stage, "action": "skip",
+                    "detail": "reference generation is off for this channel"}
+        used = studio.shotlist_refs(pdir)
+        if not used:
+            return {"stage": stage, "action": "skip",
+                    "detail": "the shotlist declares no references"}
+        todo = studio.refs_to_generate(pdir)
+        supplied = sum(1 for r in used.values() if r["provided"])
+        if not todo:
+            return {"stage": stage, "action": "skip",
+                    "detail": f"all {len(used)} reference(s) are supplied"}
+        return {"stage": stage, "action": "run",
+                "detail": f"generate {len(todo)} reference image(s) "
+                          f"({', '.join(list(todo)[:5])}); {supplied} supplied"}
     if stage == "images":
         if not (pdir / "shotlist.json").exists():
             return {"stage": stage, "action": "pause",

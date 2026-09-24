@@ -638,6 +638,11 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("render_resolution") or "").strip().lower()
             fields["render_resolution"] = (raw if raw in studio.RENDER_RESOLUTIONS
                                            else None)   # empty = inherit
+        if "generate_references" in request.form:
+            raw = (request.form.get("generate_references") or "").strip()
+            fields["generate_references"] = (None if raw == ""
+                                             else 1 if raw in ("1", "on", "true")
+                                             else 0)
         # shotlist gate overrides
         if "shotlist_min_alignment" in request.form:
             raw = (request.form.get("shotlist_min_alignment") or "").strip()
@@ -1042,6 +1047,8 @@ def create_app(cfg) -> Flask:
             preview=preview, preview_url=preview_url,
             review_video=review_video, review_video_url=review_video_url,
             nle_projects=nle_projects,
+            refs=studio.shotlist_refs(pdir),
+            generate_references=eff["generate_references"],
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
             source_video=source_video, llm_ready=llm_ready,
@@ -1130,6 +1137,23 @@ def create_app(cfg) -> Flask:
                         if f.exists():
                             f.unlink()
                             removed.append(name)
+                    if stage == "refs":
+                        # only the refs WE generated (tracked in the manifest):
+                        # supplied refs are inputs and must survive a reset
+                        manifest = pdir / studio.REFS_GENERATED_MANIFEST
+                        names = []
+                        try:
+                            names = json.loads(
+                                manifest.read_text(encoding="utf-8"))
+                        except (OSError, ValueError):
+                            names = []
+                        for name in names if isinstance(names, list) else []:
+                            f = pdir / "refs" / f"{name}.png"
+                            if f.is_file():
+                                f.unlink()
+                                removed.append(f"refs/{name}.png")
+                        if manifest.exists():
+                            manifest.unlink()
                     if stage == "images":
                         img_dir = pdir / "images"
                         if img_dir.exists():
