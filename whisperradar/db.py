@@ -190,6 +190,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_id", "TEXT")
+    # autorun marks productions the producer created, so auto-resume only ever
+    # touches its own work and never a production you are building by hand
+    _add_column_if_missing(conn, "productions", "autorun", "INTEGER")
+    _add_column_if_missing(conn, "productions", "last_attempt_at", "TEXT")
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str,
@@ -448,7 +452,8 @@ STAGES = ["style", "script", "audio", "srt", "shots", "images", "merge", "review
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
                 "stage_extras", "render_mode", "voice", "own_channel_id",
-                "warning", "flow_project_url", "flow_project_id"}
+                "warning", "flow_project_url", "flow_project_id",
+                "autorun", "last_attempt_at"}
 
 
 def stage_extra(prod, stage: str) -> str:

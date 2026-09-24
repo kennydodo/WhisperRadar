@@ -373,9 +373,13 @@ def cmd_produce(cfg, args):
     for item in result["created"]:
         print(f"created #{item['pid']}: {item['title']} "
               f"({item['own_channel']})")
+    for entry in result.get("resumed", []):
+        print(f"resumed #{entry['production_id']}: {entry['title']} "
+              f"-> {entry.get('result', '?')}")
     for entry in result["skipped"]:
         print(f"skipped {entry.get('own_channel', '-')}: {entry['detail']}")
     print(f"produce: {len(result['created'])} created, "
+          f"{len(result.get('resumed', []))} resumed, "
           f"{len(result['skipped'])} skipped, result={result['result']}")
     return 0 if result["result"] == "ok" else 1
 

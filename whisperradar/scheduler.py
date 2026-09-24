@@ -132,12 +132,19 @@ class Scheduler:
             plan = producer.build_plan(self.cfg, conn)
         finally:
             conn.close()
-        runnable = [p for p in plan if p.get("action") == "run"]
+        # resumes count as work too: a plan can be "continue these" with no
+        # new productions at all (chunked images, a cleared Flow refusal)
+        runnable = [p for p in plan if p.get("action") in ("run", "resume")]
         if not runnable:
             reason = plan[0]["detail"] if plan else "nothing to do"
             self._record(now, f"nothing to do - {reason}")
             return {"action": "skip", "reason": reason}
 
-        self._record(now, f"started for {len(runnable)} channel(s)")
+        creates = sum(1 for p in runnable if p["action"] == "run")
+        resumes = len(runnable) - creates
+        what = ", ".join(x for x in (f"{creates} new" if creates else "",
+                                     f"{resumes} resumed" if resumes else "")
+                         if x)
+        self._record(now, f"started for {what}")
         self.run_producer(len(runnable), log.info)
         return {"action": "run", "channels": len(runnable)}

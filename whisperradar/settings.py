@@ -60,6 +60,28 @@ SPEC: list[dict] = [
                 "you only hear about pauses and failures.",
     },
     {
+        "key": "autorun_resume", "type": "bool", "default": True,
+        "label": "Resume unfinished productions",
+        "help": "Before creating new productions, continue the auto-run ones "
+                "that stopped mid-pipeline - images left over from the "
+                "Images-per-run limit, or a Flow refusal that has since "
+                "cleared. Only productions the producer created are touched; "
+                "anything you are building by hand is left alone.",
+    },
+    {
+        "key": "resume_cooldown_minutes", "type": "int", "default": 60,
+        "min": 5, "max": 1440,
+        "label": "Resume cooldown (minutes)",
+        "help": "Do not re-attempt a production until this long after its last "
+                "attempt, so a Flow refusal is not hammered.",
+    },
+    {
+        "key": "resume_per_run", "type": "int", "default": 2, "min": 1, "max": 10,
+        "label": "Resumes per run",
+        "help": "At most this many unfinished productions are continued in one "
+                "auto-run, so a single run cannot sprawl.",
+    },
+    {
         "key": "scheduler_enabled", "type": "bool", "default": False,
         "label": "Scheduler",
         "help": "Let the running dashboard start Auto Run on its own every "
@@ -258,6 +280,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick", "producer_llm_provider",
+        "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script quality gate", [
         "script_min_rating", "script_max_overlap", "script_hard_overlap",

@@ -20,10 +20,13 @@ which stops before review and pauses when manual input is missing.
 """
 
 import json
+import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import db, notify, settings, studio
+
+log = logging.getLogger("whisperradar")
 
 
 def _in_window(vals: dict, now: datetime | None = None) -> bool:
@@ -151,6 +154,37 @@ def choose_topic(cfg, conn, own_channel, cands, provider: str | None,
             "method": "llm"}
 
 
+def resumable(conn, cooldown_minutes: int, limit: int = 5) -> list:
+    """Auto-run productions that stopped mid-pipeline and are past their
+    cooldown, oldest first.
+
+    `autorun` is what makes this safe: the producer only ever continues work it
+    created, so a production you are building by hand is never touched."""
+    return conn.execute(
+        "SELECT * FROM productions"
+        " WHERE autorun = 1 AND stage <> 'review'"
+        "   AND (last_attempt_at IS NULL"
+        "        OR datetime(last_attempt_at) <= datetime('now', ?))"
+        " ORDER BY id LIMIT ?",
+        (f"-{int(cooldown_minutes)} minutes", limit)).fetchall()
+
+
+def _resume_entry(conn, prod) -> dict:
+    """A plan entry describing what resuming a production would do."""
+    done = db.latest_steps(conn, prod["id"])
+    left = [s for s in db.STAGES if s not in done and s != "review"]
+    stage = prod["stage"] or (left[0] if left else "?")
+    detail = f"stopped at '{stage}'"
+    if "images" in left:
+        detail += " - images still to render"
+    if left:
+        detail += f"; remaining stages: {', '.join(left[:4])}"
+    return {"action": "resume", "production_id": prod["id"],
+            "own_channel": f"#{prod['id']} {str(prod['title'])[:28]}",
+            "stage": stage, "detail": detail,
+            "title": prod["title"]}
+
+
 def build_plan(cfg, conn) -> list[dict]:
     """What Auto Run would do right now, per own channel (no LLM calls, so
     the confirm modal is free to open)."""
@@ -158,13 +192,22 @@ def build_plan(cfg, conn) -> list[dict]:
     plan: list[dict] = []
     if not vals["autorun_enabled"]:
         return [{"action": "pause", "detail": "Auto Run is off in Settings"}]
+    now = datetime.now()
+    if not _in_window(vals, now):
+        return [{"action": "pause",
+                 "detail": f"outside the run window "
+                           f"({vals['run_window_start']}-{vals['run_window_end']})"}]
+    # 1. continue what is already started (and paid for) before creating more
+    if vals["autorun_resume"]:
+        for prod in resumable(conn, vals["resume_cooldown_minutes"],
+                             int(vals["resume_per_run"]) or 2):
+            plan.append(_resume_entry(conn, prod))
     global_cap = int(vals["per_day"] or 0)
     made_today = _created_today(conn)
     if global_cap and made_today >= global_cap:
-        return [{"action": "pause",
-                 "detail": f"daily cap reached ({made_today}/{global_cap} "
-                           f"created today)"}]
-    now = datetime.now()
+        return plan + [{"action": "pause",
+                        "detail": f"daily cap reached ({made_today}/{global_cap} "
+                                  f"created today)"}]
     for oc in db.list_own_channels(conn, active_only=True):
         eff = settings.for_production(conn, {"own_channel_id": oc["id"]})
         entry = {"own_channel_id": oc["id"], "own_channel": oc["name"],
@@ -234,11 +277,15 @@ def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
         plan = build_plan(cfg, conn)
         global_provider = vals.get("producer_llm_provider") or None
         created: list[dict] = []
+        resumed: list[dict] = []
         skipped: list[dict] = []
         for entry in plan:
             if job is not None and job.cancel:
-                return {"created": created, "skipped": skipped,
-                        "result": "stopped"}
+                return {"created": created, "resumed": resumed,
+                        "skipped": skipped, "result": "stopped"}
+            if entry["action"] == "resume":
+                resumed.append(entry)
+                continue
             if entry["action"] != "run":
                 skipped.append(entry)
                 log(f"[produce] {entry.get('own_channel', '-')}: "
@@ -261,7 +308,7 @@ def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
             pid = db.create_production(conn, title, oc["genre"],
                                        video["video_id"], None)
             db.update_production(conn, pid, own_channel_id=oc["id"],
-                                 llm_provider=provider)
+                                 llm_provider=provider, autorun=1)
             prod = db.get_production(conn, pid)
             seeded = studio.seed_production(cfg, conn, prod, log=log)
             created.append({"pid": pid, "title": title,
@@ -273,10 +320,29 @@ def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
         conn.close()
 
     result = "ok"
+    # 1. continue the unfinished ones first - they are already paid for. A
+    #    pause or failure here is NOT fatal: one production waiting on a human
+    #    must not block everything else, and the cooldown stops a retry storm.
+    for entry in resumed:
+        if job is not None and job.cancel:
+            result = "stopped"
+            break
+        pid = entry["production_id"]
+        _touch(cfg.db_path, pid)
+        log(f"[produce] resuming production {pid}: {entry['title'][:60]} "
+            f"({entry['detail']})")
+        outcome = autorun.run_pipeline(cfg, pid, job=job, log=log,
+                                       stop_before=stop_before)
+        entry["result"] = outcome
+        if outcome != "ok":
+            log(f"[produce] production {pid} returned {outcome} - leaving it "
+                f"for the next run (cooldown applies)")
+    # 2. then run the ones just created
     for item in created:
         if job is not None and job.cancel:
             result = "stopped"
             break
+        _touch(cfg.db_path, item["pid"])
         log(f"[produce] running production {item['pid']}: {item['title']}")
         result = autorun.run_pipeline(cfg, item["pid"], job=job, log=log,
                                       stop_before=stop_before)
@@ -284,11 +350,33 @@ def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
             log(f"[produce] stopping: production {item['pid']} returned "
                 f"{result}")
             break
-    _notify_outcome(cfg, created, skipped, result, log)
-    return {"created": created, "skipped": skipped, "result": result}
+    _notify_outcome(cfg, created, skipped, result, log, resumed)
+    return {"created": created, "resumed": resumed, "skipped": skipped,
+            "result": result}
 
 
-def _notify_outcome(cfg, created, skipped, result, log) -> None:
+def _touch(db_path, pid: int) -> None:
+    """Record that this production was attempted, so the resume cooldown can
+    keep a refusing Flow from being hammered.
+
+    Stored as UTC in SQLite's own format: the cooldown is compared against
+    datetime('now'), which is UTC, and a local ISO string with a 'T' separator
+    would never compare correctly."""
+    try:
+        conn = db.connect(db_path)
+        db.init_db(conn)
+        try:
+            db.update_production(
+                conn, pid,
+                last_attempt_at=datetime.now(timezone.utc).strftime(
+                    "%Y-%m-%d %H:%M:%S"))
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - never block a run
+        log.debug("could not record the attempt time: %s", exc)
+
+
+def _notify_outcome(cfg, created, skipped, result, log, resumed=None) -> None:
     """Tell the user about an unattended outcome. Never raises."""
     try:
         conn = db.connect(cfg.db_path)
@@ -306,9 +394,10 @@ def _notify_outcome(cfg, created, skipped, result, log) -> None:
                     return
                 title = "WhisperRadar: Auto Run finished"
                 message = (f"{len(created)} production(s) created and run; "
+                           f"{len(resumed or [])} continued; "
                            f"{len(skipped)} channel(s) skipped. They are "
                            f"waiting at review.")
-                if not created:
+                if not created and not resumed:
                     title = "WhisperRadar: Auto Run found nothing to do"
                     message = (skipped[0]["detail"] if skipped
                                else "no channels to produce for")
