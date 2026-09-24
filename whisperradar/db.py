@@ -183,7 +183,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("script_judge_provider", "TEXT"),
                          ("shotlist_min_alignment", "REAL"),
                          ("shotlist_max_attempts", "INTEGER"),
-                         ("shotlist_judge_provider", "TEXT")):
+                         ("shotlist_judge_provider", "TEXT"),
+                         ("render_target", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
@@ -585,7 +586,7 @@ _OWN_CHANNEL_FIELDS = {
     "script_min_rating", "script_max_overlap", "script_max_attempts",
     "script_judge_provider",
     "shotlist_min_alignment", "shotlist_max_attempts",
-    "shotlist_judge_provider",
+    "shotlist_judge_provider", "render_target",
     "renderly_channel_id", "renderly_channel_name",
 }
 

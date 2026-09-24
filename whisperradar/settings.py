@@ -431,7 +431,7 @@ def for_production(conn, prod) -> dict:
         # channel sets one (callers fall back to the global config value).
         "flow_project_url": row_get(own, "flow_project_url"),
         # global-only: which NLE the merge stage exports to (premiere|capcut)
-        "render_target": glob["render_target"],
+        "render_target": row_get(own, "render_target", glob["render_target"]),
         "own_channel": own,
         "own_channel_name": row_get(own, "name"),
         "renderly_channel_name": (row_get(own, "renderly_channel_name")

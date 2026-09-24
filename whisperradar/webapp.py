@@ -531,6 +531,8 @@ def create_app(cfg) -> Flask:
             renderly_url=cfg.renderly_url, genres=genres,
             source_genres=source_genres,
             providers=[p["name"] for p in cfg.studio_llm_providers],
+            render_targets=studio.RENDER_TARGETS,
+            render_target_labels=studio.RENDER_TARGET_LABELS,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/my-channels/add")
@@ -626,6 +628,10 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("script_judge_provider") or "").strip()
             known = {p["name"] for p in cfg.studio_llm_providers}
             fields["script_judge_provider"] = raw if raw in known else None
+        if "render_target" in request.form:
+            raw = (request.form.get("render_target") or "").strip().lower()
+            fields["render_target"] = (raw if raw in studio.RENDER_TARGETS
+                                       else None)   # empty = inherit
         # shotlist gate overrides
         if "shotlist_min_alignment" in request.form:
             raw = (request.form.get("shotlist_min_alignment") or "").strip()
@@ -1762,7 +1768,9 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            target = settings.load(conn)["render_target"]
+            # the production's own channel may override the global target
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+            target = eff["render_target"]
         finally:
             conn.close()
         label = studio.RENDER_TARGET_LABELS[target]

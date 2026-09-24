@@ -346,6 +346,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>render target
+                <select name="render_target">
+                  <option value="">inherit</option>
+                  {% for t in render_targets %}
+                  <option value="{{ t }}" {{ 'selected' if ch['render_target'] == t else '' }}>{{ render_target_labels[t] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
             </div>
             <div style="margin-top:10px">
               <button type="submit">save</button>
