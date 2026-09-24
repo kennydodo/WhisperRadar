@@ -2038,7 +2038,47 @@ def provider_ready(cfg, name: str | None = None) -> bool:
                 and provider_api_ready(p))
 
 
-def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
+class LLMStalled(RuntimeError):
+    """The provider accepted the request but never produced content. Raised so a
+    caller can retry on a DIFFERENT provider instead of waiting out the whole
+    timeout: glm-flash stalls on large prompts (keep-alive lines keep the socket
+    busy, so the socket timeout never fires). deepseek/GPT/Claude-class models
+    do not; the guard is about a provider that goes quiet, not about length."""
+
+
+# Abort a stream that has produced no CONTENT for this long. Keep-alive lines do
+# not count: a provider that only sends heartbeats is stalled, not working.
+LLM_IDLE_TIMEOUT = 150
+
+
+def script_max_tokens(words: int) -> int:
+    """A generous ceiling for a script of `words` words. Prose runs ~1.3-1.6
+    tokens per word; the headroom keeps a slightly long draft from being cut
+    while still bounding generation time (no max_tokens = unbounded ramble)."""
+    return int(max(0, words) * 1.6) + 200
+
+
+def script_target_words(setting: int | None, source_words: int) -> int:
+    """The written script is never planned LONGER than the transcript it is
+    based on - a longer target only makes generation slower without adding
+    substance. An explicit `studio.script_words` still wins when it is shorter."""
+    wanted = int(setting or 0) or source_words or 1200
+    cap = source_words or wanted
+    return min(wanted, cap)
+
+
+def _fallback_provider(cfg, failed: str) -> dict | None:
+    """A different READY provider to retry a stalled request on, or None."""
+    for p in (cfg.studio_llm_providers or []):
+        if p.get("name") == failed:
+            continue
+        if provider_ready(cfg, p.get("name")):
+            return p
+    return None
+
+
+def openai_chat(p: dict, prompt: str, timeout: int = 600,
+                max_tokens: int | None = None) -> str:
     import http.client
 
     key = _provider_key(p)
@@ -2056,6 +2096,8 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
         "temperature": 1.0,  # creative writing; regenerations must differ
         "messages": [{"role": "user", "content": prompt}],
     }
+    if max_tokens:
+        payload["max_tokens"] = int(max_tokens)
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode(),
@@ -2071,12 +2113,23 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
     for attempt in range(2):
         try:
             parts = []
+            last_content = time.monotonic()
+            deadline = last_content + timeout
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 ctype = r.headers.get("Content-Type", "")
                 if "event-stream" not in ctype:
                     data = json.loads(r.read())
                     return data["choices"][0]["message"]["content"].strip()
                 for raw in r:
+                    now = time.monotonic()
+                    if now > deadline:
+                        raise LLMStalled(
+                            f"'{p['name']}' produced no complete answer in "
+                            f"{timeout}s")
+                    if now - last_content > LLM_IDLE_TIMEOUT:
+                        raise LLMStalled(
+                            f"'{p['name']}' sent no content for "
+                            f"{LLM_IDLE_TIMEOUT}s")
                     line = raw.decode("utf-8", "ignore").strip()
                     if not line.startswith("data:"):
                         continue
@@ -2087,7 +2140,10 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600) -> str:
                         delta = json.loads(chunk)["choices"][0].get("delta", {})
                     except (ValueError, KeyError, IndexError):
                         continue
-                    parts.append(delta.get("content") or "")
+                    content = delta.get("content") or ""
+                    if content:
+                        parts.append(content)
+                        last_content = time.monotonic()
             text = "".join(parts).strip()
             if text:
                 return text
@@ -2109,7 +2165,8 @@ CHAT_APIS = {"openai": openai_chat}
 
 
 def llm_generate(cfg, prompt: str, timeout: int = 1800,
-                 provider: str | None = None) -> str:
+                 provider: str | None = None,
+                 max_tokens: int | None = None) -> str:
     p = _resolve_provider(cfg, provider)
     api = (p.get("api") or "openai").lower()
     fn = CHAT_APIS.get(api)
@@ -2118,7 +2175,19 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
             f"LLM provider '{p['name']}' uses api '{api}', which is not "
             f"implemented yet (available: {', '.join(sorted(CHAT_APIS))}). "
             f"Add an adapter to CHAT_APIS in studio.py.")
-    return fn(p, prompt, timeout=timeout)
+    try:
+        return fn(p, prompt, timeout=timeout, max_tokens=max_tokens)
+    except LLMStalled as exc:
+        # A stalled provider must not burn the whole timeout: retry the SAME
+        # prompt once on a different ready provider (glm-flash stalls on large
+        # prompts; deepseek/GPT/Claude-class models do not).
+        alt = _fallback_provider(cfg, p["name"])
+        alt_fn = (CHAT_APIS.get((alt.get("api") or "openai").lower())
+                  if alt else None)
+        if not alt or alt_fn is None:
+            raise
+        log.warning("%s - retrying on '%s'", exc, alt["name"])
+        return alt_fn(alt, prompt, timeout=timeout, max_tokens=max_tokens)
 
 
 def provider_api_ready(p: dict) -> bool:
@@ -2224,7 +2293,7 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap)
     try:
         reply = _parse_json_object(
-            llm_generate(cfg, prompt, provider=provider))
+            llm_generate(cfg, prompt, provider=provider, max_tokens=900))
     except Exception as exc:  # noqa: BLE001
         return {"score": None, "criteria": {}, "feedback": [],
                 "weak_spans": [], "error": str(exc)[:200]}

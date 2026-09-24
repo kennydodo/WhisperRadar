@@ -222,7 +222,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     style = studio.find_style(pdir)
     style_guide = style.read_text(encoding="utf-8") if style else ""
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
-    target_words = cfg.studio_script_words or source_words or 1200
+    target_words = studio.script_target_words(cfg.studio_script_words,
+                                              source_words)
     min_rating = eff["script_min_rating"]
     max_overlap = eff["script_max_overlap"]
     hard_overlap = eff["script_hard_overlap"]
@@ -241,13 +242,21 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
             overlap=previous["overlap"] if previous else None,
             runs=previous["runs"] if previous else None,
             feedback=previous["feedback"] if previous else None)
+        if previous and previous.get("too_long"):
+            variation = ((variation + "\n") if variation else "") + (
+                f"The previous draft was too long. Keep this one at or under "
+                f"{target_words} words.")
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], source_text, style_guide,
             target_words=target_words, variation=variation,
             extra_direction=db.stage_extra(prod, "script"))
-        text = studio.llm_generate(cfg, prompt, provider=provider)
+        text = studio.llm_generate(
+            cfg, prompt, provider=provider,
+            max_tokens=studio.script_max_tokens(target_words))
         if not text:
             raise RuntimeError("LLM returned an empty script")
+        words = len(re.findall(r"\w+", text))
+        too_long = words > int(target_words * 1.15)
         overlap = studio.overlap_ratio(text, source_text)
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
@@ -259,10 +268,12 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                                                         encoding="utf-8")
         attempts.append({"attempt": attempt, "text": text, "overlap": overlap,
                          "runs": runs, "score": score, "rating": rating,
-                         "passed": passed})
+                         "passed": passed, "words": words,
+                         "too_long": too_long})
         log_attempt = (f"attempt {attempt}: rating "
                        f"{score if score is not None else 'n/a'}, overlap "
-                       f"{overlap:.1%}")
+                       f"{overlap:.1%}, ~{words} words"
+                       + (" (too long)" if too_long else ""))
         if passed:
             _log_line(log_attempt + " - accepted")
             break
@@ -277,7 +288,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                        f"target")
         _log_line(log_attempt + " - rejected (" + "; ".join(why) + ")")
         previous = {"overlap": overlap, "runs": runs,
-                    "feedback": rating["feedback"] or rating["weak_spans"]}
+                    "feedback": rating["feedback"] or rating["weak_spans"],
+                    "too_long": too_long}
 
     # settle for the best draft rather than shipping a rejected one blindly
     best = max(attempts, key=lambda a: ((a["score"] or 0), -a["overlap"]))
@@ -293,6 +305,7 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     (auto_dir / "review.json").write_text(
         json.dumps([{"attempt": a["attempt"], "score": a["score"],
                      "overlap": round(a["overlap"], 4), "passed": a["passed"],
+                     "words": a.get("words"), "too_long": a.get("too_long"),
                      "criteria": a["rating"].get("criteria") or {},
                      "feedback": a["rating"].get("feedback") or [],
                      "weak_spans": a["rating"].get("weak_spans") or [],
@@ -304,7 +317,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     try:
         detail = (f"{provider}, best of {len(attempts)} attempt(s): rating "
                   f"{best['score'] if best['score'] is not None else 'n/a'}, "
-                  f"overlap {best['overlap']:.1%}, target {target_words} words, "
+                  f"overlap {best['overlap']:.1%}, target {target_words} words "
+                  f"(wrote ~{best.get('words', '?')}), "
                   f"judged by {judge}, "
                   f"took {format_duration(time.monotonic() - t0)}")
         db.update_production(conn, pid, llm_provider=provider)
