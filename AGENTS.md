@@ -20,11 +20,13 @@ export-capcut <folder>             -> out\capcut\<name>\ (copy into CapCut's dra
 render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [legacy/hook/upload only]
 ```
 
-- Global setting `render_target` in its OWN Settings category **"Video render"**
+- Setting `render_target` in its OWN Settings category **"Video render"**
   (`whisperradar/settings.py` SPEC + GROUPS), choices `premiere` (DEFAULT) |
   `capcut`, friendly labels via the new generic `choice_labels` extra rendered
-  by `templates/settings.html`. Global only (the user asked for global); it is
-  surfaced through `settings.for_production` as `render_target`.
+  by `templates/settings.html`. Global, overridable per channel
+  (`own_channels.render_target`, editable on My Channels with an "inherit"
+  option) and resolved in `settings.for_production` as global <- channel
+  (`c248e88`); the manual merge route uses the production's EFFECTIVE target.
 - `studio.run_merge_render(cfg, pid_dir, target)` returns
   `{preview, target, project}` and runs BOTH commands. Helpers:
   `find_preview`, `nle_project`, `find_nle_projects`, `find_review_video`
@@ -43,6 +45,20 @@ render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [le
   smaller" claim). Tuning knobs live in ImgToVideo's own `imgtovideo.json`:
   `PreviewWidth/Height`, `PreviewPreset`, `PreviewCrf`, `FinalPreset`,
   `FinalCrf`, `Output.Width/Height`, `FfmpegPath`.
+- PREVIEW SHIMMER (2026-09-24): the first preview builds looked "shaky". Root
+  cause was NOT the motion filter (the crop geometry is identical to the final
+  render) but the **encoder's B-frames**: at the preview's 960x540 + CRF28 the
+  B-frame quality pattern pumps the sharpness every (bframes+1) frames — a
+  period-4 alternation measured on `out\preview.mp4` (laplacian ~13.4 vs ~12.7)
+  that reads as shimmer. The 2560 final hid it (downscaling averages it out).
+  FIXED in ImgToVideo: `RenderOptions.PreviewBframes` (default 0) /
+  `FinalBframes` (default 3), emitted as `-bf` in
+  `PreviewRenderPlanFactory.VideoEncoderArgs`; the final-render clone copies
+  `FinalBframes` -> `PreviewBframes`. Verify with
+  `ffprobe -show_entries stream=has_b_frames` (preview now 0, final still 2-3).
+  Re-render old previews to clear it. ImgToVideo side committed `8317522`; the
+  preview stays 960x540 (the user's call - they normally deliver 2K/4K, so a
+  sub-2K preview was the first place this showed).
 
 ### 2. FlowImagesGen `prepare --report` — RECEIVING END DONE (2026-09-23)
 
