@@ -59,6 +59,24 @@ render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [le
   Re-render old previews to clear it. ImgToVideo side committed `8317522`; the
   preview stays 960x540 (the user's call - they normally deliver 2K/4K, so a
   sub-2K preview was the first place this showed).
+- MOTION JITTER (2026-09-24, second cause): after the B-frame fix a slow
+  pan/zoom still stair-stepped. `zoompan` rounds the crop to whole INPUT pixels,
+  so the pan moves in (output / grid) pixel steps. The source is supersampled 2x
+  only under 3840, so a 720p source (prod5/6 images are 1376x768) sat on a 2752
+  grid: ~0.5 px/frame rounded into a hard period-2 stair-step (pan trajectory
+  std 0.310, jerk 0.399). FIXED in ImgToVideo: `RenderOptions.
+  SupersampleTargetWidth` (default 4608) drives `PreviewRenderPlanFactory.
+  SupersampleFor` (cap 4x; >=3840 never supersampled), so 720p -> 5504 grid,
+  1080p -> 5760, 2304/2880 unchanged. Measured on prod5's preview: trajectory
+  std 0.310 -> 0.083, jerk 0.399 -> 0.142, motion otherwise identical; render
+  time 2.5 -> 6.8 min (cost is ~quadratic in the factor). The residual keeps
+  falling as 1/grid with no floor, so more is possible at more cost - the knob
+  is exposed for that.
+  KEY POINT for the "just use higher-res images" plan: a 4K source gets grid
+  5504 too, so higher-res images give the SAME smoothness as this fix, not
+  more - and prod1 (the "smooth" reference) was all-STATIC clips, so it never
+  exercised motion. The real remaining lever is a sub-pixel motion filter, not
+  resolution.
 
 ### 2. FlowImagesGen `prepare --report` — RECEIVING END DONE (2026-09-23)
 
