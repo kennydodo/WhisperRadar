@@ -1038,6 +1038,29 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
             encoding="utf-8")
 
 
+def image_batch_limits(cfg, pid: int) -> tuple[int, bool]:
+    """(chunk_size, stop_on_failure) for the images stage.
+
+    Flow tolerates roughly 80-100 automated generations on one account before
+    it refuses, and both engines drive the SAME account, so a long shotlist is
+    chunked across runs and a failing batch is stopped instead of ground
+    through. Both values are global settings."""
+    from . import db, settings
+
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+        finally:
+            conn.close()
+        return (max(0, int(eff.get("images_chunk_size") or 0)),
+                bool(eff.get("images_stop_on_failure")))
+    except Exception as exc:  # noqa: BLE001 - never block a batch
+        log.debug("could not read the image batch limits: %s", exc)
+        return 0, False
+
+
 def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
                                cancel=None, project_url: str | None = None) -> int:
@@ -1061,6 +1084,20 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
     cmd = _flowimagesgen_cmd(["generate", "--job", str(job_path),
                               "--output", str(pid_dir / "flow_images"),
                               "--no-color"])
+    chunk, stop_on_failure = image_batch_limits(cfg, pid)
+    if chunk:
+        # bound this run: Flow's tolerance is per account and both engines
+        # share it, so the rest of the shotlist waits for the next run
+        cmd += ["--limit", str(chunk)]
+    if stop_on_failure:
+        # the CLI's own flag stops at the first failed item (its granularity);
+        # anything rendered is kept and the production stays resumable
+        cmd += ["--fail-fast"]
+    if log and (chunk or stop_on_failure):
+        _safe_log(log, "FlowImagesGen: batch guards - "
+                       + (f"at most {chunk} image(s), " if chunk else "")
+                       + ("stop on first failure" if stop_on_failure
+                          else "no failure guard"))
     # prefer whatever prepare learned, then the DB/job resolution
     resolved_url, source = flow_project_url_for(cfg, pid, project_url)
     if resolved_url:
@@ -1215,7 +1252,8 @@ class BatchCancelled(RuntimeError):
 
 def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperradar",
                       project: str = "", upscale: int | None = None,
-                      master: str = "", log=print, cancel=None) -> int:
+                      master: str = "", log=print, cancel=None,
+                      pid: int | None = None) -> int:
     """Render missing shotlist images through Google Flow via the Flow Driver
     service. Results land in images\\ under the exact shotlist names; upscaled
     copies produced via Renderly are adopted as the shotlist files.
@@ -1298,6 +1336,11 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         deadline = time.monotonic() + 14400
         restarted = False
         shotlist_mtime = shotlist_file.stat().st_mtime
+        chunk, stop_on_failure = image_batch_limits(cfg, pid) if pid else (0, False)
+        # the driver's counts cover the whole batch, so measure THIS run
+        base_ok = int(((flow_service_status(cfg) or {}).get("counts") or {})
+                      .get("ok") or 0)
+        last_ok, last_failed, consecutive = base_ok, 0, 0
         while True:
             if cancel and cancel():
                 log("cancel requested - stopping the Flow Driver batch")
@@ -1341,6 +1384,32 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
                 except OSError:
                     pass
             if not st.get("running"):
+                break
+            counts = st.get("counts") or {}
+            ok_now = int(counts.get("ok") or 0)
+            failed_now = int(counts.get("failed") or 0)
+            if failed_now > last_failed and ok_now <= last_ok:
+                consecutive += 1
+            elif ok_now > last_ok:
+                consecutive = 0
+            last_ok, last_failed = ok_now, failed_now
+            if stop_on_failure and consecutive >= 3:
+                # three cards in a row failed: Flow is refusing, and every
+                # further card spends ~a minute failing (this is the ~98-image
+                # stall seen on productions 5 and 6)
+                flow_stop(cfg)
+                raise RuntimeError(
+                    f"Flow Driver: {consecutive} cards failed in a row after "
+                    f"{ok_now} rendered - Flow is refusing this session "
+                    f"(usually the account's reCAPTCHA score after ~80-100 "
+                    f"generations). Stopped instead of failing the rest. The "
+                    f"{ok_now} image(s) are kept - wait a while, then Resume.")
+            if chunk and (ok_now - base_ok) >= chunk:
+                # bound this run; the remaining cards wait for the next one
+                flow_stop(cfg)
+                log(f"Flow Driver: {chunk} image(s) rendered in this run "
+                    f"(the Images-per-run limit) - stopping here; "
+                    f"{max(0, todo - (ok_now - base_ok))} left for the next run")
                 break
         if restarted:
             continue

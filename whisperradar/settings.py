@@ -183,6 +183,25 @@ SPEC: list[dict] = [
                 "production overrides it. Empty = the built-in default.",
     },
     {
+        "key": "images_chunk_size", "type": "int", "default": 60,
+        "min": 0, "max": 500,
+        "label": "Images per run",
+        "help": "Render at most this many images in one batch, then stop and "
+                "leave the rest to the next run. Flow tolerates roughly 80-100 "
+                "automated generations on an account before it starts refusing "
+                "(and BOTH engines share the account), so chunking a big "
+                "shotlist spreads it across sessions. 0 = no limit.",
+    },
+    {
+        "key": "images_stop_on_failure", "type": "bool", "default": True,
+        "label": "Stop the batch when images start failing",
+        "help": "Stop instead of grinding through the remaining cards. "
+                "FlowImagesGen uses --fail-fast (stops at the first failed "
+                "item); the Flow Driver stops after 3 consecutive failed cards. "
+                "Everything rendered is kept and the production stays "
+                "resumable either way.",
+    },
+    {
         "key": "render_resolution", "type": "choice", "default": "2k",
         "choices": ["1080p", "2k", "4k"],
         "choice_labels": {"1080p": "1920x1080 (Full HD)",
@@ -252,6 +271,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "default_engine", "default_render_mode", "default_upscale",
         "default_voice", "seed_dirs",
     ]),
+    ("Image rendering", ["images_chunk_size", "images_stop_on_failure"]),
     ("Video render", ["render_target", "render_resolution"]),
     ("Scheduler", ["scheduler_enabled", "scheduler_interval_minutes"]),
     ("Notifications", [
@@ -446,6 +466,9 @@ def for_production(conn, prod) -> dict:
         "render_target": row_get(own, "render_target", glob["render_target"]),
         "render_resolution": row_get(own, "render_resolution",
                                      glob["render_resolution"]),
+        # image-batch guards (global only - operational, not per production)
+        "images_chunk_size": int(glob["images_chunk_size"]),
+        "images_stop_on_failure": bool(glob["images_stop_on_failure"]),
         "own_channel": own,
         "own_channel_name": row_get(own, "name"),
         "renderly_channel_name": (row_get(own, "renderly_channel_name")

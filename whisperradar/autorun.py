@@ -551,7 +551,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
             count = studio.run_imagegen_flow(
                 cfg, pdir, channel=flow_channel, project=flow_project,
                 upscale=flow_upscale, master=flow_master, log=log,
-                cancel=cancel)
+                cancel=cancel, pid=pid)
             source = "Flow Driver (Google Flow)"
         else:
             count = studio.run_imagegen(cfg, pdir, channel=renderly_channel,
