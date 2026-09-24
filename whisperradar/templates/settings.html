@@ -49,6 +49,18 @@
   .fieldwrap input[type=text], .fieldwrap input[type=number],
   .fieldwrap input[type=time], .fieldwrap select { width: 100%; }
   .checkrow { display: flex; gap: 8px; align-items: center; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 16px 0 0;
+          border-bottom: 1px solid var(--border); }
+  .tab { background: transparent; border: 1px solid transparent;
+         border-bottom: none; color: var(--muted); font-weight: 600;
+         font-size: 13px; padding: 7px 13px; border-radius: 8px 8px 0 0;
+         cursor: pointer; }
+  .tab:hover { color: var(--text); filter: none; }
+  .tab.active { background: var(--panel); border-color: var(--border);
+                color: var(--text); }
+  .tabpanel { display: none; }
+  .tabpanel.active { display: block; }
+  .tabpanel > .panel { border-top-left-radius: 0; margin-top: 0; }
 </style>
 </head>
 <body>
@@ -66,7 +78,14 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
-  <h2>Tools</h2>
+  <div class="tabs" id="settings-tabs">
+    <button type="button" class="tab" data-tab="Tools">Tools</button>
+    {% for group_name, _spec in groups %}
+    <button type="button" class="tab" data-tab="{{ group_name }}">{{ group_name }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="tabpanel" data-tab="Tools">
   <div class="panel">
     <div class="muted" style="font-size:12px; margin-bottom:10px">
       External tools are consumed in place from their own checkouts. Start and
@@ -112,10 +131,11 @@
       <div></div>
     </div>
   </div>
+  </div>
 
   <form method="post" action="/settings/save">
   {% for group_name, group_spec in groups %}
-  <h2>{{ group_name }}</h2>
+  <div class="tabpanel" data-tab="{{ group_name }}">
   <div class="panel">
     {% if group_name == "Auto Run" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
@@ -229,11 +249,64 @@
         {% endfor %}
     </div>
   </div>
+  </div>
   {% endfor %}
   <div class="panel">
     <button type="submit">Save settings</button>
+    <span class="muted" style="font-size:12px; margin-left:10px">
+      saves every tab, not just this one
+    </span>
   </div>
   </form>
 </div>
+
+<script>
+  (function () {
+    var tabs = Array.prototype.slice.call(
+      document.querySelectorAll('#settings-tabs .tab'));
+    var panels = Array.prototype.slice.call(
+      document.querySelectorAll('.tabpanel'));
+    if (!tabs.length || !panels.length) return;
+    var KEY = 'wr-settings-tab';
+
+    function show(name, remember) {
+      var found = panels.some(function (p) {
+        return p.getAttribute('data-tab') === name;
+      });
+      if (!found) { name = tabs[0].getAttribute('data-tab'); }
+      panels.forEach(function (p) {
+        p.classList.toggle('active', p.getAttribute('data-tab') === name);
+      });
+      tabs.forEach(function (t) {
+        t.classList.toggle('active', t.getAttribute('data-tab') === name);
+      });
+      if (remember !== false) {
+        try { sessionStorage.setItem(KEY, name); } catch (e) {}
+      }
+      // keep ?tab= shareable without a reload
+      try {
+        var url = new URL(window.location);
+        if (name === tabs[0].getAttribute('data-tab')) {
+          url.searchParams.delete('tab');
+        } else {
+          url.searchParams.set('tab', name);
+        }
+        history.replaceState(null, '', url);
+      } catch (e) {}
+    }
+
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        show(t.getAttribute('data-tab'));
+      });
+    });
+
+    var wanted = new URLSearchParams(window.location.search).get('tab');
+    if (!wanted) {
+      try { wanted = sessionStorage.getItem(KEY); } catch (e) {}
+    }
+    show(wanted || tabs[0].getAttribute('data-tab'), false);
+  })();
+</script>
 </body>
 </html>
