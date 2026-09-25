@@ -531,7 +531,18 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 extra_direction=db.stage_extra(prod, "shots"),
                 bible=bible_text, feedback=feedback)
             text = studio.llm_generate(cfg, prompt, provider=provider)
-            data, sheet = studio.parse_shotlist_output(text)
+            try:
+                data, sheet = studio.parse_shotlist_output(text)
+            except RuntimeError as exc:
+                # A long plan's reply slips (a stray quote, an unclosed object).
+                # Spend another attempt instead of failing the stage.
+                _log_line(f"shotlist attempt {attempt}: reply was not valid "
+                          f"JSON ({exc}) - retrying")
+                feedback = ("Your previous reply was not valid JSON "
+                            f"({str(exc)[:140]}). Output ONLY the two documents, "
+                            "starting with the shotlist JSON, and close every "
+                            "bracket cleanly.")
+                continue
             review = studio.review_shotlist(cfg, data, cues, judge,
                                             max_hold_seconds=max_hold)
             passed = (not review["faults"] and review["ratio"] >= min_align)
@@ -545,8 +556,11 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                          if review.get("warnings") else ""))
             if passed:
                 break
-            feedback = _shotlist_feedback(review, min_align)
+            feedback = _shotlist_feedback(review, min_align, data)
 
+        if not attempts:
+            raise RuntimeError("the planner returned no valid shotlist JSON in "
+                               f"{attempts_allowed} attempt(s)")
         best = max(attempts, key=lambda a: (not a["faults"], a["ratio"]))
         data, sheet = best["data"], best["sheet"]
         passed = not best["faults"] and best["ratio"] >= min_align
@@ -593,8 +607,11 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         conn.close()
 
 
-def _shotlist_feedback(review: dict, min_align: float) -> str:
-    """The correction list fed into the next shotlist attempt."""
+def _shotlist_feedback(review: dict, min_align: float,
+                       data: dict | None = None) -> str:
+    """The correction list fed into the next shotlist attempt. A re-plan is a
+    FRESH call, so it carries the rules and the fault list - never the previous
+    plan (the model then asks for the exact prompts it was told to preserve)."""
     parts = []
     if review["faults"]:
         parts.append("FAULTS (must be zero):\n"

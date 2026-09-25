@@ -52,18 +52,14 @@ class PacingTests(unittest.TestCase):
         cues = _cues(12, 5)  # 60s
         data = _shots([("S01_01_SCN_ZI.png", 1, 6, "ZI"),
                        ("S01_02_SCN_ZO.png", 7, 12, "ZO")])
-        faults, _ = studio.shotlist_pacing(data, cues)
+        faults, warnings = studio.shotlist_pacing(data, cues)
         text = "\n".join(faults)
         self.assertTrue(any("hold longer than" in f for f in faults), faults)
-        # where to split, in cue numbers
-        self.assertIn("split around cue", text)
-        # the exact shot and its range
-        self.assertIn("S01_01_SCN_ZI.png cues 1-6", text)
-        # naming: keep the scene, take the NEXT unused sub-beat (S01_02 is used)
-        self.assertIn("next unused sub-beat", text)
-        self.assertIn("S01_03", text)
-        # and do not rename anything
-        self.assertIn("never rename", text)
+        self.assertIn("split around cue", text)           # where, in cue numbers
+        self.assertIn("S01_01_SCN_ZI.png cues 1-6", text)  # the exact shot + range
+        self.assertIn("next unused sub-beat", text)       # naming the new image
+        self.assertIn("cues drive it", text)              # the count is never fixed
+        self.assertEqual(warnings, [])
 
     def test_a_long_static_hold_is_a_fault(self):
         cues = _cues(12, 5)
@@ -92,22 +88,47 @@ class PacingTests(unittest.TestCase):
         faults, _ = studio.shotlist_pacing(data, cues)
         self.assertTrue(any("single cue" in f for f in faults), faults)
 
-    def test_a_low_count_for_the_length_warns(self):
-        cues = _cues(12, 5)  # 60s
-        data = _shots([("S01_01_SCN_ZI.png", 1, 4, "ZI"),
-                       ("S01_02_SCN_ZO.png", 5, 8, "ZO"),
-                       ("S01_03_SCN_PL.png", 9, 12, "PL")])
+    def test_no_image_may_hold_past_the_default_12s(self):
+        cues = _cues(120, 10)  # 1200s = 20 min
+        data = _shots([(f"S01_{i:02d}_SCN_ZI.png", i * 6 + 1, i * 6 + 6, "ZI")
+                       for i in range(1, 21)])  # 20 shots of 60s
+        faults, warnings = studio.shotlist_pacing(data, cues)
+        self.assertEqual(warnings, [])
+        self.assertTrue(any("longer than the 12s maximum" in f for f in faults),
+                        faults)
+
+    def test_dense_plans_are_legal_when_every_hold_is_short(self):
+        # the count is never fixed: 6 images a minute is fine if each holds 10s
+        cues = _cues(24, 5)  # 120s
+        motions = ["ZI", "ZO", "PL", "PR", "PU", "PV"]
+        data = _shots([(f"S01_{i + 1:02d}_SCN_{motions[i % 6]}.png",
+                        i * 2 + 1, i * 2 + 2, motions[i % 6])
+                       for i in range(12)])
         faults, warnings = studio.shotlist_pacing(data, cues)
         self.assertEqual(faults, [])
-        self.assertTrue(any("per image" in w for w in warnings), warnings)
+        self.assertEqual(warnings, [])
 
-    def test_the_cap_is_tunable(self):
+    def test_the_max_hold_is_tunable(self):
         cues = _cues(18, 10)  # 180s; six 30s shots
         motions = ["ZI", "ZO", "PL", "PR", "PU", "PV"]
         data = _shots([(f"S01_0{i}_SCN_{m}.png", i * 3 + 1, i * 3 + 3, m)
                        for i, m in enumerate(motions, 1)])
-        self.assertTrue(studio.shotlist_pacing(data, cues, 20.0)[0])
+        self.assertTrue(studio.shotlist_pacing(data, cues, 12.0)[0])
         self.assertEqual(studio.shotlist_pacing(data, cues, 45.0)[0], [])
+
+
+class FeedbackTests(unittest.TestCase):
+    def test_the_feedback_carries_the_faults_and_no_previous_plan(self):
+        # a re-plan is a FRESH call; dumping the previous plan makes the model
+        # demand the exact prompts it was told to preserve
+        review = {"faults": ["2 shot(s) hold longer than the 12s maximum"],
+                  "ratio": 1.0, "matched": 2, "total": 2, "weak": []}
+        data = _shots([("S01_01_SCN_ZI.png", 1, 6, "ZI"),
+                       ("S01_02_SCN_ZO.png", 7, 12, "ZO")])
+        fb = autorun._shotlist_feedback(review, 0.9, data)
+        self.assertIn("FAULTS (must be zero)", fb)
+        self.assertIn("hold longer than", fb)
+        self.assertNotIn("S01_01_SCN_ZI.png", fb)
 
 
 class ImageResumeTests(unittest.TestCase):

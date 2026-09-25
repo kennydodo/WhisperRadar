@@ -113,13 +113,13 @@ SPEC: list[dict] = [
                 "rendered. 0.90 = 90% of shots.",
     },
     {
-        "key": "shotlist_max_attempts", "type": "int", "default": 2,
-        "min": 1, "max": 5,
+        "key": "shotlist_max_attempts", "type": "int", "default": 3,
+        "min": 1, "max": 6,
         "label": "Shotlist: max attempts",
         "help": "How many times to re-plan the shotlist with the under-specified "
-                "prompts and their missing elements fed back. Structural faults "
-                "(coverage, order, orphan assets, duplicates) must always be "
-                "zero.",
+                "prompts, the pacing faults and their missing elements fed back. "
+                "Structural faults (coverage, order, orphan assets, duplicates) "
+                "must always be zero.",
     },
     {
         "key": "shotlist_judge_provider", "type": "provider", "default": "",
@@ -128,16 +128,19 @@ SPEC: list[dict] = [
                 "different provider from the planner.",
     },
     {
-        "key": "shotlist_max_hold_seconds", "type": "float", "default": 20.0,
-        "min": 5.0, "max": 120.0,
+        "key": "shotlist_max_hold_seconds", "type": "float", "default": 12.0,
+        "min": 4.0, "max": 12.0,
         "label": "Shotlist: max seconds per image",
-        "help": "Checked from the SRT cue timings BEFORE any image renders: a "
-                "shot planned to hold longer than this re-plans the shotlist, "
-                "because too few images for the narration leaves each one on "
-                "screen so long the video reads as a slideshow. The planning "
-                "brief's own rules (a long STATIC hold is never acceptable, ST "
-                "only on short holds and ~10% of shots, no motion code above "
-                "~40%, no fragmentation) are enforced at the same time.",
+        "help": "The hard maximum hold for any image - 12s is the ceiling, so this "
+                "only lets you TIGHTEN it (4-12s). Checked from the SRT cue "
+                "timings BEFORE any image renders. The number of images is NEVER "
+                "fixed: the cues drive it, so an image may cover one cue or many "
+                "and a dense passage can run to 7-8 images a minute. A plan with "
+                "a longer hold re-plans with instructions to split at a meaning "
+                "boundary and renumber the scene (a new image takes the next "
+                "unused sub-beat). The brief's other rules (no long STATIC hold, "
+                "ST only on short holds and ~10% of shots, no motion code above "
+                "~40%) are enforced too, and one-image-per-cue is a fault.",
     },
     {
         "key": "script_min_rating", "type": "float", "default": 9.0,
