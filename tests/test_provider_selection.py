@@ -109,6 +109,17 @@ class ProviderSelectionTests(unittest.TestCase):
         conn.close()
         self.assertEqual(autorun._default_provider(self.cfg, self.pid), "glm-flash")
 
+    def test_a_db_llm_default_beats_config_yaml(self):
+        # Settings > LLM saves llm_default in the database
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_own_channel(conn, self.chan, producer_llm_provider=None)
+        db.set_setting(conn, "llm_default", "openrouter-claude")
+        conn.commit()
+        conn.close()
+        self.assertEqual(autorun._default_provider(self.cfg, self.pid),
+                         "openrouter-claude")
+
 
 if __name__ == "__main__":
     unittest.main()

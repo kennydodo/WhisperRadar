@@ -13,6 +13,15 @@ import re
 # type is one of: bool | int | str | choice | time | map
 SPEC: list[dict] = [
     {
+        "key": "llm_default", "type": "provider", "default": "",
+        "label": "Default LLM",
+        "help": "Which provider writes the style, script and shotlist when a "
+                "production or its channel does not set one. Saved in the "
+                "database; empty falls back to studio.llm_default in "
+                "config.yaml. A channel's producer_llm_provider and a "
+                "production's own choice both override this.",
+    },
+    {
         "key": "autorun_enabled", "type": "bool", "default": False,
         "label": "Enable Auto Run",
         "help": "Master switch for the unattended producer. Off = nothing "
@@ -307,6 +316,8 @@ SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 # The settings page renders these groups in order; a key missing from every
 # group lands in "Other", so adding a SPEC entry can never hide it.
 GROUPS: list[tuple[str, list[str]]] = [
+    ("LLM", ["llm_default", "producer_llm_provider",
+             "script_judge_provider", "shotlist_judge_provider"]),
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick", "producer_llm_provider",

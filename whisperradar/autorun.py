@@ -50,9 +50,24 @@ def _get_prod(cfg, pid: int):
         conn.close()
 
 
+def _db_llm_default(cfg) -> str | None:
+    """The global default LLM saved in the DATABASE (Settings > LLM), if any.
+    config.yaml's studio.llm_default is the fallback when nothing is saved."""
+    try:
+        conn = _connect(cfg)
+        try:
+            value = db.get_setting(conn, "llm_default")
+        finally:
+            conn.close()
+        return (value or "").strip() or None
+    except Exception:  # noqa: BLE001 - never block a run on settings storage
+        return None
+
+
 def _default_provider(cfg, pid: int) -> str | None:
     """Which LLM a production's style/script/shots use: the production's own
-    choice, then its channel's producer preference, then the global default.
+    choice, then its channel's producer preference, then the database default
+    (Settings > LLM), then config.yaml.
 
     Without the channel step a channel set to `deepseek` still ran the pipeline
     on the global `glm-flash`, which stalls on large prompts (the channel's
@@ -67,7 +82,7 @@ def _default_provider(cfg, pid: int) -> str | None:
                 return pref
         except Exception:  # noqa: BLE001 - never block a run on settings
             pass
-    return cfg.studio_llm_default
+    return _db_llm_default(cfg) or cfg.studio_llm_default
 
 
 def _set_stage(cfg, pid: int, stage: str) -> None:
