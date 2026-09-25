@@ -224,6 +224,12 @@ def _run_style(cfg, pid: int, provider: str | None = None) -> None:
 
 RESEARCH_NOTES_FILE = "research_notes.md"
 
+# Flow's "still busy" wave leaves some cards unrendered. Rather than failing the
+# stage, pause (the account settles) and resume: both engines skip what already
+# exists, so a round only attempts the missing cards.
+IMAGE_RESUME_PAUSE_SECONDS = 300
+IMAGE_RESUME_ROUNDS = 3
+
 
 def _research_notes(cfg, pdir: Path, title: str, genre: str,
                     source_text: str, provider: str | None) -> str:
@@ -511,6 +517,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         cues = studio.parse_srt_cues(srt_text)
         eff = _effective(cfg, pid)
         min_align = eff["shotlist_min_alignment"]
+        max_hold = eff["shotlist_max_hold_seconds"]
         attempts_allowed = max(1, int(eff["shotlist_max_attempts"]))
         judge = studio.judge_provider(cfg, provider,
                                       eff["shotlist_judge_provider"])
@@ -525,14 +532,17 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 bible=bible_text, feedback=feedback)
             text = studio.llm_generate(cfg, prompt, provider=provider)
             data, sheet = studio.parse_shotlist_output(text)
-            review = studio.review_shotlist(cfg, data, cues, judge)
+            review = studio.review_shotlist(cfg, data, cues, judge,
+                                            max_hold_seconds=max_hold)
             passed = (not review["faults"] and review["ratio"] >= min_align)
             attempts.append({**review, "attempt": attempt, "data": data,
                              "sheet": sheet})
             _log_line(f"shotlist attempt {attempt}: "
                       f"{review['matched']}/{review['total']} prompts detailed "
                       f"enough ({review['ratio']:.0%}), "
-                      f"{len(review['faults'])} structural fault(s)")
+                      f"{len(review['faults'])} fault(s)"
+                      + (f", {len(review['warnings'])} pacing warning(s)"
+                         if review.get("warnings") else ""))
             if passed:
                 break
             feedback = _shotlist_feedback(review, min_align)
@@ -553,22 +563,29 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                          if k not in ("data", "sheet")} for a in attempts],
                        indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         db.update_production(conn, pid, llm_provider=provider)
+        pacing = best.get("warnings") or []
         detail = (f"{len(data.get('images', []))} image(s) in "
                   f"{len(data.get('shots', []))} shot(s) via manifest brief, "
                   f"best of {len(attempts)} attempt(s): prompts detailed "
                   f"enough {best['matched']}/{best['total']} "
                   f"({best['ratio']:.0%}, min {min_align:.0%}), "
-                  f"{len(best['faults'])} structural fault(s), "
+                  f"{len(best['faults'])} fault(s), "
                   f"judged by {judge}, "
                   f"took {format_duration(time.monotonic() - t0)}")
+        if pacing:
+            detail += " | " + "; ".join(pacing)
         if passed:
             db.add_step(conn, pid, "shots", "auto", detail=detail)
+            if pacing:
+                db.update_production(conn, pid, warning="; ".join(pacing)[:900])
         else:
             # same reasoning as the script gate: we keep the best shotlist and
             # carry on to images, so it IS this stage's artifact. Marking it
             # failed would re-plan it on a resume and orphan the rendered
             # images. The warning flags it instead.
             warning = _shotlist_feedback(best, min_align)[:900]
+            if pacing:
+                warning = (warning + " | " + "; ".join(pacing))[:900]
             db.update_production(conn, pid, warning=warning)
             db.add_step(conn, pid, "shots", "auto",
                         detail=detail + " | " + warning)
@@ -580,7 +597,7 @@ def _shotlist_feedback(review: dict, min_align: float) -> str:
     """The correction list fed into the next shotlist attempt."""
     parts = []
     if review["faults"]:
-        parts.append("STRUCTURAL FAULTS (must be zero):\n"
+        parts.append("FAULTS (must be zero):\n"
                      + "\n".join(f"- {f}" for f in review["faults"]))
     if review["ratio"] < min_align:
         parts.append(
@@ -667,6 +684,14 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     _step(detail)
 
 
+def _should_resume_images(exc: Exception, round_no: int) -> bool:
+    """True when a failed images round should pause and be resumed: ONLY Flow's
+    'N of M image(s) were not produced' wave (its 'still busy' timeout), and only
+    while rounds remain. Any other error is a real failure."""
+    return (round_no < IMAGE_RESUME_ROUNDS
+            and "were not produced" in str(exc))
+
+
 def _run_images(cfg, pid: int, mode: str | None = None,
                 engine: str | None = None,
                 flow_channel: str = "whisperradar",
@@ -699,27 +724,45 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     try:
         services.MANAGER.ensure(cfg, services.services_for(engine, mode),
                                 log_fn=log)
-        if engine == "flowimagesgen":
-            # FlowImagesGen drives Flow itself and upscales on the way out, so
-            # the Renderly channel/project and the Flow Driver do not apply.
-            count = studio.run_imagegen_flowimagesgen(
-                cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel,
-                project_url=flow_project_url)
-            source = "FlowImagesGen"
-        elif mode == "flow":
-            # per-image refs come from the shotlist's own refs registry, which
-            # flow.js resolves itself; the production refs\ folder is just the
-            # library it resolves names against - attaching every file globally
-            # would blow past Flow's 3-ingredient limit
-            count = studio.run_imagegen_flow(
-                cfg, pdir, channel=flow_channel, project=flow_project,
-                upscale=flow_upscale, master=flow_master, log=log,
-                cancel=cancel, pid=pid)
-            source = "Flow Driver (Google Flow)"
-        else:
-            count = studio.run_imagegen(cfg, pdir, channel=renderly_channel,
-                                        upscale=flow_upscale)
-            source = "Renderly"
+        for round_no in range(1, IMAGE_RESUME_ROUNDS + 1):
+            try:
+                if engine == "flowimagesgen":
+                    # FlowImagesGen drives Flow itself and upscales on the way
+                    # out, so the Renderly channel/project and the Flow Driver
+                    # do not apply.
+                    count = studio.run_imagegen_flowimagesgen(
+                        cfg, pdir, pid, upscale=flow_upscale, log=log,
+                        cancel=cancel, project_url=flow_project_url)
+                    source = "FlowImagesGen"
+                elif mode == "flow":
+                    # per-image refs come from the shotlist's own refs registry,
+                    # which flow.js resolves itself; the production refs\ folder
+                    # is just the library it resolves names against - attaching
+                    # every file globally would blow past Flow's 3-ingredient
+                    # limit
+                    count = studio.run_imagegen_flow(
+                        cfg, pdir, channel=flow_channel, project=flow_project,
+                        upscale=flow_upscale, master=flow_master, log=log,
+                        cancel=cancel, pid=pid)
+                    source = "Flow Driver (Google Flow)"
+                else:
+                    count = studio.run_imagegen(cfg, pdir,
+                                                channel=renderly_channel,
+                                                upscale=flow_upscale)
+                    source = "Renderly"
+                break
+            except RuntimeError as exc:
+                # Flow gave up on some cards ("still busy"). Pause, then resume:
+                # the driver skips what is already on disk, so the next round
+                # only attempts the gaps.
+                if not _should_resume_images(exc, round_no):
+                    raise
+                log(f"[auto-run] images: {exc}")
+                log(f"[auto-run] images: pausing "
+                    f"{IMAGE_RESUME_PAUSE_SECONDS // 60} minutes, then resuming "
+                    f"the missing card(s) - round {round_no} of "
+                    f"{IMAGE_RESUME_ROUNDS - 1}")
+                time.sleep(IMAGE_RESUME_PAUSE_SECONDS)
     finally:
         # stop what we started, if the user opted in; never a service that was
         # already running

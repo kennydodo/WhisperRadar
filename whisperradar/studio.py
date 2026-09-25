@@ -2739,6 +2739,98 @@ def cue_range(text: str) -> tuple[int, int] | None:
     return (start, end) if end >= start else (start, start)
 
 
+def _srt_seconds(ts: str) -> float:
+    """'HH:MM:SS,mmm' (or with '.') -> seconds."""
+    m = re.match(r"(\d+):(\d{2}):(\d{2})[,.](\d{1,3})", str(ts or ""))
+    if not m:
+        return 0.0
+    ms = int(m.group(4).ljust(3, "0"))
+    return (int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+            + ms / 1000.0)
+
+
+# Checked BEFORE a single image renders: too few images for the narration leaves
+# each one on screen so long that the video reads as a slideshow. The channel can
+# tune it (Settings > shotlist_max_hold_seconds); this is the default.
+SHOT_MAX_HOLD_DEFAULT = 20.0
+# The planning brief's own rules: a long hold (~15s+) is acceptable only when it
+# carries motion; ST is only for ~1-2-cue shots (~2-4s) and ~10% of shots; no
+# motion code above ~40%; most shots should span several cues.
+ST_MAX_HOLD_SECONDS = 5.0
+ST_MAX_SHARE = 0.10
+MOTION_MAX_SHARE = 0.40
+FRAGMENTATION_SHARE = 0.50
+
+
+def shotlist_pacing(data: dict, cues: list[dict],
+                    max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT
+                    ) -> tuple[list[str], list[str]]:
+    """(faults, warnings) for how long the plan holds each image, derived from
+    the SRT cue timings before anything is rendered.
+
+    Faults force a re-plan (they run in the shots gate); warnings - the count is
+    low for the narration length - are reported only, because the brief says an
+    image count is never a failure by itself."""
+    shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
+    if not shots or not cues:
+        return [], []
+    by_index = {c["index"]: c for c in cues if isinstance(c, dict)}
+    duration = _srt_seconds(cues[-1].get("end"))
+    holds: list[tuple[float, str, str]] = []
+    for s in shots:
+        rng = cue_range(s.get("cues"))
+        if not rng:
+            continue
+        first, last = by_index.get(rng[0]), by_index.get(rng[1])
+        if not first or not last:
+            continue
+        holds.append((_srt_seconds(last.get("end")) - _srt_seconds(first.get("start")),
+                      str(s.get("motion") or "").upper(),
+                      str(s.get("asset") or "?")))
+    if not holds:
+        return [], []
+    faults: list[str] = []
+    cap = max(1.0, float(max_hold_seconds))
+    long = sorted((h for h in holds if h[0] > cap), reverse=True)
+    if long:
+        faults.append(
+            f"{len(long)} shot(s) hold longer than {cap:.0f}s (longest "
+            f"{long[0][0]:.0f}s: " + ", ".join(a for _, _, a in long[:3]) + ") - "
+            f"split them so every image lasts under {cap:.0f}s; about "
+            f"{int(duration / cap) + 1} shots fits {duration / 60:.0f} min")
+    static_long = [(h, a) for h, m, a in holds if m == "ST" and h >= 15.0]
+    if static_long:
+        faults.append("a long STATIC hold is never acceptable: " + ", ".join(
+            f"{a} ({h:.0f}s, ST)" for h, a in static_long[:4]))
+    st = [(h, a) for h, m, a in holds if m == "ST"]
+    if st and len(st) / len(holds) > ST_MAX_SHARE:
+        faults.append(f"ST is {len(st) / len(holds):.0%} of shots (cap ~"
+                      f"{ST_MAX_SHARE:.0%}) - ST is the exception, not the default")
+    st_long = [(h, a) for h, a in st if h > ST_MAX_HOLD_SECONDS]
+    if st_long:
+        faults.append(f"ST shots hold longer than {ST_MAX_HOLD_SECONDS:.0f}s: "
+                      + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
+    for code in sorted({m for _, m, _ in holds if m}):
+        share = sum(1 for _, m, _ in holds if m == code) / len(holds)
+        if share > MOTION_MAX_SHARE:
+            faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
+                          f"{MOTION_MAX_SHARE:.0%}) - vary the motion codes")
+    one_cue = sum(1 for s in shots
+                  if (r := cue_range(s.get("cues"))) and r[0] == r[1])
+    if one_cue / len(holds) > FRAGMENTATION_SHARE:
+        faults.append(f"{one_cue} of {len(holds)} shots span a single cue - "
+                      f"changing images more often than the ideas change is "
+                      f"fragmentation; group the cues that develop one idea")
+    warnings: list[str] = []
+    per_image = duration / len(holds)
+    if per_image > 15.0:
+        warnings.append(
+            f"{len(holds)} image(s) over {duration / 60:.1f} min is ~{per_image:.0f}s "
+            f"per image - some images will hold a long time; about "
+            f"{int(duration / 12) + 1} shots would average 12s")
+    return faults, warnings
+
+
 # Reference names ARE the identity: FlowImagesGen attaches project assets by
 # name, Renderly resolves them as filenames, and Flow's own card matching is
 # fuzzy. So the shape is enforced, not hoped for.
@@ -2957,13 +3049,18 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str]) -> str:
 
 
 def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
-                    chunk_size: int = 20) -> dict:
+                    chunk_size: int = 20,
+                    max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT) -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
-    {faults, matched, total, weak, ratio, error}. Never raises.
+    {faults, matched, total, weak, ratio, error, warnings}. Never raises.
 
     `matched` counts shots whose prompt carries everything its cues require;
     `weak` lists the rest with the elements they fail to specify."""
     faults = shotlist_structural_faults(data, len(cues))
+    # Pacing is checked HERE, before any image renders: too few images for the
+    # narration is far cheaper to fix in the plan than after 45 generations.
+    pacing_faults, pacing_warnings = shotlist_pacing(data, cues, max_hold_seconds)
+    faults = faults + pacing_faults
     cue_text = {c["index"]: c["text"] for c in cues}
     prompt_by_file = {str(i.get("file")): i.get("prompt")
                       for i in (data.get("images") or [])
@@ -2975,7 +3072,7 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
     total = len(shots)
     if not shots:
         return {"faults": faults, "matched": 0, "total": 0, "weak": [],
-                "ratio": 0.0, "error": None}
+                "ratio": 0.0, "error": None, "warnings": pacing_warnings}
     weak: list[dict] = []
     matched = 0
     error = None
@@ -3010,7 +3107,8 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                                                      or (0, 0))[0], ""))[:200]})
     ratio = (matched / total) if total else 0.0
     return {"faults": faults, "matched": matched, "total": total,
-            "weak": weak[:30], "ratio": ratio, "error": error}
+            "weak": weak[:30], "ratio": ratio, "error": error,
+            "warnings": pacing_warnings}
 
 
 # --------------------------------------------------- external tool hooks ---

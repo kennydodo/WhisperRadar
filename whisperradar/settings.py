@@ -128,6 +128,18 @@ SPEC: list[dict] = [
                 "different provider from the planner.",
     },
     {
+        "key": "shotlist_max_hold_seconds", "type": "float", "default": 20.0,
+        "min": 5.0, "max": 120.0,
+        "label": "Shotlist: max seconds per image",
+        "help": "Checked from the SRT cue timings BEFORE any image renders: a "
+                "shot planned to hold longer than this re-plans the shotlist, "
+                "because too few images for the narration leaves each one on "
+                "screen so long the video reads as a slideshow. The planning "
+                "brief's own rules (a long STATIC hold is never acceptable, ST "
+                "only on short holds and ~10% of shots, no motion code above "
+                "~40%, no fragmentation) are enforced at the same time.",
+    },
+    {
         "key": "script_min_rating", "type": "float", "default": 9.0,
         "min": 1.0, "max": 10.0,
         "label": "Script: minimum rating",
@@ -303,6 +315,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Shotlist gate", [
         "shotlist_min_alignment", "shotlist_max_attempts",
+        "shotlist_max_hold_seconds",
         "shotlist_judge_provider",
     ]),
     ("Production defaults", [
@@ -491,6 +504,9 @@ def for_production(conn, prod) -> dict:
                                              glob["shotlist_max_attempts"])),
         "shotlist_judge_provider": (row_get(own, "shotlist_judge_provider")
                                     or glob["shotlist_judge_provider"] or None),
+        "shotlist_max_hold_seconds": float(row_get(
+            own, "shotlist_max_hold_seconds",
+            glob["shotlist_max_hold_seconds"])),
         "autorun_enabled": bool(glob["autorun_enabled"])
                            and bool(row_get(own, "autorun_enabled", 1)),
         "bible_dir": row_get(own, "bible_dir"),
