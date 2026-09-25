@@ -148,9 +148,11 @@ production from any transcribed video in your library, then walk its stages:
 The default `tts_command` hook generates the audio stage automatically with
 [OpenSpeaker](https://ai33.pro/app) - no more manual uploads. One-time setup:
 
-1. Get an API key from the OpenSpeaker app (API section) and set it once:
-   `setx WR_AI33_API_KEY "your-key"` (new terminals pick it up; restart the
-   dashboard afterwards).
+1. Get an API key from the OpenSpeaker app (API section) and paste it into
+   the dashboard under **Settings > LLM > OpenSpeaker (ai33.pro) API key**.
+   (Alternatively set `WR_AI33_API_KEY` once with `setx`; new terminals pick
+   it up and the dashboard needs a restart.) The key is used by both the
+   audio stage's TTS hook and the voice picker.
 2. Pick the narration voice in the **audio stage dropdown** on the production
    page, with sample previews. By default it lists the voices shortlisted in
    `studio.ai33_voices` (config.yaml); leave that empty to browse the full
@@ -162,8 +164,8 @@ The default `tts_command` hook generates the audio stage automatically with
 With the hook configured, **Run till finish** covers
 style → script → audio → srt → shots → images → merge and stops before
 review. Scripts are sent as-is (max 1,000,000 chars), `--speed` accepts
-0.5-1.5. Optional config overrides: `studio.ai33_api_key`, `ai33_voice`,
-`ai33_base_url`.
+0.5-1.5. The API key and host live in Settings > LLM; the legacy config
+overrides `studio.ai33_api_key`, `ai33_voice`, `ai33_base_url` still work.
 
 ## Daily usage
 

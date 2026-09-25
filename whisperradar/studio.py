@@ -3147,16 +3147,20 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
 
 # --------------------------------------------------- external tool hooks ---
 
-def run_hook(command: str, subs: dict, timeout: int = 3600) -> None:
+def run_hook(command: str, subs: dict, timeout: int = 3600,
+             env: dict | None = None) -> None:
     """Run a configured external command, substituting {placeholders}.
     Every value is command-line quoted, so working folders or filenames
-    containing spaces, & , ^ or % cannot inject extra commands."""
+    containing spaces, & , ^ or % cannot inject extra commands.
+
+    `env` replaces the child's environment when given (used to hand a hook a
+    secret resolved from the dashboard settings, e.g. the AI33 API key)."""
     cmd = command
     for key, val in subs.items():
         cmd = cmd.replace("{" + key + "}",
                           subprocess.list2cmdline([str(val)]))
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True,
-                            timeout=timeout)
+                            timeout=timeout, env=env)
     if result.returncode != 0:
         tail = (result.stderr or result.stdout or "")[-400:]
         raise RuntimeError(f"command failed (exit {result.returncode}): {tail}")

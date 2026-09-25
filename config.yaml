@@ -34,7 +34,8 @@ studio:
   # {voice} is the voice picked in the dashboard's audio stage (per
   # production); empty = AI33_VOICE env var or the built-in edge default.
   tts_command: python D:\Repos\WhisperRadar\scripts\ai33_tts.py {script} {out} --voice {voice}
-  # Optional overrides: ai33_api_key, ai33_voice, ai33_base_url
+  # The API key and base URL are configured in the dashboard under
+  # Settings > LLM (OpenSpeaker). The keys below are legacy fallbacks.
   ai33_api_key: null
   # Shortlist shown in the audio-stage dropdown (order kept). Find ids with
   #   python scripts\ai33_tts.py --voices --search <name>

@@ -16,13 +16,14 @@ human decision.
 
 import json
 import logging
+import os
 import re
 import shutil
 import time
 
 from pathlib import Path
 
-from . import db, services, settings, studio, transcribe
+from . import ai33, db, services, settings, studio, transcribe
 from .cli import format_duration
 
 
@@ -464,8 +465,15 @@ def _run_audio(cfg, pid: int) -> None:
             raise RuntimeError("Write the script first")
         out = pdir / "audio.mp3"
         voice = _effective(cfg, pid)["voice"]
+        # Hand the TTS hook the AI33 key resolved from Settings > LLM (or
+        # config/env), so it does not depend on the process environment.
+        hook_env = None
+        ai33_key = ai33.api_key(cfg)
+        if ai33_key:
+            hook_env = {**os.environ, "WR_AI33_API_KEY": ai33_key}
         studio.run_hook(cfg.studio_tts_command,
-                        {"script": script, "out": out, "voice": voice or ""})
+                        {"script": script, "out": out, "voice": voice or ""},
+                        env=hook_env)
         audio = studio.find_audio(pdir)
         if not audio:
             raise RuntimeError("TTS produced no audio file")

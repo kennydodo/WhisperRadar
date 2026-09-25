@@ -1,8 +1,9 @@
 """OpenSpeaker (ai33.pro) API client - narration voices + TTS tasks.
 
 Used by the Studio audio stage (tts_command hook) and the dashboard's
-voice picker. API key: config `studio.ai33_api_key` or the WR_AI33_API_KEY /
-AI33_API_KEY environment variable. Docs are embedded in the OpenSpeaker app;
+voice picker. API key: Settings > LLM in the dashboard, else config
+`studio.ai33_api_key`, else the WR_AI33_API_KEY / AI33_API_KEY environment
+variable. Docs are embedded in the OpenSpeaker app;
 short version: POST /v3/text-to-speech (FormData) -> task_id, poll
 GET /v1/task/<task_id> until done, download output_uri / metadata.audio_url.
 """
@@ -81,8 +82,8 @@ def resolve_voice(cfg, voice_id: str) -> dict | None:
     Returns None when the voice cannot be found."""
     key = api_key(cfg)
     if not key:
-        raise RuntimeError("no OpenSpeaker API key - set WR_AI33_API_KEY "
-                           "(or studio.ai33_api_key in config.yaml)")
+        raise RuntimeError("no OpenSpeaker API key - add one in Settings > "
+                           "LLM, or set WR_AI33_API_KEY")
     provider, _, bare = voice_id.partition("_")
     if provider not in PROVIDERS or not bare:
         return None
@@ -124,8 +125,8 @@ def favorites(cfg, refresh: bool = False) -> list[dict]:
     """
     key = api_key(cfg)
     if not key:
-        raise RuntimeError("no OpenSpeaker API key - set WR_AI33_API_KEY "
-                           "(or studio.ai33_api_key in config.yaml)")
+        raise RuntimeError("no OpenSpeaker API key - add one in Settings > "
+                           "LLM, or set WR_AI33_API_KEY")
     now = time.monotonic()
     if not refresh and _favorites_cache["data"] \
             and now - _favorites_cache["at"] < VOICES_CACHE_TTL:
@@ -150,14 +151,37 @@ def favorites(cfg, refresh: bool = False) -> list[dict]:
     return out
 
 
+def _saved_setting(cfg, key: str) -> str | None:
+    """A value from the dashboard's settings table, when cfg points at a DB.
+
+    The Settings > LLM page is the configured home for the AI33 key, so it
+    wins over config.yaml; a missing DB or table is simply "not set"."""
+    db_path = getattr(cfg, "db_path", None) if cfg else None
+    if not db_path:
+        return None
+    try:
+        from . import db
+
+        conn = db.connect(db_path)
+        try:
+            return (db.get_setting(conn, key) or "").strip() or None
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - unreadable DB means "not configured"
+        return None
+
+
 def api_key(cfg=None) -> str | None:
-    key = getattr(cfg, "studio_ai33_api_key", None) if cfg else None
+    # Priority: Settings > LLM in the dashboard, then config.yaml, then env.
+    key = _saved_setting(cfg, "ai33_api_key") \
+        or (getattr(cfg, "studio_ai33_api_key", None) if cfg else None)
     return (key or os.environ.get("WR_AI33_API_KEY")
             or os.environ.get("AI33_API_KEY") or None)
 
 
 def base_url(cfg=None) -> str:
-    url = getattr(cfg, "studio_ai33_base_url", None) if cfg else None
+    url = _saved_setting(cfg, "ai33_base_url") \
+        or (getattr(cfg, "studio_ai33_base_url", None) if cfg else None)
     return (url or os.environ.get("AI33_BASE_URL") or API_BASE).rstrip("/")
 
 
@@ -221,8 +245,8 @@ def _fetch_voices(cfg, provider: str, page_size: int,
     sane cap so catalogs larger than one page are fully loaded."""
     key = api_key(cfg)
     if not key:
-        raise RuntimeError("no OpenSpeaker API key - set WR_AI33_API_KEY "
-                           "(or studio.ai33_api_key in config.yaml)")
+        raise RuntimeError("no OpenSpeaker API key - add one in Settings > "
+                           "LLM, or set WR_AI33_API_KEY")
     voices = []
     page = 1
     while True:
@@ -332,8 +356,8 @@ def generate(cfg, text: str, voice_id: str | None, *, speed: float = 1.0,
     """Submit a v3 TTS task, poll until done, return the audio URL."""
     key = api_key(cfg)
     if not key:
-        raise RuntimeError("no OpenSpeaker API key - set WR_AI33_API_KEY "
-                           "(or studio.ai33_api_key in config.yaml)")
+        raise RuntimeError("no OpenSpeaker API key - add one in Settings > "
+                           "LLM, or set WR_AI33_API_KEY")
     log = log or _log
     body, ctype = _multipart({
         "text": text,

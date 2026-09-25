@@ -21,6 +21,20 @@ SPEC: list[dict] = [
                 "production's own choice both override this.",
     },
     {
+        "key": "ai33_api_key", "type": "str", "default": "",
+        "label": "OpenSpeaker (ai33.pro) API key",
+        "help": "Narration key used by the audio stage's AI33 TTS hook and the "
+                "voice picker. Get it from the OpenSpeaker app (API section). "
+                "Empty = the WR_AI33_API_KEY / AI33_API_KEY environment "
+                "variable, then the config.yaml ai33_api_key.",
+    },
+    {
+        "key": "ai33_base_url", "type": "str", "default": "",
+        "label": "OpenSpeaker base URL",
+        "help": "Optional. Override the OpenSpeaker API host "
+                "(default https://api.ai33.pro).",
+    },
+    {
         "key": "autorun_enabled", "type": "bool", "default": False,
         "label": "Enable Auto Run",
         "help": "Master switch for the unattended producer. Off = nothing "
@@ -315,7 +329,8 @@ SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 # The settings page renders these groups in order; a key missing from every
 # group lands in "Other", so adding a SPEC entry can never hide it.
 GROUPS: list[tuple[str, list[str]]] = [
-    ("LLM", ["llm_default", "producer_llm_provider"]),
+    ("LLM", ["llm_default", "producer_llm_provider",
+             "ai33_api_key", "ai33_base_url"]),
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
