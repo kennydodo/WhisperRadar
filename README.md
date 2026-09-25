@@ -189,8 +189,13 @@ python wr.py export <video_id> --out C:\some\folder
 ### Backlog (old videos)
 
 When you add a channel, its existing uploads are logged as **backlog** and are
-*not* auto-downloaded - only videos published after you subscribed are. To
-process older videos on purpose:
+*not* auto-downloaded - only videos published after you subscribed are. By
+default the **full history** is imported with yt-dlp (YouTube's RSS feed only
+lists the latest 15, so older videos would otherwise be invisible); set
+`history_backfill: false` in `config.yaml`, or `history_backfill_limit: N`, to
+import less. Import a channel's history at any time with
+`python wr.py backfill <channel|all> [--limit N]` or the **backfill** button on
+its Dashboard row. To process older videos on purpose:
 
 ```powershell
 python wr.py backlog                 # list backlog
@@ -287,6 +292,8 @@ All options live in `config.yaml`:
 | `whisper.language` | `null` = auto-detect, or e.g. `en` |
 | `cookies_from_browser` | `chrome` / `firefox` / `edge` if YouTube bot-checks you |
 | `max_video_seconds` | skip videos longer than this |
+| `history_backfill` | import a channel's full history on its first sync (default `true`; RSS only lists the latest 15) |
+| `history_backfill_limit` | cap that import (`null` = whole channel) |
 
 **Genres**: tag each channel with a genre (`python wr.py add <url> --genre tech`
 or `genre: tech` in config). Filter videos by genre with
@@ -300,6 +307,7 @@ The dashboard's "Export all transcripts (.zip)" also accepts `?genre=tech`.
 - **`ffmpeg not found`** -> install it (see setup) and reopen the terminal.
 - **Bot-check / sign-in errors** -> set `cookies_from_browser` in config.
 - **RSS only shows the last 15 videos** -> run `python wr.py run` at least
-  daily, or use `--retry` after a gap.
+  daily, or use `--retry` after a gap. Channel *history* (older uploads) comes
+  from the automatic first-sync backfill / `wr.py backfill`, not RSS.
 - **CUDA errors in logs** -> it already fell back to CPU; install cuDNN 9 DLLs
   to re-enable GPU.

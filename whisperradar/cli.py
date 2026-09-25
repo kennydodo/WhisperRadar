@@ -281,6 +281,33 @@ def cmd_backlog(cfg, args):
         conn.close()
 
 
+def cmd_backfill(cfg, args):
+    """Import a channel's full uploads history into the backlog.
+
+    The RSS feed only lists the latest 15 uploads, so this walks the channel
+    with yt-dlp to discover the rest. Nothing is downloaded - the new rows are
+    backlog until you queue them."""
+    conn = _open(cfg)
+    try:
+        if args.channel == "all":
+            rows = db.list_channels(conn)
+        else:
+            row = db.get_channel(conn, args.channel)
+            rows = [row] if row else []
+        if not rows:
+            print(f"No such channel: {args.channel}")
+            return
+        for ch in rows:
+            try:
+                added = pipeline.import_history(cfg, conn, ch, limit=args.limit)
+                print(f"{ch['name']}: imported {added} new video(s) "
+                      f"(backlog) - queue with: python wr.py backlog all")
+            except Exception as exc:
+                print(f"{ch['name']}: failed: {exc}")
+    finally:
+        conn.close()
+
+
 def cmd_clean(cfg, args):
     conn = _open(cfg)
     try:
@@ -493,6 +520,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="video id or 'all' to queue for download; "
                         "omit to list the backlog")
     p.set_defaults(func=cmd_backlog)
+
+    p = sub.add_parser("backfill", help="import a channel's FULL uploads "
+                                         "history (RSS only shows the latest 15)",
+                       parents=[common])
+    p.add_argument("channel", nargs="?", default="all",
+                   help="channel name or id, or 'all' (default)")
+    p.add_argument("--limit", type=int, default=None,
+                   help="import at most this many newest uploads "
+                        "(default: the whole history)")
+    p.set_defaults(func=cmd_backfill)
 
     p = sub.add_parser("clean", help="report/delete audio+transcript files "
                                      "not tracked in the database")

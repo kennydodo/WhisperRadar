@@ -345,6 +345,35 @@ def upsert_video(conn, channel_id: str, video: dict, auto: int = 1) -> bool:
     return cur.rowcount == 1
 
 
+def upsert_videos(conn, channel_id: str, videos: list[dict],
+                  auto: int = 0) -> int:
+    """Bulk-insert videos (INSERT OR IGNORE), one transaction. Returns the
+    number of rows actually created - used when importing a full channel
+    history, which can be thousands of entries."""
+    rows = [
+        (
+            channel_id,
+            video["video_id"],
+            video.get("title", ""),
+            video.get("url", ""),
+            video.get("published_at"),
+            auto,
+        )
+        for video in videos
+        if video.get("video_id")
+    ]
+    if not rows:
+        return 0
+    before = conn.total_changes
+    conn.executemany(
+        "INSERT OR IGNORE INTO videos (channel_id, video_id, title, url,"
+        " published_at, auto) VALUES (?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+    return conn.total_changes - before
+
+
 def set_video(conn, video_id: str, **fields) -> None:
     cols, vals = [], []
     for key, value in fields.items():

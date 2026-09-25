@@ -12,6 +12,15 @@ cookies_from_browser: null
 # Optional: skip videos longer than this many seconds (null = no limit)
 max_video_seconds: null
 
+# On a channel's first sync, import its FULL uploads history with yt-dlp.
+# YouTube's RSS feed only lists the latest 15 videos, so without this a newly
+# added channel can never see its older uploads. New rows land in the backlog
+# (never downloaded until you queue them). Set false to use RSS only.
+history_backfill: true
+# Cap the history import (null = the whole channel). Useful for very large
+# channels where you only want the most recent N uploads.
+history_backfill_limit: null
+
 whisper:
   # tiny | base | small | medium | large-v3  (bigger = better + slower)
   model: small

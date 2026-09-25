@@ -426,6 +426,42 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
 
+    @app.post("/channels/backfill")
+    def channels_backfill():
+        """Import a channel's full upload history into the backlog (the RSS
+        feed only lists the latest 15). Runs in the job slot - yt-dlp can take
+        a while on a big channel."""
+        key = (request.form.get("key") or "").strip()
+        limit_raw = (request.form.get("limit") or "").strip()
+        try:
+            limit = int(limit_raw) if limit_raw else None
+        except ValueError:
+            limit = None
+        log = logging.getLogger("whisperradar")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                if key and key != "all":
+                    row = db.get_channel(conn, key)
+                    rows = [row] if row else []
+                else:
+                    rows = db.list_channels(conn)
+                if not rows:
+                    log.warning("backfill: no matching channel")
+                    return
+                total = 0
+                for ch in rows:
+                    total += pipeline.import_history(cfg, conn, ch, limit=limit)
+                log.info("backfill finished: %d new backlog video(s)", total)
+            finally:
+                conn.close()
+
+        if not job.start(worker, "history backfill"):
+            return _back(request, error="A job is already running")
+        return _back(request, msg="Importing channel history - watch the log")
+
     @app.post("/channels/remove")
     def channels_remove():
         key = (request.form.get("key") or "").strip()

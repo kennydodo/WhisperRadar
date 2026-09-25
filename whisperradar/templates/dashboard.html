@@ -136,6 +136,11 @@
             {% else %}<span class="badge skipped">paused</span>{% endif %}</td>
         <td style="text-align:right; white-space:nowrap">
           <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
+          <form class="row" method="post" action="/channels/backfill" style="display:inline"
+                title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
+            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
+            <button type="submit" class="ghost">backfill</button>
+          </form>
           <form class="row" method="post" action="/channels/remove"
                 onsubmit="return confirm('Remove {{ ch["name"] }} and its video records?')">
             <input type="hidden" name="key" value="{{ ch["channel_id"] }}">

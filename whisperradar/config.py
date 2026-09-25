@@ -17,6 +17,11 @@ class Config:
         self.exports_dir = base_dir / "exports"
         self.cookies_from_browser = raw.get("cookies_from_browser") or None
         self.max_video_seconds = raw.get("max_video_seconds") or None
+        # On a channel's first sync, import its full uploads history (the RSS
+        # feed only lists the latest 15). New rows land in the backlog.
+        self.history_backfill = bool(raw.get("history_backfill", True))
+        _backfill_limit = raw.get("history_backfill_limit")
+        self.history_backfill_limit = int(_backfill_limit) if _backfill_limit else None
 
         whisper = raw.get("whisper") or {}
         self.whisper_model = whisper.get("model", "small")

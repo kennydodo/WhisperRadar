@@ -40,6 +40,24 @@ def move_channel_files(cfg, conn, channel_row, new_genre: str) -> int:
     return moved
 
 
+def import_history(cfg, conn, channel_row, limit: int | None = None) -> int:
+    """Import a channel's full upload history into the backlog.
+
+    The RSS feed only lists the latest 15 uploads, so a newly added channel
+    would otherwise never see its older videos. New rows land in the backlog
+    (auto=0) - nothing is downloaded until it is explicitly queued. Existing
+    rows are left untouched. Returns the number of new rows."""
+    channel_id = channel_row["channel_id"]
+    videos = watch.fetch_channel_videos_full(
+        channel_id, limit=limit,
+        cookies_from_browser=getattr(cfg, "cookies_from_browser", None),
+    )
+    added = db.upsert_videos(conn, channel_id, videos, auto=0)
+    log.info("history %s: %d video(s) found, %d new (backlog)",
+             channel_row["name"], len(videos), added)
+    return added
+
+
 def refresh_feeds(cfg, conn) -> int:
     """Check each active channel's feed; returns number of new videos."""
     new_total = 0
@@ -47,12 +65,6 @@ def refresh_feeds(cfg, conn) -> int:
     if not channels:
         log.warning("No channels configured. Add one with: python wr.py add <url>")
     for ch in channels:
-        try:
-            videos = watch.fetch_channel_videos(ch["channel_id"])
-        except Exception as exc:
-            log.error("feed failed for %s: %s", ch["name"], exc)
-            continue
-        added = 0
         # first sync of a channel: existing uploads are backlog, not auto-queue.
         # similar channels never auto-download - their uploads always land in
         # backlog until explicitly queued.
@@ -60,14 +72,31 @@ def refresh_feeds(cfg, conn) -> int:
             "SELECT 1 FROM videos WHERE channel_id = ? LIMIT 1",
             (ch["channel_id"],),
         ).fetchone() is None
+        try:
+            videos = watch.fetch_channel_videos(ch["channel_id"])
+        except Exception as exc:
+            log.error("feed failed for %s: %s", ch["name"], exc)
+            videos = []
+        added = 0
         for video in videos:
             auto = 1 if (not first_sync and ch["kind"] != "similar") else 0
             if db.upsert_video(conn, ch["channel_id"], video, auto=auto):
                 added += 1
                 label = "backlog video" if auto == 0 else "new video"
                 log.info("%s: [%s] %s", label, ch["name"], video["title"])
-        log.info("feed %s: %d videos, %d new", ch["name"], len(videos), added)
+        if videos:
+            log.info("feed %s: %d videos, %d new", ch["name"], len(videos), added)
         new_total += added
+        # RSS only lists the latest 15, so on a channel's first sync import the
+        # rest of its uploads too (opt out with history_backfill: false). Run
+        # after the RSS pass so the newest videos keep their RSS dates.
+        if first_sync and getattr(cfg, "history_backfill", True):
+            try:
+                import_history(cfg, conn, ch,
+                               limit=getattr(cfg, "history_backfill_limit", None))
+            except Exception as exc:
+                log.warning("history import failed for %s: %s - RSS only",
+                            ch["name"], exc)
     return new_total
 
 
