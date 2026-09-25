@@ -673,7 +673,7 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     Optional per channel. A ref you SUPPLY is used as-is; a ref with no usable
     file is generated from its own prompt and placed in the production's refs\\
     folder, with the shotlist registry path filled in - so the images stage can
-    upload it to the Flow project under the ref's own name (FlowImagesGen) or
+    upload it to the Flow project under the ref's own name (FlowBatch) or
     resolve it as a local file (the Renderly driver)."""
     t0 = time.monotonic()
     log = log or (lambda m: None)
@@ -715,7 +715,7 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
         todo = dict(list(todo.items())[:studio.REFS_ON_THE_FLY_CAP])
     log(f"[auto-run] refs: generating {len(todo)} reference image(s): "
         f"{', '.join(list(todo)[:6])}")
-    result = studio.run_flowimagesgen_refs(cfg, pdir, pid, todo, log=log,
+    result = studio.run_flowbatch_refs(cfg, pdir, pid, todo, log=log,
                                            cancel=cancel)
     made = result["generated"]
     failed = result["missing"] + stranded
@@ -770,14 +770,14 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                                 log_fn=log)
         for round_no in range(1, IMAGE_RESUME_ROUNDS + 1):
             try:
-                if engine == "flowimagesgen":
-                    # FlowImagesGen drives Flow itself and upscales on the way
+                if engine == "flowbatch":
+                    # FlowBatch drives Flow itself and upscales on the way
                     # out, so the Renderly channel/project and the Flow Driver
                     # do not apply.
-                    count = studio.run_imagegen_flowimagesgen(
+                    count = studio.run_imagegen_flowbatch(
                         cfg, pdir, pid, upscale=flow_upscale, log=log,
                         cancel=cancel, project_url=flow_project_url)
-                    source = "FlowImagesGen"
+                    source = "FlowBatch"
                 elif mode == "flow":
                     # per-image refs come from the shotlist's own refs registry,
                     # which flow.js resolves itself; the production refs\ folder
@@ -990,10 +990,10 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
         prod = _get_prod(cfg, pid)
         mode = _default_render_mode(cfg, prod)
         eff = _effective(cfg, pid)
-        if eff["engine"] == "flowimagesgen":
+        if eff["engine"] == "flowbatch":
             refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
                     if (pdir / "refs").exists() else 0)
-            detail = (f"{len(missing)} missing image(s) via FlowImagesGen "
+            detail = (f"{len(missing)} missing image(s) via FlowBatch "
                       f"(upscale {eff['upscale']}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
         elif mode == "flow":
@@ -1049,7 +1049,7 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None) -> dict:
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
         params = {"mode": mode, "engine": eff["engine"], "flow_project": "",
                   "flow_upscale": eff["upscale"], "log": log, "cancel": cancel}
-        if eff["engine"] == "flowimagesgen":
+        if eff["engine"] == "flowbatch":
             pass  # drives Flow itself; no Renderly channel/project involved
         elif mode == "flow":
             params["flow_channel"] = eff["renderly_channel_name"]

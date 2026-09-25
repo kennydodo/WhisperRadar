@@ -697,32 +697,32 @@ def flow_service_url(cfg) -> str:
     return (cfg.flow_driver_url or "http://127.0.0.1:8030").rstrip("/")
 
 
-# ------------------------------------------- FlowImagesGen (2nd engine) --
+# ------------------------------------------- FlowBatch (2nd engine) --
 # The standalone Playwright Flow CLI, consumed in place from its own
 # checkout (like ImgToVideo and Renderly - never vendored: its Google
 # session lives in a gitignored profile\ folder). Invoked as:
 #   node src/cli.js generate --job <job.json> --output <dir> ...
 
-# WhisperRadar's upscale 0-4 -> FlowImagesGen's resolution tier names.
+# WhisperRadar's upscale 0-4 -> FlowBatch's resolution tier names.
 # 3k does not exist there (off/1k/2k/4k) and normalizeTier throws on unknown
 # tiers, so tier 3 collapses to 2k - the same legacy mapping Renderly's
 # resolve_tier applies.
-FLOWIMAGESGEN_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "2k", 4: "4k"}
+FLOWBATCH_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "2k", 4: "4k"}
 
 # Flow refuses prompts over roughly 2450 characters with the SAME message it
 # uses for rate limiting, so the job-wide style is only sent when it fits.
-FLOWIMAGESGEN_MAX_PROMPT_CHARS = 2420
+FLOWBATCH_MAX_PROMPT_CHARS = 2420
 
 
-def flowimagesgen_dir(cfg) -> Path | None:
-    if not cfg.flowimagesgen_repo:
+def flowbatch_dir(cfg) -> Path | None:
+    if not cfg.flowbatch_repo:
         return None
-    d = Path(cfg.flowimagesgen_repo).expanduser()
+    d = Path(cfg.flowbatch_repo).expanduser()
     return d if d.exists() else None
 
 
-def flowimagesgen_ready(cfg) -> bool:
-    d = flowimagesgen_dir(cfg)
+def flowbatch_ready(cfg) -> bool:
+    d = flowbatch_dir(cfg)
     return bool(d) and (d / "src" / "cli.js").exists() \
         and (d / "node_modules" / "playwright").exists() \
         and shutil.which("node") is not None
@@ -757,7 +757,7 @@ def flow_project_url_for(cfg, pid: int,
             conn.close()
     except Exception as exc:  # noqa: BLE001 - never block generation on this
         log.debug("could not read the production's Flow project: %s", exc)
-    url = (cfg.flowimagesgen_project_url or "").strip() or None
+    url = (cfg.flowbatch_project_url or "").strip() or None
     return url, "config" if url else "none"
 
 
@@ -814,7 +814,7 @@ def refs_to_generate(pdir: Path) -> dict:
 
 
 def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
-    """A FlowImagesGen job that renders one image per reference, named exactly
+    """A FlowBatch job that renders one image per reference, named exactly
     after the ref, so the result can be attached by name later."""
     # the same style source the main job uses: the shotlist's style field, then
     # style.md - the refs should be drawn in the channel's art direction too
@@ -842,24 +842,24 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
     if url:
         job["projectUrl"] = url
     # the channel's art direction, when it fits Flow's prompt ceiling
-    if style and longest + len(style) + 1 <= FLOWIMAGESGEN_MAX_PROMPT_CHARS:
+    if style and longest + len(style) + 1 <= FLOWBATCH_MAX_PROMPT_CHARS:
         job["style"] = style
     elif style:
         log.info("refs: omitting the %d-char style - ref prompts would exceed "
                  "Flow's %d-char limit", len(style),
-                 FLOWIMAGESGEN_MAX_PROMPT_CHARS)
-    job_path = pdir / "flowimagesgen_refs.json"
+                 FLOWBATCH_MAX_PROMPT_CHARS)
+    job_path = pdir / "flowbatch_refs.json"
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
     return job_path
 
 
-def run_flowimagesgen_refs(cfg, pdir: Path, pid: int, refs: dict,
+def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                            log=None, cancel=None) -> dict:
-    """Render the missing reference images with FlowImagesGen, then place them
+    """Render the missing reference images with FlowBatch, then place them
     so BOTH engines can use them: as files in the production's refs\\ (the
     Renderly driver resolves names there) and with the shotlist's registry
-    path filled in (so FlowImagesGen's prepare uploads them by name into the
+    path filled in (so FlowBatch's prepare uploads them by name into the
     Flow project gallery).
 
     Returns {generated: [names], missing: [names]} - nothing raises for a ref
@@ -867,14 +867,14 @@ def run_flowimagesgen_refs(cfg, pdir: Path, pid: int, refs: dict,
     log = log or (lambda m: None)
     if not refs:
         return {"generated": [], "missing": []}
-    if not flowimagesgen_ready(cfg):
+    if not flowbatch_ready(cfg):
         raise RuntimeError(
-            "reference generation needs FlowImagesGen - set "
-            "studio.flowimagesgen_repo in config.yaml")
-    repo = flowimagesgen_dir(cfg)
+            "reference generation needs FlowBatch - set "
+            "studio.flowbatch_repo in config.yaml")
+    repo = flowbatch_dir(cfg)
     job_path = _write_refs_job(cfg, pdir, pid, refs)
-    tier = set_flowimagesgen_tier(cfg, cfg.renderly_upscale)
-    cmd = _flowimagesgen_cmd(["generate", "--job", str(job_path),
+    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale)
+    cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pdir / "flow_refs"),
                               "--no-color"])
     url, _ = flow_project_url_for(cfg, pid)
@@ -961,13 +961,13 @@ def _update_ref_paths(pdir: Path, names: list[str]) -> None:
             encoding="utf-8")
 
 
-def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int,
+def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
                               project_url: str | None = None) -> tuple[Path, list[str]]:
-    """Build a FlowImagesGen job from the production's shotlist: only the
+    """Build a FlowBatch job from the production's shotlist: only the
     images still missing from images\\.
 
     Per-image refs stay as NAMES and the shotlist's refs registry becomes the
-    job's name -> path map, so FlowImagesGen's default refMode "reuse" attaches
+    job's name -> path map, so FlowBatch's default refMode "reuse" attaches
     existing Flow project assets by name instead of re-uploading (its own
     README: repeated uploads duplicate project assets). Files in the
     production's refs\\ folder are exposed under their stem, matching how the
@@ -1014,11 +1014,11 @@ def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int,
     url, source = flow_project_url_for(cfg, pid, project_url)
     if url:
         job["projectUrl"] = url
-        log.info("FlowImagesGen: Flow project from %s", source)
+        log.info("FlowBatch: Flow project from %s", source)
     else:
         # Never silent: without a URL Flow opens its landing page and uses the
         # most recent project, which may belong to another video.
-        log.warning("FlowImagesGen: no Flow project URL for production %s - "
+        log.warning("FlowBatch: no Flow project URL for production %s - "
                     "Flow will fall back to its most recent project, which may "
                     "be the wrong one. Set one on the channel, or run the "
                     "prepare step to create a project for this production.",
@@ -1044,41 +1044,41 @@ def prepare_flowimagesgen_job(cfg, pid_dir: Path, pid: int,
     # whole prompt would still fit.
     style = (data.get("style") or "").strip()
     longest = max((len(i["prompt"]) for i in todo), default=0)
-    if style and longest + len(style) + 1 <= FLOWIMAGESGEN_MAX_PROMPT_CHARS:
+    if style and longest + len(style) + 1 <= FLOWBATCH_MAX_PROMPT_CHARS:
         job["style"] = style
     elif style:
-        log.info("FlowImagesGen: omitting the %d-char style - prompts would "
+        log.info("FlowBatch: omitting the %d-char style - prompts would "
                  "exceed Flow's %d-char limit (longest prompt %d)",
-                 len(style), FLOWIMAGESGEN_MAX_PROMPT_CHARS, longest)
-    job_path = pid_dir / "flowimagesgen.json"
+                 len(style), FLOWBATCH_MAX_PROMPT_CHARS, longest)
+    job_path = pid_dir / "flowbatch.json"
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
     return job_path, [i["file"] for i in todo]
 
 
-def _flowimagesgen_cmd(args: list[str]) -> list[str]:
+def _flowbatch_cmd(args: list[str]) -> list[str]:
     return ["node", "src/cli.js", *args]
 
 
-def set_flowimagesgen_tier(cfg, upscale: int) -> str | None:
-    """Remember the upscale tier in FlowImagesGen's own local config (the
+def set_flowbatch_tier(cfg, upscale: int) -> str | None:
+    """Remember the upscale tier in FlowBatch's own local config (the
     same thing its web UI does). Returns the tier name."""
-    d = flowimagesgen_dir(cfg)
+    d = flowbatch_dir(cfg)
     if not d:
         return None
-    tier = FLOWIMAGESGEN_TIERS.get(int(upscale or 0), "off")
+    tier = FLOWBATCH_TIERS.get(int(upscale or 0), "off")
     try:
-        subprocess.run(_flowimagesgen_cmd(["upscale", "--set-tier", tier]),
+        subprocess.run(_flowbatch_cmd(["upscale", "--set-tier", tier]),
                        cwd=str(d), capture_output=True, text=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
-        log.warning("FlowImagesGen: could not set upscale tier %s: %s",
+        log.warning("FlowBatch: could not set upscale tier %s: %s",
                     tier, exc)
     return tier
 
 
-def _adopt_flowimagesgen_outputs(pdir: Path, names: list[str],
+def _adopt_flowbatch_outputs(pdir: Path, names: list[str],
                                  tier: str) -> list[str]:
-    """Copy FlowImagesGen's results into images\\ under the shotlist's own
+    """Copy FlowBatch's results into images\\ under the shotlist's own
     file names, preferring the upscaled <stem>_<tier>.png over the master
     (both are written, so the pipeline would otherwise see duplicates)."""
     out_dir = pdir / "flow_images"
@@ -1105,7 +1105,7 @@ def _adopt_flowimagesgen_outputs(pdir: Path, names: list[str],
 
 
 def _safe_log(log, message) -> None:
-    """Log a child process line without ever raising. FlowImagesGen prints
+    """Log a child process line without ever raising. FlowBatch prints
     non-ASCII (checkmarks, box drawing) and a cp1252 console raises
     UnicodeEncodeError on write - which used to kill the whole stage and hide
     the real error."""
@@ -1140,20 +1140,20 @@ def _read_json_retry(path: Path, attempts: int = 3, delay: float = 1.5):
     return None
 
 
-def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
+def run_flowbatch_prepare(cfg, pid_dir: Path, job_path: Path,
                               log=None) -> dict:
-    """Ask FlowImagesGen to create-or-open this production's Flow project and
+    """Ask FlowBatch to create-or-open this production's Flow project and
     get its references into the project gallery, then read back the report.
 
     The report is the frozen contract (see AGENTS.md): projectUrl, projectId,
     created, and per-ref {name, kind, status, path}. This is the receiving end,
-    so FlowImagesGen only has to write it. It is OPTIONAL: a missing `prepare`
+    so FlowBatch only has to write it. It is OPTIONAL: a missing `prepare`
     command, a failure, or an absent report all return {} and generation
     proceeds with the stored URL - preparation must never block a batch."""
     log = log or (lambda m: None)
     report_path = pid_dir / FLOW_PREPARE_REPORT
-    repo = flowimagesgen_dir(cfg)
-    cmd = _flowimagesgen_cmd(["prepare", "--job", str(job_path),
+    repo = flowbatch_dir(cfg)
+    cmd = _flowbatch_cmd(["prepare", "--job", str(job_path),
                               "--report", str(report_path), "--no-color"])
     _safe_log(log, "$ " + " ".join(cmd))
     try:
@@ -1161,7 +1161,7 @@ def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
                               text=True, encoding="utf-8", errors="replace",
                               timeout=3600)
     except (OSError, subprocess.SubprocessError) as exc:
-        _safe_log(log, f"FlowImagesGen prepare could not run: {exc}")
+        _safe_log(log, f"FlowBatch prepare could not run: {exc}")
         return {}
     out = (proc.stdout or "") + (proc.stderr or "")
     for line in out.splitlines():
@@ -1171,12 +1171,12 @@ def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
         low = out.lower()
         if ("unknown command" in low or "unknown argument" in low
                 or "usage:" in low):
-            _safe_log(log, "FlowImagesGen has no 'prepare' command yet - "
+            _safe_log(log, "FlowBatch has no 'prepare' command yet - "
                            "skipping project preparation; the Flow project "
                            "still comes from the DB/job")
             return {}
         detail = " | ".join(out.strip().splitlines()[-4:])[:280]
-        _safe_log(log, f"FlowImagesGen prepare failed (exit "
+        _safe_log(log, f"FlowBatch prepare failed (exit "
                        f"{proc.returncode}): {detail}")
         # prepare writes the report the moment the project exists - BEFORE it
         # touches references. So a failure during the REF work still has a usable
@@ -1185,7 +1185,7 @@ def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
         report = _read_json_retry(report_path)
         url = _usable_flow_project(report)
         if url:
-            _safe_log(log, f"FlowImagesGen prepare opened/created {url} but its "
+            _safe_log(log, f"FlowBatch prepare opened/created {url} but its "
                            f"reference step failed - keeping the project; "
                            f"generate will attach the references")
             return report
@@ -1195,7 +1195,7 @@ def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
         return {"error": detail}
     report = _read_json_retry(report_path)
     if not isinstance(report, dict) or not report:
-        _safe_log(log, "FlowImagesGen prepare wrote no readable report - "
+        _safe_log(log, "FlowBatch prepare wrote no readable report - "
                        "continuing with the stored project URL")
         return {}
     return report
@@ -1224,7 +1224,7 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
                 db.update_production(conn, pid, flow_project_url=url,
                                      flow_project_id=project_id)
                 if report.get("created") and had and had != url:
-                    log(f"FlowImagesGen CREATED a new Flow project ({url}) "
+                    log(f"FlowBatch CREATED a new Flow project ({url}) "
                         f"even though production {pid} already had {had} - "
                         f"check for a duplicate project")
         finally:
@@ -1256,10 +1256,10 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
         missing = [str(r.get("name")) for r in refs if isinstance(r, dict)
                    and str(r.get("status") or "").lower() == "missing"]
         if ok:
-            log(f"FlowImagesGen: all {len(refs)} reference(s) are in the "
+            log(f"FlowBatch: all {len(refs)} reference(s) are in the "
                 f"project - refMode 'assets' (no uploads)")
         elif missing:
-            log(f"FlowImagesGen: {len(missing)} reference(s) missing from the "
+            log(f"FlowBatch: {len(missing)} reference(s) missing from the "
                 f"project: {', '.join(missing[:8])}")
     if changed:
         Path(job_path).write_text(
@@ -1328,7 +1328,7 @@ def run_flowdriver_prepare(cfg, pid_dir: Path, pid: int,
     """Call the Flow Driver's prepare endpoint - the Renderly half of the frozen
     handshake. It opens or creates the production's Flow project and gets its
     references into the project gallery WITHOUT generating, then writes the same
-    schema-1 report as FlowImagesGen.
+    schema-1 report as FlowBatch.
 
     When the stored project is gone (Flow answers .../404?reason=project, e.g.
     it was deleted or the driver now signs in as a different account) the
@@ -1412,33 +1412,33 @@ def image_batch_limits(cfg, pid: int) -> tuple[int, bool]:
         return 0, False
 
 
-def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
+def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
                                cancel=None, project_url: str | None = None) -> int:
-    """Render the production's missing shotlist images with FlowImagesGen.
+    """Render the production's missing shotlist images with FlowBatch.
 
     Returns how many new images landed in images\\. Long-running by design:
     Flow rate-limits automation and the CLI waits it out, so the timeout is
     generous and `cancel` kills the whole process tree."""
-    if not flowimagesgen_ready(cfg):
-        raise RuntimeError("Set studio.flowimagesgen_repo in config.yaml to "
-                           "your FlowImagesGen checkout (and run npm install)")
-    repo = flowimagesgen_dir(cfg)
-    job_path, names = prepare_flowimagesgen_job(cfg, pid_dir, pid, project_url)
+    if not flowbatch_ready(cfg):
+        raise RuntimeError("Set studio.flowbatch_repo in config.yaml to "
+                           "your FlowBatch checkout (and run npm install)")
+    repo = flowbatch_dir(cfg)
+    job_path, names = prepare_flowbatch_job(cfg, pid_dir, pid, project_url)
     # create-or-open this production's Flow project and get its references into
-    # the project gallery before generating (optional: {} when FlowImagesGen
+    # the project gallery before generating (optional: {} when FlowBatch
     # has no prepare command yet, or the report is absent)
-    report = run_flowimagesgen_prepare(cfg, pid_dir, job_path, log)
+    report = run_flowbatch_prepare(cfg, pid_dir, job_path, log)
     if not _usable_flow_project(report):
         # Empty handshake: the job's stored project is missing or dead (Flow
         # answers .../404?reason=project for a deleted or other-account
         # project). Ask prepare again with NO project URL so it CREATES one.
         stored, source = flow_project_url_for(cfg, pid, project_url)
         if stored:
-            _safe_log(log, f"FlowImagesGen: the stored Flow project ({source}) "
+            _safe_log(log, f"FlowBatch: the stored Flow project ({source}) "
                            f"is not usable - asking prepare to create a new one")
             _strip_job_project_url(job_path)
-            report = run_flowimagesgen_prepare(cfg, pid_dir, job_path, log)
+            report = run_flowbatch_prepare(cfg, pid_dir, job_path, log)
     if report.get("error") and not _usable_flow_project(report):
         # Still nothing: warn and carry on - generation will surface the failure
         # the same way instead of failing silently mid-batch.
@@ -1447,7 +1447,7 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
             msg = (f"the stored Flow project {stored} could not be opened and "
                    f"prepare could not create a new one - generation will fail "
                    f"on this URL")
-            _safe_log(log, f"FlowImagesGen: {msg}")
+            _safe_log(log, f"FlowBatch: {msg}")
             from . import db as _db
 
             try:
@@ -1461,9 +1461,9 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
             except Exception:  # noqa: BLE001
                 pass
     _apply_prepare_report(cfg, pid_dir, pid, job_path, report, log)
-    tier = set_flowimagesgen_tier(cfg, cfg.renderly_upscale if upscale is None
+    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
                                   else upscale)
-    cmd = _flowimagesgen_cmd(["generate", "--job", str(job_path),
+    cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pid_dir / "flow_images"),
                               "--no-color"])
     chunk, stop_on_failure = image_batch_limits(cfg, pid)
@@ -1476,7 +1476,7 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
         # anything rendered is kept and the production stays resumable
         cmd += ["--fail-fast"]
     if log and (chunk or stop_on_failure):
-        _safe_log(log, "FlowImagesGen: batch guards - "
+        _safe_log(log, "FlowBatch: batch guards - "
                        + (f"at most {chunk} image(s), " if chunk else "")
                        + ("stop on first failure" if stop_on_failure
                           else "no failure guard"))
@@ -1485,9 +1485,9 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
     if resolved_url:
         cmd += ["--project-url", resolved_url]
         if log:
-            _safe_log(log, f"FlowImagesGen: Flow project from {source}")
+            _safe_log(log, f"FlowBatch: Flow project from {source}")
     if log:
-        _safe_log(log, f"FlowImagesGen: {len(names)} image(s), "
+        _safe_log(log, f"FlowBatch: {len(names)} image(s), "
                        f"upscale tier {tier}")
         _safe_log(log, "$ " + " ".join(cmd))
     proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
@@ -1517,31 +1517,31 @@ def run_imagegen_flowimagesgen(cfg, pid_dir: Path, pid: int,
         if "rate limit" in text or "refused the generation" in text:
             raise RuntimeError(
                 "Flow refused the generation (a reCAPTCHA score on this "
-                "browser profile, not a temporary limit). FlowImagesGen stops "
+                "browser profile, not a temporary limit). FlowBatch stops "
                 "the batch on purpose rather than lowering the score further. "
                 "Wait a while, then Resume - finished images are kept in its "
                 f"state\\wr-{pid}.json. Raising delayBetweenItemsMs in "
-                "FlowImagesGen's config/settings.json lowers the risk.")
+                "FlowBatch's config/settings.json lowers the risk.")
         if "already in use" in text or "existing browser session" in text:
             raise RuntimeError(
-                "FlowImagesGen could not open its browser profile because "
-                "another Chrome is already using it - close the FlowImagesGen "
+                "FlowBatch could not open its browser profile because "
+                "another Chrome is already using it - close the FlowBatch "
                 "UI / that Chrome window, then Resume. (state is kept in its "
                 f"state\\wr-{pid}.json)")
         if "executable doesn't exist" in text and "ms-playwright" in text:
             raise RuntimeError(
                 "Playwright's browser is not installed - run "
                 f"`npx playwright install chromium` in {repo}, or configure "
-                "FlowImagesGen to use your system Chrome. (exit "
+                "FlowBatch to use your system Chrome. (exit "
                 f"{proc.returncode})")
         raise RuntimeError(
-            f"FlowImagesGen failed (exit {proc.returncode}): "
+            f"FlowBatch failed (exit {proc.returncode}): "
             + " | ".join(tail[-4:])[:400]
             + f" - state is kept in its state\\wr-{pid}.json so a re-run "
               f"resumes")
-    adopted = _adopt_flowimagesgen_outputs(pid_dir, names, tier or "off")
+    adopted = _adopt_flowbatch_outputs(pid_dir, names, tier or "off")
     if not adopted:
-        raise RuntimeError("FlowImagesGen produced no images - check the log "
+        raise RuntimeError("FlowBatch produced no images - check the log "
                            "and its debug\\ folder")
     # Flow refuses some prompts on content policy. It retries, then skips the
     # item and carries on, so the batch "succeeds" while images are missing -
@@ -1963,7 +1963,7 @@ def apply_render_resolution(cfg, pid: int) -> None:
 
     Read-modify-write, never a fresh file: ImgToVideo's options are a shared
     contract and it may hold keys we do not own (the same rule as the
-    FlowImagesGen job)."""
+    FlowBatch job)."""
     from . import db, settings
 
     pdir = prod_dir(cfg, pid)
@@ -2865,7 +2865,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
     return faults, []
 
 
-# Reference names ARE the identity: FlowImagesGen attaches project assets by
+# Reference names ARE the identity: FlowBatch attaches project assets by
 # name, Renderly resolves them as filenames, and Flow's own card matching is
 # fuzzy. So the shape is enforced, not hoped for.
 REF_NAME_RE = re.compile(r"^(CH|BG|OBJ)_[A-Z0-9]+(?:_[0-9]{2})?$")

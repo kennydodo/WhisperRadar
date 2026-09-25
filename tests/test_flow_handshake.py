@@ -26,7 +26,7 @@ DEAD = "https://flow.google.com/404?reason=project"
 def _cfg(db_path, global_url=None):
     cfg = load_config(ROOT / "config.yaml")
     cfg.db_path = Path(db_path)
-    cfg.flowimagesgen_project_url = global_url
+    cfg.flowbatch_project_url = global_url
     return cfg
 
 
@@ -118,7 +118,7 @@ class ProjectPrecedenceTests(unittest.TestCase):
                          ("http://global", "config"))
 
     def test_none_when_nothing_is_set(self):
-        self.cfg.flowimagesgen_project_url = None
+        self.cfg.flowbatch_project_url = None
         self.assertEqual(studio.flow_project_url_for(self.cfg, self.pid), (None, "none"))
 
 
@@ -165,7 +165,7 @@ class ImagesPrecedenceGuard(unittest.TestCase):
                          "the channel URL must not override the production row")
 
 
-class FlowImagesGenPrepareTests(unittest.TestCase):
+class FlowBatchPrepareTests(unittest.TestCase):
     """prepare writes its report BEFORE the ref work, so a failed ref step still
     leaves a usable project - generation then uploads the refs itself."""
 
@@ -180,12 +180,12 @@ class FlowImagesGenPrepareTests(unittest.TestCase):
             (pid_dir / studio.FLOW_PREPARE_REPORT).write_text(
                 json.dumps({"projectUrl": PROJECT, "refs": []}), encoding="utf-8")
             cfg = _cfg(Path(d) / "wr.db")
-            cfg.flowimagesgen_repo = d  # exists, so flowimagesgen_dir() finds it
-            with mock.patch.object(studio, "_flowimagesgen_cmd",
+            cfg.flowbatch_repo = d  # exists, so flowbatch_dir() finds it
+            with mock.patch.object(studio, "_flowbatch_cmd",
                                    lambda args: ["node", "cli.js"]), \
                     mock.patch.object(studio.subprocess, "run",
                                       lambda *a, **k: _Proc()):
-                report = studio.run_flowimagesgen_prepare(
+                report = studio.run_flowbatch_prepare(
                     cfg, pid_dir, pid_dir / "job.json", log=lambda m: None)
         self.assertEqual(report.get("projectUrl"), PROJECT)
 
@@ -198,12 +198,12 @@ class FlowImagesGenPrepareTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             pid_dir = Path(d)
             cfg = _cfg(Path(d) / "wr.db")
-            cfg.flowimagesgen_repo = d
-            with mock.patch.object(studio, "_flowimagesgen_cmd",
+            cfg.flowbatch_repo = d
+            with mock.patch.object(studio, "_flowbatch_cmd",
                                    lambda args: ["node", "cli.js"]), \
                     mock.patch.object(studio.subprocess, "run",
                                       lambda *a, **k: _Proc()):
-                report = studio.run_flowimagesgen_prepare(
+                report = studio.run_flowbatch_prepare(
                     cfg, pid_dir, pid_dir / "job.json", log=lambda m: None)
         self.assertIn("error", report)
 

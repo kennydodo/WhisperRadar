@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS own_channels (
     -- text defaults seeded into a new production's style.md / bible.md
     style TEXT,
     bible TEXT,
-    -- Google Flow project URL used by the FlowImagesGen engine
+    -- Google Flow project URL used by the FlowBatch engine
     flow_project_url TEXT,
     -- auto-run criteria (NULL = inherit the global setting)
     autorun_enabled INTEGER,
@@ -195,6 +195,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # touches its own work and never a production you are building by hand
     _add_column_if_missing(conn, "productions", "autorun", "INTEGER")
     _add_column_if_missing(conn, "productions", "last_attempt_at", "TEXT")
+    # FlowImagesGen was renamed to FlowBatch (2026-09-25); carry the stored
+    # engine choice over so channels keep their engine
+    conn.execute("UPDATE own_channels SET default_engine = 'flowbatch'"
+                 " WHERE default_engine = 'flowimagesgen'")
+    conn.execute("UPDATE settings SET value = 'flowbatch'"
+                 " WHERE key = 'default_engine' AND value = 'flowimagesgen'")
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str,

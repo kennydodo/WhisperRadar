@@ -203,10 +203,10 @@ SPEC: list[dict] = [
     },
     {
         "key": "default_engine", "type": "choice", "default": "renderly",
-        "choices": ["renderly", "flowimagesgen"],
+        "choices": ["renderly", "flowbatch"],
         "label": "Image engine",
         "help": "Which image pipeline new productions use. Renderly = its "
-                "API + Flow driver; FlowImagesGen = the standalone Flow CLI.",
+                "API + Flow driver; FlowBatch = the standalone Flow CLI.",
     },
     {
         "key": "default_render_mode", "type": "choice", "default": "auto",
@@ -245,7 +245,7 @@ SPEC: list[dict] = [
         "key": "images_stop_on_failure", "type": "bool", "default": True,
         "label": "Stop the batch when images start failing",
         "help": "Stop instead of grinding through the remaining cards. "
-                "FlowImagesGen uses --fail-fast (stops at the first failed "
+                "FlowBatch uses --fail-fast (stops at the first failed "
                 "item); the Flow Driver stops after 3 consecutive failed cards. "
                 "Everything rendered is kept and the production stays "
                 "resumable either way.",
@@ -524,7 +524,7 @@ def for_production(conn, prod) -> dict:
         # text defaults seeded into a new production's style.md / bible.md
         "style": row_get(own, "style"),
         "bible": row_get(own, "bible"),
-        # Google Flow project URL for the FlowImagesGen engine, when the
+        # Google Flow project URL for the FlowBatch engine, when the
         # channel sets one (callers fall back to the global config value).
         "flow_project_url": row_get(own, "flow_project_url"),
         # global-only: which NLE the merge stage exports to (premiere|capcut)

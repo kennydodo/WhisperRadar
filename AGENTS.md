@@ -7,8 +7,8 @@ Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `
 
 ## NEXT SESSION — RETEST the refs productions (written 2026-09-24, end of day)
 
-BLOCKED until: (a) FlowImagesGen fixes the refs-stage issues in
-`D:\Repos\FlowImagesGen\NEXT_SESSION.md` (assetTile detection with refs attached;
+BLOCKED until: (a) FlowBatch fixes the refs-stage issues in
+`D:\Repos\FlowBatch\NEXT_SESSION.md` (assetTile detection with refs attached;
 prepare/generate ref-presence agreement; promptReferenceChip confirmation), and (b) Renderly
 implements the prepare/project-URL handover in `D:\Repos\Renderly\NEXT_SESSION.md`
 (`prepare` + `FLOW_PROJECT_URL` + atomic report, per-ref status, and a signed-in driver profile).
@@ -18,22 +18,22 @@ Then: **retest the two failed productions and add two new ones.**
 ### State of the three test productions (`data\studio\7|8|9`)
 - **pid 7 "ZZTEST refs To Live and More"** - channel 1, renderly/flow, upscale 2.
   shots DONE (4 images; ON-THE-FLY refs `CH_HOST, BG_KITCHEN, BG_OFFICE, BG_TATAMI`);
-  refs DONE (all 4 generated via FlowImagesGen into project `7585c0da`);
-  images NOT done - forced through FlowImagesGen, renders happened but `assetTile` detection timed
+  refs DONE (all 4 generated via FlowBatch into project `7585c0da`);
+  images NOT done - forced through FlowBatch, renders happened but `assetTile` detection timed
   out, **0/4 local**. RETEST images on the renderly engine once Renderly's handover lands.
-- **pid 8 "ZZTEST refs The Nature Made Us"** - channel 2, flowimagesgen, upscale 0.
+- **pid 8 "ZZTEST refs The Nature Made Us"** - channel 2, flowbatch, upscale 0.
   DONE end to end: shots (6 images, NO refs) + refs skipped + images **6/6 rendered**. Keep as the
   no-refs reference.
-- **pid 9 "ZZTEST refs Kenny Invest"** - channel 3, flowimagesgen, upscale 2.
+- **pid 9 "ZZTEST refs Kenny Invest"** - channel 3, flowbatch, upscale 2.
   shots DONE (6 images; SUPPLIED refs `MAYA`, `BG_LIVING_ROOM_01`, `BG_KITCHEN_01` with paths into
   `refs\`); refs skipped ("all 3 supplied"); images FAILED (prepare/generate ref disagreement +
-  promptReferenceChip). RETEST images after the FlowImagesGen fixes.
+  promptReferenceChip). RETEST images after the FlowBatch fixes.
 
 ### Retest plan — see `RETEST_RUNBOOK.md`
 1. **DONE (2026-09-24):** pid 7 images rendered 4/4 on the renderly engine.
-2. **DONE (2026-09-24):** pid 9 images rendered 6/6 on flowimagesgen.
+2. **DONE (2026-09-24):** pid 9 images rendered 6/6 on flowbatch.
 3. **READY:** two new full-pipeline productions were created for the retest —
-   **pid 10** (Kenny Invest, flowimagesgen, SUPPLIED refs, glm-flash -> exercises the stall
+   **pid 10** (Kenny Invest, flowbatch, SUPPLIED refs, glm-flash -> exercises the stall
    fallback) and **pid 11** (To Live and More, renderly, ON-THE-FLY refs, deepseek). Run them
    stage by stage with `python scripts/run_stage.py <pid> <stage>`; details in `RETEST_RUNBOOK.md`.
 4. Re-confirm the three ref modes end to end: ON-THE-FLY (pid 7 / 11), SUPPLIED (pid 9 / 10),
@@ -44,7 +44,7 @@ Then: **retest the two failed productions and add two new ones.**
 - Refs: `autorun.run_stage(cfg, pid, "refs", params={"log": print, "cancel": None})`.
 - Images: `params = autorun._stage_params(cfg, pid, "images", log)` then
   `autorun.run_stage(cfg, pid, "images", params=params)`. Force an engine with
-  `params["engine"] = "flowimagesgen"` and pin a project with `params["flow_project_url"] = <url>`.
+  `params["engine"] = "flowbatch"` and pin a project with `params["flow_project_url"] = <url>`.
 - Python: `D:\Repos\WhisperRadar\.venv\Scripts\python.exe`.
 
 ### WhisperRadar bugs to fix (found 2026-09-24)
@@ -54,22 +54,22 @@ Then: **retest the two failed productions and add two new ones.**
    will hang - add a provider fallback, a real request timeout, or a size guard in `openai_chat`.
 2. **`_run_images` lets the CHANNEL `flow_project_url` override the PRODUCTION row.**
    `_run_images` passes `flow_project_url or eff["flow_project_url"]` into
-   `run_imagegen_flowimagesgen`, bypassing the documented precedence (production -> channel ->
+   `run_imagegen_flowbatch`, bypassing the documented precedence (production -> channel ->
    global) in `flow_project_url_for`; pinning `productions.flow_project_url` had no effect on the
    images stage. In the same run pid 9's `prepare` reported project `4e8cbaa4` while `generate` was
    handed `89e82620`. Make the prepare report's URL authoritative for the generate it precedes.
 3. **`renderly_upscale: 4`** in `config.yaml` made the refs job upscale to 4K (`_4k` variants), not
    the 2K the tier doc states. Confirm the intended default.
-4. Ref-generation state resume (FlowImagesGen side): a `done` item whose files were deleted is not
-   re-generated (`state/wr-7-refs.json` skipped `CH_HOST`). Also noted in FlowImagesGen's file.
+4. Ref-generation state resume (FlowBatch side): a `done` item whose files were deleted is not
+   re-generated (`state/wr-7-refs.json` skipped `CH_HOST`). Also noted in FlowBatch's file.
 
 ### Notes
 - No channel settings or repo source were modified. Productions 7-9 and their folders are left in
   place; do not touch productions 1-6.
 - Renderly backend (:8022) + Flow Driver (:8030) were started as managed services during testing;
-  FlowImagesGen uses `profile-renderly` (koogunyemi@gmail.com), **agent mode OFF** (never turn it
+  FlowBatch uses `profile-renderly` (koogunyemi@gmail.com), **agent mode OFF** (never turn it
   on), and `japanliveshealthy@gmail.com` must not be used.
-- Channel engines: 1 = renderly/flow, 2 = flowimagesgen upscale 0, 3 = flowimagesgen upscale 2.
+- Channel engines: 1 = renderly/flow, 2 = flowbatch upscale 0, 3 = flowbatch upscale 2.
 
 ## NEXT SESSION — handoff (written 2026-09-23, end of day)
 
@@ -149,7 +149,7 @@ render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [le
   generation stays native Gemini 1K (cost unchanged), the local Real-ESRGAN
   step targets the 2K preset, `DEFAULT_RESOLUTION` 2K, legacy scale 0 rejected;
   the Flow Driver's `driver-config.json` upscale 1 -> "2K" (gitignored, local).
-  FlowImagesGen: tiers were already 1k/2k/4k (`d1c1922`); the local override
+  FlowBatch: tiers were already 1k/2k/4k (`d1c1922`); the local override
   flipped off -> 2k (gitignored). WhisperRadar: tier 0 omits `--upscale`
   (ImageGen rejects 0 and the whole run failed), tier 3 -> 2k ("3k" was dropped
   upstream and normalizeTier throws), config `renderly_upscale` default 4 -> 2
@@ -160,12 +160,12 @@ render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [le
   shots keep the planner's fallback framing; PU/PD could get real vertical
   overscan later via 1:1 generation on Renderly.
 
-### 2. FlowImagesGen `prepare --report` — RECEIVING END DONE (2026-09-23)
+### 2. FlowBatch `prepare --report` — RECEIVING END DONE (2026-09-23)
 
-WhisperRadar side is implemented (`c130b5e`), so FlowImagesGen only has to
+WhisperRadar side is implemented (`c130b5e`), so FlowBatch only has to
 WRITE the report:
 
-- `run_flowimagesgen_prepare()` runs `prepare --job <job> --report <prod
+- `run_flowbatch_prepare()` runs `prepare --job <job> --report <prod
   dir>\flow_prepare.json` before generating, echoes the `FLOW_PROJECT_URL=`
   marker if printed, and reads the report back defensively (atomic write, so a
   malformed file is retried; absent = "no project yet").
@@ -179,7 +179,7 @@ WRITE the report:
   output), a failure, or an absent report all return `{}` and generation
   proceeds on the stored URL.
 
-STILL TO DO on the FlowImagesGen side: the `prepare` command itself
+STILL TO DO on the FlowBatch side: the `prepare` command itself
 (create-or-open the project, get the refs into the gallery), the
 `FLOW_PROJECT_URL=` marker, and the atomic report write. Also: the refs
 GENERATION (item 3) is what makes `refMode: assets` useful - until refs exist in
@@ -189,7 +189,7 @@ the gallery the report will keep saying `missing`.
 
 Agreed design: an optional stage BETWEEN shots and images that gets every
 reference into the Flow project gallery once, so the image batch never uploads
-(FlowImagesGen `refMode: assets`) and never duplicates project assets.
+(FlowBatch `refMode: assets`) and never duplicates project assets.
 
 - Shotlist refs registry must widen from `name -> path` to carry
   `{kind, prompt, provided}` so the stage can: `provided` -> ensure the file,
@@ -250,7 +250,7 @@ genuinely weak — which decides whether to adjust the rubric or the bar.
 
 ### 7. Flow reliability after ~98 images (both engines)
 
-FlowImagesGen hit a refusal loop at item ~82 ("might violate our policies" /
+FlowBatch hit a refusal loop at item ~82 ("might violate our policies" /
 "you have not been charged"), and Renderly's driver hit "still busy" timeouts
 from ~98. In both cases the first ~80-100 items rendered fine, so this looks
 session/account-level rather than per-prompt. Worth investigating before
@@ -270,7 +270,7 @@ change needed beyond passing the active tab, or a small JS switcher).
 
 - Auto Run's master switch is still ON and the global `per_day` is 2 (both set
   for the #2 validation run).
-- `D:\Repos\FlowImagesGen\NEXT_SESSION.md` is modified but uncommitted (the
+- `D:\Repos\FlowBatch\NEXT_SESSION.md` is modified but uncommitted (the
   frozen contract + the download/policy-refusal write-up).
 - `CombineAll` is ahead of `origin/CombineAll`; merge to `master` when ready.
 
@@ -360,20 +360,20 @@ STILL OPEN (next steps, in order):
    prepends the shotlist `style` to every prompt (`extension-v2/flow.js:155-159`
    + `:222-224` reads `style` as the master), and the real style is 4000 chars,
    so every card is sent ~4400 chars - over Flow's ~2450 ceiling, which Flow
-   refuses with the SAME message as rate limiting. FlowImagesGen dodges this
+   refuses with the SAME message as rate limiting. FlowBatch dodges this
    because we omit the style there; the Renderly path still does not. This is
    very likely the cause of the recent Flow batch failures.
 2. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
 
-### FlowImagesGen pacing and the assetTile trap (2026-09-23)
+### FlowBatch pacing and the assetTile trap (2026-09-23)
 
 Measured on a real 156-image batch (production #5, The Nature Made Us):
 
 - `config/settings.json` `generation.delayBetweenItemsMs: 20000` - a deliberate
   20s pause between items, plus ~40-60s of actual generation. So ~70s/item is
   the floor and 156 images is ~3h minimum.
-- **The real cost is asset-tile detection, not generation.** FlowImagesGen
+- **The real cost is asset-tile detection, not generation.** FlowBatch
   waits for a NEW asset tile to appear; when it misses one it times out after
   `timeouts.generationMs` (300s), then the retry succeeds in under a minute.
   Observed: item 2 wasted 300s for a 38s generation. The error says "calibrate
@@ -387,9 +387,9 @@ Measured on a real 156-image batch (production #5, The Nature Made Us):
   is non-retryable and stops the batch. Raise it to 3 for long batches.
 - WhisperRadar does NOT manage the `generation` block; it only writes the
   upscale tier via `upscale --set-tier`. Pacing is the user's call in
-  FlowImagesGen's own config.
+  FlowBatch's own config.
 
-### FROZEN CONTRACT with FlowImagesGen (do not change silently)
+### FROZEN CONTRACT with FlowBatch (do not change silently)
 
 Agreed 2026-09-23. Changing the marker or the report schema means updating BOTH
 sides and both handover notes.
@@ -407,14 +407,14 @@ sides and both handover notes.
    absent report is treated as "no project yet").
 3. **Ownership**: the report is the INTERFACE, the DB is the TRUTH. Persist
    `projectUrl`/`projectId` on the production row and mirror `projectUrl` into
-   the job we own. `prepare_flowimagesgen_job` must write projectUrl FROM THE
+   the job we own. `prepare_flowbatch_job` must write projectUrl FROM THE
    DB - today it rebuilds the job wholesale and would lose it.
 4. **Ref mode**: every ref present -> generation runs `refMode: "assets"`
    (attach by name, never upload, no duplicate project assets); otherwise
    `reuse`. `refs[].status: missing` replaces scraping `⚠ reference not found`
    out of the log.
 5. **Precedence** for the project URL: production row -> channel
-   `flow_project_url` -> global `studio.flowimagesgen_project_url` -> none. With
+   `flow_project_url` -> global `studio.flowbatch_project_url` -> none. With
    none, log LOUDLY and set a production warning; Flow's "most recent project"
    fallback must never be silent.
 
@@ -479,14 +479,14 @@ needed, and when:
 | Renderly backend | 8022 | Renderly engine only (Gemini, imports, upscale) |
 | Renderly frontend (Vite) | 5173 | NEVER - WhisperRadar uses the backend API |
 | Flow Driver (extension-v2) | 8030 | Renderly engine + flow mode only |
-| FlowImagesGen | none | FlowImagesGen engine only (CLI spawns its own Chrome) |
-| FlowImagesGen UI | 8787 | NEVER - optional frontend |
+| FlowBatch | none | FlowBatch engine only (CLI spawns its own Chrome) |
+| FlowBatch UI | 8787 | NEVER - optional frontend |
 
-So the FlowImagesGen engine needs no extra service at all. Renderly's
+So the FlowBatch engine needs no extra service at all. Renderly's
 start.bat is the main source of sprawl (it opens backend + frontend + driver
 consoles); WhisperRadar starts the backend directly with uvicorn instead.
 
-- **Settings > Tools** lists Renderly backend / Flow Driver / FlowImagesGen
+- **Settings > Tools** lists Renderly backend / Flow Driver / FlowBatch
   with status and Start/Stop buttons (`POST /services/<name>/start|stop`), so
   no .bat needs to stay open. Status uses `services.MANAGER.status_cached`
   (stale-while-revalidate, never blocks a page render).
@@ -536,7 +536,7 @@ Two bugs found 2026-09-22 and fixed - both places had ignored the channel:
 `whisperradar/services.py` (`MANAGER`) owns the external services the images
 stage needs. `services_for(engine, mode)` says what a run requires:
 renderly+flow -> backend + Flow Driver; renderly+api -> backend;
-flowimagesgen -> nothing (a CLI that starts/stops its own browser).
+flowbatch -> nothing (a CLI that starts/stops its own browser).
 
 Conservative rules - keep them:
 - A service that already answers is YOURS: never tracked, never stopped, so a
@@ -558,12 +558,12 @@ Conservative rules - keep them:
 ### Per-channel Flow project URL — DONE (2026-09-22)
 
 `own_channels.flow_project_url` (nullable, added by
-`db._add_column_if_missing`). Resolution order for the FlowImagesGen engine:
+`db._add_column_if_missing`). Resolution order for the FlowBatch engine:
 the images-stage field, then the channel's URL, then the global
-`studio.flowimagesgen_project_url`; when all are empty the job simply omits
-`projectUrl` so FlowImagesGen falls back to its own `config/settings.json` or
+`studio.flowbatch_project_url`; when all are empty the job simply omits
+`projectUrl` so FlowBatch falls back to its own `config/settings.json` or
 Flow's most recent project. Editable on My Channels, and the images stage
-shows a URL box only while the FlowImagesGen engine is selected.
+shows a URL box only while the FlowBatch engine is selected.
 
 ### Unattended-run notifications — DONE (2026-09-22)
 
@@ -605,20 +605,20 @@ manual one cannot overlap and progress shows in the UI.
   honours the run window and caps, so a frequent trigger is safe):
   `schtasks /Create /TN "WhisperRadar Auto Run" /SC MINUTE /MO 30 /TR "\"D:\Repos\WhisperRadar\.venv\Scripts\python.exe\" \"D:\Repos\WhisperRadar\wr.py\" produce"`
 
-### FlowImagesGen as a second image engine — DONE (2026-09-22)
+### FlowBatch as a second image engine — DONE (2026-09-22)
 
 `default_engine` (global in Settings, per channel on My Channels, overridable
 on the images stage) now actually switches the images stage:
 - `renderly` - the existing path (Flow Driver or Renderly API + Renderly
   upscale), unchanged.
-- `flowimagesgen` - the standalone Playwright Flow CLI, consumed IN PLACE
-  from `studio.flowimagesgen_repo` (never vendored: its Google session lives
+- `flowbatch` - the standalone Playwright Flow CLI, consumed IN PLACE
+  from `studio.flowbatch_repo` (never vendored: its Google session lives
   in a gitignored `profile\`, and a fresh profile means a new Google login,
   which is exactly where the Flow abuse-block lives).
 
-Code: `studio.flowimagesgen_ready()`, `prepare_flowimagesgen_job()`,
-`set_flowimagesgen_tier()`, `_adopt_flowimagesgen_outputs()`,
-`run_imagegen_flowimagesgen()`; `autorun._run_images` dispatches on
+Code: `studio.flowbatch_ready()`, `prepare_flowbatch_job()`,
+`set_flowbatch_tier()`, `_adopt_flowbatch_outputs()`,
+`run_imagegen_flowbatch()`; `autorun._run_images` dispatches on
 `eff["engine"]`; the images panel has an Engine select.
 
 DECISIONS worth keeping:
@@ -629,18 +629,18 @@ DECISIONS worth keeping:
    sent only when `longest prompt + style <= 2420`.
 2. **Refs are passed as NAMES**, with the shotlist `refs` registry plus every
    file in the production's `refs\` (keyed by stem) as the job's name -> path
-   map, and `refMode: reuse` - so FlowImagesGen attaches existing Flow project
+   map, and `refMode: reuse` - so FlowBatch attaches existing Flow project
    assets by name instead of re-uploading (its README: uploads duplicate
    project assets).
 3. **Outputs go to `flow_images\` and are adopted into `images\`**, preferring
    the upscaled `<stem>_<tier>.png` over the 720p master, so `images\` never
    holds two graded copies of the same shot.
-4. **Upscale tier** is written to FlowImagesGen's own
+4. **Upscale tier** is written to FlowBatch's own
    `config/upscale.local.json` via `upscale --set-tier` (what its UI does).
    Mapping: upscale 0-4 -> off/1k/2k/3k/4k.
-5. **Job name is `wr-<pid>`**, so FlowImagesGen's `state\wr-<pid>.json` makes
+5. **Job name is `wr-<pid>`**, so FlowBatch's `state\wr-<pid>.json` makes
    a re-run resume the items that are still missing.
-6. Rate limiting is waited out by FlowImagesGen itself (cooldown 180s, up to
+6. Rate limiting is waited out by FlowBatch itself (cooldown 180s, up to
    10 waits); cancel kills the whole process tree with taskkill /T /F.
 
 ### Auto Run producer — DONE (2026-09-22)
@@ -679,6 +679,23 @@ AGREED DESIGN (do not change without the user):
   yaml fallback anymore; an unset global default means no default provider.
 - The manual Studio generate routes (style/script/shotlist) fall back to
   `autorun._default_provider(cfg, pid)` instead of a yaml default.
+
+### FlowImagesGen renamed to FlowBatch — DONE (2026-09-25)
+
+- The tool's repo is now `D:\Repos\FlowBatch` (same layout: `src\cli.js`,
+  `config\`, `state\`, `profile-*`, NEXT_SESSION.md). Its CLI commands, flags
+  and job JSON are UNCHANGED, so the frozen contract below still holds - only
+  the name moved.
+- Adopted here wholesale: engine id `flowbatch`, config keys
+  `studio.flowbatch_repo` / `studio.flowbatch_project_url`, studio functions
+  (`flowbatch_dir/ready`, `prepare_flowbatch_job`, `run_imagegen_flowbatch`,
+  `run_flowbatch_prepare/refs`, `set_flowbatch_tier`, `_adopt_flowbatch_outputs`,
+  `_flowbatch_cmd`), job files `flowbatch.json` / `flowbatch_refs.json` in
+  production dirs, and all UI labels.
+- `db._migrate` carries stored engine choices over
+  (`own_channels.default_engine` and the global `settings.default_engine`:
+  'flowimagesgen' -> 'flowbatch'), idempotent on every startup. Older entries
+  in this file still say FlowImagesGen - same tool.
 
 ### Settings page regroup — DONE (2026-09-25)
 
@@ -734,11 +751,11 @@ pass an explicit `work_dir` when exercising anything that writes files.
 
 TOOLS ARE CONSUMED IN PLACE - do not vendor them. Renderly (stateful service:
 own DB, storage, venv, signed-in Chrome profile), ImgToVideo (.NET, invoked as
-a subprocess) and FlowImagesGen (CLI, Google session in a gitignored profile)
+a subprocess) and FlowBatch (CLI, Google session in a gitignored profile)
 are all used from their own checkouts via config paths. A submodule copy would
 strand Renderly's database/storage/profile and add a second login for
-FlowImagesGen. Paths live in config.yaml: `imgtovideo_repo`, `renderly_url`,
-`flow_driver_dir`, `flowimagesgen_repo`.
+FlowBatch. Paths live in config.yaml: `imgtovideo_repo`, `renderly_url`,
+`flow_driver_dir`, `flowbatch_repo`.
 
 ### Per-channel defaults wired into the pipeline — DONE (2026-09-22)
 

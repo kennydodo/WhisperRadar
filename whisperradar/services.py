@@ -310,7 +310,7 @@ MANAGER = ServiceManager()
 
 def services_for(engine: str, mode: str) -> list[str]:
     """Which external services a stage needs for this engine/mode."""
-    if engine == "flowimagesgen":
+    if engine == "flowbatch":
         return []          # a CLI: it starts and stops its own browser
     if mode == "flow":
         return ["renderly", "flow-driver"]

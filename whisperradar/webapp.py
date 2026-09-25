@@ -457,7 +457,7 @@ def create_app(cfg) -> Flask:
             providers_nested=studio.providers_nested(cfg),
             scheduler=sched.status(),
             services=services.MANAGER.status_cached(cfg),
-            flowimagesgen_ready=studio.flowimagesgen_ready(cfg),
+            flowbatch_ready=studio.flowbatch_ready(cfg),
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/services/<name>/<action>")
@@ -1110,8 +1110,8 @@ def create_app(cfg) -> Flask:
             default_engine=eff["engine"],
             own_channel_name=eff["own_channel_name"],
             flow_project_url_default=(eff["flow_project_url"]
-                                      or cfg.flowimagesgen_project_url or ""),
-            flowimagesgen_ready=studio.flowimagesgen_ready(cfg),
+                                      or cfg.flowbatch_project_url or ""),
+            flowbatch_ready=studio.flowbatch_ready(cfg),
             own_channels=own_channels,
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
@@ -1772,7 +1772,7 @@ def create_app(cfg) -> Flask:
         if mode not in ("api", "flow"):
             mode = "flow" if studio.flow_driver_ready(cfg) else "api"
         engine = (request.form.get("engine") or eff["engine"] or "renderly")
-        if engine not in ("renderly", "flowimagesgen"):
+        if engine not in ("renderly", "flowbatch"):
             engine = "renderly"
         flow_channel = (request.form.get("flow_channel")
                         or eff["renderly_channel_name"]).strip()
@@ -1799,7 +1799,7 @@ def create_app(cfg) -> Flask:
                 "log": sjob.log.append,
             }))
 
-        label = ("FlowImagesGen" if engine == "flowimagesgen"
+        label = ("FlowBatch" if engine == "flowbatch"
                  else "Flow Driver" if mode == "flow" else "Renderly")
         sjob.start(worker, f"image rendering ({label})")
         return _studio_url(pid, msg=f"Image rendering started ({label})")

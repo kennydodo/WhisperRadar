@@ -192,7 +192,7 @@
               <label>image engine
                 <select name="default_engine">
                   <option value="">inherit</option>
-                  {% for opt in ['renderly', 'flowimagesgen'] %}
+                  {% for opt in ['renderly', 'flowbatch'] %}
                   <option value="{{ opt }}" {{ 'selected' if ch['default_engine'] == opt else '' }}>{{ opt }}</option>
                   {% endfor %}
                 </select>
@@ -260,7 +260,7 @@
               <label>Google Flow project URL
                 <input type="text" name="flow_project_url"
                        value="{{ ch['flow_project_url'] or '' }}"
-                       placeholder="https://flow.google.com/project/... (FlowImagesGen engine)"
+                       placeholder="https://flow.google.com/project/... (FlowBatch engine)"
                        style="width:430px">
               </label>
             </div>

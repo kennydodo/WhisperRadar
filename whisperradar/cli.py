@@ -18,7 +18,7 @@ def _utf8_console() -> None:
     """Make stdout/stderr survive non-ASCII output.
 
     Stage logs carry text from other tools (the Flow Driver prints warnings
-    with U+26A0, FlowImagesGen prints box drawing), and a Windows console is
+    with U+26A0, FlowBatch prints box drawing), and a Windows console is
     cp1252 by default, so a plain print() raises UnicodeEncodeError and kills
     the stage. Replacing unencodable characters is always better than dying.
     """

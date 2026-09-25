@@ -7,7 +7,7 @@ run them one stage at a time and stop wherever something looks wrong.
 
 | pid | channel | engine | refs mode | source video | provider |
 | --- | --- | --- | --- | --- | --- |
-| 10 | Kenny Invest (Personal Finance) | flowimagesgen | SUPPLIED (27 seeded refs) | "Why You're Always Broke: 10 Silent Money Killers" (~3920 words, 1537s) | glm-flash (channel/global) |
+| 10 | Kenny Invest (Personal Finance) | flowbatch | SUPPLIED (27 seeded refs) | "Why You're Always Broke: 10 Silent Money Killers" (~3920 words, 1537s) | glm-flash (channel/global) |
 | 11 | To Live and More (Lifestyle) | renderly/flow | ON-THE-FLY | "Japanese Women Don't Clean Hard…" (~3531 words, 1203s) | deepseek |
 
 Both were built like `/studio/new`: production row + `seed_production` (bible.md,
@@ -22,7 +22,7 @@ pid 11 is pinned to **deepseek** for a fast, reliable script+judge run.
 
 - Dashboard: `python wr.py serve` (http://127.0.0.1:8540).
 - Renderly backend :8022 and Flow Driver :8030 — the images stage starts them.
-- FlowImagesGen uses `profile-renderly` (koogunyemi); the Renderly driver uses
+- FlowBatch uses `profile-renderly` (koogunyemi); the Renderly driver uses
   `profile-b` (kogunyemi75). **Agent mode stays OFF.**
 - Test suite (must be green before you start):
   - `python wr.py test` (or `test.bat`) -> 22 WhisperRadar unit tests.
@@ -43,7 +43,7 @@ Exit 0 = ok, 1 = paused/failed (stop there).
 ## Steps (run 1 by 1)
 
 ```
-# pid 10 — Kenny Invest, flowimagesgen, supplied refs, glm-flash
+# pid 10 — Kenny Invest, flowbatch, supplied refs, glm-flash
 python scripts/run_stage.py 10 style                 # skip (seeded)
 python scripts/run_stage.py 10 script                # expect glm stall -> deepseek fallback
 python scripts/run_stage.py 10 audio                 # ai33 TTS
@@ -89,7 +89,7 @@ python scripts/run_stage.py 11 merge
   `refs_generated.json` written.
 
 **images**
-- pid 10 (flowimagesgen): refs attached, no "could not confirm"/"not in assets".
+- pid 10 (flowbatch): refs attached, no "could not confirm"/"not in assets".
   Dead project → expect `the stored Flow project is not usable - asking prepare to
   create a new one`.
 - pid 11 (renderly): ownership detection, **no** `ingredient echo` / timeouts.
@@ -102,7 +102,7 @@ python scripts/run_stage.py 11 merge
 
 ## If something breaks
 
-- Flow refusal/throttle: check `D:\Repos\FlowImagesGen\debug\error-*.png`; do not
+- Flow refusal/throttle: check `D:\Repos\FlowBatch\debug\error-*.png`; do not
   grind (per the notes it lowers the reCAPTCHA score).
 - Dead/foreign Flow project: the stage creates a new one automatically.
 - LLM stall with no fallback: check Settings > LLM providers has another ready one.
@@ -112,13 +112,13 @@ python scripts/run_stage.py 11 merge
 ## Where the findings go
 
 - Renderly: `D:\Repos\Renderly\NEXT_SESSION.md`
-- FlowImagesGen: `D:\Repos\FlowImagesGen\NEXT_SESSION.md`
+- FlowBatch: `D:\Repos\FlowBatch\NEXT_SESSION.md`
 - WhisperRadar: `AGENTS.md` (NEXT SESSION sections)
 
 ## Already green (from 2026-09-24)
 
-- pid 7 (renderly) images 4/4; pid 8 (flowimagesgen, no refs) 6/6; pid 9
-  (flowimagesgen, supplied refs) 6/6.
+- pid 7 (renderly) images 4/4; pid 8 (flowbatch, no refs) 6/6; pid 9
+  (flowbatch, supplied refs) 6/6.
 - Renderly handshake (`/api/prepare`) wired into `run_imagegen_flow`; project
   create-on-dead/404 verified.
 - WhisperRadar: `tests/test_llm_limits.py` (9) covering the length caps, the
