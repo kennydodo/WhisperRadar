@@ -2433,11 +2433,43 @@ Rules:
   written by the writer described there.
 - Use ONLY the facts above. Never reuse sentences, phrasing, or the structure
   of any source material - only the style is shared.
+- The facts are NOTES, not prose: write entirely new sentences and do not follow
+  their wording or order. No run of five or more consecutive words may match the
+  facts or any source material.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words. Conversational, second person, no stage directions, no scene labels.
 - End with a short call to action matching the style guide's CTA style.
 
 Output ONLY the script text."""
+
+
+NOTES_MAX_TOKENS = 2000
+
+
+def notes_prompt(title: str, genre: str, source_text: str) -> str:
+    """Turn a source transcript into neutral research NOTES for the writer.
+
+    Feeding the transcript itself as the 'facts' made the writer echo it: the
+    first live attempt measured 93.5% 5-gram overlap with the source, and the
+    copycat gate rejects anything over 20%. Notes in the model's own words break
+    that echo before the script is written."""
+    text = (source_text or "").strip()
+    if len(text) > SOURCE_FACTS_MAX_CHARS:
+        text = text[:SOURCE_FACTS_MAX_CHARS] + " ..."
+    return f"""You are a researcher for a {genre} YouTube channel. Below is a transcript of an existing video titled "{title}".
+
+Extract the FACTS it contains as a terse bulleted list - every claim, number, name, place and example, one per line.
+
+Rules:
+- Write in your own words. Copy no sentence, phrase or clause from the transcript: no run of five or more consecutive words may appear in your notes.
+- Facts only: no introduction, no commentary, no headings, no conclusion.
+- Keep every number and proper noun exactly as written.
+- Group related facts under a short label line when that helps.
+
+TRANSCRIPT:
+{text}
+
+Output only the bullet list."""
 
 
 def shotlist_prompts(pid_dir: Path) -> list[str]:

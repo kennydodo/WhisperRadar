@@ -222,6 +222,45 @@ def _run_style(cfg, pid: int, provider: str | None = None) -> None:
         conn.close()
 
 
+RESEARCH_NOTES_FILE = "research_notes.md"
+
+
+def _research_notes(cfg, pdir: Path, title: str, genre: str,
+                    source_text: str, provider: str | None) -> str:
+    """Cached fact-notes for this production, generated once by the writer's
+    provider. The script is composed FROM these rather than from the transcript
+    prose, so it stops echoing the source: the first live run measured 93.5%
+    overlap with the transcript and the copycat gate rejects over 20%."""
+    pdir = Path(pdir)
+    path = pdir / RESEARCH_NOTES_FILE
+    try:
+        cached = path.read_text(encoding="utf-8").strip()
+        if cached:
+            _log_line(f"using cached {RESEARCH_NOTES_FILE} "
+                      f"({len(cached.split())} words)")
+            return cached
+    except OSError:
+        pass
+    try:
+        notes = studio.llm_generate(
+            cfg, studio.notes_prompt(title, genre, source_text),
+            provider=provider, max_tokens=studio.NOTES_MAX_TOKENS)
+    except Exception as exc:  # noqa: BLE001 - notes are an optimisation
+        _log_line(f"could not build research notes ({exc}); writing from the "
+                  f"transcript")
+        return source_text
+    notes = (notes or "").strip()
+    if not notes:
+        _log_line("research notes came back empty; writing from the transcript")
+        return source_text
+    try:
+        path.write_text(notes + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    _log_line(f"built {RESEARCH_NOTES_FILE} ({len(notes.split())} words)")
+    return notes
+
+
 def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     t0 = time.monotonic()
     conn = _connect(cfg)
@@ -239,6 +278,11 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
     target_words = studio.script_target_words(cfg.studio_script_words,
                                               source_words)
+    # Compose from NEUTRAL NOTES, not the transcript prose - otherwise the writer
+    # echoes the source and every attempt fails the copycat gate. Cached once.
+    facts = (_research_notes(cfg, pdir, prod["title"], prod["genre"],
+                             source_text, provider)
+             if source_text.strip() else "")
     min_rating = eff["script_min_rating"]
     max_overlap = eff["script_max_overlap"]
     hard_overlap = eff["script_hard_overlap"]
@@ -262,7 +306,7 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                 f"The previous draft was too long. Keep this one at or under "
                 f"{target_words} words.")
         prompt = studio.script_prompt(
-            prod["title"], prod["genre"], source_text, style_guide,
+            prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
             extra_direction=db.stage_extra(prod, "script"))
         text = studio.llm_generate(
