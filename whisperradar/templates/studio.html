@@ -109,13 +109,19 @@
         </select>
       </div>
       <div>
-        <label>Based on (optional)</label>
-        <select name="source_video_id" style="width:340px">
+        <label for="source-search">Based on (optional)</label>
+        <input type="search" id="source-search"
+               placeholder="Type to filter transcripts..."
+               style="width:340px; margin-bottom:6px" autocomplete="off"
+               onkeydown="if(event.key==='Enter')event.preventDefault()">
+        <select name="source_video_id" id="source-select" style="width:340px"
+                title="Pick the transcribed source video this production is based on">
           <option value="">- none, fresh topic -</option>
           {% for v in sources %}
-          <option value="{{ v['video_id'] }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
+          <option value="{{ v['video_id'] }}" data-search="{{ (v['channel_name'] ~ ' ' ~ v['title'])|lower }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
           {% endfor %}
         </select>
+        <div class="muted" id="source-hint" style="font-size:12px; margin-top:3px"></div>
       </div>
       <div>
         <label>Working folder (optional)</label>
@@ -154,6 +160,50 @@
   <div class="panel muted">No productions yet. Pick a transcribed video above and create your first one.</div>
   {% endif %}
 </div>
+
+<script>
+  // Filter the "Based on" source-video dropdown by typing. The options are
+  // captured once, then rebuilt on every keystroke (hiding <option>s is
+  // unreliable inside native select popups).
+  (function () {
+    var search = document.getElementById('source-search');
+    var select = document.getElementById('source-select');
+    var hint = document.getElementById('source-hint');
+    if (!search || !select) return;
+    var all = Array.prototype.map.call(
+      select.querySelectorAll('option[value!=""]'),
+      function (o) {
+        return { id: o.value, text: o.textContent,
+                 hay: (o.dataset.search || o.textContent).toLowerCase() };
+      });
+
+    function apply() {
+      var q = search.value.trim().toLowerCase();
+      var chosen = select.value;
+      Array.prototype.slice.call(select.querySelectorAll('option[value!=""]'))
+        .forEach(function (o) { o.remove(); });
+      var shown = all.filter(function (v) {
+        return !q || v.hay.indexOf(q) !== -1;
+      });
+      shown.forEach(function (v) {
+        var o = document.createElement('option');
+        o.value = v.id;
+        o.textContent = v.text;
+        o.dataset.search = v.hay;
+        select.appendChild(o);
+      });
+      // keep the pick only while it still matches
+      select.value = shown.some(function (v) { return v.id === chosen; })
+        ? chosen : '';
+      hint.textContent = q
+        ? shown.length + ' of ' + all.length + ' transcript(s) match'
+        : all.length + ' transcript(s) available';
+    }
+
+    search.addEventListener('input', apply);
+    apply();
+  })();
+</script>
 
 <script>
   async function produceNow() {
