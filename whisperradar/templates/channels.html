@@ -185,9 +185,14 @@
             </div>
             <div class="inline">
               <label>narration voice
-                <input type="text" name="default_voice"
-                       value="{{ ch['default_voice'] or '' }}" placeholder="inherit"
-                       style="width:230px">
+                <select name="default_voice" class="voice-select"
+                        data-current="{{ ch['default_voice'] or '' }}"
+                        style="width:230px">
+                  <option value="">inherit</option>
+                  {% if ch['default_voice'] %}
+                  <option value="{{ ch['default_voice'] }}" selected>{{ ch['default_voice'] }}</option>
+                  {% endif %}
+                </select>
               </label>
               <label>image engine
                 <select name="default_engine">
@@ -388,6 +393,9 @@
       </td></tr>
       {% endfor %}
     </table>
+    <div id="voice_status" class="muted" style="font-size:12px; margin-top:10px">
+      Loading favorite narration voices from OpenSpeaker...
+    </div>
   </div>
 </div>
 
@@ -400,8 +408,80 @@
     const row = document.getElementById('edit-' + id);
     const form = row.querySelector('form');
     if (form) { form.reset(); }
+    // form.reset() cannot restore a saved voice whose option was rebuilt
+    // from favorites, so put the channel's own value back explicitly.
+    row.querySelectorAll('select.voice-select').forEach(function (sel) {
+      sel.value = sel.getAttribute('data-current') || '';
+    });
     row.style.display = 'none';
   }
+
+  // The narration-voice dropdowns are filled from the OpenSpeaker favorites
+  // (GET /studio/voices.json?source=favorites). A voice already saved on a
+  // channel is kept as an option even when it is not a favorite, so opening
+  // and saving a channel never silently drops its voice.
+  (function () {
+    var selects = Array.prototype.slice.call(
+      document.querySelectorAll('select.voice-select'));
+    var status = document.getElementById('voice_status');
+    if (!selects.length || !status) return;
+
+    function populate(sel, voices) {
+      var current = sel.getAttribute('data-current') || '';
+      // keep only the "inherit" option, drop the server-rendered saved one
+      Array.prototype.slice.call(
+        sel.querySelectorAll('option, optgroup')).forEach(function (node) {
+        if (node.tagName === 'OPTGROUP' || node.value !== '') { node.remove(); }
+      });
+      var groups = {};
+      voices.forEach(function (v) {
+        (groups[v.provider] = groups[v.provider] || []).push(v);
+      });
+      Object.keys(groups).sort().forEach(function (provider) {
+        var og = document.createElement('optgroup');
+        og.label = provider.charAt(0).toUpperCase() + provider.slice(1);
+        groups[provider].forEach(function (v) {
+          var opt = document.createElement('option');
+          opt.value = v.voice_id;
+          opt.textContent = v.name + (v.language ? ' - ' + v.language : '');
+          if (v.voice_id === current) { opt.selected = true; }
+          og.appendChild(opt);
+        });
+        sel.appendChild(og);
+      });
+      var found = Array.prototype.some.call(sel.options, function (o) {
+        return o.value === current;
+      });
+      if (current && !found) {
+        var saved = document.createElement('option');
+        saved.value = current;
+        saved.textContent = current + ' (saved, not in favorites)';
+        saved.selected = true;
+        sel.appendChild(saved);
+      }
+    }
+
+    fetch('/studio/voices.json?source=favorites')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var voices = (data && data.voices) || [];
+        if (!voices.length) {
+          status.textContent = (data && data.error)
+            ? 'Favorite voices unavailable: ' + data.error
+            : 'No OpenSpeaker favorites - the saved voice ids are kept.';
+          status.style.color = 'var(--amber)';
+          return;
+        }
+        selects.forEach(function (sel) { populate(sel, voices); });
+        status.textContent = voices.length + ' favorite voice(s) loaded.';
+        status.style.color = 'var(--muted)';
+      })
+      .catch(function (e) {
+        status.textContent = 'Could not load favorite voices (' + e
+          + ') - the saved voice ids are kept.';
+        status.style.color = 'var(--amber)';
+      });
+  })();
 </script>
 </body>
 </html>
