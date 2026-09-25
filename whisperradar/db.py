@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS videos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status);
+-- paging: the dashboard orders by published_at (newest) or view_count (most
+-- viewed). These composite indexes match the ORDER BY exactly (including the
+-- id tiebreak), so each page walks the index instead of sorting the table.
+CREATE INDEX IF NOT EXISTS idx_videos_published
+    ON videos(published_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_videos_views
+    ON videos(view_count DESC, published_at DESC, id DESC);
 
 CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY,
@@ -425,7 +432,7 @@ def get_video(conn, video_id: str):
 
 
 def _video_filters(status: str | None, genre: str | None, backlog: bool,
-                   channel: str | None):
+                   channel: str | None, q: str | None = None):
     clauses, params = [], []
     if backlog:
         clauses.append("v.auto = 0")
@@ -439,14 +446,27 @@ def _video_filters(status: str | None, genre: str | None, backlog: bool,
     if channel:
         clauses.append("(c.channel_id = ? OR lower(c.name) = lower(?))")
         params.extend([channel, channel])
+    if q:
+        clauses.append("v.title LIKE ?")
+        params.append(f"%{q}%")
     return clauses, params
 
 
+def _video_order(sort: str | None) -> str:
+    """ORDER BY for the video list. `id` is the final tiebreak so paging is
+    stable when view counts or publish dates are equal. SQLite sorts NULLs
+    last on DESC, so unrecorded view counts sink to the bottom."""
+    if sort == "views":
+        return " ORDER BY v.view_count DESC, v.published_at DESC, v.id DESC"
+    return " ORDER BY v.published_at DESC, v.id DESC"
+
+
 def count_videos(conn, status: str | None = None, genre: str | None = None,
-                 backlog: bool = False, channel: str | None = None) -> int:
+                 backlog: bool = False, channel: str | None = None,
+                 q: str | None = None) -> int:
     sql = ("SELECT COUNT(*) FROM videos v"
            " JOIN channels c ON c.channel_id = v.channel_id")
-    clauses, params = _video_filters(status, genre, backlog, channel)
+    clauses, params = _video_filters(status, genre, backlog, channel, q)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     return conn.execute(sql, params).fetchone()[0]
@@ -455,21 +475,35 @@ def count_videos(conn, status: str | None = None, genre: str | None = None,
 def get_videos(conn, status: str | None = None, genre: str | None = None,
                backlog: bool = False, channel: str | None = None,
                limit: int | None = None, offset: int = 0,
-               sort: str | None = None):
+               sort: str | None = None, q: str | None = None):
     sql = ("SELECT v.*, c.name AS channel_name, c.genre AS channel_genre FROM videos v"
            " JOIN channels c ON c.channel_id = v.channel_id")
-    clauses, params = _video_filters(status, genre, backlog, channel)
+    clauses, params = _video_filters(status, genre, backlog, channel, q)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
-    if sort == "views":
-        # most viewed first; videos with no recorded count sink to the bottom
-        sql += " ORDER BY v.view_count IS NULL, v.view_count DESC, v.published_at DESC"
-    else:
-        sql += " ORDER BY v.published_at DESC"
+    sql += _video_order(sort)
     if limit:
         sql += " LIMIT ? OFFSET ?"
         params.extend([limit, offset])
     return conn.execute(sql, params).fetchall()
+
+
+def get_videos_page(conn, status: str | None = None, genre: str | None = None,
+                    backlog: bool = False, channel: str | None = None,
+                    q: str | None = None, sort: str | None = None,
+                    limit: int = 50, offset: int = 0):
+    """One page of videos plus the total number of matching rows.
+
+    Deliberately two queries: a `COUNT(*) OVER ()` would force SQLite to
+    materialise and sort the whole result set, which defeats the paging
+    indexes (each request would sort every row instead of walking the index).
+    """
+    rows = get_videos(conn, status=status, genre=genre, backlog=backlog,
+                      channel=channel, q=q, sort=sort, limit=limit,
+                      offset=offset)
+    total = count_videos(conn, status=status, genre=genre, backlog=backlog,
+                         channel=channel, q=q)
+    return rows, total
 
 
 def get_pending_downloads(conn):

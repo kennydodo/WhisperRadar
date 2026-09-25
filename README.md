@@ -69,7 +69,8 @@ python wr.py serve --port 9000
 
 The dashboard lets you add/remove channels (it resolves any YouTube URL or
 @handle), trigger Watch / Download / Transcribe / Run-all with live log
-output, browse videos by status/genre/channel with pagination, **sort by most
+output, browse videos by status/genre/channel with pagination, **search
+titles**, pick **25/50/100/200 per page** (remembered), **sort by most
 viewed**, read transcripts in the browser, download individual `.txt` files,
 and export everything as a zip.
 

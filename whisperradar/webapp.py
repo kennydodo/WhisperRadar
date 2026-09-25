@@ -19,6 +19,7 @@ from urllib.parse import quote, urlparse
 from flask import (
     Flask,
     abort,
+    make_response,
     redirect,
     render_template,
     request,
@@ -32,12 +33,14 @@ from .watch import CHANNEL_ID_RE, resolve_channel
 
 
 def _back(request, msg: str | None = None, error: str | None = None):
-    """Redirect back to the dashboard preserving status/genre/channel filters.
+    """Redirect back to the dashboard preserving the current view.
 
-    Filter values come from hidden fields the POST forms carry.
+    Filter and paging values come from hidden fields the POST forms carry, so
+    acting on a row (queue, retry, delete, ...) returns to the same page and
+    sort instead of jumping to page 1.
     """
     parts = []
-    for key in ("status", "genre", "channel"):
+    for key in ("status", "genre", "channel", "sort", "q", "per_page", "page"):
         val = request.form.get(key)
         if val:
             parts.append(f"{key}={quote(val)}")
@@ -184,6 +187,28 @@ def _transcribe_one(cfg, video_id: str):
 
 
 PAGE_SIZE = 50
+PAGE_SIZES = (25, 50, 100, 200)
+PER_PAGE_COOKIE = "wr_per_page"
+
+
+def _safe_int(value, default: int, lo: int | None = None,
+              hi: int | None = None) -> int:
+    """int() that never raises; used for query/cookie params so a malformed
+    ?page=abc (or a hand-edited URL) cannot 500 the dashboard."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    if lo is not None:
+        number = max(lo, number)
+    if hi is not None:
+        number = min(hi, number)
+    return number
+
+
+def _page_size(value, default: int) -> int:
+    """A page-size value clamped to the offered sizes."""
+    return value if value in PAGE_SIZES else default
 
 
 # Generated artifacts per stage, deleted by the start-over reset. Named
@@ -343,15 +368,30 @@ def create_app(cfg) -> Flask:
         genre = request.args.get("genre") or None
         channel = request.args.get("channel") or None
         sort = request.args.get("sort") or None
-        page = max(1, int(request.args.get("page") or 1))
-        total = db.count_videos(conn, status=status, genre=genre,
-                                backlog=backlog, channel=channel)
-        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-        page = min(page, pages)
-        videos = db.get_videos(conn, status=status, genre=genre,
-                               backlog=backlog, channel=channel,
-                               limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE,
-                               sort=sort)
+        q = (request.args.get("q") or "").strip() or None
+        # page size: an explicit ?per_page= wins and is remembered in a cookie
+        per_page_arg = request.args.get("per_page")
+        remember_size = per_page_arg is not None
+        if remember_size:
+            per_page = _page_size(_safe_int(per_page_arg, PAGE_SIZE),
+                                  PAGE_SIZE)
+        else:
+            per_page = _page_size(
+                _safe_int(request.cookies.get(PER_PAGE_COOKIE), PAGE_SIZE),
+                PAGE_SIZE)
+        page = _safe_int(request.args.get("page"), 1, lo=1)
+
+        def fetch(page_no: int):
+            return db.get_videos_page(
+                conn, status=status, genre=genre, backlog=backlog,
+                channel=channel, q=q, sort=sort,
+                limit=per_page, offset=(page_no - 1) * per_page)
+
+        videos, total = fetch(page)
+        pages = max(1, (total + per_page - 1) // per_page)
+        if page > pages:  # out-of-range page: clamp to the last page
+            page = pages
+            videos, total = fetch(page)
         genres = sorted({ch["genre"] for ch in channels})
         conn.close()
         raw_status = request.args.get("status")
@@ -359,15 +399,16 @@ def create_app(cfg) -> Flask:
         def qs(**overrides) -> str:
             """Query string preserving current filters; overrides replace them."""
             vals = {"status": raw_status, "genre": genre, "channel": channel,
-                    "sort": sort}
+                    "sort": sort, "q": q,
+                    "per_page": per_page if per_page != PAGE_SIZE else None}
             page_override = overrides.pop("page", None)
             vals.update(overrides)
-            parts = [f"{k}={quote(v)}" for k, v in vals.items() if v]
+            parts = [f"{k}={quote(str(v))}" for k, v in vals.items() if v]
             if page_override:
                 parts.append(f"page={page_override}")
             return "&".join(parts)
 
-        return render_template(
+        resp = make_response(render_template(
             "dashboard.html",
             channels=channels,
             videos=videos,
@@ -376,6 +417,9 @@ def create_app(cfg) -> Flask:
             genre=genre,
             channel=channel,
             sort=sort,
+            q=q,
+            per_page=per_page,
+            per_page_options=PAGE_SIZES,
             page=page,
             pages=pages,
             total=total,
@@ -385,7 +429,11 @@ def create_app(cfg) -> Flask:
             error=request.args.get("error"),
             job=job,
             log_text="\n".join(list(job.log))[-4000:],
-        )
+        ))
+        if remember_size:
+            resp.set_cookie(PER_PAGE_COOKIE, str(per_page),
+                            max_age=60 * 60 * 24 * 365, samesite="Lax")
+        return resp
 
     @app.post("/channels/edit")
     def channels_edit():

@@ -66,6 +66,8 @@
   .pager a { padding: 3px 10px; border: 1px solid var(--border); border-radius: 7px;
              color: var(--muted); font-size: 13px; }
   .pager a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .pager form.jump { display: flex; gap: 4px; align-items: center; margin-left: 6px; }
+  .pager form.jump input[type=number] { width: 64px; padding: 3px 8px; flex: none; }
 </style>
 </head>
 <body>
@@ -88,6 +90,9 @@
   {% if genre %}<input type="hidden" name="genre" value="{{ genre }}">{% endif %}
   {% if channel %}<input type="hidden" name="channel" value="{{ channel }}">{% endif %}
   {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
+  {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+  {% if per_page and per_page != 50 %}<input type="hidden" name="per_page" value="{{ per_page }}">{% endif %}
+  {% if page and page > 1 %}<input type="hidden" name="page" value="{{ page }}">{% endif %}
 {% endmacro %}
 <div class="wrap">
   <h1>WhisperRadar</h1>
@@ -196,7 +201,14 @@
       <option value="{{ ch['channel_id'] }}" {{ 'selected' if channel == ch['channel_id'] else '' }}>{{ ch["name"] }} ({{ ch["genre"] }})</option>
       {% endfor %}
     </select>
-    <noscript><button type="submit" class="secondary">filter</button></noscript>
+    <select name="per_page" onchange="this.form.submit()" title="Videos per page">
+      {% for n in per_page_options %}
+      <option value="{{ n }}" {{ 'selected' if per_page == n else '' }}>{{ n }}/page</option>
+      {% endfor %}
+    </select>
+    <input type="search" name="q" value="{{ q or '' }}" placeholder="search titles..."
+           style="flex:0 1 220px" autocomplete="off">
+    <button type="submit" class="secondary">search</button>
   </form>
   <div class="filters">
     <a href="/?{{ qs(status='') }}" class="{{ 'active' if not status else '' }}">all</a>
@@ -273,17 +285,44 @@
       <tr><td colspan="7" class="muted">No videos{% if status %} with status "{{ status }}"{% endif %}{% if genre %} in genre "{{ genre }}"{% endif %}.</td></tr>
       {% endfor %}
     </table>
-    {% if pages > 1 %}
-    <div class="pager">
-      {% if page > 1 %}<a href="/?{{ qs(page=page - 1) }}">&laquo; prev</a>{% endif %}
-      {% for p in page_list %}
-        {% if p %}<a href="/?{{ qs(page=p) }}" class="{{ 'active' if p == page else '' }}">{{ p }}</a>
-        {% else %}<span class="muted">&hellip;</span>{% endif %}
-      {% endfor %}
-      {% if page < pages %}<a href="/?{{ qs(page=page + 1) }}">next &raquo;</a>{% endif %}
-      <span class="muted" style="margin-left:auto">{{ total }} video{{ 's' if total != 1 else '' }}</span>
+    {% if q %}
+    <div class="filters">
+      <span class="muted" style="align-self:center;font-size:12px;margin-left:4px">search:</span>
+      <a href="/?{{ qs(q='') }}" class="active" title="Clear the title search">{{ q }} &times;</a>
     </div>
     {% endif %}
+    <div class="pager">
+      <span class="muted" style="margin-right:auto">
+        {{ total }} video{{ 's' if total != 1 else '' }}
+        {%- if pages > 1 %} &middot; page {{ page }} of {{ pages }}{% endif %}
+      </span>
+      {% if pages > 1 %}
+        {% if page > 1 %}
+        <a href="/?{{ qs(page=1) }}" title="First page" aria-label="First page">&laquo; first</a>
+        <a href="/?{{ qs(page=page - 1) }}" rel="prev" aria-label="Previous page">&lsaquo; prev</a>
+        {% endif %}
+        {% for p in page_list %}
+          {% if p %}<a href="/?{{ qs(page=p) }}" class="{{ 'active' if p == page else '' }}"
+             {% if p == page %}aria-current="page"{% endif %}>{{ p }}</a>
+          {% else %}<span class="muted">&hellip;</span>{% endif %}
+        {% endfor %}
+        {% if page < pages %}
+        <a href="/?{{ qs(page=page + 1) }}" rel="next" aria-label="Next page">next &rsaquo;</a>
+        <a href="/?{{ qs(page=pages) }}" title="Last page" aria-label="Last page">last &raquo;</a>
+        {% endif %}
+        <form method="get" action="/" class="jump" title="Jump to page">
+          <input type="hidden" name="status" value="{{ status or '' }}">
+          <input type="hidden" name="genre" value="{{ genre or '' }}">
+          <input type="hidden" name="channel" value="{{ channel or '' }}">
+          <input type="hidden" name="sort" value="{{ sort or '' }}">
+          <input type="hidden" name="q" value="{{ q or '' }}">
+          <input type="hidden" name="per_page" value="{{ per_page }}">
+          <input type="number" name="page" min="1" max="{{ pages }}" value="{{ page }}"
+                 aria-label="Page number">
+          <button type="submit" class="ghost">go</button>
+        </form>
+      {% endif %}
+    </div>
   </div>
 </div>
 
