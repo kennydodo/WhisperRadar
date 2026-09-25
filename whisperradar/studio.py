@@ -2016,10 +2016,103 @@ def prepare_project_folder(cfg, pid: int) -> Path:
     return pdir
 
 
+def providers(cfg) -> list[dict]:
+    """The LLM providers the pipeline can use, as flat {name, base_url, model,
+    api_key, env_key, gateway} entries.
+
+    The Settings > Providers page saves a NESTED list to the DB (one entry per
+    gateway + key, each with several models - b.ai and OpenRouter both serve many
+    models on one key). This flattens that to the flat shape the rest of the
+    pipeline already uses: one entry per MODEL, named by its label, sharing the
+    gateway's base_url and key. With nothing saved it falls back to config.yaml.
+    """
+    nested = None
+    try:
+        from . import db
+
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            raw = db.get_setting(conn, "llm_providers")
+        finally:
+            conn.close()
+        if raw:
+            nested = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception as exc:  # noqa: BLE001 - never block on settings storage
+        log.debug("could not read saved providers: %s", exc)
+    if isinstance(nested, list):
+        flat: list[dict] = []
+        for prov in nested:
+            if not isinstance(prov, dict) or not str(prov.get("name") or "").strip():
+                continue
+            for model in prov.get("models") or []:
+                if isinstance(model, str):
+                    model = {"id": model}
+                if not isinstance(model, dict) or not str(model.get("id") or "").strip():
+                    continue
+                flat.append({
+                    "name": str(model.get("name") or model["id"]).strip(),
+                    "base_url": str(prov.get("base_url") or "").strip(),
+                    "model": str(model["id"]).strip(),
+                    "api_key": prov.get("api_key"),
+                    "env_key": str(prov.get("env_key") or "WR_LLM_API_KEY").strip(),
+                    "gateway": str(prov.get("name")).strip(),
+                })
+        if flat:
+            return flat
+    return [dict(p) for p in (cfg.studio_llm_providers or [])]
+
+
+def _gateway_label(url: str) -> str:
+    low = (url or "").lower()
+    if "openrouter" in low:
+        return "OpenRouter"
+    if "b.ai" in low:
+        return "b.ai"
+    from urllib.parse import urlparse
+
+    return urlparse(url).netloc or ""
+
+
+def providers_nested(cfg) -> list[dict]:
+    """The RAW nested provider list for the Settings > Providers editor: whatever
+    the page saved, else seeded from config.yaml (flat entries grouped by
+    gateway) so the form starts filled in."""
+    try:
+        from . import db
+
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            raw = db.get_setting(conn, "llm_providers")
+        finally:
+            conn.close()
+        if raw:
+            data = json.loads(raw) if isinstance(raw, str) else raw
+            if isinstance(data, list) and data:
+                return data
+    except Exception as exc:  # noqa: BLE001
+        log.debug("could not read saved providers: %s", exc)
+    groups: dict[str, dict] = {}
+    for p in (cfg.studio_llm_providers or []):
+        url = str(p.get("base_url") or "").strip()
+        key = url or p["name"]
+        group = groups.setdefault(key, {
+            "name": _gateway_label(url) or p["name"],
+            "base_url": url,
+            "api_key": p.get("api_key") or "",
+            "env_key": p.get("env_key") or "WR_LLM_API_KEY",
+            "models": [],
+        })
+        group["models"].append({"id": p.get("model") or "", "name": p["name"]})
+    return list(groups.values())
+
+
 def _resolve_provider(cfg, name: str | None = None) -> dict:
-    if cfg.studio_llm_providers:
+    provs = providers(cfg)
+    if provs:
         name = name or cfg.studio_llm_default
-        for p in cfg.studio_llm_providers:
+        for p in provs:
             if p["name"] == name:
                 return p
         raise RuntimeError(f"Unknown LLM provider '{name}'")
@@ -2090,10 +2183,10 @@ def _fallback_provider(cfg, failed: str) -> dict | None:
     """A different READY provider to retry a stalled/empty request on, or None.
     Prefers a DIFFERENT gateway: both of our providers sit on api.b.ai, so a
     stall there would repeat on the fallback."""
-    providers = cfg.studio_llm_providers or []
+    providers_list = providers(cfg)
     failed_url = next((str(p.get("base_url") or "").rstrip("/")
-                       for p in providers if p.get("name") == failed), "")
-    ready = [p for p in providers
+                       for p in providers_list if p.get("name") == failed), "")
+    ready = [p for p in providers_list
              if p.get("name") != failed and provider_ready(cfg, p.get("name"))]
     for p in ready:
         if str(p.get("base_url") or "").rstrip("/") != failed_url:
@@ -2340,13 +2433,21 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
 
 
 def judge_provider(cfg, writer: str | None, preferred: str | None) -> str | None:
-    """Which provider rates the script: an explicit choice, else any configured
-    provider that is not the one that wrote it (self-scoring is biased)."""
+    """Which provider rates the script: an explicit choice, else a configured
+    provider that is not the one that wrote it (self-scoring is biased), and
+    preferably on a DIFFERENT gateway - a stall on api.b.ai hits every provider
+    on api.b.ai, so a judge there would fail exactly when it is needed."""
     if preferred:
         return preferred
-    names = [p["name"] for p in cfg.studio_llm_providers]
-    others = [n for n in names if n != writer and provider_ready(cfg, n)]
-    return others[0] if others else writer
+    provs = providers(cfg)
+    writer_url = next((str(p.get("base_url") or "").rstrip("/")
+                       for p in provs if p.get("name") == writer), "")
+    ready = [p for p in provs
+             if p.get("name") != writer and provider_ready(cfg, p.get("name"))]
+    for p in ready:
+        if str(p.get("base_url") or "").rstrip("/") != writer_url:
+            return p["name"]
+    return ready[0]["name"] if ready else writer
 
 
 def style_prompt(title: str, genre: str, source_text: str,

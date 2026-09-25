@@ -40,11 +40,21 @@ studio:
       model: deepseek-v4.1-flash
       api_key: null
       api: openai
-    # - name: claude
-    #   base_url: https://openrouter.ai/api/v1
-    #   model: anthropic/claude-sonnet-4
-    #   api_key: null          # or set WR_CLAUDE_API_KEY
-    #   api: openai
+    # A SECOND gateway, so a stall on api.b.ai (which hits both providers above)
+    # cannot take the run down: the judge/fallback can use a provider here.
+    # Set the key in Settings > LLM providers, or export WR_OPENROUTER_API_KEY.
+    - name: openrouter-claude
+      base_url: https://openrouter.ai/api/v1
+      model: anthropic/claude-sonnet-4
+      api_key: null
+      env_key: WR_OPENROUTER_API_KEY
+      api: openai
+    - name: openrouter-gpt
+      base_url: https://openrouter.ai/api/v1
+      model: openai/gpt-5
+      api_key: null
+      env_key: WR_OPENROUTER_API_KEY
+      api: openai
     # - name: gpt
     #   base_url: https://api.openai.com/v1
     #   model: gpt-5

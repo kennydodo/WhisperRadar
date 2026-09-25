@@ -258,6 +258,82 @@
     </span>
   </div>
   </form>
+
+  <h2>LLM providers</h2>
+  <p class="help">
+    One entry per gateway and its key. Add several models under one gateway -
+    b.ai and OpenRouter both serve many models on a single key. Every model then
+    appears wherever an LLM is chosen (script writer, judge, style, shotlist).
+    Saved in the database; config.yaml providers are shown until you save here.
+  </p>
+  <form method="post" action="/settings/providers" onsubmit="return serializeProviders()">
+    <input type="hidden" name="providers_json" id="providers-json">
+    <div id="providers-editor"></div>
+    <div class="panel">
+      <button type="button" onclick="addProvider()">+ Add provider</button>
+      <button type="submit">Save providers</button>
+      <span class="muted" style="font-size:12px; margin-left:10px">stored locally</span>
+    </div>
+  </form>
+
+  <script>
+  var PROVIDERS = {{ providers_nested|tojson }};
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+  function renderProviders() {
+    var host = document.getElementById('providers-editor');
+    if (!host) return;
+    var html = '';
+    PROVIDERS.forEach(function (p, i) {
+      html += '<div class="panel" style="margin-bottom:10px">'
+        + '<div style="display:flex;gap:8px;align-items:center">'
+        + '<input placeholder="Gateway (b.ai)" data-p="' + i + '" data-f="name" value="' + esc(p.name) + '" style="width:170px">'
+        + '<input placeholder="Base URL (https://api.b.ai/v1)" data-p="' + i + '" data-f="base_url" value="' + esc(p.base_url) + '" style="flex:1">'
+        + '<button type="button" onclick="delProvider(' + i + ')">remove</button></div>'
+        + '<div style="display:flex;gap:8px;margin-top:6px">'
+        + '<input placeholder="API key" data-p="' + i + '" data-f="api_key" value="' + esc(p.api_key) + '" style="flex:1">'
+        + '<input placeholder="env var (optional)" data-p="' + i + '" data-f="env_key" value="' + esc(p.env_key) + '" style="width:220px"></div>'
+        + '<div class="muted" style="margin-top:8px">Models on this key</div>';
+      (p.models || []).forEach(function (m, j) {
+        html += '<div style="display:flex;gap:8px;margin-top:4px">'
+          + '<input placeholder="model id" data-p="' + i + '" data-m="' + j + '" data-f="id" value="' + esc(m.id) + '" style="flex:1">'
+          + '<input placeholder="label (shown in the pickers)" data-p="' + i + '" data-m="' + j + '" data-f="name" value="' + esc(m.name) + '" style="width:230px">'
+          + '<button type="button" onclick="delModel(' + i + ',' + j + ')">x</button></div>';
+      });
+      html += '<button type="button" onclick="addModel(' + i + ')" style="margin-top:6px">+ model</button></div>';
+    });
+    host.innerHTML = html;
+  }
+  function readBack() {
+    PROVIDERS.forEach(function (p) { p.models = []; });
+    document.querySelectorAll('#providers-editor [data-f]').forEach(function (el) {
+      var i = +el.dataset.p, f = el.dataset.f;
+      if (el.dataset.m === undefined) { PROVIDERS[i][f] = el.value.trim(); return; }
+      var j = +el.dataset.m;
+      if (!PROVIDERS[i].models[j]) { PROVIDERS[i].models[j] = { id: '', name: '' }; }
+      PROVIDERS[i].models[j][f] = el.value.trim();
+    });
+  }
+  function addProvider() {
+    PROVIDERS.push({ name: '', base_url: '', api_key: '', env_key: 'WR_LLM_API_KEY',
+                     models: [{ id: '', name: '' }] });
+    renderProviders();
+  }
+  function delProvider(i) { PROVIDERS.splice(i, 1); renderProviders(); }
+  function addModel(i) { (PROVIDERS[i].models = PROVIDERS[i].models || []).push({ id: '', name: '' }); renderProviders(); }
+  function delModel(i, j) { PROVIDERS[i].models.splice(j, 1); renderProviders(); }
+  function serializeProviders() {
+    readBack();
+    var clean = PROVIDERS.filter(function (p) {
+      return p.name && p.base_url && (p.models || []).some(function (m) { return m && m.id; });
+    });
+    document.getElementById('providers-json').value = JSON.stringify(clean);
+    return true;
+  }
+  renderProviders();
+  </script>
 </div>
 
 <script>

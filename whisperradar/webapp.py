@@ -453,7 +453,8 @@ def create_app(cfg) -> Flask:
             "settings.html", values=values, spec=settings.SPEC,
             groups=settings.grouped_spec(),
             seed_dirs_text=settings.format_seed_dirs(values.get("seed_dirs")),
-            providers=[p["name"] for p in cfg.studio_llm_providers],
+            providers=[p["name"] for p in studio.providers(cfg)],
+            providers_nested=studio.providers_nested(cfg),
             scheduler=sched.status(),
             services=services.MANAGER.status_cached(cfg),
             flowimagesgen_ready=studio.flowimagesgen_ready(cfg),
@@ -496,6 +497,59 @@ def create_app(cfg) -> Flask:
             msg += " - " + "; ".join(warnings)
         return redirect("/settings?msg=" + quote(msg))
 
+    @app.post("/settings/providers")
+    def settings_providers_save():
+        """Save the nested gateway/model list the Providers editor posts.
+
+        One entry per gateway + key, each with several models; studio.providers()
+        flattens it to the flat {name, base_url, model} entries the pipeline uses,
+        so several models share a key. An empty list clears the override and the
+        config.yaml providers apply again."""
+        raw = (request.form.get("providers_json") or "").strip()
+        try:
+            data = json.loads(raw) if raw else []
+        except ValueError:
+            return redirect("/settings?error=Providers+must+be+valid+JSON")
+        if not isinstance(data, list):
+            return redirect("/settings?error=Providers+must+be+a+list")
+        clean = []
+        for prov in data:
+            if not isinstance(prov, dict):
+                continue
+            name = str(prov.get("name") or "").strip()
+            base_url = str(prov.get("base_url") or "").strip()
+            if not name or not base_url:
+                continue
+            models = []
+            for model in (prov.get("models") or []):
+                if isinstance(model, str):
+                    model = {"id": model}
+                if not isinstance(model, dict):
+                    continue
+                mid = str(model.get("id") or "").strip()
+                if not mid:
+                    continue
+                models.append({"id": mid,
+                               "name": str(model.get("name") or mid).strip()})
+            if not models:
+                continue
+            clean.append({
+                "name": name,
+                "base_url": base_url,
+                "api_key": str(prov.get("api_key") or "").strip(),
+                "env_key": str(prov.get("env_key") or "WR_LLM_API_KEY").strip(),
+                "models": models,
+            })
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.set_setting(conn, "llm_providers", json.dumps(clean))
+        finally:
+            conn.close()
+        label = ", ".join(p["name"] for p in clean) or "none"
+        logging.getLogger("whisperradar").info("providers saved: %s", label)
+        return redirect("/settings?msg=" + quote(f"Providers saved ({label})"))
+
     # ------------------------------------------------------- my channels ---
     # The channels the user publishes on - mirrored into Renderly lazily.
 
@@ -530,7 +584,7 @@ def create_app(cfg) -> Flask:
             "channels.html", own_channels=own_channels, links=links,
             renderly_url=cfg.renderly_url, genres=genres,
             source_genres=source_genres,
-            providers=[p["name"] for p in cfg.studio_llm_providers],
+            providers=[p["name"] for p in studio.providers(cfg)],
             render_targets=studio.RENDER_TARGETS,
             render_target_labels=studio.RENDER_TARGET_LABELS,
             render_resolutions=studio.RENDER_RESOLUTIONS,
