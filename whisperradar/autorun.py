@@ -261,6 +261,39 @@ def _research_notes(cfg, pdir: Path, title: str, genre: str,
     return notes
 
 
+def _script_gate(words: int, target_words: int, overlap: float,
+                 score: float | None, min_rating: float, max_overlap: float,
+                 hard_overlap: float,
+                 judge_error: str | None = None) -> tuple[bool, list[str], bool, bool]:
+    """(passed, reasons, too_long, too_short) for one script attempt.
+
+    A stub must not slip through: a judge that cannot rate returns score None,
+    which used to reject with an EMPTY reason, and nothing rejected a draft far
+    under the target (a 1067-word answer to a 3531-word target was only rejected
+    because the judge was down)."""
+    too_long = words > int(target_words * 1.15)
+    too_short = words < int(target_words * 0.6)
+    passed = (overlap <= max_overlap and overlap <= hard_overlap
+              and not too_short
+              and score is not None and score >= min_rating)
+    reasons: list[str] = []
+    if too_short:
+        reasons.append(f"~{words} words is well under the {target_words}-word "
+                       f"target")
+    if score is None:
+        reasons.append("the judge could not rate the draft"
+                       + (f" ({judge_error})" if judge_error else ""))
+    elif score < min_rating:
+        reasons.append(f"rating {score} < {min_rating}")
+    if overlap > hard_overlap:
+        reasons.append(f"overlap {overlap:.1%} over the hard "
+                       f"{hard_overlap:.0%} limit")
+    elif overlap > max_overlap:
+        reasons.append(f"overlap {overlap:.1%} over the {max_overlap:.0%} "
+                       f"target")
+    return passed, reasons, too_long, too_short
+
+
 def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     t0 = time.monotonic()
     conn = _connect(cfg)
@@ -305,6 +338,10 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
             variation = ((variation + "\n") if variation else "") + (
                 f"The previous draft was too long. Keep this one at or under "
                 f"{target_words} words.")
+        if previous and previous.get("too_short"):
+            variation = ((variation + "\n") if variation else "") + (
+                f"The previous draft was far too short. Write the full "
+                f"{target_words} words and cover every fact in the notes.")
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
@@ -315,40 +352,32 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         if not text:
             raise RuntimeError("LLM returned an empty script")
         words = len(re.findall(r"\w+", text))
-        too_long = words > int(target_words * 1.15)
         overlap = studio.overlap_ratio(text, source_text)
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
                                     source_text, style_guide, judge)
         score = rating["score"]
-        passed = (overlap <= max_overlap and overlap <= hard_overlap
-                  and score is not None and score >= min_rating)
+        passed, why, too_long, too_short = _script_gate(
+            words, target_words, overlap, score, min_rating, max_overlap,
+            hard_overlap, rating.get("error"))
         (auto_dir / f"attempt-{attempt}.md").write_text(text + "\n",
                                                         encoding="utf-8")
         attempts.append({"attempt": attempt, "text": text, "overlap": overlap,
                          "runs": runs, "score": score, "rating": rating,
                          "passed": passed, "words": words,
-                         "too_long": too_long})
+                         "too_long": too_long, "too_short": too_short})
         log_attempt = (f"attempt {attempt}: rating "
                        f"{score if score is not None else 'n/a'}, overlap "
                        f"{overlap:.1%}, ~{words} words"
-                       + (" (too long)" if too_long else ""))
+                       + (" (too long)" if too_long else "")
+                       + (" (too short)" if too_short else ""))
         if passed:
             _log_line(log_attempt + " - accepted")
             break
-        why = []
-        if score is not None and score < min_rating:
-            why.append(f"rating {score} < {min_rating}")
-        if overlap > hard_overlap:
-            why.append(f"overlap {overlap:.1%} over the hard "
-                       f"{hard_overlap:.0%} limit")
-        elif overlap > max_overlap:
-            why.append(f"overlap {overlap:.1%} over the {max_overlap:.0%} "
-                       f"target")
         _log_line(log_attempt + " - rejected (" + "; ".join(why) + ")")
         previous = {"overlap": overlap, "runs": runs,
                     "feedback": rating["feedback"] or rating["weak_spans"],
-                    "too_long": too_long}
+                    "too_long": too_long, "too_short": too_short}
 
     # settle for the best draft rather than shipping a rejected one blindly
     best = max(attempts, key=lambda a: ((a["score"] or 0), -a["overlap"]))

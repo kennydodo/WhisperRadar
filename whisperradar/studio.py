@@ -2369,23 +2369,35 @@ def overlap_runs(script: str, source: str, n: int = 5,
 
 RATING_RUBRIC = [    ("hook", "Does the first 15 seconds earn attention without clickbait?"),
     ("originality", "Is it a genuine rewrite, not a reworded copy?"),
-    ("accuracy", "Are the claims supported by the source and not invented?"),
+    ("accuracy", "Are the claims consistent with the SOURCE FACTS and not invented?"),
     ("structure", "Clear beats, logical order, no filler or repetition?"),
     ("pacing", "Does it hold attention to the end at a spoken pace?"),
     ("style_fit", "Does it obey the channel's style guide and tone?"),
     ("ending", "Does it land a payoff rather than trailing off?"),
 ]
 
+# How much of the source transcript the judge sees. It MUST see it: the rubric
+# asks whether claims are supported by the source, and without it the judge
+# demanded external citations the transcript never had (accuracy 7-8, so no
+# attempt could clear a 9.0 bar).
+JUDGE_SOURCE_CHARS = 12000
+
 
 def rating_prompt(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float) -> str:
     rubric = "\n".join(f"- {name}: {desc}" for name, desc in RATING_RUBRIC)
+    facts = (source or "").strip()[:JUDGE_SOURCE_CHARS]
     return (
         f"You are a ruthless YouTube script editor for the channel genre "
         f"'{genre}'. Score this script for the video \"{title}\".\n\n"
         f"Score each criterion 1-10:\n{rubric}\n\n"
         f"Measured 5-gram overlap with the source transcript: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
+        f"The SOURCE FACTS below are the ground truth: a claim is accurate when "
+        f"it is consistent with them. Do NOT ask for external citations or "
+        f"sources - the SOURCE FACTS are the source. Penalise only claims that "
+        f"are absent from, or contradict, the SOURCE FACTS.\n\n"
+        f"SOURCE FACTS:\n{facts or '(none)'}\n\n"
         f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:3000]}\n\n"
         f"SCRIPT:\n{script or ''}\n\n"
         f"Reply with ONLY a JSON object:\n"
