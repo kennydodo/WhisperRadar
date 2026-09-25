@@ -682,7 +682,7 @@ def create_app(cfg) -> Flask:
                 fields["script_max_attempts"] = None
         if "script_judge_provider" in request.form:
             raw = (request.form.get("script_judge_provider") or "").strip()
-            known = {p["name"] for p in cfg.studio_llm_providers}
+            known = {p["name"] for p in studio.providers(cfg)}
             fields["script_judge_provider"] = raw if raw in known else None
         if "render_target" in request.form:
             raw = (request.form.get("render_target") or "").strip().lower()
@@ -708,13 +708,13 @@ def create_app(cfg) -> Flask:
         if "shotlist_max_attempts" in request.form:
             raw = (request.form.get("shotlist_max_attempts") or "").strip()
             try:
-                fields["shotlist_max_attempts"] = (max(1, min(5, int(raw)))
+                fields["shotlist_max_attempts"] = (max(1, min(8, int(raw)))
                                                    if raw else None)
             except ValueError:
                 fields["shotlist_max_attempts"] = None
         if "shotlist_judge_provider" in request.form:
             raw = (request.form.get("shotlist_judge_provider") or "").strip()
-            known = {p["name"] for p in cfg.studio_llm_providers}
+            known = {p["name"] for p in studio.providers(cfg)}
             fields["shotlist_judge_provider"] = raw if raw in known else None
         if "default_upscale" in request.form:
             raw = (request.form.get("default_upscale") or "").strip()
