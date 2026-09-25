@@ -2762,21 +2762,31 @@ MOTION_MAX_SHARE = 0.40
 FRAGMENTATION_SHARE = 0.50
 
 
+def _scene_subbeat(asset: str) -> tuple[str, int] | None:
+    """('S12', 2) for 'S12_02_PROC_PR.png' - the scene and its sub-beat index."""
+    m = re.match(r"(S\d+)_(\d+)_", str(asset or ""))
+    return (m.group(1), int(m.group(2))) if m else None
+
+
 def shotlist_pacing(data: dict, cues: list[dict],
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT
                     ) -> tuple[list[str], list[str]]:
     """(faults, warnings) for how long the plan holds each image, derived from
     the SRT cue timings before anything is rendered.
 
-    Faults force a re-plan (they run in the shots gate); warnings - the count is
-    low for the narration length - are reported only, because the brief says an
-    image count is never a failure by itself."""
+    Faults force a re-plan (they run in the shots gate) and tell the planner
+    exactly how to fix a long hold the way the brief prescribes: split at a
+    MEANING boundary (Section 2), keep the existing asset's name and its first
+    cues, and give the new image the next unused sub-beat index in the SAME
+    scene (Section 9 - sub-beat numbers are stable, never rename). Warnings - the
+    count is low for the narration length - are reported only, because the brief
+    says an image count is never a failure by itself."""
     shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
     if not shots or not cues:
         return [], []
     by_index = {c["index"]: c for c in cues if isinstance(c, dict)}
     duration = _srt_seconds(cues[-1].get("end"))
-    holds: list[tuple[float, str, str]] = []
+    holds: list[tuple[float, str, str, int, int]] = []
     for s in shots:
         rng = cue_range(s.get("cues"))
         if not rng:
@@ -2786,23 +2796,50 @@ def shotlist_pacing(data: dict, cues: list[dict],
             continue
         holds.append((_srt_seconds(last.get("end")) - _srt_seconds(first.get("start")),
                       str(s.get("motion") or "").upper(),
-                      str(s.get("asset") or "?")))
+                      str(s.get("asset") or "?"), rng[0], rng[1]))
     if not holds:
         return [], []
     faults: list[str] = []
     cap = max(1.0, float(max_hold_seconds))
+    scene_max: dict[str, int] = {}
+    for _, _, asset, _, _ in holds:
+        sb = _scene_subbeat(asset)
+        if sb:
+            scene_max[sb[0]] = max(scene_max.get(sb[0], 0), sb[1])
+    for i in (data.get("images") or []):
+        sb = _scene_subbeat(i.get("file")) if isinstance(i, dict) else None
+        if sb:
+            scene_max[sb[0]] = max(scene_max.get(sb[0], 0), sb[1])
     long = sorted((h for h in holds if h[0] > cap), reverse=True)
     if long:
+        lines = []
+        for hold, _motion, asset, first, last in long[:6]:
+            midpoint = _srt_seconds(by_index[first]["start"]) + hold / 2
+            choices = [c for c in range(first + 1, last + 1) if c in by_index]
+            split_at = min(choices,
+                           key=lambda c: abs(_srt_seconds(by_index[c]["start"])
+                                             - midpoint)) if choices else None
+            sb = _scene_subbeat(asset)
+            next_name = (f"{sb[0]}_{scene_max.get(sb[0], 0) + 1:02d}" if sb else "")
+            bit = (f"; the new image takes the next unused sub-beat in {sb[0]} "
+                   f"({next_name})") if next_name else ""
+            at = f" around cue {split_at}" if split_at else ""
+            lines.append(f"{asset} cues {first}-{last} ({hold:.0f}s) - split{at}{bit}")
         faults.append(
-            f"{len(long)} shot(s) hold longer than {cap:.0f}s (longest "
-            f"{long[0][0]:.0f}s: " + ", ".join(a for _, _, a in long[:3]) + ") - "
-            f"split them so every image lasts under {cap:.0f}s; about "
-            f"{int(duration / cap) + 1} shots fits {duration / 60:.0f} min")
-    static_long = [(h, a) for h, m, a in holds if m == "ST" and h >= 15.0]
+            f"{len(long)} shot(s) hold longer than {cap:.0f}s - split them so every "
+            f"image lasts under {cap:.0f}s (about {int(duration / cap) + 1} shots fits "
+            f"{duration / 60:.0f} min). Split only at a meaning boundary (a number, "
+            f"statistic or price arrives; a second character, object or location "
+            f"enters; the narration pivots; the action changes; a list ends and the "
+            f"payoff begins). Keep each existing asset's name and its first cues; give "
+            f"the new image the next unused sub-beat index in the SAME scene with its "
+            f"own TYPE and MOTION and its own prompt that describes the separated "
+            f"sub-beat - never rename an existing asset:\n  " + "\n  ".join(lines))
+    static_long = [(h, a) for h, m, a, _f, _l in holds if m == "ST" and h >= 15.0]
     if static_long:
         faults.append("a long STATIC hold is never acceptable: " + ", ".join(
             f"{a} ({h:.0f}s, ST)" for h, a in static_long[:4]))
-    st = [(h, a) for h, m, a in holds if m == "ST"]
+    st = [(h, a) for h, m, a, _f, _l in holds if m == "ST"]
     if st and len(st) / len(holds) > ST_MAX_SHARE:
         faults.append(f"ST is {len(st) / len(holds):.0%} of shots (cap ~"
                       f"{ST_MAX_SHARE:.0%}) - ST is the exception, not the default")
@@ -2810,8 +2847,8 @@ def shotlist_pacing(data: dict, cues: list[dict],
     if st_long:
         faults.append(f"ST shots hold longer than {ST_MAX_HOLD_SECONDS:.0f}s: "
                       + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
-    for code in sorted({m for _, m, _ in holds if m}):
-        share = sum(1 for _, m, _ in holds if m == code) / len(holds)
+    for code in sorted({m for _h, m, _a, _f, _l in holds if m}):
+        share = sum(1 for _h, m, _a, _f, _l in holds if m == code) / len(holds)
         if share > MOTION_MAX_SHARE:
             faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
                           f"{MOTION_MAX_SHARE:.0%}) - vary the motion codes")

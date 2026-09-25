@@ -48,12 +48,22 @@ class PacingTests(unittest.TestCase):
         self.assertEqual(faults, [])
         self.assertEqual(warnings, [])
 
-    def test_a_long_hold_is_a_fault(self):
-        cues = _cues(12, 5)
+    def test_a_long_hold_tells_the_planner_where_and_how_to_split(self):
+        cues = _cues(12, 5)  # 60s
         data = _shots([("S01_01_SCN_ZI.png", 1, 6, "ZI"),
                        ("S01_02_SCN_ZO.png", 7, 12, "ZO")])
         faults, _ = studio.shotlist_pacing(data, cues)
+        text = "\n".join(faults)
         self.assertTrue(any("hold longer than" in f for f in faults), faults)
+        # where to split, in cue numbers
+        self.assertIn("split around cue", text)
+        # the exact shot and its range
+        self.assertIn("S01_01_SCN_ZI.png cues 1-6", text)
+        # naming: keep the scene, take the NEXT unused sub-beat (S01_02 is used)
+        self.assertIn("next unused sub-beat", text)
+        self.assertIn("S01_03", text)
+        # and do not rename anything
+        self.assertIn("never rename", text)
 
     def test_a_long_static_hold_is_a_fault(self):
         cues = _cues(12, 5)
