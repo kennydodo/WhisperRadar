@@ -2046,9 +2046,17 @@ class LLMStalled(RuntimeError):
     do not; the guard is about a provider that goes quiet, not about length."""
 
 
-# Abort a stream that has produced no CONTENT for this long. Keep-alive lines do
-# not count: a provider that only sends heartbeats is stalled, not working.
-LLM_IDLE_TIMEOUT = 150
+class LLMEmpty(RuntimeError):
+    """The provider answered but returned no content - a gateway glitch that is
+    worth retrying on another provider (glm-flash returned this today)."""
+
+
+# A big prompt can take a while to START streaming: deepseek needed ~118s for a
+# 32k-char prompt, so a short idle rule would kill a healthy call. Allow much
+# longer for the FIRST token than for the gaps between tokens. Keep-alive lines
+# never count as content.
+LLM_FIRST_TOKEN_TIMEOUT = 300
+LLM_IDLE_TIMEOUT = 90
 
 
 def script_max_tokens(words: int) -> int:
@@ -2068,13 +2076,18 @@ def script_target_words(setting: int | None, source_words: int) -> int:
 
 
 def _fallback_provider(cfg, failed: str) -> dict | None:
-    """A different READY provider to retry a stalled request on, or None."""
-    for p in (cfg.studio_llm_providers or []):
-        if p.get("name") == failed:
-            continue
-        if provider_ready(cfg, p.get("name")):
+    """A different READY provider to retry a stalled/empty request on, or None.
+    Prefers a DIFFERENT gateway: both of our providers sit on api.b.ai, so a
+    stall there would repeat on the fallback."""
+    providers = cfg.studio_llm_providers or []
+    failed_url = next((str(p.get("base_url") or "").rstrip("/")
+                       for p in providers if p.get("name") == failed), "")
+    ready = [p for p in providers
+             if p.get("name") != failed and provider_ready(cfg, p.get("name"))]
+    for p in ready:
+        if str(p.get("base_url") or "").rstrip("/") != failed_url:
             return p
-    return None
+    return ready[0] if ready else None
 
 
 def openai_chat(p: dict, prompt: str, timeout: int = 600,
@@ -2113,8 +2126,9 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600,
     for attempt in range(2):
         try:
             parts = []
-            last_content = time.monotonic()
-            deadline = last_content + timeout
+            started = time.monotonic()
+            last_content = None
+            deadline = started + timeout
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 ctype = r.headers.get("Content-Type", "")
                 if "event-stream" not in ctype:
@@ -2126,10 +2140,15 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600,
                         raise LLMStalled(
                             f"'{p['name']}' produced no complete answer in "
                             f"{timeout}s")
-                    if now - last_content > LLM_IDLE_TIMEOUT:
+                    if last_content is None:
+                        if now - started > LLM_FIRST_TOKEN_TIMEOUT:
+                            raise LLMStalled(
+                                f"'{p['name']}' sent no first token for "
+                                f"{LLM_FIRST_TOKEN_TIMEOUT}s")
+                    elif now - last_content > LLM_IDLE_TIMEOUT:
                         raise LLMStalled(
-                            f"'{p['name']}' sent no content for "
-                            f"{LLM_IDLE_TIMEOUT}s")
+                            f"'{p['name']}' stalled mid-answer "
+                            f"({LLM_IDLE_TIMEOUT}s without content)")
                     line = raw.decode("utf-8", "ignore").strip()
                     if not line.startswith("data:"):
                         continue
@@ -2147,7 +2166,7 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600,
             text = "".join(parts).strip()
             if text:
                 return text
-            raise RuntimeError("LLM returned an empty response")
+            raise LLMEmpty(f"'{p['name']}' returned an empty response")
         except RuntimeError:
             raise
         except (urllib.error.URLError, http.client.HTTPException,
@@ -2177,10 +2196,10 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
             f"Add an adapter to CHAT_APIS in studio.py.")
     try:
         return fn(p, prompt, timeout=timeout, max_tokens=max_tokens)
-    except LLMStalled as exc:
-        # A stalled provider must not burn the whole timeout: retry the SAME
-        # prompt once on a different ready provider (glm-flash stalls on large
-        # prompts; deepseek/GPT/Claude-class models do not).
+    except (LLMStalled, LLMEmpty) as exc:
+        # A provider that goes quiet or answers empty must not burn the whole
+        # timeout: retry the SAME prompt once on a different ready provider,
+        # preferring a different gateway.
         alt = _fallback_provider(cfg, p["name"])
         alt_fn = (CHAT_APIS.get((alt.get("api") or "openai").lower())
                   if alt else None)

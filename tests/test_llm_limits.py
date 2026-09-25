@@ -126,14 +126,54 @@ class StallTests(unittest.TestCase):
 
     def test_a_provider_that_only_sends_keepalives_is_stalled(self):
         # The glm-flash failure: the socket stays busy, so the socket timeout
-        # never fires. The idle guard must break out quickly instead.
+        # never fires. The first-token guard must break out quickly instead.
         with mock.patch.object(studio.urllib.request, "urlopen",
                                lambda req, timeout=None: self._heartbeat()), \
+                mock.patch.object(studio, "LLM_FIRST_TOKEN_TIMEOUT", 0.05), \
                 mock.patch.object(studio, "LLM_IDLE_TIMEOUT", 0.05):
             started = time.monotonic()
             with self.assertRaises(studio.LLMStalled):
                 studio.openai_chat(PROVIDER, "prompt", timeout=1800)
             self.assertLess(time.monotonic() - started, 5.0)
+
+    def test_a_stall_after_the_first_token_is_detected_too(self):
+        class _Half(_FakeResponse):
+            def __iter__(self):
+                yield ("data: " + json.dumps(
+                    {"choices": [{"delta": {"content": "hi"}}]})).encode()
+                while True:  # content started, then only keep-alives
+                    yield b": ping\n"
+
+        with mock.patch.object(studio.urllib.request, "urlopen",
+                               lambda req, timeout=None: _Half()), \
+                mock.patch.object(studio, "LLM_FIRST_TOKEN_TIMEOUT", 30), \
+                mock.patch.object(studio, "LLM_IDLE_TIMEOUT", 0.05):
+            with self.assertRaises(studio.LLMStalled):
+                studio.openai_chat(PROVIDER, "prompt", timeout=1800)
+
+    def test_the_first_token_allowance_is_much_longer_than_the_idle_one(self):
+        # A 32k-char prompt took deepseek ~118s to start streaming, so a short
+        # first-token rule would kill a healthy call.
+        self.assertGreater(studio.LLM_FIRST_TOKEN_TIMEOUT,
+                           studio.LLM_IDLE_TIMEOUT)
+
+    def test_an_empty_answer_is_retried_on_another_provider(self):
+        alt = dict(PROVIDER, name="deepseek", base_url="http://other.test")
+        calls = []
+
+        def adapter(p, prompt, timeout=600, max_tokens=None):
+            calls.append(p["name"])
+            if p["name"] == "glm-flash":
+                raise studio.LLMEmpty("glm-flash returned an empty response")
+            return "fallback-ok"
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER), \
+                mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}), \
+                mock.patch.object(studio, "_fallback_provider",
+                                  lambda cfg, failed: alt):
+            self.assertEqual(studio.llm_generate(object(), "prompt"), "fallback-ok")
+        self.assertEqual(calls, ["glm-flash", "deepseek"])
 
     def test_a_stream_with_content_is_not_stalled(self):
         resp = _FakeResponse(lines=_sse("Hello ", "world"))
