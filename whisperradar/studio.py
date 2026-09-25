@@ -1178,6 +1178,17 @@ def run_flowimagesgen_prepare(cfg, pid_dir: Path, job_path: Path,
         detail = " | ".join(out.strip().splitlines()[-4:])[:280]
         _safe_log(log, f"FlowImagesGen prepare failed (exit "
                        f"{proc.returncode}): {detail}")
+        # prepare writes the report the moment the project exists - BEFORE it
+        # touches references. So a failure during the REF work still has a usable
+        # project URL, and generate uploads the missing refs itself. Only a
+        # failure with no usable project is a handshake failure.
+        report = _read_json_retry(report_path)
+        url = _usable_flow_project(report)
+        if url:
+            _safe_log(log, f"FlowImagesGen prepare opened/created {url} but its "
+                           f"reference step failed - keeping the project; "
+                           f"generate will attach the references")
+            return report
         # a real failure, not "unsupported": the caller needs to know, because
         # a stored project URL that prepare could not open is probably dead and
         # generation will fail on it too
@@ -2732,6 +2743,16 @@ def shotlist_structural_faults(data: dict, cue_count: int,
         faults.append(f"{len(undeclared)} reference name(s) are used by an "
                       f"image but not declared in the shotlist's refs: "
                       f"{', '.join(undeclared[:6])}")
+    # A SUPPLIED reference (a registry entry with a path) that no image attaches
+    # means the plan never features it. The brief calls a plan that never uses a
+    # supplied character a failure, and the refs stage would copy the file for
+    # nothing - so this must fail here rather than render a faceless plan.
+    supplied = {n for n, entry in declared.items()
+                if isinstance(entry, str) and entry.strip()}
+    if supplied and not (used & supplied):
+        faults.append("the shotlist declares "
+                      f"{len(supplied)} supplied reference(s) but no image "
+                      f"attaches any of them: {', '.join(sorted(supplied)[:6])}")
     # A ref with no path AND no prompt can never be produced: the refs stage
     # would have nothing to generate it from, so the image would silently lose
     # its subject. (A path that exists on disk is checked by the refs stage,

@@ -165,5 +165,48 @@ class ImagesPrecedenceGuard(unittest.TestCase):
                          "the channel URL must not override the production row")
 
 
+class FlowImagesGenPrepareTests(unittest.TestCase):
+    """prepare writes its report BEFORE the ref work, so a failed ref step still
+    leaves a usable project - generation then uploads the refs itself."""
+
+    def test_a_failed_ref_step_keeps_a_usable_project(self):
+        class _Proc:
+            returncode = 1
+            stdout = "boom while uploading references"
+            stderr = ""
+
+        with tempfile.TemporaryDirectory() as d:
+            pid_dir = Path(d)
+            (pid_dir / studio.FLOW_PREPARE_REPORT).write_text(
+                json.dumps({"projectUrl": PROJECT, "refs": []}), encoding="utf-8")
+            cfg = _cfg(Path(d) / "wr.db")
+            cfg.flowimagesgen_repo = d  # exists, so flowimagesgen_dir() finds it
+            with mock.patch.object(studio, "_flowimagesgen_cmd",
+                                   lambda args: ["node", "cli.js"]), \
+                    mock.patch.object(studio.subprocess, "run",
+                                      lambda *a, **k: _Proc()):
+                report = studio.run_flowimagesgen_prepare(
+                    cfg, pid_dir, pid_dir / "job.json", log=lambda m: None)
+        self.assertEqual(report.get("projectUrl"), PROJECT)
+
+    def test_a_failure_with_no_project_is_an_error(self):
+        class _Proc:
+            returncode = 1
+            stdout = "prompt box not found"
+            stderr = ""
+
+        with tempfile.TemporaryDirectory() as d:
+            pid_dir = Path(d)
+            cfg = _cfg(Path(d) / "wr.db")
+            cfg.flowimagesgen_repo = d
+            with mock.patch.object(studio, "_flowimagesgen_cmd",
+                                   lambda args: ["node", "cli.js"]), \
+                    mock.patch.object(studio.subprocess, "run",
+                                      lambda *a, **k: _Proc()):
+                report = studio.run_flowimagesgen_prepare(
+                    cfg, pid_dir, pid_dir / "job.json", log=lambda m: None)
+        self.assertIn("error", report)
+
+
 if __name__ == "__main__":
     unittest.main()
