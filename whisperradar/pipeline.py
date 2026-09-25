@@ -53,9 +53,26 @@ def import_history(cfg, conn, channel_row, limit: int | None = None) -> int:
         cookies_from_browser=getattr(cfg, "cookies_from_browser", None),
     )
     added = db.upsert_videos(conn, channel_id, videos, auto=0)
+    # INSERT OR IGNORE leaves existing rows alone, so refresh their view counts
+    db.set_view_counts(conn, videos)
     log.info("history %s: %d video(s) found, %d new (backlog)",
              channel_row["name"], len(videos), added)
     return added
+
+
+def refresh_view_counts(cfg, conn, channel_row, limit: int | None = None) -> int:
+    """Re-read a channel's history and update the stored view counts.
+
+    View counts are not in the RSS feed, so they come from the yt-dlp listing
+    (the same one the backfill uses). Returns the number of rows updated."""
+    channel_id = channel_row["channel_id"]
+    videos = watch.fetch_channel_videos_full(
+        channel_id, limit=limit,
+        cookies_from_browser=getattr(cfg, "cookies_from_browser", None),
+    )
+    updated = db.set_view_counts(conn, videos)
+    log.info("views %s: %d count(s) updated", channel_row["name"], updated)
+    return updated
 
 
 def refresh_feeds(cfg, conn) -> int:

@@ -100,6 +100,7 @@ def fetch_channel_videos_full(
                 "url": entry.get("url")
                 or f"https://www.youtube.com/watch?v={video_id}",
                 "published_at": _published_at(entry),
+                "view_count": entry.get("view_count"),
             }
         )
     return videos

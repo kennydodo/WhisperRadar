@@ -308,6 +308,32 @@ def cmd_backfill(cfg, args):
         conn.close()
 
 
+def cmd_views(cfg, args):
+    """Refresh the stored view counts for a channel's videos.
+
+    View counts are not in the RSS feed, so this walks the channel with
+    yt-dlp. Once populated, sort the dashboard by "most viewed"."""
+    conn = _open(cfg)
+    try:
+        if args.channel == "all":
+            rows = db.list_channels(conn)
+        else:
+            row = db.get_channel(conn, args.channel)
+            rows = [row] if row else []
+        if not rows:
+            print(f"No such channel: {args.channel}")
+            return
+        for ch in rows:
+            try:
+                updated = pipeline.refresh_view_counts(cfg, conn, ch,
+                                                       limit=args.limit)
+                print(f"{ch['name']}: updated {updated} view count(s)")
+            except Exception as exc:
+                print(f"{ch['name']}: failed: {exc}")
+    finally:
+        conn.close()
+
+
 def cmd_clean(cfg, args):
     conn = _open(cfg)
     try:
@@ -530,6 +556,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="import at most this many newest uploads "
                         "(default: the whole history)")
     p.set_defaults(func=cmd_backfill)
+
+    p = sub.add_parser("views", help="refresh view counts for a channel's "
+                                     "videos (for the 'most viewed' filter)",
+                       parents=[common])
+    p.add_argument("channel", nargs="?", default="all",
+                   help="channel name or id, or 'all' (default)")
+    p.add_argument("--limit", type=int, default=None,
+                   help="only read the most recent N uploads "
+                        "(default: the whole channel)")
+    p.set_defaults(func=cmd_views)
 
     p = sub.add_parser("clean", help="report/delete audio+transcript files "
                                      "not tracked in the database")

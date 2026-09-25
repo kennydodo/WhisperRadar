@@ -87,6 +87,7 @@
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if genre %}<input type="hidden" name="genre" value="{{ genre }}">{% endif %}
   {% if channel %}<input type="hidden" name="channel" value="{{ channel }}">{% endif %}
+  {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
 {% endmacro %}
 <div class="wrap">
   <h1>WhisperRadar</h1>
@@ -141,6 +142,11 @@
             <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
             <button type="submit" class="ghost">backfill</button>
           </form>
+          <form class="row" method="post" action="/channels/views" style="display:inline"
+                title="Refresh this channel's video view counts (for the 'most viewed' sort)">
+            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
+            <button type="submit" class="ghost">views</button>
+          </form>
           <form class="row" method="post" action="/channels/remove"
                 onsubmit="return confirm('Remove {{ ch["name"] }} and its video records?')">
             <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
@@ -183,6 +189,7 @@
   <form method="get" action="/" class="inline" style="margin-bottom:10px">
     <input type="hidden" name="status" value="{{ status or '' }}">
     <input type="hidden" name="genre" value="{{ genre or '' }}">
+    <input type="hidden" name="sort" value="{{ sort or '' }}">
     <select name="channel" onchange="this.form.submit()">
       <option value="">all channels</option>
       {% for ch in channels %}
@@ -206,9 +213,15 @@
     {% endfor %}
   </div>
   {% endif %}
+  <div class="filters">
+    <span class="muted" style="align-self:center;font-size:12px;margin-left:4px">sort:</span>
+    <a href="/?{{ qs(sort='') }}" class="{{ 'active' if sort != 'views' else '' }}">newest</a>
+    <a href="/?{{ qs(sort='views') }}" class="{{ 'active' if sort == 'views' else '' }}"
+       title="Most viewed first. Refresh the counts with the channel's 'views' button or: python wr.py views">most viewed</a>
+  </div>
   <div class="panel">
     <table>
-      <tr><th>Published</th><th>Channel</th><th>Genre</th><th>Title</th><th>Status</th><th style="text-align:right">Transcript</th></tr>
+      <tr><th>Published</th><th>Channel</th><th>Genre</th><th>Title</th><th style="text-align:right">Views</th><th>Status</th><th style="text-align:right">Transcript</th></tr>
       {% for v in videos %}
       <tr>
         <td class="mono muted">{{ (v["published_at"] or "?")[:10] }}</td>
@@ -217,6 +230,7 @@
         <td><a href="{{ v['url'] }}" target="_blank">{{ v["title"] }}</a>
             {% if v["duration"] %}<span class="muted">&middot; {{ v["duration"] | dur }}</span>{% endif %}
             {% if v["error"] %}<div class="muted" style="font-size:12px">{{ v["error"][:120] }}</div>{% endif %}</td>
+        <td class="muted" style="text-align:right" title="{{ v['view_count'] if v['view_count'] is not none else 'not recorded yet' }}">{{ v["view_count"] | views }}</td>
         <td><span class="badge {{ v['status'] }}">{{ v["status"] }}{% if v["auto"] == 0 and v["status"] == "new" %} (backlog){% endif %}</span></td>
         <td style="text-align:right; white-space:nowrap">
           {% if v["auto"] == 0 and v["status"] == "new" %}
@@ -256,7 +270,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">No videos{% if status %} with status "{{ status }}"{% endif %}{% if genre %} in genre "{{ genre }}"{% endif %}.</td></tr>
+      <tr><td colspan="7" class="muted">No videos{% if status %} with status "{{ status }}"{% endif %}{% if genre %} in genre "{{ genre }}"{% endif %}.</td></tr>
       {% endfor %}
     </table>
     {% if pages > 1 %}

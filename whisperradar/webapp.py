@@ -214,11 +214,25 @@ def _page_list(current: int, total: int) -> list:
     return out
 
 
+def format_views(value) -> str:
+    """Compact view count for the dashboard: 1234567 -> '1.2M'."""
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M".replace(".0M", "M")
+    if count >= 1_000:
+        return f"{count / 1_000:.1f}K".replace(".0K", "K")
+    return str(count)
+
+
 def create_app(cfg) -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live
     app.jinja_env.filters["dur"] = format_duration
+    app.jinja_env.filters["views"] = format_views
     ai33.warm_cache(cfg)  # background prefetch so the voice picker is instant
 
     @app.before_request
@@ -328,6 +342,7 @@ def create_app(cfg) -> Flask:
             status = None
         genre = request.args.get("genre") or None
         channel = request.args.get("channel") or None
+        sort = request.args.get("sort") or None
         page = max(1, int(request.args.get("page") or 1))
         total = db.count_videos(conn, status=status, genre=genre,
                                 backlog=backlog, channel=channel)
@@ -335,14 +350,16 @@ def create_app(cfg) -> Flask:
         page = min(page, pages)
         videos = db.get_videos(conn, status=status, genre=genre,
                                backlog=backlog, channel=channel,
-                               limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE)
+                               limit=PAGE_SIZE, offset=(page - 1) * PAGE_SIZE,
+                               sort=sort)
         genres = sorted({ch["genre"] for ch in channels})
         conn.close()
         raw_status = request.args.get("status")
 
         def qs(**overrides) -> str:
             """Query string preserving current filters; overrides replace them."""
-            vals = {"status": raw_status, "genre": genre, "channel": channel}
+            vals = {"status": raw_status, "genre": genre, "channel": channel,
+                    "sort": sort}
             page_override = overrides.pop("page", None)
             vals.update(overrides)
             parts = [f"{k}={quote(v)}" for k, v in vals.items() if v]
@@ -358,6 +375,7 @@ def create_app(cfg) -> Flask:
             status=raw_status,
             genre=genre,
             channel=channel,
+            sort=sort,
             page=page,
             pages=pages,
             total=total,
@@ -461,6 +479,36 @@ def create_app(cfg) -> Flask:
         if not job.start(worker, "history backfill"):
             return _back(request, error="A job is already running")
         return _back(request, msg="Importing channel history - watch the log")
+
+    @app.post("/channels/views")
+    def channels_views():
+        """Refresh a channel's stored view counts (they are not in the RSS
+        feed) so the "most viewed" filter has data."""
+        key = (request.form.get("key") or "").strip()
+        log = logging.getLogger("whisperradar")
+
+        def worker():
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                if key and key != "all":
+                    row = db.get_channel(conn, key)
+                    rows = [row] if row else []
+                else:
+                    rows = db.list_channels(conn)
+                if not rows:
+                    log.warning("views: no matching channel")
+                    return
+                total = 0
+                for ch in rows:
+                    total += pipeline.refresh_view_counts(cfg, conn, ch)
+                log.info("view counts refreshed: %d row(s)", total)
+            finally:
+                conn.close()
+
+        if not job.start(worker, "view counts"):
+            return _back(request, error="A job is already running")
+        return _back(request, msg="Refreshing view counts - watch the log")
 
     @app.post("/channels/remove")
     def channels_remove():

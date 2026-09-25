@@ -69,9 +69,9 @@ python wr.py serve --port 9000
 
 The dashboard lets you add/remove channels (it resolves any YouTube URL or
 @handle), trigger Watch / Download / Transcribe / Run-all with live log
-output, browse videos by status/genre/channel with pagination, read
-transcripts in the browser, download individual `.txt` files, and export
-everything as a zip.
+output, browse videos by status/genre/channel with pagination, **sort by most
+viewed**, read transcripts in the browser, download individual `.txt` files,
+and export everything as a zip.
 
 It runs on [waitress](https://docs.pylonsproject.org/projects/waitress/) (a
 production WSGI server) and falls back to the Flask dev server if waitress is
@@ -182,6 +182,7 @@ python wr.py watch        # refresh feeds, log new uploads
 python wr.py download     # download pending audio (new uploads only)
 python wr.py transcribe   # transcribe downloaded audio
 python wr.py videos --status transcribed
+python wr.py views all               # refresh view counts (for "most viewed")
 python wr.py export all --out C:\transcripts-for-llm
 python wr.py export <video_id> --out C:\some\folder
 ```

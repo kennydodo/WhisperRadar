@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS videos (
     audio_path TEXT,
     transcript_path TEXT,
     duration REAL,
+    view_count INTEGER,
     language TEXT,
     error TEXT
 );
@@ -116,6 +117,7 @@ _VIDEO_FIELDS = {
     "audio_path",
     "transcript_path",
     "duration",
+    "view_count",
     "language",
     "error",
     "auto",
@@ -147,6 +149,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE videos ADD COLUMN auto INTEGER NOT NULL DEFAULT 1")
         # videos discovered but never downloaded are backlog, not auto-queue
         conn.execute("UPDATE videos SET auto = 0 WHERE status = 'new'")
+    _add_column_if_missing(conn, "videos", "view_count", "INTEGER")
     cols = {row[1] for row in conn.execute("PRAGMA table_info(productions)")}
     if "llm_provider" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN llm_provider TEXT")
@@ -331,13 +334,14 @@ def upsert_video(conn, channel_id: str, video: dict, auto: int = 1) -> bool:
     """
     cur = conn.execute(
         "INSERT OR IGNORE INTO videos (channel_id, video_id, title, url,"
-        " published_at, auto) VALUES (?, ?, ?, ?, ?, ?)",
+        " published_at, view_count, auto) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             channel_id,
             video["video_id"],
             video.get("title", ""),
             video.get("url", ""),
             video.get("published_at"),
+            video.get("view_count"),
             auto,
         ),
     )
@@ -357,6 +361,7 @@ def upsert_videos(conn, channel_id: str, videos: list[dict],
             video.get("title", ""),
             video.get("url", ""),
             video.get("published_at"),
+            video.get("view_count"),
             auto,
         )
         for video in videos
@@ -367,9 +372,29 @@ def upsert_videos(conn, channel_id: str, videos: list[dict],
     before = conn.total_changes
     conn.executemany(
         "INSERT OR IGNORE INTO videos (channel_id, video_id, title, url,"
-        " published_at, auto) VALUES (?, ?, ?, ?, ?, ?)",
+        " published_at, view_count, auto) VALUES (?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
+    conn.commit()
+    return conn.total_changes - before
+
+
+def set_view_counts(conn, videos: list[dict]) -> int:
+    """Update the stored view count for videos that already exist.
+
+    Used when a channel's history is re-read: INSERT OR IGNORE never touches an
+    existing row, so the counts would otherwise stay stale. Returns the number
+    of rows matched."""
+    rows = [
+        (video["view_count"], video["video_id"])
+        for video in videos
+        if video.get("video_id") and video.get("view_count") is not None
+    ]
+    if not rows:
+        return 0
+    before = conn.total_changes
+    conn.executemany(
+        "UPDATE videos SET view_count = ? WHERE video_id = ?", rows)
     conn.commit()
     return conn.total_changes - before
 
@@ -429,13 +454,18 @@ def count_videos(conn, status: str | None = None, genre: str | None = None,
 
 def get_videos(conn, status: str | None = None, genre: str | None = None,
                backlog: bool = False, channel: str | None = None,
-               limit: int | None = None, offset: int = 0):
+               limit: int | None = None, offset: int = 0,
+               sort: str | None = None):
     sql = ("SELECT v.*, c.name AS channel_name, c.genre AS channel_genre FROM videos v"
            " JOIN channels c ON c.channel_id = v.channel_id")
     clauses, params = _video_filters(status, genre, backlog, channel)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
-    sql += " ORDER BY v.published_at DESC"
+    if sort == "views":
+        # most viewed first; videos with no recorded count sink to the bottom
+        sql += " ORDER BY v.view_count IS NULL, v.view_count DESC, v.published_at DESC"
+    else:
+        sql += " ORDER BY v.published_at DESC"
     if limit:
         sql += " LIMIT ? OFFSET ?"
         params.extend([limit, offset])
