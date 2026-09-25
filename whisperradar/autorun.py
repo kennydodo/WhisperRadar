@@ -51,8 +51,23 @@ def _get_prod(cfg, pid: int):
 
 
 def _default_provider(cfg, pid: int) -> str | None:
+    """Which LLM a production's style/script/shots use: the production's own
+    choice, then its channel's producer preference, then the global default.
+
+    Without the channel step a channel set to `deepseek` still ran the pipeline
+    on the global `glm-flash`, which stalls on large prompts (the channel's
+    `producer_llm_provider` was only used for topic picking)."""
     prod = _get_prod(cfg, pid)
-    return (prod["llm_provider"] if prod else None) or cfg.studio_llm_default
+    if prod and prod["llm_provider"]:
+        return prod["llm_provider"]
+    if prod:
+        try:
+            pref = (_effective(cfg, pid) or {}).get("producer_llm_provider")
+            if pref:
+                return pref
+        except Exception:  # noqa: BLE001 - never block a run on settings
+            pass
+    return cfg.studio_llm_default
 
 
 def _set_stage(cfg, pid: int, stage: str) -> None:

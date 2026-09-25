@@ -26,7 +26,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("pid", type=int)
-    ap.add_argument("stage", choices=db.STAGES)
+    ap.add_argument("stage", choices=[*db.STAGES, "all"],
+                    help="one stage, or 'all' to run the whole pipeline from here")
     ap.add_argument("--provider", default=None,
                     help="LLM provider for style/script/shots (default: the "
                          "production's channel/global provider)")
@@ -40,6 +41,13 @@ def main() -> int:
                         format="%(asctime)s %(levelname)-7s %(message)s",
                         datefmt="%H:%M:%S")
     log = lambda m: print(m, flush=True)  # noqa: E731
+
+    if args.stage == "all":
+        t0 = time.monotonic()
+        result = autorun.run_pipeline(cfg, args.pid, log=log)
+        print(f"\npid {args.pid} pipeline -> {result} "
+              f"({time.monotonic() - t0:.0f}s)")
+        return 0 if result == "ok" else 1
 
     plan = autorun.stage_action(cfg, args.pid, args.stage)
     print(f"plan: {plan['stage']} -> {plan['action']}: {plan['detail']}")
