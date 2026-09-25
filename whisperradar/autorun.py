@@ -531,17 +531,33 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 extra_direction=db.stage_extra(prod, "shots"),
                 bible=bible_text, feedback=feedback)
             text = studio.llm_generate(cfg, prompt, provider=provider)
-            try:
-                data, sheet = studio.parse_shotlist_output(text)
-            except RuntimeError as exc:
-                # A long plan's reply slips (a stray quote, an unclosed object).
-                # Spend another attempt instead of failing the stage.
-                _log_line(f"shotlist attempt {attempt}: reply was not valid "
-                          f"JSON ({exc}) - retrying")
-                feedback = ("Your previous reply was not valid JSON "
-                            f"({str(exc)[:140]}). Output ONLY the two documents, "
-                            "starting with the shotlist JSON, and close every "
-                            "bracket cleanly.")
+            data = sheet = None
+            for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
+                try:
+                    data, sheet = studio.parse_shotlist_output(text)
+                    break
+                except RuntimeError as exc:
+                    msg = str(exc)
+                    if ("incomplete" in msg
+                            and cont < studio.SHOTLIST_CONTINUE_ROUNDS):
+                        # the reply was cut off mid-JSON: ask for the rest and
+                        # keep appending (the brief's Section 11 continuation)
+                        _log_line(f"shotlist attempt {attempt}: output cut off - "
+                                  f"continuing ({cont + 1}/"
+                                  f"{studio.SHOTLIST_CONTINUE_ROUNDS})")
+                        text += studio.llm_generate(
+                            cfg, studio.continuation_prompt(prompt, text),
+                            provider=provider)
+                        continue
+                    # malformed or prose: spend this attempt and re-plan
+                    _log_line(f"shotlist attempt {attempt}: reply was not valid "
+                              f"JSON ({msg}) - retrying")
+                    feedback = ("Your previous reply was not valid JSON "
+                                f"({msg[:140]}). Output ONLY the two documents, "
+                                "starting with the shotlist JSON, and close "
+                                "every bracket cleanly.")
+                    break
+            if data is None:
                 continue
             review = studio.review_shotlist(cfg, data, cues, judge,
                                             max_hold_seconds=max_hold)

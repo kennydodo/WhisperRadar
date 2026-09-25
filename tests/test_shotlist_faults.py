@@ -76,5 +76,16 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(len(data["images"]), 1)
 
 
+class ContinuationTests(unittest.TestCase):
+    def test_the_continuation_carries_the_rule_and_the_tail(self):
+        # the brief's Section 11: continue in the next message until every cue
+        # is covered, instead of throwing a cut-off plan away
+        p = studio.continuation_prompt("BASE PROMPT", "some partial json")
+        self.assertIn("BASE PROMPT", p)
+        self.assertIn("CUT OFF", p)
+        self.assertIn("some partial json", p)
+        self.assertIn("Continue from EXACTLY", p)
+
+
 if __name__ == "__main__":
     unittest.main()

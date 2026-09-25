@@ -2683,6 +2683,30 @@ def parse_shotlist_output(text: str) -> tuple[dict, str]:
     return data, tail.strip()
 
 
+# A long plan's reply can be cut off mid-JSON (the brief's Section 11 says to
+# continue in the next message until every cue is covered). We ask for the rest
+# and keep appending instead of throwing the plan away.
+SHOTLIST_CONTINUE_ROUNDS = 5
+
+
+def continuation_prompt(base_prompt: str, partial: str) -> str:
+    """Ask for the rest of a reply that was cut off mid-JSON.
+
+    Only the TAIL of what was written is re-sent - the base prompt already
+    carries the brief and the narration - so the request stays in context even
+    when the finished plan is 100+ images."""
+    tail = (partial or "")[-3000:]
+    return (base_prompt.rstrip()
+            + "\n\n---\n\nYOUR PREVIOUS OUTPUT WAS CUT OFF. It ended with:\n"
+            + tail
+            + "\n\nContinue from EXACTLY where it stopped: the same JSON "
+            "document, the same entry, no repetition of anything already "
+            "written, no commentary, no markdown fences, no second \"style\" "
+            "field. Output only the remaining content, close every bracket "
+            "cleanly, and finish every cue through the last one. Then write the "
+            "IMAGE BATCH SHEET if it is still missing.")
+
+
 def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
                     extra_direction: str = "", bible: str = "",
                     feedback: str = "") -> str:

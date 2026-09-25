@@ -113,8 +113,8 @@ SPEC: list[dict] = [
                 "rendered. 0.90 = 90% of shots.",
     },
     {
-        "key": "shotlist_max_attempts", "type": "int", "default": 3,
-        "min": 1, "max": 6,
+        "key": "shotlist_max_attempts", "type": "int", "default": 4,
+        "min": 1, "max": 8,
         "label": "Shotlist: max attempts",
         "help": "How many times to re-plan the shotlist with the under-specified "
                 "prompts, the pacing faults and their missing elements fed back. "
