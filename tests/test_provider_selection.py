@@ -1,9 +1,11 @@
 """Which LLM the style/script/shots stages use.
 
 precedence: the production's own `llm_provider`, then its channel's
-`producer_llm_provider`, then the global `studio.llm_default`. The channel step
-was missing, so a channel set to deepseek still ran on the global glm-flash
-(which stalls on large prompts).
+`producer_llm_provider`, then the global `llm_default` saved in the database
+(Settings > LLM). The database is the single source of truth - config.yaml no
+longer carries LLM providers or a default LLM. The channel step was missing
+before, so a channel set to deepseek still ran on the global glm-flash (which
+stalls on large prompts).
 
 Run: python -m unittest discover -s tests
 """
@@ -54,14 +56,14 @@ class ProvidersFlattenTests(unittest.TestCase):
         self.assertEqual(by["deepseek"]["api_key"], "K")
         self.assertEqual(by["gpt"]["gateway"], "OpenRouter")
 
-    def test_config_providers_apply_when_nothing_is_saved(self):
+    def test_no_saved_providers_means_no_providers(self):
+        # nothing in the database = no providers (no config.yaml seed)
         conn = db.connect(self.cfg.db_path)
         db.init_db(conn)
         db.set_setting(conn, "llm_providers", "[]")
         conn.commit()
         conn.close()
-        names = [p["name"] for p in studio.providers(self.cfg)]
-        self.assertIn("deepseek", names)
+        self.assertEqual(studio.providers(self.cfg), [])
 
     def test_the_judge_prefers_a_different_gateway(self):
         # the writer is on api.b.ai; the judge must not share that gateway
@@ -78,7 +80,6 @@ class ProviderSelectionTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.cfg = load_config(ROOT / "config.yaml")
         self.cfg.db_path = Path(self.tmp.name) / "wr.db"
-        self.cfg.studio_llm_default = "glm-flash"
         conn = db.connect(self.cfg.db_path)
         db.init_db(conn)
         self.chan = db.create_own_channel(conn, "Ch", producer_llm_provider="deepseek")
@@ -101,15 +102,25 @@ class ProviderSelectionTests(unittest.TestCase):
         conn.close()
         self.assertEqual(autorun._default_provider(self.cfg, self.pid), "gpt")
 
-    def test_the_global_default_is_the_last_resort(self):
+    def test_the_db_default_is_the_last_resort(self):
+        # no channel preference -> the global llm_default saved in the DB
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_own_channel(conn, self.chan, producer_llm_provider=None)
+        db.set_setting(conn, "llm_default", "glm-flash")
+        conn.commit()
+        conn.close()
+        self.assertEqual(autorun._default_provider(self.cfg, self.pid), "glm-flash")
+
+    def test_nothing_saved_means_no_default(self):
         conn = db.connect(self.cfg.db_path)
         db.init_db(conn)
         db.update_own_channel(conn, self.chan, producer_llm_provider=None)
         conn.commit()
         conn.close()
-        self.assertEqual(autorun._default_provider(self.cfg, self.pid), "glm-flash")
+        self.assertIsNone(autorun._default_provider(self.cfg, self.pid))
 
-    def test_a_db_llm_default_beats_config_yaml(self):
+    def test_a_db_llm_default_beats_nothing_else(self):
         # Settings > LLM saves llm_default in the database
         conn = db.connect(self.cfg.db_path)
         db.init_db(conn)

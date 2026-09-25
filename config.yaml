@@ -21,46 +21,11 @@ whisper:
 # Studio (video production pipeline) automation hooks.
 # Every stage also works fully by hand (paste text / upload files) - these
 # hooks are optional. {placeholders} are replaced at runtime.
+#
+# LLM providers and the default LLM are NOT configured here anymore - they
+# live in the database, managed in the dashboard under Settings > LLM
+# providers and Settings > LLM (default LLM).
 studio:
-  # Named LLM providers (OpenAI-compatible chat APIs). The default is used
-  # unless you pick another one in the Studio UI; keys can also come from
-  # environment variables: WR_GLM_FLASH_API_KEY, WR_DEEPSEEK_API_KEY.
-  # `api` picks the wire protocol - only "openai" (OpenAI-compatible
-  # /chat/completions) is implemented today. Claude/GPT work through any
-  # OpenAI-compatible gateway (OpenRouter, LiteLLM, Azure, ...) by adding an
-  # entry here; a native API needs a new adapter in studio.py CHAT_APIS.
-  llm_providers:
-    - name: glm-flash
-      base_url: https://api.b.ai/v1
-      model: glm-5.3-flash
-      api_key: null
-      api: openai
-    - name: deepseek
-      base_url: https://api.b.ai/v1
-      model: deepseek-v4.1-flash
-      api_key: null
-      api: openai
-    # A SECOND gateway, so a stall on api.b.ai (which hits both providers above)
-    # cannot take the run down: the judge/fallback can use a provider here.
-    # Set the key in Settings > LLM providers, or export WR_OPENROUTER_API_KEY.
-    - name: openrouter-claude
-      base_url: https://openrouter.ai/api/v1
-      model: anthropic/claude-sonnet-4
-      api_key: null
-      env_key: WR_OPENROUTER_API_KEY
-      api: openai
-    - name: openrouter-gpt
-      base_url: https://openrouter.ai/api/v1
-      model: openai/gpt-5
-      api_key: null
-      env_key: WR_OPENROUTER_API_KEY
-      api: openai
-    # - name: gpt
-    #   base_url: https://api.openai.com/v1
-    #   model: gpt-5
-    #   api_key: null          # or set WR_GPT_API_KEY
-    #   api: openai
-  llm_default: glm-flash
   # Target script length in words. null = match the source transcript's
   # length automatically; set a number to force a fixed target (e.g. 1200).
   script_words: null

@@ -120,9 +120,10 @@ production from any transcribed video in your library, then walk its stages:
   script/image generation must match it while using only the facts - original
   wording, familiar feel. A 5-gram overlap check warns if a script drifts
   too close to the source.
-- **LLM providers** (`studio.llm_providers` in config.yaml): named
-  OpenAI-compatible providers (GLM, DeepSeek, ...) with separate API keys
-  (or `WR_<NAME>_API_KEY` env variables); pick one per generation.
+- **LLM providers** (Settings > LLM providers in the dashboard, saved in the
+  database): named OpenAI-compatible gateways (b.ai, OpenRouter, ...) with
+  separate API keys (or `WR_*_API_KEY` env variables) and several models per
+  key; pick one per generation. The default LLM is the Settings > LLM setting.
 - **Run till finish**: one button at the top of the production page executes
   every remaining stage in order - done stages are skipped, the confirm modal
   shows the exact plan (hooks used, image credits warning, merge duration).

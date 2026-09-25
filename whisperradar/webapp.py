@@ -503,8 +503,7 @@ def create_app(cfg) -> Flask:
 
         One entry per gateway + key, each with several models; studio.providers()
         flattens it to the flat {name, base_url, model} entries the pipeline uses,
-        so several models share a key. An empty list clears the override and the
-        config.yaml providers apply again."""
+        so several models share a key."""
         raw = (request.form.get("providers_json") or "").strip()
         try:
             data = json.loads(raw) if raw else []
@@ -650,7 +649,7 @@ def create_app(cfg) -> Flask:
         if "producer_llm_provider" in request.form:
             # only a configured provider is meaningful; anything else inherits
             raw = (request.form.get("producer_llm_provider") or "").strip()
-            known = {p["name"] for p in cfg.studio_llm_providers}
+            known = {p["name"] for p in studio.providers(cfg)}
             fields["producer_llm_provider"] = raw if raw in known else None
         for key in ("run_window_start", "run_window_end"):
             if key in request.form:
@@ -1068,22 +1067,10 @@ def create_app(cfg) -> Flask:
                             if target == "capcut" else None),
             })
 
-        providers = cfg.studio_llm_providers
-        default_provider = prod["llm_provider"] or cfg.studio_llm_default
-        if providers:
-            llm_ready = any(studio.provider_ready(cfg, p["name"])
-                            for p in providers)
-            llm_label = studio.llm_label(cfg, default_provider)
-        elif cfg.studio_llm == "openai":
-            import os
-
-            llm_ready = bool(cfg.studio_llm_model and
-                             (cfg.studio_llm_api_key or
-                              os.environ.get("WR_LLM_API_KEY")))
-            llm_label = studio.llm_label(cfg)
-        else:
-            llm_ready = False
-            llm_label = studio.llm_label(cfg)
+        providers = studio.providers(cfg)
+        default_provider = prod["llm_provider"] or autorun._default_provider(cfg, pid)
+        llm_ready = any(studio.provider_ready(cfg, p["name"]) for p in providers)
+        llm_label = studio.llm_label(cfg, default_provider)
         renderly_ready = studio.renderly_ready(cfg.renderly_url)
         hooks = {
             "tts": bool(cfg.studio_tts_command),
@@ -1397,7 +1384,7 @@ def create_app(cfg) -> Flask:
     def studio_style_generate(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
-        provider = request.form.get("provider") or cfg.studio_llm_default
+        provider = request.form.get("provider") or autorun._default_provider(cfg, pid)
 
         def worker():
             autorun.raise_result(autorun.run_stage(
@@ -1429,7 +1416,7 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
 
-        provider = request.form.get("provider") or cfg.studio_llm_default
+        provider = request.form.get("provider") or autorun._default_provider(cfg, pid)
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -1737,7 +1724,7 @@ def create_app(cfg) -> Flask:
                 pid,
                 error="The planning brief requires a character/reference "
                       "bible - write or upload one below first")
-        provider = request.form.get("provider") or cfg.studio_llm_default
+        provider = request.form.get("provider") or autorun._default_provider(cfg, pid)
 
         def worker():
             autorun.raise_result(autorun.run_stage(

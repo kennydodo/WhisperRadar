@@ -362,12 +362,12 @@
               onsubmit="return confirm('Generate a script with the selected LLM? Existing script will be overwritten.')">
           {{ provider_select() }}
           <button type="submit" {{ 'disabled' if job.running or not llm_ready else '' }}
-                  title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in config.yaml') }}">
+                   title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in Settings > LLM providers') }}">
             {{ 'Working...' if job.running else 'Generate script' }}
           </button>
         </form>
         {% else %}
-        <span class="muted">No LLM providers configured (studio.llm_providers in config.yaml) - paste or upload a script instead.</span>
+        <span class="muted">No LLM providers configured (Settings > LLM providers) - paste or upload a script instead.</span>
         {% endif %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/save" enctype="multipart/form-data">
           <input type="file" name="script_file" accept=".txt,.md">
@@ -579,7 +579,7 @@
           </button>
         </form>
         {% else %}
-        <span class="muted">No LLM providers configured (studio.llm_providers in config.yaml) - write the shotlist by hand below.</span>
+        <span class="muted">No LLM providers configured (Settings > LLM providers) - write the shotlist by hand below.</span>
         {% endif %}
       </div>
       <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">

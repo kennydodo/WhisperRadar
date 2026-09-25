@@ -143,23 +143,21 @@
       <a href="/my-channels">My Channels</a>.
     </div>
     {% endif %}
-    {% if group_name == "Script quality gate" %}
+    {% if group_name == "Script & shotlist" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
-      A script draft must rate at least <b>minimum rating</b> and overlap no
+      <b>Script</b> - a draft must rate at least <b>minimum rating</b> and overlap no
       more than <b>target overlap</b>, or it is rewritten (best of N is kept).
       Anything over <b>hard overlap</b> is rejected regardless of rating.
     </div>
-    {% endif %}
-    {% if group_name == "Shotlist gate" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
-      After the shotlist is planned and <b>before any image is rendered</b>,
-      each shot's prompt is audited against the narration at its SRT cues: does
-      it state everything that scene needs (who, doing what, where, which
-      props, the specific information)? Under-specified prompts are rewritten,
-      because rendering is slow and a vague prompt means a hand regeneration
-      later. Structural faults (coverage, order, orphan assets, duplicate
-      prompts) must be zero; <b>minimum prompt detail</b> is the share of shots
-      that must pass.
+      <b>Shotlist</b> - after the shotlist is planned and <b>before any image is
+      rendered</b>, each shot's prompt is audited against the narration at its SRT
+      cues: does it state everything that scene needs (who, doing what, where,
+      which props, the specific information)? Under-specified prompts are
+      rewritten, because rendering is slow and a vague prompt means a hand
+      regeneration later. Structural faults (coverage, order, orphan assets,
+      duplicate prompts) must be zero; <b>minimum prompt detail</b> is the share
+      of shots that must pass.
     </div>
     {% endif %}
     {% if group_name == "Video render" %}
@@ -259,12 +257,13 @@
   </div>
   </form>
 
+  <div class="tabpanel" data-tab="LLM">
   <h2>LLM providers</h2>
   <p class="help">
     One entry per gateway and its key. Add several models under one gateway -
     b.ai and OpenRouter both serve many models on a single key. Every model then
     appears wherever an LLM is chosen (script writer, judge, style, shotlist).
-    Saved in the database; config.yaml providers are shown until you save here.
+    Saved in the database - this is the only place providers are configured.
   </p>
   <form method="post" action="/settings/providers" onsubmit="return serializeProviders()">
     <input type="hidden" name="providers_json" id="providers-json">
@@ -275,6 +274,7 @@
       <span class="muted" style="font-size:12px; margin-left:10px">stored locally</span>
     </div>
   </form>
+  </div>
 
   <script>
   var PROVIDERS = {{ providers_nested|tojson }};

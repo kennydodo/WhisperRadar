@@ -105,7 +105,7 @@ python scripts/run_stage.py 11 merge
 - Flow refusal/throttle: check `D:\Repos\FlowImagesGen\debug\error-*.png`; do not
   grind (per the notes it lowers the reCAPTCHA score).
 - Dead/foreign Flow project: the stage creates a new one automatically.
-- LLM stall with no fallback: check `studio.llm_providers` has another ready one.
+- LLM stall with no fallback: check Settings > LLM providers has another ready one.
 - Capture the log tail + the step detail; both are persisted (`production_steps`,
   `productions.warning`).
 

@@ -664,13 +664,51 @@ AGREED DESIGN (do not change without the user):
   before review. The producer stops the whole run on the first pause/failure.
 - Skips are logged per channel (no candidates / cap / auto-run off).
 
+### LLM settings are DB-only — DONE (2026-09-25)
+
+- config.yaml no longer carries `studio.llm_providers` / `studio.llm_default`
+  (or the legacy single-LLM keys) — the `settings` table is the single source
+  of truth. `Config` still exposes `studio_llm*` attributes, always empty, for
+  compatibility only.
+- `studio._saved_llm_settings(cfg)` reads the saved nested `llm_providers` +
+  `llm_default` in one connect; `studio.providers()` / `providers_nested()` /
+  `llm_default()` build on it. Empty DB = no providers (no yaml seed), and the
+  Settings > LLM providers page is the only place to configure them.
+- Provider precedence is unchanged: production `llm_provider` -> channel
+  `producer_llm_provider` -> DB `llm_default` (Settings > LLM). There is no
+  yaml fallback anymore; an unset global default means no default provider.
+- The manual Studio generate routes (style/script/shotlist) fall back to
+  `autorun._default_provider(cfg, pid)` instead of a yaml default.
+
+### Settings page regroup — DONE (2026-09-25)
+
+- `settings.GROUPS` (settings.py) now renders: LLM (default LLM + producer
+  LLM only — every LLM *setting* lives here), Auto Run (no LLM duplicate),
+  Script & shotlist (both gates + their judge dropdowns), Production & images
+  (engine/voice/seed dirs + image batch controls), Video render, Scheduler,
+  Notifications, Service handling.
+- Each settings key renders exactly once, so the duplicated provider dropdowns
+  (same key on two tabs) are gone. The per-job LLM picks are the judge
+  dropdowns on the Script & shotlist tab; Auto Run's LLM is the producer LLM
+  on the LLM tab.
+- The LLM providers editor (gateways/keys/models) is its own `<form>`, so it
+  cannot nest in the save form — it renders in a second
+  `<div class="tabpanel" data-tab="LLM">` right after it, visible ONLY on the
+  LLM tab (the tab JS toggles every .tabpanel by data-tab).
+- There is no separate "shotlist writer LLM" by design: style/script/shotlist
+  all use one writer chain (production -> channel -> Default LLM); only the
+  judges are separately selectable.
+- channels.html section labels renamed to match ("Production", "Script",
+  "Shotlist").
+
 LLM PROVIDER SEAM: providers now carry `api` (default "openai"); only the
 OpenAI-compatible `/chat/completions` adapter exists, in `CHAT_APIS`
 (studio.py). `llm_generate` dispatches on it and raises a clear error for an
 unimplemented api; `provider_ready` returns False for one, so the UI shows it
 as not ready. Adding Claude/GPT: config-only through any OpenAI-compatible
 gateway, or a new `*_chat` function + one CHAT_APIS entry for a native API.
-New settings: `producer_llm_provider` (empty = studio.llm_default) and
+New settings: `producer_llm_provider` (empty = the Default LLM in Settings >
+LLM) and
 `candidate_window_days` (default 90).
 
 ### Seeding + create-form channel picker — DONE (2026-09-22)

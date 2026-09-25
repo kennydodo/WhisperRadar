@@ -17,8 +17,7 @@ SPEC: list[dict] = [
         "label": "Default LLM",
         "help": "Which provider writes the style, script and shotlist when a "
                 "production or its channel does not set one. Saved in the "
-                "database; empty falls back to studio.llm_default in "
-                "config.yaml. A channel's producer_llm_provider and a "
+                "database. A channel's producer_llm_provider and a "
                 "production's own choice both override this.",
     },
     {
@@ -192,8 +191,8 @@ SPEC: list[dict] = [
         "key": "producer_llm_provider", "type": "provider", "default": "",
         "label": "Producer LLM",
         "help": "Which configured LLM provider picks the topic and writes the "
-                "title for Auto Run. Empty = studio.llm_default. Providers are "
-                "declared in config.yaml (studio.llm_providers).",
+                "title for Auto Run. Empty = the Default LLM above. Providers "
+                "are managed in Settings > LLM providers.",
     },
     {
         "key": "candidate_window_days", "type": "int", "default": 90,
@@ -316,28 +315,25 @@ SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 # The settings page renders these groups in order; a key missing from every
 # group lands in "Other", so adding a SPEC entry can never hide it.
 GROUPS: list[tuple[str, list[str]]] = [
-    ("LLM", ["llm_default", "producer_llm_provider",
-             "script_judge_provider", "shotlist_judge_provider"]),
+    ("LLM", ["llm_default", "producer_llm_provider"]),
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
-        "candidate_window_days", "topic_pick", "producer_llm_provider",
+        "candidate_window_days", "topic_pick",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
-    ("Script quality gate", [
+    ("Script & shotlist", [
         "script_min_rating", "script_max_overlap", "script_hard_overlap",
         "script_max_attempts", "script_judge_provider",
-    ]),
-    ("Shotlist gate", [
         "shotlist_min_alignment", "shotlist_max_attempts",
         "shotlist_max_hold_seconds",
         "shotlist_judge_provider",
     ]),
-    ("Production defaults", [
+    ("Production & images", [
         "default_engine", "default_render_mode", "default_upscale",
         "default_voice", "seed_dirs",
+        "images_chunk_size", "images_stop_on_failure",
+        "generate_references",
     ]),
-    ("Image rendering", ["images_chunk_size", "images_stop_on_failure",
-                         "generate_references"]),
     ("Video render", ["render_target", "render_resolution"]),
     ("Scheduler", ["scheduler_enabled", "scheduler_interval_minutes"]),
     ("Notifications", [

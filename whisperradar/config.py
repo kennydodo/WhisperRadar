@@ -1,6 +1,6 @@
 """Configuration loading. Paths in config.yaml are relative to its directory."""
 
-import re
+import re  # noqa: F401  (kept for callers that import it from this module)
 from pathlib import Path
 
 import yaml
@@ -36,30 +36,16 @@ class Config:
         self.channels = channels
 
         studio = raw.get("studio") or {}
-        self.studio_llm = studio.get("llm", "openai")
-        self.studio_llm_base_url = studio.get("llm_base_url") or None
-        self.studio_llm_api_key = studio.get("llm_api_key") or None
-        self.studio_llm_model = studio.get("llm_model") or None
-
-        # named providers: each has its own base_url / key / model.
-        # `api` selects the wire protocol: only "openai" (OpenAI-compatible
-        # /chat/completions) is implemented today; anthropic/google/... can be
-        # added later as new adapters without touching callers.
+        # LLM providers and the default LLM live in the database (Settings >
+        # LLM); the settings table is the single source of truth. The legacy
+        # single-LLM keys are kept as empty attributes for compatibility and
+        # are never read for LLM selection.
+        self.studio_llm = "openai"
+        self.studio_llm_base_url = None
+        self.studio_llm_api_key = None
+        self.studio_llm_model = None
         self.studio_llm_providers = []
-        for i, prov in enumerate(studio.get("llm_providers") or []):
-            name = (prov.get("name") or f"provider-{i + 1}").strip()
-            self.studio_llm_providers.append({
-                "name": name,
-                "base_url": (prov.get("base_url") or "").strip() or None,
-                "api_key": (prov.get("api_key") or "").strip() or None,
-                "model": (prov.get("model") or "").strip() or None,
-                "api": (prov.get("api") or "openai").strip().lower(),
-                "env_key": "WR_" + re.sub(r"[^A-Z0-9]", "_", name.upper()) + "_API_KEY",
-            })
-        names = [p["name"] for p in self.studio_llm_providers]
-        default = studio.get("llm_default") or (names[0] if names else None)
-        self.studio_llm_default = default if default in names else (
-            names[0] if names else None)
+        self.studio_llm_default = None
 
         self.studio_tts_command = studio.get("tts_command") or None
         # OpenSpeaker (ai33.pro) narration: optional config key/voice; the

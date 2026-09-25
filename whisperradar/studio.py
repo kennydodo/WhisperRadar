@@ -2016,113 +2016,93 @@ def prepare_project_folder(cfg, pid: int) -> Path:
     return pdir
 
 
+def _saved_llm_settings(cfg) -> tuple[list | None, str | None]:
+    """The saved LLM settings: (nested providers, llm_default) from the
+    database, or (None, None) when nothing is stored yet (or the DB read
+    failed - a settings failure must not take the pipeline down).
+
+    The settings table is the single source of truth; config.yaml no longer
+    carries any LLM providers or a default LLM."""
+    try:
+        from . import db
+
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            raw = db.get_setting(conn, "llm_providers")
+            raw_default = db.get_setting(conn, "llm_default")
+        finally:
+            conn.close()
+        nested = None
+        if raw:
+            nested = json.loads(raw) if isinstance(raw, str) else raw
+        default = (raw_default or "").strip() or None
+        return nested, default
+    except Exception as exc:  # noqa: BLE001 - never block on settings storage
+        log.debug("could not read saved LLM settings: %s", exc)
+        return None, None
+
+
+def _flatten_nested(nested: list | None) -> list[dict]:
+    """The nested gateway/model list saved by Settings > Providers, flattened
+    to the flat shape the pipeline uses: one entry per MODEL, named by its
+    label, sharing the gateway's base_url and key."""
+    flat: list[dict] = []
+    for prov in nested or []:
+        if not isinstance(prov, dict) or not str(prov.get("name") or "").strip():
+            continue
+        for model in prov.get("models") or []:
+            if isinstance(model, str):
+                model = {"id": model}
+            if not isinstance(model, dict) or not str(model.get("id") or "").strip():
+                continue
+            flat.append({
+                "name": str(model.get("name") or model["id"]).strip(),
+                "base_url": str(prov.get("base_url") or "").strip(),
+                "model": str(model["id"]).strip(),
+                "api_key": prov.get("api_key"),
+                "env_key": str(prov.get("env_key") or "WR_LLM_API_KEY").strip(),
+                "gateway": str(prov.get("name")).strip(),
+            })
+    return flat
+
+
 def providers(cfg) -> list[dict]:
     """The LLM providers the pipeline can use, as flat {name, base_url, model,
     api_key, env_key, gateway} entries.
 
     The Settings > Providers page saves a NESTED list to the DB (one entry per
-    gateway + key, each with several models - b.ai and OpenRouter both serve many
-    models on one key). This flattens that to the flat shape the rest of the
-    pipeline already uses: one entry per MODEL, named by its label, sharing the
-    gateway's base_url and key. With nothing saved it falls back to config.yaml.
-    """
-    nested = None
-    try:
-        from . import db
-
-        conn = db.connect(cfg.db_path)
-        db.init_db(conn)
-        try:
-            raw = db.get_setting(conn, "llm_providers")
-        finally:
-            conn.close()
-        if raw:
-            nested = json.loads(raw) if isinstance(raw, str) else raw
-    except Exception as exc:  # noqa: BLE001 - never block on settings storage
-        log.debug("could not read saved providers: %s", exc)
-    if isinstance(nested, list):
-        flat: list[dict] = []
-        for prov in nested:
-            if not isinstance(prov, dict) or not str(prov.get("name") or "").strip():
-                continue
-            for model in prov.get("models") or []:
-                if isinstance(model, str):
-                    model = {"id": model}
-                if not isinstance(model, dict) or not str(model.get("id") or "").strip():
-                    continue
-                flat.append({
-                    "name": str(model.get("name") or model["id"]).strip(),
-                    "base_url": str(prov.get("base_url") or "").strip(),
-                    "model": str(model["id"]).strip(),
-                    "api_key": prov.get("api_key"),
-                    "env_key": str(prov.get("env_key") or "WR_LLM_API_KEY").strip(),
-                    "gateway": str(prov.get("name")).strip(),
-                })
-        if flat:
-            return flat
-    return [dict(p) for p in (cfg.studio_llm_providers or [])]
+    gateway + key, each with several models - b.ai and OpenRouter both serve
+    many models on one key). This flattens that to the flat shape the rest of
+    the pipeline already uses. Empty when nothing has been saved yet - manage
+    providers in Settings > LLM providers."""
+    nested, _default = _saved_llm_settings(cfg)
+    return _flatten_nested(nested)
 
 
-def _gateway_label(url: str) -> str:
-    low = (url or "").lower()
-    if "openrouter" in low:
-        return "OpenRouter"
-    if "b.ai" in low:
-        return "b.ai"
-    from urllib.parse import urlparse
-
-    return urlparse(url).netloc or ""
+def llm_default(cfg) -> str | None:
+    """The global default LLM saved in the database (Settings > LLM), or None
+    when nothing is saved."""
+    return _saved_llm_settings(cfg)[1]
 
 
 def providers_nested(cfg) -> list[dict]:
-    """The RAW nested provider list for the Settings > Providers editor: whatever
-    the page saved, else seeded from config.yaml (flat entries grouped by
-    gateway) so the form starts filled in."""
-    try:
-        from . import db
-
-        conn = db.connect(cfg.db_path)
-        db.init_db(conn)
-        try:
-            raw = db.get_setting(conn, "llm_providers")
-        finally:
-            conn.close()
-        if raw:
-            data = json.loads(raw) if isinstance(raw, str) else raw
-            if isinstance(data, list) and data:
-                return data
-    except Exception as exc:  # noqa: BLE001
-        log.debug("could not read saved providers: %s", exc)
-    groups: dict[str, dict] = {}
-    for p in (cfg.studio_llm_providers or []):
-        url = str(p.get("base_url") or "").strip()
-        key = url or p["name"]
-        group = groups.setdefault(key, {
-            "name": _gateway_label(url) or p["name"],
-            "base_url": url,
-            "api_key": p.get("api_key") or "",
-            "env_key": p.get("env_key") or "WR_LLM_API_KEY",
-            "models": [],
-        })
-        group["models"].append({"id": p.get("model") or "", "name": p["name"]})
-    return list(groups.values())
+    """The RAW nested provider list for the Settings > Providers editor:
+    whatever the page saved. Empty until providers are saved there - there is
+    no config.yaml seed anymore."""
+    nested, _default = _saved_llm_settings(cfg)
+    return nested if isinstance(nested, list) else []
 
 
 def _resolve_provider(cfg, name: str | None = None) -> dict:
     provs = providers(cfg)
-    if provs:
-        name = name or cfg.studio_llm_default
-        for p in provs:
-            if p["name"] == name:
-                return p
-        raise RuntimeError(f"Unknown LLM provider '{name}'")
-    # legacy single-LLM config
-    if cfg.studio_llm == "openai":
-        return {"name": "llm", "base_url": cfg.studio_llm_base_url,
-                "api_key": cfg.studio_llm_api_key,
-                "model": cfg.studio_llm_model, "api": "openai",
-                "env_key": "WR_LLM_API_KEY"}
-    raise RuntimeError("No LLM providers configured (studio.llm_providers)")
+    if not provs:
+        raise RuntimeError("No LLM providers configured (Settings > LLM providers)")
+    name = name or llm_default(cfg)
+    for p in provs:
+        if p["name"] == name:
+            return p
+    raise RuntimeError(f"Unknown LLM provider '{name}'")
 
 
 def _provider_key(p: dict) -> str | None:
