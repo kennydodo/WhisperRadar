@@ -2648,9 +2648,19 @@ def _extract_json_object(text: str) -> tuple[dict, str]:
             depth -= 1
             if depth == 0:
                 try:
-                    data = json.loads(text[start:i + 1])
+                    # strict=False: the planner sometimes emits a RAW control
+                    # character (a literal newline) inside a prompt string, which
+                    # json rejects by default and which would fail the whole plan
+                    data = json.loads(text[start:i + 1], strict=False)
                 except ValueError as exc:
-                    raise RuntimeError(f"shotlist JSON is invalid: {exc}")
+                    # A long plan occasionally slips a trailing comma (e.g. a
+                    # dropped "refs" field leaves `"prompt": "...", }`). Valid
+                    # JSON is never touched - this only runs after a failure.
+                    cleaned = re.sub(r",(\s*[}\]])", r"\1", text[start:i + 1])
+                    try:
+                        data = json.loads(cleaned, strict=False)
+                    except ValueError:
+                        raise RuntimeError(f"shotlist JSON is invalid: {exc}")
                 return data, text[i + 1:]
     raise RuntimeError("LLM returned an incomplete JSON object")
 

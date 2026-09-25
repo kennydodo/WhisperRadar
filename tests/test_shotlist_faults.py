@@ -57,5 +57,24 @@ class SuppliedRefsTests(unittest.TestCase):
         self.assertTrue(any("not declared" in f for f in faults), faults)
 
 
+class ParseTests(unittest.TestCase):
+    def test_a_raw_control_character_in_a_prompt_still_parses(self):
+        # the planner sometimes emits a literal newline inside a prompt string;
+        # json rejects that by default, which would fail the whole plan
+        text = ('{"shots": [{"cues": "1", "asset": "S01_01_SCN_ZI.png", '
+                '"scene": "S01", "motion": "ZI"}], "images": [{"file": '
+                '"S01_01_SCN_ZI.png", "prompt": "line one\nline two"}]}')
+        data, _ = studio.parse_shotlist_output(text)
+        self.assertEqual(len(data["images"]), 1)
+
+    def test_a_trailing_comma_still_parses(self):
+        # a long plan occasionally slips one (a dropped "refs" leaves `"}",`)
+        text = ('{"shots": [{"cues": "1", "asset": "S01_01_SCN_ZI.png", '
+                '"scene": "S01", "motion": "ZI"}], "images": [{"file": '
+                '"S01_01_SCN_ZI.png", "prompt": "a scene", }, ]}')
+        data, _ = studio.parse_shotlist_output(text)
+        self.assertEqual(len(data["images"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
