@@ -131,6 +131,25 @@ class ProviderSelectionTests(unittest.TestCase):
         self.assertEqual(autorun._default_provider(self.cfg, self.pid),
                          "openrouter-claude")
 
+    def test_a_run_provider_override_beats_everything(self):
+        # an auto-run started with an explicit LLM (the Run-till-finish
+        # selector) runs the text stages on THAT provider - the production's
+        # stored choice and the channel/global defaults all step aside
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_production(conn, self.pid, llm_provider="glm-flash")
+        conn.commit()
+        conn.close()
+        self.assertEqual(
+            autorun._stage_params(self.cfg, self.pid, "shots", lambda m: None,
+                                  provider="openrouter-claude"),
+            {"provider": "openrouter-claude"})
+
+    def test_no_run_override_falls_back_to_the_saved_choice(self):
+        self.assertEqual(
+            autorun._stage_params(self.cfg, self.pid, "shots", lambda m: None),
+            {"provider": "deepseek"})
+
 
 if __name__ == "__main__":
     unittest.main()

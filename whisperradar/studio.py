@@ -806,6 +806,27 @@ def flow_project_url_for(cfg, pid: int,
 REFS_GENERATED_MANIFEST = "refs_generated.json"
 
 
+def find_supplied_refs(pdir: Path) -> list[str]:
+    """Image files the USER put in the production's refs\\ folder (uploaded on
+    the studio page or seeded from the channel) - files written by the refs
+    generator are excluded via its manifest. Filenames only, e.g.
+    'MAYA.png': the planning prompt lists them so the planner can attach the
+    exact registry paths instead of guessing at what might be on disk."""
+    refs_dir = pdir / "refs"
+    if not refs_dir.is_dir():
+        return []
+    try:
+        generated = set(json.loads(
+            (pdir / REFS_GENERATED_MANIFEST).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        generated = set()
+    return sorted(
+        f.name for f in refs_dir.iterdir()
+        if f.is_file()
+        and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")
+        and f.stem not in generated)
+
+
 def shotlist_refs(pdir: Path) -> dict:
     """The refs the shotlist USES, as {name: {"path": str|None,
     "prompt": str|None, "file": Path|None, "provided": bool}}.
@@ -2732,7 +2753,8 @@ def continuation_prompt(base_prompt: str, partial: str) -> str:
 
 def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     extra_direction: str = "", bible: str = "",
-                    feedback: str = "") -> str:
+                    feedback: str = "",
+                    supplied_refs: list[str] | None = None) -> str:
     """Assemble the manifest-authoring brief with its inputs: the narration
     (cue-delimited, timestamp-free - see compact_srt), the channel visual
     style, the optional character / reference bible, and the creator's
@@ -2756,6 +2778,23 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
         fix_block = (f"\n\nINPUT 5 - FIXES REQUIRED IN THIS REVISION "
                      f"(the previous shotlist was rejected - address every "
                      f"point):\n{feedback.strip()}")
+    supplied_block = ""
+    if supplied_refs:
+        listing = "\n".join(f"- refs/{name}" for name in supplied_refs)
+        supplied_block = (
+            f"\n\nSUPPLIED REFERENCE FILES ALREADY ON DISK (read this BEFORE "
+            f"planning - in this production's refs folder; these are the ONLY "
+            f"reference files that exist):\n{listing}\n"
+            f"These files are used AS-IS. To attach one, put its name "
+            f"(the file name without extension) in the shot's refs and "
+            f"declare it in the refs registry with EXACTLY the path shown "
+            f"above - never a different spelling, never a subfolder. Do NOT "
+            f"write a refPrompts entry for a supplied file: it is never "
+            f"generated. Attach a supplied character to every shot where it "
+            f"appears on screen. Every other reference you need (other "
+            f"characters, environments, props) does NOT exist yet and is "
+            f"generated on the fly before rendering: give each a CH_/BG_/OBJ_ "
+            f"name and a detailed refPrompts entry.")
     return f"""{brief_text.strip()}
 
 ---
@@ -2763,7 +2802,7 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
 INPUT 1 - NARRATION (one line per cue: "N: text"; the cue numbers are what the shot `cues` ranges refer to; timestamps are intentionally omitted):
 {narration.strip()}
 
-{style_block}{bible_block}{extra}{fix_block}"""
+{style_block}{bible_block}{extra}{fix_block}{supplied_block}"""
 
 
 # ------------------------------------------- shotlist review (shots gate) ---

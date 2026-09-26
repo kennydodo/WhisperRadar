@@ -2179,6 +2179,8 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return {"plan": autorun.build_plan(cfg, pid),
+                "providers": [p["name"] for p in studio.providers(cfg)],
+                "provider": autorun._default_provider(cfg, pid) or "",
                 "running": sjob.running,
                 "paused": sjob.pause_reason if sjob.pid == pid else None}
 
@@ -2205,9 +2207,12 @@ def create_app(cfg) -> Flask:
             return _studio_url(
                 pid, error="Every stage up to review is already done")
 
+        provider = (request.form.get("provider") or "").strip() or None
+
         def worker():
             result = autorun.run_pipeline(cfg, pid, job=sjob,
-                                          log=sjob.log.append)
+                                          log=sjob.log.append,
+                                          provider=provider)
             if result.startswith("failed:"):
                 raise RuntimeError(result.split(":", 1)[1])
 

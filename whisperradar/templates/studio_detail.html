@@ -99,7 +99,7 @@
 </nav>
 <div class="wrap">
   {% macro provider_select() %}
-  <select name="provider" title="LLM provider">
+  <select name="provider" data-current="{{ llm_label }}" title="LLM provider">
     {% for p in providers %}
     <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
     {% endfor %}
@@ -969,6 +969,22 @@
 <script>
   let wasRunning = {{ 'true' if job.running else 'false' }};
   let lastSeq = {{ job.seq }};
+  // the stage buttons embed the LLM they will run ("Plan shotlist with X");
+  // keep them honest the moment the dropdown changes
+  document.addEventListener('change', function (e) {
+    const sel = e.target;
+    if (!sel.matches || !sel.matches('select[name="provider"]')) return;
+    const form = sel.closest('form');
+    const btn = form && form.querySelector('button[type="submit"]');
+    const old = sel.getAttribute('data-current');
+    if (!btn || !old) return;
+    const opt = sel.options[sel.selectedIndex];
+    const label = (opt ? opt.textContent : '').replace(/ \*$/, '').trim();
+    if (label && btn.textContent.indexOf(old) !== -1) {
+      btn.textContent = btn.textContent.replace(old, label);
+      sel.setAttribute('data-current', label);
+    }
+  });
   function reloadWhenSafe() {
     const dirty = [...document.querySelectorAll('textarea, input')]
       .some((el) => el.type !== 'checkbox' && el.type !== 'radio' &&
@@ -1150,6 +1166,14 @@
     if (hasMerge) {
       html += '<div class="warn">⚠ The merge stage builds a preview draft + NLE export and can take a long time.</div>';
     }
+    if (data.providers && data.providers.length) {
+      const opts = data.providers.map(function (p) {
+        return '<option value="' + p + '"' + (p === data.provider ? ' selected' : '') + '>' + p + '</option>';
+      }).join('');
+      html += '<label style="display:block; margin:10px 0 0">LLM for the text stages (style, script, shotlist)' +
+        '<select id="ar_provider">' + opts + '</select>' +
+        '<span class="muted" style="font-size:12px">overrides the saved default for this run</span></label>';
+    }
     html += '<div class="muted" style="font-size:12px; margin-top:8px">Fixes made here count immediately (the plan refreshes). Anything left over pauses the run mid-way - handle it, then click Resume. A server restart cancels a running auto-run.</div>';
     body.innerHTML = html;
     document.getElementById('autoruntitle').textContent = data.paused ? 'Resume auto-run' : 'Run till finish';
@@ -1177,6 +1201,14 @@
     const f = document.createElement('form');
     f.method = 'post';
     f.action = '/studio/' + AR_PID + '/auto-run';
+    const sel = document.getElementById('ar_provider');
+    if (sel && sel.value) {
+      const i = document.createElement('input');
+      i.type = 'hidden';
+      i.name = 'provider';
+      i.value = sel.value;
+      f.appendChild(i);
+    }
     document.body.appendChild(f);
     f.submit();
   });

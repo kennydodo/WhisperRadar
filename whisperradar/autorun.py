@@ -556,7 +556,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
             prompt = studio.shotlist_prompt(
                 brief, narration, style_guide,
                 extra_direction=db.stage_extra(prod, "shots"),
-                bible=bible_text, feedback=feedback)
+                bible=bible_text, feedback=feedback,
+                supplied_refs=studio.find_supplied_refs(pdir))
             text = studio.llm_generate(cfg, prompt, provider=provider)
             data = sheet = None
             for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
@@ -1055,11 +1056,13 @@ def build_plan(cfg, pid: int) -> list[dict]:
 
 # --------------------------------------------------------- the runner ---
 
-def _stage_params(cfg, pid: int, stage: str, log, cancel=None) -> dict:
-    """Auto-run parameters per stage: the production's saved LLM provider
-    for LLM stages, the saved render mode for images."""
+def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
+                  provider: str | None = None) -> dict:
+    """Auto-run parameters per stage: the run's chosen LLM provider (the
+    override a run was started with, else the production's saved one) for LLM
+    stages, the saved render mode for images."""
     if stage in ("style", "script", "shots"):
-        return {"provider": _default_provider(cfg, pid)}
+        return {"provider": provider or _default_provider(cfg, pid)}
     if stage == "images":
         eff = _effective(cfg, pid)
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
@@ -1077,13 +1080,15 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None) -> dict:
 
 
 def run_pipeline(cfg, pid: int, job=None, log=None,
-                 stop_before: str | None = None) -> str:
+                 stop_before: str | None = None,
+                 provider: str | None = None) -> str:
     """Run every remaining stage in order, skipping the ones that are
     already done and pausing when manual input is missing.
 
     Each stage's action is re-evaluated when it is reached, so stages that
     become runnable mid-run (e.g. shots created the shotlist) execute
-    instead of pausing per an outdated snapshot.
+    instead of pausing per an outdated snapshot. `provider` overrides the
+    saved LLM for every text stage of this run (style, script, shots).
 
     Returns 'ok', 'stopped', 'paused:<reason>' or 'failed:<error>'.
     Never touches the review stage: the production pointer ends at review.
@@ -1134,7 +1139,8 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
             job.stage = stage
         result = run_stage(cfg, pid, stage,
                            params=_stage_params(cfg, pid, stage, log,
-                                                cancel=cancel_check))
+                                                cancel=cancel_check,
+                                                provider=provider))
         if result == "stopped":
             log(f"[auto-run] stopped by user during stage {i}/{total}: "
                 f"{stage} - rendered images are kept, re-run to fill the gaps")

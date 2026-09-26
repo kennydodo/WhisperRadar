@@ -680,6 +680,23 @@ AGREED DESIGN (do not change without the user):
 - The manual Studio generate routes (style/script/shotlist) fall back to
   `autorun._default_provider(cfg, pid)` instead of a yaml default.
 
+### Supplied-refs inventory in the planning prompt — DONE (2026-09-26)
+
+- The planner has no filesystem access, so a character the user uploads could
+  only reach the shotlist through bible conventions - and the upload route
+  slugifies file names, so a mismatch silently turned the character into a
+  "generate" candidate.
+- `studio.find_supplied_refs(pdir)` lists the image files in the production's
+  `refs\` folder EXCLUDING the ones the refs generator wrote (tracked in
+  `refs_generated.json`), and `_run_shots` passes them to
+  `shotlist_prompt(..., supplied_refs=...)`, which appends
+  "INPUT 6 - SUPPLIED REFERENCE FILES ALREADY ON DISK": exact `refs/<file>`
+  paths, attach-by-name rules, no refPrompts for supplied files, and the
+  reminder that everything else is generated on the fly (CH_/BG_/OBJ_).
+- The shotlist gate still fails a plan that declares supplied refs but never
+  attaches them. Mixing one supplied character with on-the-fly backgrounds
+  and props is now prompt-driven, not convention-driven.
+
 ### FlowImagesGen renamed to FlowBatch — DONE (2026-09-25)
 
 - The tool's repo is now `D:\Repos\FlowBatch` (same layout: `src\cli.js`,
