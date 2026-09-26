@@ -33,14 +33,25 @@ VARIATION_ANGLES = [
 
 def variation_nudge(attempt: int = 1, overlap: float | None = None,
                     runs: list[str] | None = None,
-                    feedback: list[str] | None = None) -> str:
+                    feedback: list[str] | None = None,
+                    version: int = 0) -> str:
     """The variation instruction. On a retry it carries the previous
     attempt's measured overlap, the passages that were lifted, and the
-    judge's notes - a bare 'be more original' changes nothing."""
-    angle = random.choice(VARIATION_ANGLES)
+    judge's notes - a bare 'be more original' changes nothing.
+
+    `version` is how many scripts already exist for this production. The angle
+    rotates by it instead of `random.choice`, which could pick the same angle
+    twice in a row and hand back the same script."""
+    angle = VARIATION_ANGLES[(version + attempt - 1) % len(VARIATION_ANGLES)]
     parts = [f"[VARIATION {random.randint(1000, 9999)}] {angle}",
              "Produce a fresh take: different wording, sentence order and "
              "rhythm from any earlier attempt."]
+    if version > 0:
+        parts.append(
+            "A previous version of this script already exists. Write a "
+            "substantially different version: a different hook, a different "
+            "opening 15 seconds, a different order of beats, and different "
+            "examples - do not reuse the earlier version's sentences.")
     if attempt > 1:
         parts.append(f"This is attempt {attempt}; earlier drafts were rejected.")
     if overlap is not None:
@@ -2470,8 +2481,8 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     overlap = overlap_ratio(script, source)
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap)
     try:
-        reply = _parse_json_object(
-            llm_generate(cfg, prompt, provider=provider, max_tokens=900))
+        raw = llm_generate(cfg, prompt, provider=provider, max_tokens=900)
+        reply = _parse_json_object(raw)
     except Exception as exc:  # noqa: BLE001
         return {"score": None, "criteria": {}, "feedback": [],
                 "weak_spans": [], "error": str(exc)[:200]}
@@ -2483,8 +2494,16 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
                                                   dict) else {}
     feedback = [str(f) for f in (reply.get("feedback") or []) if str(f).strip()]
     weak = [str(s) for s in (reply.get("weak_spans") or []) if str(s).strip()]
+    # A reply that parses to no score (prose, an empty answer, a different JSON
+    # shape) used to surface only as a cryptic "rating n/a". Keep the reason so
+    # the stage can say WHY the judge could not rate the draft.
+    error = None
+    if score is None:
+        snippet = " ".join(str(raw or "").split())[:160]
+        error = ("the judge reply had no usable score" +
+                 (f": {snippet}" if snippet else " (empty reply)"))
     return {"score": score, "criteria": criteria, "feedback": feedback,
-            "weak_spans": weak, "error": None}
+            "weak_spans": weak, "error": error}
 
 
 def judge_provider(cfg, writer: str | None, preferred: str | None) -> str | None:

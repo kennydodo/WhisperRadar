@@ -244,21 +244,29 @@ IMAGE_RESUME_ROUNDS = 3
 
 
 def _research_notes(cfg, pdir: Path, title: str, genre: str,
-                    source_text: str, provider: str | None) -> str:
+                    source_text: str, provider: str | None,
+                    refresh: bool = False) -> str:
     """Cached fact-notes for this production, generated once by the writer's
     provider. The script is composed FROM these rather than from the transcript
     prose, so it stops echoing the source: the first live run measured 93.5%
-    overlap with the transcript and the copycat gate rejects over 20%."""
+    overlap with the transcript and the copycat gate rejects over 20%.
+
+    `refresh` re-derives the notes from the source transcript instead of using
+    the cache - a manual regenerate wants a different factual phrasing so the
+    writer does not reproduce the previous script verbatim."""
     pdir = Path(pdir)
     path = pdir / RESEARCH_NOTES_FILE
-    try:
-        cached = path.read_text(encoding="utf-8").strip()
-        if cached:
-            _log_line(f"using cached {RESEARCH_NOTES_FILE} "
-                      f"({len(cached.split())} words)")
-            return cached
-    except OSError:
-        pass
+    if not refresh:
+        try:
+            cached = path.read_text(encoding="utf-8").strip()
+            if cached:
+                _log_line(f"using cached {RESEARCH_NOTES_FILE} "
+                          f"({len(cached.split())} words)")
+                return cached
+        except OSError:
+            pass
+    elif path.exists():
+        _log_line(f"regenerate: rebuilding {RESEARCH_NOTES_FILE} for a fresh take")
     try:
         notes = studio.llm_generate(
             cfg, studio.notes_prompt(title, genre, source_text),
@@ -329,19 +337,33 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
     target_words = studio.script_target_words(cfg.studio_script_words,
                                               source_words)
+    script_path = pdir / "script.md"
+    auto_dir = pdir / "versions" / "script"
+    auto_dir.mkdir(parents=True, exist_ok=True)
+    # How many scripts already exist drives the variation rotation: the first
+    # run starts at angle 0, each manual regenerate advances it, so two
+    # regenerates never ask the writer for the same angle (and this run is a
+    # regenerate, so the notes are rebuilt too).
+    try:
+        archived = len(list(auto_dir.glob("auto-*.md")))
+    except OSError:
+        archived = 0
+    run_index = archived + (1 if script_path.exists() else 0)
+    regenerating = run_index > 0
+    if regenerating:
+        _log_line(f"regenerate: {run_index} script version(s) already exist - "
+                  f"asking for a substantially different take")
     # Compose from NEUTRAL NOTES, not the transcript prose - otherwise the writer
-    # echoes the source and every attempt fails the copycat gate. Cached once.
+    # echoes the source and every attempt fails the copycat gate. Cached once;
+    # a regenerate rebuilds them for a fresh factual phrasing.
     facts = (_research_notes(cfg, pdir, prod["title"], prod["genre"],
-                             source_text, provider)
+                             source_text, provider, refresh=regenerating)
              if source_text.strip() else "")
     min_rating = eff["script_min_rating"]
     max_overlap = eff["script_max_overlap"]
     hard_overlap = eff["script_hard_overlap"]
     attempts_allowed = max(1, int(eff["script_max_attempts"]))
     judge = studio.judge_provider(cfg, provider, eff["script_judge_provider"])
-    script_path = pdir / "script.md"
-    auto_dir = pdir / "versions" / "script"
-    auto_dir.mkdir(parents=True, exist_ok=True)
 
     attempts: list[dict] = []
     previous: dict | None = None
@@ -351,7 +373,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
             attempt=attempt,
             overlap=previous["overlap"] if previous else None,
             runs=previous["runs"] if previous else None,
-            feedback=previous["feedback"] if previous else None)
+            feedback=previous["feedback"] if previous else None,
+            version=run_index)
         if previous and previous.get("too_long"):
             variation = ((variation + "\n") if variation else "") + (
                 f"The previous draft was too long. Keep this one at or under "
@@ -441,6 +464,10 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                        f"{best['score'] if best['score'] is not None else 'n/a'} "
                        f"(min {min_rating}), overlap {best['overlap']:.1%} "
                        f"(target {max_overlap:.0%})")
+            judge_err = best["rating"].get("error")
+            if best["score"] is None and judge_err:
+                # otherwise "rating n/a" hides that the JUDGE failed, not the script
+                warning += f" | judge: {judge_err[:200]}"
             db.update_production(conn, pid, warning=warning)
             db.add_step(conn, pid, "script", "auto",
                         detail=detail + " | " + warning)
