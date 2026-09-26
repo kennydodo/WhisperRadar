@@ -131,6 +131,55 @@
     </form>
   </div>
 
+  <div class="panel" style="margin-top:16px">
+    <div class="row" style="justify-content:space-between; align-items:center">
+      <h2 style="margin:0">Batch queue</h2>
+      {% if batch_queue %}
+      <form method="post" action="/studio/batch/clear">
+        <button type="submit" class="ghost">clear queue</button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="muted" style="font-size:12px; margin:6px 0 10px">
+      Queue productions to auto-run one after another. Each run <b>stops after
+      merge</b> - review stays manual. Add jobs with <b>queue</b> on a production
+      card below; jobs added while a batch is running wait for the next start.
+    </div>
+    {% if batch_queue %}
+    <div class="actions" style="flex-wrap:wrap; margin-bottom:10px">
+      {% for q in batch_queue %}
+      <form method="post" action="/studio/batch/unqueue" style="display:inline">
+        <input type="hidden" name="pid" value="{{ q.id }}">
+        <button type="submit" class="ghost" title="Remove from the batch">{{ q.title }} ({{ q.id }}) &times;</button>
+      </form>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="muted" style="font-size:12px; margin-bottom:10px">The queue is empty.</div>
+    {% endif %}
+    <form method="post" action="/studio/batch/start" class="row"
+          style="align-items:center; gap:12px; flex-wrap:wrap"
+          onsubmit="return confirm('Start the batch? Each production auto-runs and stops after merge.')">
+      <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:6px">
+        <input type="checkbox" name="shutdown">
+        Shut down this PC 5 minutes after the last job finishes
+      </label>
+      <button type="submit" class="green" {{ 'disabled' if batch_running or not batch_queue else '' }}>
+        Start batch
+      </button>
+      {% if batch_running %}
+      <button type="submit" formaction="/studio/batch/stop" class="secondary"
+              onclick="return confirm('Stop the batch after the current stage?')">Stop batch</button>
+      {% endif %}
+    </form>
+    {% if batch_shutdown_pending %}
+    <form method="post" action="/studio/batch/cancel-shutdown" style="margin-top:8px">
+      <button type="submit" class="secondary">Cancel shutdown</button>
+      <span class="muted" style="font-size:12px; margin-left:8px">A shutdown is scheduled in ~5 minutes.</span>
+    </form>
+    {% endif %}
+  </div>
+
   <h2>Productions</h2>
   {% if prods %}
   <div class="grid">
@@ -148,6 +197,10 @@
       <div class="meta">{{ item.done }}/{{ item.total }} stages done</div>
       <div class="foot">
         <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>
+        <form method="post" action="/studio/batch/queue">
+          <input type="hidden" name="pid" value="{{ item.row['id'] }}">
+          <button type="submit" class="ghost" title="Add to the batch queue (auto-run, stops after merge)">queue</button>
+        </form>
         <form method="post" action="/studio/{{ item.row['id'] }}/delete"
               onsubmit="return confirm('Delete production and all its files?')">
           <button type="submit" class="ghost">delete</button>

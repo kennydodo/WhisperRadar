@@ -7,10 +7,13 @@ import io
 import ipaddress
 import json
 import logging
+import os
 import re
 import shutil
 import socket
+import subprocess
 import threading
+import time
 import zipfile
 from collections import deque
 from pathlib import Path
@@ -307,6 +310,60 @@ def create_app(cfg) -> Flask:
 
     job = _Job()
     sjob = _Job()  # studio jobs (LLM generation, SRT alignment)
+
+    # Manual batch: queue productions that auto-run one after another, each
+    # stopping after merge (review stays a human decision). Optionally shut the
+    # PC down a few minutes after the LAST one finishes, so an unattended run
+    # can power the machine off.
+    BATCH_SHUTDOWN_SECONDS = 300
+    batch = {"queue": [], "lock": threading.Lock(), "shutdown_at": None}
+
+    def _batch_shutdown_cmd() -> list[str]:
+        if os.name == "nt":
+            return ["shutdown", "/s", "/t", str(BATCH_SHUTDOWN_SECONDS)]
+        return ["shutdown", "-h", f"+{max(1, BATCH_SHUTDOWN_SECONDS // 60)}"]
+
+    def _batch_cancel_shutdown_cmd() -> list[str]:
+        return ["shutdown", "/a"] if os.name == "nt" else ["shutdown", "-c"]
+
+    def _batch_spawn(cmd: list[str]) -> None:
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except Exception as exc:  # noqa: BLE001 - never crash the batch
+            sjob.log.append(f"[batch] could not run {' '.join(cmd)}: {exc}")
+
+    def _run_batch(pids: list[int], shutdown: bool) -> None:
+        """Auto-run each queued production to merge, one after another."""
+        done = []
+        for pid in pids:
+            if sjob.cancel:
+                sjob.log.append("[batch] stopped by user - remaining job(s) "
+                                "left in the queue")
+                break
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                prod = db.get_production(conn, pid)
+                title = prod["title"] if prod else f"#{pid}"
+            finally:
+                conn.close()
+            sjob.pid = pid
+            sjob.log.append(f"[batch] production {pid} ({title}): auto-run")
+            result = autorun.run_pipeline(cfg, pid, job=sjob,
+                                          log=sjob.log.append)
+            done.append((pid, result))
+            sjob.log.append(f"[batch] production {pid}: {result}")
+        ok = sum(1 for _, r in done if r == "ok")
+        sjob.log.append(f"[batch] finished: {len(done)} job(s) run, {ok} "
+                        f"reached merge - review stays manual")
+        if shutdown and not sjob.cancel:
+            _batch_spawn(_batch_shutdown_cmd())
+            batch["shutdown_at"] = time.time() + BATCH_SHUTDOWN_SECONDS
+            cancel = ("shutdown /a" if os.name == "nt" else "shutdown -c")
+            sjob.log.append(
+                f"[batch] shutting down in {BATCH_SHUTDOWN_SECONDS // 60} "
+                f"minute(s) - cancel it with: {cancel}")
 
     class _DequeHandler(logging.Handler):
         def emit(self, record):
@@ -1058,11 +1115,80 @@ def create_app(cfg) -> Flask:
                           "own_channel": own_by_id.get(p["own_channel_id"])})
         sources = db.get_videos(conn, status="transcribed", limit=500)
         conn.close()
-        return render_template("studio.html", prods=prods, sources=sources,
-                               own_channels=[c for c in own_channels
-                                             if c["active"]],
-                               job=sjob, msg=request.args.get("msg"),
-                               error=request.args.get("error"))
+        title_by_id = {p["row"]["id"]: p["row"]["title"] for p in prods}
+        with batch["lock"]:
+            queued = [{"id": pid, "title": title_by_id.get(pid, f"#{pid}")}
+                      for pid in batch["queue"]]
+        shutdown_pending = bool(batch["shutdown_at"]
+                                and batch["shutdown_at"] > time.time())
+        if batch["shutdown_at"] and not shutdown_pending:
+            batch["shutdown_at"] = None  # the countdown already elapsed
+        return render_template(
+            "studio.html", prods=prods, sources=sources,
+            own_channels=[c for c in own_channels if c["active"]],
+            job=sjob, msg=request.args.get("msg"),
+            error=request.args.get("error"),
+            batch_queue=queued,
+            batch_running=(sjob.running and sjob.kind == "batch auto-run"),
+            batch_shutdown_pending=shutdown_pending)
+
+    @app.post("/studio/batch/queue")
+    def studio_batch_queue():
+        pid = _safe_int(request.form.get("pid"), 0, lo=1)
+        with batch["lock"]:
+            if pid and pid not in batch["queue"]:
+                batch["queue"].append(pid)
+        return redirect("/studio?msg=" + quote(f"Production {pid} queued"))
+
+    @app.post("/studio/batch/unqueue")
+    def studio_batch_unqueue():
+        pid = _safe_int(request.form.get("pid"), 0)
+        with batch["lock"]:
+            batch["queue"] = [p for p in batch["queue"] if p != pid]
+        return redirect("/studio?msg=" + quote("Removed from the batch"))
+
+    @app.post("/studio/batch/clear")
+    def studio_batch_clear():
+        with batch["lock"]:
+            batch["queue"].clear()
+        return redirect("/studio?msg=" + quote("Batch queue cleared"))
+
+    @app.post("/studio/batch/start")
+    def studio_batch_start():
+        if sjob.running:
+            return redirect("/studio?error=" + quote("A job is already running"))
+        with batch["lock"]:
+            pids = list(batch["queue"])
+            batch["queue"] = []
+        if not pids:
+            return redirect("/studio?error=" + quote("The batch queue is empty"))
+        shutdown = request.form.get("shutdown") == "on"
+        batch["shutdown_at"] = None
+
+        def worker():
+            _run_batch(pids, shutdown)
+
+        if not sjob.start(worker, "batch auto-run"):
+            with batch["lock"]:  # could not start: put the queue back
+                batch["queue"] = pids + batch["queue"]
+            return redirect("/studio?error=" + quote("A job is already running"))
+        note = ", shutting down when done" if shutdown else ""
+        return redirect("/studio?msg=" + quote(
+            f"Batch started ({len(pids)} job(s)){note}"))
+
+    @app.post("/studio/batch/stop")
+    def studio_batch_stop():
+        if not sjob.running or sjob.kind != "batch auto-run":
+            return redirect("/studio?error=" + quote("No batch is running"))
+        sjob.cancel = True
+        return redirect("/studio?msg=" + quote(
+            "Stopping the batch after the current stage"))
+
+    @app.post("/studio/batch/cancel-shutdown")
+    def studio_batch_cancel_shutdown():
+        _batch_spawn(_batch_cancel_shutdown_cmd())
+        batch["shutdown_at"] = None
+        return redirect("/studio?msg=" + quote("Shutdown cancelled"))
 
     @app.post("/studio/new")
     def studio_new():
