@@ -1,5 +1,9 @@
 yt-dlp>=2025.1.26
 faster-whisper>=1.1.1
+# GPU (CUDA) inference DLLs for faster-whisper on Windows - transcribe.py
+# auto-locates them; without these, Whisper silently runs on CPU
+nvidia-cublas-cu12>=12,<13
+nvidia-cudnn-cu12>=9,<10
 PyYAML>=6.0
 Flask>=3.0
 waitress>=3.0
