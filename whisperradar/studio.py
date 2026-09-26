@@ -2637,7 +2637,8 @@ def load_manifest_brief(cfg) -> str:
                 / "manifest-authoring-brief.md")
     if not path or not path.exists():
         raise RuntimeError(
-            "manifest-authoring-brief.md not found - set studio.imgtovideo_repo "
+            "manifest-authoring-brief.md not found - clone ImgToVideo next "
+            "to this repo (sibling folder), or set studio.imgtovideo_repo "
             "or studio.manifest_brief in config.yaml")
     text = path.read_text(encoding="utf-8")
     if "\n---\n" in text:  # skip the how-to header, keep the prompt itself

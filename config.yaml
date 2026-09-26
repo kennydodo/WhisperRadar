@@ -66,11 +66,16 @@ studio:
   renderly_url: http://127.0.0.1:8022
   renderly_channel: null
   renderly_upscale: 4
-  imgtovideo_repo: D:\Repos\ImgToVideo
+  # Tool checkouts, consumed in place. null = auto-detect a SIBLING checkout
+  # of this repo (...\Repos\WhisperRadar -> ...\Repos\ImgToVideo), so a
+  # standard clone layout needs no machine-specific paths here. Set an
+  # explicit path only when a checkout lives elsewhere.
+  imgtovideo_repo: null
   # Google Flow image generation via Renderly's extension-v2 Playwright
-  # driver (D:\Repos\Renderly\extension-v2). Needs `npm install` there once
-  # and a signed-in Google session in its profile. Requires node on PATH.
-  flow_driver_dir: D:\Repos\Renderly\extension-v2
+  # driver (auto-detected as a sibling: ..\Renderly\extension-v2). Needs
+  # `npm install` there once and a signed-in Google session in its profile.
+  # Requires node on PATH.
+  flow_driver_dir: null
   # Flow Driver service URL (extension-v2\server.js; started automatically
   # when a Flow render needs it, or by Renderly's start.bat).
   flow_driver_url: http://127.0.0.1:8030
@@ -80,7 +85,7 @@ studio:
   # PLACE from its own checkout - never vendored, because its signed-in
   # Google session lives in the gitignored profile\ folder. Run
   # `npm install` there once and `npm run login`.
-  flowbatch_repo: D:\Repos\FlowBatch
+  flowbatch_repo: null
   # Default Google Flow project URL for its jobs. Empty = FlowBatch's own
   # config/settings.json projectUrl, else Flow's most recent project.
   flowbatch_project_url: null

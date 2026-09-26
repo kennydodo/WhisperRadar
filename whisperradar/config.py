@@ -86,14 +86,25 @@ class Config:
         # survive the lookup, so no truthiness shortcut here.
         self.renderly_upscale = 2 if studio.get("renderly_upscale") is None \
             else studio.get("renderly_upscale")
-        self.imgtovideo_repo = studio.get("imgtovideo_repo") or None
+        # External tool checkouts, consumed in place. An explicit path in
+        # this file always wins; otherwise fall back to a SIBLING checkout
+        # of this repo (...\Repos\WhisperRadar -> ...\Repos\ImgToVideo), so
+        # a standard clone layout works with no machine-specific paths here.
+        def _sibling(*parts: str) -> str | None:
+            cand = base_dir.parent.joinpath(*parts)
+            return str(cand) if cand.is_dir() else None
+
+        self.imgtovideo_repo = studio.get("imgtovideo_repo") \
+            or _sibling("ImgToVideo")
         # FlowBatch (the standalone Playwright Flow CLI) - consumed in
         # place from its own checkout, like ImgToVideo and Renderly.
-        self.flowbatch_repo = studio.get("flowbatch_repo") or None
+        self.flowbatch_repo = studio.get("flowbatch_repo") \
+            or _sibling("FlowBatch")
         self.flowbatch_project_url = \
             (studio.get("flowbatch_project_url") or "").strip() or None
         self.studio_manifest_brief = studio.get("manifest_brief") or None
-        self.flow_driver_dir = studio.get("flow_driver_dir") or None
+        self.flow_driver_dir = studio.get("flow_driver_dir") \
+            or _sibling("Renderly", "extension-v2")
         self.flow_driver_url = studio.get("flow_driver_url") \
             or "http://127.0.0.1:8030"
         self.studio_dir = base_dir / "data" / "studio"
