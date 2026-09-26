@@ -671,6 +671,13 @@ def create_app(cfg) -> Flask:
                 "env_key": str(prov.get("env_key") or "WR_LLM_API_KEY").strip(),
                 "models": models,
             })
+        if not clean:
+            # an empty list would leave the pipeline with NO providers (there
+            # is no config.yaml fallback) - refuse instead of saving
+            return redirect("/settings?error="
+                            + quote("No valid gateway in the list (each needs "
+                                    "a name, base URL and a model) - nothing "
+                                    "was saved"))
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
