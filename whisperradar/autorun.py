@@ -534,6 +534,14 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         brief = studio.load_manifest_brief(cfg)
         srt_text = srt.read_text(encoding="utf-8")
         cues = studio.parse_srt_cues(srt_text)
+        # The planner never writes timings (the cue ranges carry them), so send
+        # `N: text` instead of full SRT blocks. The file keeps its timestamps -
+        # the pacing gate and the ImgToVideo assembler read them from disk.
+        narration = studio.compact_srt(srt_text)
+        if len(narration) < len(srt_text):
+            _log_line(f"shotlist: narration {len(srt_text)} -> "
+                      f"{len(narration)} chars (timestamps dropped, cue "
+                      f"numbers kept)")
         eff = _effective(cfg, pid)
         min_align = eff["shotlist_min_alignment"]
         max_hold = eff["shotlist_max_hold_seconds"]
@@ -546,7 +554,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         sheet = ""
         for attempt in range(1, attempts_allowed + 1):
             prompt = studio.shotlist_prompt(
-                brief, srt_text, style_guide,
+                brief, narration, style_guide,
                 extra_direction=db.stage_extra(prod, "shots"),
                 bible=bible_text, feedback=feedback)
             text = studio.llm_generate(cfg, prompt, provider=provider)

@@ -2744,6 +2744,22 @@ def parse_srt_cues(srt_text: str) -> list[dict]:
     return cues
 
 
+def compact_srt(srt_text: str) -> str:
+    """The narration as `N: text` lines - cue numbers kept, timestamps dropped.
+
+    The planning brief tells the model it never writes timings ("the cue ranges
+    carry them"), so the per-cue timestamp block is pure prompt overhead - on a
+    long narration it is a large share of the SRT. The `subtitles.srt` FILE is
+    untouched: the pacing gate and ImgToVideo's assembler still read its real
+    timestamps. Cue NUMBERS are kept because the shotlist's cue ranges and the
+    assembler index by them. Falls back to the raw text when nothing parses, so
+    a malformed SRT can never blank the narration."""
+    cues = parse_srt_cues(srt_text)
+    if not cues:
+        return (srt_text or "").strip()
+    return "\n".join(f"{c['index']}: {c['text']}" for c in cues)
+
+
 def cue_range(text: str) -> tuple[int, int] | None:
     m = _CUE_RANGE_RE.match(str(text or ""))
     if not m:
