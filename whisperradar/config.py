@@ -53,6 +53,14 @@ class Config:
         self.studio_llm_default = None
 
         self.studio_tts_command = studio.get("tts_command") or None
+        if self.studio_tts_command is None:
+            # default to the TTS script bundled in THIS checkout, resolved
+            # relative to config.yaml - never a machine-specific absolute
+            # path, so a clone on any drive just works
+            bundled = base_dir / "scripts" / "ai33_tts.py"
+            if bundled.is_file():
+                self.studio_tts_command = (
+                    f'python "{bundled}" {{script}} {{out}} --voice {{voice}}')
         # OpenSpeaker (ai33.pro) narration: optional config key/voice; the
         # key can also come from the WR_AI33_API_KEY env variable.
         self.studio_ai33_api_key = studio.get("ai33_api_key") or None
