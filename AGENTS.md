@@ -5,6 +5,28 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## NEXT SESSION — shotlist speed: two-pass planning design (queued 2026-09-26, needs discussion before building)
+
+A 484-cue narration forces one giant LLM call: 19-minute generations,
+malformed-JSON attempts (2 of 3 failed on p16), output-limit continuation
+rounds. Sketch agreed so far — **inputs stay whole**: the SRT, bible and
+style go in complete and stay in the production folder untouched; what is
+SPLIT is the RESULT generation:
+- pass 1 (one small call over the FULL narration): a scene outline only -
+  main beats S01..SNN with cue ranges + one line each. Tiny output, fast,
+  globally coherent.
+- pass 2 (one small call per beat): brief + that beat's cues + previous-beat
+  context + the running refs registry so later beats REUSE refs instead of
+  inventing duplicates. 5-15 shots per call - no truncation, fast, parseable.
+- the pipeline (not the model) stitches: coverage validation, sequential
+  scene/sub-beat renumbering, refs registry merge. Gates and judge unchanged.
+- optional brief edit in ImgToVideo: Document 1 (batch sheet) becomes
+  optional - it is a deterministic rendering of the JSON the pipeline can
+  produce itself; dropping it cuts model output ~30%.
+OPEN QUESTIONS for the discussion: beat boundaries from pass 1 vs meaning,
+parallel pass-2 calls (fast, duplicate-ref risk) vs sequential (consistent),
+how the stitcher reports/repairs cross-beat faults, wall-time target.
+
 ## NEXT SESSION — code review of the 2026-09-25/26 session (queued 2026-09-26)
 
 Review every change from the two big sessions, commit range `4855642..bb47ffd`
