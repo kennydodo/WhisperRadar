@@ -125,7 +125,12 @@
       </div>
       <div>
         <label>Working folder (optional)</label>
-        <input type="text" name="work_dir" placeholder="D:\VideoProjects\my-video" style="width:260px">
+        <div class="inline" style="gap:6px">
+          <input type="text" id="workdir-input" name="work_dir"
+                 placeholder="D:\VideoProjects\my-video" style="width:260px">
+          <button type="button" class="ghost" onclick="pickFolder('workdir-input')"
+                  title="Choose a folder on this PC (empty = data\studio\<id>)">Browse...</button>
+        </div>
       </div>
       <button type="submit" style="align-self:flex-end">Create</button>
     </form>
@@ -206,6 +211,37 @@
 </script>
 
 <script>
+  // Ask the local server to open the OS folder chooser (a browser page cannot
+  // read a real filesystem path itself) and drop the result into the field.
+  async function pickFolder(inputId) {
+    const input = document.getElementById(inputId);
+    try {
+      const body = new FormData();
+      body.append('initial', input && input.value ? input.value : '');
+      const resp = await fetch('/studio/pick-folder', { method: 'POST', body });
+      const text = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        // HTML instead of JSON almost always means the dashboard is running
+        // older code where this route does not exist yet (templates reload,
+        // Python does not) - tell the user to restart instead of a JSON error.
+        alert(resp.status === 404
+          ? 'The dashboard is running an older version without the folder picker - restart it (python wr.py serve) and try again.'
+          : 'Folder picker failed (HTTP ' + resp.status + '): ' + text.slice(0, 200));
+        return;
+      }
+      if (data.path) {
+        if (input) input.value = data.path;
+      } else if (data.error) {
+        alert(data.error);
+      }
+    } catch (e) {
+      alert('Folder picker failed: ' + e);
+    }
+  }
+
   async function produceNow() {
     let data;
     try {

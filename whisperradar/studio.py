@@ -139,6 +139,48 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
     return p
 
 
+def pick_folder(initial_dir: str | None = None) -> str | None:
+    """Open the OS folder chooser and return the chosen absolute path.
+
+    The browser cannot hand a page a real filesystem path, but WhisperRadar's
+    server runs on the same machine, so the SERVER opens the native dialog.
+    Blocks until the user picks or cancels - fine for a local, single-user
+    tool. Returns None when cancelled. Raises RuntimeError when there is no GUI
+    session / Tk (e.g. a headless service), so the caller can say so."""
+    try:
+        import tkinter
+        from tkinter import filedialog
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "no folder picker on the server (tkinter is missing) - type the "
+            "path instead") from exc
+    try:
+        root = tkinter.Tk()
+    except Exception as exc:  # noqa: BLE001 - headless / no display
+        raise RuntimeError(
+            "the server has no desktop session to show a folder picker - "
+            "type the path instead") from exc
+    try:
+        root.withdraw()
+        root.attributes("-topmost", True)
+        root.update()
+        start = None
+        if initial_dir:
+            p = Path(initial_dir).expanduser()
+            if p.is_dir():
+                start = str(p)
+        chosen = filedialog.askdirectory(
+            parent=root, title="Choose a working folder",
+            initialdir=start, mustexist=False)
+    finally:
+        try:
+            root.destroy()
+        except Exception:  # noqa: BLE001
+            pass
+    chosen = str(chosen or "").strip()
+    return chosen or None
+
+
 MOVE_ITEMS = ["script.md", "style.md", "bible.md", "source_transcript.txt",
               "subtitles.srt", "shotlist.json", "shotlist.json.bak",
               "imgtovideo.json", "prompts.txt", "batch_sheet.txt", "final.mp4",
@@ -2687,12 +2729,13 @@ def continuation_prompt(base_prompt: str, partial: str) -> str:
             "IMAGE BATCH SHEET if it is still missing.")
 
 
-def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
+def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     extra_direction: str = "", bible: str = "",
                     feedback: str = "") -> str:
-    """Assemble the manifest-authoring brief with its inputs: the full
-    narration SRT, the channel visual style, the optional character /
-    reference bible, and the creator's per-stage direction."""
+    """Assemble the manifest-authoring brief with its inputs: the narration
+    (cue-delimited, timestamp-free - see compact_srt), the channel visual
+    style, the optional character / reference bible, and the creator's
+    per-stage direction."""
     style = (style_guide or "").strip()
     style_block = (
         f"INPUT 2 - CHANNEL VISUAL STYLE INSTRUCTIONS:\n{style}"
@@ -2716,8 +2759,8 @@ def shotlist_prompt(brief_text: str, srt_text: str, style_guide: str = "",
 
 ---
 
-INPUT 1 - THE FULL NARRATION SRT:
-{srt_text.strip()}
+INPUT 1 - NARRATION (one line per cue: "N: text"; the cue numbers are what the shot `cues` ranges refer to; timestamps are intentionally omitted):
+{narration.strip()}
 
 {style_block}{bible_block}{extra}{fix_block}"""
 

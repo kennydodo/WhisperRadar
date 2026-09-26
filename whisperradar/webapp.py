@@ -19,6 +19,7 @@ from urllib.parse import quote, urlparse
 from flask import (
     Flask,
     abort,
+    jsonify,
     make_response,
     redirect,
     render_template,
@@ -1070,6 +1071,20 @@ def create_app(cfg) -> Flask:
                                              if c["active"]],
                                job=sjob, msg=request.args.get("msg"),
                                error=request.args.get("error"))
+
+    @app.post("/studio/pick-folder")
+    def studio_pick_folder():
+        """Open the server's native folder chooser and return the real path.
+
+        The browser cannot give a page an absolute filesystem path, so the
+        local server opens the OS dialog itself and hands the path back as JSON
+        for the form's input. Cancelling returns {"path": null}."""
+        initial = (request.form.get("initial") or "").strip()
+        try:
+            path = studio.pick_folder(initial or None)
+        except RuntimeError as exc:
+            return jsonify({"path": None, "error": str(exc)})
+        return jsonify({"path": path})
 
     @app.post("/studio/new")
     def studio_new():

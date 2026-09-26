@@ -154,7 +154,9 @@
         <summary class="muted" style="font-size:12px; cursor:pointer">change folder</summary>
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/workdir"
               onsubmit="return confirm('Move all production files to the new folder?')">
-          <input type="text" name="work_dir" placeholder="D:\VideoProjects\my-video (empty = default)" style="flex:1; min-width:260px">
+          <input type="text" id="workdir-move" name="work_dir" placeholder="D:\VideoProjects\my-video (empty = default)" style="flex:1; min-width:260px">
+          <button type="button" class="ghost" onclick="pickFolder('workdir-move')"
+                  title="Choose a folder on this PC">Browse...</button>
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
                   title="{{ 'Move all production files' if not job.running else 'A job is already running' }}">
             {{ 'Working...' if job.running else 'Move files' }}
@@ -1014,6 +1016,36 @@
   }
   setInterval(poll, 2000);
 </script>
+<script>
+  // Ask the local server to open the OS folder chooser (a browser page cannot
+  // read a real filesystem path itself) and drop the result into the field.
+  async function pickFolder(inputId) {
+    const input = document.getElementById(inputId);
+    try {
+      const body = new FormData();
+      body.append('initial', input && input.value ? input.value : '');
+      const resp = await fetch('/studio/pick-folder', { method: 'POST', body });
+      const text = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        alert(resp.status === 404
+          ? 'The dashboard is running an older version without the folder picker - restart it (python wr.py serve) and try again.'
+          : 'Folder picker failed (HTTP ' + resp.status + '): ' + text.slice(0, 200));
+        return;
+      }
+      if (data.path) {
+        if (input) input.value = data.path;
+      } else if (data.error) {
+        alert(data.error);
+      }
+    } catch (e) {
+      alert('Folder picker failed: ' + e);
+    }
+  }
+</script>
+
 <script>
   // Copy button on every textarea and read-only text block
   (function () {
