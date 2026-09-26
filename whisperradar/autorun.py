@@ -594,14 +594,17 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         if min_shots:
             pacing_note = (
                 f"the narration runs ~{total_s:.0f}s across {len(cues)} cues "
-                f"(the (Ns) on each line is that cue's length). Every shot "
-                f"holds at most {max_hold:.0f}s - a longer hold is a "
-                f"structural fault that fails the plan. Cover ALL "
-                f"{len(cues)} cues with AT LEAST {min_shots} shots: roughly "
-                f"one shot per visual beat, more when the visuals change. A "
-                f"plan with fewer than {min_shots} shots cannot pass review "
-                f"no matter how good the prompts are, so do not merge many "
-                f"cues into one shot.")
+                f"(the (Ns) suffix on each line is that cue's length in "
+                f"seconds). How this plan will be judged on this channel: "
+                f"every cue covered exactly once, in order (the rule that "
+                f"outranks everything); no shot holding longer than "
+                f"{max_hold:.0f}s; detailed prompts on at least "
+                f"{min_align:.0%} of shots. Plan strictly from meaning per "
+                f"Section 2 - each new concrete detail deserves its own "
+                f"visual - and let the count follow the beats: with cues of "
+                f"a few seconds each, covering ~{total_s:.0f}s of narration "
+                f"well lands at roughly {min_shots}+ shots. Merging many "
+                f"cues into a few long holds fails the review.")
         attempts: list[dict] = []
         data: dict = {}
         sheet = ""

@@ -62,9 +62,12 @@ class PacingNoteTests(unittest.TestCase):
     def test_prompt_carries_the_pacing_note(self):
         prompt = studio.shotlist_prompt("BRIEF", "1: hello",
                                         pacing_note="narration ~960s; "
-                                                    "at least 80 shots")
+                                                    "roughly 81+ shots")
         self.assertIn("PACING MATH", prompt)
-        self.assertIn("at least 80 shots", prompt)
+        self.assertIn("roughly 81+ shots", prompt)
+        # brief-compatible wording: it states how the plan is judged and the
+        # arithmetic, it does not command a fixed image count
+        self.assertIn("Plan strictly from meaning", prompt)
 
     def test_prompt_without_pacing_note(self):
         self.assertNotIn("PACING MATH",
