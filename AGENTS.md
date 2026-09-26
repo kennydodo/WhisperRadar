@@ -1,9 +1,31 @@
 # WhisperRadar — Agent Notes
 
 YouTube channel monitoring + Studio video production pipeline.
-Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: none formal — verify features over HTTP against a test production (never call paid APIs — Gemini/Renderly/Flow — for testing).
+Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -m unittest discover -s tests` (never call paid APIs — Gemini/Renderly/Flow — for testing).
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
+
+## NEXT SESSION — code review of the 2026-09-25/26 session (queued 2026-09-26)
+
+Review every change from the two big sessions, commit range `4855642..bb47ffd`
+(LLM config DB-only, settings page regroup + per-gateway save + providers
+reset, FlowBatch rename, portable TTS default + sibling tool detection,
+supplied-refs inventory in the shotlist prompt, LLM override for stage picks
+and Run-till-finish, provider-deletion reference cleanup, implicit-pin removal
++ one-time migration, channel bible seeding before the shots gate). Focus:
+- correctness of the reference-cleanup SQL (`settings_providers_save` +
+  `/settings/providers/reset`) against renamed providers (rename = delete +
+  add; references to the old name are wiped by design — confirm that is OK);
+- the one-time `migration_llm_provider_cleared` flag: pins can never be
+  deliberate while no UI sets `productions.llm_provider` — decide whether the
+  column and the production→channel→global precedence should be simplified;
+- `shotlist_prompt` prompt-size growth (INPUT blocks + supplied refs) vs the
+  glm-5.3-flash 300s stall on b.ai;
+- template/JS: the provider-select live-label hack and the per-gateway
+  `saveProvider(-1)`-free flow (a removed last card has no Save — deletions
+  of the final card persist only via another card's save);
+- test isolation: tests that redirect `cfg.studio_dir` must not touch the
+  real `data\studio` folders (see test_bible_seeding).
 
 ## NEXT SESSION — RETEST the refs productions (written 2026-09-24, end of day)
 
