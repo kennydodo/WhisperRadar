@@ -65,9 +65,9 @@ class PacingNoteTests(unittest.TestCase):
                                                     "roughly 81+ shots")
         self.assertIn("PACING MATH", prompt)
         self.assertIn("roughly 81+ shots", prompt)
-        # brief-compatible wording: it states how the plan is judged and the
-        # arithmetic, it does not command a fixed image count
-        self.assertIn("Plan strictly from meaning", prompt)
+        # the block is advisory input appended after the brief - the brief
+        # itself stays verbatim at the top
+        self.assertLess(prompt.index("BRIEF"), prompt.index("PACING MATH"))
 
     def test_prompt_without_pacing_note(self):
         self.assertNotIn("PACING MATH",
