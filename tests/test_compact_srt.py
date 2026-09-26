@@ -1,4 +1,5 @@
-"""compact_srt: the LLM-only narration projection (timestamps dropped).
+"""compact_srt: the LLM-only narration projection (timestamps dropped,
+per-cue durations kept).
 
 The SRT file on disk must stay untouched - it is what the pacing gate and the
 ImgToVideo assembler read for frame-exact cue times.
@@ -30,14 +31,14 @@ Final cue.
 
 
 class CompactSrtTests(unittest.TestCase):
-    def test_drops_timestamps_keeps_numbers_and_text(self):
+    def test_drops_timestamps_keeps_numbers_durations_and_text(self):
         out = studio.compact_srt(SRT)
         self.assertEqual(
             out,
-            "1: Hello world.\n"
-            "2: This is a second cue that wraps a line.\n"
-            "3: Final cue.")
-        self.assertNotIn("-->", out)
+            "1: Hello world. (3s)\n"
+            "2: This is a second cue that wraps a line. (4s)\n"
+            "3: Final cue. (2s)")
+
         self.assertNotIn("00:00", out)
 
     def test_smaller_than_the_raw_srt(self):
@@ -52,6 +53,22 @@ class CompactSrtTests(unittest.TestCase):
     def test_malformed_srt_falls_back_to_raw_text(self):
         self.assertEqual(studio.compact_srt("no cues here"), "no cues here")
         self.assertEqual(studio.compact_srt(""), "")
+
+
+class PacingNoteTests(unittest.TestCase):
+    """The pacing arithmetic is injected into the planning prompt so the
+    planner cannot under-plan a long narration (34 shots for ~960s)."""
+
+    def test_prompt_carries_the_pacing_note(self):
+        prompt = studio.shotlist_prompt("BRIEF", "1: hello",
+                                        pacing_note="narration ~960s; "
+                                                    "at least 80 shots")
+        self.assertIn("PACING MATH", prompt)
+        self.assertIn("at least 80 shots", prompt)
+
+    def test_prompt_without_pacing_note(self):
+        self.assertNotIn("PACING MATH",
+                         studio.shotlist_prompt("BRIEF", "1: hello"))
 
 
 if __name__ == "__main__":

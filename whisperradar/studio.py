@@ -2773,7 +2773,8 @@ def continuation_prompt(base_prompt: str, partial: str) -> str:
 def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     extra_direction: str = "", bible: str = "",
                     feedback: str = "",
-                    supplied_refs: list[str] | None = None) -> str:
+                    supplied_refs: list[str] | None = None,
+                    pacing_note: str = "") -> str:
     """Assemble the manifest-authoring brief with its inputs: the narration
     (cue-delimited, timestamp-free - see compact_srt), the channel visual
     style, the optional character / reference bible, and the creator's
@@ -2814,14 +2815,18 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
             f"characters, environments, props) does NOT exist yet and is "
             f"generated on the fly before rendering: give each a CH_/BG_/OBJ_ "
             f"name and a detailed refPrompts entry.")
+    pacing_block = ""
+    if (pacing_note or "").strip():
+        pacing_block = (f"\n\nPACING MATH (computed from the narration itself "
+                        f"- follow it):\n{pacing_note.strip()}")
     return f"""{brief_text.strip()}
 
 ---
 
-INPUT 1 - NARRATION (one line per cue: "N: text"; the cue numbers are what the shot `cues` ranges refer to; timestamps are intentionally omitted):
+INPUT 1 - NARRATION (one line per cue: "N: text (Ns)"; the cue numbers are what the shot `cues` ranges refer to and the (Ns) is how long the cue runs; timestamps are intentionally omitted):
 {narration.strip()}
 
-{style_block}{bible_block}{extra}{fix_block}{supplied_block}"""
+{style_block}{bible_block}{extra}{fix_block}{supplied_block}{pacing_block}"""
 
 
 # ------------------------------------------- shotlist review (shots gate) ---
@@ -2847,19 +2852,27 @@ def parse_srt_cues(srt_text: str) -> list[dict]:
 
 
 def compact_srt(srt_text: str) -> str:
-    """The narration as `N: text` lines - cue numbers kept, timestamps dropped.
+    """The narration as `N: text (Ns)` lines - cue numbers kept, timestamps
+    dropped, per-cue DURATION kept.
 
     The planning brief tells the model it never writes timings ("the cue ranges
     carry them"), so the per-cue timestamp block is pure prompt overhead - on a
     long narration it is a large share of the SRT. The `subtitles.srt` FILE is
     untouched: the pacing gate and ImgToVideo's assembler still read its real
     timestamps. Cue NUMBERS are kept because the shotlist's cue ranges and the
-    assembler index by them. Falls back to the raw text when nothing parses, so
-    a malformed SRT can never blank the narration."""
+    assembler index by them. The per-cue duration is kept because a planner
+    that cannot see how long each cue runs cannot pace its shots (a 16-minute
+    narration once came back as 34 shots) - and the pacing gate needs seconds,
+    not indexes, to be predictable. Falls back to the raw text when nothing
+    parses, so a malformed SRT can never blank the narration."""
     cues = parse_srt_cues(srt_text)
     if not cues:
         return (srt_text or "").strip()
-    return "\n".join(f"{c['index']}: {c['text']}" for c in cues)
+    lines = []
+    for c in cues:
+        dur = int(_srt_seconds(c["end"]) - _srt_seconds(c["start"]) + 0.5)
+        lines.append(f"{c['index']}: {c['text']} ({max(1, dur)}s)")
+    return "\n".join(lines)
 
 
 def cue_range(text: str) -> tuple[int, int] | None:

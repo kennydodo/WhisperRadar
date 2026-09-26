@@ -565,13 +565,15 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         srt_text = srt.read_text(encoding="utf-8")
         cues = studio.parse_srt_cues(srt_text)
         # The planner never writes timings (the cue ranges carry them), so send
-        # `N: text` instead of full SRT blocks. The file keeps its timestamps -
+        # `N: text (Ns)` instead of full SRT blocks: cue numbers plus per-cue
+        # DURATION, without which the planner cannot pace its shots (a 16-minute
+        # narration once came back as 34 shots). The file keeps its timestamps -
         # the pacing gate and the ImgToVideo assembler read them from disk.
         narration = studio.compact_srt(srt_text)
         if len(narration) < len(srt_text):
             _log_line(f"shotlist: narration {len(srt_text)} -> "
                       f"{len(narration)} chars (timestamps dropped, cue "
-                      f"numbers kept)")
+                      f"numbers and durations kept)")
         eff = _effective(cfg, pid)
         min_align = eff["shotlist_min_alignment"]
         max_hold = eff["shotlist_max_hold_seconds"]
@@ -579,6 +581,27 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         judge = studio.judge_provider(cfg, provider,
                                       eff["shotlist_judge_provider"])
         feedback = ""
+        # pacing arithmetic: the narration's total length and the max hold
+        # give a hard minimum shot count - without it a planner that cannot
+        # see durations under-plans (e.g. 34 shots for ~960s) and the review
+        # fails after a very expensive generation
+        total_s = (studio._srt_seconds(cues[-1]["end"]) - 0.0
+                   if cues else 0.0)
+        min_shots = (int(total_s / max_hold)
+                     + (1 if total_s % max_hold else 0)
+                     if max_hold > 0 and total_s > 0 else 0)
+        pacing_note = ""
+        if min_shots:
+            pacing_note = (
+                f"the narration runs ~{total_s:.0f}s across {len(cues)} cues "
+                f"(the (Ns) on each line is that cue's length). Every shot "
+                f"holds at most {max_hold:.0f}s - a longer hold is a "
+                f"structural fault that fails the plan. Cover ALL "
+                f"{len(cues)} cues with AT LEAST {min_shots} shots: roughly "
+                f"one shot per visual beat, more when the visuals change. A "
+                f"plan with fewer than {min_shots} shots cannot pass review "
+                f"no matter how good the prompts are, so do not merge many "
+                f"cues into one shot.")
         attempts: list[dict] = []
         data: dict = {}
         sheet = ""
@@ -587,7 +610,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 brief, narration, style_guide,
                 extra_direction=db.stage_extra(prod, "shots"),
                 bible=bible_text, feedback=feedback,
-                supplied_refs=studio.find_supplied_refs(pdir))
+                supplied_refs=studio.find_supplied_refs(pdir),
+                pacing_note=pacing_note)
             text = studio.llm_generate(cfg, prompt, provider=provider)
             data = sheet = None
             for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
