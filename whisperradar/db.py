@@ -211,6 +211,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
                  " WHERE default_engine = 'flowimagesgen'")
     conn.execute("UPDATE settings SET value = 'flowbatch'"
                  " WHERE key = 'default_engine' AND value = 'flowimagesgen'")
+    # stage runners used to auto-pin the production's llm_provider, which then
+    # silently outranked the Default LLM forever (a deleted provider kept
+    # "coming back"). The pin was implicit, never deliberate - clear it ONCE
+    # so productions follow the channel/global default again; the runners no
+    # longer write it, so nothing re-pins it afterwards
+    if get_setting(conn, "migration_llm_provider_cleared") is None:
+        conn.execute("UPDATE productions SET llm_provider = NULL")
+        set_setting(conn, "migration_llm_provider_cleared", "1")
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str,

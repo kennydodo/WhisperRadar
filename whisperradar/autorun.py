@@ -450,7 +450,10 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                   f"(wrote ~{best.get('words', '?')}), "
                   f"judged by {judge}, "
                   f"took {format_duration(time.monotonic() - t0)}")
-        db.update_production(conn, pid, llm_provider=provider)
+        # the run's provider is NOT persisted onto the production: an implicit
+        # pin made later runs ignore a changed Default LLM (a deleted provider
+        # kept "coming back" through this row). Which LLM ran is in the step
+        # history; the per-run override stays per-run.
         if passed:
             db.add_step(conn, pid, "script", "auto", detail=detail)
         else:
@@ -647,7 +650,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
             json.dumps([{k: v for k, v in a.items()
                          if k not in ("data", "sheet")} for a in attempts],
                        indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        db.update_production(conn, pid, llm_provider=provider)
+        # no llm_provider persistence here either - see the script stage
         pacing = best.get("warnings") or []
         detail = (f"{len(data.get('images', []))} image(s) in "
                   f"{len(data.get('shots', []))} shot(s) via manifest brief, "
