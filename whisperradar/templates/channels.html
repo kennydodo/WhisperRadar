@@ -218,6 +218,13 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>missing references
+                <select name="generate_references">
+                  <option value="">inherit</option>
+                  <option value="1" {{ 'selected' if ch['generate_references'] == 1 else '' }}>generate them</option>
+                  <option value="0" {{ 'selected' if ch['generate_references'] == 0 else '' }}>skip the refs stage</option>
+                </select>
+              </label>
               <label>auto run
                 <select name="autorun_enabled">
                   <option value="">inherit</option>
@@ -365,13 +372,6 @@
                   {% for r in render_resolutions %}
                   <option value="{{ r }}" {{ 'selected' if ch['render_resolution'] == r else '' }}>{{ render_resolution_labels[r] }}</option>
                   {% endfor %}
-                </select>
-              </label>
-              <label>missing references
-                <select name="generate_references">
-                  <option value="">inherit</option>
-                  <option value="1" {{ 'selected' if ch['generate_references'] == 1 else '' }}>generate them</option>
-                  <option value="0" {{ 'selected' if ch['generate_references'] == 0 else '' }}>skip the refs stage</option>
                 </select>
               </label>
             </div>
