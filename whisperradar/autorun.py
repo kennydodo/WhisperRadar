@@ -1000,10 +1000,21 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
             return {"stage": stage, "action": "skip",
                     "detail": "shotlist already exists"}
         if not studio.find_bible(pdir):
-            return {"stage": stage, "action": "pause",
-                    "detail": "no character/reference bible - the planning "
-                              "brief requires one before planning - write it "
-                              "at the shots stage, then Resume"}
+            # the channel may have a bible TEXT that was filled in after the
+            # production was created - seed it before declaring a pause
+            prod = _get_prod(cfg, pid)
+            if prod is not None:
+                conn = _connect(cfg)
+                try:
+                    studio.seed_production(cfg, conn, prod)
+                finally:
+                    conn.close()
+            if not studio.find_bible(pdir):
+                return {"stage": stage, "action": "pause",
+                        "detail": "no character/reference bible - the "
+                                  "planning brief requires one before "
+                                  "planning - write it at the shots stage, "
+                                  "then Resume"}
         provider = _default_provider(cfg, pid)
         return {"stage": stage, "action": "run",
                 "detail": f"shotlist planned via LLM "

@@ -2048,6 +2048,18 @@ def create_app(cfg) -> Flask:
     def studio_shotlist_generate(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/studio?error=Unknown+production")
+            # seed from the channel first: a bible/style filled in AFTER the
+            # production was created must still reach it (the old pre-check
+            # errored before that seeding could ever run)
+            studio.seed_production(cfg, conn, prod)
+        finally:
+            conn.close()
         # the manifest-authoring brief's bible gate: the LLM refuses to plan
         # without a reference bible, so require it up front
         if not studio.find_bible(studio.prod_dir(cfg, pid)):
