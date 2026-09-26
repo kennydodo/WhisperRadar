@@ -680,6 +680,20 @@ AGREED DESIGN (do not change without the user):
 - The manual Studio generate routes (style/script/shotlist) fall back to
   `autorun._default_provider(cfg, pid)` instead of a yaml default.
 
+### Provider deletion cleans references + full reset — DONE (2026-09-26)
+
+- Saving the providers editor now diffs old vs new names: a DELETED provider
+  has every reference cleared (Default LLM, both judge picks, channels'
+  producer LLM, production pins) - references to KEPT providers survive. A
+  stale reference otherwise keeps surfacing as errors about a provider that
+  no longer exists (the brother's "claude" errors).
+- "Reset LLM providers (fresh start)" button on Settings > LLM wipes ALL
+  providers and references at once (confirm-guarded) - for a broken or
+  inherited setup. After a reset: add the gateway, pick a Default LLM.
+- A trap fixed alongside: stage runners no longer auto-pin
+  `productions.llm_provider` (an implicit pin outranked the Default LLM
+  forever); a one-time migration cleared the implicit pins.
+
 ### Supplied-refs inventory in the planning prompt — DONE (2026-09-26)
 
 - The planner has no filesystem access, so a character the user uploads could

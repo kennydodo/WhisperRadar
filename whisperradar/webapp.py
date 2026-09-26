@@ -739,12 +739,63 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
+            try:
+                old_names = {p.get("name") for p in json.loads(
+                    db.get_setting(conn, "llm_providers") or "[]")}
+            except ValueError:
+                old_names = set()
+            removed = sorted(n for n in old_names
+                             if n and n not in {p["name"] for p in clean})
             db.set_setting(conn, "llm_providers", json.dumps(clean))
+            if removed:
+                # a deleted provider must not survive in the places that
+                # pointed at it (Default LLM, judge picks, channel producer
+                # LLM, production pins) - they would keep raising errors
+                # about a provider that no longer exists
+                marks = ",".join("?" for _ in removed)
+                conn.execute(
+                    "UPDATE settings SET value = '' WHERE key IN "
+                    "('llm_default', 'script_judge_provider', "
+                    "'shotlist_judge_provider') AND value IN "
+                    f"({marks})", tuple(removed))
+                conn.execute(
+                    "UPDATE own_channels SET producer_llm_provider = NULL "
+                    f"WHERE producer_llm_provider IN ({marks})",
+                    tuple(removed))
+                conn.execute(
+                    "UPDATE productions SET llm_provider = NULL "
+                    f"WHERE llm_provider IN ({marks})", tuple(removed))
+            conn.commit()
         finally:
             conn.close()
         label = ", ".join(p["name"] for p in clean) or "none"
         logging.getLogger("whisperradar").info("providers saved: %s", label)
         return redirect("/settings?msg=" + quote(f"Providers saved ({label})"))
+
+    @app.post("/settings/providers/reset")
+    def settings_providers_reset():
+        """A full fresh start for the LLM setup: remove every configured
+        provider AND every reference to them - the gateway list, the Default
+        LLM, both judge picks, the channels' producer LLM and any production
+        pins. Stale references to a deleted provider otherwise keep surfacing
+        (preselected dropdowns, judge/fallback picks) even after the provider
+        itself is gone."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            conn.execute("DELETE FROM settings WHERE key IN "
+                         "('llm_providers', 'llm_default', "
+                         "'script_judge_provider', 'shotlist_judge_provider')")
+            conn.execute("UPDATE own_channels "
+                         "SET producer_llm_provider = NULL")
+            conn.execute("UPDATE productions SET llm_provider = NULL")
+            conn.commit()
+        finally:
+            conn.close()
+        logging.getLogger("whisperradar").info(
+            "LLM providers reset - all providers and references removed")
+        return redirect("/settings?msg=" + quote(
+            "LLM providers reset - add your gateway, then pick a Default LLM"))
 
     # ------------------------------------------------------- my channels ---
     # The channels the user publishes on - mirrored into Renderly lazily.

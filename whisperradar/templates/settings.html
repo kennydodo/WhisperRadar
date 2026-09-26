@@ -297,6 +297,16 @@
       </span>
     </div>
   </form>
+  <form method="post" action="/settings/providers/reset"
+        onsubmit="return confirm('Delete ALL providers, the Default LLM and the judge LLM picks on this machine? Add your gateway again afterwards.')">
+    <button type="submit" class="ghost" style="margin-top:10px">
+      Reset LLM providers (fresh start)
+    </button>
+    <span class="muted" style="font-size:12px; margin-left:10px">
+      removes every provider and every reference to them - for a broken or
+      inherited setup
+    </span>
+  </form>
   </div>
 
   <script>
