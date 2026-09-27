@@ -1,8 +1,11 @@
 """Transcription with faster-whisper.
 
-Uses the GPU (CUDA, float16) when available and falls back to CPU (int8)
-automatically - both when picking the device and if CUDA fails at load time
-(e.g. missing cuDNN DLLs).
+Uses the GPU (CUDA) when available and falls back to CPU automatically - both
+when picking the device and if CUDA fails at load time (e.g. missing cuDNN
+DLLs). The compute type is also chosen automatically from what the device
+actually supports: a hardcoded float16 is not supported on older GPUs (a GTX
+1060/Pascal offers only int8/float32), which made the CUDA load fail and drop
+back to CPU.
 """
 
 import logging
@@ -19,6 +22,33 @@ _CUDA_DLL_GROUPS = (
     ("cublas64_12.dll",),
     ("cudnn64_9.dll", "cudnn_ops64_9.dll"),
 )
+
+# Compute types to try, best first, per device. The device's SUPPORTED set is
+# queried at runtime, so an old GPU that cannot do float16 (Pascal) gets
+# int8_float32 instead of failing to load.
+_COMPUTE_PREFERENCE = {
+    "cuda": ["float16", "int8_float16", "int8_float32", "bfloat16",
+             "int8", "float32"],
+    "cpu": ["int8", "int8_float32", "float32"],
+}
+
+
+def pick_compute_type(device: str) -> str:
+    """The fastest compute type `device` actually supports.
+
+    ctranslate2 exposes the supported set (e.g. a GTX 1060 reports
+    {'int8', 'int8_float32', 'float32'} - no float16), so asking it avoids the
+    hardcoded float16 that silently forced CPU on older GPUs."""
+    try:
+        import ctranslate2
+
+        supported = set(ctranslate2.get_supported_compute_types(device))
+    except Exception:  # noqa: BLE001 - fall back to a safe, broad default
+        return "int8" if device == "cpu" else "float16"
+    for compute_type in _COMPUTE_PREFERENCE.get(device, []):
+        if compute_type in supported:
+            return compute_type
+    return "float32"
 
 
 def _cuda_dlls_available() -> bool:
@@ -58,10 +88,10 @@ def pick_device() -> tuple[str, str]:
         import ctranslate2
 
         if ctranslate2.get_cuda_device_count() > 0 and _cuda_dlls_available():
-            return "cuda", "float16"
+            return "cuda", pick_compute_type("cuda")
     except Exception:
         pass
-    return "cpu", "int8"
+    return "cpu", pick_compute_type("cpu")
 
 
 def _load_model(model_size: str, device: str | None = None):
@@ -71,7 +101,7 @@ def _load_model(model_size: str, device: str | None = None):
     if device is None:
         device, compute_type = pick_device()
     else:
-        compute_type = "int8" if device == "cpu" else "float16"
+        compute_type = pick_compute_type(device)
     try:
         from faster_whisper import WhisperModel
 
@@ -80,7 +110,8 @@ def _load_model(model_size: str, device: str | None = None):
         if device == "cpu":
             raise
         log.warning("CUDA load failed (%s); falling back to CPU", exc)
-        device, compute_type = "cpu", "int8"
+        device = "cpu"
+        compute_type = pick_compute_type("cpu")
         from faster_whisper import WhisperModel
 
         model = WhisperModel(model_size, device=device, compute_type=compute_type)
