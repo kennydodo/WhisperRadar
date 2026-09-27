@@ -82,6 +82,21 @@ def _default_provider(cfg, pid: int) -> str | None:
     return _db_llm_default(cfg)
 
 
+def _stage_provider(cfg, pid: int, stage: str,
+                    override: str | None = None) -> str | None:
+    """Which LLM one stage uses: an explicit choice for THIS action, else the
+    production's saved pick for that stage (only when it still exists and is
+    ready - a deleted provider must not come back), else the Default LLM."""
+    if override:
+        return override
+    prod = _get_prod(cfg, pid)
+    if prod is not None:
+        saved = db.stage_provider(prod, stage)
+        if saved and studio.provider_ready(cfg, saved):
+            return saved
+    return _default_provider(cfg, pid)
+
+
 def _set_stage(cfg, pid: int, stage: str) -> None:
     conn = _connect(cfg)
     try:
@@ -1136,10 +1151,10 @@ def build_plan(cfg, pid: int) -> list[dict]:
 def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
                   provider: str | None = None) -> dict:
     """Auto-run parameters per stage: the run's chosen LLM provider (the
-    override a run was started with, else the production's saved one) for LLM
-    stages, the saved render mode for images."""
+    override a run was started with, else that stage's saved pick, else the
+    Default LLM) for LLM stages, the saved render mode for images."""
     if stage in ("style", "script", "shots"):
-        return {"provider": provider or _default_provider(cfg, pid)}
+        return {"provider": _stage_provider(cfg, pid, stage, override=provider)}
     if stage == "images":
         eff = _effective(cfg, pid)
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))

@@ -168,6 +168,28 @@ def _stage(func, cfg):
         conn.close()
 
 
+def _remember_stage_provider(cfg, pid: int, stage: str, chosen: str | None) -> None:
+    """Persist the LLM picked in a stage's dropdown so later runs (and the page
+    after a reload) keep it. Choosing the Default LLM CLEARS the override, so
+    the stage resumes following the global default. An unknown/unready name is
+    never stored - that is what used to resurrect deleted providers."""
+    if not chosen:
+        return
+    try:
+        if not studio.provider_ready(cfg, chosen):
+            return
+    except Exception:  # noqa: BLE001 - never block the run on validation
+        return
+    conn = db.connect(cfg.db_path)
+    db.init_db(conn)
+    try:
+        default = autorun._default_provider(cfg, pid)
+        db.set_stage_provider(conn, pid, stage,
+                              None if chosen == default else chosen)
+    finally:
+        conn.close()
+
+
 def _download_one(cfg, video_id: str):
     conn = db.connect(cfg.db_path)
     db.init_db(conn)
@@ -1400,6 +1422,18 @@ def create_app(cfg) -> Flask:
 
         providers = studio.providers(cfg)
         default_provider = prod["llm_provider"] or autorun._default_provider(cfg, pid)
+        ready_names = {p["name"] for p in providers}
+        # Per-stage picks that still exist and are ready; anything else falls
+        # back to the Default LLM in provider_select().
+        stage_providers = {
+            s: (db.stage_provider(prod, s)
+                if db.stage_provider(prod, s) in ready_names else None)
+            for s in ("style", "script", "shots")
+        }
+        stage_labels = {
+            s: studio.llm_label(cfg, stage_providers.get(s) or default_provider)
+            for s in ("style", "script", "shots")
+        }
         llm_ready = any(studio.provider_ready(cfg, p["name"]) for p in providers)
         llm_label = studio.llm_label(cfg, default_provider)
         renderly_ready = studio.renderly_ready(cfg.renderly_url)
@@ -1425,7 +1459,8 @@ def create_app(cfg) -> Flask:
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
             source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
-            default_provider=default_provider, hooks=hooks,
+            default_provider=default_provider, stage_providers=stage_providers,
+            stage_labels=stage_labels, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
             prod_voice=prod["voice"] or eff["voice"],
             voice_from=("this production" if prod["voice"]
@@ -1715,7 +1750,10 @@ def create_app(cfg) -> Flask:
     def studio_style_generate(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
-        provider = request.form.get("provider") or autorun._default_provider(cfg, pid)
+        provider = autorun._stage_provider(
+            cfg, pid, "style",
+            override=(request.form.get("provider") or "").strip() or None)
+        _remember_stage_provider(cfg, pid, "style", provider)
 
         def worker():
             autorun.raise_result(autorun.run_stage(
@@ -1747,7 +1785,10 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
 
-        provider = request.form.get("provider") or autorun._default_provider(cfg, pid)
+        provider = autorun._stage_provider(
+            cfg, pid, "script",
+            override=(request.form.get("provider") or "").strip() or None)
+        _remember_stage_provider(cfg, pid, "script", provider)
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -2067,7 +2108,10 @@ def create_app(cfg) -> Flask:
                 pid,
                 error="The planning brief requires a character/reference "
                       "bible - write or upload one below first")
-        provider = request.form.get("provider") or autorun._default_provider(cfg, pid)
+        provider = autorun._stage_provider(
+            cfg, pid, "shots",
+            override=(request.form.get("provider") or "").strip() or None)
+        _remember_stage_provider(cfg, pid, "shots", provider)
 
         def worker():
             autorun.raise_result(autorun.run_stage(

@@ -98,10 +98,11 @@
   <a href="/settings">Settings</a>
 </nav>
 <div class="wrap">
-  {% macro provider_select() %}
-  <select name="provider" data-current="{{ llm_label }}" title="LLM provider">
+  {% macro provider_select(stage) %}
+  {% set chosen = stage_providers.get(stage) or default_provider %}
+  <select name="provider" data-current="{{ stage_labels.get(stage) or llm_label }}" title="LLM for this stage (Default LLM turns the override off)">
     {% for p in providers %}
-    <option value="{{ p['name'] }}" {{ 'selected' if (prod['llm_provider'] or default_provider) == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
+    <option value="{{ p['name'] }}" {{ 'selected' if chosen == p['name'] else '' }}>{{ p["name"] }} ({{ p["model"] }}){{ ' *' if p['name'] == default_provider else '' }}</option>
     {% endfor %}
   </select>
   {% endmacro %}
@@ -362,7 +363,7 @@
         {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
               onsubmit="return confirm('Generate a script with the selected LLM? Existing script will be overwritten.')">
-          {{ provider_select() }}
+          {{ provider_select('script') }}
           <button type="submit" {{ 'disabled' if job.running or not llm_ready else '' }}
                    title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in Settings > LLM providers') }}">
             {{ 'Working...' if job.running else 'Generate script' }}
@@ -574,10 +575,10 @@
       <div class="actions">
         {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/shotlist/generate">
-          {{ provider_select() }}
+          {{ provider_select('shots') }}
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and srt) else '' }}
-                  title="{{ 'Plan shots from the subtitles with ' + llm_label if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs subtitles done and a configured LLM') }}">
-            {{ 'Working...' if job.running else 'Plan shotlist with ' + llm_label }}
+                  title="{{ 'Plan shots from the subtitles with ' + (stage_labels.get('shots') or llm_label) if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs subtitles done and a configured LLM') }}">
+            {{ 'Working...' if job.running else 'Plan shotlist with ' + (stage_labels.get('shots') or llm_label) }}
           </button>
         </form>
         {% else %}

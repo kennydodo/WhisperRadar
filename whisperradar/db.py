@@ -173,6 +173,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "UPDATE productions SET stage_extras = ? WHERE id = ?",
                 (json.dumps({"style": old, "script": old, "shots": old}), pid))
+    if "stage_providers" not in cols:
+        conn.execute("ALTER TABLE productions ADD COLUMN stage_providers TEXT")
     if "render_mode" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN render_mode TEXT")
     if "voice" not in cols:
@@ -560,9 +562,9 @@ STAGES = ["style", "script", "audio", "srt", "shots", "refs", "images",
 
 _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
-                "stage_extras", "render_mode", "voice", "own_channel_id",
-                "warning", "flow_project_url", "flow_project_id",
-                "autorun", "last_attempt_at"}
+                "stage_extras", "stage_providers", "render_mode", "voice",
+                "own_channel_id", "warning", "flow_project_url",
+                "flow_project_id", "autorun", "last_attempt_at"}
 
 
 def stage_extra(prod, stage: str) -> str:
@@ -573,6 +575,34 @@ def stage_extra(prod, stage: str) -> str:
         data = {}
     value = data.get(stage) if isinstance(data, dict) else None
     return value if isinstance(value, str) else ""
+
+
+def stage_provider(prod, stage: str) -> str | None:
+    """The LLM chosen for one stage (JSON map in stage_providers), or None.
+
+    A None means "no override": the stage follows the global Default LLM."""
+    try:
+        data = json.loads(prod["stage_providers"] or "{}")
+    except (ValueError, TypeError):
+        data = {}
+    value = data.get(stage) if isinstance(data, dict) else None
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def set_stage_provider(conn, pid: int, stage: str, name: str | None) -> None:
+    """Remember (name) or clear (None) a stage's LLM override."""
+    prod = get_production(conn, pid)
+    try:
+        data = json.loads((prod["stage_providers"] if prod else None) or "{}")
+    except (ValueError, TypeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    if name:
+        data[stage] = name
+    else:
+        data.pop(stage, None)
+    update_production(conn, pid, stage_providers=json.dumps(data))
 
 
 def create_production(conn, title: str, genre: str = "general",
