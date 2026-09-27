@@ -838,6 +838,20 @@ def find_supplied_refs(pdir: Path) -> list[str]:
         and f.stem not in generated)
 
 
+def shotlist_uses_refs(data: dict) -> bool:
+    """True when the plan declares a refs registry / refPrompts or any image
+    attaches a reference. Used to enforce a channel's references-off rule: a
+    plan that uses refs when they are disabled is rejected and re-planned."""
+    if isinstance(data.get("refs"), dict) and data["refs"]:
+        return True
+    if isinstance(data.get("refPrompts"), dict) and data["refPrompts"]:
+        return True
+    for img in (data.get("images") or []):
+        if isinstance(img, dict) and img.get("refs"):
+            return True
+    return False
+
+
 def shotlist_refs(pdir: Path) -> dict:
     """The refs the shotlist USES, as {name: {"path": str|None,
     "prompt": str|None, "file": Path|None, "provided": bool}}.
@@ -1069,7 +1083,12 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
             continue
         entry = {"file": item["file"], "prompt": item["prompt"]}
         if item.get("refs"):
-            entry["refs"] = [str(r) for r in item["refs"]]
+            # only attach refs that actually resolve to a file (registry or
+            # refs\\ folder); a ref that was never generated must not stall
+            # the whole batch - the image renders from its inline prompt
+            usable = [str(r) for r in item["refs"] if str(r) in registry]
+            if usable:
+                entry["refs"] = usable
         todo.append(entry)
     if not todo:
         raise RuntimeError(
@@ -2774,7 +2793,7 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     extra_direction: str = "", bible: str = "",
                     feedback: str = "",
                     supplied_refs: list[str] | None = None,
-                    pacing_note: str = "") -> str:
+                    pacing_note: str = "", allow_refs: bool = True) -> str:
     """Assemble the manifest-authoring brief with its inputs: the narration
     (cue-delimited, timestamp-free - see compact_srt), the channel visual
     style, the optional character / reference bible, and the creator's
@@ -2798,10 +2817,20 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
         fix_block = (f"\n\nINPUT 5 - FIXES REQUIRED IN THIS REVISION "
                      f"(the previous shotlist was rejected - address every "
                      f"point):\n{feedback.strip()}")
-    supplied_block = ""
-    if supplied_refs:
+    refs_block = ""
+    if not allow_refs:
+        refs_block = (
+            "\n\nREFERENCES ARE DISABLED FOR THIS CHANNEL (strict rule): do "
+            "NOT declare a top-level \"refs\" registry, do NOT write any "
+            "\"refPrompts\" entries, and do NOT put a \"refs\" array on any "
+            "image. Describe every character, location and object FULLY "
+            "INLINE in each image prompt (look, wardrobe, the specific room, "
+            "the exact prop) so it stays consistent without a reference "
+            "image. Any shotlist that references a name will be rejected and "
+            "re-planned.")
+    elif supplied_refs:
         listing = "\n".join(f"- refs/{name}" for name in supplied_refs)
-        supplied_block = (
+        refs_block = (
             f"\n\nSUPPLIED REFERENCE FILES ALREADY ON DISK (read this BEFORE "
             f"planning - in this production's refs folder; these are the ONLY "
             f"reference files that exist):\n{listing}\n"
@@ -2826,7 +2855,7 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
 INPUT 1 - NARRATION (one line per cue: "N: text (Ns)"; the cue numbers are what the shot `cues` ranges refer to and the (Ns) is how long the cue runs; timestamps are intentionally omitted):
 {narration.strip()}
 
-{style_block}{bible_block}{extra}{fix_block}{supplied_block}{pacing_block}"""
+{style_block}{bible_block}{extra}{fix_block}{refs_block}{pacing_block}"""
 
 
 # ------------------------------------------- shotlist review (shots gate) ---

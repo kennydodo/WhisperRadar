@@ -577,6 +577,9 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         eff = _effective(cfg, pid)
         min_align = eff["shotlist_min_alignment"]
         max_hold = eff["shotlist_max_hold_seconds"]
+        # a channel with references off must get NO references at all - the
+        # planner is told, and the gate rejects any plan that still uses refs
+        allow_refs = bool(eff["generate_references"])
         attempts_allowed = max(1, int(eff["shotlist_max_attempts"]))
         judge = studio.judge_provider(cfg, provider,
                                       eff["shotlist_judge_provider"])
@@ -614,7 +617,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 extra_direction=db.stage_extra(prod, "shots"),
                 bible=bible_text, feedback=feedback,
                 supplied_refs=studio.find_supplied_refs(pdir),
-                pacing_note=pacing_note)
+                pacing_note=pacing_note, allow_refs=allow_refs)
             text = studio.llm_generate(cfg, prompt, provider=provider)
             data = sheet = None
             for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
@@ -646,6 +649,12 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 continue
             review = studio.review_shotlist(cfg, data, cues, judge,
                                             max_hold_seconds=max_hold)
+            if not allow_refs and studio.shotlist_uses_refs(data):
+                review["faults"] = list(review["faults"]) + [
+                    "references are DISABLED for this channel: remove the "
+                    "\"refs\" registry, every \"refPrompts\" entry and every "
+                    "per-image \"refs\" array - describe each character, "
+                    "location and object inline in the image prompt instead"]
             passed = (not review["faults"] and review["ratio"] >= min_align)
             attempts.append({**review, "attempt": attempt, "data": data,
                              "sheet": sheet})
