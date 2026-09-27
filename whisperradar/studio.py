@@ -3044,8 +3044,15 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
             f"name and a detailed refPrompts entry.")
     pacing_block = ""
     if (pacing_note or "").strip():
-        pacing_block = (f"\n\nPACING MATH (computed from the narration itself "
-                        f"- follow it):\n{pacing_note.strip()}")
+        pacing_block = (
+            f"\n\nPACING MATH FOR THIS CHANNEL - OVERRIDES SECTIONS 1 AND 2 "
+            f"ABOVE (computed from the narration itself, follow it exactly): "
+            f"the brief above says there is no duration cap and a 15s+ hold "
+            f"is fine with motion - THAT IS THE GENERAL RULE FOR CHANNELS "
+            f"WITH NO LIMIT, IT DOES NOT APPLY HERE. This channel enforces a "
+            f"hard maximum hold, checked by the review before anything "
+            f"renders; a shot over it is a hard failure regardless of "
+            f"whether it carries motion:\n{pacing_note.strip()}")
     return f"""{brief_text.strip()}
 
 ---

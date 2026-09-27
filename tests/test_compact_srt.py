@@ -73,6 +73,21 @@ class PacingNoteTests(unittest.TestCase):
         self.assertNotIn("PACING MATH",
                          studio.shotlist_prompt("BRIEF", "1: hello"))
 
+    def test_pacing_note_explicitly_overrides_the_briefs_no_cap_language(self):
+        # manifest-authoring-brief.md (Sections 1-2) tells the planner there
+        # is no duration cap and a 15s+ hold is fine with motion - true for
+        # channels with no limit, but this channel enforces a hard max hold.
+        # Appending the number alone left that contradiction unresolved, and
+        # attempt 1 (before any fault feedback exists) produced holds more
+        # than double the cap. The pacing block must say outright that it
+        # overrides the brief's no-cap sections, not just state a number.
+        prompt = studio.shotlist_prompt("BRIEF", "1: hello",
+                                        pacing_note="no shot holding longer "
+                                                    "than 12s")
+        self.assertIn("OVERRIDES SECTIONS 1 AND 2", prompt)
+        self.assertIn("no shot holding longer than 12s", prompt)
+        self.assertIn("hard failure regardless of", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
