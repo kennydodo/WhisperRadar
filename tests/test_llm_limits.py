@@ -220,6 +220,30 @@ class StallTests(unittest.TestCase):
             with self.assertRaises(studio.LLMStalled):
                 studio.llm_generate(object(), "prompt")
 
+    def test_an_auth_error_from_the_primary_provider_is_not_retried(self):
+        # AGENTS.md backlog #2: a revoked/invalid key 401s, which is not a
+        # transient stall or an empty gateway response - hopping to a
+        # different provider will not fix a bad key on THIS one, so it must
+        # surface immediately as a plain config error, never masked behind a
+        # (doomed to also fail differently) fallback attempt.
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            raise RuntimeError("'glm-flash' request failed: 401 Unauthorized "
+                              "- invalid API key")
+
+        def fallback_must_not_be_called(cfg, failed):
+            raise AssertionError("a plain auth/config error must not trigger "
+                                 "a fallback-provider retry")
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER), \
+                mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}), \
+                mock.patch.object(studio, "_fallback_provider",
+                                  fallback_must_not_be_called):
+            with self.assertRaises(RuntimeError) as ctx:
+                studio.llm_generate(object(), "prompt")
+        self.assertIn("401", str(ctx.exception))
+        self.assertIn("glm-flash", str(ctx.exception))
+
     def test_when_the_fallback_also_fails_both_errors_are_reported(self):
         # A fallback that ALSO fails used to raise only its own error,
         # burying the fact the original provider failed too - the log then

@@ -28,15 +28,24 @@ Pick from the top; #1-#4 are the ones that cause user-visible errors.
    cues, asserting the tail continuation fires and the merged plan covers
    every cue) in tests/test_shotlist_tail_continuation_integration.py.
 
-2. **`provider_ready` checks a key's PRESENCE, not its VALIDITY**
-   (studio.py:2210). A present-but-revoked key reads as "ready", gets chosen
-   as the planner or the stall-fallback, then 401s at request time (this is
-   exactly the glm-5.3-stall -> openrouter-claude-401 chain). Two parts:
-   (a) optionally validate a key with a cheap `GET /models` and surface
-   auth-bad distinctly in the providers UI; (b) do NOT treat a 401/auth error
-   like a stall in `llm_generate` - a bad key won't fix itself by hopping
-   providers, so surface it as a config error instead of masking it behind a
-   fallback attempt.
+2. **CHECKED (2026-09-27), part (b) already correct; part (a) declined.**
+   `provider_ready` (studio.py:2210) still checks a key's PRESENCE, not its
+   VALIDITY, so a present-but-revoked key still reads as "ready" and can
+   still be picked as the planner or the stall-fallback. But traced the
+   actual request path end to end: a 401/auth error from either transport
+   (`_openai_chat_curl`'s `fail-with-body`, `_openai_chat_urllib`'s
+   `HTTPError` catch) already surfaces as a plain `RuntimeError`, never
+   `LLMStalled`/`LLMEmpty` - so `llm_generate` already re-raises it directly
+   (temperature==1.0 skips the fallback branch entirely) instead of masking
+   it behind a fallback attempt. Added
+   `test_an_auth_error_from_the_primary_provider_is_not_retried` (asserts
+   `_fallback_provider` is never even called) to lock this in - part (b)
+   needed no code change, just a test making it explicit. Asked the user
+   about part (a) (a live `GET /models` check, cached, surfaced in the
+   providers UI); user chose reactive-only for now, so (a) is deliberately
+   not done - a bad-but-present key is still only caught when it's actually
+   used (as a fallback, that means one wasted attempt, but both errors are
+   reported together per item #3's fix, not masked).
 
 3. **DONE (2026-09-27).** Fallback error masking in `_retry_on_different_provider`
    fixed - when the fallback ALSO fails, both errors are now reported
