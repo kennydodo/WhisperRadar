@@ -665,7 +665,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
             if data is None:
                 continue
             review = studio.review_shotlist(cfg, data, cues, judge,
-                                            max_hold_seconds=max_hold)
+                                            max_hold_seconds=max_hold,
+                                            style_guide=style_guide)
             if not allow_refs and studio.shotlist_uses_refs(data):
                 review["faults"] = list(review["faults"]) + [
                     "references are DISABLED for this channel: remove the "

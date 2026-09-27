@@ -138,6 +138,22 @@ class AlignmentPromptTests(unittest.TestCase):
         p = self._prompt()
         self.assertIn("exact numbers, ranges, dates or units", p)
         self.assertIn("25-150 Hz", p)
+
+    def test_the_channel_style_is_handed_to_the_judge_when_given(self):
+        # the judge itself decides the number-exclusion using the style's
+        # OWN text policy, rather than a blanket "never required" rule that
+        # would be too lenient for a channel whose style allows on-image text
+        p = studio.alignment_prompt(
+            [{"cues": "1-1", "asset": "S01_01_SCN_PR.png", "prompt": "p"}],
+            {1: "text"},
+            style_guide="Text policy: no readable words or numbers.")
+        self.assertIn("CHANNEL VISUAL STYLE", p)
+        self.assertIn("no readable words or numbers", p)
+        self.assertIn("WHEN THE CHANNEL STYLE BELOW BANS", p)
+
+    def test_no_style_guide_omits_the_channel_style_block(self):
+        p = self._prompt()
+        self.assertNotIn("CHANNEL VISUAL STYLE", p)
         self.assertIn("bus stop", p)
         self.assertIn("A cat sits near a bus stop.", p)
 

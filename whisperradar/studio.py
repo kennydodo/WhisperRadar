@@ -3420,7 +3420,8 @@ def shotlist_structural_faults(data: dict, cue_count: int,
     return faults[:limit]
 
 
-def alignment_prompt(chunk: list[dict], cues: dict[int, str]) -> str:
+def alignment_prompt(chunk: list[dict], cues: dict[int, str],
+                     style_guide: str = "") -> str:
     """Audit prompt COMPLETENESS per scene, not just topical match.
 
     Rendering an image is slow and costs credits, so a prompt that only
@@ -3462,10 +3463,13 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str]) -> str:
         "opposed to showing THAT it happens\n"
         "  - exact numbers, ranges, dates or units (\"25-150 Hz\", \"1 to "
         "10 centimeters per second\", \"in 1943\", \"10 to 15 minutes\") "
-        "- showing the PRECISE figure needs a legible label, which most "
-        "channel styles forbid; a relative visual (a gauge, a bar, a "
-        "before/after size) already satisfies the cue, exact digits are "
-        "never required\n"
+        "WHEN THE CHANNEL STYLE BELOW BANS READABLE TEXT/NUMBERS - showing "
+        "the PRECISE figure then needs a legible label the image is not "
+        "allowed to carry, so a relative visual (a gauge, a bar, a "
+        "before/after size) already satisfies the cue. If the style "
+        "permits on-image text, a prompt that omits an exact figure the "
+        "narration states IS missing it - hold the prompt to that "
+        "figure normally\n"
         "Only flag an element as missing when a viewer could plausibly see it "
         "in a single static illustration: a concrete subject, a visible "
         "action or pose, a setting, an object or prop, a visible expression, "
@@ -3481,6 +3485,9 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str]) -> str:
         "Judge visual completeness only: stylistic wording is irrelevant, and "
         "do not require anything the narration does not ask for, or anything "
         "in the excluded list above.\n\n"
+        + (f"CHANNEL VISUAL STYLE (its text/number policy decides the "
+           f"exact-number exclusion above):\n{style_guide.strip()[:2000]}\n\n"
+           if (style_guide or "").strip() else "")
         + "\n".join(items) +
         "\n\nReply with ONLY a JSON object:\n"
         '{"shots": [{"asset": "<asset>", "verdict": "ok"|"weak"|"missing", '
@@ -3492,7 +3499,8 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str]) -> str:
 
 def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                     chunk_size: int = 20,
-                    max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT) -> dict:
+                    max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
+                    style_guide: str = "") -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
     {faults, matched, total, weak, ratio, error, warnings}. Never raises.
 
@@ -3522,7 +3530,8 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
         chunk = shots[i:i + chunk_size]
         try:
             reply = _parse_json_object(llm_generate(
-                cfg, alignment_prompt(chunk, cue_text), provider=provider))
+                cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide),
+                provider=provider))
         except Exception as exc:  # noqa: BLE001 - a judge failure must not
             error = str(exc)[:200]          # lose an otherwise usable shotlist
             continue
