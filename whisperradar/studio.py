@@ -2401,7 +2401,8 @@ def _curl_read_stream(proc: subprocess.Popen, provider_name: str,
 
 
 def _openai_chat_curl(p: dict, prompt: str, timeout: int = 600,
-                      max_tokens: int | None = None) -> str:
+                      max_tokens: int | None = None,
+                      temperature: float = 1.0) -> str:
     key = _provider_key(p)
     if not key:
         raise RuntimeError(
@@ -2414,7 +2415,7 @@ def _openai_chat_curl(p: dict, prompt: str, timeout: int = 600,
     payload = {
         "model": p["model"],
         "stream": True,  # streaming keeps gateways from timing out long completions
-        "temperature": 1.0,  # creative writing; regenerations must differ
+        "temperature": temperature,  # 1.0 by default for creative writing (regenerations must differ); judges pass a lower value
         "messages": [{"role": "user", "content": prompt}],
     }
     if max_tokens:
@@ -2440,7 +2441,8 @@ def _openai_chat_curl(p: dict, prompt: str, timeout: int = 600,
 
 
 def _openai_chat_urllib(p: dict, prompt: str, timeout: int = 600,
-                        max_tokens: int | None = None) -> str:
+                        max_tokens: int | None = None,
+                        temperature: float = 1.0) -> str:
     """The original pure-Python transport, kept as a fallback for machines
     with no curl on PATH. See _openai_chat_curl for why curl is preferred."""
     import http.client
@@ -2457,7 +2459,7 @@ def _openai_chat_urllib(p: dict, prompt: str, timeout: int = 600,
     payload = {
         "model": p["model"],
         "stream": True,  # streaming keeps gateways from timing out long completions
-        "temperature": 1.0,  # creative writing; regenerations must differ
+        "temperature": temperature,  # 1.0 by default for creative writing (regenerations must differ); judges pass a lower value
         "messages": [{"role": "user", "content": prompt}],
     }
     if max_tokens:
@@ -2531,8 +2533,14 @@ def _openai_chat_urllib(p: dict, prompt: str, timeout: int = 600,
 
 
 def openai_chat(p: dict, prompt: str, timeout: int = 600,
-                max_tokens: int | None = None) -> str:
+                max_tokens: int | None = None,
+                temperature: float = 1.0) -> str:
     """Send one chat completion and return the full text.
+
+    `temperature` defaults to 1.0 (creative: script/style/shotlist writing,
+    where a retry must genuinely differ) - a judge call passes a lower value
+    so the same input grades the same way twice; either way it is the SAME
+    knob, just set differently per caller, never per-provider.
 
     Prefers curl as the transport (see _openai_chat_curl's docstring for
     why); falls back to the pure-Python urllib path only when curl is not on
@@ -2541,8 +2549,9 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600,
     forced = (os.environ.get("WR_LLM_TRANSPORT") or "").strip().lower()
     if forced == "urllib" or (not forced and not _curl_binary()):
         return _openai_chat_urllib(p, prompt, timeout=timeout,
-                                   max_tokens=max_tokens)
-    return _openai_chat_curl(p, prompt, timeout=timeout, max_tokens=max_tokens)
+                                   max_tokens=max_tokens, temperature=temperature)
+    return _openai_chat_curl(p, prompt, timeout=timeout, max_tokens=max_tokens,
+                             temperature=temperature)
 
 
 # Wire protocols an LLM provider can speak, selected per provider with the
@@ -2554,7 +2563,8 @@ CHAT_APIS = {"openai": openai_chat}
 
 def llm_generate(cfg, prompt: str, timeout: int = 1800,
                  provider: str | None = None,
-                 max_tokens: int | None = None) -> str:
+                 max_tokens: int | None = None,
+                 temperature: float = 1.0) -> str:
     p = _resolve_provider(cfg, provider)
     api = (p.get("api") or "openai").lower()
     fn = CHAT_APIS.get(api)
@@ -2564,7 +2574,8 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
             f"implemented yet (available: {', '.join(sorted(CHAT_APIS))}). "
             f"Add an adapter to CHAT_APIS in studio.py.")
     try:
-        return fn(p, prompt, timeout=timeout, max_tokens=max_tokens)
+        return fn(p, prompt, timeout=timeout, max_tokens=max_tokens,
+                  temperature=temperature)
     except (LLMStalled, LLMEmpty) as exc:
         # A provider that goes quiet or answers empty must not burn the whole
         # timeout: retry the SAME prompt once on a different ready provider,
@@ -2575,7 +2586,8 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
         if not alt or alt_fn is None:
             raise
         log.warning("%s - retrying on '%s'", exc, alt["name"])
-        return alt_fn(alt, prompt, timeout=timeout, max_tokens=max_tokens)
+        return alt_fn(alt, prompt, timeout=timeout, max_tokens=max_tokens,
+                      temperature=temperature)
 
 
 def provider_api_ready(p: dict) -> bool:
@@ -2686,13 +2698,19 @@ def _parse_json_object(text: str) -> dict:
 
 
 def rate_script(cfg, title: str, genre: str, script: str, source: str,
-                style_guide: str, provider: str | None) -> dict:
+                style_guide: str, provider: str | None,
+                temperature: float = 1.0) -> dict:
     """LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
-    Never raises: a judge failure must not lose a usable draft."""
+    Never raises: a judge failure must not lose a usable draft.
+
+    `temperature` defaults to 1.0 (matching every other LLM call) but the
+    script stage passes a low value here - the writer must keep varying
+    between attempts, the judge scoring it should not."""
     overlap = overlap_ratio(script, source)
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap)
     try:
-        raw = llm_generate(cfg, prompt, provider=provider, max_tokens=900)
+        raw = llm_generate(cfg, prompt, provider=provider, max_tokens=900,
+                           temperature=temperature)
         reply = _parse_json_object(raw)
     except Exception as exc:  # noqa: BLE001
         return {"score": None, "criteria": {}, "feedback": [],
@@ -3500,7 +3518,7 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
 def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                     chunk_size: int = 20,
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
-                    style_guide: str = "") -> dict:
+                    style_guide: str = "", temperature: float = 1.0) -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
     {faults, matched, total, weak, ratio, error, warnings}. Never raises.
 
@@ -3531,7 +3549,7 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
         try:
             reply = _parse_json_object(llm_generate(
                 cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide),
-                provider=provider))
+                provider=provider, temperature=temperature))
         except Exception as exc:  # noqa: BLE001 - a judge failure must not
             error = str(exc)[:200]          # lose an otherwise usable shotlist
             continue

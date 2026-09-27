@@ -411,7 +411,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         overlap = studio.overlap_ratio(text, source_text)
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
-                                    source_text, style_guide, judge)
+                                    source_text, style_guide, judge,
+                                    temperature=eff["script_judge_temperature"])
         score = rating["score"]
         passed, why, too_long, too_short = _script_gate(
             words, target_words, overlap, score, min_rating, max_overlap,
@@ -664,9 +665,10 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                     break
             if data is None:
                 continue
-            review = studio.review_shotlist(cfg, data, cues, judge,
-                                            max_hold_seconds=max_hold,
-                                            style_guide=style_guide)
+            review = studio.review_shotlist(
+                cfg, data, cues, judge, max_hold_seconds=max_hold,
+                style_guide=style_guide,
+                temperature=eff["shotlist_judge_temperature"])
             if not allow_refs and studio.shotlist_uses_refs(data):
                 review["faults"] = list(review["faults"]) + [
                     "references are DISABLED for this channel: remove the "

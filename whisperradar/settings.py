@@ -150,6 +150,21 @@ SPEC: list[dict] = [
                 "different provider from the planner.",
     },
     {
+        "key": "shotlist_judge_temperature", "type": "float", "default": 0.3,
+        "min": 0.0, "max": 1.0,
+        "label": "Shotlist: judge temperature",
+        "help": "How much the completeness judge's own wording varies between "
+                "calls. The planner stays creative (temperature 1.0, unaffected "
+                "by this) so retries keep producing different shotlists - this "
+                "only tunes how consistently the judge grades them. Lower is "
+                "more consistent shot-to-shot and call-to-call; this judge "
+                "defaults a bit higher than the script judge because its own "
+                "criteria already carve out what a still image cannot show "
+                "(recurrence, exact numbers, internal states, etc.), so some "
+                "sampling variety here does little harm and this setting is "
+                "not itself a strictness dial - the judge's instructions are.",
+    },
+    {
         "key": "shotlist_max_hold_seconds", "type": "float", "default": 12.0,
         "min": 4.0, "max": 12.0,
         "label": "Shotlist: max seconds per image",
@@ -200,6 +215,19 @@ SPEC: list[dict] = [
         "help": "Which provider rates the script. Empty = automatically a "
                 "DIFFERENT provider from the one that wrote it, to avoid "
                 "self-preference bias.",
+    },
+    {
+        "key": "script_judge_temperature", "type": "float", "default": 0.1,
+        "min": 0.0, "max": 1.0,
+        "label": "Script: judge temperature",
+        "help": "How much the rating judge's own wording varies between "
+                "calls. The writer stays creative (temperature 1.0, unaffected "
+                "by this) so every regenerate keeps being a genuinely different "
+                "script - this only tunes how consistently the judge scores "
+                "and applies the copycat-overlap gate. Kept low by default so "
+                "the same draft rates the same way twice, and the same "
+                "overlap threshold is enforced every time rather than "
+                "occasionally waved through by sampling luck.",
     },
     {
         "key": "producer_llm_provider", "type": "provider", "default": "",
@@ -339,9 +367,10 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Script & shotlist", [
         "script_min_rating", "script_max_overlap", "script_hard_overlap",
         "script_max_attempts", "script_judge_provider",
+        "script_judge_temperature",
         "shotlist_min_alignment", "shotlist_max_attempts",
         "shotlist_max_hold_seconds",
-        "shotlist_judge_provider",
+        "shotlist_judge_provider", "shotlist_judge_temperature",
     ]),
     ("Production & images", [
         "default_engine", "default_render_mode", "default_upscale",
@@ -522,6 +551,9 @@ def for_production(conn, prod) -> dict:
                                            glob["script_max_attempts"])),
         "script_judge_provider": (row_get(own, "script_judge_provider")
                                   or glob["script_judge_provider"] or None),
+        # global only, like script_hard_overlap above - the strictness comes
+        # from the judge's own rubric, this just keeps its grading consistent
+        "script_judge_temperature": float(glob["script_judge_temperature"]),
         # shotlist gate
         "shotlist_min_alignment": float(row_get(own, "shotlist_min_alignment",
                                                 glob["shotlist_min_alignment"])),
@@ -532,6 +564,7 @@ def for_production(conn, prod) -> dict:
         "shotlist_max_hold_seconds": float(row_get(
             own, "shotlist_max_hold_seconds",
             glob["shotlist_max_hold_seconds"])),
+        "shotlist_judge_temperature": float(glob["shotlist_judge_temperature"]),
         "autorun_enabled": bool(glob["autorun_enabled"])
                            and bool(row_get(own, "autorun_enabled", 1)),
         "bible_dir": row_get(own, "bible_dir"),

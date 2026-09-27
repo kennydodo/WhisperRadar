@@ -107,7 +107,8 @@ class MaxTokensTests(unittest.TestCase):
     def test_judge_output_is_capped(self):
         captured = {}
 
-        def fake_llm(cfg, prompt, provider=None, max_tokens=None):
+        def fake_llm(cfg, prompt, provider=None, max_tokens=None,
+                    temperature=1.0):
             captured["max_tokens"] = max_tokens
             return '{"score": 8.5, "criteria": {}, "feedback": [], "weak_spans": []}'
 
@@ -166,7 +167,7 @@ class StallTests(unittest.TestCase):
         alt = dict(PROVIDER, name="deepseek", base_url="http://other.test")
         calls = []
 
-        def adapter(p, prompt, timeout=600, max_tokens=None):
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
             calls.append(p["name"])
             if p["name"] == "glm-flash":
                 raise studio.LLMEmpty("glm-flash returned an empty response")
@@ -192,7 +193,7 @@ class StallTests(unittest.TestCase):
         alt = dict(PROVIDER, name="deepseek", base_url="http://other.test")
         calls = []
 
-        def adapter(p, prompt, timeout=600, max_tokens=None):
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
             calls.append(p["name"])
             if p["name"] == "glm-flash":
                 raise studio.LLMStalled("glm-flash sent no content for 150s")
@@ -208,7 +209,7 @@ class StallTests(unittest.TestCase):
         self.assertEqual(calls, ["glm-flash", "deepseek"])
 
     def test_a_stall_with_no_fallback_propagates(self):
-        def adapter(p, prompt, timeout=600, max_tokens=None):
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
             raise studio.LLMStalled("stalled")
 
         with mock.patch.object(studio, "_resolve_provider",
@@ -382,6 +383,101 @@ class CurlTransportTests(unittest.TestCase):
             studio._spawn_curl(cfg, 60)
         argv = popen.call_args[0][0]
         self.assertTrue(all("super-secret-key" not in str(a) for a in argv))
+
+
+class TemperatureTests(unittest.TestCase):
+    """Every LLM call shares one transport with a single hardcoded
+    temperature=1.0 - fine for the writer/planner (a retry must genuinely
+    differ) but wrong for a judge, which should grade the same input the
+    same way twice. `temperature` is now a real parameter threaded through
+    the whole chain, defaulting to 1.0 everywhere so no existing call site
+    changes behavior unless it explicitly passes a lower value."""
+
+    def test_default_temperature_is_1_in_the_curl_payload(self):
+        seen = {}
+
+        def fake_config(url, headers, payload):
+            seen["temperature"] = payload["temperature"]
+            return "cfg"
+
+        lines = ['data: ' + json.dumps(
+            {"choices": [{"delta": {"content": "hi"}}]}) + "\n", "data: [DONE]\n"]
+        proc = _FakeCurlProc(lines)
+        with mock.patch.object(studio, "_curl_binary", return_value="/usr/bin/curl"), \
+                mock.patch.object(studio, "_curl_config", fake_config), \
+                mock.patch.object(studio, "_spawn_curl", return_value=proc):
+            studio.openai_chat(PROVIDER, "prompt")
+        self.assertEqual(seen["temperature"], 1.0)
+
+    def test_a_lower_temperature_reaches_the_curl_payload(self):
+        seen = {}
+
+        def fake_config(url, headers, payload):
+            seen["temperature"] = payload["temperature"]
+            return "cfg"
+
+        lines = ['data: ' + json.dumps(
+            {"choices": [{"delta": {"content": "hi"}}]}) + "\n", "data: [DONE]\n"]
+        proc = _FakeCurlProc(lines)
+        with mock.patch.object(studio, "_curl_binary", return_value="/usr/bin/curl"), \
+                mock.patch.object(studio, "_curl_config", fake_config), \
+                mock.patch.object(studio, "_spawn_curl", return_value=proc):
+            studio.openai_chat(PROVIDER, "prompt", temperature=0.2)
+        self.assertEqual(seen["temperature"], 0.2)
+
+    def test_llm_generate_passes_temperature_through(self):
+        seen = {}
+
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            seen["temperature"] = temperature
+            return "ok"
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER), \
+                mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}):
+            studio.llm_generate(object(), "prompt", temperature=0.3)
+        self.assertEqual(seen["temperature"], 0.3)
+
+    def test_llm_generate_defaults_temperature_to_1(self):
+        seen = {}
+
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            seen["temperature"] = temperature
+            return "ok"
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER), \
+                mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}):
+            studio.llm_generate(object(), "prompt")
+        self.assertEqual(seen["temperature"], 1.0)
+
+    def test_rate_script_forwards_its_temperature_to_llm_generate(self):
+        seen = {}
+
+        def fake_llm(cfg, prompt, provider=None, max_tokens=None, temperature=1.0):
+            seen["temperature"] = temperature
+            return '{"score": 8.0, "criteria": {}, "feedback": [], "weak_spans": []}'
+
+        with mock.patch.object(studio, "llm_generate", fake_llm):
+            studio.rate_script(object(), "t", "g", "script", "src", "style",
+                               None, temperature=0.1)
+        self.assertEqual(seen["temperature"], 0.1)
+
+    def test_review_shotlist_forwards_its_temperature_to_llm_generate(self):
+        seen = {}
+
+        def fake_llm(cfg, prompt, provider=None, temperature=1.0, max_tokens=None):
+            seen["temperature"] = temperature
+            return '{"shots": []}'
+
+        data = {"shots": [{"cues": "1-1", "asset": "a.png"}],
+               "images": [{"file": "a.png", "prompt": "p"}]}
+        cues = [{"index": 1, "start": "00:00:00,000", "end": "00:00:02,000",
+                "text": "hi"}]
+        with mock.patch.object(studio, "llm_generate", fake_llm):
+            studio.review_shotlist(object(), data, cues, None,
+                                   temperature=0.4)
+        self.assertEqual(seen["temperature"], 0.4)
 
 
 if __name__ == "__main__":
