@@ -609,5 +609,68 @@ class TemperatureRejectionTests(unittest.TestCase):
                 studio.llm_generate(object(), "prompt", temperature=0.3)
 
 
+class PinnedFallbackProviderTests(unittest.TestCase):
+    """Settings > LLM > Fallback LLM: an explicit second choice, instead of
+    always landing on "whichever model happens to be first in the list" -
+    the only outcome _fallback_provider could reach before this, since every
+    configured model shares one gateway (api.b.ai) and the "prefer a
+    different gateway" rule never had anything to prefer."""
+
+    def setUp(self):
+        import tempfile
+        from whisperradar import db
+        from whisperradar.config import load_config
+
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(__file__).resolve().parents[1]
+        self.cfg = load_config(root / "config.yaml")
+        self.cfg.db_path = Path(self.tmp.name) / "wr.db"
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.set_setting(conn, "llm_providers", json.dumps([{
+            "name": "bai", "base_url": "https://api.b.ai/v1",
+            "api_key": "test-key",
+            "models": [{"id": "deepseek-v4.1-flash"},
+                      {"id": "gpt-6-luna"},
+                      {"id": "mimo-v2.6-pro"}],
+        }]))
+        self._set_fallback(conn, "")
+        conn.commit()
+        conn.close()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _set_fallback(self, conn, value):
+        from whisperradar import db
+        db.set_setting(conn, "llm_fallback_provider", value)
+
+    def _set_pinned(self, value):
+        from whisperradar import db
+        conn = db.connect(self.cfg.db_path)
+        self._set_fallback(conn, value)
+        conn.commit()
+        conn.close()
+
+    def test_unset_falls_back_to_first_ready_other_than_the_failed_one(self):
+        alt = studio._fallback_provider(self.cfg, "gpt-6-luna")
+        self.assertEqual(alt["name"], "deepseek-v4.1-flash")
+
+    def test_a_pinned_provider_wins_over_the_list_order(self):
+        self._set_pinned("mimo-v2.6-pro")
+        alt = studio._fallback_provider(self.cfg, "gpt-6-luna")
+        self.assertEqual(alt["name"], "mimo-v2.6-pro")
+
+    def test_a_pinned_provider_that_is_itself_the_failed_one_is_ignored(self):
+        self._set_pinned("gpt-6-luna")
+        alt = studio._fallback_provider(self.cfg, "gpt-6-luna")
+        self.assertEqual(alt["name"], "deepseek-v4.1-flash")
+
+    def test_an_unknown_pinned_provider_falls_back_to_auto_select(self):
+        self._set_pinned("some-provider-that-was-deleted")
+        alt = studio._fallback_provider(self.cfg, "gpt-6-luna")
+        self.assertEqual(alt["name"], "deepseek-v4.1-flash")
+
+
 if __name__ == "__main__":
     unittest.main()

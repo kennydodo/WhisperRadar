@@ -237,6 +237,17 @@ SPEC: list[dict] = [
                 "are managed in Settings > LLM providers.",
     },
     {
+        "key": "llm_fallback_provider", "type": "provider", "default": "",
+        "label": "Fallback LLM",
+        "help": "Pinned second choice whenever ANY call needs a fallback - a "
+                "provider that stalls, answers empty, or (a judge) rejects "
+                "its temperature after the same-model retry. Empty = pick "
+                "automatically: a provider on a different gateway than the "
+                "failed one if one is configured, else the first other "
+                "ready provider in the list above. Global only - the same "
+                "fallback is used for every channel and every stage.",
+    },
+    {
         "key": "candidate_window_days", "type": "int", "default": 90,
         "min": 0, "max": 3650,
         "label": "Candidate window (days)",
@@ -357,7 +368,7 @@ SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 # The settings page renders these groups in order; a key missing from every
 # group lands in "Other", so adding a SPEC entry can never hide it.
 GROUPS: list[tuple[str, list[str]]] = [
-    ("LLM", ["llm_default", "producer_llm_provider",
+    ("LLM", ["llm_default", "producer_llm_provider", "llm_fallback_provider",
              "ai33_api_key", "ai33_base_url"]),
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",

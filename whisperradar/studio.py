@@ -2266,11 +2266,42 @@ def script_target_words(setting: int | None, source_words: int) -> int:
     return min(wanted, cap)
 
 
+def _pinned_fallback_provider(cfg) -> str | None:
+    """Settings > LLM > Fallback LLM: a global override read straight from
+    the database (this runs inside the LLM transport, with no production/pid
+    in scope for the usual channel<-production override chain - see
+    `settings.llm_fallback_provider`'s help text)."""
+    try:
+        from . import db
+
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            raw = db.get_setting(conn, "llm_fallback_provider")
+        finally:
+            conn.close()
+        return (raw or "").strip() or None
+    except Exception as exc:  # noqa: BLE001 - never block on settings storage
+        log.debug("could not read the pinned fallback provider: %s", exc)
+        return None
+
+
 def _fallback_provider(cfg, failed: str) -> dict | None:
-    """A different READY provider to retry a stalled/empty request on, or None.
-    Prefers a DIFFERENT gateway: both of our providers sit on api.b.ai, so a
-    stall there would repeat on the fallback."""
+    """A different READY provider to retry a stalled/empty/rejected request
+    on, or None.
+
+    A pinned choice (Settings > LLM > Fallback LLM) wins outright when it is
+    itself ready and is not the provider that just failed. Otherwise prefers
+    a DIFFERENT gateway - today all providers sit on the one api.b.ai
+    gateway, so a stall there repeats on any of them, but this matters once
+    a second gateway (OpenRouter, Claude, ...) is configured."""
     providers_list = providers(cfg)
+    by_name = {p["name"]: p for p in providers_list}
+
+    pinned = _pinned_fallback_provider(cfg)
+    if pinned and pinned != failed and pinned in by_name             and provider_ready(cfg, pinned):
+        return by_name[pinned]
+
     failed_url = next((str(p.get("base_url") or "").rstrip("/")
                        for p in providers_list if p.get("name") == failed), "")
     ready = [p for p in providers_list
