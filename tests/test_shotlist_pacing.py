@@ -58,7 +58,8 @@ class PacingTests(unittest.TestCase):
         self.assertIn("split around cue", text)           # where, in cue numbers
         self.assertIn("S01_01_SCN_ZI.png cues 1-6", text)  # the exact shot + range
         self.assertIn("next unused sub-beat", text)       # naming the new image
-        self.assertIn("cues drive it", text)              # the count is never fixed
+        self.assertIn("NOT a target to hit", text)         # the count is never fixed
+        self.assertIn("absolute FLOOR", text)              # and the number is a floor
         self.assertEqual(warnings, [])
 
     def test_a_long_static_hold_is_a_fault(self):

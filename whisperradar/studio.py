@@ -2823,11 +2823,17 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
             "\n\nREFERENCES ARE DISABLED FOR THIS CHANNEL (strict rule): do "
             "NOT declare a top-level \"refs\" registry, do NOT write any "
             "\"refPrompts\" entries, and do NOT put a \"refs\" array on any "
-            "image. Describe every character, location and object FULLY "
-            "INLINE in each image prompt (look, wardrobe, the specific room, "
-            "the exact prop) so it stays consistent without a reference "
-            "image. Any shotlist that references a name will be rejected and "
-            "re-planned.")
+            "image. With no reference image to carry anything, EVERY image "
+            "prompt must be fully self-contained and state all of: the "
+            "subject(s) and what they are DOING, the specific location, "
+            "every prop the narration mentions, the spatial layout (who is "
+            "where, foreground/background), and where the scene's light "
+            "comes from. Recurring characters/objects must be re-described "
+            "in full in each prompt that shows them (look, wardrobe, the "
+            "exact prop) so they stay consistent without a reference. A "
+            "terse prompt that omits what a cue requires will be marked weak "
+            "and the plan rejected. Any shotlist that references a name will "
+            "be rejected and re-planned.")
     elif supplied_refs:
         listing = "\n".join(f"- refs/{name}" for name in supplied_refs)
         refs_block = (
@@ -2988,9 +2994,12 @@ def shotlist_pacing(data: dict, cues: list[dict],
             f"EVERY one of them at a meaning boundary (a number, statistic or "
             f"price arrives; a second character, object or location enters; the "
             f"narration pivots; the action changes; a list ends and the payoff "
-            f"begins) so no image holds longer than {cap:.0f}s - the number of "
-            f"images is not fixed, the cues drive it (about "
-            f"{int(duration / cap) + 1} images would cover {duration / 60:.0f} min). "
+            f"begins) so no image holds longer than {cap:.0f}s. The count is "
+            f"NOT a target to hit: {int(duration / cap) + 1} is only the "
+            f"absolute FLOOR (it assumes every shot runs the full {cap:.0f}s, "
+            f"but most cues are shorter), so splitting every long hold drives "
+            f"the real count WELL ABOVE {int(duration / cap) + 1} - do not "
+            f"stop near that number. "
             f"Number each scene's images in order - the first image in scene S12 is "
             f"S12_01, the next S12_02, and so on - so a new image takes the next "
             f"unused sub-beat in its scene, with its own TYPE and MOTION codes and "
