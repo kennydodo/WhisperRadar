@@ -87,5 +87,50 @@ class ContinuationTests(unittest.TestCase):
         self.assertIn("Continue from EXACTLY", p)
 
 
+class AlignmentPromptTests(unittest.TestCase):
+    """A single still frame cannot show everything a sentence says (a cat
+    appearing every morning, something wired into every human, an urge
+    happening inside someone's head). The completeness judge used to treat
+    ALL of that as a missing element, which meant narration-heavy content
+    could never pass the 90% detail-completeness gate no matter how good the
+    prompts were - it wasn't the prompts, it was the judge asking for the
+    impossible. These lock in the carve-outs added to fix that."""
+
+    def _prompt(self):
+        chunk = [{"cues": "1-2", "asset": "S01_01_SCN_PR.png",
+                 "prompt": "DAY. A cat sits near a bus stop."}]
+        cues = {1: "There's a stray cat that", 2: "sits near a bus stop"}
+        return studio.alignment_prompt(chunk, cues)
+
+    def test_recurrence_and_frequency_are_excluded(self):
+        p = self._prompt()
+        self.assertIn("recurrence or frequency", p)
+        self.assertIn("every morning", p)
+
+    def test_duration_and_timespan_are_excluded(self):
+        p = self._prompt()
+        self.assertIn("duration or a span of time", p)
+        self.assertIn("over decades", p)
+
+    def test_universal_and_statistical_claims_are_excluded(self):
+        p = self._prompt()
+        self.assertIn("universal or statistical claims", p)
+
+    def test_internal_invisible_states_are_excluded(self):
+        p = self._prompt()
+        self.assertIn("internal, invisible states", p)
+        self.assertIn("before conscious awareness", p)
+
+    def test_causal_explanation_is_excluded_in_favor_of_showing_that(self):
+        p = self._prompt()
+        self.assertIn("causal or explanatory claims", p.lower())
+
+    def test_the_shot_and_narration_still_appear(self):
+        p = self._prompt()
+        self.assertIn("S01_01_SCN_PR.png", p)
+        self.assertIn("bus stop", p)
+        self.assertIn("A cat sits near a bus stop.", p)
+
+
 if __name__ == "__main__":
     unittest.main()
