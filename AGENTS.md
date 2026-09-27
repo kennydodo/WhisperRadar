@@ -5,6 +5,67 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## NEXT SESSION — improvement backlog (found 2026-09-27, ranked)
+
+Pick from the top; #1-#4 are the ones that cause user-visible errors.
+
+1. **Shotlist truncation on long narrations (biggest functional gap).** On a
+   484-cue narration the planner cleanly STOPS early (p16: 73 shots covering
+   cues 1-221, 263 cues left uncovered) and the gate flags it, but every
+   attempt truncates around the same point. The continuation machinery
+   (`SHOTLIST_CONTINUE_ROUNDS`, `continuation_prompt`) only fires on a
+   MID-JSON cutoff ("incomplete"), never on a clean early stop. Cheap fix
+   before the two-pass rewrite (item below): after `parse_shotlist_output`
+   succeeds, if the last shot's end cue < the final cue, issue a
+   "continue the shotlist from cue N to the end" prompt (reuse the same
+   continuation path) instead of a full re-plan.
+
+2. **`provider_ready` checks a key's PRESENCE, not its VALIDITY**
+   (studio.py:2210). A present-but-revoked key reads as "ready", gets chosen
+   as the planner or the stall-fallback, then 401s at request time (this is
+   exactly the glm-5.3-stall -> openrouter-claude-401 chain). Two parts:
+   (a) optionally validate a key with a cheap `GET /models` and surface
+   auth-bad distinctly in the providers UI; (b) do NOT treat a 401/auth error
+   like a stall in `llm_generate` - a bad key won't fix itself by hopping
+   providers, so surface it as a config error instead of masking it behind a
+   fallback attempt.
+
+3. **Fallback error masking.** `_retry_on_different_provider`
+   (studio.py:2632) re-raises the ORIGINAL error only when there is NO
+   fallback (studio.py:2641); when the chosen fallback provider ALSO fails,
+   the user sees the fallback's error, not the original stall/empty. Preserve
+   the original cause alongside the fallback result in the message.
+
+4. **Add `.gitattributes` (currently absent).** CRLF/LF churn forced a whole
+   "normalize line endings" commit (dd58076) and a 2442-line studio_detail.html
+   diff that was mostly line-ending noise. Add `* text=auto` and force
+   `.py/.html/.yaml/.md` to LF so future diffs are readable.
+
+5. **Audit the ~60 broad `except Exception` handlers.** Most are deliberate
+   (`# noqa: BLE001` + comment), but the judge-outage bug just fixed
+   (a7b7c37) was exactly a silent `except` swallowing a failure as "0 faults".
+   Confirm none of the others hide a real error behind a silent default.
+
+6. **Module size.** studio.py ~3693 lines, webapp.py ~2476. The LLM transport
+   (openai_chat/curl/stall), shotlist planning+review, refs and image-gen are
+   now fairly separable - splitting them reduces the parallel-edit collisions
+   between agents (see #8).
+
+7. **Test isolation.** Some tests only redirect `cfg.db_path`, not
+   `cfg.studio_dir`, so they can read the REAL `data/studio/<id>` folders
+   (hit in test_bible_seeding before it was fixed). Sweep tests to redirect
+   BOTH `db_path` and `studio_dir` to a temp dir.
+
+8. **Coordination (process).** Today the `productions.llm_provider` pin was
+   added, removed, and re-added differently across two agents, and both
+   edited studio.py/autorun.py in parallel. Smaller commits + a shared
+   "in progress" line here would cut merge conflicts.
+
+Still-open known bugs (see "WhisperRadar bugs to fix (found 2026-09-24)"
+below): #2 flow_project_url precedence (verify - may now be fixed by the
+flowbatch project_url path), #3 renderly_upscale default 4 vs 2K, #4
+FlowBatch ref-resume re-generating a `done` item whose files were deleted.
+
 ## NEXT SESSION — shotlist speed: two-pass planning design (queued 2026-09-26, needs discussion before building)
 
 A 484-cue narration forces one giant LLM call: 19-minute generations,
