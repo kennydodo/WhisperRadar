@@ -298,7 +298,7 @@
     </div>
   </form>
   <form method="post" action="/settings/providers/reset"
-        onsubmit="return confirm('Delete ALL providers, the Default LLM and the judge LLM picks on this machine? Add your gateway again afterwards.')">
+        onsubmit="return wrConfirmSubmit(this, 'Delete ALL providers, the Default LLM and the judge LLM picks on this machine? Add your gateway again afterwards.')">
     <button type="submit" class="ghost" style="margin-top:10px">
       Reset LLM providers (fresh start)
     </button>
@@ -439,5 +439,6 @@
     show(wanted || tabs[0].getAttribute('data-tab'), false);
   })();
 </script>
+<script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>
 </html>

@@ -149,7 +149,7 @@
                     style="color:var(--accent);border-color:var(--accent)">sync</button>
           </form>
           <form class="row" method="post" action="/my-channels/remove" style="display:inline"
-                onsubmit="return confirm('Remove {{ ch['name'] }} from WhisperRadar? The Renderly channel is left untouched.')">
+                onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch['name'] }} from WhisperRadar? The Renderly channel is left untouched.')">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
             <button type="submit" class="ghost">remove</button>
           </form>
@@ -483,5 +483,6 @@
       });
   })();
 </script>
+<script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>
 </html>

@@ -153,7 +153,7 @@
             <button type="submit" class="ghost">views</button>
           </form>
           <form class="row" method="post" action="/channels/remove"
-                onsubmit="return confirm('Remove {{ ch["name"] }} and its video records?')">
+                onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch["name"] }} and its video records?')">
             <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
             <button type="submit" class="ghost">remove</button>
           </form>
@@ -274,7 +274,7 @@
           <a class="btn" href="/file/{{ v['video_id'] }}">.txt</a>
           {% endif %}
           <form class="row" method="post" action="/videos/delete"
-                onsubmit="return confirm('Delete {{ v["title"] }} and its audio/transcript files?')">
+                onsubmit="return wrConfirmSubmit(this, 'Delete {{ v["title"] }} and its audio/transcript files?')">
             {{ hidden_filters() }}
             <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
             <button type="submit" class="ghost" title="remove from library, delete files">del</button>
@@ -391,5 +391,6 @@
     });
   })();
 </script>
+<script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>
 </html>

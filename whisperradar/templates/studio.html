@@ -164,7 +164,7 @@
     {% endif %}
     <form method="post" action="/studio/batch/start" class="row"
           style="align-items:center; gap:12px; flex-wrap:wrap"
-          onsubmit="return confirm('Start the batch? Each production auto-runs and stops after merge.')">
+          onsubmit="return wrConfirmSubmit(this, 'Start the batch? Each production auto-runs and stops after merge.')">
       <label class="muted" style="font-size:12px; display:flex; align-items:center; gap:6px">
         <input type="checkbox" name="shutdown">
         Shut down this PC 5 minutes after the last job finishes
@@ -174,7 +174,7 @@
       </button>
       {% if batch_running %}
       <button type="submit" formaction="/studio/batch/stop" class="secondary"
-              onclick="return confirm('Stop the batch after the current stage?')">Stop batch</button>
+              onclick="return wrConfirmClick(this, 'Stop the batch after the current stage?')">Stop batch</button>
       {% endif %}
     </form>
     {% if batch_shutdown_pending %}
@@ -207,7 +207,7 @@
           <button type="submit" class="ghost" title="Add to the batch queue (auto-run, stops after merge)">queue</button>
         </form>
         <form method="post" action="/studio/{{ item.row['id'] }}/delete"
-              onsubmit="return confirm('Delete production and all its files?')">
+              onsubmit="return wrConfirmSubmit(this, 'Delete production and all its files?')">
           <button type="submit" class="ghost">delete</button>
         </form>
       </div>
@@ -305,11 +305,12 @@
     });
     const body = lines.length ? lines.join('\n')
                               : 'Nothing to do.';
-    if (!confirm('Auto Run will:\n\n' + body +
-                 '\n\nProductions run style -> merge and STOP before review.')) return;
+    if (!(await wrConfirm('Auto Run will:\n\n' + body +
+                 '\n\nProductions run style -> merge and STOP before review.'))) return;
     await fetch('/studio/produce', {method: 'POST'});
     location.reload();
   }
 </script>
+<script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>
 </html>

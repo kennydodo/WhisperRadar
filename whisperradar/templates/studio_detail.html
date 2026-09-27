@@ -154,7 +154,7 @@
       <details style="flex:1">
         <summary class="muted" style="font-size:12px; cursor:pointer">change folder</summary>
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/workdir"
-              onsubmit="return confirm('Move all production files to the new folder?')">
+              onsubmit="return wrConfirmSubmit(this, 'Move all production files to the new folder?')">
           <input type="text" id="workdir-move" name="work_dir" placeholder="D:\VideoProjects\my-video (empty = default)" style="flex:1; min-width:260px">
           <button type="button" class="ghost" onclick="pickFolder('workdir-move')"
                   title="Choose a folder on this PC">Browse...</button>
@@ -181,7 +181,7 @@
     </span>
     {% if job.running and job.kind == 'auto-run' %}
     <form method="post" action="/studio/{{ prod['id'] }}/auto-run/stop"
-          onsubmit="return confirm('Stop the auto-run? The current card finishes first, then the run stops - already rendered images are kept.')">
+          onsubmit="return wrConfirmSubmit(this, 'Stop the auto-run? The current card finishes first, then the run stops - already rendered images are kept.')">
       <button type="submit" class="secondary" title="Stop after the current card (or stage) finishes">■ Stop auto-run</button>
     </form>
     {% elif not job.running %}
@@ -237,7 +237,7 @@
       [...radios].forEach((r) => r.addEventListener('change', sync));
       sync();
     })();
-    function submitReset() {
+    async function submitReset() {
       const from = [...document.getElementsByName('resetfrom')].find((r) => r.checked).value;
       document.getElementById('resetfrom').value = from;
       document.getElementById('resetaudiofield').value =
@@ -246,7 +246,7 @@
       const msg = from === 'images'
         ? 'Delete all rendered images and the merge output (preview + NLE export), then re-render everything?'
         : 'Delete the generated files from ' + (from === 'style' ? 'the beginning' : 'the script stage') + ' onward? This cannot be undone.';
-      if (!window.confirm(msg)) return;
+      if (!(await wrConfirm(msg))) return;
       const forms = document.querySelectorAll('form[action*="/start-over"]');
       forms[0].submit();
     }
@@ -270,7 +270,7 @@
       {% else %}<span class="badge pending">not done</span>
         {% if stage == prod["stage"] and stage != "review" %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/stage/done"
-              onsubmit="return confirm('Mark \'{{ stage }}\' done without automation? You can still redo it later.')">
+              onsubmit="return wrConfirmSubmit(this, 'Mark \'{{ stage }}\' done without automation? You can still redo it later.')">
           <button type="submit" class="ghost" style="margin-left:8px">mark done anyway</button>
         </form>
         {% endif %}
@@ -346,7 +346,7 @@
         <span class="muted" style="font-size:12px">Saved versions (click to load):</span>
         {% for v in script_versions %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
-              onsubmit="return confirm('Replace the current script with version {{ v }}?')">
+              onsubmit="return wrConfirmSubmit(this, 'Replace the current script with version {{ v }}?')">
           <input type="hidden" name="kind" value="script">
           <input type="hidden" name="name" value="{{ v }}">
           <button type="submit" class="ghost" title="Load this version over the current script">{{ v }}</button>
@@ -362,7 +362,7 @@
       <div class="actions">
         {% if providers %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
-              onsubmit="return confirm('Generate a script with the selected LLM? Existing script will be overwritten.')">
+              onsubmit="return wrConfirmSubmit(this, 'Generate a script with the selected LLM? Existing script will be overwritten.')">
           {{ provider_select('script') }}
           <button type="submit" {{ 'disabled' if job.running or not llm_ready else '' }}
                    title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in Settings > LLM providers') }}">
@@ -659,7 +659,7 @@
       </table>
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/auto-run"
-              onsubmit="return confirm('Run the refs stage now? Supplied refs are left alone; refs with no file are generated from their prompts.')">
+              onsubmit="return wrConfirmSubmit(this, 'Run the refs stage now? Supplied refs are left alone; refs with no file are generated from their prompts.')">
           <input type="hidden" name="from_stage" value="refs">
           <button type="submit" class="green" {{ 'disabled' if job.running else '' }}>
             Run refs stage
@@ -696,7 +696,7 @@
       </div>
       <div class="actions" style="margin-top:10px">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
-              onsubmit="return confirmRender()">
+              onsubmit="return confirmRender(this)">
           {% set dm = prod['render_mode'] or default_render_mode %}
           {% set default_mode = dm if dm in ('flow', 'api') else ('flow' if flow_ready else 'api') %}
           <select name="engine" id="engine" title="Image engine">
@@ -745,7 +745,7 @@
         <div class="actions" style="margin-bottom:6px; flex-wrap:wrap">
           {% for name in flow_refs %}
           <form class="row" method="post" action="/studio/{{ prod['id'] }}/refs/delete"
-                onsubmit="return confirm('Remove reference {{ name }}?')">
+                onsubmit="return wrConfirmSubmit(this, 'Remove reference {{ name }}?')">
             <input type="hidden" name="name" value="{{ name.rsplit('.', 1)[0] }}">
             <button type="submit" class="ghost" title="Remove this reference">{{ name }} x</button>
           </form>
@@ -787,14 +787,23 @@
             panel.style.display = (!isFig && sel && sel.value === 'flow') ? '' : 'none';
           }
         }
-        function confirmRender() {
+        function confirmRender(form) {
+          if (form.dataset.wrConfirmed === '1') {
+            delete form.dataset.wrConfirmed;
+            return true;
+          }
           var engine = currentEngine();
           var what = engine === 'flowbatch'
             ? 'FlowBatch will open Chrome, drive Google Flow with your account and upscale the results.\nKeep the machine running until the batch finishes.'
             : (document.getElementById('rendermode') || {}).value === 'flow'
               ? 'Flow Driver will open a Chrome window and drive Google Flow with your account - keep it running until the job finishes.'
               : 'Renderly API consumes your Renderly/Gemini credits.';
-          return confirm('Render the missing shotlist images now?\n\n' + what);
+          wrConfirm('Render the missing shotlist images now?\n\n' + what).then(function (ok) {
+            if (!ok) return;
+            form.dataset.wrConfirmed = '1';
+            if (form.requestSubmit) form.requestSubmit(); else form.submit();
+          });
+          return false;
         }
         (function () {
           var engine = document.getElementById('engine');
@@ -812,7 +821,7 @@
         }
       </script>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/generate"
-              onsubmit="return confirm('Run the configured imagegen command now? It reads prompts.txt and fills the images folder.')">
+              onsubmit="return wrConfirmSubmit(this, 'Run the configured imagegen command now? It reads prompts.txt and fills the images folder.')">
           <button type="submit" class="green" {{ 'disabled' if job.running or not hooks.imagegen else '' }}
                   title="{{ 'Run studio.imagegen_command (uses prompts.txt)' if hooks.imagegen and not job.running else ('A job is already running' if job.running else 'Set studio.imagegen_command in config.yaml') }}">
             {{ 'Working...' if job.running else 'Generate images (hook)' }}
@@ -847,7 +856,7 @@
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render"
-              onsubmit="return confirm('Build the preview draft and export the {{ render_target_label }} project with ImgToVideo?')">
+              onsubmit="return wrConfirmSubmit(this, 'Build the preview draft and export the {{ render_target_label }} project with ImgToVideo?')">
           <button type="submit" class="green" {{ 'disabled' if job.running or not (hooks.merge and audio and srt and images) else '' }}
                   title="{{ 'Headless: analyze -> plan -> out.preview.mp4 + ' ~ render_target_label ~ ' project' if hooks.merge and audio and srt and images and not job.running else ('A job is already running' if job.running else 'Needs audio, subtitles and images done (and studio.imgtovideo_repo set)') }}">
             {{ 'Working...' if job.running else 'Build preview + export to ' ~ render_target_label }}
@@ -933,7 +942,7 @@
       <span class="muted" style="font-size:12px">Saved versions for {{ stage }} (click to load):</span>
       {% for v in direction_versions %}
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
-            onsubmit="return confirm('Replace the {{ stage }} direction with version {{ v }}?')">
+            onsubmit="return wrConfirmSubmit(this, 'Replace the {{ stage }} direction with version {{ v }}?')">
         <input type="hidden" name="kind" value="direction">
         <input type="hidden" name="stage" value="{{ stage }}">
         <input type="hidden" name="name" value="{{ v }}">
@@ -990,9 +999,9 @@
     const dirty = [...document.querySelectorAll('textarea, input')]
       .some((el) => el.type !== 'checkbox' && el.type !== 'radio' &&
                      el.value !== el.defaultValue);
-    if (!dirty || window.confirm('A background job finished - reload the page? Unsaved edits will be lost.')) {
-      location.reload();
-    }
+    if (!dirty) { location.reload(); return; }
+    wrConfirm('A background job finished - reload the page? Unsaved edits will be lost.')
+      .then(function (ok) { if (ok) location.reload(); });
   }
   async function poll() {
     try {
@@ -1220,5 +1229,6 @@
     f.submit();
   });
 </script>
+<script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>
 </html>
