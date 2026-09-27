@@ -39,6 +39,18 @@
   input, select, textarea { background: #0c0e12; color: var(--text);
                   border: 1px solid var(--border); border-radius: 7px;
                   padding: 7px 10px; font-size: 13px; font-family: inherit; }
+  .combo { position: relative; }
+  .combo input { width: 100%; }
+  .combo-panel { position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+                 background: var(--panel2); border: 1px solid var(--border);
+                 border-radius: 8px; max-height: 280px; overflow-y: auto;
+                 z-index: 30; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
+  .combo-item { padding: 7px 10px; font-size: 13px; cursor: pointer;
+                border-bottom: 1px solid var(--border); }
+  .combo-item:last-child { border-bottom: none; }
+  .combo-item:hover, .combo-item.active { background: var(--accent); color: #fff; }
+  .combo-item .muted { color: inherit; opacity: .7; }
+  .combo-empty { padding: 10px; font-size: 13px; color: var(--muted); }
   textarea { width: 100%; min-height: 180px; resize: vertical;
              font-family: Consolas, monospace; font-size: 13px; line-height: 1.5; }
   .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -111,17 +123,19 @@
       </div>
       <div>
         <label for="source-search">Based on (optional)</label>
-        <input type="search" id="source-search"
-               placeholder="Type to filter transcripts..."
-               style="width:340px; margin-bottom:6px" autocomplete="off"
-               onkeydown="if(event.key==='Enter')event.preventDefault()">
-        <select name="source_video_id" id="source-select" style="width:340px"
-                title="Pick the transcribed source video this production is based on">
-          <option value="">- none, fresh topic -</option>
-          {% for v in sources %}
-          <option value="{{ v['video_id'] }}" data-search="{{ (v['channel_name'] ~ ' ' ~ v['title'])|lower }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
-          {% endfor %}
-        </select>
+        <div class="combo" style="width:340px">
+          <input type="text" id="source-search"
+                 placeholder="- none, fresh topic - or search transcripts..."
+                 autocomplete="off"
+                 title="Pick the transcribed source video this production is based on">
+          <input type="hidden" name="source_video_id" id="source-value" value="">
+          <select id="source-data" style="display:none" aria-hidden="true">
+            {% for v in sources %}
+            <option value="{{ v['video_id'] }}" data-search="{{ (v['channel_name'] ~ ' ' ~ v['title'])|lower }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
+            {% endfor %}
+          </select>
+          <div class="combo-panel" id="source-panel" style="display:none"></div>
+        </div>
         <div class="muted" id="source-hint" style="font-size:12px; margin-top:3px"></div>
       </div>
       <div>
@@ -221,46 +235,100 @@
 </div>
 
 <script>
-  // Filter the "Based on" source-video dropdown by typing. The options are
-  // captured once, then rebuilt on every keystroke (hiding <option>s is
-  // unreliable inside native select popups).
+  // "Based on" is a searchable combobox, not a plain <select>: with 100+
+  // transcripts, typing into a separate box then opening a native select to
+  // see the filtered results is two clicks too many. This shows matches
+  // directly under the input as you type, like a browser address bar.
   (function () {
     var search = document.getElementById('source-search');
-    var select = document.getElementById('source-select');
+    var value = document.getElementById('source-value');
+    var data = document.getElementById('source-data');
+    var panel = document.getElementById('source-panel');
     var hint = document.getElementById('source-hint');
-    if (!search || !select) return;
+    if (!search || !value || !data || !panel) return;
     var all = Array.prototype.map.call(
-      select.querySelectorAll('option[value!=""]'),
+      data.querySelectorAll('option[value!=""]'),
       function (o) {
         return { id: o.value, text: o.textContent,
                  hay: (o.dataset.search || o.textContent).toLowerCase() };
       });
+    var active = -1;  // index into the currently rendered matches
+    var matches = [];
 
-    function apply() {
+    function choose(v) {
+      value.value = v ? v.id : '';
+      search.value = v ? v.text : '';
+      close();
+    }
+
+    function close() {
+      panel.style.display = 'none';
+      panel.innerHTML = '';
+      active = -1;
+    }
+
+    function highlight() {
+      Array.prototype.forEach.call(panel.children, function (el, i) {
+        el.classList.toggle('active', i === active);
+      });
+      var el = panel.children[active];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+
+    function render() {
       var q = search.value.trim().toLowerCase();
-      var chosen = select.value;
-      Array.prototype.slice.call(select.querySelectorAll('option[value!=""]'))
-        .forEach(function (o) { o.remove(); });
-      var shown = all.filter(function (v) {
-        return !q || v.hay.indexOf(q) !== -1;
-      });
-      shown.forEach(function (v) {
-        var o = document.createElement('option');
-        o.value = v.id;
-        o.textContent = v.text;
-        o.dataset.search = v.hay;
-        select.appendChild(o);
-      });
-      // keep the pick only while it still matches
-      select.value = shown.some(function (v) { return v.id === chosen; })
-        ? chosen : '';
+      matches = q ? all.filter(function (v) { return v.hay.indexOf(q) !== -1; })
+                  : all;
+      active = -1;
+      panel.innerHTML = '';
+      if (!matches.length) {
+        var empty = document.createElement('div');
+        empty.className = 'combo-empty';
+        empty.textContent = q ? 'No transcript matches "' + search.value + '"'
+                              : 'No transcribed videos yet';
+        panel.appendChild(empty);
+      } else {
+        matches.slice(0, 200).forEach(function (v) {
+          var item = document.createElement('div');
+          item.className = 'combo-item';
+          item.textContent = v.text;
+          item.addEventListener('mousedown', function (e) {
+            e.preventDefault();  // keep focus so 'blur' doesn't close first
+            choose(v);
+          });
+          panel.appendChild(item);
+        });
+      }
+      panel.style.display = '';
       hint.textContent = q
-        ? shown.length + ' of ' + all.length + ' transcript(s) match'
+        ? matches.length + ' of ' + all.length + ' transcript(s) match'
         : all.length + ' transcript(s) available';
     }
 
-    search.addEventListener('input', apply);
-    apply();
+    search.addEventListener('input', function () {
+      if (value.value) value.value = '';  // typing again clears any pick
+      render();
+    });
+    search.addEventListener('focus', render);
+    search.addEventListener('blur', close);
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (active >= 0 && matches[active]) choose(matches[active]);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (panel.style.display === 'none') { render(); return; }
+        active = Math.min(active + 1, matches.length - 1);
+        highlight();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        active = Math.max(active - 1, 0);
+        highlight();
+      } else if (e.key === 'Escape') {
+        close();
+      }
+    });
+    hint.textContent = all.length + ' transcript(s) available';
   })();
 </script>
 

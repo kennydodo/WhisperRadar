@@ -1331,7 +1331,7 @@ def create_app(cfg) -> Flask:
         try:
             pid = db.create_production(conn, title, genre, source, work_dir)
             row = db.get_video(conn, source) if source else None
-            seeded = {"source": "", "bible": False, "refs": 0}
+            seeded = {"source": "", "bible": False, "style": False, "refs": 0}
             if own_channel:
                 oc = db.get_own_channel(conn, own_channel)
                 if oc:
