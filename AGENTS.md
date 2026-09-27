@@ -47,16 +47,16 @@ Pick from the top; #1-#4 are the ones that cause user-visible errors.
    providers, so surface it as a config error instead of masking it behind a
    fallback attempt.
 
-3. **Fallback error masking.** `_retry_on_different_provider`
-   (studio.py:2632) re-raises the ORIGINAL error only when there is NO
-   fallback (studio.py:2641); when the chosen fallback provider ALSO fails,
-   the user sees the fallback's error, not the original stall/empty. Preserve
-   the original cause alongside the fallback result in the message.
+3. **DONE (2026-09-27).** Fallback error masking in `_retry_on_different_provider`
+   fixed - when the fallback ALSO fails, both errors are now reported
+   together (chained via `from`) instead of only the fallback's, with a
+   regression test (7ea4e73).
 
-4. **Add `.gitattributes` (currently absent).** CRLF/LF churn forced a whole
-   "normalize line endings" commit (dd58076) and a 2442-line studio_detail.html
-   diff that was mostly line-ending noise. Add `* text=auto` and force
-   `.py/.html/.yaml/.md` to LF so future diffs are readable.
+4. **DONE (2026-09-27).** `.gitattributes` added (LF everywhere except native
+   `.cmd`/`.bat`/`.ps1`), plus a one-time normalize of the three files still
+   CRLF (test_llm_limits.py, test_shotlist_faults.py, studio_detail.html) -
+   verified with `--ignore-all-space` that only real content changes
+   remained (7ea4e73).
 
 5. **Audit the ~60 broad `except Exception` handlers.** Most are deliberate
    (`# noqa: BLE001` + comment), but the judge-outage bug just fixed
@@ -68,10 +68,12 @@ Pick from the top; #1-#4 are the ones that cause user-visible errors.
    now fairly separable - splitting them reduces the parallel-edit collisions
    between agents (see #8).
 
-7. **Test isolation.** Some tests only redirect `cfg.db_path`, not
-   `cfg.studio_dir`, so they can read the REAL `data/studio/<id>` folders
-   (hit in test_bible_seeding before it was fixed). Sweep tests to redirect
-   BOTH `db_path` and `studio_dir` to a temp dir.
+7. **CHECKED (2026-09-27), no fix needed.** Swept every test file for a call
+   that touches `cfg.studio_dir` (prepare_project_folder, seed_production,
+   run_stage, run_merge_render, ...) without redirecting it. Two more hits
+   besides test_bible_seeding (test_batch_queue.py, test_stage_provider.py)
+   both fully mock `run_pipeline`/`run_stage`/`Popen`, so nothing in them
+   ever reaches real disk. Nothing left to fix.
 
 8. **Coordination (process).** Today the `productions.llm_provider` pin was
    added, removed, and re-added differently across two agents, and both
