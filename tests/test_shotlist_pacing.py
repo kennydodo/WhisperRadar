@@ -155,7 +155,7 @@ class FeedbackTests(unittest.TestCase):
                   "ratio": 1.0, "matched": 2, "total": 2, "weak": []}
         data = _shots([("S01_01_SCN_ZI.png", 1, 6, "ZI"),
                        ("S01_02_SCN_ZO.png", 7, 12, "ZO")])
-        fb = autorun._shotlist_feedback(review, 0.9, data)
+        fb = autorun._shotlist_feedback(review, 0.9)
         self.assertIn("FAULTS (must be zero)", fb)
         self.assertIn("hold longer than", fb)
         self.assertNotIn("S01_01_SCN_ZI.png", fb)

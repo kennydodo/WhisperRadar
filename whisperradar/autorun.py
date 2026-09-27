@@ -686,7 +686,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                          if review.get("warnings") else ""))
             if passed:
                 break
-            feedback = _shotlist_feedback(review, min_align, data)
+            feedback = _shotlist_feedback(review, min_align)
 
         if not attempts:
             raise RuntimeError("the planner returned no valid shotlist JSON in "
@@ -737,8 +737,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         conn.close()
 
 
-def _shotlist_feedback(review: dict, min_align: float,
-                       data: dict | None = None) -> str:
+def _shotlist_feedback(review: dict, min_align: float) -> str:
     """The correction list fed into the next shotlist attempt. A re-plan is a
     FRESH call, so it carries the rules and the fault list - never the previous
     plan (the model then asks for the exact prompts it was told to preserve)."""
@@ -756,13 +755,17 @@ def _shotlist_feedback(review: dict, min_align: float,
             f"every element its narration requires - who is in frame, what "
             f"they are doing, where they are, the objects or props involved, "
             f"and the specific information the cue conveys:")
-        for m in review["weak"][:10]:
+        weak = review["weak"]
+        for m in weak:
             missing = ("; missing: " + ", ".join(m["missing"])
                        if m.get("missing") else "")
             parts.append(f"- {m['asset']} ({m['verdict']}){missing}"
                          + (f" - {m['reason']}" if m.get("reason") else "")
                          + (f" | cue says: {m['narration']}"
                             if m.get("narration") else ""))
+        if len(weak) >= 30:
+            parts.append("...and any other prompt that under-specifies its "
+                         "beat - apply the same rule.")
     if not parts:
         return ""
     parts.append("Keep everything that already passed; change only what is "

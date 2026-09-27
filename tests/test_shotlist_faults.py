@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from whisperradar import studio  # noqa: E402
+from whisperradar import autorun  # noqa: E402
 
 
 def _shotlist(refs=None, image_refs=None, images=2):
@@ -156,6 +157,37 @@ class AlignmentPromptTests(unittest.TestCase):
         self.assertNotIn("CHANNEL VISUAL STYLE", p)
         self.assertIn("bus stop", p)
         self.assertIn("A cat sits near a bus stop.", p)
+
+
+class ShotlistFeedbackTests(unittest.TestCase):
+    """A re-plan is a FRESH call with no memory of the previous attempt, so
+    it can only fix the weak shots actually named in the feedback string -
+    truncating that list silently strands the rest at the same weak verdict
+    forever, which is why detail % used to plateau across attempts."""
+
+    def _review(self, weak_count):
+        weak = [{"asset": f"S01_{i:03d}_SCN_ZI.png", "verdict": "weak",
+                 "missing": ["subject"], "reason": "too vague",
+                 "narration": f"cue {i}"} for i in range(weak_count)]
+        return {"faults": [], "matched": 0, "total": weak_count,
+                "weak": weak, "ratio": 0.0, "warnings": []}
+
+    def test_all_weak_shots_are_listed_not_just_the_first_ten(self):
+        review = self._review(15)
+        feedback = autorun._shotlist_feedback(review, min_align=0.8)
+        for i in range(15):
+            self.assertIn(f"S01_{i:03d}_SCN_ZI.png", feedback)
+
+    def test_hitting_the_upstream_cap_notes_there_may_be_more(self):
+        review = self._review(30)
+        feedback = autorun._shotlist_feedback(review, min_align=0.8)
+        self.assertIn("and any other prompt that under-specifies", feedback)
+
+    def test_no_stray_data_argument_required(self):
+        # data was an unused parameter on the old signature; calling with
+        # just (review, min_align) must work
+        review = self._review(1)
+        self.assertTrue(autorun._shotlist_feedback(review, 0.8))
 
 
 if __name__ == "__main__":

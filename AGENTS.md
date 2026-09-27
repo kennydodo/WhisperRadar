@@ -5,40 +5,6 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
-## NEXT SESSION — BUG: shotlist detail-feedback truncates to 10 weak shots (found 2026-09-27)
-
-Severity: medium. This is why detail % plateaus (e.g. 73%) across attempts
-instead of climbing. Same failure mode `d27d9fe` fixed for pacing offenders,
-but the detail path never got it.
-
-A re-plan is a FRESH call with no memory, so it can only fix the weak shots
-**named in the feedback**. But `_shotlist_feedback` (autorun.py:759) lists
-only the first 10:
-
-    for m in review["weak"][:10]:
-
-while `review_shotlist` already collects up to 30 (studio.py:3590
-`"weak": weak[:30]`). 20 of 30 are silently dropped, and the closing line
-(autorun.py:768 "change only what is listed") tells the model to IGNORE the
-rest - so attempt 2 fixes 10, the other 20 stay weak, detail barely moves.
-
-Fix: iterate the full list (already capped at 30 upstream) - `for m in
-review["weak"]:` - and mirror `d27d9fe`'s wording: when `len(review["weak"])`
-hits the cap, add "and any other prompt that under-specifies its beat - apply
-the same rule" so the model knows there may be more.
-
-Notes:
-- Prompt size is fine: 30 x ~150 chars ~ 4.5 KB; the pacing feedback already
-  lists 30, so this is consistent, not new bloat.
-- The stored human `warning` is separately truncated to [:900]
-  (autorun.py:728/730) - that is the banner, NOT the feedback string sent to
-  the next attempt (which is not truncated). Don't conflate them.
-- `_shotlist_feedback`'s `data` parameter is unused (signature has it, body
-  never reads it) - drop it while in there.
-- Test: in tests/test_shotlist_faults.py, build a review with >10 weak shots
-  (e.g. 15), call _shotlist_feedback, assert all 15 assets appear (currently
-  only 10 would). Locks the fix.
-
 ## NEXT SESSION — shotlist speed: two-pass planning design (queued 2026-09-26, needs discussion before building)
 
 A 484-cue narration forces one giant LLM call: 19-minute generations,
