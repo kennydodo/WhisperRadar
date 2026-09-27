@@ -84,6 +84,41 @@ class RateScriptErrorTests(unittest.TestCase):
         self.assertEqual(rating["score"], 8.5)
         self.assertIsNone(rating["error"])
 
+    def test_trailing_commentary_with_a_stray_brace_does_not_lose_the_score(self):
+        # A real production's judge replies came back "no usable score" over
+        # and over - but the raw reply, truncated in the log, plainly showed
+        # a real score ({"score":5.2,...}). The old `re.search(r"\{.*\}")`
+        # matched from the first "{" to the LAST "}" anywhere in the text, so
+        # one sentence of commentary after the JSON (reasoning-style models
+        # add this constantly despite being told to reply with ONLY JSON)
+        # with a stray brace in it broke json.loads and threw the whole
+        # verdict away - score included. This is the exact failure shape.
+        reply = ('{"score": 5.2, "criteria": {"hook": 7}, '
+                '"feedback": ["Keep the low-overlap rewrite, but tighten '
+                'the hook."], "weak_spans": []}\n\n'
+                'Note: I nearly scored this higher {but the pacing dragged}.')
+        with mock.patch("whisperradar.studio.llm_generate",
+                        return_value=reply):
+            rating = studio.rate_script(self.cfg, "T", "general", "script",
+                                        "source", "style", None)
+        self.assertEqual(rating["score"], 5.2)
+        self.assertIsNone(rating["error"])
+
+    def test_a_stray_brace_in_a_shotlist_judge_reply_is_also_tolerated(self):
+        # review_shotlist parses its per-chunk verdicts through the same
+        # _parse_json_object - the fix must cover both judges.
+        reply = ('{"shots": [{"asset": "a.png", "verdict": "ok"}]}\n\n'
+                'Aside: a couple of these felt thin {barely}.')
+        data = {"shots": [{"cues": "1-1", "asset": "a.png"}],
+               "images": [{"file": "a.png", "prompt": "p"}]}
+        cues = [{"index": 1, "start": "00:00:00,000", "end": "00:00:02,000",
+                "text": "hi"}]
+        with mock.patch.object(studio, "llm_generate",
+                               return_value=reply):
+            review = studio.review_shotlist(self.cfg, data, cues, None)
+        self.assertEqual(review["matched"], 1)
+        self.assertEqual(review["weak"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2763,12 +2763,21 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
 
 
 def _parse_json_object(text: str) -> dict:
-    match = re.search(r"\{.*\}", text or "", re.S)
-    if not match:
-        return {}
+    """Extract a judge's JSON verdict from its reply. Uses the same
+    balanced-brace, string-aware scan as the shotlist planner's
+    _extract_json_object - NOT a naive `re.search(r"\{.*\}")`, which used to
+    grab from the first "{" to the LAST "}" anywhere in the text. A judge that
+    replies with valid JSON and then adds so much as one sentence of
+    commentary (reasoning-style models do this constantly despite being told
+    to reply with ONLY JSON) would have that greedy match swallow the whole
+    tail; one stray brace anywhere in that commentary (e.g. "I nearly scored
+    this higher {but the pacing dragged}") broke json.loads and threw the
+    ENTIRE verdict away - including a perfectly good score - misreported as
+    "the judge reply had no usable score" with no hint the score was ever
+    there."""
     try:
-        data = json.loads(match.group(0))
-    except ValueError:
+        data, _tail = _extract_json_object(text or "")
+    except RuntimeError:
         return {}
     return data if isinstance(data, dict) else {}
 
