@@ -380,6 +380,38 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     attempts_allowed = max(1, int(eff["script_max_attempts"]))
     judge = studio.judge_provider(cfg, provider, eff["script_judge_provider"])
 
+    # A regenerate must never silently make things worse: rate the script
+    # that is ALREADY there (if any) as a baseline this run's attempts have
+    # to beat. Without this, "best of this run's attempts" only ever compares
+    # new drafts against each other - a run whose attempts all score worse
+    # than what was already accepted would still overwrite it, and if the
+    # judge could not score anything (score None on every attempt, as the
+    # JSON-parsing bug used to cause on nearly every real call), "best" fell
+    # through to "lowest overlap wins", a tiebreak with no relationship to
+    # writing quality at all.
+    baseline = None
+    if script_path.exists():
+        existing_text = script_path.read_text(encoding="utf-8")
+        existing_overlap = studio.overlap_ratio(existing_text, source_text)
+        existing_words = len(re.findall(r"\w+", existing_text))
+        existing_rating = studio.rate_script(
+            cfg, prod["title"], prod["genre"], existing_text, source_text,
+            style_guide, judge, temperature=eff["script_judge_temperature"])
+        existing_passed, _why, _tl, _ts = _script_gate(
+            existing_words, target_words, existing_overlap,
+            existing_rating["score"], min_rating, max_overlap, hard_overlap,
+            existing_rating.get("error"))
+        baseline = {"attempt": 0, "text": existing_text,
+                   "overlap": existing_overlap, "runs": [],
+                   "score": existing_rating["score"], "rating": existing_rating,
+                   "passed": existing_passed, "words": existing_words,
+                   "too_long": False, "too_short": False, "is_baseline": True}
+        _log_line(
+            f"regenerate: existing script rates "
+            f"{existing_rating['score'] if existing_rating['score'] is not None else 'n/a'} "
+            f"(overlap {existing_overlap:.1%}) - a new attempt must beat this "
+            "to replace it")
+
     attempts: list[dict] = []
     previous: dict | None = None
     text = ""
@@ -436,36 +468,52 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                     "feedback": rating["feedback"] or rating["weak_spans"],
                     "too_long": too_long, "too_short": too_short}
 
-    # settle for the best draft rather than shipping a rejected one blindly
-    best = max(attempts, key=lambda a: ((a["score"] or 0), -a["overlap"]))
+    # settle for the best draft rather than shipping a rejected one blindly -
+    # but "best" must include the script already on disk (the baseline), or a
+    # run whose attempts are all worse would still overwrite it
+    candidates = attempts + ([baseline] if baseline else [])
+    best = max(candidates, key=lambda a: ((a["score"] or 0), -a["overlap"]))
+    kept_existing = bool(baseline) and best is baseline
     text = best["text"]
     passed = best["passed"]
-    if script_path.exists():
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
-    script_path.write_text(text + "\n", encoding="utf-8")
-    # Persist the judge's per-attempt scores, criteria and feedback. Without
+    if not kept_existing:
+        if script_path.exists():
+            stamp = time.strftime("%Y%m%d-%H%M%S")
+            shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
+        script_path.write_text(text + "\n", encoding="utf-8")
+    # Persist the judge's per-attempt scores, criteria and feedback (plus the
+    # baseline's, when rated, so it's visible why it won or lost). Without
     # this the only trace of WHY a draft was rejected is the log line, and a
     # "rating 5.5 vs min 9.4" warning is unactionable.
     (auto_dir / "review.json").write_text(
         json.dumps([{"attempt": a["attempt"], "score": a["score"],
                      "overlap": round(a["overlap"], 4), "passed": a["passed"],
                      "words": a.get("words"), "too_long": a.get("too_long"),
+                     "is_baseline": bool(a.get("is_baseline")),
                      "criteria": a["rating"].get("criteria") or {},
                      "feedback": a["rating"].get("feedback") or [],
                      "weak_spans": a["rating"].get("weak_spans") or [],
                      "judge_error": a["rating"].get("error")}
-                    for a in attempts], indent=2, ensure_ascii=False) + "\n",
+                    for a in candidates], indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8")
 
     conn = _connect(cfg)
     try:
-        detail = (f"{provider}, best of {len(attempts)} attempt(s): rating "
-                  f"{best['score'] if best['score'] is not None else 'n/a'}, "
-                  f"overlap {best['overlap']:.1%}, target {target_words} words "
-                  f"(wrote ~{best.get('words', '?')}), "
-                  f"judged by {judge}, "
-                  f"took {format_duration(time.monotonic() - t0)}")
+        if kept_existing:
+            detail = (
+                f"regenerate: {len(attempts)} new attempt(s) via {provider}, "
+                f"none beat the existing script (rating "
+                f"{best['score'] if best['score'] is not None else 'n/a'}, "
+                f"overlap {best['overlap']:.1%}) - kept it unchanged, "
+                f"judged by {judge}, "
+                f"took {format_duration(time.monotonic() - t0)}")
+        else:
+            detail = (f"{provider}, best of {len(attempts)} attempt(s): rating "
+                      f"{best['score'] if best['score'] is not None else 'n/a'}, "
+                      f"overlap {best['overlap']:.1%}, target {target_words} "
+                      f"words (wrote ~{best.get('words', '?')}), "
+                      f"judged by {judge}, "
+                      f"took {format_duration(time.monotonic() - t0)}")
         # the run's provider is NOT persisted onto the production: an implicit
         # pin made later runs ignore a changed Default LLM (a deleted provider
         # kept "coming back" through this row). Which LLM ran is in the step
@@ -478,11 +526,18 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
             # would make a later resume regenerate the script - and the audio
             # and subtitles were already built from this one. The warning
             # column is what flags it to the user.
-            warning = (f"script gate failed after {len(attempts)} attempt(s) - "
-                       f"kept the best: rating "
-                       f"{best['score'] if best['score'] is not None else 'n/a'} "
-                       f"(min {min_rating}), overlap {best['overlap']:.1%} "
-                       f"(target {max_overlap:.0%})")
+            if kept_existing:
+                warning = (
+                    f"regenerate did not beat the existing script (min "
+                    f"{min_rating}) - kept it unchanged rather than replace "
+                    "it with something worse")
+            else:
+                warning = (
+                    f"script gate failed after {len(attempts)} attempt(s) - "
+                    f"kept the best: rating "
+                    f"{best['score'] if best['score'] is not None else 'n/a'} "
+                    f"(min {min_rating}), overlap {best['overlap']:.1%} "
+                    f"(target {max_overlap:.0%})")
             judge_err = best["rating"].get("error")
             if best["score"] is None and judge_err:
                 # otherwise "rating n/a" hides that the JUDGE failed, not the script
