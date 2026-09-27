@@ -88,6 +88,13 @@ OPEN QUESTIONS for the discussion: beat boundaries from pass 1 vs meaning,
 parallel pass-2 calls (fast, duplicate-ref risk) vs sequential (consistent),
 how the stitcher reports/repairs cross-beat faults, wall-time target.
 
+RE-MEASURE (2026-09-27): the JSON-parsing bug in the script/shotlist judges
+and the missing stall/fallback handling on `llm_generate` - both fixed this
+session - were a real part of what made the single giant call slow and
+fragile (malformed-JSON retries, 19-min stalls with no fallback). Run one
+large-narration production against the current code first and see whether
+the pain that motivated this design is still there before building it.
+
 ## NEXT SESSION — code review of the 2026-09-25/26 session (queued 2026-09-26)
 
 Review every change from the two big sessions, commit range `4855642..bb47ffd`
@@ -153,16 +160,17 @@ Then: **retest the two failed productions and add two new ones.**
 - Python: `D:\Repos\WhisperRadar\.venv\Scripts\python.exe`.
 
 ### WhisperRadar bugs to fix (found 2026-09-24)
-1. **`glm-flash` hangs on large shotlist prompts.** The shots prompt is ~38.5k chars (19.3k brief +
-   a big channel bible, e.g. 16.8k). `glm-5.3-flash` never returned (the streaming read ignores the
-   1800s timeout); `deepseek` returned in ~100s and passed the gate. Big-bible channels (1 and 3)
-   will hang - add a provider fallback, a real request timeout, or a size guard in `openai_chat`.
-2. **`_run_images` lets the CHANNEL `flow_project_url` override the PRODUCTION row.**
-   `_run_images` passes `flow_project_url or eff["flow_project_url"]` into
-   `run_imagegen_flowbatch`, bypassing the documented precedence (production -> channel ->
-   global) in `flow_project_url_for`; pinning `productions.flow_project_url` had no effect on the
-   images stage. In the same run pid 9's `prepare` reported project `4e8cbaa4` while `generate` was
-   handed `89e82620`. Make the prepare report's URL authoritative for the generate it precedes.
+1. **DONE (2026-09-27).** `glm-flash` hangs on large shotlist prompts were the same stalled-stream
+   problem fixed generally this session: `_curl_read_stream`'s first-token/idle/hard-deadline guards
+   raise `LLMStalled`, and `llm_generate` now retries on a different (fallback) provider. No
+   separate fix needed here.
+2. **CHECKED (2026-09-27), not reproducible in the real auto-run path.** Traced `_stage_params`
+   -> `_run_images` -> `flow_project_url_for`: the images stage's `_stage_params` never sets
+   `flow_project_url`, so it reaches `flow_project_url_for` as `None` and resolves production
+   -> channel -> global correctly. This only happened when the RETEST runbook's manual driving
+   passed `params["flow_project_url"]` explicitly at the call site (see "How the stages were
+   driven" above) - a test-harness quirk, not a pipeline bug. Leave as-is unless it recurs in a
+   real auto-run.
 3. **`renderly_upscale: 4`** in `config.yaml` made the refs job upscale to 4K (`_4k` variants), not
    the 2K the tier doc states. Confirm the intended default.
 4. Ref-generation state resume (FlowBatch side): a `done` item whose files were deleted is not
