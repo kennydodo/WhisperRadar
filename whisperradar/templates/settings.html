@@ -337,7 +337,7 @@
       });
       html += '<div style="display:flex;gap:8px;margin-top:6px">'
         + '<button type="button" onclick="addModel(' + i + ')">+ model</button>'
-        + '<button type="button" onclick="saveProvider(' + i + ')">Save</button></div></div>';
+        + '<button type="button" onclick="saveProvider()">Save</button></div></div>';
     });
     host.innerHTML = html;
   }
@@ -352,20 +352,39 @@
       PROVIDERS[i].models[j][f] = el.value.trim();
     });
   }
-  function saveProvider(i) {
-    readBackCard(i);
-    var clean = PROVIDERS.filter(function (p) {
+  function readBackAll() {
+    // every visible card, not just the one being acted on - a save or a
+    // delete used to read back only ITS OWN card, so editing two cards and
+    // then saving (or deleting) one silently discarded the other's unsaved
+    // edits
+    for (var k = 0; k < PROVIDERS.length; k++) { readBackCard(k); }
+  }
+  function cleanProviders() {
+    return PROVIDERS.filter(function (p) {
       return p.name && p.base_url && (p.models || []).some(function (m) { return m && m.id; });
     });
-    document.getElementById('providers-json').value = JSON.stringify(clean);
+  }
+  function submitProviders() {
+    document.getElementById('providers-json').value = JSON.stringify(cleanProviders());
     document.getElementById('providers-form').submit();
+  }
+  function saveProvider() {
+    readBackAll();
+    submitProviders();
   }
   function addProvider() {
     PROVIDERS.push({ name: '', base_url: '', api_key: '', env_key: 'WR_LLM_API_KEY',
                      models: [{ id: '', name: '' }] });
     renderProviders();
   }
-  function delProvider(i) { PROVIDERS.splice(i, 1); renderProviders(); }
+  function delProvider(i) {
+    // persist the deletion right away instead of just re-rendering: removing
+    // the LAST card leaves no Save button anywhere to submit it, and a
+    // reload would silently bring the "deleted" provider back
+    readBackAll();
+    PROVIDERS.splice(i, 1);
+    submitProviders();
+  }
   function addModel(i) { (PROVIDERS[i].models = PROVIDERS[i].models || []).push({ id: '', name: '' }); renderProviders(); }
   function delModel(i, j) { PROVIDERS[i].models.splice(j, 1); renderProviders(); }
   renderProviders();

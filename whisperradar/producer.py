@@ -307,8 +307,13 @@ def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
                 + (f" - {choice['reason']}" if choice["reason"] else ""))
             pid = db.create_production(conn, title, oc["genre"],
                                        video["video_id"], None)
-            db.update_production(conn, pid, own_channel_id=oc["id"],
-                                 llm_provider=provider, autorun=1)
+            # llm_provider is NOT persisted here - see autorun._run_script's
+            # comment. An implicit pin at creation time would outrank the
+            # channel's producer_llm_provider / the global Default LLM
+            # forever, which is exactly the bug the manual stage runners were
+            # fixed to stop doing (2615632); the topic-pick provider stays a
+            # one-off choice for THIS call, not a lasting pin on the row.
+            db.update_production(conn, pid, own_channel_id=oc["id"], autorun=1)
             prod = db.get_production(conn, pid)
             seeded = studio.seed_production(cfg, conn, prod, log=log)
             created.append({"pid": pid, "title": title,

@@ -778,8 +778,8 @@ def create_app(cfg) -> Flask:
                 conn.execute(
                     "UPDATE settings SET value = '' WHERE key IN "
                     "('llm_default', 'script_judge_provider', "
-                    "'shotlist_judge_provider') AND value IN "
-                    f"({marks})", tuple(removed))
+                    "'shotlist_judge_provider', 'llm_fallback_provider') "
+                    f"AND value IN ({marks})", tuple(removed))
                 conn.execute(
                     "UPDATE own_channels SET producer_llm_provider = NULL "
                     f"WHERE producer_llm_provider IN ({marks})",
@@ -798,16 +798,17 @@ def create_app(cfg) -> Flask:
     def settings_providers_reset():
         """A full fresh start for the LLM setup: remove every configured
         provider AND every reference to them - the gateway list, the Default
-        LLM, both judge picks, the channels' producer LLM and any production
-        pins. Stale references to a deleted provider otherwise keep surfacing
-        (preselected dropdowns, judge/fallback picks) even after the provider
-        itself is gone."""
+        LLM, both judge picks, the pinned fallback LLM, the channels'
+        producer LLM and any production pins. Stale references to a deleted
+        provider otherwise keep surfacing (preselected dropdowns,
+        judge/fallback picks) even after the provider itself is gone."""
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
             conn.execute("DELETE FROM settings WHERE key IN "
                          "('llm_providers', 'llm_default', "
-                         "'script_judge_provider', 'shotlist_judge_provider')")
+                         "'script_judge_provider', 'shotlist_judge_provider', "
+                         "'llm_fallback_provider')")
             conn.execute("UPDATE own_channels "
                          "SET producer_llm_provider = NULL")
             conn.execute("UPDATE productions SET llm_provider = NULL")

@@ -42,6 +42,9 @@ class ProvidersResetTests(unittest.TestCase):
         # the deleted reference may be cleared
         db.set_setting(conn, "script_judge_provider", "glm-5.3-flash")
         db.set_setting(conn, "shotlist_judge_provider", "openrouter-claude")
+        # the pinned fallback LLM must be cleaned up exactly like the
+        # judge picks - it is read straight from this table too
+        db.set_setting(conn, "llm_fallback_provider", "glm-5.3-flash")
         self.chan = db.create_own_channel(
             conn, "Ch", producer_llm_provider="glm-5.3-flash")
         self.pid = db.create_production(conn, "P", "general", None, None)
@@ -60,6 +63,7 @@ class ProvidersResetTests(unittest.TestCase):
         self.assertIsNone(db.get_setting(conn, "llm_default"))
         self.assertIsNone(db.get_setting(conn, "script_judge_provider"))
         self.assertIsNone(db.get_setting(conn, "shotlist_judge_provider"))
+        self.assertIsNone(db.get_setting(conn, "llm_fallback_provider"))
         chan = conn.execute("select producer_llm_provider from own_channels"
                             ).fetchone()
         prod = conn.execute("select llm_provider from productions"
@@ -95,6 +99,7 @@ class ProvidersResetTests(unittest.TestCase):
         self.assertEqual(db.get_setting(conn, "script_judge_provider"), "")
         self.assertEqual(db.get_setting(conn, "shotlist_judge_provider"),
                          "openrouter-claude")
+        self.assertEqual(db.get_setting(conn, "llm_fallback_provider"), "")
         chan = conn.execute("select producer_llm_provider from own_channels"
                             ).fetchone()
         prod = conn.execute("select llm_provider from productions"
