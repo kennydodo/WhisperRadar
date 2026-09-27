@@ -72,7 +72,7 @@ class ReferencesOffTests(unittest.TestCase):
                                         supplied_refs=["MAYA.png"],
                                         allow_refs=False)
         self.assertIn("REFERENCES ARE DISABLED", prompt)
-        self.assertIn("describe every character", prompt.lower())
+        self.assertIn("self-contained", prompt.lower())
         # the supplied-refs block must NOT appear when refs are off
         self.assertNotIn("SUPPLIED REFERENCE FILES", prompt)
 

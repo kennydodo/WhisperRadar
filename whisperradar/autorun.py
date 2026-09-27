@@ -619,10 +619,12 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 f"{max_hold:.0f}s; detailed prompts on at least "
                 f"{min_align:.0%} of shots. Plan strictly from meaning per "
                 f"Section 2 - each new concrete detail deserves its own "
-                f"visual - and let the count follow the beats: with cues of "
-                f"a few seconds each, covering ~{total_s:.0f}s of narration "
-                f"well lands at roughly {min_shots}+ shots. Merging many "
-                f"cues into a few long holds fails the review.")
+                f"visual. {min_shots} is only the ABSOLUTE FLOOR (it assumes "
+                f"every shot runs the full {max_hold:.0f}s, but most cues are "
+                f"far shorter), so a meaning-driven plan lands WELL ABOVE "
+                f"{min_shots} - do not treat it as a target to stop at. A "
+                f"plan that merges many cues into long holds, or that leaves "
+                f"prompts terse, fails the review.")
         attempts: list[dict] = []
         data: dict = {}
         sheet = ""
