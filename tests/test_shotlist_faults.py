@@ -128,6 +128,16 @@ class AlignmentPromptTests(unittest.TestCase):
     def test_the_shot_and_narration_still_appear(self):
         p = self._prompt()
         self.assertIn("S01_01_SCN_PR.png", p)
+
+    def test_exact_numbers_ranges_and_dates_are_excluded(self):
+        # a real run flagged prompts "missing" for things like the exact
+        # "25-150 Hz" purr-frequency range and "1943" - but this channel's
+        # own style.md bans readable numbers/labels in every image, so the
+        # judge was demanding a figure the prompt is contractually forbidden
+        # from rendering. A relative visual (a gauge, a bar) must be enough.
+        p = self._prompt()
+        self.assertIn("exact numbers, ranges, dates or units", p)
+        self.assertIn("25-150 Hz", p)
         self.assertIn("bus stop", p)
         self.assertIn("A cat sits near a bus stop.", p)
 
