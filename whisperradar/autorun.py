@@ -720,6 +720,30 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                     break
             if data is None:
                 continue
+            # A plan can close its JSON cleanly and still stop short of the
+            # final cue (e.g. 73 shots covering cues 1-221 of 484, no error,
+            # nothing planned for the rest) - every re-plan from scratch tends
+            # to truncate at roughly the same point, so ask for just the
+            # missing tail instead of burning another whole attempt on it.
+            for tail_cont in range(studio.SHOTLIST_CONTINUE_ROUNDS):
+                tail_gap = studio.shotlist_tail_gap(data, len(cues))
+                if tail_gap is None:
+                    break
+                _log_line(f"shotlist attempt {attempt}: stopped cleanly at "
+                          f"cue {tail_gap}/{len(cues)} - continuing tail "
+                          f"({tail_cont + 1}/{studio.SHOTLIST_CONTINUE_ROUNDS})")
+                addition_text = studio.llm_generate(
+                    cfg, studio.shotlist_tail_continuation_prompt(
+                        prompt, tail_gap, len(cues)),
+                    provider=provider)
+                try:
+                    addition, _ = studio.parse_shotlist_output(addition_text)
+                except RuntimeError as exc:
+                    _log_line(f"shotlist attempt {attempt}: tail continuation "
+                              f"reply was not usable ({exc}) - keeping the "
+                              "plan as-is; review will flag what's missing")
+                    break
+                data = studio.merge_shotlist_continuation(data, addition)
             review = studio.review_shotlist(
                 cfg, data, cues, judge, max_hold_seconds=max_hold,
                 style_guide=style_guide,

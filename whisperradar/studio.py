@@ -3094,6 +3094,67 @@ def continuation_prompt(base_prompt: str, partial: str) -> str:
             "IMAGE BATCH SHEET if it is still missing.")
 
 
+def shotlist_tail_gap(data: dict, cue_count: int) -> int | None:
+    """The last covered cue, when a plan cleanly closes its JSON (unlike the
+    mid-JSON cutoff continuation_prompt handles) but simply stops before the
+    end of the narration - e.g. 73 shots covering cues 1-221 of 484, with no
+    error, just nothing planned for the rest. Every attempt re-planning from
+    scratch tends to truncate at roughly the same point, so this lets the
+    caller ask for just the missing tail instead.
+
+    Returns None when the plan already reaches cue_count, or when it has some
+    OTHER structural problem (an internal gap, an overlap, out-of-order
+    shots, a malformed 'cues' range) that a tail continuation can't fix -
+    those still need the full review-and-feedback re-plan."""
+    shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
+    if not shots:
+        return None
+    ranges = []
+    for s in shots:
+        rng = cue_range(s.get("cues"))
+        if rng is None:
+            return None
+        ranges.append(rng)
+    if ranges[0][0] != 1:
+        return None
+    covered_end = ranges[0][1]
+    for start, end in ranges[1:]:
+        if start != covered_end + 1:
+            return None  # a real gap, overlap, or out-of-order shot
+        covered_end = end
+    return covered_end if covered_end < cue_count else None
+
+
+def shotlist_tail_continuation_prompt(base_prompt: str, from_cue: int,
+                                      cue_count: int) -> str:
+    """Ask for just the missing tail of a plan shotlist_tail_gap flagged -
+    a JSON FRAGMENT (only 'shots' and 'images', continuing the existing
+    numbering) to be merged onto the plan with merge_shotlist_continuation,
+    not a full replacement. Distinct from continuation_prompt, which resumes
+    a reply that was cut off mid-document rather than one that finished
+    cleanly but stopped short."""
+    return (base_prompt.rstrip()
+            + "\n\n---\n\nYour previous reply was a complete, validly-closed "
+            f"JSON document, but it only plans cues 1-{from_cue} of this "
+            f"narration's {cue_count} cues - the rest was left unplanned. "
+            f"Continue the SAME shotlist: plan cues {from_cue + 1}-"
+            f"{cue_count} (every one, in order, no gaps, no repeats of a cue "
+            "already covered above), continuing the same asset numbering. "
+            "Output ONLY a JSON object with exactly two keys, \"shots\" and "
+            "\"images\", containing just these NEW entries - no other keys, "
+            "no markdown fences, no commentary, no repetition of anything "
+            "already planned.")
+
+
+def merge_shotlist_continuation(data: dict, addition: dict) -> dict:
+    """Append a tail continuation's new shots/images onto an already-valid
+    plan (see shotlist_tail_gap / shotlist_tail_continuation_prompt)."""
+    merged = dict(data)
+    merged["shots"] = list(data.get("shots") or []) + list(addition.get("shots") or [])
+    merged["images"] = list(data.get("images") or []) + list(addition.get("images") or [])
+    return merged
+
+
 def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     extra_direction: str = "", bible: str = "",
                     feedback: str = "",

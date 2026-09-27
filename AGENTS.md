@@ -9,33 +9,24 @@ Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `
 
 Pick from the top; #1-#4 are the ones that cause user-visible errors.
 
-1. **Shotlist truncation on long narrations (biggest functional gap — STILL
-   OPEN, the parser fix does NOT cover it).** On a 484-cue narration the
-   planner cleanly STOPS early (p16: 73 shots covering cues 1-221, 263 cues
-   left uncovered) and the gate flags it, but every attempt truncates around
-   the same point.
-
-   **Important:** `f71ecc3` (balanced-brace JSON parsing) fixed *malformed*
-   replies being discarded — a DIFFERENT failure. Truncation is the model
-   emitting VALID, well-formed JSON that simply stops before the final cue.
-   The continuation machinery (`SHOTLIST_CONTINUE_ROUNDS`,
-   `continuation_prompt`) only fires when `parse_shotlist_output` raises
-   "incomplete" (mid-JSON cut-off); a clean early stop parses fine, so
-   continuation never triggers and the whole attempt is wasted on a re-plan.
-
-   **Cheap fix (do this before the two-pass rewrite):** in `_run_shots`
-   (autorun.py), after `parse_shotlist_output` SUCCEEDS and before review,
-   compute the highest cue actually covered vs `cues[-1]["index"]`; if there
-   is a gap, issue a targeted continuation — "your shotlist stops at cue N;
-   KEEP every shot you wrote and CONTINUE from cue N+1 to the final cue M;
-   return only the additional shots" — append/merge the result, and re-check.
-   Reuse the existing continuation path rather than a full re-plan. The
-   structural gate already verifies coverage, so it confirms the merge fixed
-   the gap (and catches any duplicate/overlapping cue ranges the merge adds).
-
-   **Test:** feed a planner stub that returns valid JSON covering only the
-   first ~half the cues; assert the continue path fires and the merged plan
-   covers all cues (currently it would just be flagged and re-planned whole).
+1. **DONE (2026-09-27).** Shotlist truncation on long narrations - a plan
+   that closes its JSON cleanly (not the mid-JSON "incomplete" cutoff
+   `continuation_prompt` already handled) but simply stops before the final
+   cue used to burn a whole extra attempt on a full re-plan, truncating at
+   roughly the same point every time. Added `shotlist_tail_gap` (finds the
+   highest covered cue vs the final one, only when the rest of the plan is
+   otherwise clean - a real internal gap/overlap/out-of-order run still
+   needs the full re-plan), `shotlist_tail_continuation_prompt` (asks for
+   just the missing tail as a {shots, images} fragment, reusing the
+   continuation path rather than a full re-plan) and
+   `merge_shotlist_continuation` (appends it) - wired into `_run_shots`'s
+   loop right after a successful parse and before review, budgeted by the
+   existing `SHOTLIST_CONTINUE_ROUNDS`. The structural gate
+   (`shotlist_structural_faults`) already verifies coverage, so it confirms
+   the merge closed the gap. Unit tests in tests/test_shotlist_tail_gap.py,
+   integration test (planner stub returning only the first half of the
+   cues, asserting the tail continuation fires and the merged plan covers
+   every cue) in tests/test_shotlist_tail_continuation_integration.py.
 
 2. **`provider_ready` checks a key's PRESENCE, not its VALIDITY**
    (studio.py:2210). A present-but-revoked key reads as "ready", gets chosen
