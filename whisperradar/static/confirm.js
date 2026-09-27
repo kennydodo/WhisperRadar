@@ -24,12 +24,14 @@
     var box = document.createElement('div');
     box.id = 'wr-confirm-box';
     box.style.cssText =
-      'background:#20242c;color:#e8e8e8;max-width:440px;width:90%;' +
-      'padding:20px 22px;border-radius:10px;' +
+      'background:#20242c;color:#e8e8e8;max-width:480px;width:90%;' +
+      'min-height:160px;display:flex;flex-direction:column;' +
+      'justify-content:space-between;' +
+      'padding:28px 26px 22px;border-radius:10px;' +
       'box-shadow:0 12px 40px rgba(0,0,0,.55);' +
-      'font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;';
+      'font:15px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;';
     box.innerHTML =
-      '<div id="wr-confirm-msg" style="white-space:pre-wrap;margin-bottom:18px"></div>' +
+      '<div id="wr-confirm-msg" style="white-space:pre-wrap;margin-bottom:22px"></div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px">' +
       '<button type="button" id="wr-confirm-cancel" ' +
       'style="padding:7px 16px;border-radius:6px;border:1px solid #555;' +
