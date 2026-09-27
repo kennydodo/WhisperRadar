@@ -118,6 +118,42 @@ class RoutePersistsPick(unittest.TestCase):
         self.app.testing = True
         self.client = self.app.test_client()
 
+    def test_autorun_without_override_keeps_the_stage_pick(self):
+        """The auto-run modal's "Use each stage's own pick" default (empty
+        provider field) must NOT force the global default onto a stage that
+        has its own saved pick - that was the actual bug: the modal used to
+        always pre-select and submit a provider, silently overriding every
+        per-stage choice on every run."""
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.set_stage_provider(conn, self.pid, "shots", CHOSEN)
+        conn.close()
+        seen = {}
+
+        def fake_run_stage(cfg, pid, stage, params=None):
+            seen[stage] = (params or {}).get("provider")
+            return "ok"
+
+        def fake_stage_action(cfg, pid, stage):
+            return {"stage": stage, "action": "run", "detail": ""}
+
+        with mock.patch("whisperradar.studio.provider_ready", return_value=True), \
+                mock.patch.object(autorun, "stage_action",
+                                  side_effect=fake_stage_action), \
+                mock.patch.object(autorun, "run_stage",
+                                  side_effect=fake_run_stage):
+            resp = self.client.post(f"/studio/{self.pid}/auto-run", data={})
+            self.assertEqual(resp.status_code, 302)
+            for _ in range(100):
+                if not self.client.get("/studio/job").get_json()["running"]:
+                    break
+                time.sleep(0.05)
+        # shots keeps its own saved pick, the other text stages keep the
+        # global default - none of them were forced onto one provider
+        self.assertEqual(seen.get("shots"), CHOSEN)
+        self.assertEqual(seen.get("style"), DEFAULT)
+        self.assertEqual(seen.get("script"), DEFAULT)
+
     def test_style_route_remembers_the_pick(self):
         with mock.patch("whisperradar.studio.provider_ready", return_value=True), \
                 mock.patch.object(autorun, "run_stage", return_value="ok"):

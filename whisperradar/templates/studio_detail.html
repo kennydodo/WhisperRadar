@@ -1168,12 +1168,18 @@
       html += '<div class="warn">⚠ The merge stage builds a preview draft + NLE export and can take a long time.</div>';
     }
     if (data.providers && data.providers.length) {
-      const opts = data.providers.map(function (p) {
-        return '<option value="' + p + '"' + (p === data.provider ? ' selected' : '') + '>' + p + '</option>';
-      }).join('');
+      // Default option keeps each stage on whatever it already resolves to -
+      // its own saved per-stage pick (Studio > that stage's dropdown), else
+      // the global Default LLM. Picking a provider here instead forces THAT
+      // one provider on every text stage for this run, ignoring their saved
+      // picks - a deliberate, explicit override, never the default action.
+      const opts = '<option value="">Use each stage\'s own pick (default: ' + data.provider + ')</option>' +
+        data.providers.map(function (p) {
+          return '<option value="' + p + '">' + p + ' (force for every text stage)</option>';
+        }).join('');
       html += '<label style="display:block; margin:10px 0 0">LLM for the text stages (style, script, shotlist)' +
         '<select id="ar_provider">' + opts + '</select>' +
-        '<span class="muted" style="font-size:12px">overrides the saved default for this run</span></label>';
+        '<span class="muted" style="font-size:12px">leave on "Use each stage\'s own pick" to keep whatever you chose per stage; only override here to force one LLM for the whole run</span></label>';
     }
     html += '<div class="muted" style="font-size:12px; margin-top:8px">Fixes made here count immediately (the plan refreshes). Anything left over pauses the run mid-way - handle it, then click Resume. A server restart cancels a running auto-run.</div>';
     body.innerHTML = html;

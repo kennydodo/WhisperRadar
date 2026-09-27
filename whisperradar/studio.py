@@ -7,6 +7,7 @@ or by hand (paste text / upload files) - the human stays in charge.
 import json
 import logging
 import os
+import queue
 import random
 import re
 import shutil
@@ -2267,8 +2268,181 @@ def _fallback_provider(cfg, failed: str) -> dict | None:
     return ready[0] if ready else None
 
 
-def openai_chat(p: dict, prompt: str, timeout: int = 600,
-                max_tokens: int | None = None) -> str:
+def _curl_binary() -> str | None:
+    """Path to a curl executable, or None if unavailable. Cheap to call
+    per-request (this is a Windows PATH lookup, not a subprocess)."""
+    return shutil.which("curl")
+
+
+def _curl_config(url: str, headers: dict, payload: dict) -> str:
+    """A curl -K config, so the request (incl. the Authorization header)
+    travels over stdin instead of argv - it never shows up in Task Manager
+    / `ps` / shell history the way a full curl command line would."""
+    def esc(s: str) -> str:
+        return s.replace("\\", "\\\\").replace('"', '\\"')
+    lines = [f'url = "{esc(url)}"', "silent", "show-error", "fail-with-body"]
+    for k, v in headers.items():
+        lines.append(f'header = "{esc(k)}: {esc(v)}"')
+    lines.append(f'data = "{esc(json.dumps(payload))}"')
+    return "\n".join(lines) + "\n"
+
+
+def _spawn_curl(config_text: str, timeout: int) -> subprocess.Popen:
+    """Start curl reading its request from that config text on stdin.
+
+    curl uses the OS's own TLS stack (Schannel on Windows); Python's
+    ``urllib``/``ssl`` uses its bundled OpenSSL. Some networks' HTTPS-
+    inspecting security software (or a router doing deep packet inspection)
+    triggers a mid-connection TLS renegotiation that Schannel handles
+    transparently but that OpenSSL-based clients can hang on forever - the
+    request never errors, it just never delivers a byte. That is invisible
+    from curl (works instantly) and from the provider's own dashboard (a
+    stalled stream showed no tokens either way), and it can affect one PC on
+    a network while another PC/network is unaffected. Shelling out to curl
+    sidesteps it entirely.
+    """
+    proc = subprocess.Popen(
+        [_curl_binary(), "-s", "-S", "-N", "--max-time", str(timeout + 30),
+         "-K", "-"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, bufsize=1,
+    )
+    try:
+        proc.stdin.write(config_text)
+    finally:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+    return proc
+
+
+def _curl_read_stream(proc: subprocess.Popen, provider_name: str,
+                      timeout: int) -> str:
+    """Read curl's SSE stdout with the same first-token/idle stall guards as
+    the urllib path (LLM_FIRST_TOKEN_TIMEOUT / LLM_IDLE_TIMEOUT), killing
+    curl if it stalls instead of waiting out `timeout`."""
+    q: queue.Queue = queue.Queue()
+
+    def _pump():
+        try:
+            for line in proc.stdout:
+                q.put(line)
+        except Exception:  # noqa: BLE001 - pipe torn down; treat as EOF
+            pass
+        finally:
+            q.put(None)
+
+    threading.Thread(target=_pump, daemon=True).start()
+
+    started = time.monotonic()
+    deadline = started + timeout
+    last_content = None
+    parts: list = []
+    tail: list = []  # last few raw lines, for an error message on failure
+    while True:
+        now = time.monotonic()
+        if now > deadline:
+            proc.kill()
+            raise LLMStalled(f"'{provider_name}' produced no complete answer "
+                             f"in {timeout}s")
+        if last_content is None and now - started > LLM_FIRST_TOKEN_TIMEOUT:
+            proc.kill()
+            raise LLMStalled(f"'{provider_name}' sent no first token for "
+                             f"{LLM_FIRST_TOKEN_TIMEOUT}s")
+        if last_content is not None and now - last_content > LLM_IDLE_TIMEOUT:
+            proc.kill()
+            raise LLMStalled(f"'{provider_name}' stalled mid-answer "
+                             f"({LLM_IDLE_TIMEOUT}s without content)")
+        try:
+            line = q.get(timeout=0.5)
+        except queue.Empty:
+            continue
+        if line is None:
+            break
+        tail.append(line)
+        del tail[:-20]
+        text_line = line.strip()
+        if not text_line.startswith("data:"):
+            continue
+        chunk = text_line[5:].strip()
+        if chunk == "[DONE]":
+            break
+        try:
+            delta = json.loads(chunk)["choices"][0].get("delta", {})
+        except (ValueError, KeyError, IndexError):
+            continue
+        content = delta.get("content") or ""
+        if content:
+            parts.append(content)
+            last_content = time.monotonic()
+        elif delta.get("reasoning_content"):
+            # a reasoning/"thinking" model (mimo, deepseek-r1-style, ...)
+            # streams its chain-of-thought as reasoning_content BEFORE any
+            # real content - that can legitimately run past the first-token
+            # timeout on a big planning prompt (500+ shots). It is not the
+            # answer, so it is not appended to parts, but it proves the
+            # request is alive and must reset the stall clock the same way
+            # real content does, or a slow-to-think model gets killed as
+            # "stalled" mid-thought on every large prompt.
+            last_content = time.monotonic()
+
+    returncode = proc.wait(timeout=10)
+    if returncode != 0:
+        stderr = (proc.stderr.read() or "").strip()
+        body = "".join(tail).strip()
+        detail = body or stderr or f"curl exited {returncode}"
+        raise RuntimeError(f"'{provider_name}' request failed: {detail[:300]}")
+
+    text = "".join(parts).strip()
+    if text:
+        return text
+    raise LLMEmpty(f"'{provider_name}' returned an empty response")
+
+
+def _openai_chat_curl(p: dict, prompt: str, timeout: int = 600,
+                      max_tokens: int | None = None) -> str:
+    key = _provider_key(p)
+    if not key:
+        raise RuntimeError(
+            f"No API key for '{p['name']}' (set api_key in config.yaml or "
+            f"{p['env_key']} env variable)"
+        )
+    if not p["base_url"] or not p["model"]:
+        raise RuntimeError(f"Provider '{p['name']}' needs base_url and model")
+    url = p["base_url"].rstrip("/") + "/chat/completions"
+    payload = {
+        "model": p["model"],
+        "stream": True,  # streaming keeps gateways from timing out long completions
+        "temperature": 1.0,  # creative writing; regenerations must differ
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if max_tokens:
+        payload["max_tokens"] = int(max_tokens)
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {key}",
+        "Accept": "text/event-stream",
+    }
+    config_text = _curl_config(url, headers, payload)
+
+    last_exc = None
+    for attempt in range(2):
+        try:
+            proc = _spawn_curl(config_text, timeout)
+            return _curl_read_stream(proc, p["name"], timeout)
+        except RuntimeError:
+            raise
+        except (OSError, subprocess.SubprocessError) as exc:
+            last_exc = exc
+            log.warning("LLM connection error (attempt %d): %s", attempt + 1, exc)
+    raise RuntimeError(f"LLM connection failed after retry: {last_exc}")
+
+
+def _openai_chat_urllib(p: dict, prompt: str, timeout: int = 600,
+                        max_tokens: int | None = None) -> str:
+    """The original pure-Python transport, kept as a fallback for machines
+    with no curl on PATH. See _openai_chat_curl for why curl is preferred."""
     import http.client
 
     key = _provider_key(p)
@@ -2340,6 +2514,9 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600,
                     if content:
                         parts.append(content)
                         last_content = time.monotonic()
+                    elif delta.get("reasoning_content"):
+                        # see the matching comment in _curl_read_stream
+                        last_content = time.monotonic()
             text = "".join(parts).strip()
             if text:
                 return text
@@ -2351,6 +2528,21 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600,
             last_exc = exc
             log.warning("LLM connection error (attempt %d): %s", attempt + 1, exc)
     raise RuntimeError(f"LLM connection failed after retry: {last_exc}")
+
+
+def openai_chat(p: dict, prompt: str, timeout: int = 600,
+                max_tokens: int | None = None) -> str:
+    """Send one chat completion and return the full text.
+
+    Prefers curl as the transport (see _openai_chat_curl's docstring for
+    why); falls back to the pure-Python urllib path only when curl is not on
+    PATH at all. Set WR_LLM_TRANSPORT=urllib to force the old path (e.g. to
+    compare behavior while debugging a provider issue)."""
+    forced = (os.environ.get("WR_LLM_TRANSPORT") or "").strip().lower()
+    if forced == "urllib" or (not forced and not _curl_binary()):
+        return _openai_chat_urllib(p, prompt, timeout=timeout,
+                                   max_tokens=max_tokens)
+    return _openai_chat_curl(p, prompt, timeout=timeout, max_tokens=max_tokens)
 
 
 # Wire protocols an LLM provider can speak, selected per provider with the
