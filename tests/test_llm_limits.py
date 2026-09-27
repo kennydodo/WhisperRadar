@@ -520,5 +520,94 @@ class TemperatureTests(unittest.TestCase):
         self.assertEqual(seen["temperature"], 0.4)
 
 
+class TemperatureRejectionTests(unittest.TestCase):
+    """gpt-6-luna once returned a hard 400 ("Unsupported parameter:
+    'temperature' is not supported with this model") on a shotlist-judge
+    call that had succeeded minutes earlier with the same payload - a
+    gateway-side inconsistency, not a real config error. The fix must retry
+    the SAME provider/model without temperature first (a different judge
+    model may simply grade differently, which is the exact inconsistency
+    temperature was introduced to remove), and only fall back to another
+    provider if that retry also fails outright."""
+
+    def test_rejects_temperature_matches_the_real_error_shape(self):
+        body = json.dumps({"error": {
+            "message": "Unsupported parameter: 'temperature' is not "
+                       "supported with this model.",
+            "type": "invalid_request_error"}})
+        exc = RuntimeError("'gpt-6-luna' request failed: " + body)
+        self.assertTrue(studio._rejects_temperature(exc))
+
+    def test_an_unrelated_runtime_error_is_not_mistaken_for_it(self):
+        self.assertFalse(studio._rejects_temperature(
+            RuntimeError("connection reset by peer")))
+        self.assertFalse(studio._rejects_temperature(
+            RuntimeError("No API key for 'gpt-6-luna'")))
+
+    def test_temperature_1_is_never_retried_without_it(self):
+        # temperature=1.0 IS the default already - stripping it changes
+        # nothing, so a same-shaped error at the default must propagate
+        # straight through rather than spin a pointless extra call.
+        calls = []
+
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            calls.append(temperature)
+            raise RuntimeError("Unsupported parameter: 'temperature' is not "
+                               "supported with this model.")
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER),                 mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}):
+            with self.assertRaises(RuntimeError):
+                studio.llm_generate(object(), "prompt", temperature=1.0)
+        self.assertEqual(calls, [1.0])
+
+    def test_a_temperature_rejection_retries_the_same_provider_without_it(self):
+        calls = []
+
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            calls.append((p["name"], temperature))
+            if temperature != 1.0:
+                raise RuntimeError("Unsupported parameter: 'temperature' is "
+                                   "not supported with this model.")
+            return "graded-ok"
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER),                 mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}):
+            out = studio.llm_generate(object(), "prompt", temperature=0.3)
+        self.assertEqual(out, "graded-ok")
+        # same provider both times - no judge swap for a one-off param hiccup
+        self.assertEqual(calls, [("glm-flash", 0.3), ("glm-flash", 1.0)])
+
+    def test_when_the_retry_without_temperature_also_fails_it_falls_back(self):
+        alt = dict(PROVIDER, name="deepseek", base_url="http://other.test")
+        calls = []
+
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            calls.append((p["name"], temperature))
+            if p["name"] == "glm-flash":
+                raise RuntimeError("Unsupported parameter: 'temperature' is "
+                                   "not supported with this model.")
+            return "fallback-ok"
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER),                 mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}),                 mock.patch.object(studio, "_fallback_provider",
+                                  lambda cfg, failed: alt):
+            out = studio.llm_generate(object(), "prompt", temperature=0.3)
+        self.assertEqual(out, "fallback-ok")
+        self.assertEqual(calls, [("glm-flash", 0.3), ("glm-flash", 1.0),
+                                 ("deepseek", 0.3)])
+
+    def test_with_no_fallback_available_it_propagates(self):
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            raise RuntimeError("Unsupported parameter: 'temperature' is not "
+                               "supported with this model.")
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER),                 mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}),                 mock.patch.object(studio, "_fallback_provider",
+                                  lambda cfg, failed: None):
+            with self.assertRaises(RuntimeError):
+                studio.llm_generate(object(), "prompt", temperature=0.3)
+
+
 if __name__ == "__main__":
     unittest.main()

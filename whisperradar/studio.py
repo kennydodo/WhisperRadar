@@ -2229,6 +2229,19 @@ class LLMEmpty(RuntimeError):
     worth retrying on another provider (glm-flash returned this today)."""
 
 
+def _rejects_temperature(exc: Exception) -> bool:
+    """True when a provider's error is specifically about the `temperature`
+    parameter - some reasoning-style models (gpt-6-luna hit this) reject any
+    value but their own default. Narrow on purpose: a real outage, a bad key
+    or a malformed request must never match this and get treated as if
+    stripping temperature would fix it."""
+    msg = str(exc).lower()
+    return "temperature" in msg and (
+        "unsupported parameter" in msg
+        or "not supported with this model" in msg
+        or "does not support" in msg)
+
+
 # A big prompt can take a while to START streaming: deepseek needed ~118s for a
 # 32k-char prompt, so a short idle rule would kill a healthy call. Allow much
 # longer for the FIRST token than for the gaps between tokens. Keep-alive lines
@@ -2584,21 +2597,42 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
             f"LLM provider '{p['name']}' uses api '{api}', which is not "
             f"implemented yet (available: {', '.join(sorted(CHAT_APIS))}). "
             f"Add an adapter to CHAT_APIS in studio.py.")
-    try:
-        return fn(p, prompt, timeout=timeout, max_tokens=max_tokens,
-                  temperature=temperature)
-    except (LLMStalled, LLMEmpty) as exc:
-        # A provider that goes quiet or answers empty must not burn the whole
-        # timeout: retry the SAME prompt once on a different ready provider,
+
+    def _retry_on_different_provider(exc: Exception) -> str:
+        # A provider that goes quiet, answers empty, or (below) hard-fails
+        # even after a temperature retry must not burn the whole timeout:
+        # retry the SAME prompt once on a different ready provider,
         # preferring a different gateway.
         alt = _fallback_provider(cfg, p["name"])
         alt_fn = (CHAT_APIS.get((alt.get("api") or "openai").lower())
                   if alt else None)
         if not alt or alt_fn is None:
-            raise
+            raise exc
         log.warning("%s - retrying on '%s'", exc, alt["name"])
         return alt_fn(alt, prompt, timeout=timeout, max_tokens=max_tokens,
                       temperature=temperature)
+
+    try:
+        return fn(p, prompt, timeout=timeout, max_tokens=max_tokens,
+                  temperature=temperature)
+    except (LLMStalled, LLMEmpty) as exc:
+        return _retry_on_different_provider(exc)
+    except RuntimeError as exc:
+        if temperature == 1.0 or not _rejects_temperature(exc):
+            raise
+        # This specific model rejects a non-default temperature outright.
+        # Retry the SAME provider/model without one before ever swapping the
+        # judge out for a different model - a different judge may simply
+        # grade differently, which is the exact inconsistency temperature
+        # was introduced to remove (see cc75462). Only if the model still
+        # will not answer at all does it fall through to a different provider.
+        log.warning("%s - retrying '%s' without a custom temperature",
+                   exc, p["name"])
+        try:
+            return fn(p, prompt, timeout=timeout, max_tokens=max_tokens,
+                      temperature=1.0)
+        except (LLMStalled, LLMEmpty, RuntimeError) as exc2:
+            return _retry_on_different_provider(exc2)
 
 
 def provider_api_ready(p: dict) -> bool:
@@ -3531,10 +3565,17 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                     style_guide: str = "", temperature: float = 1.0) -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
-    {faults, matched, total, weak, ratio, error, warnings}. Never raises.
+    {faults, matched, total, weak, ratio, error, unreviewed, warnings}. Never
+    raises.
 
     `matched` counts shots whose prompt carries everything its cues require;
-    `weak` lists the rest with the elements they fail to specify."""
+    `weak` lists the rest with the elements they fail to specify. `unreviewed`
+    counts shots whose judge call itself failed (network/provider error) -
+    those are excluded from BOTH `matched` and `weak`: they were never
+    actually graded, so neither counting them as passed nor telling the next
+    attempt to rewrite them would be honest. A caller should treat
+    `unreviewed == total` (nothing could be judged at all) very differently
+    from a partial `unreviewed` count mixed with real weak/matched verdicts."""
     faults = shotlist_structural_faults(data, len(cues))
     # Pacing is checked HERE, before any image renders: too few images for the
     # narration is far cheaper to fix in the plan than after 45 generations.
@@ -3551,10 +3592,12 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
     total = len(shots)
     if not shots:
         return {"faults": faults, "matched": 0, "total": 0, "weak": [],
-                "ratio": 0.0, "error": None, "warnings": pacing_warnings}
+                "ratio": 0.0, "error": None, "unreviewed": 0,
+                "warnings": pacing_warnings}
     weak: list[dict] = []
     matched = 0
     error = None
+    unreviewed = 0
     for i in range(0, len(shots), chunk_size):
         chunk = shots[i:i + chunk_size]
         try:
@@ -3563,6 +3606,13 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                 provider=provider, temperature=temperature))
         except Exception as exc:  # noqa: BLE001 - a judge failure must not
             error = str(exc)[:200]          # lose an otherwise usable shotlist
+            # These shots were never actually judged - they must NOT count as
+            # matched (that would silently pass unverified prompts) and must
+            # NOT be added to `weak` either (that would tell the next attempt
+            # to rewrite prompts that may be perfectly fine; only the judge
+            # call failed). `unreviewed` is how a caller tells "genuinely
+            # reviewed, some are weak" apart from "the judge never ran".
+            unreviewed += len(chunk)
             continue
         verdicts = reply.get("shots") if isinstance(reply.get("shots"),
                                                     list) else []
@@ -3588,7 +3638,7 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
     ratio = (matched / total) if total else 0.0
     return {"faults": faults, "matched": matched, "total": total,
             "weak": weak[:30], "ratio": ratio, "error": error,
-            "warnings": pacing_warnings}
+            "unreviewed": unreviewed, "warnings": pacing_warnings}
 
 
 # --------------------------------------------------- external tool hooks ---

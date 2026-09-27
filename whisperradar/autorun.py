@@ -669,6 +669,18 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 cfg, data, cues, judge, max_hold_seconds=max_hold,
                 style_guide=style_guide,
                 temperature=eff["shotlist_judge_temperature"])
+            if review["total"] and review["unreviewed"] == review["total"]:
+                # The judge never actually ran on a single shot - unlike a
+                # low completeness ratio (real information: some prompts are
+                # genuinely thin), this is NO information at all. Faults are
+                # computed independently of the judge, so this would
+                # otherwise look exactly like a clean pass ("0 faults") and
+                # sail through to costly rendering with a shotlist nobody
+                # ever checked. Stop and surface it instead of guessing.
+                raise _Paused(
+                    f"the shotlist judge ('{judge}') could not review any "
+                    f"of the {review['total']} shots - {review['error']} - "
+                    "check the judge provider/API, then Resume to retry")
             if not allow_refs and studio.shotlist_uses_refs(data):
                 review["faults"] = list(review["faults"]) + [
                     "references are DISABLED for this channel: remove the "
@@ -683,7 +695,10 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                       f"enough ({review['ratio']:.0%}), "
                       f"{len(review['faults'])} fault(s)"
                       + (f", {len(review['warnings'])} pacing warning(s)"
-                         if review.get("warnings") else ""))
+                         if review.get("warnings") else "")
+                      + (f", {review['unreviewed']} shot(s) could not be "
+                         f"judged ({review['error']})"
+                         if review.get("unreviewed") else ""))
             if passed:
                 break
             feedback = _shotlist_feedback(review, min_align)
@@ -716,6 +731,9 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                   f"{len(best['faults'])} fault(s), "
                   f"judged by {judge}, "
                   f"took {format_duration(time.monotonic() - t0)}")
+        if best.get("unreviewed"):
+            detail += (f" | {best['unreviewed']} shot(s) could not be judged "
+                       f"({best.get('error')})")
         if pacing:
             detail += " | " + "; ".join(pacing)
         if passed:

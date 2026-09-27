@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from whisperradar import studio  # noqa: E402
 from whisperradar import autorun  # noqa: E402
+from unittest import mock  # noqa: E402
 
 
 def _shotlist(refs=None, image_refs=None, images=2):
@@ -188,6 +189,80 @@ class ShotlistFeedbackTests(unittest.TestCase):
         # just (review, min_align) must work
         review = self._review(1)
         self.assertTrue(autorun._shotlist_feedback(review, 0.8))
+
+
+class ReviewShotlistJudgeFailureTests(unittest.TestCase):
+    """A judge call that hard-fails (a gateway error, not a real verdict)
+    must not be indistinguishable from a genuinely clean review. Faults come
+    from structural/pacing checks that run independent of the judge, so a
+    dead judge and a perfect plan both show "0 faults" - `unreviewed` is the
+    only way a caller can tell those apart."""
+
+    def _data(self, n):
+        shots = [{"cues": f"{i}-{i}", "asset": f"S01_{i:02d}_SCN_ZI.png"}
+                 for i in range(1, n + 1)]
+        images = [{"file": s["asset"], "prompt": f"a prompt about scene {i}"}
+                 for i, s in enumerate(shots, start=1)]
+        return {"shots": shots, "images": images}
+
+    def _cues(self, n):
+        return [{"index": i, "start": "00:00:00,000", "end": "00:00:02,000",
+                "text": f"cue {i}"} for i in range(1, n + 1)]
+
+    def test_a_total_judge_failure_is_reported_as_fully_unreviewed(self):
+        def fake_llm(cfg, prompt, provider=None, temperature=1.0,
+                    max_tokens=None):
+            raise RuntimeError("Unsupported parameter: 'temperature' is not "
+                               "supported with this model.")
+
+        data = self._data(5)
+        with mock.patch.object(studio, "llm_generate", fake_llm):
+            review = studio.review_shotlist(object(), data, self._cues(5),
+                                            None, chunk_size=20)
+        self.assertEqual(review["unreviewed"], 5)
+        self.assertEqual(review["matched"], 0)
+        self.assertEqual(review["weak"], [])  # never graded - not "weak"
+        # faults come from structural/pacing checks, computed independent of
+        # whether the judge ran at all - a caller must not read an empty
+        # fault list here as "the plan is fine" (see test_shotlist_pacing.py
+        # for those checks in isolation; this fixture happens to also trip
+        # the fragmentation heuristic, which is not what this test is about)
+        self.assertIsNotNone(review["error"])
+
+    def test_a_partial_judge_failure_only_marks_its_own_chunk_unreviewed(self):
+        calls = {"n": 0}
+
+        def fake_llm(cfg, prompt, provider=None, temperature=1.0,
+                    max_tokens=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("Unsupported parameter: 'temperature' is "
+                                   "not supported with this model.")
+            return ('{"shots": [{"asset": "S01_21_SCN_ZI.png", '
+                    '"verdict": "ok"}]}')
+
+        data = self._data(21)  # chunk_size=20 -> two chunks (20 + 1)
+        with mock.patch.object(studio, "llm_generate", fake_llm):
+            review = studio.review_shotlist(object(), data, self._cues(21),
+                                            None, chunk_size=20)
+        self.assertEqual(review["unreviewed"], 20)  # the failed first chunk
+        self.assertEqual(review["matched"], 1)       # the second chunk's ok
+        self.assertEqual(review["weak"], [])
+
+    def test_a_clean_review_reports_zero_unreviewed(self):
+        def fake_llm(cfg, prompt, provider=None, temperature=1.0,
+                    max_tokens=None):
+            return '{"shots": [{"asset": "S01_01_SCN_ZI.png", "verdict": "ok"}]}'
+
+        with mock.patch.object(studio, "llm_generate", fake_llm):
+            review = studio.review_shotlist(object(), self._data(1),
+                                            self._cues(1), None)
+        self.assertEqual(review["unreviewed"], 0)
+
+    def test_no_shots_at_all_reports_zero_unreviewed(self):
+        review = studio.review_shotlist(object(), {"shots": [], "images": []},
+                                        [], None)
+        self.assertEqual(review["unreviewed"], 0)
 
 
 if __name__ == "__main__":
