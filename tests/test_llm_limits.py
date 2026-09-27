@@ -405,10 +405,12 @@ class CurlTransportTests(unittest.TestCase):
         # UTF-8-emitting process plus an explicit encoding="utf-8" Popen
         # call (exactly what _spawn_curl now does) proves the fix works,
         # without needing to fight _spawn_curl's hardcoded curl-only argv.
-        import shutil
         import subprocess as sp
-        if not shutil.which("python3"):
-            self.skipTest("no python3 on PATH to stand in for curl")
+        # sys.executable is the interpreter actually running the tests -
+        # guaranteed real, unlike "python3", which on Windows is often the
+        # Microsoft Store App Execution Alias stub that prints an error to
+        # stderr and exits non-zero (which _curl_read_stream then correctly
+        # reports as a failed request).
         content = json.dumps(
             {"choices": [{"delta": {"content": "a cat’s coat"}}]})
         script = (
@@ -416,7 +418,7 @@ class CurlTransportTests(unittest.TestCase):
             f"sys.stdout.buffer.write('data: {content}\\n'.encode('utf-8')); "
             "sys.stdout.buffer.write(b'data: [DONE]\\n')"
         )
-        real_proc = sp.Popen(["python3", "-c", script], stdout=sp.PIPE,
+        real_proc = sp.Popen([sys.executable, "-c", script], stdout=sp.PIPE,
                              stderr=sp.PIPE, text=True, encoding="utf-8")
         out = studio._curl_read_stream(real_proc, "test-provider", 10)
         self.assertEqual(out, "a cat’s coat")
