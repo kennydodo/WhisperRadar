@@ -95,27 +95,31 @@ fragile (malformed-JSON retries, 19-min stalls with no fallback). Run one
 large-narration production against the current code first and see whether
 the pain that motivated this design is still there before building it.
 
-## NEXT SESSION — code review of the 2026-09-25/26 session (queued 2026-09-26)
+## DONE (2026-09-27) — code review of the 2026-09-25/26 session
 
-Review every change from the two big sessions, commit range `4855642..bb47ffd`
-(LLM config DB-only, settings page regroup + per-gateway save + providers
-reset, FlowBatch rename, portable TTS default + sibling tool detection,
-supplied-refs inventory in the shotlist prompt, LLM override for stage picks
-and Run-till-finish, provider-deletion reference cleanup, implicit-pin removal
-+ one-time migration, channel bible seeding before the shots gate). Focus:
-- correctness of the reference-cleanup SQL (`settings_providers_save` +
-  `/settings/providers/reset`) against renamed providers (rename = delete +
-  add; references to the old name are wiped by design — confirm that is OK);
-- the one-time `migration_llm_provider_cleared` flag: pins can never be
-  deliberate while no UI sets `productions.llm_provider` — decide whether the
-  column and the production→channel→global precedence should be simplified;
-- `shotlist_prompt` prompt-size growth (INPUT blocks + supplied refs) vs the
-  glm-5.3-flash 300s stall on b.ai;
-- template/JS: the provider-select live-label hack and the per-gateway
-  `saveProvider(-1)`-free flow (a removed last card has no Save — deletions
-  of the final card persist only via another card's save);
-- test isolation: tests that redirect `cfg.studio_dir` must not touch the
-  real `data\studio` folders (see test_bible_seeding).
+Reviewed commit range `4855642..bb47ffd`. Findings and outcomes:
+- reference-cleanup SQL (`settings_providers_save` / `/settings/providers/reset`):
+  correct against renamed providers. Gap found: the new `llm_fallback_provider`
+  setting (added 2026-09-27) was missing from both - FIXED, plus tests.
+- `migration_llm_provider_cleared`: the one-time migration is fine, but
+  `producer.run()` (the auto-run producer) still pinned `llm_provider` on every
+  production it created - the same bug 2615632 fixed for the manual stage
+  runners, reintroduced on a path that commit didn't touch. FIXED, plus a
+  regression test (`test_producer_no_pin.py`). The column/precedence itself
+  (production -> channel -> global) is fine now that nothing pins it silently.
+- `shotlist_prompt` size growth is real (bible + supplied-refs + pacing text
+  stack up) but no longer dangerous: a stall on the big prompt now retries on
+  a fallback provider instead of hanging the run (fixed the same day). No
+  further action.
+- template/JS: confirmed the last-card-delete bug exactly as suspected -
+  `delProvider()` only mutated the in-memory array with no Save button left to
+  submit it. FIXED (`delProvider`/`saveProvider` now read back every card and
+  submit immediately via a shared `readBackAll()`/`submitProviders()`), which
+  also fixed a related bug: editing two cards and saving/deleting only one
+  used to silently discard the other's edits.
+- test isolation: `test_bible_seeding.py` correctly redirects both `db_path`
+  and `studio_dir`; no other test touched in that session writes into
+  `cfg.studio_dir`, so no other fix was needed.
 
 ## NEXT SESSION — RETEST the refs productions (written 2026-09-24, end of day)
 
