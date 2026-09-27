@@ -81,6 +81,7 @@
 <nav class="topnav">
   <span class="brand">WhisperRadar</span>
   <a href="/" class="active">Dashboard</a>
+  <a href="/watched">Watched Channels</a>
   <a href="/studio">Studio</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
@@ -115,79 +116,6 @@
       <a class="btn" style="background:var(--green)" href="/export_all?{{ qs() }}">Export all transcripts (.zip)</a>
     </div>
     <pre class="logbox copyable" id="logbox">{{ log_text }}</pre>
-  </div>
-
-  <h2>Channels</h2>
-  <div class="panel">
-    <form class="inline" method="post" action="/channels/add">
-      {{ hidden_filters() }}
-      <input type="text" name="url" placeholder="https://www.youtube.com/@channel or UC..." required>
-      <input type="text" name="name" placeholder="Name (optional)" style="flex:0 0 160px">
-      <input type="text" name="genre" placeholder="genre e.g. tech" style="flex:0 0 140px">
-      <select name="kind">
-        <option value="primary">primary</option>
-        <option value="similar">similar</option>
-      </select>
-      <button type="submit">Add channel</button>
-    </form>
-    <table style="margin-top:10px">
-      <tr><th>Name</th><th>Channel ID</th><th>Kind</th><th>Genre</th><th>State</th><th></th></tr>
-      {% for ch in channels %}
-      <tr>
-        <td>{{ ch["name"] }}</td>
-        <td class="mono muted">{{ ch["channel_id"] }}</td>
-        <td>{{ ch["kind"] }}</td>
-        <td class="muted">{{ ch["genre"] }}</td>
-        <td>{% if ch["active"] %}<span class="badge transcribed">active</span>
-            {% else %}<span class="badge skipped">paused</span>{% endif %}</td>
-        <td style="text-align:right; white-space:nowrap">
-          <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
-          <form class="row" method="post" action="/channels/backfill" style="display:inline"
-                title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
-            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
-            <button type="submit" class="ghost">backfill</button>
-          </form>
-          <form class="row" method="post" action="/channels/views" style="display:inline"
-                title="Refresh this channel's video view counts (for the 'most viewed' sort)">
-            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
-            <button type="submit" class="ghost">views</button>
-          </form>
-          <form class="row" method="post" action="/channels/remove"
-                onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch["name"] }} and its video records?')">
-            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
-            <button type="submit" class="ghost">remove</button>
-          </form>
-        </td>
-      </tr>
-      <tr id="edit-{{ ch['channel_id'] }}" style="display:none">
-        <td colspan="6" style="background:#12151c">
-          <form class="inline" method="post" action="/channels/edit">
-            {{ hidden_filters() }}
-            <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
-            <label class="muted" style="font-size:12px">name
-              <input type="text" name="name" value="{{ ch["name"] }}" style="width:180px">
-            </label>
-            <label class="muted" style="font-size:12px">genre
-              <input type="text" name="genre" value="{{ ch["genre"] }}" style="width:120px">
-            </label>
-            <select name="kind">
-              <option value="primary" {{ 'selected' if ch['kind'] == 'primary' else '' }}>primary</option>
-              <option value="similar" {{ 'selected' if ch['kind'] == 'similar' else '' }}>similar</option>
-            </select>
-            <select name="active">
-              <option value="1" {{ 'selected' if ch['active'] else '' }}>active</option>
-              <option value="0" {{ 'selected' if not ch['active'] else '' }}>paused</option>
-            </select>
-            <button type="submit">save</button>
-            <button type="button" class="ghost"
-                    onclick="cancelEdit('{{ ch['channel_id'] }}')">cancel</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="muted">No channels yet &mdash; add one above or edit config.yaml</td></tr>
-      {% endfor %}
-    </table>
   </div>
 
   <h2>Videos</h2>
@@ -327,16 +255,6 @@
 </div>
 
 <script>
-  function toggleEdit(id) {
-    const row = document.getElementById('edit-' + id);
-    row.style.display = row.style.display === 'none' ? '' : 'none';
-  }
-  function cancelEdit(id) {
-    const row = document.getElementById('edit-' + id);
-    const form = row.querySelector('form');
-    if (form) { form.reset(); }
-    row.style.display = 'none';
-  }
   let wasRunning = {{ 'true' if job.running else 'false' }};
   async function poll() {
     try {

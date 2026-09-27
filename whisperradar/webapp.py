@@ -36,12 +36,14 @@ from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
 
-def _back(request, msg: str | None = None, error: str | None = None):
-    """Redirect back to the dashboard preserving the current view.
+def _back(request, msg: str | None = None, error: str | None = None,
+          base: str = "/"):
+    """Redirect back to the dashboard (or `base`) preserving the current view.
 
     Filter and paging values come from hidden fields the POST forms carry, so
     acting on a row (queue, retry, delete, ...) returns to the same page and
-    sort instead of jumping to page 1.
+    sort instead of jumping to page 1. `base` lets a form living on another
+    page (e.g. Watched Channels) return there instead of the dashboard.
     """
     parts = []
     for key in ("status", "genre", "channel", "sort", "q", "per_page", "page"):
@@ -52,7 +54,7 @@ def _back(request, msg: str | None = None, error: str | None = None):
         parts.append(f"msg={quote(msg)}")
     if error:
         parts.append(f"error={quote(error)}")
-    return redirect("/" + ("?" + "&".join(parts) if parts else ""))
+    return redirect(base + ("?" + "&".join(parts) if parts else ""))
 
 
 def _studio_url(pid, msg: str | None = None, error: str | None = None):
@@ -515,6 +517,23 @@ def create_app(cfg) -> Flask:
                             max_age=60 * 60 * 24 * 365, samesite="Lax")
         return resp
 
+    @app.get("/watched")
+    def watched_channels():
+        """The competitor/source channels WhisperRadar monitors for new
+        uploads - split out of the dashboard (2026-09-27) so a long watch
+        list doesn't push the videos list below the fold."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        db.sync_channels(conn, cfg.channels)
+        channels = db.list_channels(conn)
+        conn.close()
+        return render_template(
+            "watched.html",
+            channels=channels,
+            msg=request.args.get("msg"),
+            error=request.args.get("error"),
+        )
+
     @app.post("/channels/edit")
     def channels_edit():
         channel_id = request.form.get("channel_id") or ""
@@ -527,14 +546,14 @@ def create_app(cfg) -> Flask:
         try:
             row = db.get_channel(conn, channel_id)
             if not row:
-                return redirect("/?error=Unknown+channel")
+                return redirect("/watched?error=Unknown+channel")
             db.update_channel(conn, channel_id, name=name or row["name"],
                               kind=kind, genre=genre, active=active)
             if row["genre"] != genre:
                 pipeline.move_channel_files(cfg, conn, row, genre)
         finally:
             conn.close()
-        return _back(request, msg="Channel updated")
+        return _back(request, msg="Channel updated", base="/watched")
 
     @app.get("/status")
     def status():
@@ -551,7 +570,7 @@ def create_app(cfg) -> Flask:
         kind = request.form.get("kind") or "primary"
         genre = (request.form.get("genre") or "").strip() or "general"
         if not raw:
-            return redirect("/?error=Enter+a+channel+URL")
+            return redirect("/watched?error=Enter+a+channel+URL")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -566,9 +585,10 @@ def create_app(cfg) -> Flask:
                 kind=kind,
                 genre=genre,
             )
-            return _back(request, msg="Channel added")
+            return _back(request, msg="Channel added", base="/watched")
         except Exception as exc:
-            return _back(request, error=f"Could not resolve channel: {exc}")
+            return _back(request, error=f"Could not resolve channel: {exc}",
+                         base="/watched")
         finally:
             conn.close()
 
@@ -605,8 +625,10 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         if not job.start(worker, "history backfill"):
-            return _back(request, error="A job is already running")
-        return _back(request, msg="Importing channel history - watch the log")
+            return _back(request, error="A job is already running",
+                         base="/watched")
+        return _back(request, msg="Importing channel history - watch the log",
+                     base="/watched")
 
     @app.post("/channels/views")
     def channels_views():
@@ -635,8 +657,10 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         if not job.start(worker, "view counts"):
-            return _back(request, error="A job is already running")
-        return _back(request, msg="Refreshing view counts - watch the log")
+            return _back(request, error="A job is already running",
+                         base="/watched")
+        return _back(request, msg="Refreshing view counts - watch the log",
+                     base="/watched")
 
     @app.post("/channels/remove")
     def channels_remove():
@@ -647,7 +671,7 @@ def create_app(cfg) -> Flask:
             db.remove_channel(conn, key)
         finally:
             conn.close()
-        return redirect("/?msg=Channel+removed")
+        return redirect("/watched?msg=Channel+removed")
 
     # ---------------------------------------------------------- settings ---
     # Global Auto Run criteria. Own channels live on /my-channels; monitored

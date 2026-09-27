@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Watched Channels</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
+    --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f; --amber: #e0a93f;
+    --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+       text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.transcribed { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.skipped { background: rgba(86,93,107,.25); color: var(--muted); }
+  button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
+          padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted);
+                 padding: 4px 10px; font-weight: 500; }
+  button.ghost:hover { color: var(--red); border-color: var(--red); filter: none; }
+  input, select { background: #0c0e12; color: var(--text); border: 1px solid var(--border);
+                  border-radius: 7px; padding: 7px 10px; font-size: 13px; }
+  input { flex: 1; }
+  form.inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  form.row { display: inline; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .muted { color: var(--muted); }
+  .mono { font-family: Consolas, monospace; font-size: 12px; }
+  .search { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .search input[type=search] { flex: 0 1 280px; }
+  .count { color: var(--muted); font-size: 12px; margin-left: 8px; }
+</style>
+</head>
+<body>
+<style>
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px; margin:0 auto;
+            padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; color:var(--text); font-size:15px; }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+</style>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/watched" class="active">Watched Channels</a>
+  <a href="/studio">Studio</a>
+  <a href="/my-channels">My Channels</a>
+  <a href="/settings">Settings</a>
+</nav>
+<div class="wrap">
+  <h1>Watched Channels</h1>
+  <p class="sub">competitor / source channels WhisperRadar monitors for new uploads to transcribe &mdash;
+    see <a href="/">the Dashboard</a> for the videos themselves</p>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <form class="inline" method="post" action="/channels/add">
+      <input type="text" name="url" placeholder="https://www.youtube.com/@channel or UC..." required>
+      <input type="text" name="name" placeholder="Name (optional)" style="flex:0 0 160px">
+      <input type="text" name="genre" placeholder="genre e.g. tech" style="flex:0 0 140px">
+      <select name="kind">
+        <option value="primary">primary</option>
+        <option value="similar">similar</option>
+      </select>
+      <button type="submit">Add channel</button>
+    </form>
+  </div>
+
+  <div class="search">
+    <input type="search" id="channel-search" placeholder="filter by name or genre..."
+           autocomplete="off" oninput="filterChannels(this.value)">
+    <span class="count" id="channel-count"></span>
+  </div>
+
+  <div class="panel">
+    <table id="channel-table">
+      <tr><th>Name</th><th>Channel ID</th><th>Kind</th><th>Genre</th><th>State</th><th></th></tr>
+      {% for ch in channels %}
+      <tr data-search="{{ (ch['name'] ~ ' ' ~ ch['genre'])|lower }}">
+        <td>{{ ch["name"] }}</td>
+        <td class="mono muted">{{ ch["channel_id"] }}</td>
+        <td>{{ ch["kind"] }}</td>
+        <td class="muted">{{ ch["genre"] }}</td>
+        <td>{% if ch["active"] %}<span class="badge transcribed">active</span>
+            {% else %}<span class="badge skipped">paused</span>{% endif %}</td>
+        <td style="text-align:right; white-space:nowrap">
+          <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
+          <form class="row" method="post" action="/channels/backfill" style="display:inline"
+                title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
+            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
+            <button type="submit" class="ghost">backfill</button>
+          </form>
+          <form class="row" method="post" action="/channels/views" style="display:inline"
+                title="Refresh this channel's video view counts (for the 'most viewed' sort)">
+            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
+            <button type="submit" class="ghost">views</button>
+          </form>
+          <form class="row" method="post" action="/channels/remove"
+                onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch["name"] }} and its video records?')">
+            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
+            <button type="submit" class="ghost">remove</button>
+          </form>
+        </td>
+      </tr>
+      <tr id="edit-{{ ch['channel_id'] }}" data-search="{{ (ch['name'] ~ ' ' ~ ch['genre'])|lower }}" style="display:none">
+        <td colspan="6" style="background:#12151c">
+          <form class="inline" method="post" action="/channels/edit">
+            <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
+            <label class="muted" style="font-size:12px">name
+              <input type="text" name="name" value="{{ ch["name"] }}" style="width:180px">
+            </label>
+            <label class="muted" style="font-size:12px">genre
+              <input type="text" name="genre" value="{{ ch["genre"] }}" style="width:120px">
+            </label>
+            <select name="kind">
+              <option value="primary" {{ 'selected' if ch['kind'] == 'primary' else '' }}>primary</option>
+              <option value="similar" {{ 'selected' if ch['kind'] == 'similar' else '' }}>similar</option>
+            </select>
+            <select name="active">
+              <option value="1" {{ 'selected' if ch['active'] else '' }}>active</option>
+              <option value="0" {{ 'selected' if not ch['active'] else '' }}>paused</option>
+            </select>
+            <button type="submit">save</button>
+            <button type="button" class="ghost"
+                    onclick="cancelEdit('{{ ch['channel_id'] }}')">cancel</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No channels yet &mdash; add one above or edit config.yaml</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+
+<script>
+  function toggleEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    row.style.display = row.style.display === 'none' ? '' : 'none';
+  }
+  function cancelEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    const form = row.querySelector('form');
+    if (form) { form.reset(); }
+    row.style.display = 'none';
+  }
+  // Client-side filter: with 10+ watched channels, scanning the whole table
+  // for one name gets tedious - this narrows it as you type, no reload.
+  function filterChannels(raw) {
+    const q = raw.trim().toLowerCase();
+    const rows = document.querySelectorAll('#channel-table tr[data-search]');
+    let total = 0;
+    let shown = 0;
+    rows.forEach(function (row) {
+      const isEditRow = row.id && row.id.indexOf('edit-') === 0;
+      const match = !q || row.dataset.search.indexOf(q) !== -1;
+      if (isEditRow) {
+        // an edit row's own visibility is controlled by toggleEdit(), not the
+        // filter - only hide it when its owning channel row is filtered out
+        if (!match) row.style.display = 'none';
+        return;
+      }
+      total++;
+      row.style.display = match ? '' : 'none';
+      if (match) shown++;
+    });
+    const countEl = document.getElementById('channel-count');
+    if (countEl) {
+      countEl.textContent = q ? shown + ' of ' + total + ' shown' : '';
+    }
+  }
+</script>
+<script src="{{ url_for('static', filename='confirm.js') }}"></script>
+</body>
+</html>
