@@ -220,6 +220,30 @@ class StallTests(unittest.TestCase):
             with self.assertRaises(studio.LLMStalled):
                 studio.llm_generate(object(), "prompt")
 
+    def test_when_the_fallback_also_fails_both_errors_are_reported(self):
+        # A fallback that ALSO fails used to raise only its own error,
+        # burying the fact the original provider failed too - the log then
+        # reads as if the fallback provider were the only problem.
+        alt = dict(PROVIDER, name="deepseek", base_url="http://other.test")
+
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            if p["name"] == "glm-flash":
+                raise studio.LLMStalled("glm-flash sent no content for 150s")
+            raise RuntimeError("deepseek: 401 Unauthorized")
+
+        with mock.patch.object(studio, "_resolve_provider",
+                               lambda cfg, name=None: PROVIDER), \
+                mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}), \
+                mock.patch.object(studio, "_fallback_provider",
+                                  lambda cfg, failed: alt):
+            with self.assertRaises(RuntimeError) as ctx:
+                studio.llm_generate(object(), "prompt")
+        msg = str(ctx.exception)
+        self.assertIn("glm-flash", msg)
+        self.assertIn("sent no content", msg)
+        self.assertIn("deepseek", msg)
+        self.assertIn("401", msg)
+
 
 class _FakeCurlProc:
     """Stands in for subprocess.Popen for the curl transport tests."""

@@ -1,0 +1,36 @@
+# Line-ending policy (added 2026-09-27 - see AGENTS.md item #4 in the
+# 2026-09-27 improvement backlog). Without this, files created on Windows
+# checkouts drift to CRLF while Linux/mac ones stay LF, and the mismatch
+# shows up as a huge line-ending-only diff the next time either side edits
+# the file (hit twice today on studio_detail.html). Everything is normalized
+# to LF in the repository; Windows-native scripts still get CRLF on checkout
+# so double-clicking them in Explorer/cmd.exe works as expected.
+
+* text=auto eol=lf
+
+*.py   text eol=lf
+*.html text eol=lf
+*.js   text eol=lf
+*.css  text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+*.gitignore   text eol=lf
+*.gitattributes text eol=lf
+
+# Windows-native scripts: keep CRLF on checkout so cmd.exe/PowerShell see the
+# line endings they expect.
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary - never touch line endings
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.db   binary
+*.zip  binary

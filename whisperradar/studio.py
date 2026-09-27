@@ -2640,8 +2640,18 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
         if not alt or alt_fn is None:
             raise exc
         log.warning("%s - retrying on '%s'", exc, alt["name"])
-        return alt_fn(alt, prompt, timeout=timeout, max_tokens=max_tokens,
-                      temperature=temperature)
+        try:
+            return alt_fn(alt, prompt, timeout=timeout, max_tokens=max_tokens,
+                          temperature=temperature)
+        except Exception as exc2:  # noqa: BLE001 - always wrap, never swallow
+            # Losing the ORIGINAL failure behind the fallback's own error
+            # made a fine setup look like the fallback provider was the
+            # (only) problem, when the real story is "both failed" - keep
+            # both messages so whoever reads the log/warning knows which
+            # provider to actually go fix.
+            raise RuntimeError(
+                f"'{p['name']}' failed ({exc}), and the fallback "
+                f"'{alt['name']}' also failed ({exc2})") from exc2
 
     try:
         return fn(p, prompt, timeout=timeout, max_tokens=max_tokens,
