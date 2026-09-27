@@ -3172,8 +3172,9 @@ def shotlist_pacing(data: dict, cues: list[dict],
     faults: list[str] = []
     long = sorted((h for h in holds if h[0] > cap), reverse=True)
     if long:
+        SHOWN_CAP = 30
         lines = []
-        for hold, _motion, asset, first, last in long[:6]:
+        for hold, _motion, asset, first, last in long[:SHOWN_CAP]:
             midpoint = _srt_seconds(by_index[first]["start"]) + hold / 2
             choices = [c for c in range(first + 1, last + 1) if c in by_index]
             split_at = min(choices,
@@ -3181,6 +3182,16 @@ def shotlist_pacing(data: dict, cues: list[dict],
                                              - midpoint)) if choices else None
             at = f" around cue {split_at}" if split_at else ""
             lines.append(f"{asset} cues {first}-{last} ({hold:.0f}s) - split{at}")
+        omitted = len(long) - len(lines)
+        # Naming every offender (not just a sample) matters: a re-plan is a
+        # fresh call with no memory of the previous attempt, so a shot left
+        # off this list is one the model has no way to know about. Earlier
+        # this only ever showed the worst 6, and re-plans kept the total
+        # offender count roughly flat attempt to attempt (fixing the 6 shown,
+        # breaking new ones elsewhere) instead of driving it to zero.
+        listed_desc = ("every shot over the maximum" if not omitted
+                       else f"the {len(lines)} worst of {len(long)} (the rest "
+                            "follow the identical rule)")
         faults.append(
             f"{len(long)} shot(s) hold longer than the {cap:.0f}s maximum. Split "
             f"EVERY one of them at a meaning boundary (a number, statistic or "
@@ -3195,9 +3206,11 @@ def shotlist_pacing(data: dict, cues: list[dict],
             f"Number each scene's images in order - the first image in scene S12 is "
             f"S12_01, the next S12_02, and so on - so a new image takes the next "
             f"unused sub-beat in its scene, with its own TYPE and MOTION codes and "
-            f"its own prompt describing the separated sub-beat. The worst offenders "
-            f"(apply the same rule to every shot over the maximum):\n  "
-            + "\n  ".join(lines))
+            f"its own prompt describing the separated sub-beat. Below is {listed_desc}"
+            f" (apply the same rule to every shot over the maximum, not only "
+            f"the ones named here):\n  "
+            + "\n  ".join(lines)
+            + (f"\n  ...and {omitted} more of the same kind" if omitted else ""))
     static_long = [(h, a) for h, m, a, _f, _l in holds if m == "ST" and h >= 15.0]
     if static_long:
         faults.append("a long STATIC hold is never acceptable: " + ", ".join(

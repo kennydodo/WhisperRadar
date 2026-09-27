@@ -7,6 +7,7 @@ fragmentation. Plus a warning when the count is low for the narration length.
 
 Run: python -m unittest discover -s tests
 """
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -116,6 +117,34 @@ class PacingTests(unittest.TestCase):
                        for i, m in enumerate(motions, 1)])
         self.assertTrue(studio.shotlist_pacing(data, cues, 12.0)[0])
         self.assertEqual(studio.shotlist_pacing(data, cues, 45.0)[0], [])
+
+    def test_every_long_hold_is_named_not_just_a_sample(self):
+        # a re-plan is a FRESH call with no memory of the previous attempt,
+        # so a shot left off this list is one the model can't know about -
+        # showing only a sample of "worst offenders" let the total offender
+        # count stay flat attempt to attempt instead of reaching zero.
+        cues = _cues(140, 10)  # 1400s, room for every shot's cue range
+        data = _shots([(f"S01_{i:02d}_SCN_ZI.png", i * 6 + 1, i * 6 + 6, "ZI")
+                       for i in range(1, 21)])  # 20 shots over the 12s cap
+        faults, _ = studio.shotlist_pacing(data, cues)
+        text = "\n".join(faults)
+        for i in range(1, 21):
+            self.assertIn(f"S01_{i:02d}_SCN_ZI.png", text)
+        self.assertNotIn("worst", text)
+        self.assertNotIn("more of the same kind", text)
+
+    def test_a_very_long_offender_list_is_capped_with_a_count(self):
+        cues = _cues(400, 10)  # 4000s, room for every shot's cue range
+        data = _shots([(f"S01_{i:03d}_SCN_ZI.png", i * 6 + 1, i * 6 + 6, "ZI")
+                       for i in range(1, 41)])  # 40 shots over the 12s cap
+        faults, _ = studio.shotlist_pacing(data, cues)
+        text = "\n".join(faults)
+        self.assertIn("40 shot(s) hold longer than", text)
+        self.assertIn("...and 10 more of the same kind", text)
+        # exactly 30 of the 40 offenders are actually named (tie-break order
+        # between equal-length holds isn't the point of this test)
+        named = len(re.findall(r"S01_\d{3}_SCN_ZI\.png cues", text))
+        self.assertEqual(named, 30)
 
 
 class FeedbackTests(unittest.TestCase):
