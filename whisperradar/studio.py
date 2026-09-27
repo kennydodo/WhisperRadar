@@ -2305,7 +2305,18 @@ def _spawn_curl(config_text: str, timeout: int) -> subprocess.Popen:
         [_curl_binary(), "-s", "-S", "-N", "--max-time", str(timeout + 30),
          "-K", "-"],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, bufsize=1,
+        text=True, bufsize=1, encoding="utf-8",
+        # text=True with no encoding falls back to locale.getpreferredencoding(),
+        # which on Windows is the system ANSI codepage (e.g. cp1252), not UTF-8.
+        # The API's SSE response is UTF-8, so every multi-byte character (a
+        # curly apostrophe, an em dash, an accented name) got decoded one byte
+        # at a time as if it were cp1252 - "'" (E2 80 99) became "â"
+        # read back as "â€™" ("a-circumflex, euro, trademark"),
+        # i.e. exactly the "a€™" mojibake seen throughout every judge review
+        # and generated script. The request side never had this problem (the
+        # outgoing JSON is built with json.dumps()'s default ensure_ascii=True,
+        # so it's already plain ASCII \uXXXX escapes before curl ever sees it)
+        # - only curl's stdout was ever mis-decoded.
     )
     try:
         proc.stdin.write(config_text)

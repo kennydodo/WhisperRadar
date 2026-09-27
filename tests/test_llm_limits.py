@@ -384,6 +384,44 @@ class CurlTransportTests(unittest.TestCase):
         argv = popen.call_args[0][0]
         self.assertTrue(all("super-secret-key" not in str(a) for a in argv))
 
+    def test_curl_subprocess_is_opened_as_explicit_utf8(self):
+        # text=True with no encoding falls back to locale.getpreferredencoding(),
+        # which on Windows is the system ANSI codepage (e.g. cp1252), not
+        # UTF-8. The API's SSE response is UTF-8, so a curly apostrophe (E2 80
+        # 99) got decoded one byte at a time as cp1252 and came out as the
+        # mojibake seen throughout real judge reviews and generated scripts -
+        # encoding="utf-8" must be explicit.
+        with mock.patch.object(studio, "_curl_binary", return_value="/usr/bin/curl"), \
+                mock.patch("subprocess.Popen") as popen:
+            popen.return_value.stdin = mock.Mock()
+            studio._spawn_curl("cfg", 60)
+        self.assertEqual(popen.call_args.kwargs.get("encoding"), "utf-8")
+
+    def test_a_real_utf8_curl_response_decodes_correctly(self):
+        # a smoke test with the actual bug's byte pattern, run through a
+        # REAL subprocess (a tiny python one-liner standing in for curl) so
+        # it exercises the real decoding path end to end -
+        # _curl_read_stream reads whatever Popen handed it, so a real
+        # UTF-8-emitting process plus an explicit encoding="utf-8" Popen
+        # call (exactly what _spawn_curl now does) proves the fix works,
+        # without needing to fight _spawn_curl's hardcoded curl-only argv.
+        import shutil
+        import subprocess as sp
+        if not shutil.which("python3"):
+            self.skipTest("no python3 on PATH to stand in for curl")
+        content = json.dumps(
+            {"choices": [{"delta": {"content": "a cat’s coat"}}]})
+        script = (
+            "import sys; "
+            f"sys.stdout.buffer.write('data: {content}\\n'.encode('utf-8')); "
+            "sys.stdout.buffer.write(b'data: [DONE]\\n')"
+        )
+        real_proc = sp.Popen(["python3", "-c", script], stdout=sp.PIPE,
+                             stderr=sp.PIPE, text=True, encoding="utf-8")
+        out = studio._curl_read_stream(real_proc, "test-provider", 10)
+        self.assertEqual(out, "a cat’s coat")
+        self.assertNotIn("â", out)
+
 
 class TemperatureTests(unittest.TestCase):
     """Every LLM call shares one transport with a single hardcoded
