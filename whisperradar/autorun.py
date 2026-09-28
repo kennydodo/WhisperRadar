@@ -257,6 +257,12 @@ RESEARCH_NOTES_FILE = "research_notes.md"
 IMAGE_RESUME_PAUSE_SECONDS = 300
 IMAGE_RESUME_ROUNDS = 3
 
+# A harder stop: 3 cards failed in a row (studio.py's run_imagegen_flow) means
+# Flow is actively refusing the session (usually a reCAPTCHA score dip after
+# ~80-100 generations), not just a "still busy" timeout - the same skip-what-
+# exists resume works, but it needs longer to clear, so it gets its own pause.
+FLOW_REFUSAL_PAUSE_SECONDS = 600
+
 
 def _research_notes(cfg, pdir: Path, title: str, genre: str,
                     source_text: str, provider: str | None,
@@ -1037,12 +1043,26 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     _step(detail)
 
 
+_RESUMABLE_IMAGE_ERRORS = ("were not produced", "is refusing this session")
+
+
 def _should_resume_images(exc: Exception, round_no: int) -> bool:
-    """True when a failed images round should pause and be resumed: ONLY Flow's
-    'N of M image(s) were not produced' wave (its 'still busy' timeout), and only
+    """True when a failed images round should pause and be resumed: ONLY
+    Flow's 'N of M image(s) were not produced' wave (its 'still busy'
+    timeout) or its 'is refusing this session' hard stop (studio.py's
+    3-failures-in-a-row guard, usually a reCAPTCHA score dip), and only
     while rounds remain. Any other error is a real failure."""
+    text = str(exc)
     return (round_no < IMAGE_RESUME_ROUNDS
-            and "were not produced" in str(exc))
+            and any(marker in text for marker in _RESUMABLE_IMAGE_ERRORS))
+
+
+def _resume_pause_seconds(exc: Exception) -> int:
+    """How long to wait before resuming - the refusal wave needs longer than
+    a plain 'still busy' timeout to actually clear."""
+    if "is refusing this session" in str(exc):
+        return FLOW_REFUSAL_PAUSE_SECONDS
+    return IMAGE_RESUME_PAUSE_SECONDS
 
 
 def _run_images(cfg, pid: int, mode: str | None = None,
@@ -1111,12 +1131,12 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                 # only attempts the gaps.
                 if not _should_resume_images(exc, round_no):
                     raise
+                pause = _resume_pause_seconds(exc)
                 log(f"[auto-run] images: {exc}")
-                log(f"[auto-run] images: pausing "
-                    f"{IMAGE_RESUME_PAUSE_SECONDS // 60} minutes, then resuming "
-                    f"the missing card(s) - round {round_no} of "
+                log(f"[auto-run] images: pausing {pause // 60} minutes, then "
+                    f"resuming the missing card(s) - round {round_no} of "
                     f"{IMAGE_RESUME_ROUNDS - 1}")
-                time.sleep(IMAGE_RESUME_PAUSE_SECONDS)
+                time.sleep(pause)
     finally:
         # stop what we started, if the user opted in; never a service that was
         # already running
