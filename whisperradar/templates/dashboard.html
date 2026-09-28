@@ -35,6 +35,7 @@
   .badge.downloading, .badge.transcribing { background: rgba(224,169,63,.15); color: var(--amber); }
   .badge.error { background: rgba(224,92,92,.15); color: var(--red); }
   .badge.skipped, .badge.downloaded { background: rgba(86,93,107,.25); color: var(--muted); }
+  .badge.produced { background: rgba(63,185,111,.15); color: var(--green); margin-left: 4px; }
   button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
           padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
   button:hover, .btn:hover { filter: brightness(1.1); }
@@ -185,7 +186,8 @@
             {% if v["duration"] %}<span class="muted">&middot; {{ v["duration"] | dur }}</span>{% endif %}
             {% if v["error"] %}<div class="muted" style="font-size:12px">{{ v["error"][:120] }}</div>{% endif %}</td>
         <td class="muted" style="text-align:right" title="{{ v['view_count'] if v['view_count'] is not none else 'not recorded yet' }}">{{ v["view_count"] | views }}</td>
-        <td><span class="badge {{ v['status'] }}">{{ v["status"] }}{% if v["auto"] == 0 and v["status"] == "new" %} (backlog){% endif %}</span></td>
+        <td><span class="badge {{ v['status'] }}">{{ v["status"] }}{% if v["auto"] == 0 and v["status"] == "new" %} (backlog){% endif %}</span>
+          {% if v["produced"] %}<span class="badge produced" title="A production made from this video reached ready - it's hidden from the 'Based on' picker until re-enabled">&#10003; produced</span>{% endif %}</td>
         <td style="text-align:right; white-space:nowrap">
           {% if v["auto"] == 0 and v["status"] == "new" %}
           <form class="row" method="post" action="/videos/action">
@@ -214,6 +216,19 @@
           {% if v["status"] == "transcribed" %}
           <a class="btn" style="background:var(--gray)" href="/transcript/{{ v['video_id'] }}">view</a>
           <a class="btn" href="/file/{{ v['video_id'] }}">.txt</a>
+          <form class="row" method="post" action="/videos/action">
+            {{ hidden_filters() }}
+            <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+            {% if v["produced"] %}
+            <input type="hidden" name="action" value="reenable">
+            <button type="submit" class="ghost" style="color:var(--accent);border-color:var(--accent)"
+                    title="Make this video pickable again in the Studio 'Based on' list">re-enable</button>
+            {% else %}
+            <input type="hidden" name="action" value="mark_produced">
+            <button type="submit" class="ghost"
+                    title="Mark as already turned into a video, without waiting for a production to reach ready">mark done</button>
+            {% endif %}
+          </form>
           {% endif %}
           <form class="row" method="post" action="/videos/delete"
                 onsubmit="return wrConfirmSubmit(this, 'Delete {{ v["title"] }} and its audio/transcript files?')">

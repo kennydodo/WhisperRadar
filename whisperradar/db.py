@@ -128,6 +128,7 @@ _VIDEO_FIELDS = {
     "language",
     "error",
     "auto",
+    "produced",
 }
 
 
@@ -157,6 +158,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # videos discovered but never downloaded are backlog, not auto-queue
         conn.execute("UPDATE videos SET auto = 0 WHERE status = 'new'")
     _add_column_if_missing(conn, "videos", "view_count", "INTEGER")
+    # Set when a production sourced from this video reaches status='ready' -
+    # lets the dashboard show it's already been turned into a finished video
+    # and hides it from the "Based on" picker for new productions, without
+    # stopping anyone from picking it again: the video row still exists and
+    # a "re-enable" action just flips this back to 0.
+    _add_column_if_missing(conn, "videos", "produced", "INTEGER NOT NULL DEFAULT 0")
     cols = {row[1] for row in conn.execute("PRAGMA table_info(productions)")}
     if "llm_provider" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN llm_provider TEXT")
@@ -442,7 +449,8 @@ def get_video(conn, video_id: str):
 
 
 def _video_filters(status: str | None, genre: str | None, backlog: bool,
-                   channel: str | None, q: str | None = None):
+                   channel: str | None, q: str | None = None,
+                   produced: int | None = None):
     clauses, params = [], []
     if backlog:
         clauses.append("v.auto = 0")
@@ -459,6 +467,9 @@ def _video_filters(status: str | None, genre: str | None, backlog: bool,
     if q:
         clauses.append("v.title LIKE ?")
         params.append(f"%{q}%")
+    if produced is not None:
+        clauses.append("v.produced = ?")
+        params.append(produced)
     return clauses, params
 
 
@@ -473,10 +484,11 @@ def _video_order(sort: str | None) -> str:
 
 def count_videos(conn, status: str | None = None, genre: str | None = None,
                  backlog: bool = False, channel: str | None = None,
-                 q: str | None = None) -> int:
+                 q: str | None = None, produced: int | None = None) -> int:
     sql = ("SELECT COUNT(*) FROM videos v"
            " JOIN channels c ON c.channel_id = v.channel_id")
-    clauses, params = _video_filters(status, genre, backlog, channel, q)
+    clauses, params = _video_filters(status, genre, backlog, channel, q,
+                                     produced)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     return conn.execute(sql, params).fetchone()[0]
@@ -485,10 +497,12 @@ def count_videos(conn, status: str | None = None, genre: str | None = None,
 def get_videos(conn, status: str | None = None, genre: str | None = None,
                backlog: bool = False, channel: str | None = None,
                limit: int | None = None, offset: int = 0,
-               sort: str | None = None, q: str | None = None):
+               sort: str | None = None, q: str | None = None,
+               produced: int | None = None):
     sql = ("SELECT v.*, c.name AS channel_name, c.genre AS channel_genre FROM videos v"
            " JOIN channels c ON c.channel_id = v.channel_id")
-    clauses, params = _video_filters(status, genre, backlog, channel, q)
+    clauses, params = _video_filters(status, genre, backlog, channel, q,
+                                     produced)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += _video_order(sort)
@@ -501,7 +515,8 @@ def get_videos(conn, status: str | None = None, genre: str | None = None,
 def get_videos_page(conn, status: str | None = None, genre: str | None = None,
                     backlog: bool = False, channel: str | None = None,
                     q: str | None = None, sort: str | None = None,
-                    limit: int = 50, offset: int = 0):
+                    limit: int = 50, offset: int = 0,
+                    produced: int | None = None):
     """One page of videos plus the total number of matching rows.
 
     Deliberately two queries: a `COUNT(*) OVER ()` would force SQLite to
@@ -510,9 +525,9 @@ def get_videos_page(conn, status: str | None = None, genre: str | None = None,
     """
     rows = get_videos(conn, status=status, genre=genre, backlog=backlog,
                       channel=channel, q=q, sort=sort, limit=limit,
-                      offset=offset)
+                      offset=offset, produced=produced)
     total = count_videos(conn, status=status, genre=genre, backlog=backlog,
-                         channel=channel, q=q)
+                         channel=channel, q=q, produced=produced)
     return rows, total
 
 

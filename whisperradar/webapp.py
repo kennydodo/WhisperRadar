@@ -1142,6 +1142,10 @@ def create_app(cfg) -> Flask:
                     return _back(request, error="Audio not downloaded yet")
                 if not job.start(lambda: _transcribe_one(cfg, video_id), "transcribe"):
                     return _back(request, error="A job is already running")
+            elif action == "mark_produced":
+                db.set_video(conn, video_id, produced=1)
+            elif action == "reenable":
+                db.set_video(conn, video_id, produced=0)
             else:
                 return _back(request, error="Unknown action")
         finally:
@@ -1296,7 +1300,11 @@ def create_app(cfg) -> Flask:
             done = sum(1 for s in db.STAGES if s in steps)
             prods.append({"row": p, "done": done, "total": len(db.STAGES),
                           "own_channel": own_by_id.get(p["own_channel_id"])})
-        sources = db.get_videos(conn, status="transcribed", limit=500)
+        # produced=0 excludes videos already turned into a "ready" production -
+        # re-enabling one on the dashboard (produced back to 0) is what brings
+        # it back into this picker.
+        sources = db.get_videos(conn, status="transcribed", produced=0,
+                                limit=500)
         conn.close()
         title_by_id = {p["row"]["id"]: p["row"]["title"] for p in prods}
         with batch["lock"]:
@@ -1794,6 +1802,8 @@ def create_app(cfg) -> Flask:
             idx = db.STAGES.index(prod["stage"])
             if prod["stage"] == "review":
                 db.update_production(conn, pid, status="ready")
+                if prod["source_video_id"]:
+                    db.set_video(conn, prod["source_video_id"], produced=1)
                 msg = "Approved - production is ready"
             else:
                 db.update_production(conn, pid, stage=db.STAGES[idx + 1])
@@ -2442,8 +2452,11 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
+            prod = db.get_production(conn, pid)
             db.add_step(conn, pid, "review", "manual", detail="approved")
             db.update_production(conn, pid, status="ready")
+            if prod and prod["source_video_id"]:
+                db.set_video(conn, prod["source_video_id"], produced=1)
         finally:
             conn.close()
         return _studio_url(pid, msg="Approved - ready to publish")
