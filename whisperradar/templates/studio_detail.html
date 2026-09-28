@@ -253,25 +253,26 @@
     }
   </script>
 
+  {% set STAGE_DISPLAY = {'shots': 'shotlist'} %}
   <div class="stepper">
     {% for s in stages %}
     {% set done = s in steps %}
     <a class="step {{ 'done' if done else '' }} {{ 'current' if s == prod['stage'] else '' }} {{ 'sel' if s == stage }}"
        href="/studio/{{ prod['id'] }}?stage={{ s }}">
       <span class="dot">{{ loop.index }}</span>
-      <span class="lbl">{{ s }}</span>
+      <span class="lbl">{{ STAGE_DISPLAY.get(s, s) }}</span>
     </a>
     {% endfor %}
   </div>
 
   <div class="panel">
-    <h2 style="margin-top:0">Stage: {{ stage }}
+    <h2 style="margin-top:0">Stage: {{ STAGE_DISPLAY.get(stage, stage) }}
       {% if stage in steps %}
       <span class="badge done">done ({{ steps[stage]["method"] }})</span>
       {% else %}<span class="badge pending">not done</span>
         {% if stage == prod["stage"] and stage != "review" %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/stage/done"
-              onsubmit="return wrConfirmSubmit(this, 'Mark \'{{ stage }}\' done without automation? You can still redo it later.')">
+              onsubmit="return wrConfirmSubmit(this, 'Mark \'{{ STAGE_DISPLAY.get(stage, stage) }}\' done without automation? You can still redo it later.')">
           <button type="submit" class="ghost" style="margin-left:8px">mark done anyway</button>
         </form>
         {% endif %}
@@ -685,7 +686,7 @@
         {% endfor %}
       </div>
       {% else %}
-      <div class="muted" style="margin-bottom:8px">No images yet. Render the shotlist through Renderly or upload your own (plan the shots at the shots stage first).</div>
+      <div class="muted" style="margin-bottom:8px">No images yet. Render the shotlist through Renderly or upload your own (plan the shots at the shotlist stage first).</div>
       {% endif %}
       <div class="muted" style="font-size:12px; margin-bottom:8px">
         Render the missing shotlist images with the <b>Renderly</b> engine
@@ -716,7 +717,7 @@
                    title="The Flow project FlowBatch should open. Empty = this channel's URL, else the global studio.flowbatch_project_url.">
           </span>
           <button type="submit" class="green" {{ 'disabled' if job.running or not shotlist_count or (not renderly_ready and not flow_ready and not flowbatch_ready) else '' }}
-                  title="{{ 'Render the missing shotlist images' if shotlist_count and not job.running and (renderly_ready or flow_ready or flowbatch_ready) else ('A job is already running' if job.running else ('Needs a shotlist first (shots stage)' if not shotlist_count else 'No image source reachable - start Renderly (start.bat), install the Flow Driver, or set studio.flowbatch_repo')) }}">
+                  title="{{ 'Render the missing shotlist images' if shotlist_count and not job.running and (renderly_ready or flow_ready or flowbatch_ready) else ('A job is already running' if job.running else ('Needs a shotlist first (shotlist stage)' if not shotlist_count else 'No image source reachable - start Renderly (start.bat), install the Flow Driver, or set studio.flowbatch_repo')) }}">
             {{ 'Working...' if job.running else 'Render images' }}
           </button>
           <button type="button" class="ghost" onclick="stopFlow()" title="Stop a running Flow Driver batch">Stop Flow batch</button>
@@ -893,16 +894,16 @@
     <div class="actions" style="border-top:1px solid var(--border); padding-top:12px; margin-top:14px">
       {% if stage == prod["stage"] and stage in steps %}
       <form method="post" action="/studio/{{ prod['id'] }}/advance">
-        <button type="submit" class="green">Approve &amp; advance to {{ stages[stages.index(stage) + 1] if stages.index(stage) + 1 < stages|length else 'publish' }}</button>
+        <button type="submit" class="green">Approve &amp; advance to {{ STAGE_DISPLAY.get(stages[stages.index(stage) + 1], stages[stages.index(stage) + 1]) if stages.index(stage) + 1 < stages|length else 'publish' }}</button>
       </form>
       {% elif stage != prod["stage"] %}
-      <span class="muted">Viewing a later stage. Current stage: <b>{{ prod["stage"] }}</b></span>
+      <span class="muted">Viewing a later stage. Current stage: <b>{{ STAGE_DISPLAY.get(prod["stage"], prod["stage"]) }}</b></span>
       {% else %}
       <span class="muted">Finish this stage to unlock &ldquo;approve &amp; advance&rdquo;.</span>
       {% endif %}
       {% if stage == prod["stage"] and stages.index(stage) > 0 %}
       <form method="post" action="/studio/{{ prod['id'] }}/back">
-        <button type="submit" class="ghost">Send back to {{ stages[stages.index(stage) - 1] }}</button>
+        <button type="submit" class="ghost">Send back to {{ STAGE_DISPLAY.get(stages[stages.index(stage) - 1], stages[stages.index(stage) - 1]) }}</button>
       </form>
       {% endif %}
     </div>
@@ -918,7 +919,7 @@
   </div>
 
   <div class="panel">
-    <h2 style="margin-top:0">Additional direction for the LLM &mdash; {{ stage }} stage</h2>
+    <h2 style="margin-top:0">Additional direction for the LLM &mdash; {{ STAGE_DISPLAY.get(stage, stage) }} stage</h2>
     {% if stage in ("style", "script", "shots") %}
     <div class="muted" style="font-size:12px; margin-bottom:6px">Injected into the LLM prompt on this stage only. Every stage keeps its own direction - what you write here does not affect the other stages.</div>
     {% else %}
@@ -926,7 +927,7 @@
     {% endif %}
     <form method="post" action="/studio/{{ prod['id'] }}/extra/save">
       <input type="hidden" name="stage" value="{{ stage }}">
-      <textarea name="extra_prompt" style="min-height:70px" placeholder="Optional: specific angles, must-include points, tone overrides... Private to the {{ stage }} stage of this production.">{{ stage_direction }}</textarea>
+      <textarea name="extra_prompt" style="min-height:70px" placeholder="Optional: specific angles, must-include points, tone overrides... Private to the {{ STAGE_DISPLAY.get(stage, stage) }} stage of this production.">{{ stage_direction }}</textarea>
       <div class="actions">
         <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save direction</button>
         <input type="text" name="name" placeholder="version name (e.g. mystery-angle)" style="width:200px"
@@ -940,10 +941,10 @@
     </form>
     {% if direction_versions %}
     <div class="actions" style="margin-top:4px">
-      <span class="muted" style="font-size:12px">Saved versions for {{ stage }} (click to load):</span>
+      <span class="muted" style="font-size:12px">Saved versions for {{ STAGE_DISPLAY.get(stage, stage) }} (click to load):</span>
       {% for v in direction_versions %}
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
-            onsubmit="return wrConfirmSubmit(this, 'Replace the {{ stage }} direction with version {{ v }}?')">
+            onsubmit="return wrConfirmSubmit(this, 'Replace the {{ STAGE_DISPLAY.get(stage, stage) }} direction with version {{ v }}?')">
         <input type="hidden" name="kind" value="direction">
         <input type="hidden" name="stage" value="{{ stage }}">
         <input type="hidden" name="name" value="{{ v }}">
@@ -1137,12 +1138,13 @@
     const body = document.getElementById('autorunbody');
     const icons = { run: '▶', skip: '✓', pause: '⏸' };
     const colors = { run: 'var(--accent)', skip: 'var(--green)', pause: 'var(--amber)' };
+    const STAGE_LABEL = { shots: 'shotlist' };
     let html = '<div class="muted" style="margin-bottom:8px">Executes every remaining stage in order (done ones are skipped) and always stops before review:</div><ul style="margin:0 0 10px; padding-left:4px; list-style:none">';
     let credits = 0, hasMerge = false;
     for (const e of data.plan) {
       html += '<li style="padding:5px 0; border-bottom:1px solid var(--border)">' +
         '<span style="color:' + colors[e.action] + '; font-weight:700; display:inline-block; width:22px">' + icons[e.action] + '</span>' +
-        '<b>' + e.stage + '</b>' +
+        '<b>' + (STAGE_LABEL[e.stage] || e.stage) + '</b>' +
         (e.action === 'pause' ? ' <span class="warn" style="display:inline">' + e.detail + '</span>'
                               : ' <span class="muted">' + e.detail + '</span>') +
         '</li>';
@@ -1155,11 +1157,11 @@
         html += '<li style="padding:6px 0 10px 22px"><label>Write the character/reference bible now (recurring characters, environments, wardrobe, objects):</label>' +
           '<textarea id="ar_bible_text" style="min-height:70px" placeholder="e.g. MAYA - woman in her 30s, black hair, mustard scarf..."></textarea>' +
           '<div class="row" style="margin-top:6px"><button type="button" class="secondary" onclick="arSaveBible()">Save bible</button>' +
-          '<a class="muted" style="font-size:12px; align-self:center" href="/studio/' + AR_PID + '?stage=shots" onclick="closeAutorunModal()">open the shots stage instead</a></div></li>';
+          '<a class="muted" style="font-size:12px; align-self:center" href="/studio/' + AR_PID + '?stage=shots" onclick="closeAutorunModal()">open the shotlist stage instead</a></div></li>';
       }
       if (e.action === 'pause' && e.stage !== 'audio' &&
           !(e.stage === 'shots' && e.detail.indexOf('bible') !== -1)) {
-        html += '<li style="padding:2px 0 8px 22px"><a class="muted" style="font-size:12px" href="/studio/' + AR_PID + '?stage=' + e.stage + '" onclick="closeAutorunModal()">open the ' + e.stage + ' stage to resolve this</a></li>';
+        html += '<li style="padding:2px 0 8px 22px"><a class="muted" style="font-size:12px" href="/studio/' + AR_PID + '?stage=' + e.stage + '" onclick="closeAutorunModal()">open the ' + (STAGE_LABEL[e.stage] || e.stage) + ' stage to resolve this</a></li>';
       }
       if (e.stage === 'images' && e.action === 'run') {
         const m = e.detail.match(/(\d+) missing image/);

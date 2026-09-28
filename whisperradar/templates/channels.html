@@ -196,7 +196,7 @@
                 </select>
               </label>
               <label>image engine
-                <select name="default_engine">
+                <select name="default_engine" class="engine-select">
                   <option value="">inherit</option>
                   {% for opt in ['renderly', 'flowbatch'] %}
                   <option value="{{ opt }}" {{ 'selected' if ch['default_engine'] == opt else '' }}>{{ opt }}</option>
@@ -204,11 +204,14 @@
                 </select>
               </label>
               <label>render mode
-                <select name="default_render_mode">
+                <select name="default_render_mode" class="rendermode-select">
                   <option value="">inherit</option>
-                  {% for opt in ['auto', 'flow', 'api'] %}
+                  {% for opt in ['flow', 'api'] %}
                   <option value="{{ opt }}" {{ 'selected' if ch['default_render_mode'] == opt else '' }}>{{ opt }}</option>
                   {% endfor %}
+                  {% if ch['default_render_mode'] and ch['default_render_mode'] not in ['flow', 'api'] %}
+                  <option value="{{ ch['default_render_mode'] }}" selected>{{ ch['default_render_mode'] }} (saved)</option>
+                  {% endif %}
                 </select>
               </label>
               <label>upscale
@@ -219,10 +222,18 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>render resolution
+                <select name="render_resolution">
+                  <option value="">inherit</option>
+                  {% for r in render_resolutions %}
+                  <option value="{{ r }}" {{ 'selected' if ch['render_resolution'] == r else '' }}>{{ render_resolution_labels[r] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>missing references
                 <select name="generate_references">
                   <option value="">inherit</option>
-                  <option value="1" {{ 'selected' if ch['generate_references'] == 1 else '' }}>generate them</option>
+                  <option value="1" {{ 'selected' if ch['generate_references'] == 1 else '' }}>on the fly</option>
                   <option value="0" {{ 'selected' if ch['generate_references'] == 0 else '' }}>skip the refs stage</option>
                 </select>
               </label>
@@ -367,14 +378,6 @@
                   {% endfor %}
                 </select>
               </label>
-              <label>render resolution
-                <select name="render_resolution">
-                  <option value="">inherit</option>
-                  {% for r in render_resolutions %}
-                  <option value="{{ r }}" {{ 'selected' if ch['render_resolution'] == r else '' }}>{{ render_resolution_labels[r] }}</option>
-                  {% endfor %}
-                </select>
-              </label>
             </div>
             <div style="margin-top:10px">
               <button type="submit">save</button>
@@ -416,6 +419,30 @@
     });
     row.style.display = 'none';
   }
+
+  // The render-mode choices depend on the image engine: FlowBatch only
+  // drives Google Flow (no direct API), so "api" is only offered for
+  // Renderly. Disabling the option (rather than removing it) makes the
+  // browser auto-reselect a valid mode if "api" was already chosen.
+  (function () {
+    function syncRenderMode(engineSel) {
+      var form = engineSel.closest('form');
+      if (!form) return;
+      var modeSel = form.querySelector('select.rendermode-select');
+      if (!modeSel) return;
+      var apiOpt = modeSel.querySelector('option[value="api"]');
+      if (!apiOpt) return;
+      apiOpt.disabled = engineSel.value === 'flowbatch';
+      if (apiOpt.disabled && modeSel.value === 'api') {
+        modeSel.value = 'flow';
+      }
+    }
+    Array.prototype.slice.call(
+      document.querySelectorAll('select.engine-select')).forEach(function (sel) {
+      syncRenderMode(sel);
+      sel.addEventListener('change', function () { syncRenderMode(sel); });
+    });
+  })();
 
   // The narration-voice dropdowns are filled from the OpenSpeaker favorites
   // (GET /studio/voices.json?source=favorites). A voice already saved on a
