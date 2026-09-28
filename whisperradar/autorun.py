@@ -1051,6 +1051,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                 flow_project: str = "", flow_upscale: int | None = None,
                 flow_master: str = "", renderly_channel=None,
                 flow_project_url: str | None = None,
+                flow_local_upscale: bool = False,
                 log=None, cancel=None) -> None:
     t0 = time.monotonic()
     pdir = studio.prepare_project_folder(cfg, pid)
@@ -1096,7 +1097,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                     count = studio.run_imagegen_flow(
                         cfg, pdir, channel=flow_channel, project=flow_project,
                         upscale=flow_upscale, master=flow_master, log=log,
-                        cancel=cancel, pid=pid)
+                        cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
                     source = "Flow Driver (Google Flow)"
                 else:
                     count = studio.run_imagegen(cfg, pdir,
@@ -1374,28 +1375,23 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
         if eff["engine"] == "flowbatch":
             pass  # drives Flow itself; no Renderly channel/project involved
         elif mode == "flow":
-            # Auto-create the production's Renderly channel mirror before
-            # handing its name to the Flow Driver - this is a cheap metadata
-            # call (POST /api/channels), not an image upload, so it does not
-            # cost the time the actual render does. Without it, a channel
-            # that has never been used before (own_channel has no
-            # renderly_channel_name and nothing of that name exists in
-            # Renderly yet) 400s the whole batch instead of being created.
-            conn = _connect(cfg)
-            try:
-                sync = studio.sync_renderly_channel(cfg, conn,
-                                                     eff["own_channel"],
-                                                     create=True)
-            finally:
-                conn.close()
-            params["flow_channel"] = (sync.get("name") if sync.get("ok")
-                                      else eff["renderly_channel_name"])
-            # flow_upscale stays the configured tier (set above from
-            # eff["upscale"]) - the Flow Driver applies it with its OWN
-            # upscaler, the same way FlowBatch upscales "on the way out" with
-            # its own engine and the Renderly engine upscales with Renderly's.
-            # Each engine/mode upscales with its own tool; none of them route
-            # through another engine's upscaler.
+            # Renderly engine + flow mode (Google Flow via the Flow Driver):
+            # never import/upload the results into a Renderly channel - so
+            # there is no channel to auto-create here either (that earlier
+            # fix is superseded; nothing is ever sent for Flow-mode autorun).
+            # Renderly's own upscale needs an imported generation's id, which
+            # is exactly the round-trip being avoided, so instead the Flow
+            # Driver is told to upscale the raw Flow output itself with
+            # FlowBatch's own local engine (Real-ESRGAN, no Renderly
+            # involved at all) - see extension-v2's --local-upscale flag,
+            # wired through run_imagegen_flow(local_upscale=True). This is
+            # the manual images-stage UI's own choice to make, not autorun's
+            # - it keeps using a real Renderly channel by default.
+            params["flow_channel"] = ""
+            params["flow_local_upscale"] = True
+            # flow_upscale (set above from eff["upscale"]) still selects the
+            # tier - the local engine reads it the same way FlowBatch's own
+            # upscale does.
         else:
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
