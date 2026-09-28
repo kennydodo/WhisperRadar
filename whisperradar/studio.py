@@ -2834,7 +2834,17 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     overlap = overlap_ratio(script, source)
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap)
     try:
-        raw = llm_generate(cfg, prompt, provider=provider, max_tokens=900,
+        # 900 was a flat guess (see 9aafa69) sized for a bare score - it never
+        # accounted for the 7-field criteria object plus feedback[] plus
+        # weak_spans[] the prompt actually asks for. A verbose judge model
+        # (e.g. gpt-5.6-luna) routinely overruns it, truncating the JSON
+        # mid-object; _parse_json_object then can't close the object, the
+        # score is thrown away with it, and every attempt reports "the judge
+        # reply had no usable score" even when the judge clearly did score it
+        # (confirmed: production 19 lost a real score on 6/6 attempts this
+        # way). 2200 covers criteria + a handful of feedback/weak_spans
+        # strings with headroom.
+        raw = llm_generate(cfg, prompt, provider=provider, max_tokens=2200,
                            temperature=temperature)
         reply = _parse_json_object(raw)
     except Exception as exc:  # noqa: BLE001
