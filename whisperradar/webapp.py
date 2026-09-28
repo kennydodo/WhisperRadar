@@ -1844,6 +1844,7 @@ def create_app(cfg) -> Flask:
             warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
             db.add_step(conn, pid, "script", "manual",
                         detail=f"overlap {ratio:.1%}{warn}")
+            autorun._advance(cfg, pid, "script")
         finally:
             conn.close()
         return _studio_url(pid, msg="Script saved")
@@ -1858,7 +1859,7 @@ def create_app(cfg) -> Flask:
         _remember_stage_provider(cfg, pid, "style", provider)
 
         def worker():
-            autorun.raise_result(autorun.run_stage(
+            autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "style", {"provider": provider}))
 
         sjob.start(worker, "style analysis")
@@ -1878,6 +1879,7 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             db.add_step(conn, pid, "style", "manual")
+            autorun._advance(cfg, pid, "style")
         finally:
             conn.close()
         return _studio_url(pid, msg="Style guide saved")
@@ -1901,7 +1903,7 @@ def create_app(cfg) -> Flask:
             conn.close()
 
         def worker():
-            autorun.raise_result(autorun.run_stage(
+            autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "script", {"provider": provider}))
 
         sjob.start(worker, "script generation")
@@ -1982,7 +1984,7 @@ def create_app(cfg) -> Flask:
                 conn.close()
 
         def worker():
-            autorun.raise_result(autorun.run_stage(cfg, pid, "audio"))
+            autorun.raise_result(autorun.run_stage_and_advance(cfg, pid, "audio"))
 
         sjob.start(worker, "tts")
         return _studio_url(pid, msg="TTS started")
@@ -1993,7 +1995,7 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
 
         def worker():
-            autorun.raise_result(autorun.run_stage(cfg, pid, "srt"))
+            autorun.raise_result(autorun.run_stage_and_advance(cfg, pid, "srt"))
 
         sjob.start(worker, "srt alignment")
         return _studio_url(pid, msg="SRT alignment started")
@@ -2162,6 +2164,7 @@ def create_app(cfg) -> Flask:
                     text, encoding="utf-8")
                 db.add_step(conn, pid, "script", "manual",
                             detail=f"loaded version '{name}'")
+                autorun._advance(cfg, pid, "script")
             else:
                 prod = db.get_production(conn, pid)
                 try:
@@ -2216,7 +2219,7 @@ def create_app(cfg) -> Flask:
         _remember_stage_provider(cfg, pid, "shots", provider)
 
         def worker():
-            autorun.raise_result(autorun.run_stage(
+            autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "shots", {"provider": provider}))
 
         sjob.start(worker, "shotlist planning")
@@ -2240,6 +2243,7 @@ def create_app(cfg) -> Flask:
             db.add_step(conn, pid, "shots", "manual",
                         detail=f"edited shotlist "
                                f"({len(data.get('images', []))} image(s))")
+            autorun._advance(cfg, pid, "shots")
         finally:
             conn.close()
         return _studio_url(pid, msg="Shotlist saved")
@@ -2279,7 +2283,7 @@ def create_app(cfg) -> Flask:
                 cfg, eff["own_channel"], create=True)
 
         def worker():
-            autorun.raise_result(autorun.run_stage(cfg, pid, "images", {
+            autorun.raise_result(autorun.run_stage_and_advance(cfg, pid, "images", {
                 "mode": mode, "engine": engine, "flow_channel": flow_channel,
                 "flow_project": flow_project,
                 "flow_upscale": flow_upscale, "flow_master": flow_master,
@@ -2307,6 +2311,7 @@ def create_app(cfg) -> Flask:
                 return _studio_url(pid, error="Stage is already done")
             db.add_step(conn, pid, stage, "manual",
                         detail="marked done by human override")
+            autorun._advance(cfg, pid, stage)
         finally:
             conn.close()
         return _studio_url(pid, msg=f"{stage} marked done")
@@ -2322,7 +2327,7 @@ def create_app(cfg) -> Flask:
                 pid, error="Need audio, subtitles and images first")
 
         def worker():
-            autorun.raise_result(autorun.run_stage(
+            autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "merge", {"mode": "cli"}))
 
         conn = db.connect(cfg.db_path)
@@ -2357,6 +2362,7 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             db.add_step(conn, pid, "images", "manual", detail=f"{saved} image(s)")
+            autorun._advance(cfg, pid, "images")
         finally:
             conn.close()
         return _studio_url(pid, msg=f"{saved} image(s) uploaded")
@@ -2412,6 +2418,7 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             db.add_step(conn, pid, "merge", "manual", detail="final.mp4")
+            autorun._advance(cfg, pid, "merge")
         finally:
             conn.close()
         return _studio_url(pid, msg="Final video uploaded")
@@ -2424,7 +2431,7 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
 
         def worker():
-            autorun.raise_result(autorun.run_stage(
+            autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "merge", {"mode": "hook"}))
 
         sjob.start(worker, "merge")
