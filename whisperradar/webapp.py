@@ -214,6 +214,38 @@ def _transcribe_one(cfg, video_id: str):
         conn.close()
 
 
+def _download_many(cfg, video_ids: list[str]):
+    """Bulk counterpart of `_download_one`, for the dashboard's multi-select
+    actions - one job, one `process_downloads` call for the whole batch."""
+    conn = db.connect(cfg.db_path)
+    db.init_db(conn)
+    try:
+        for video_id in video_ids:
+            db.set_video(conn, video_id, status="new", auto=1, error=None)
+        pipeline.process_downloads(cfg, conn, video_ids=video_ids)
+    finally:
+        conn.close()
+
+
+def _transcribe_many(cfg, video_ids: list[str]):
+    """Bulk counterpart of `_transcribe_one` - only videos with audio already
+    downloaded are included; the rest are silently skipped (same as the
+    single-video action, which requires `audio_path` too)."""
+    conn = db.connect(cfg.db_path)
+    db.init_db(conn)
+    try:
+        ready = []
+        for video_id in video_ids:
+            row = db.get_video(conn, video_id)
+            if row and row["audio_path"]:
+                db.set_video(conn, video_id, status="downloaded", error=None)
+                ready.append(video_id)
+        if ready:
+            pipeline.process_transcripts(cfg, conn, video_ids=ready)
+    finally:
+        conn.close()
+
+
 PAGE_SIZE = 50
 PAGE_SIZES = (25, 50, 100, 200)
 PER_PAGE_COOKIE = "wr_per_page"
@@ -1134,6 +1166,51 @@ def create_app(cfg) -> Flask:
                 if path:
                     Path(path).unlink(missing_ok=True)
         return _back(request, msg="Video deleted")
+
+    @app.post("/videos/bulk")
+    def videos_bulk():
+        """Multi-select counterpart of /videos/action and /videos/delete -
+        the dashboard's row checkboxes post their video_ids here in one
+        request instead of one page reload per video."""
+        video_ids = [v for v in request.form.getlist("video_ids") if v]
+        action = request.form.get("action") or ""
+        if not video_ids:
+            return _back(request, error="No videos selected")
+        if action in ("download", "transcribe"):
+            fn = ((lambda: _download_many(cfg, video_ids)) if action == "download"
+                  else (lambda: _transcribe_many(cfg, video_ids)))
+            if not job.start(fn, action):
+                return _back(request, error="A job is already running")
+            verb = "Downloading" if action == "download" else "Transcribing"
+            return _back(request, msg=f"{verb} {len(video_ids)} video(s)")
+        if action not in ("queue", "retry", "delete"):
+            return _back(request, error="Unknown action")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            n = 0
+            for video_id in video_ids:
+                row = db.get_video(conn, video_id)
+                if not row:
+                    continue
+                if action == "queue":
+                    db.set_video(conn, video_id, auto=1, status="new", error=None)
+                elif action == "retry":
+                    db.set_video(
+                        conn, video_id,
+                        status="downloaded" if row["audio_path"] else "new",
+                        error=None)
+                elif action == "delete":
+                    db.delete_video(conn, video_id)
+                    for key in ("audio_path", "transcript_path"):
+                        p = row[key]
+                        if p:
+                            Path(p).unlink(missing_ok=True)
+                n += 1
+        finally:
+            conn.close()
+        verb = {"queue": "Queued", "retry": "Retrying", "delete": "Deleted"}[action]
+        return _back(request, msg=f"{verb} {n} video(s)")
     @app.get("/transcript/<video_id>")
     def transcript(video_id):
         conn = db.connect(cfg.db_path)

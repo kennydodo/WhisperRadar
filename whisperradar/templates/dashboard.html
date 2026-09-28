@@ -159,11 +159,25 @@
     <a href="/?{{ qs(sort='views') }}" class="{{ 'active' if sort == 'views' else '' }}"
        title="Most viewed first. Refresh the counts with the channel's 'views' button or: python wr.py views">most viewed</a>
   </div>
+  <div class="actions" id="bulkBar" style="display:none">
+    <span id="bulkCount" class="muted" style="margin-right:auto"></span>
+    <button type="button" class="secondary" onclick="wrBulk('queue')">Queue selected</button>
+    <button type="button" class="secondary" onclick="wrBulk('retry')">Retry selected</button>
+    <button type="button" class="secondary" onclick="wrBulk('download')">Download selected</button>
+    <button type="button" class="secondary" onclick="wrBulk('transcribe')">Transcribe selected</button>
+    <button type="button" class="ghost" style="color:var(--red);border-color:var(--red)"
+            onclick="wrBulk('delete')">Delete selected</button>
+  </div>
+  <form id="bulkForm" method="post" action="/videos/bulk">
+    {{ hidden_filters() }}
+    <input type="hidden" name="action" id="bulkAction" value="">
+  </form>
   <div class="panel">
     <table>
-      <tr><th>Published</th><th>Channel</th><th>Genre</th><th>Title</th><th style="text-align:right">Views</th><th>Status</th><th style="text-align:right">Transcript</th></tr>
+      <tr><th><input type="checkbox" id="selectAll" title="Select all on this page"></th><th>Published</th><th>Channel</th><th>Genre</th><th>Title</th><th style="text-align:right">Views</th><th>Status</th><th style="text-align:right">Transcript</th></tr>
       {% for v in videos %}
       <tr>
+        <td><input type="checkbox" class="rowcheck" name="video_ids" form="bulkForm" value="{{ v['video_id'] }}"></td>
         <td class="mono muted">{{ (v["published_at"] or "?")[:10] }}</td>
         <td class="muted"><a href="/?{{ qs(channel=v['channel_id']) }}">{{ v["channel_name"] }}</a></td>
         <td class="muted">{{ v["channel_genre"] }}</td>
@@ -210,7 +224,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="7" class="muted">No videos{% if status %} with status "{{ status }}"{% endif %}{% if genre %} in genre "{{ genre }}"{% endif %}.</td></tr>
+      <tr><td colspan="8" class="muted">No videos{% if status %} with status "{{ status }}"{% endif %}{% if genre %} in genre "{{ genre }}"{% endif %}.</td></tr>
       {% endfor %}
     </table>
     {% if q %}
@@ -255,6 +269,42 @@
 </div>
 
 <script>
+  // Bulk row-select toolbar for the videos table (checkbox column + the
+  // queue/retry/download/transcribe/delete buttons above it).
+  (function () {
+    var selectAll = document.getElementById('selectAll');
+    var bar = document.getElementById('bulkBar');
+    var count = document.getElementById('bulkCount');
+    function rowchecks() {
+      return Array.prototype.slice.call(document.querySelectorAll('.rowcheck'));
+    }
+    function refresh() {
+      var n = rowchecks().filter(function (c) { return c.checked; }).length;
+      bar.style.display = n ? 'flex' : 'none';
+      count.textContent = n + ' selected';
+      if (selectAll) {
+        selectAll.checked = n > 0 && n === rowchecks().length;
+      }
+    }
+    rowchecks().forEach(function (c) { c.addEventListener('change', refresh); });
+    if (selectAll) {
+      selectAll.addEventListener('change', function () {
+        rowchecks().forEach(function (c) { c.checked = selectAll.checked; });
+        refresh();
+      });
+    }
+    window.wrBulk = function (action) {
+      var n = rowchecks().filter(function (c) { return c.checked; }).length;
+      if (!n) return;
+      if (action === 'delete' &&
+          !confirm('Delete ' + n + ' video(s) and their audio/transcript files?')) {
+        return;
+      }
+      document.getElementById('bulkAction').value = action;
+      document.getElementById('bulkForm').submit();
+    };
+    refresh();
+  })();
   let wasRunning = {{ 'true' if job.running else 'false' }};
   async function poll() {
     try {
