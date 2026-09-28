@@ -1729,10 +1729,19 @@ class BatchCancelled(RuntimeError):
 def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperradar",
                       project: str = "", upscale: int | None = None,
                       master: str = "", log=print, cancel=None,
-                      pid: int | None = None) -> int:
+                      pid: int | None = None, local_upscale: bool = False) -> int:
     """Render missing shotlist images through Google Flow via the Flow Driver
-    service. Results land in images\\ under the exact shotlist names; upscaled
-    copies produced via Renderly are adopted as the shotlist files.
+    service. Results land in images\\ under the exact shotlist names.
+
+    local_upscale=False (default, used by the manual images-stage UI): results
+    are imported into the given Renderly channel, and upscaled copies produced
+    via Renderly are adopted as the shotlist files - same as always.
+
+    local_upscale=True (used by auto-run): the channel is never touched at
+    all - nothing gets imported into Renderly - and the Flow Driver instead
+    upscales the raw Flow output itself by calling Renderly's own backend
+    upscaler module directly (extension-v2's --local-upscale flag, no
+    Renderly HTTP round-trip and no separate FlowBatch checkout needed).
 
     The batch is always built from the CURRENT shotlist.json - and if the
     shotlist is edited while the batch runs, the batch is stopped and
@@ -1768,13 +1777,17 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
     config = {
         "shotlistPath": str(pid_dir / "shotlist.json"),
         "outPath": str(img_dir),
-        "channel": str(channel or "whisperradar").strip(),
-        "project": project,
+        # local_upscale never sends a channel - an empty one plus
+        # localUpscale below tells the driver to skip Renderly entirely
+        # instead of falling back to some other channel.
+        "channel": "" if local_upscale else str(channel or "whisperradar").strip(),
+        "project": "" if local_upscale else project,
         "flowProject": flow_project or "",
         "refs": ",".join(refs),
         "master": (master or "").strip(),
         "upscale": renderly_upscale(upscale if upscale is not None
                                     else (cfg.renderly_upscale or 0)),
+        "localUpscale": bool(local_upscale),
     }
     shotlist_file = pid_dir / "shotlist.json"
     todo = 0
