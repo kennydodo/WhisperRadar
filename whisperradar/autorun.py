@@ -1374,7 +1374,28 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
         if eff["engine"] == "flowbatch":
             pass  # drives Flow itself; no Renderly channel/project involved
         elif mode == "flow":
-            params["flow_channel"] = eff["renderly_channel_name"]
+            # Auto-create the production's Renderly channel mirror before
+            # handing its name to the Flow Driver - this is a cheap metadata
+            # call (POST /api/channels), not an image upload, so it does not
+            # cost the time the actual render does. Without it, a channel
+            # that has never been used before (own_channel has no
+            # renderly_channel_name and nothing of that name exists in
+            # Renderly yet) 400s the whole batch instead of being created.
+            conn = _connect(cfg)
+            try:
+                sync = studio.sync_renderly_channel(cfg, conn,
+                                                     eff["own_channel"],
+                                                     create=True)
+            finally:
+                conn.close()
+            params["flow_channel"] = (sync.get("name") if sync.get("ok")
+                                      else eff["renderly_channel_name"])
+            # Google Flow's own generations are never sent to Renderly for
+            # upscaling - tier 0 ("off") means the Flow Driver keeps Flow's
+            # native render and never uploads it anywhere. The channel above
+            # exists only to hold Flow's own gallery/references, never an
+            # uploaded/upscaled copy.
+            params["flow_upscale"] = 0
         else:
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
