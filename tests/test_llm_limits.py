@@ -418,6 +418,24 @@ class CurlTransportTests(unittest.TestCase):
                 studio.openai_chat(PROVIDER, "prompt")
         self.assertIn("Invalid api_key format", str(ctx.exception))
 
+    def test_curl_dying_mid_stream_reports_a_connection_cut_not_raw_json(self):
+        # Real content already decoded (a "data:" delta with actual text)
+        # before curl exited non-zero: the connection was cut mid-stream,
+        # not a bad reply, so the message should say so in plain words
+        # instead of dumping the partial SSE JSON as if it were the error.
+        lines = [
+            'data: {"choices": [{"delta": {"content": "at"}}]}\n',
+        ]
+        proc = _FakeCurlProc(lines, returncode=56, stderr="Recv failure")
+        with mock.patch.object(studio, "_curl_binary", return_value="/usr/bin/curl"), \
+                mock.patch.object(studio, "_spawn_curl", return_value=proc):
+            with self.assertRaises(RuntimeError) as ctx:
+                studio.openai_chat(PROVIDER, "prompt")
+        msg = str(ctx.exception)
+        self.assertIn("connection was cut", msg)
+        self.assertIn("Recv failure", msg)
+        self.assertNotIn('"delta"', msg)
+
     def test_curl_config_never_puts_the_key_on_argv(self):
         # the whole point of -K over a plain curl command line: the key
         # travels as config text, never as a command-line argument.

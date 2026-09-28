@@ -2446,6 +2446,23 @@ def _curl_read_stream(proc: subprocess.Popen, provider_name: str,
     if returncode != 0:
         stderr = (proc.stderr.read() or "").strip()
         body = "".join(tail).strip()
+        # `parts` only fills once real SSE "data:" delta content has been
+        # decoded. A non-zero curl exit AFTER that point means the stream
+        # was flowing and then the connection was cut, not that the
+        # provider sent a bad reply - the raw partial JSON in `body` is
+        # just the tail of a perfectly normal stream, so dumping it as
+        # "the error" reads as gibberish to a person. Say plainly that the
+        # connection dropped instead. A non-zero exit with NO decoded
+        # content (e.g. a synchronous JSON error body, never a stream at
+        # all) keeps showing that body - it's the actual, useful error.
+        if parts:
+            log.warning("'%s' curl exited %s mid-stream; last output: %s",
+                       provider_name, returncode, body[:300] or "(none)")
+            why = f" ({stderr})" if stderr else f" (curl exit {returncode})"
+            raise RuntimeError(
+                f"'{provider_name}' connection was cut before the reply "
+                f"finished{why} - this is usually a dropped network/gateway "
+                f"connection, not a bad response. Try again.")
         detail = body or stderr or f"curl exited {returncode}"
         raise RuntimeError(f"'{provider_name}' request failed: {detail[:300]}")
 
