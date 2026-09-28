@@ -1381,17 +1381,17 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
             # fix is superseded; nothing is ever sent for Flow-mode autorun).
             # Renderly's own upscale needs an imported generation's id, which
             # is exactly the round-trip being avoided, so instead the Flow
-            # Driver is told to upscale the raw Flow output itself with
-            # FlowBatch's own local engine (Real-ESRGAN, no Renderly
-            # involved at all) - see extension-v2's --local-upscale flag,
-            # wired through run_imagegen_flow(local_upscale=True). This is
-            # the manual images-stage UI's own choice to make, not autorun's
-            # - it keeps using a real Renderly channel by default.
+            # Driver is told to upscale the raw Flow output itself by calling
+            # Renderly's own backend upscaler module directly (Real-ESRGAN,
+            # no import, no HTTP round-trip) - see extension-v2's
+            # --local-upscale flag, wired through
+            # run_imagegen_flow(local_upscale=True). This is the manual
+            # images-stage UI's own choice to make, not autorun's - it keeps
+            # using a real Renderly channel by default.
             params["flow_channel"] = ""
             params["flow_local_upscale"] = True
             # flow_upscale (set above from eff["upscale"]) still selects the
-            # tier - the local engine reads it the same way FlowBatch's own
-            # upscale does.
+            # tier for that local engine.
         else:
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)

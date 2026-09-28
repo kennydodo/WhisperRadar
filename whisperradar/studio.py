@@ -1739,8 +1739,9 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
 
     local_upscale=True (used by auto-run): the channel is never touched at
     all - nothing gets imported into Renderly - and the Flow Driver instead
-    upscales the raw Flow output itself with FlowBatch's own local engine
-    (extension-v2's --local-upscale/--flowbatch-dir, no Renderly round-trip).
+    upscales the raw Flow output itself by calling Renderly's own backend
+    upscaler module directly (extension-v2's --local-upscale flag, no
+    Renderly HTTP round-trip and no separate FlowBatch checkout needed).
 
     The batch is always built from the CURRENT shotlist.json - and if the
     shotlist is edited while the batch runs, the batch is stopped and
@@ -1788,8 +1789,6 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
                                     else (cfg.renderly_upscale or 0)),
         "localUpscale": bool(local_upscale),
     }
-    if local_upscale and cfg.flowbatch_repo:
-        config["flowbatchDir"] = str(cfg.flowbatch_repo)
     shotlist_file = pid_dir / "shotlist.json"
     todo = 0
     rounds = 0
