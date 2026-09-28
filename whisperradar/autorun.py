@@ -1390,12 +1390,12 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
                 conn.close()
             params["flow_channel"] = (sync.get("name") if sync.get("ok")
                                       else eff["renderly_channel_name"])
-            # Google Flow's own generations are never sent to Renderly for
-            # upscaling - tier 0 ("off") means the Flow Driver keeps Flow's
-            # native render and never uploads it anywhere. The channel above
-            # exists only to hold Flow's own gallery/references, never an
-            # uploaded/upscaled copy.
-            params["flow_upscale"] = 0
+            # flow_upscale stays the configured tier (set above from
+            # eff["upscale"]) - the Flow Driver applies it with its OWN
+            # upscaler, the same way FlowBatch upscales "on the way out" with
+            # its own engine and the Renderly engine upscales with Renderly's.
+            # Each engine/mode upscales with its own tool; none of them route
+            # through another engine's upscaler.
         else:
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
