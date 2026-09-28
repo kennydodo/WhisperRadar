@@ -26,7 +26,11 @@ VARIATION_ANGLES = [
     "Take a slightly different narrative angle than any previous version.",
     "Open with a different hook pattern than a question.",
     "Lead with the most surprising fact and restructure the beats around it.",
-    "Use a more story-driven approach built on one concrete anecdote.",
+    "Use a more story-driven approach: dramatize ONE specific fact already in "
+    "the FACTS above as a narrative moment. Do not invent a named person, a "
+    "quote, or an event that is not in the FACTS - if none of the facts "
+    "supports a personal story, use this angle on the structure/pacing "
+    "instead, not on inventing a character.",
     "Emphasize the practical steps more than the theory.",
     "Frame the topic as a mistake people make and reverse-engineer the fix.",
 ]
