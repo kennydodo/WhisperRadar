@@ -380,6 +380,17 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     facts = (_research_notes(cfg, pdir, prod["title"], prod["genre"],
                              source_text, provider, refresh=regenerating)
              if source_text.strip() else "")
+    # rate_script() below is given `facts`, not `source_text`. The writer is
+    # told "use ONLY these facts" (facts), so that has to be the judge's
+    # ground truth too - grading against the raw transcript instead silently
+    # disagreed with the writer on what the source even says. rating_prompt()
+    # further caps whatever it's handed at JUDGE_SOURCE_CHARS=12000 chars; on
+    # a transcript over that (raw source_text often is, facts rarely is) the
+    # judge only ever saw the first ~half of it and flagged every real fact
+    # past that cutoff as "absent from the SOURCE FACTS" - confirmed on
+    # production 19, where items 8-12 of a 12-item list sit past char 16,500
+    # of the raw transcript and were rejected on every attempt despite being
+    # in `facts` (and in the script) all along.
     min_rating = eff["script_min_rating"]
     max_overlap = eff["script_max_overlap"]
     hard_overlap = eff["script_hard_overlap"]
@@ -401,7 +412,7 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         existing_overlap = studio.overlap_ratio(existing_text, source_text)
         existing_words = len(re.findall(r"\w+", existing_text))
         existing_rating = studio.rate_script(
-            cfg, prod["title"], prod["genre"], existing_text, source_text,
+            cfg, prod["title"], prod["genre"], existing_text, facts,
             style_guide, judge, temperature=eff["script_judge_temperature"])
         existing_passed, _why, _tl, _ts = _script_gate(
             existing_words, target_words, existing_overlap,
@@ -449,7 +460,7 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         overlap = studio.overlap_ratio(text, source_text)
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
-                                    source_text, style_guide, judge,
+                                    facts, style_guide, judge,
                                     temperature=eff["script_judge_temperature"])
         score = rating["score"]
         passed, why, too_long, too_short = _script_gate(
