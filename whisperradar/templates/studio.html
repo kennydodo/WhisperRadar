@@ -252,7 +252,7 @@
     var channelSel = document.getElementById('source-channel');
     if (!search || !value || !data || !panel) return;
     var all = Array.prototype.map.call(
-      data.querySelectorAll('option[value!=""]'),
+      data.querySelectorAll('option:not([value=""])'),
       function (o) {
         return { id: o.value, text: o.textContent,
                  channel: o.dataset.channel || '',
