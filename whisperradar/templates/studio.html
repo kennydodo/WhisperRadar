@@ -123,6 +123,10 @@
       </div>
       <div>
         <label for="source-search">Based on (optional)</label>
+        <select id="source-channel" style="width:340px; margin-bottom:4px"
+                title="Narrow the search to one monitored channel">
+          <option value="">All monitored channels</option>
+        </select>
         <div class="combo" style="width:340px">
           <input type="text" id="source-search"
                  placeholder="- none, fresh topic - or search transcripts..."
@@ -131,7 +135,7 @@
           <input type="hidden" name="source_video_id" id="source-value" value="">
           <select id="source-data" style="display:none" aria-hidden="true">
             {% for v in sources %}
-            <option value="{{ v['video_id'] }}" data-search="{{ (v['channel_name'] ~ ' ' ~ v['title'])|lower }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
+            <option value="{{ v['video_id'] }}" data-channel="{{ v['channel_name'] }}" data-search="{{ (v['channel_name'] ~ ' ' ~ v['title'])|lower }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
             {% endfor %}
           </select>
           <div class="combo-panel" id="source-panel" style="display:none"></div>
@@ -245,15 +249,40 @@
     var data = document.getElementById('source-data');
     var panel = document.getElementById('source-panel');
     var hint = document.getElementById('source-hint');
+    var channelSel = document.getElementById('source-channel');
     if (!search || !value || !data || !panel) return;
     var all = Array.prototype.map.call(
       data.querySelectorAll('option[value!=""]'),
       function (o) {
         return { id: o.value, text: o.textContent,
+                 channel: o.dataset.channel || '',
                  hay: (o.dataset.search || o.textContent).toLowerCase() };
       });
     var active = -1;  // index into the currently rendered matches
     var matches = [];
+
+    // Populate the channel-narrowing dropdown from the monitored channels
+    // actually present in the transcript list, so picking one first cuts
+    // a long list down before typing a word to search within it.
+    if (channelSel) {
+      var channels = [];
+      var seen = {};
+      all.forEach(function (v) {
+        if (v.channel && !seen[v.channel]) { seen[v.channel] = true; channels.push(v.channel); }
+      });
+      channels.sort(function (a, b) { return a.localeCompare(b); });
+      channels.forEach(function (name) {
+        var opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        channelSel.appendChild(opt);
+      });
+      channelSel.addEventListener('change', function () {
+        if (value.value) value.value = '';  // a new channel invalidates any pick
+        render();
+        search.focus();
+      });
+    }
 
     function choose(v) {
       value.value = v ? v.id : '';
@@ -277,15 +306,18 @@
 
     function render() {
       var q = search.value.trim().toLowerCase();
-      matches = q ? all.filter(function (v) { return v.hay.indexOf(q) !== -1; })
-                  : all;
+      var chan = channelSel ? channelSel.value : '';
+      var pool = chan ? all.filter(function (v) { return v.channel === chan; }) : all;
+      matches = q ? pool.filter(function (v) { return v.hay.indexOf(q) !== -1; })
+                  : pool;
       active = -1;
       panel.innerHTML = '';
       if (!matches.length) {
         var empty = document.createElement('div');
         empty.className = 'combo-empty';
         empty.textContent = q ? 'No transcript matches "' + search.value + '"'
-                              : 'No transcribed videos yet';
+                              : (chan ? 'No transcripts yet for ' + chan
+                                      : 'No transcribed videos yet');
         panel.appendChild(empty);
       } else {
         matches.slice(0, 200).forEach(function (v) {
@@ -301,8 +333,8 @@
       }
       panel.style.display = '';
       hint.textContent = q
-        ? matches.length + ' of ' + all.length + ' transcript(s) match'
-        : all.length + ' transcript(s) available';
+        ? matches.length + ' of ' + pool.length + ' transcript(s) match'
+        : pool.length + ' transcript(s) available' + (chan ? ' in ' + chan : '');
     }
 
     search.addEventListener('input', function () {
@@ -329,6 +361,13 @@
       }
     });
     hint.textContent = all.length + ' transcript(s) available';
+    if (channelSel) {
+      var channelCount = {};
+      all.forEach(function (v) { channelCount[v.channel] = (channelCount[v.channel] || 0) + 1; });
+      Array.prototype.forEach.call(channelSel.options, function (opt) {
+        if (opt.value) opt.textContent = opt.value + ' (' + (channelCount[opt.value] || 0) + ')';
+      });
+    }
   })();
 </script>
 
