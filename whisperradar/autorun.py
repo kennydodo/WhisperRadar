@@ -607,6 +607,42 @@ def _run_srt(cfg, pid: int) -> None:
         conn.close()
 
 
+_BEST_EVER_FILE = "best_ever.json"
+
+
+def _rank(entry: dict | None) -> tuple:
+    """Sort key for a shotlist attempt: fault-free beats faulty, then higher
+    ratio wins. A missing entry ranks below everything real."""
+    if not entry:
+        return (False, -1.0)
+    return (not entry.get("faults"), entry.get("ratio") or 0.0)
+
+
+def _load_best_ever(pdir) -> dict | None:
+    """The best shotlist attempt ever recorded for this production, across
+    every past resume - or None if there isn't one yet. Never raises: a
+    missing or corrupt file just means no prior best to beat."""
+    path = pdir / "versions" / "shotlist" / _BEST_EVER_FILE
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _save_best_ever(pdir, entry: dict) -> None:
+    """Persist the best shotlist attempt so a later, worse resume can never
+    silently lose it. Never raises - this is a nice-to-have, not load-bearing."""
+    path = pdir / "versions" / "shotlist" / _BEST_EVER_FILE
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        keep = {k: v for k, v in entry.items() if k != "warnings"}
+        path.write_text(json.dumps(keep, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8")
+    except OSError as exc:
+        logging.getLogger("whisperradar").debug(
+            "could not save the best-ever shotlist: %s", exc)
+
+
 def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
     t0 = time.monotonic()
     conn = _connect(cfg)
@@ -652,8 +688,22 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         # planner is told, and the gate rejects any plan that still uses refs
         allow_refs = bool(eff["generate_references"])
         attempts_allowed = max(1, int(eff["shotlist_max_attempts"]))
-        judge = studio.judge_provider(cfg, provider,
-                                      eff["shotlist_judge_provider"])
+        # Pin the judge for this production once resolved, and reuse it on
+        # every later resume. Without this, a production whose effective
+        # judge provider drifted between resumes (the setting changed, or an
+        # unset provider auto-resolved differently) was graded by a
+        # different model run to run - "detailed enough" is not a fixed bar,
+        # different judges do not agree on it, so "best of attempts" across
+        # resumes was comparing scores that were never on the same scale
+        # (observed on this very production: 85% under one judge, 63% under
+        # another, on essentially the same shotlist).
+        judge = db.stage_provider(prod, "shots_judge")
+        if not judge:
+            judge = studio.judge_provider(cfg, provider,
+                                          eff["shotlist_judge_provider"])
+            if judge:
+                db.set_stage_provider(conn, pid, "shots_judge", judge)
+                prod = db.get_production(conn, pid)
         feedback = ""
         # pacing arithmetic: the narration's total length and the max hold
         # give a hard minimum shot count - without it a planner that cannot
@@ -685,65 +735,103 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         data: dict = {}
         sheet = ""
         for attempt in range(1, attempts_allowed + 1):
-            prompt = studio.shotlist_prompt(
-                brief, narration, style_guide,
-                extra_direction=db.stage_extra(prod, "shots"),
-                bible=bible_text, feedback=feedback,
-                supplied_refs=studio.find_supplied_refs(pdir),
-                pacing_note=pacing_note, allow_refs=allow_refs)
-            text = studio.llm_generate(cfg, prompt, provider=provider)
-            data = sheet = None
-            for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
-                try:
-                    data, sheet = studio.parse_shotlist_output(text)
-                    break
-                except RuntimeError as exc:
-                    msg = str(exc)
-                    if ("incomplete" in msg
-                            and cont < studio.SHOTLIST_CONTINUE_ROUNDS):
-                        # the reply was cut off mid-JSON: ask for the rest and
-                        # keep appending (the brief's Section 11 continuation)
-                        _log_line(f"shotlist attempt {attempt}: output cut off - "
-                                  f"continuing ({cont + 1}/"
-                                  f"{studio.SHOTLIST_CONTINUE_ROUNDS})")
-                        text += studio.llm_generate(
-                            cfg, studio.continuation_prompt(prompt, text),
-                            provider=provider)
-                        continue
-                    # malformed or prose: spend this attempt and re-plan
-                    _log_line(f"shotlist attempt {attempt}: reply was not valid "
-                              f"JSON ({msg}) - retrying")
-                    feedback = ("Your previous reply was not valid JSON "
-                                f"({msg[:140]}). Output ONLY the two documents, "
-                                "starting with the shotlist JSON, and close "
-                                "every bracket cleanly.")
-                    break
-            if data is None:
-                continue
-            # A plan can close its JSON cleanly and still stop short of the
-            # final cue (e.g. 73 shots covering cues 1-221 of 484, no error,
-            # nothing planned for the rest) - every re-plan from scratch tends
-            # to truncate at roughly the same point, so ask for just the
-            # missing tail instead of burning another whole attempt on it.
-            for tail_cont in range(studio.SHOTLIST_CONTINUE_ROUNDS):
-                tail_gap = studio.shotlist_tail_gap(data, len(cues))
-                if tail_gap is None:
-                    break
-                _log_line(f"shotlist attempt {attempt}: stopped cleanly at "
-                          f"cue {tail_gap}/{len(cues)} - continuing tail "
-                          f"({tail_cont + 1}/{studio.SHOTLIST_CONTINUE_ROUNDS})")
-                addition_text = studio.llm_generate(
-                    cfg, studio.shotlist_tail_continuation_prompt(
-                        prompt, tail_gap, len(cues)),
+            prior = attempts[-1] if attempts else None
+            # Once a plan has zero STRUCTURAL faults and only falls short on
+            # prompt detail, patch just the flagged prompts instead of
+            # re-planning from scratch. A full re-plan was found to swing
+            # non-monotonically on the very same shotlist (e.g. 85% detailed
+            # on one attempt, 63% on the next) because the model does not
+            # reliably honor "keep everything that already passed" - a patch
+            # call can only touch the assets it is given, so the rest of the
+            # plan is safe by construction.
+            patch_mode = bool(prior and not prior["faults"]
+                              and prior["ratio"] < min_align
+                              and prior.get("weak"))
+            if patch_mode:
+                patch_text = studio.llm_generate(
+                    cfg, studio.shotlist_patch_prompt(
+                        prior["weak"], style_guide=style_guide,
+                        bible=bible_text),
                     provider=provider)
-                try:
-                    addition, _ = studio.parse_shotlist_output(addition_text)
-                except RuntimeError as exc:
-                    _log_line(f"shotlist attempt {attempt}: tail continuation "
-                              f"reply was not usable ({exc}) - keeping the "
-                              "plan as-is; review will flag what's missing")
-                    break
-                data = studio.merge_shotlist_continuation(data, addition)
+                patches = studio.parse_shotlist_patch(patch_text)
+                if patches:
+                    data = studio.apply_shotlist_patch(prior["data"], patches)
+                    # batch_sheet.txt is a human-readable export, not read by
+                    # rendering (which reads shotlist.json) - carrying the
+                    # prior text forward means it can go stale after a patch,
+                    # which is cosmetic only.
+                    sheet = prior["sheet"]
+                    _log_line(f"shotlist attempt {attempt}: patched "
+                              f"{len(patches)}/{len(prior['weak'])} flagged "
+                              f"prompt(s), kept the rest of the plan as-is")
+                else:
+                    _log_line(f"shotlist attempt {attempt}: patch reply had "
+                              f"no usable rewrites - falling back to a full "
+                              f"re-plan")
+                    patch_mode = False
+            if not patch_mode:
+                prompt = studio.shotlist_prompt(
+                    brief, narration, style_guide,
+                    extra_direction=db.stage_extra(prod, "shots"),
+                    bible=bible_text, feedback=feedback,
+                    supplied_refs=studio.find_supplied_refs(pdir),
+                    pacing_note=pacing_note, allow_refs=allow_refs)
+                text = studio.llm_generate(cfg, prompt, provider=provider)
+                data = sheet = None
+                for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
+                    try:
+                        data, sheet = studio.parse_shotlist_output(text)
+                        break
+                    except RuntimeError as exc:
+                        msg = str(exc)
+                        if ("incomplete" in msg
+                                and cont < studio.SHOTLIST_CONTINUE_ROUNDS):
+                            # the reply was cut off mid-JSON: ask for the rest
+                            # and keep appending (brief's Section 11)
+                            _log_line(f"shotlist attempt {attempt}: output cut "
+                                      f"off - continuing ({cont + 1}/"
+                                      f"{studio.SHOTLIST_CONTINUE_ROUNDS})")
+                            text += studio.llm_generate(
+                                cfg, studio.continuation_prompt(prompt, text),
+                                provider=provider)
+                            continue
+                        # malformed or prose: spend this attempt and re-plan
+                        _log_line(f"shotlist attempt {attempt}: reply was not "
+                                  f"valid JSON ({msg}) - retrying")
+                        feedback = ("Your previous reply was not valid JSON "
+                                    f"({msg[:140]}). Output ONLY the two "
+                                    "documents, starting with the shotlist "
+                                    "JSON, and close every bracket cleanly.")
+                        break
+                if data is None:
+                    continue
+                # A plan can close its JSON cleanly and still stop short of
+                # the final cue (e.g. 73 shots covering cues 1-221 of 484, no
+                # error, nothing planned for the rest) - every re-plan from
+                # scratch tends to truncate at roughly the same point, so ask
+                # for just the missing tail instead of burning another whole
+                # attempt on it.
+                for tail_cont in range(studio.SHOTLIST_CONTINUE_ROUNDS):
+                    tail_gap = studio.shotlist_tail_gap(data, len(cues))
+                    if tail_gap is None:
+                        break
+                    _log_line(f"shotlist attempt {attempt}: stopped cleanly "
+                              f"at cue {tail_gap}/{len(cues)} - continuing "
+                              f"tail ({tail_cont + 1}/"
+                              f"{studio.SHOTLIST_CONTINUE_ROUNDS})")
+                    addition_text = studio.llm_generate(
+                        cfg, studio.shotlist_tail_continuation_prompt(
+                            prompt, tail_gap, len(cues)),
+                        provider=provider)
+                    try:
+                        addition, _ = studio.parse_shotlist_output(addition_text)
+                    except RuntimeError as exc:
+                        _log_line(f"shotlist attempt {attempt}: tail "
+                                  f"continuation reply was not usable "
+                                  f"({exc}) - keeping the plan as-is; review "
+                                  "will flag what's missing")
+                        break
+                    data = studio.merge_shotlist_continuation(data, addition)
             review = studio.review_shotlist(
                 cfg, data, cues, judge, max_hold_seconds=max_hold,
                 style_guide=style_guide,
@@ -785,7 +873,23 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         if not attempts:
             raise RuntimeError("the planner returned no valid shotlist JSON in "
                                f"{attempts_allowed} attempt(s)")
-        best = max(attempts, key=lambda a: (not a["faults"], a["ratio"]))
+        best = max(attempts, key=_rank)
+        # Never let a worse resume silently overwrite a better result from an
+        # earlier one: each stage-run only gets `attempts_allowed` tries and
+        # used to start from scratch every time, so a good pass (e.g. 85%
+        # detailed) could be discarded by a later, worse resume (e.g. 63%)
+        # with no way back - this production hit exactly that.
+        prior_best = _load_best_ever(pdir)
+        kept_prior = _rank(prior_best) > _rank(best)
+        if kept_prior:
+            _log_line(f"shots: keeping the best-ever result from an earlier "
+                      f"run ({prior_best['ratio']:.0%} detailed, "
+                      f"{len(prior_best['faults'])} fault(s)) over this "
+                      f"run's best ({best['ratio']:.0%}, "
+                      f"{len(best['faults'])} fault(s))")
+            best = prior_best
+        elif _rank(best) > _rank(prior_best):
+            _save_best_ever(pdir, best)
         data, sheet = best["data"], best["sheet"]
         passed = not best["faults"] and best["ratio"] >= min_align
         (pdir / "shotlist.json").write_text(
@@ -802,9 +906,11 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                        indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         # no llm_provider persistence here either - see the script stage
         pacing = best.get("warnings") or []
+        attempts_desc = ("kept from an earlier run" if kept_prior
+                         else f"best of {len(attempts)} attempt(s)")
         detail = (f"{len(data.get('images', []))} image(s) in "
                   f"{len(data.get('shots', []))} shot(s) via manifest brief, "
-                  f"best of {len(attempts)} attempt(s): prompts detailed "
+                  f"{attempts_desc}: prompts detailed "
                   f"enough {best['matched']}/{best['total']} "
                   f"({best['ratio']:.0%}, min {min_align:.0%}), "
                   f"{len(best['faults'])} fault(s), "

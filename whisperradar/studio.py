@@ -3237,6 +3237,77 @@ INPUT 1 - NARRATION (one line per cue: "N: text (Ns)"; the cue numbers are what 
 {style_block}{bible_block}{extra}{fix_block}{refs_block}{pacing_block}"""
 
 
+def shotlist_patch_prompt(weak: list[dict], style_guide: str = "",
+                          bible: str = "") -> str:
+    """A narrow follow-up prompt: rewrite ONLY the image prompts flagged weak
+    by the last review - nothing else about the plan.
+
+    Used instead of a full shotlist_prompt() re-plan once a shotlist already
+    has zero structural faults and only falls short on prompt detail. A full
+    re-plan regenerates every prompt from scratch, and in practice does not
+    reliably honor "keep everything that already passed" - that is what
+    produced non-monotonic swings across retries of the same shotlist (e.g.
+    85% detailed, then 63% on the very next attempt). A patch call can only
+    ever touch the assets it is given, so the rest of the shotlist is safe
+    by construction rather than by the model's cooperation."""
+    style = (style_guide or "").strip()
+    style_block = (f"\n\nCHANNEL VISUAL STYLE:\n{style}" if style else "")
+    bible_block = ""
+    if (bible or "").strip():
+        bible_block = (f"\n\nCHARACTER / REFERENCE BIBLE (preserve these "
+                       f"characters, environments and objects exactly as "
+                       f"described):\n{bible.strip()}")
+    lines = []
+    for w in weak:
+        missing = ("; missing: " + ", ".join(w["missing"])
+                   if w.get("missing") else "")
+        lines.append(f"- {w['asset']}{missing}"
+                     + (f" - {w['reason']}" if w.get("reason") else "")
+                     + (f" | cue says: {w['narration']}"
+                        if w.get("narration") else ""))
+    return (
+        "You are revising a small number of image prompts from an existing, "
+        "otherwise-approved shotlist for a narrated video. Do NOT change "
+        "anything about the plan itself (shot count, order, cue coverage, "
+        "hold lengths, references, other prompts) - rewrite ONLY the PROMPT "
+        "TEXT for the exact assets listed below, so each one states every "
+        "element its narration cue requires: who is in frame, what they are "
+        "doing, where they are, the objects or props involved, and the "
+        "specific information the cue conveys."
+        + style_block + bible_block +
+        "\n\nAssets to rewrite:\n" + "\n".join(lines) +
+        "\n\nReply with ONLY a JSON object of the form "
+        '{"patches": {"<asset filename>": "<new prompt text>", ...}} '
+        "with exactly one entry per asset listed above, nothing else."
+    )
+
+
+def parse_shotlist_patch(text: str) -> dict[str, str]:
+    """Parse a shotlist_patch_prompt() reply into {asset: new_prompt}. Never
+    raises - a malformed or empty reply just yields no patches, and the
+    caller falls back to a full re-plan."""
+    data = _parse_json_object(text)
+    patches = data.get("patches") if isinstance(data, dict) else None
+    if not isinstance(patches, dict):
+        return {}
+    return {str(k): str(v) for k, v in patches.items()
+            if isinstance(v, str) and v.strip()}
+
+
+def apply_shotlist_patch(data: dict, patches: dict[str, str]) -> dict:
+    """Return a COPY of a shotlist plan with only the given assets' prompts
+    replaced - every other shot, image and registry entry is untouched."""
+    if not patches:
+        return data
+    new_data = json.loads(json.dumps(data))  # cheap deep copy, no aliasing
+    images = new_data.get("images")
+    if isinstance(images, list):
+        for item in images:
+            if isinstance(item, dict) and item.get("file") in patches:
+                item["prompt"] = patches[item["file"]]
+    return new_data
+
+
 # ------------------------------------------- shotlist review (shots gate) ---
 # The shotlist declares which SRT cues each shot illustrates (`cues: "3-9"`),
 # so alignment is verifiable BEFORE any image is rendered. Structural faults
