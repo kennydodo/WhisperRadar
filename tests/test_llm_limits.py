@@ -105,6 +105,9 @@ class MaxTokensTests(unittest.TestCase):
         self.assertNotIn("max_tokens", seen["payload"])
 
     def test_judge_output_is_capped(self):
+        # e72dd3a raised the script judge's budget off the flat 900 (which
+        # truncated the rating JSON) to a real 2200-token budget; assert the
+        # judge call is capped at that, not left unbounded.
         captured = {}
 
         def fake_llm(cfg, prompt, provider=None, max_tokens=None,
@@ -115,7 +118,7 @@ class MaxTokensTests(unittest.TestCase):
         with mock.patch.object(studio, "llm_generate", fake_llm):
             rating = studio.rate_script(object(), "t", "g", "script", "src",
                                         "style", None)
-        self.assertEqual(captured["max_tokens"], 900)
+        self.assertEqual(captured["max_tokens"], 2200)
         self.assertEqual(rating["score"], 8.5)
 
 
