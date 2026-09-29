@@ -442,15 +442,32 @@ def cmd_serve(cfg, args):
 
     app = create_app(cfg)
     print(f"WhisperRadar dashboard: http://{args.host}:{args.port}")
-    try:
-        from waitress import serve
+    if args.no_reload:
+        try:
+            from waitress import serve
 
-        serve(app, host=args.host, port=args.port, threads=8)
-    except ImportError:
-        logging.getLogger("whisperradar").warning(
-            "waitress not installed - using the Flask development server"
-        )
-        app.run(host=args.host, port=args.port, debug=False)
+            serve(app, host=args.host, port=args.port, threads=8)
+            return
+        except ImportError:
+            logging.getLogger("whisperradar").warning(
+                "waitress not installed - using the Flask development server"
+            )
+    # Default: Werkzeug's dev server with the reloader on, so a code change
+    # (a bug fix, a tweak) restarts the process by itself on save. Without
+    # this, editing a .py file did nothing until the OLD process was killed
+    # and a new one started - and start_dashboard.cmd's own "already
+    # running? just open the browser" guard means re-running it is not
+    # enough, so a restart silently no-ops and you keep testing stale code
+    # (this bit a real fix on 2026-09-29: waitress, used before this change,
+    # has no concept of watching files at all).
+    # threaded=True keeps the one-thread-per-request handling waitress gave
+    # it, so nothing is lost for local single-user use.
+    # --no-reload switches back to waitress - e.g. if this is ever run
+    # somewhere reachable beyond localhost, where debug=True's interactive
+    # in-browser debugger (arbitrary code execution on an unhandled
+    # exception) would be a real risk instead of a localhost-only one.
+    app.run(host=args.host, port=args.port, debug=True, use_reloader=True,
+            threaded=True)
 
 
 def cmd_test(cfg, args):
@@ -608,6 +625,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("serve", help="start the local web dashboard", parents=[common])
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8540)
+    p.add_argument("--no-reload", action="store_true",
+                   help="use waitress instead of the auto-reloading dev "
+                        "server (no auto-restart on code changes, but no "
+                        "in-browser debugger either - use this if serving "
+                        "beyond localhost)")
     p.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("test", parents=[common],
