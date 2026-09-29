@@ -44,15 +44,25 @@ STUDIO_TEST_MOTIONS = ["ST", "ZI", "ZO", "PU", "PD", "ST", "ZI", "PL", "PR", "PV
 
 
 def _shotlist(motions) -> dict:
-    return {
-        "style": STYLE,
-        "images": [
-            {"file": f"A{i:02d}_{m}.png",
-             "prompt": (f"TEST frame {i}, motion {m}: a neutral studio scene "
-                        f"used only to exercise the {m} aspect path.")}
-            for i, m in enumerate(motions, 1)
-        ],
-    }
+    images = []
+    shots = []
+    for i, motion in enumerate(motions, 1):
+        file_name = f"A{i:02d}_{motion}.png"
+        images.append({
+            "file": file_name,
+            "prompt": (f"TEST frame {i}, motion {motion}: a neutral studio scene "
+                       f"used only to exercise the {motion} aspect path."),
+        })
+        # ImgToVideo.Cli's parser requires a top-level "shots" array (cues +
+        # asset); the motion rides along for readability, but the batch derives
+        # it from the filename suffix.
+        shots.append({
+            "shot_id": f"SH{i:03d}",
+            "cues": str(i),
+            "asset": file_name,
+            "motion": motion,
+        })
+    return {"style": STYLE, "shots": shots, "images": images}
 
 
 def _ensure_channel(conn, name, **fields) -> int:
