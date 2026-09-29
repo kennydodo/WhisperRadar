@@ -5,60 +5,18 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
-## NEXT SESSION — refs must honor the image engine (no cross-engine FlowBatch)
+## DONE — refs now honor the image engine (fixed 2026-09-29)
 
-Found 2026-09-29. **Do this on THIS PC** (the home PC is building new
-features on a separate branch — do not assume its code here).
-
-**The bug:** the refs stage always generates reference images through
-FlowBatch, even for a channel whose image engine is Renderly. The images
-stage branches on the engine (`_run_images`, autorun.py:1114:
-`if engine == "flowbatch": … elif mode == "flow": … else: run_imagegen`),
-but the refs stage calls `studio.run_flowbatch_refs(...)` **unconditionally**
-(autorun.py:1044) — no engine check. So a Renderly channel silently depends on
-FlowBatch (and its Flow login) just to make reference images. The user wants
-ONE engine per channel: renderly => renderly does everything; flowbatch =>
-flowbatch does everything. No cross-engine.
-
-**Not the same as the earlier port:** the function that was copied from
-FlowBatch into the flow/renderly path was the LOCAL UPSCALE engine
-(commits e863fc6 / 5a6da77 / 6f0500f) — that made *upscaling* engine-local.
-Refs *generation* was never ported; it is still FlowBatch-only.
-
-**The fix — make `_run_refs` engine-aware, mirroring `_run_images`:**
-- `engine == "flowbatch"` -> `studio.run_flowbatch_refs(...)` (unchanged).
-- `engine == "renderly"` -> a new `studio.run_renderly_refs(cfg, pdir, pid,
-  refs, log=…, cancel=…)` that renders each ref's prompt through the SAME
-  Renderly image engine `run_imagegen` uses (`ImgToVideo.ImageGen --renderly`),
-  writing `refs\<NAME>.png` (the ref's own name — CH_/BG_/OBJ_ stem), then
-  fills the shotlist registry path for each (exactly what `run_flowbatch_refs`
-  does at the end), so the images stage resolves it as a local file.
-
-**Details to get right:**
-- The Renderly renderer (`run_imagegen`, studio.py:678) reads the production's
-  `shotlist.json` `images[]` and writes to `images\`. For refs you need it to
-  render the *ref prompts* into `refs\` named by the ref. Either (a) a refs
-  variant of that call, or (b) a temporary shotlist-shaped job (one image per
-  ref: `file = <NAME>.png`, `prompt = refPrompts[NAME]`) pointed at `refs\`.
-  Pick whichever keeps `run_imagegen` unchanged and reuses its render/upscale
-  path — do NOT fork the whole subprocess call.
-- Refs should get the SAME upscale treatment the images stage applies
-  (respect `eff["upscale"]` / the renderly upscale), so a renderly channel's
-  refs match its images.
-- Idempotent/resume: skip a ref whose `refs\<NAME>.png` already exists (like
-  `refs_to_generate` already filters provided ones); never re-render.
-- Honor `REFS_ON_THE_FLY_CAP` and the same todo list (`studio.refs_to_generate`)
-  the flowbatch path uses — only the RENDER step differs by engine.
-- A renderly channel must not require FlowBatch or a Flow login for the refs
-  stage after this.
-
-**Tests (mock the subprocess, no paid render):**
-- `run_renderly_refs` writes `refs\<NAME>.png` for each todo ref and fills the
-  registry path (assert the renderly command was invoked, not flowbatch).
-- `_run_refs` picks `run_renderly_refs` when `eff["engine"] == "renderly"` and
-  `run_flowbatch_refs` when `"flowbatch"` — assert the right one is called
-  (patch both).
-- A renderly production's refs stage never calls FlowBatch.
+Was: the refs stage always rendered reference images through FlowBatch,
+even for a Renderly channel. Fixed: `_run_refs` (autorun.py) now branches on
+`eff["engine"]` exactly like `_run_images` does - `"flowbatch"` still calls
+`studio.run_flowbatch_refs`, everything else calls the new
+`studio.run_renderly_refs` (studio.py), which drives the SAME Renderly
+path `run_imagegen` uses for real shots (a throwaway shotlist-shaped temp
+project folder, one image per ref, discarded after the results are copied
+into refs\), resolving the channel and upscale the same way the images
+stage's `_stage_params` does. Tests: `tests/test_refs_engine.py`.
+A Renderly channel no longer needs FlowBatch or a Flow login for refs.
 
 ## NEXT SESSION — improvement backlog (found 2026-09-27, ranked)
 

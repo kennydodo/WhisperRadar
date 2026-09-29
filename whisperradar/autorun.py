@@ -1000,7 +1000,12 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     file is generated from its own prompt and placed in the production's refs\\
     folder, with the shotlist registry path filled in - so the images stage can
     upload it to the Flow project under the ref's own name (FlowBatch) or
-    resolve it as a local file (the Renderly driver)."""
+    resolve it as a local file (the Renderly driver).
+
+    Engine-aware: a "flowbatch" channel generates refs via FlowBatch; every
+    other channel (Renderly, including Flow-mode) generates them via the SAME
+    Renderly image engine the images stage itself uses - refs never fall back
+    to FlowBatch just because it happens to be configured."""
     t0 = time.monotonic()
     log = log or (lambda m: None)
     pdir = studio.prepare_project_folder(cfg, pid)
@@ -1041,8 +1046,22 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
         todo = dict(list(todo.items())[:studio.REFS_ON_THE_FLY_CAP])
     log(f"[auto-run] refs: generating {len(todo)} reference image(s): "
         f"{', '.join(list(todo)[:6])}")
-    result = studio.run_flowbatch_refs(cfg, pdir, pid, todo, log=log,
-                                           cancel=cancel)
+    # One engine per channel: a Renderly channel must never fall back to
+    # FlowBatch (and its own Flow login) just to make reference images - it
+    # renders refs through the same Renderly path _run_images() uses for the
+    # production's real shots. Mirrors the engine branch in _run_images() and
+    # the channel/upscale resolution _stage_params() does for the images
+    # stage.
+    if eff["engine"] == "flowbatch":
+        result = studio.run_flowbatch_refs(cfg, pdir, pid, todo, log=log,
+                                               cancel=cancel)
+    else:
+        renderly_channel = studio.resolve_renderly_channel(
+            cfg, eff["own_channel"], create=True)
+        result = studio.run_renderly_refs(cfg, pdir, pid, todo,
+                                          channel=renderly_channel,
+                                          upscale=eff["upscale"],
+                                          log=log, cancel=cancel)
     made = result["generated"]
     failed = result["missing"] + stranded
     detail = (f"{len(made)} reference image(s) generated "

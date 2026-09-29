@@ -12,6 +12,7 @@ import random
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -1052,6 +1053,87 @@ def _update_ref_paths(pdir: Path, names: list[str]) -> None:
         shotlist_path.write_text(
             json.dumps(data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
+
+
+def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
+                      upscale=None, log=None, cancel=None) -> dict:
+    """Render the missing reference images through the SAME Renderly image
+    engine run_imagegen() uses for the production's real shots - so a
+    Renderly channel never has to depend on FlowBatch (or a Flow login) just
+    to make its reference images. Mirrors run_flowbatch_refs()'s contract
+    exactly: same signature shape, same return value, same placement of the
+    results (refs\\<name>.png + the shotlist registry updated).
+
+    Builds a throwaway, shotlist-shaped project folder with one image per ref
+    (file=<NAME>.png, prompt=refPrompts[NAME]) and points run_imagegen() at
+    it, so the actual render/upscale call is reused unchanged rather than
+    forked into a second subprocess path. The temp folder is discarded once
+    the results are copied into the real production's refs\\.
+
+    `cancel` is accepted for signature parity with run_flowbatch_refs() but,
+    like the plain Renderly images path in _run_images(), is not honored
+    mid-render - run_imagegen() itself has no cancellation hook.
+
+    Returns {generated: [names], missing: [names]} - nothing raises for a
+    ref that could not be made; the caller reports it."""
+    log = log or (lambda m: None)
+    if not refs:
+        return {"generated": [], "missing": []}
+    # the same style source the FlowBatch refs job uses - the shotlist's own
+    # style field, then style.md - so refs share the channel's art direction
+    style = ""
+    try:
+        style = str(json.loads((pdir / "shotlist.json")
+                               .read_text(encoding="utf-8")).get("style") or "")
+    except (OSError, ValueError):
+        style = ""
+    if not style.strip():
+        style_path = find_style(pdir)
+        style = style_path.read_text(encoding="utf-8") if style_path else ""
+    style = style.strip()
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix=f"wr-{pid}-refs-"))
+    try:
+        job: dict = {
+            "shots": [{"asset": name, "cues": "1-1"} for name in refs],
+            "images": [{"file": f"{name}.png", "prompt": r["prompt"]}
+                      for name, r in refs.items()],
+        }
+        if style:
+            job["style"] = style
+        (tmp_dir / "shotlist.json").write_text(
+            json.dumps(job, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+        _safe_log(log, f"refs: generating {len(refs)} reference image(s) "
+                       f"via Renderly")
+        run_imagegen(cfg, tmp_dir, channel=channel, upscale=upscale)
+        out_dir = tmp_dir / "images"
+        refs_dir = pdir / "refs"
+        refs_dir.mkdir(parents=True, exist_ok=True)
+        generated, missing = [], []
+        for name in refs:
+            src = next((p for p in (out_dir / f"{name}.png",
+                                    out_dir / f"{name}.jpg",
+                                    out_dir / f"{name}.jpeg")
+                       if p.is_file()), None)
+            if src is None:
+                missing.append(name)
+                continue
+            shutil.copy(src, refs_dir / f"{name}.png")
+            generated.append(name)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if generated:
+        (pdir / REFS_GENERATED_MANIFEST).write_text(
+            json.dumps(sorted(generated), indent=2) + "\n", encoding="utf-8")
+        _update_ref_paths(pdir, generated)
+        log(f"refs: {len(generated)} reference image(s) ready in refs\\ - "
+            f"{', '.join(generated[:6])}")
+    if missing:
+        log(f"refs: {len(missing)} could not be generated: "
+            f"{', '.join(missing[:8])}")
+    return {"generated": generated, "missing": missing}
 
 
 def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
