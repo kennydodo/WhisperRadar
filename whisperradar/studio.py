@@ -808,7 +808,7 @@ FLOWBATCH_MAX_PROMPT_CHARS = 2420
 # toggle for belong here - Flow's aspectRatioGroup is 16:9/4:3/1:1/3:4/9:16
 # with no 21:9, so PL/PR/PV pans stay on the job-wide "16:9" default and stay
 # push-ins after MotionEngine's overscan fallback; only PU/PD (1:1) benefit.
-FLOWBATCH_ASPECT_BY_MOTION = {"PU": "1:1", "PD": "1:1"}
+FLOWBATCH_ASPECT_BY_MOTION = {"PU": "1:1", "PD": "1:1", "PV": "16:9"}
 
 
 def flowbatch_dir(cfg) -> Path | None:
