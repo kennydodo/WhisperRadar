@@ -1492,6 +1492,10 @@ def create_app(cfg) -> Flask:
             if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
                 shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
                 source_tr = studio.find_source_transcript(pdir)
+        # source_tr above is a Path (used only for truthiness elsewhere, e.g.
+        # gating the Generate Style button) - the "view transcript" panel
+        # needs the actual text, same as script_text/style_text/etc below.
+        source_tr_text = _read_text(source_tr)
         shotlist = pdir / "shotlist.json"
         shotlist_text = _read_text(shotlist if shotlist.exists() else None)
         audio = studio.find_audio(pdir)
@@ -1557,6 +1561,7 @@ def create_app(cfg) -> Flask:
             "studio_detail.html", prod=prod, steps=steps, history=history,
             stages=db.STAGES, stage=stage, script_text=script_text,
             style=style, style_text=style_text, source_tr=source_tr,
+            source_tr_text=source_tr_text,
             shotlist_text=shotlist_text, audio=audio, srt=srt,
             srt_text=srt_text, prompts_text=prompts_text, images=images,
             final=final, final_url=final_url,
