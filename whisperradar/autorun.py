@@ -1131,10 +1131,30 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                         cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
                     source = "Flow Driver (Google Flow)"
                 else:
-                    count = studio.run_imagegen(cfg, pdir,
-                                                channel=renderly_channel,
-                                                upscale=flow_upscale)
-                    source = "Renderly"
+                    try:
+                        count = studio.run_imagegen(cfg, pdir,
+                                                    channel=renderly_channel,
+                                                    upscale=flow_upscale)
+                        source = "Renderly"
+                    except studio.RenderlyQuotaExhausted as exc:
+                        # Renderly/Gemini's quota is exhausted, not just this
+                        # image - every remaining call would fail the same
+                        # way. Finish the batch through Renderly's own Flow
+                        # Driver instead of stopping the run: it is free, and
+                        # it already skips whatever Renderly just produced.
+                        # PL/PR shots picked up this way lose their wide
+                        # aspect ratio (Flow's own UI tops out at 16:9) and
+                        # render as push-ins, same as a pure FlowBatch/Flow
+                        # run - an accepted tradeoff for not losing the batch.
+                        log(f"[auto-run] images: {exc} - finishing the rest "
+                            "through the Flow Driver (Renderly extension-v2, "
+                            "free) instead of stopping")
+                        flow_count = studio.run_imagegen_flow(
+                            cfg, pdir, channel=flow_channel, project=flow_project,
+                            upscale=flow_upscale, master=flow_master, log=log,
+                            cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
+                        count = exc.generated + flow_count
+                        source = "Renderly (quota-limited) + Flow Driver"
                 break
             except RuntimeError as exc:
                 # Flow gave up on some cards ("still busy"). Pause, then resume:

@@ -675,11 +675,28 @@ def renderly_upscale(value) -> int:
     return 2 if tier <= 2 else 4
 
 
+class RenderlyQuotaExhausted(RuntimeError):
+    """ImgToVideo.ImageGen (--renderly) stopped early (exit 3) because
+    Renderly/Gemini reported a quota or billing limit - not just one image
+    failing, the whole rest of the batch would fail the same way. `generated`
+    is how many images it produced before stopping, so a caller can add the
+    fallback generator's count to it rather than losing track."""
+
+    def __init__(self, generated: int, tail: str):
+        super().__init__(
+            f"Renderly quota/billing limit reached after {generated} "
+            f"image(s) this run: {tail}")
+        self.generated = generated
+
+
 def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
     """Render the production's shotlist images through ImgToVideo.ImageGen
     in Renderly mode. `channel` is the target Renderly channel id (the
     production's own channel mirror); None falls back to the legacy
-    'whisperradar' channel. Returns how many new images landed in images\\."""
+    'whisperradar' channel. Returns how many new images landed in images\\.
+
+    Raises RenderlyQuotaExhausted (rather than plain RuntimeError) when the
+    tool stopped early on a quota/billing wall (exit 3) - see that class."""
     repo = cfg.imgtovideo_repo
     if not repo or not Path(repo, "src", "ImgToVideo.ImageGen").exists():
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
@@ -705,11 +722,15 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
     if scale:
         cmd += ["--upscale", str(scale)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+    img_dir = pid_dir / "images"
+    new = [p.name for p in img_dir.iterdir() if p.name not in before] \
+        if img_dir.exists() else []
+    if result.returncode == 3:
+        tail = (result.stderr or result.stdout or "")[-500:]
+        raise RenderlyQuotaExhausted(len(new), tail)
     if result.returncode != 0:
         tail = (result.stderr or result.stdout or "")[-500:]
         raise RuntimeError(f"ImageGen failed (exit {result.returncode}): {tail}")
-    img_dir = pid_dir / "images"
-    new = [p.name for p in img_dir.iterdir() if p.name not in before]
     return len(new)
 
 
