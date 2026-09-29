@@ -689,11 +689,18 @@ class RenderlyQuotaExhausted(RuntimeError):
         self.generated = generated
 
 
-def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
+def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
+                  motion_filter=None) -> int:
     """Render the production's shotlist images through ImgToVideo.ImageGen
     in Renderly mode. `channel` is the target Renderly channel id (the
     production's own channel mirror); None falls back to the legacy
     'whisperradar' channel. Returns how many new images landed in images\\.
+
+    `motion_filter`, if given (an iterable of motion codes like ("PL", "PR")),
+    passes --motion-filter through to ImageGen so only shots with a matching
+    filename suffix go through the paid API this call - everything else in
+    the shotlist is left on the table for a separate free-generator call
+    (see autorun._run_images, which is the only caller that sets this).
 
     Raises RenderlyQuotaExhausted (rather than plain RuntimeError) when the
     tool stopped early on a quota/billing wall (exit 3) - see that class."""
@@ -730,6 +737,8 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
     ]
     if scale:
         cmd += ["--upscale", str(scale)]
+    if motion_filter:
+        cmd += ["--motion-filter", ",".join(motion_filter)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
     img_dir = pid_dir / "images"
     new = [p.name for p in img_dir.iterdir() if p.name not in before] \

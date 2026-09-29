@@ -1131,30 +1131,49 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                         cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
                     source = "Flow Driver (Google Flow)"
                 else:
+                    # Renderly engine, API mode: only PL/PR are worth a paid
+                    # API call (they need a canvas wider than 16:9, and the
+                    # API is the only path that can request 21:9). Everything
+                    # else in the shotlist - ST/ZI/ZO/PU/PD/PV - gets the same
+                    # or a strictly worse aspect from the API than it already
+                    # gets for free through Renderly's own Flow Driver, so it
+                    # is never sent to the API at all; one engine ("renderly")
+                    # still does the whole batch, it just always splits the
+                    # work between its two free/paid halves rather than
+                    # mixing only on quota failure.
+                    api_count = 0
+                    quota_hit = False
                     try:
-                        count = studio.run_imagegen(cfg, pdir,
-                                                    channel=renderly_channel,
-                                                    upscale=flow_upscale)
-                        source = "Renderly"
+                        api_count = studio.run_imagegen(
+                            cfg, pdir, channel=renderly_channel,
+                            upscale=flow_upscale, motion_filter=("PL", "PR"))
                     except studio.RenderlyQuotaExhausted as exc:
-                        # Renderly/Gemini's quota is exhausted, not just this
-                        # image - every remaining call would fail the same
-                        # way. Finish the batch through Renderly's own Flow
-                        # Driver instead of stopping the run: it is free, and
-                        # it already skips whatever Renderly just produced.
-                        # PL/PR shots picked up this way lose their wide
-                        # aspect ratio (Flow's own UI tops out at 16:9) and
-                        # render as push-ins, same as a pure FlowBatch/Flow
-                        # run - an accepted tradeoff for not losing the batch.
-                        log(f"[auto-run] images: {exc} - finishing the rest "
-                            "through the Flow Driver (Renderly extension-v2, "
-                            "free) instead of stopping")
-                        flow_count = studio.run_imagegen_flow(
-                            cfg, pdir, channel=flow_channel, project=flow_project,
-                            upscale=flow_upscale, master=flow_master, log=log,
-                            cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
-                        count = exc.generated + flow_count
-                        source = "Renderly (quota-limited) + Flow Driver"
+                        # Even the PL/PR slice hit a quota/billing wall.
+                        # api_count carries whatever it got through before
+                        # stopping; the Flow Driver pass below still picks up
+                        # the rest of PL/PR (as 16:9 push-ins, same tradeoff
+                        # as always) plus every other motion code.
+                        api_count = exc.generated
+                        quota_hit = True
+                        log(f"[auto-run] images: {exc} - the remaining PL/PR "
+                            "shots will fall through to the Flow Driver too")
+                    # Whatever the API pass above left untouched - the rest of
+                    # PL/PR on a quota failure, and ST/ZI/ZO/PU/PD/PV always -
+                    # goes through the Flow Driver. It reads shotlist.json
+                    # itself and skips any file already on disk, so this is
+                    # safe to call even when the API pass finished everything
+                    # it was asked for (it just finds nothing left to do).
+                    flow_count = studio.run_imagegen_flow(
+                        cfg, pdir, channel=flow_channel, project=flow_project,
+                        upscale=flow_upscale, master=flow_master, log=log,
+                        cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
+                    count = api_count + flow_count
+                    if quota_hit:
+                        source = "Renderly API (PL/PR, quota-limited) + Flow Driver (rest)"
+                    elif api_count:
+                        source = "Renderly API (PL/PR) + Flow Driver (rest)"
+                    else:
+                        source = "Flow Driver"
                 break
             except RuntimeError as exc:
                 # Flow gave up on some cards ("still busy"). Pause, then resume:

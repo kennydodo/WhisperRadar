@@ -176,32 +176,25 @@ class RenderlyExportBatchTests(unittest.TestCase):
         self.assertTrue(issubclass(studio.RenderlyQuotaExhausted, RuntimeError))
 
 
-class QuotaFallbackTests(unittest.TestCase):
-    """autorun._run_images: Renderly exits 3 -> finish through the Flow Driver,
-    and the reported count is the two partials added together."""
+class RenderlySplitTests(unittest.TestCase):
+    """autorun._run_images, engine=renderly/mode=api: the API is only ever
+    called for the PL/PR slice (motion_filter=("PL", "PR")); the Flow Driver
+    always runs afterward for the rest of the shotlist, quota wall or not."""
 
-    def test_quota_exhaustion_is_finished_by_the_flow_driver(self):
+    def _run(self, motions, fake_run_imagegen, fake_run_imagegen_flow,
+             label):
         with tempfile.TemporaryDirectory() as d:
             cfg = _cfg(Path(d) / "wr.db")
             pid_dir = Path(d) / "studio"
             pid_dir.mkdir()
             (pid_dir / "shotlist.json").write_text(
-                json.dumps(_shotlist(MOTIONS)), encoding="utf-8")
+                json.dumps(_shotlist(motions)), encoding="utf-8")
 
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
-            pid = db.create_production(conn, "TEST aspect quota fallback")
+            pid = db.create_production(conn, label)
             conn.commit()
             conn.close()
-
-            seen = {"flow": 0}
-
-            def fake_run_imagegen(cfg, pdir, channel=None, upscale=None):
-                raise studio.RenderlyQuotaExhausted(2, "quota exceeded")
-
-            def fake_run_imagegen_flow(cfg, pdir, **kwargs):
-                seen["flow"] += 1
-                return 3
 
             def fake_connect(c):
                 c2 = db.connect(c.db_path)
@@ -217,21 +210,66 @@ class QuotaFallbackTests(unittest.TestCase):
                                       lambda *a, **k: []), \
                     mock.patch.object(services.MANAGER, "release",
                                       lambda *a, **k: []), \
-                    mock.patch.object(studio, "run_imagegen", fake_run_imagegen), \
+                    mock.patch.object(studio, "run_imagegen",
+                                      fake_run_imagegen), \
                     mock.patch.object(studio, "run_imagegen_flow",
                                       fake_run_imagegen_flow):
                 autorun._run_images(cfg, pid, mode="api", engine="renderly",
                                     log=lambda m: None)
 
-            self.assertEqual(seen["flow"], 1)
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             detail = db.latest_steps(conn, pid)["images"]["detail"]
             conn.close()
-            self.assertIn("5 image(s)", detail)
-            self.assertIn("quota-limited", detail)
+            return detail
+
+    def test_the_api_call_is_scoped_to_pl_pr_and_flow_finishes_the_rest(self):
+        seen = {"api_filter": None, "flow": 0}
+
+        def fake_run_imagegen(cfg, pdir, channel=None, upscale=None,
+                              motion_filter=None):
+            seen["api_filter"] = motion_filter
+            return 2  # the PL/PR pair in MOTIONS
+
+        def fake_run_imagegen_flow(cfg, pdir, **kwargs):
+            seen["flow"] += 1
+            return 6  # everything else in MOTIONS (ST/ZI/ZO/PU/PD/PV)
+
+        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flow,
+                           "TEST aspect split - normal")
+
+        self.assertEqual(seen["api_filter"], ("PL", "PR"))
+        self.assertEqual(seen["flow"], 1)
+        self.assertIn("8 image(s)", detail)
+        self.assertNotIn("quota-limited", detail)
+
+    def test_quota_exhaustion_on_the_pl_pr_slice_still_finishes_via_flow(self):
+        seen = {"flow": 0}
+
+        def fake_run_imagegen(cfg, pdir, channel=None, upscale=None,
+                              motion_filter=None):
+            self.assertEqual(motion_filter, ("PL", "PR"))
+            raise studio.RenderlyQuotaExhausted(2, "quota exceeded")
+
+        def fake_run_imagegen_flow(cfg, pdir, **kwargs):
+            seen["flow"] += 1
+            return 3
+
+        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flow,
+                           "TEST aspect split - quota")
+
+        self.assertEqual(seen["flow"], 1)
+        self.assertIn("5 image(s)", detail)
+        self.assertIn("quota-limited", detail)
 
     def test_a_plain_renderly_failure_does_not_fall_back(self):
+        def fake_run_imagegen(cfg, pdir, channel=None, upscale=None,
+                              motion_filter=None):
+            raise RuntimeError("ImageGen failed (exit 1): boom")
+
+        def fake_run_imagegen_flow(cfg, pdir, **kwargs):
+            self.fail("must not fall back on a plain failure")
+
         with tempfile.TemporaryDirectory() as d:
             cfg = _cfg(Path(d) / "wr.db")
             pid_dir = Path(d) / "studio"
@@ -250,9 +288,6 @@ class QuotaFallbackTests(unittest.TestCase):
                 db.init_db(c2)
                 return c2
 
-            def fake_run_imagegen(cfg, pdir, channel=None, upscale=None):
-                raise RuntimeError("ImageGen failed (exit 1): boom")
-
             with mock.patch.object(studio, "prepare_project_folder",
                                    lambda c, p: pid_dir), \
                     mock.patch.object(autorun, "_effective",
@@ -262,10 +297,10 @@ class QuotaFallbackTests(unittest.TestCase):
                                       lambda *a, **k: []), \
                     mock.patch.object(services.MANAGER, "release",
                                       lambda *a, **k: []), \
-                    mock.patch.object(studio, "run_imagegen", fake_run_imagegen), \
+                    mock.patch.object(studio, "run_imagegen",
+                                      fake_run_imagegen), \
                     mock.patch.object(studio, "run_imagegen_flow",
-                                      lambda *a, **k: self.fail(
-                                          "must not fall back on a plain failure")):
+                                      fake_run_imagegen_flow):
                 with self.assertRaises(RuntimeError):
                     autorun._run_images(cfg, pid, mode="api", engine="renderly",
                                         log=lambda m: None)
