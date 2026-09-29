@@ -100,4 +100,8 @@ def nearest_aspect(width: int, height: int) -> tuple[str, float]:
 
 def ratios_match(aspect: str, width: int, height: int,
                  tolerance: float = RATIO_TOLERANCE) -> bool:
-    return abs(ratio_value(aspect) - (width / height)) <= tolerance
+    """Relative, not absolute: a flat 0.04 slack is ~1.7% of 16:9 but only
+    ~1.7% of 21:9, and providers round the long side (21:9 came back as
+    3291x1440)."""
+    target = ratio_value(aspect)
+    return abs(target - (width / height)) / target <= tolerance

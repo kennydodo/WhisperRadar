@@ -1486,6 +1486,12 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
         else:
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
+            # The split's Flow Driver half imports into the SAME Renderly
+            # channel as the API half so it also upscales through Renderly. The
+            # driver matches channels by NAME, not id, so the default
+            # "whisperradar" would fail on any production whose channel is
+            # named after the production.
+            params["flow_channel"] = studio._own_channel_name(eff["own_channel"])
         return params
     return {}
 
