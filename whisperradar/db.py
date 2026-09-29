@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS channels (
     kind TEXT NOT NULL DEFAULT 'primary',
     genre TEXT NOT NULL DEFAULT 'general',
     active INTEGER NOT NULL DEFAULT 1,
-    added_at TEXT NOT NULL DEFAULT (datetime('now'))
+    added_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS videos (
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     published_at TEXT,
-    discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    discovered_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     status TEXT NOT NULL DEFAULT 'new',
     audio_path TEXT,
     transcript_path TEXT,
@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_videos_views
 
 CREATE TABLE IF NOT EXISTS runs (
     id INTEGER PRIMARY KEY,
-    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
     finished_at TEXT,
     new_videos INTEGER NOT NULL DEFAULT 0,
     downloaded INTEGER NOT NULL DEFAULT 0,
@@ -59,8 +59,8 @@ CREATE TABLE IF NOT EXISTS productions (
     stage TEXT NOT NULL DEFAULT 'script',
     status TEXT NOT NULL DEFAULT 'active',
     notes TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 CREATE TABLE IF NOT EXISTS production_steps (
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS production_steps (
     status TEXT NOT NULL DEFAULT 'done',
     artifact TEXT,
     detail TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 -- The channels the USER publishes on (distinct from `channels`, which are the
@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS own_channels (
     -- Renderly mirror (soft reference: never a FK, always re-resolved)
     renderly_channel_id INTEGER,
     renderly_channel_name TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
 -- Global key-value settings (Auto Run criteria and friends). Values are
@@ -264,7 +264,7 @@ def _migrate_own_channels(conn: sqlite3.Connection) -> None:
             topic_pick TEXT,
             renderly_channel_id INTEGER,
             renderly_channel_name TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
         INSERT INTO own_channels (id, name, description, genre, youtube_handle,
             active, default_voice, default_engine, default_render_mode,
@@ -623,9 +623,15 @@ def set_stage_provider(conn, pid: int, stage: str, name: str | None) -> None:
 def create_production(conn, title: str, genre: str = "general",
                       source_video_id: str | None = None,
                       work_dir: str | None = None) -> int:
+    # created_at/updated_at set explicitly, in local time: this table already
+    # existed before its DEFAULT clause was changed to 'localtime', and
+    # SQLite never retroactively applies a new column default to an existing
+    # table, so relying on it here would keep inserting UTC.
     cur = conn.execute(
-        "INSERT INTO productions (title, genre, source_video_id, work_dir, stage)"
-        " VALUES (?, ?, ?, ?, 'style')",
+        "INSERT INTO productions (title, genre, source_video_id, work_dir,"
+        " stage, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, 'style', datetime('now', 'localtime'),"
+        " datetime('now', 'localtime'))",
         (title, genre or "general", source_video_id, work_dir),
     )
     conn.commit()
@@ -649,7 +655,7 @@ def update_production(conn, pid: int, **fields) -> None:
             raise ValueError(f"Unknown production field: {key}")
         cols.append(f"{key} = ?")
         vals.append(value)
-    cols.append("updated_at = datetime('now')")
+    cols.append("updated_at = datetime('now', 'localtime')")
     vals.append(pid)
     conn.execute(f"UPDATE productions SET {', '.join(cols)} WHERE id = ?", vals)
     conn.commit()
@@ -665,10 +671,17 @@ def add_step(conn, pid: int, stage: str, method: str = "auto",
              status: str = "done") -> None:
     """Record a step. `status='failed'` is used for a stage that errored:
     latest_steps() only counts 'done', so a failure never looks like
-    completion and the stage is retried on resume."""
+    completion and the stage is retried on resume.
+
+    created_at is set explicitly, in local time - this table already
+    existed before its DEFAULT clause was changed to 'localtime', and
+    SQLite never retroactively applies a new column default to an
+    existing table, so relying on it here would keep inserting UTC (the
+    History panel showing times that don't match the PC's clock)."""
     conn.execute(
         "INSERT INTO production_steps (production_id, stage, method, status,"
-        " artifact, detail) VALUES (?, ?, ?, ?, ?, ?)",
+        " artifact, detail, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
         (pid, stage, method, status, artifact, detail),
     )
     conn.commit()
@@ -718,7 +731,7 @@ def stage_done(conn, pid: int, stage: str) -> bool:
 
 def finish_run(conn, run_id: int, **counts) -> None:
     conn.execute(
-        "UPDATE runs SET finished_at = datetime('now'), new_videos = ?,"
+        "UPDATE runs SET finished_at = datetime('now', 'localtime'), new_videos = ?,"
         " downloaded = ?, transcribed = ?, failed = ? WHERE id = ?",
         (
             counts.get("new_videos", 0),
