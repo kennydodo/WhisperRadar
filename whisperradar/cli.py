@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import os
 import re
 import shutil
 import sys
@@ -438,11 +439,12 @@ def cmd_produce(cfg, args):
 
 
 def cmd_serve(cfg, args):
-    from .webapp import create_app
-
-    app = create_app(cfg)
     print(f"WhisperRadar dashboard: http://{args.host}:{args.port}")
+
     if args.no_reload:
+        from .webapp import create_app
+
+        app = create_app(cfg)
         try:
             from waitress import serve
 
@@ -452,6 +454,9 @@ def cmd_serve(cfg, args):
             logging.getLogger("whisperradar").warning(
                 "waitress not installed - using the Flask development server"
             )
+            app.run(host=args.host, port=args.port, debug=False)
+            return
+
     # Default: Werkzeug's dev server with the reloader on, so a code change
     # (a bug fix, a tweak) restarts the process by itself on save. Without
     # this, editing a .py file did nothing until the OLD process was killed
@@ -466,6 +471,30 @@ def cmd_serve(cfg, args):
     # somewhere reachable beyond localhost, where debug=True's interactive
     # in-browser debugger (arbitrary code execution on an unhandled
     # exception) would be a real risk instead of a localhost-only one.
+    #
+    # With the reloader on, this function runs TWICE per launch: once in an
+    # outer "watch .py files, spawn/restart a child" process that Werkzeug
+    # never actually serves requests from (run_with_reloader() only spawns
+    # and waits there - it never touches the WSGI app object), and once for
+    # real in the spawned child, which Werkzeug marks by setting
+    # WERKZEUG_RUN_MAIN=true in its environment. create_app() is not just a
+    # Flask() call - it starts background threads (the Auto Run scheduler
+    # ticker, the renderly/flow-driver autostart), so calling it in the outer
+    # copy too would start a SECOND, unsynchronized scheduler thread with its
+    # own in-memory "is a job running" flag that the real one can't see -
+    # both could decide to fire off Auto Run at the same time against the
+    # same database. So the outer copy gets a bare do-nothing Flask app
+    # (never actually invoked - see above) and only the real child builds
+    # the app for real.
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        from .webapp import create_app
+
+        app = create_app(cfg)
+    else:
+        from flask import Flask
+
+        app = Flask(__name__)
+
     app.run(host=args.host, port=args.port, debug=True, use_reloader=True,
             threaded=True)
 
