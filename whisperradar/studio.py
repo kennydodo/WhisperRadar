@@ -771,6 +771,15 @@ FLOWBATCH_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "2k", 4: "4k"}
 # uses for rate limiting, so the job-wide style is only sent when it fits.
 FLOWBATCH_MAX_PROMPT_CHARS = 2420
 
+# Per-shot aspect-ratio override for FlowBatch jobs (src/jobs/load.js already
+# reads item.aspectRatio, this just needed to be sent). Keyed by the motion
+# code suffix on the shot's file name (matches ImgToVideo.Cli export-batch's
+# own canvas/aspect table). Only motion codes Flow's own UI actually offers a
+# toggle for belong here - Flow's aspectRatioGroup is 16:9/4:3/1:1/3:4/9:16
+# with no 21:9, so PL/PR/PV pans stay on the job-wide "16:9" default and stay
+# push-ins after MotionEngine's overscan fallback; only PU/PD (1:1) benefit.
+FLOWBATCH_ASPECT_BY_MOTION = {"PU": "1:1", "PD": "1:1"}
+
 
 def flowbatch_dir(cfg) -> Path | None:
     if not cfg.flowbatch_repo:
@@ -1087,6 +1096,12 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
                 and item.get("prompt") and item["file"] not in existing):
             continue
         entry = {"file": item["file"], "prompt": item["prompt"]}
+        stem = (item["file"][:-4] if item["file"].lower().endswith(".png")
+                else item["file"])
+        motion = stem.rsplit("_", 1)[-1]
+        flow_aspect = FLOWBATCH_ASPECT_BY_MOTION.get(motion)
+        if flow_aspect:
+            entry["aspectRatio"] = flow_aspect
         if item.get("refs"):
             # only attach refs that actually resolve to a file (registry or
             # refs\\ folder); a ref that was never generated must not stall
