@@ -15,7 +15,9 @@ Core paths (motion code = last `_` token of `<name>_<MOTION>.png`):
 | --- | --- | --- |
 | 1 | WhisperRadar -> Renderly (engine `renderly`, mode `api`) | PL/PR -> paid API **21:9**; ST/ZI/ZO -> Flow Driver **16:9**; PU/PD -> Flow Driver **1:1**; PV -> Flow Driver **16:9** |
 | 2 | WhisperRadar -> FlowBatch (engine `flowbatch`) | **1:1** (PU/PD), **16:9** (ST/ZI/ZO/PL/PR/PV) |
-| 3 | Direct Renderly API (`renderly_direct_aspects.py`) | backend contract only: **9:16, 4:3, 3:4** |
+
+9:16 / 4:3 / 3:4 are intentionally out of scope: the shotlist never selects
+them and they are never sent to the API. Only PL/PR ever use the paid API.
 
 On the renderly engine one batch is split across the engine's two halves -
 PL/PR to the paid API, everything else to the free Flow Driver. If the API
@@ -76,19 +78,6 @@ python scripts\aspect_tests\verify_rendered_aspects.py <flowbatch_pid>
 Expect: 1:1 for PU/PD, 16:9 for everything else (FlowBatch has no 21:9, so
 PL/PR/PV all render 16:9). Requires a signed-in Google session in FlowBatch's
 `profile\`.
-
-## Step 4 - test 3: backend contract for the unreachable ratios (paid)
-
-The shotlist pipeline never selects 9:16, 4:3 or 3:4 (no motion code maps to
-them), so this is a MANUAL Renderly-backend contract probe, not pipeline
-behaviour:
-
-```
-python scripts\aspect_tests\renderly_direct_aspects.py
-```
-
-Calls Renderly's API once per ratio (9:16, 4:3, 3:4), downloads each result
-and checks its pixel shape. `--all` also runs 16:9/21:9/1:1.
 
 ## Notes and known risk
 
