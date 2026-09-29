@@ -683,6 +683,15 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
     repo = cfg.imgtovideo_repo
     if not repo or not Path(repo, "src", "ImgToVideo.ImageGen").exists():
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
+    # Refresh out\image-batch.json first: ImgToVideo.ImageGen reads its
+    # per-shot "aspect" field (21:9 for PL/PR - see export-batch) to request
+    # the right ratio per file instead of one flat 16:9 for the whole batch.
+    # Best-effort: a failure here (e.g. no shotlist yet) surfaces the same
+    # way it always did, from the ImageGen call right below, so it is not
+    # worth a special error path of its own.
+    cli = _imgtovideo_cli(cfg)
+    if cli:
+        _run_imgtovideo_cli(cli, ["export-batch", str(pid_dir)])
     if channel is None:
         channel = ensure_renderly_channel(cfg)
     if upscale is None:
