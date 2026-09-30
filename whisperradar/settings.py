@@ -316,10 +316,11 @@ SPEC: list[dict] = [
     },
     {
         "key": "render_resolution", "type": "choice", "default": "2k",
-        "choices": ["1080p", "2k", "4k"],
+        "choices": ["1080p", "2k", "4k", "flow-native"],
         "choice_labels": {"1080p": "1920x1080 (Full HD)",
                           "2k": "2560x1440 (2K)",
-                          "4k": "3840x2160 (4K)"},
+                          "4k": "3840x2160 (4K)",
+                          "flow-native": "1376x768 (Flow native)"},
         "label": "Render resolution",
         "help": "Output resolution written into the production's "
                 "imgtovideo.json (output.width/height) for the preview build "

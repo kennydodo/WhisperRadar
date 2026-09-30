@@ -2208,10 +2208,11 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
 # 960x540 draft - the shimmer seen on productions 5/6 was low-resolution
 # B-frames, fixed in ImgToVideo by preview_bframes=0, not a resolution problem.
 RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2k": (2560, 1440),
-                      "4k": (3840, 2160)}
+                      "4k": (3840, 2160), "flow-native": (1376, 768)}
 RENDER_RESOLUTION_LABELS = {"1080p": "1920x1080 (Full HD)",
                             "2k": "2560x1440 (2K)",
-                            "4k": "3840x2160 (4K)"}
+                            "4k": "3840x2160 (4K)",
+                            "flow-native": "1376x768 (Flow native)"}
 
 
 def apply_render_resolution(cfg, pid: int) -> None:
