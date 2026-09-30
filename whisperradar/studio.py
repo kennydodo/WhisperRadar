@@ -3181,6 +3181,15 @@ Rules:
   or uncertain, keep the script exactly that approximate, qualified, or uncertain -
   do not sharpen it into something more specific, dramatic, or certain than the
   facts actually support. When in doubt, describe it more vaguely, not more vividly.
+- Match the facts' own confidence level. If a fact says "may have", "suggests",
+  "is consistent with", or "one possible explanation", the script must carry that
+  same hedge - never upgrade it into "proves", "shows that", "is why", or a flat
+  statement of what happened or why. A dramatic TELLING of a fact is fine; a more
+  CERTAIN version of the fact is not.
+- State each idea ONCE, where it best belongs, then move on. Before writing a
+  sentence, check whether the script has already made this point - if so, cut the
+  new one rather than restating it "one more time" for emphasis. A script that
+  circles back to summarize what it already explained is padding, not pacing.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words. Conversational, second person, no stage directions, no scene labels.
 - Write ONE ending. Land the final point once, in a single short closing passage,
