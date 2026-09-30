@@ -470,6 +470,24 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
             max_tokens=studio.script_max_tokens(target_words))
         if not text:
             raise RuntimeError("LLM returned an empty script")
+        # A draft that stops mid-sentence/mid-word tanks the judge's `ending`
+        # criterion to 1 regardless of how good everything before the cutoff
+        # is - confirmed on real attempts that cut off well under their token
+        # budget. Ask it to finish rather than score (and burn the whole
+        # attempt on) a draft that was never actually done.
+        for cont in range(studio.SCRIPT_CONTINUE_ROUNDS):
+            if not studio.script_looks_truncated(text):
+                break
+            _log_line(f"attempt {attempt}: output looks cut off mid-sentence "
+                      f"- continuing ({cont + 1}/"
+                      f"{studio.SCRIPT_CONTINUE_ROUNDS})")
+            more = studio.llm_generate(
+                cfg, studio.script_continuation_prompt(prompt, text),
+                provider=provider,
+                max_tokens=studio.script_max_tokens(target_words))
+            if not more:
+                break
+            text = text.rstrip() + "\n\n" + more.lstrip()
         words = len(re.findall(r"\w+", text))
         overlap = studio.overlap_ratio(text, source_text)
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []

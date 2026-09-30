@@ -2419,6 +2419,57 @@ def script_target_words(setting: int | None, source_words: int) -> int:
     return min(wanted, cap)
 
 
+# How many times a truncated draft gets asked to finish itself before the
+# attempt is scored as-is. Mirrors SHOTLIST_CONTINUE_ROUNDS's reasoning, but a
+# script rarely needs more than one continuation to reach a natural ending.
+SCRIPT_CONTINUE_ROUNDS = 2
+
+# Characters treated as trailing "decoration" around a sentence's real end
+# (a closing quote, parenthesis, or stray markdown emphasis marker) - stripped
+# before checking for terminal punctuation, so `he said "no."` and `*done.*`
+# both read as complete.
+_SCRIPT_TRAILING_CLOSERS = ('"', "'", '”', '’', ')', ']', '*', '_')
+
+
+def script_looks_truncated(text: str) -> bool:
+    """True when a draft stops mid-sentence or mid-word instead of reaching a
+    real ending.
+
+    This is a distinct failure from running long: on a long single-pass
+    generation the model sometimes just stops before finishing the thought,
+    independent of script_max_tokens's headroom (confirmed on real attempts
+    that cut off well short of their token budget, at word counts LOWER than
+    other attempts that finished cleanly). The judge's `ending` criterion
+    scores this a flat 1 regardless of how good everything before the cutoff
+    was, which craters the whole attempt for a reason that has nothing to do
+    with writing quality - so it is worth detecting and continuing rather
+    than burning the attempt on it."""
+    t = (text or "").rstrip()
+    if not t:
+        return True
+    while t and t[-1] in _SCRIPT_TRAILING_CLOSERS:
+        t = t[:-1]
+    return not t.endswith((".", "!", "?"))
+
+
+def script_continuation_prompt(base_prompt: str, partial: str) -> str:
+    """Ask for the rest of a script that stopped mid-sentence/mid-word.
+
+    Only the TAIL of what was written is re-sent - the base prompt already
+    carries the facts and style guide - mirroring continuation_prompt's
+    approach for a cut-off shotlist."""
+    tail = (partial or "")[-2000:]
+    return (base_prompt.rstrip()
+            + "\n\n---\n\nYOUR PREVIOUS OUTPUT WAS CUT OFF before it reached "
+            "a conclusion. It ended with:\n" + tail
+            + "\n\nContinue from EXACTLY where it stopped - the same "
+            "sentence, the same voice - with no repetition of anything "
+            "already written, no restating the introduction, and no "
+            "commentary about continuing or being cut off. Write only the "
+            "remaining script, and bring it to ONE single, clear ending "
+            "(not several).")
+
+
 def _pinned_fallback_provider(cfg) -> str | None:
     """Settings > LLM > Fallback LLM: a global override read straight from
     the database (this runs inside the LLM transport, with no production/pid
@@ -3125,8 +3176,16 @@ Rules:
 - The facts are NOTES, not prose: write entirely new sentences and do not follow
   their wording or order. No run of five or more consecutive words may match the
   facts or any source material.
+- Never state a specific number, measurement, legal claim, or behavioral/causal
+  detail unless it appears in the facts above. If a fact is approximate, qualified,
+  or uncertain, keep the script exactly that approximate, qualified, or uncertain -
+  do not sharpen it into something more specific, dramatic, or certain than the
+  facts actually support. When in doubt, describe it more vaguely, not more vividly.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words. Conversational, second person, no stage directions, no scene labels.
+- Write ONE ending. Land the final point once, in a single short closing passage,
+  then go straight into the call to action - do not summarize the video, restate
+  the thesis, or add a second "so what does this all mean" passage before it.
 - End with a short call to action matching the style guide's CTA style.
 
 Output ONLY the script text."""

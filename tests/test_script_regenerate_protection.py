@@ -27,9 +27,13 @@ from whisperradar.config import load_config  # noqa: E402
 
 # ~100 distinct words each, so overlap with the source stays low and the
 # length gate (0.6x-1.15x of source word count) never trips either draft.
-EXISTING_SCRIPT = " ".join(f"existingword{i}" for i in range(100))
-NEW_ATTEMPT = " ".join(f"newword{i}" for i in range(100))
-SOURCE_TRANSCRIPT = " ".join(f"sourceword{i}" for i in range(100))
+# Trailing periods so these fixtures read as a COMPLETE draft, not a
+# mid-sentence cutoff - script_looks_truncated (added for the continuation
+# fix) would otherwise trigger an extra llm_generate() call on NEW_ATTEMPT,
+# which this module's tests mock to always return the same fixture text.
+EXISTING_SCRIPT = " ".join(f"existingword{i}" for i in range(100)) + "."
+NEW_ATTEMPT = " ".join(f"newword{i}" for i in range(100)) + "."
+SOURCE_TRANSCRIPT = " ".join(f"sourceword{i}" for i in range(100)) + "."
 
 
 class ScriptRegenerateProtectionTests(unittest.TestCase):
