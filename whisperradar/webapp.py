@@ -1482,6 +1482,15 @@ def create_app(cfg) -> Flask:
         style_text = _read_text(style)
         bible = studio.find_bible(pdir)
         bible_text = _read_text(bible)
+        # which value the planner will actually use: the live channel value,
+        # or this production's own file when it has overridden
+        _c = db.connect(cfg.db_path)
+        db.init_db(_c)
+        try:
+            _sg, style_src, _bt, bible_src = autorun.style_bible(
+                cfg, _c, prod, pdir)
+        finally:
+            _c.close()
         source_tr = studio.find_source_transcript(pdir)
         if not source_tr and prod["source_video_id"]:
             conn = db.connect(cfg.db_path)
@@ -1561,6 +1570,7 @@ def create_app(cfg) -> Flask:
             "studio_detail.html", prod=prod, steps=steps, history=history,
             stages=db.STAGES, stage=stage, script_text=script_text,
             style=style, style_text=style_text, source_tr=source_tr,
+            style_src=style_src, bible_src=bible_src,
             source_tr_text=source_tr_text,
             shotlist_text=shotlist_text, audio=audio, srt=srt,
             srt_text=srt_text, prompts_text=prompts_text, images=images,
@@ -1634,7 +1644,11 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         from_stage = request.form.get("from") or ""
-        if from_stage not in ("style", "script", "images"):
+        # Any already-reached stage is a valid reset point - "review" is
+        # excluded (nothing generated there to clear); the caller
+        # (studio_detail.html's modal) only ever offers stages the
+        # production has actually reached, but this is re-checked here too.
+        if from_stage not in db.STAGES or from_stage == "review":
             return _studio_url(pid, error="Unknown start-over scope")
         with_audio = request.form.get("with_audio") == "1"
         conn = db.connect(cfg.db_path)
@@ -1642,10 +1656,12 @@ def create_app(cfg) -> Flask:
         try:
             if not db.get_production(conn, pid):
                 return redirect("/studio?error=Unknown+production")
+            # "audio" is normally kept when resetting from an earlier stage
+            # (a new style/script does not invalidate existing narration) -
+            # unless the reset target IS "audio" itself (it's the thing being
+            # redone) or the user explicitly opted in via with_audio.
             reset = [s for s in db.STAGES[db.STAGES.index(from_stage):]
-                     if s != "audio"]
-            if with_audio:
-                reset.append("audio")
+                     if s != "audio" or from_stage == "audio" or with_audio]
             # a live Flow batch would repopulate images\ while we delete it
             studio.flow_stop(cfg)
             with sjob._lock:
@@ -1893,11 +1909,14 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
+            # a production-page edit is an explicit per-production override
+            db.update_production(conn, pid, style_override=1)
             db.add_step(conn, pid, "style", "manual")
             autorun._advance(cfg, pid, "style")
         finally:
             conn.close()
-        return _studio_url(pid, msg="Style guide saved")
+        return _studio_url(pid, msg="Style guide saved (this production now "
+                                     "overrides the channel style)")
 
     @app.post("/studio/<int:pid>/script/generate")
     def studio_script_generate(pid):
@@ -2132,7 +2151,31 @@ def create_app(cfg) -> Flask:
         if not text:
             return _studio_url(pid, error="Nothing to save")
         (pdir / "bible.md").write_text(text + "\n", encoding="utf-8")
-        return _studio_url(pid, msg="Character / reference bible saved")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.update_production(conn, pid, bible_override=1)
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Bible saved (this production now "
+                                    "overrides the channel bible)")
+
+    @app.post("/studio/<int:pid>/style-bible/use-channel")
+    def studio_style_bible_use_channel(pid):
+        """Drop a production's style/bible overrides so it follows the live
+        channel value again."""
+        which = (request.form.get("which") or "both").strip().lower()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if which in ("style", "both"):
+                db.update_production(conn, pid, style_override=0)
+            if which in ("bible", "both"):
+                db.update_production(conn, pid, bible_override=0)
+            conn.commit()
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Now using the channel value")
 
     @app.post("/studio/<int:pid>/versions/save")
     def studio_versions_save(pid):

@@ -997,7 +997,7 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
 
 
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
-                           log=None, cancel=None) -> dict:
+                       log=None, cancel=None, upscale: int | None = None) -> dict:
     """Render the missing reference images with FlowBatch, then place them
     so BOTH engines can use them: as files in the production's refs\\ (the
     Renderly driver resolves names there) and with the shotlist's registry
@@ -1015,7 +1015,8 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
             "studio.flowbatch_repo in config.yaml")
     repo = flowbatch_dir(cfg)
     job_path = _write_refs_job(cfg, pdir, pid, refs)
-    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale)
+    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
+                              else upscale)
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pdir / "flow_refs"),
                               "--no-color"])
@@ -1104,7 +1105,8 @@ def _update_ref_paths(pdir: Path, names: list[str]) -> None:
 
 
 def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
-                      upscale=None, log=None, cancel=None) -> dict:
+                      upscale=None, log=None, cancel=None,
+                      flow: bool = False) -> dict:
     """Render the missing reference images through the SAME Renderly image
     engine run_imagegen() uses for the production's real shots - so a
     Renderly channel never has to depend on FlowBatch (or a Flow login) just
@@ -1152,9 +1154,17 @@ def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
         (tmp_dir / "shotlist.json").write_text(
             json.dumps(job, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
-        _safe_log(log, f"refs: generating {len(refs)} reference image(s) "
-                       f"via Renderly")
-        run_imagegen(cfg, tmp_dir, channel=channel, upscale=upscale)
+        _safe_log(log, f"refs: generating {len(refs)} reference image(s) via "
+                       f"{'the Flow Driver' if flow else 'Renderly'}")
+        if flow:
+            # renderly + flow: make the refs through the Flow Driver (Google
+            # Flow), NOT the :8022 API - one engine does everything.
+            # local_upscale=True keeps the Renderly channel out of it (refs are
+            # inputs, not results to import), so no API call at all.
+            run_imagegen_flow(cfg, tmp_dir, pid=pid, upscale=upscale,
+                              local_upscale=True, log=log, cancel=cancel)
+        else:
+            run_imagegen(cfg, tmp_dir, channel=channel, upscale=upscale)
         out_dir = tmp_dir / "images"
         refs_dir = pdir / "refs"
         refs_dir.mkdir(parents=True, exist_ok=True)
@@ -2199,10 +2209,11 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
 # 960x540 draft - the shimmer seen on productions 5/6 was low-resolution
 # B-frames, fixed in ImgToVideo by preview_bframes=0, not a resolution problem.
 RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2k": (2560, 1440),
-                      "4k": (3840, 2160)}
+                      "4k": (3840, 2160), "flow-native": (1376, 768)}
 RENDER_RESOLUTION_LABELS = {"1080p": "1920x1080 (Full HD)",
                             "2k": "2560x1440 (2K)",
-                            "4k": "3840x2160 (4K)"}
+                            "4k": "3840x2160 (4K)",
+                            "flow-native": "1376x768 (Flow native)"}
 
 
 def apply_render_resolution(cfg, pid: int) -> None:

@@ -189,6 +189,20 @@
   <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</div>
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
 
+  {% set STAGE_DISPLAY = {'shots': 'shotlist', 'srt': 'subtitles',
+                          'refs': 'references', 'merge': 'merge & export'} %}
+  {% set RESET_BLURB = {
+    'style': 'everything re-runs, starting from a fresh style guide',
+    'script': 'also deletes the subtitles and shotlist (a new script is generated; kept audio will no longer match it)',
+    'audio': 'deletes the audio - you will need to upload or regenerate it (subtitles/shotlist/images are also cleared, since they were timed to it)',
+    'srt': 'deletes the subtitles and shotlist, then re-transcribes from the kept audio',
+    'shots': 'deletes the shotlist and re-plans it from the kept subtitles',
+    'refs': 'deletes the reference images WhisperRadar generated (supplied refs are kept) and re-generates them',
+    'images': 'deletes the rendered images and the merge output (preview + NLE export), then re-renders everything (fills the gaps)',
+    'merge': 'just re-does the final preview/NLE export',
+  } %}
+  {% set RESETTABLE = stages[:stages.index('review')] if 'review' in stages else stages %}
+  {% set reached_idx = stages.index(prod['stage']) if prod['stage'] in stages else 0 %}
   <div class="inline" style="justify-content:space-between; margin-top:14px">
     <span class="muted" style="font-size:12px">
       {% if job.running and job.kind == 'auto-run' %}Auto-run in progress - it always stops before review{% else %}Auto-run executes every remaining stage in order - it always stops before review{% endif %}
@@ -201,7 +215,7 @@
     {% elif not job.running %}
     <form method="post" action="/studio/{{ prod['id'] }}/start-over"
           onsubmit="return confirmStartOver(this)">
-      <input type="hidden" name="from" id="resetfrom" value="images">
+      <input type="hidden" name="from" id="resetfrom" value="{{ prod['stage'] }}">
       <input type="hidden" name="with_audio" id="resetaudiofield" value="0">
       <button type="submit" class="ghost" title="Reset progress from a chosen stage and delete the generated files, so the pipeline runs again">↺ Start over</button>
     </form>
@@ -215,10 +229,16 @@
   <div id="resetmodal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:61; align-items:center; justify-content:center">
     <div style="background:var(--panel); border:1px solid var(--border); border-radius:10px; max-width:560px; width:94%; padding:18px 20px">
       <h2 style="margin-top:0">Start over</h2>
-      <div class="muted" style="font-size:13px; margin-bottom:10px">Resets progress from the chosen stage onward: the generated files and the step history of those stages are deleted, and auto-run will execute them again. Inputs are kept: source transcript, bible, refs, named versions, notes.</div>
-      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="images" checked> From the <b>images</b> stage &mdash; deletes the rendered images and the merge output (preview + NLE export), then re-renders everything (fills the gaps)</label>
-      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="script"> From the <b>script</b> stage &mdash; also deletes the script, subtitles and shotlist (a new script is generated; kept audio will no longer match it)</label>
-      <label style="display:block; margin:8px 0; color:var(--text)"><input type="radio" name="resetfrom" value="style"> From the <b>beginning</b> (style) &mdash; everything re-runs, starting from a fresh style guide</label>
+      <div class="muted" style="font-size:13px; margin-bottom:10px">Resets progress from the chosen stage onward: the generated files and the step history of those stages are deleted, and auto-run will execute them again. Inputs are kept: source transcript, bible, refs, named versions, notes. Pick any already-reached stage - one step back, or all the way to the beginning.</div>
+      {% for s in RESETTABLE %}
+      {% if loop.index0 <= reached_idx %}
+      <label style="display:block; margin:8px 0; color:var(--text)">
+        <input type="radio" name="resetfrom" value="{{ s }}" {{ 'checked' if loop.index0 == reached_idx else '' }}>
+        {% if loop.index0 == 0 %}From the <b>beginning</b> ({{ STAGE_DISPLAY.get(s, s) }}){% elif loop.index0 == reached_idx %}From <b>{{ STAGE_DISPLAY.get(s, s) }}</b> (redo the current stage){% else %}From the <b>{{ STAGE_DISPLAY.get(s, s) }}</b> stage{% endif %}
+        &mdash; {{ RESET_BLURB.get(s, 'regenerates this stage and everything after it') }}
+      </label>
+      {% endif %}
+      {% endfor %}
       <label style="display:block; margin:10px 0; color:var(--amber)" id="resetaudiolabel"><input type="checkbox" id="resetaudiobox"> Also delete the audio (you will need to upload new audio)</label>
       <div class="warn" id="resetwarn" style="display:none">Kept files mean those stages are skipped by auto-run - make sure they still match what will be regenerated.</div>
       <div class="inline" style="justify-content:flex-end; margin-top:14px">
@@ -242,31 +262,33 @@
       const radios = document.getElementsByName('resetfrom');
       const box = document.getElementById('resetaudiobox');
       const label = document.getElementById('resetaudiolabel');
+      const STAGE_ORDER = {{ RESETTABLE | tojson }};
       function sync() {
         const from = [...radios].find((r) => r.checked).value;
-        const audioRelevant = from !== 'images';
+        const audioRelevant = STAGE_ORDER.indexOf(from) < STAGE_ORDER.indexOf('audio');
         label.style.display = audioRelevant ? '' : 'none';
         if (!audioRelevant) box.checked = false;
       }
       [...radios].forEach((r) => r.addEventListener('change', sync));
       sync();
     })();
+    const STAGE_LABEL = {{ STAGE_DISPLAY | tojson }};
     async function submitReset() {
-      const from = [...document.getElementsByName('resetfrom')].find((r) => r.checked).value;
+      const radio = [...document.getElementsByName('resetfrom')].find((r) => r.checked);
+      const from = radio.value;
+      const label = (radio.closest('label').textContent || '').replace(/\s+/g, ' ').trim();
       document.getElementById('resetfrom').value = from;
       document.getElementById('resetaudiofield').value =
         document.getElementById('resetaudiobox').checked ? '1' : '0';
       closeResetModal();
-      const msg = from === 'images'
-        ? 'Delete all rendered images and the merge output (preview + NLE export), then re-render everything?'
-        : 'Delete the generated files from ' + (from === 'style' ? 'the beginning' : 'the script stage') + ' onward? This cannot be undone.';
+      const stageName = STAGE_LABEL[from] || from;
+      const msg = 'Start over from ' + stageName + '? ' + label + ' This cannot be undone.';
       if (!(await wrConfirm(msg))) return;
       const forms = document.querySelectorAll('form[action*="/start-over"]');
       forms[0].submit();
     }
   </script>
 
-  {% set STAGE_DISPLAY = {'shots': 'shotlist'} %}
   <div class="stepper">
     {% for s in stages %}
     {% set done = s in steps %}
@@ -316,6 +338,14 @@
             {{ 'Working...' if job.running else 'Generate style guide from source' }}
           </button>
         </form>
+      </div>
+      <div class="muted" style="font-size:12px; margin:8px 0 4px">
+        {% if style_src == 'production' %}<b>Production override ✓</b> — this
+          production's own style guide is used, not the channel's.
+          <form method="post" action="/studio/{{ prod['id'] }}/style-bible/use-channel" style="display:inline"><input type="hidden" name="which" value="style"><button type="submit" class="secondary" style="padding:2px 8px;font-size:12px">use channel instead</button></form>
+        {% elif style_src == 'channel' %}Using the <b>channel</b> style guide — editing here overrides it for this production only.
+        {% else %}No style guide yet — set one on the channel or here.
+        {% endif %}
       </div>
       <form method="post" action="/studio/{{ prod['id'] }}/style/save">
         <textarea name="style" placeholder="Write or paste your own style guide (markdown) - it will be passed to the LLM for the script and images...">{{ style_text }}</textarea>
@@ -611,6 +641,14 @@
       </form>
       <h2>Character / reference bible (optional)</h2>
       <div class="muted" style="font-size:12px; margin-bottom:6px">Recurring characters, environments, wardrobe, objects - kept consistent across all generated images. Passed to the shotlist planner as its reference bible.</div>
+      <div class="muted" style="font-size:12px; margin-bottom:6px">
+        {% if bible_src == 'production' %}<b>Production override ✓</b> — this
+          production's own bible is used, not the channel's.
+          <form method="post" action="/studio/{{ prod['id'] }}/style-bible/use-channel" style="display:inline"><input type="hidden" name="which" value="bible"><button type="submit" class="secondary" style="padding:2px 8px;font-size:12px">use channel instead</button></form>
+        {% elif bible_src == 'channel' %}Using the <b>channel</b> bible — editing here overrides it for this production only.
+        {% else %}No bible yet — set one on the channel or here.
+        {% endif %}
+      </div>
       <form method="post" action="/studio/{{ prod['id'] }}/bible/save">
         <textarea name="bible" style="min-height:90px" placeholder="e.g. MAYA - woman in her 30s, shoulder-length black hair, olive skin, mustard scarf... The forest god appears as a white stag with antlers of branches.">{{ bible_text }}</textarea>
         <div class="actions">

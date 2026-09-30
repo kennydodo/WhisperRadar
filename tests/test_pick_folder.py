@@ -65,5 +65,37 @@ class PickFolderTests(unittest.TestCase):
                          {"path": None, "error": "no desktop session"})
 
 
+class ChannelFolderPickerTests(unittest.TestCase):
+    """The channel settings page (bible folder / refs folder) must offer the
+    same native picker the working-folder fields already do - a browser page
+    cannot read a real filesystem path itself, so the channel form fields
+    need it just as much as the production form did."""
+
+    def setUp(self):
+        from whisperradar import db
+
+        self.cfg = load_config(ROOT / "config.yaml")
+        self.cfg.db_path = Path(tempfile.mkdtemp()) / "wr.db"
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        self.chan = db.create_own_channel(conn, "Test Channel")
+        conn.commit()
+        conn.close()
+        self.app = create_app(self.cfg)
+        self.app.testing = True
+        self.client = self.app.test_client()
+
+    def test_bible_and_refs_folder_fields_have_browse_buttons(self):
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn(f'id="bible-dir-{self.chan}"', html)
+        self.assertIn(f'id="refs-dir-{self.chan}"', html)
+        self.assertIn(f"pickFolder('bible-dir-{self.chan}')", html)
+        self.assertIn(f"pickFolder('refs-dir-{self.chan}')", html)
+        # the page defines its own copy of pickFolder() - it is a standalone
+        # template, not one that inherits studio.html's script block
+        self.assertIn("function pickFolder", html)
+        self.assertIn("/studio/pick-folder", html)
+
+
 if __name__ == "__main__":
     unittest.main()

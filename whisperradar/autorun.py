@@ -82,6 +82,47 @@ def _default_provider(cfg, pid: int) -> str | None:
     return _db_llm_default(cfg)
 
 
+def style_bible(cfg, conn, prod, pdir):
+    """Resolve the style guide + bible the planner should use.
+
+    The CHANNEL's live DB value is the source of truth, so editing the channel
+    propagates to every production of it immediately. A production can opt out
+    with `style_override` / `bible_override` - then its own style.md / bible.md
+    wins instead. Returns (style_guide, style_src, bible_text, bible_src) where
+    *_src is "production" | "channel" | "none" so the UI can show which is in
+    force. A file with no channel value still resolves as "production" (the
+    seed copy), so a channel-less production keeps working."""
+    eff = settings.for_production(conn, prod)
+
+    def pick(override, file_name, channel_val):
+        f = pdir / file_name
+        if override and f.exists():
+            return f.read_text(encoding="utf-8").strip(), "production"
+        if (channel_val or "").strip():
+            return channel_val.strip(), "channel"
+        if f.exists():
+            return f.read_text(encoding="utf-8").strip(), "production"
+        return "", "none"
+
+    style_guide, style_src = pick(
+        bool(settings.row_get(prod, "style_override", 0)), "style.md",
+        eff["style"])
+    bible_text, bible_src = pick(
+        bool(settings.row_get(prod, "bible_override", 0)), "bible.md",
+        eff["bible"])
+    return style_guide, style_src, bible_text, bible_src
+
+
+def _upscale_for(eff) -> int:
+    """The upscale to use for a channel/production. 'Flow native' render
+    resolution means NONE (0): the images are already at Flow's master size
+    (1376x768), so upscaling them would defeat the point. Otherwise the
+    channel/global upscale setting."""
+    if str(eff.get("render_resolution") or "").lower() == "flow-native":
+        return 0
+    return eff["upscale"]
+
+
 def _stage_provider(cfg, pid: int, stage: str,
                     override: str | None = None) -> str | None:
     """Which LLM one stage uses: an explicit choice for THIS action, else the
@@ -762,22 +803,20 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         srt = studio.find_srt(pdir)
         if not srt:
             raise RuntimeError("Generate or upload the subtitles first")
-        bible = studio.find_bible(pdir)
-        if not bible:
-            # seed from the own channel / per-genre seed folder first, so an
-            # unattended run does not have to pause at the bible gate
-            seeded = studio.seed_production(cfg, conn, prod)
-            if seeded["source"]:
-                bible = studio.find_bible(pdir)
-        if not bible:
+        # Seed from the channel / seed folder FIRST, every run: this copies any
+        # new channel refs into the production's refs\ (file-by-file, never
+        # overwriting) so the planner's supplied-refs inventory sees them -
+        # independent of whether the bible gate needs it. (Skipping this when
+        # the channel bible satisfied the gate used to strand channel refs.)
+        studio.seed_production(cfg, conn, prod)
+        style_guide, style_src, bible_text, bible_src = style_bible(
+            cfg, conn, prod, pdir)
+        if not bible_text:
             # the manifest-authoring brief's bible gate: the LLM will refuse
             # to plan without one (it just asks for the bible instead)
             raise _Paused("no character/reference bible - the planning brief "
                           "requires one before planning - write it at the "
                           "shots stage, then Resume")
-        style = studio.find_style(pdir)
-        style_guide = style.read_text(encoding="utf-8") if style else ""
-        bible_text = bible.read_text(encoding="utf-8")
         brief = studio.load_manifest_brief(cfg)
         srt_text = srt.read_text(encoding="utf-8")
         cues = studio.parse_srt_cues(srt_text)
@@ -1159,13 +1198,20 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     # stage.
     if eff["engine"] == "flowbatch":
         result = studio.run_flowbatch_refs(cfg, pdir, pid, todo, log=log,
-                                               cancel=cancel)
+                                           cancel=cancel,
+                                           upscale=_upscale_for(eff))
+    elif _default_render_mode(cfg, _get_prod(cfg, pid)) == "flow":
+        # renderly + flow: refs come from the Flow Driver too, so a flow
+        # channel never touches the :8022 API - one engine does everything.
+        result = studio.run_renderly_refs(cfg, pdir, pid, todo,
+                                          upscale=_upscale_for(eff),
+                                          log=log, cancel=cancel, flow=True)
     else:
         renderly_channel = studio.resolve_renderly_channel(
             cfg, eff["own_channel"], create=True)
         result = studio.run_renderly_refs(cfg, pdir, pid, todo,
                                           channel=renderly_channel,
-                                          upscale=eff["upscale"],
+                                          upscale=_upscale_for(eff),
                                           log=log, cancel=cancel)
     made = result["generated"]
     failed = result["missing"] + stranded
@@ -1530,19 +1576,19 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
             refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
                     if (pdir / "refs").exists() else 0)
             detail = (f"{len(missing)} missing image(s) via FlowBatch "
-                      f"(upscale {eff['upscale']}"
+                      f"(upscale {_upscale_for(eff)}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
         elif mode == "flow":
             refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
                     if (pdir / "refs").exists() else 0)
             detail = (f"{len(missing)} missing image(s) via Flow Driver "
                       f"(channel {eff['renderly_channel_name']}, default "
-                      f"project, upscale {eff['upscale']}"
+                      f"project, upscale {_upscale_for(eff)}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
         else:
             detail = (f"{len(missing)} missing image(s) via Renderly API "
                       f"(channel {eff['renderly_channel_name']}, upscale "
-                      f"{eff['upscale']})")
+                      f"{_upscale_for(eff)})")
         return {"stage": stage, "action": "run", "detail": detail}
     if stage == "merge":
         if studio.merge_done(pdir):
@@ -1586,7 +1632,7 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
         eff = _effective(cfg, pid)
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
         params = {"mode": mode, "engine": eff["engine"], "flow_project": "",
-                  "flow_upscale": eff["upscale"], "log": log, "cancel": cancel}
+                  "flow_upscale": _upscale_for(eff), "log": log, "cancel": cancel}
         if eff["engine"] == "flowbatch":
             pass  # drives Flow itself; no Renderly channel/project involved
         elif mode == "flow":
