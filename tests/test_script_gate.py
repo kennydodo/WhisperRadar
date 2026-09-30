@@ -31,6 +31,17 @@ class ScriptGateTests(unittest.TestCase):
         self.assertTrue(too_short)
         self.assertTrue(any("well under" in r for r in why), why)
 
+    def test_the_too_short_floor_is_80_percent_of_target(self):
+        # Raised from 0.6 to 0.8 after two real productions showed a
+        # 67-71%-of-target draft winning "best of attempts" purely on judge
+        # score, because a shorter draft gives the judge less material to
+        # find repetition/overreach in. 750/1000 (75%) must now be
+        # too_short; 850/1000 (85%) must not.
+        _, _, _, too_short_at_75pct = self.gate(words=750)
+        _, _, _, too_short_at_85pct = self.gate(words=850)
+        self.assertTrue(too_short_at_75pct)
+        self.assertFalse(too_short_at_85pct)
+
     def test_a_judge_that_cannot_rate_is_named(self):
         passed, why, _, _ = self.gate(score=None, judge_error="empty response")
         self.assertFalse(passed)

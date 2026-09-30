@@ -319,7 +319,14 @@ def _script_gate(words: int, target_words: int, overlap: float,
     under the target (a 1067-word answer to a 3531-word target was only rejected
     because the judge was down)."""
     too_long = words > int(target_words * 1.15)
-    too_short = words < int(target_words * 0.6)
+    # 0.6 used to let a 67-71%-of-target draft win "best of attempts" purely
+    # on judge score - confirmed on two real productions where a shorter
+    # draft outscored a fuller one because it had less material for the
+    # judge to find repetition/overreach in (see the ranking comment in
+    # _run_script). 0.8 was chosen directly by the channel owner after
+    # seeing those real word counts, to make the selection favor length
+    # more than the judge's rating alone does.
+    too_short = words < int(target_words * 0.8)
     passed = (overlap <= max_overlap and overlap <= hard_overlap
               and not too_short
               and score is not None and score >= min_rating)
