@@ -38,13 +38,17 @@ def _shots(spec):
 
 class PacingTests(unittest.TestCase):
     def test_a_well_paced_plan_has_no_faults(self):
-        cues = _cues(12, 5)  # 60s
+        # PL/PR appear once each out of 8 shots (12.5%) - under their own
+        # tighter ~15% cap, not just the general ~40% one.
+        cues = _cues(16, 5)  # 80s
         data = _shots([("S01_01_SCN_ZI.png", 1, 2, "ZI"),
                        ("S01_02_SCN_ZO.png", 3, 4, "ZO"),
                        ("S01_03_SCN_PL.png", 5, 6, "PL"),
                        ("S01_04_SCN_PR.png", 7, 8, "PR"),
                        ("S01_05_INF_PU.png", 9, 10, "PU"),
-                       ("S01_06_INF_PV.png", 11, 12, "PV")])
+                       ("S01_06_INF_PV.png", 11, 12, "PV"),
+                       ("S01_07_SCN_ZI.png", 13, 14, "ZI"),
+                       ("S01_08_SCN_ZO.png", 15, 16, "ZO")])
         faults, warnings = studio.shotlist_pacing(data, cues)
         self.assertEqual(faults, [])
         self.assertEqual(warnings, [])
@@ -82,6 +86,27 @@ class PacingTests(unittest.TestCase):
         faults, _ = studio.shotlist_pacing(data, cues)
         self.assertTrue(any("motion ZI is" in f for f in faults), faults)
 
+    def test_pl_and_pr_are_capped_tighter_than_the_general_motion_limit(self):
+        # 2 of 8 shots = 25% - under the general ~40% cap but over PL/PR's
+        # own tighter ~15% cap (they default too easily, so a plan leaning
+        # on them needs to be caught well before the general ceiling).
+        cues = _cues(16, 2)
+        motions = ["PL", "PL", "ZI", "ZO", "PU", "PD", "PV", "ZI"]
+        data = _shots([(f"S01_0{i}_SCN_{m}.png", i * 2 - 1, i * 2, m)
+                       for i, m in enumerate(motions, 1)])
+        faults, _ = studio.shotlist_pacing(data, cues)
+        self.assertTrue(any("motion PL is 25% of shots (cap ~15%)" in f
+                            for f in faults), faults)
+
+    def test_pl_and_pr_under_15_percent_each_is_not_a_fault(self):
+        cues = _cues(16, 2)
+        motions = ["PL", "PR", "ZI", "ZO", "PU", "PD", "PV", "ZI"]
+        data = _shots([(f"S01_0{i}_SCN_{m}.png", i * 2 - 1, i * 2, m)
+                       for i, m in enumerate(motions, 1)])
+        faults, _ = studio.shotlist_pacing(data, cues)
+        self.assertFalse(any(f.startswith("motion PL") or f.startswith("motion PR")
+                             for f in faults), faults)
+
     def test_fragmentation_is_a_fault(self):
         cues = _cues(6, 2)
         motions = ["ZI", "ZO", "PL", "PR", "PU", "PV"]
@@ -100,19 +125,24 @@ class PacingTests(unittest.TestCase):
                         faults)
 
     def test_dense_plans_are_legal_when_every_hold_is_short(self):
-        # the count is never fixed: 6 images a minute is fine if each holds 10s
+        # the count is never fixed: 6 images a minute is fine if each holds
+        # 10s. PL/PR appear once each (8.3%, under their tighter ~15% cap) -
+        # the other motions fill out the rest of the variety.
         cues = _cues(24, 5)  # 120s
-        motions = ["ZI", "ZO", "PL", "PR", "PU", "PV"]
-        data = _shots([(f"S01_{i + 1:02d}_SCN_{motions[i % 6]}.png",
-                        i * 2 + 1, i * 2 + 2, motions[i % 6])
-                       for i in range(12)])
+        motions = ["ZI", "ZO", "PL", "PR", "PU", "PV",
+                  "ZI", "ZO", "PU", "PV", "ZI", "ZO"]
+        data = _shots([(f"S01_{i + 1:02d}_SCN_{m}.png",
+                        i * 2 + 1, i * 2 + 2, m)
+                       for i, m in enumerate(motions)])
         faults, warnings = studio.shotlist_pacing(data, cues)
         self.assertEqual(faults, [])
         self.assertEqual(warnings, [])
 
     def test_the_max_hold_is_tunable(self):
+        # not testing motion variety here, so no PL/PR - avoids their
+        # tighter ~15% cap being incidentally what fails this fixture.
         cues = _cues(18, 10)  # 180s; six 30s shots
-        motions = ["ZI", "ZO", "PL", "PR", "PU", "PV"]
+        motions = ["ZI", "ZO", "PU", "PD", "PV", "ZO"]
         data = _shots([(f"S01_0{i}_SCN_{m}.png", i * 3 + 1, i * 3 + 3, m)
                        for i, m in enumerate(motions, 1)])
         self.assertTrue(studio.shotlist_pacing(data, cues, 12.0)[0])

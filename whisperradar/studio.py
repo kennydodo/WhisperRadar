@@ -3675,10 +3675,16 @@ def _srt_seconds(ts: str) -> float:
 SHOT_MAX_HOLD_DEFAULT = 12.0
 # The planning brief's own rules: a long hold (~15s+) is acceptable only when it
 # carries motion; ST is only for ~1-2-cue shots (~2-4s) and ~10% of shots; no
-# motion code above ~40%; most shots should span several cues.
+# motion code above ~40% (PL/PR tighter, at ~15% - they default too easily);
+# most shots should span several cues.
 ST_MAX_HOLD_SECONDS = 5.0
 ST_MAX_SHARE = 0.10
 MOTION_MAX_SHARE = 0.40
+# PL/PR are the easiest motions to reach for by default (any left/right beat
+# "just works" with a pan), so a plan leans on them far more readily than the
+# others - a tighter, code-specific cap catches that before the general 40%
+# ceiling would ever trip.
+MOTION_MAX_SHARE_OVERRIDES = {"PL": 0.15, "PR": 0.15}
 FRAGMENTATION_SHARE = 0.50
 
 
@@ -3695,7 +3701,8 @@ def shotlist_pacing(data: dict, cues: list[dict],
     give the new image the next unused sub-beat index in the SAME scene
     (Section 9 - sub-beat numbers are stable, never rename). The brief's other
     rules (no long STATIC hold, ST only on short holds and ~10% of shots, no
-    motion code above ~40%, no fragmentation) are enforced at the same time."""
+    motion code above ~40% - PL/PR tighter at ~15% - no fragmentation) are
+    enforced at the same time."""
     shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
     if not shots or not cues:
         return [], []
@@ -3771,9 +3778,10 @@ def shotlist_pacing(data: dict, cues: list[dict],
                       + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
     for code in sorted({m for _h, m, _a, _f, _l in holds if m}):
         share = sum(1 for _h, m, _a, _f, _l in holds if m == code) / len(holds)
-        if share > MOTION_MAX_SHARE:
+        cap = MOTION_MAX_SHARE_OVERRIDES.get(code, MOTION_MAX_SHARE)
+        if share > cap:
             faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
-                          f"{MOTION_MAX_SHARE:.0%}) - vary the motion codes")
+                          f"{cap:.0%}) - vary the motion codes")
     one_cue = sum(1 for s in shots
                   if (r := cue_range(s.get("cues"))) and r[0] == r[1])
     if one_cue / len(holds) > FRAGMENTATION_SHARE:

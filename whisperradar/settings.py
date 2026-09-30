@@ -177,7 +177,8 @@ SPEC: list[dict] = [
                 "boundary and renumber the scene (a new image takes the next "
                 "unused sub-beat). The brief's other rules (no long STATIC hold, "
                 "ST only on short holds and ~10% of shots, no motion code above "
-                "~40%) are enforced too, and one-image-per-cue is a fault.",
+                "~40% - PL/PR tighter at ~15%) are enforced too, and "
+                "one-image-per-cue is a fault.",
     },
     {
         "key": "script_min_rating", "type": "float", "default": 9.0,
