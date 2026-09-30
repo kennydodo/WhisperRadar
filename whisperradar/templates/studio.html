@@ -84,6 +84,7 @@
   <a href="/">Dashboard</a>
   <a href="/watched">Watched Channels</a>
   <a href="/studio" class="active">Studio</a>
+  <a href="/finished">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
 </nav>
@@ -204,7 +205,10 @@
     {% endif %}
   </div>
 
-  <h2>Productions</h2>
+  <div class="inline" style="justify-content:space-between; align-items:baseline">
+    <h2 style="margin:24px 0 10px">Productions</h2>
+    {% if finished_count %}<a href="/finished" style="font-size:12px">{{ finished_count }} finished &rarr;</a>{% endif %}
+  </div>
   {% if prods %}
   <div class="grid">
     {% for item in prods %}

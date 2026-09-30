@@ -1295,7 +1295,13 @@ def create_app(cfg) -> Flask:
         own_channels = db.list_own_channels(conn)
         own_by_id = {c["id"]: c["name"] for c in own_channels}
         prods = []
+        finished_count = 0
         for p in db.list_productions(conn):
+            if p["status"] == "ready":
+                # Approved productions move to their own "Finished" page
+                # instead of staying mixed into this in-progress list.
+                finished_count += 1
+                continue
             steps = db.latest_steps(conn, p["id"])
             done = sum(1 for s in db.STAGES if s in steps)
             prods.append({"row": p, "done": done, "total": len(db.STAGES),
@@ -1321,7 +1327,52 @@ def create_app(cfg) -> Flask:
             error=request.args.get("error"),
             batch_queue=queued,
             batch_running=(sjob.running and sjob.kind == "batch auto-run"),
-            batch_shutdown_pending=shutdown_pending)
+            batch_shutdown_pending=shutdown_pending,
+            finished_count=finished_count)
+
+    @app.get("/finished")
+    def finished_list():
+        """Productions that passed review sit here, off the in-progress
+        Studio list, sortable by channel or date so a growing backlog of
+        approved-but-not-yet-published videos stays browsable."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        own_channels = db.list_own_channels(conn)
+        own_by_id = {c["id"]: c["name"] for c in own_channels}
+
+        sort = request.args.get("sort") or "date"
+        if sort not in ("date", "channel", "title"):
+            sort = "date"
+        direction = request.args.get("dir") or "desc"
+        if direction not in ("asc", "desc"):
+            direction = "desc"
+
+        items = []
+        for p in db.list_productions(conn):
+            if p["status"] != "ready":
+                continue
+            items.append({
+                "row": p,
+                "own_channel": own_by_id.get(p["own_channel_id"]) or "",
+            })
+
+        key_fns = {
+            "date": lambda it: it["row"]["updated_at"] or "",
+            "channel": lambda it: (it["own_channel"] or "").lower(),
+            "title": lambda it: (it["row"]["title"] or "").lower(),
+        }
+        items.sort(key=key_fns[sort], reverse=(direction == "desc"))
+        conn.close()
+
+        def qs(**overrides) -> str:
+            vals = {"sort": sort, "dir": direction}
+            vals.update(overrides)
+            return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
+                            if v)
+
+        return render_template(
+            "finished.html", items=items, sort=sort, dir=direction, qs=qs,
+            msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/studio/batch/queue")
     def studio_batch_queue():

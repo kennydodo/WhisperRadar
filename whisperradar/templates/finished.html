@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finished - WhisperRadar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #12151c; --border: #262b36;
+    --text: #e6e9ef; --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f;
+    --amber: #e0a93f; --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px;
+            margin:0 auto; padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; font-size:15px; color:var(--text); }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  button, .btn { background: var(--accent); color: #fff; border: none;
+          border-radius: 7px; padding: 7px 14px; font-size: 13px;
+          font-weight: 600; cursor: pointer; display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; border: 1px solid var(--border);
+                 color: var(--muted); padding: 4px 10px; font-weight: 500; }
+  button.ghost:hover { color: var(--accent); border-color: var(--accent); filter: none; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.genre { background: rgba(79,140,255,.15); color: var(--accent); }
+  .badge.chan { background: rgba(224,169,63,.15); color: var(--amber); }
+  .muted { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border);
+           font-size: 13px; }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase;
+       font-size: 11px; letter-spacing: .04em; }
+  th a { color: var(--muted); }
+  th a.active { color: var(--accent); }
+  td.actions { text-align: right; white-space: nowrap; }
+  td.actions form { display: inline-block; margin-left: 6px; }
+</style>
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/watched">Watched Channels</a>
+  <a href="/studio">Studio</a>
+  <a href="/finished" class="active">Finished</a>
+  <a href="/my-channels">My Channels</a>
+  <a href="/settings">Settings</a>
+</nav>
+<div class="wrap">
+  <h1>Finished</h1>
+  <p class="sub">productions that passed review and are ready to publish</p>
+
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    {% if items %}
+    <table>
+      <thead>
+        <tr>
+          <th><a href="?{{ qs(sort='title', dir=('asc' if sort != 'title' or dir == 'desc' else 'desc')) }}"
+                 class="{{ 'active' if sort == 'title' }}">Title</a></th>
+          <th><a href="?{{ qs(sort='channel', dir=('asc' if sort != 'channel' or dir == 'desc' else 'desc')) }}"
+                 class="{{ 'active' if sort == 'channel' }}">Channel</a></th>
+          <th>Genre</th>
+          <th><a href="?{{ qs(sort='date', dir=('asc' if sort != 'date' or dir == 'desc' else 'desc')) }}"
+                 class="{{ 'active' if sort == 'date' }}">Approved</a></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        <tr>
+          <td><a href="/studio/{{ item.row['id'] }}">{{ item.row["title"] }}</a></td>
+          <td>{% if item.own_channel %}<span class="badge chan">{{ item.own_channel }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
+          <td><span class="badge genre">{{ item.row["genre"] }}</span></td>
+          <td class="muted">{{ item.row["updated_at"] }}</td>
+          <td class="actions">
+            <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>
+            {% if item.row["source_video_id"] %}
+            <form method="post" action="/videos/action" style="display:inline"
+                  onsubmit="return wrConfirmSubmit(this, 'Re-enable this source video so it can be used for another production?')">
+              <input type="hidden" name="video_id" value="{{ item.row['source_video_id'] }}">
+              <input type="hidden" name="action" value="reenable">
+              <button type="submit" class="ghost" title="Make the source video available again for a new production">reenable source</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="muted">Nothing finished yet - productions land here once you approve them in Review.</div>
+    {% endif %}
+  </div>
+</div>
+<script src="{{ url_for('static', filename='confirm.js') }}"></script>
+</body>
+</html>
