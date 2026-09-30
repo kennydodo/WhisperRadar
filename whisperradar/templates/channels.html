@@ -270,14 +270,22 @@
             </div>
             <div class="inline" style="margin-top:8px">
               <label>bible folder
-                <input type="text" name="bible_dir"
-                       value="{{ ch['bible_dir'] or '' }}" placeholder="folder holding bible.md (optional)"
-                       style="width:330px">
+                <span class="inline" style="gap:6px">
+                  <input type="text" id="bible-dir-{{ ch['id'] }}" name="bible_dir"
+                         value="{{ ch['bible_dir'] or '' }}" placeholder="folder holding bible.md (optional)"
+                         style="width:280px">
+                  <button type="button" class="ghost" onclick="pickFolder('bible-dir-{{ ch['id'] }}')"
+                          title="Choose a folder on this PC">Browse...</button>
+                </span>
               </label>
               <label>refs folder
-                <input type="text" name="refs_dir"
-                       value="{{ ch['refs_dir'] or '' }}" placeholder="folder copied into refs\ (optional)"
-                       style="width:330px">
+                <span class="inline" style="gap:6px">
+                  <input type="text" id="refs-dir-{{ ch['id'] }}" name="refs_dir"
+                         value="{{ ch['refs_dir'] or '' }}" placeholder="folder copied into refs\ (optional)"
+                         style="width:280px">
+                  <button type="button" class="ghost" onclick="pickFolder('refs-dir-{{ ch['id'] }}')"
+                          title="Choose a folder on this PC">Browse...</button>
+                </span>
               </label>
             </div>
             <div class="inline" style="margin-top:8px">
@@ -404,6 +412,36 @@
 </div>
 
 <script>
+  // Ask the local server to open the OS folder chooser (a browser page cannot
+  // read a real filesystem path itself) and drop the result into the field.
+  // Same route/contract as studio.html's own copy (/studio/pick-folder) -
+  // this page is a separate standalone template so it keeps its own copy.
+  async function pickFolder(inputId) {
+    const input = document.getElementById(inputId);
+    try {
+      const body = new FormData();
+      body.append('initial', input && input.value ? input.value : '');
+      const resp = await fetch('/studio/pick-folder', { method: 'POST', body });
+      const text = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        alert(resp.status === 404
+          ? 'The dashboard is running an older version without the folder picker - restart it (python wr.py serve) and try again.'
+          : 'Folder picker failed (HTTP ' + resp.status + '): ' + text.slice(0, 200));
+        return;
+      }
+      if (data.path) {
+        if (input) input.value = data.path;
+      } else if (data.error) {
+        alert(data.error);
+      }
+    } catch (e) {
+      alert('Folder picker failed: ' + e);
+    }
+  }
+
   function toggleEdit(id) {
     const row = document.getElementById('edit-' + id);
     row.style.display = row.style.display === 'none' ? '' : 'none';
