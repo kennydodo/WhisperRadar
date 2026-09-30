@@ -1644,7 +1644,11 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         from_stage = request.form.get("from") or ""
-        if from_stage not in ("style", "script", "images"):
+        # Any already-reached stage is a valid reset point - "review" is
+        # excluded (nothing generated there to clear); the caller
+        # (studio_detail.html's modal) only ever offers stages the
+        # production has actually reached, but this is re-checked here too.
+        if from_stage not in db.STAGES or from_stage == "review":
             return _studio_url(pid, error="Unknown start-over scope")
         with_audio = request.form.get("with_audio") == "1"
         conn = db.connect(cfg.db_path)
@@ -1652,10 +1656,12 @@ def create_app(cfg) -> Flask:
         try:
             if not db.get_production(conn, pid):
                 return redirect("/studio?error=Unknown+production")
+            # "audio" is normally kept when resetting from an earlier stage
+            # (a new style/script does not invalidate existing narration) -
+            # unless the reset target IS "audio" itself (it's the thing being
+            # redone) or the user explicitly opted in via with_audio.
             reset = [s for s in db.STAGES[db.STAGES.index(from_stage):]
-                     if s != "audio"]
-            if with_audio:
-                reset.append("audio")
+                     if s != "audio" or from_stage == "audio" or with_audio]
             # a live Flow batch would repopulate images\ while we delete it
             studio.flow_stop(cfg)
             with sjob._lock:
