@@ -700,14 +700,14 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         srt = studio.find_srt(pdir)
         if not srt:
             raise RuntimeError("Generate or upload the subtitles first")
+        # Seed from the channel / seed folder FIRST, every run: this copies any
+        # new channel refs into the production's refs\ (file-by-file, never
+        # overwriting) so the planner's supplied-refs inventory sees them -
+        # independent of whether the bible gate needs it. (Skipping this when
+        # the channel bible satisfied the gate used to strand channel refs.)
+        studio.seed_production(cfg, conn, prod)
         style_guide, style_src, bible_text, bible_src = style_bible(
             cfg, conn, prod, pdir)
-        if not bible_text:
-            # seed from the own channel / per-genre seed folder first, so an
-            # unattended run does not have to pause at the bible gate
-            studio.seed_production(cfg, conn, prod)
-            style_guide, style_src, bible_text, bible_src = style_bible(
-                cfg, conn, prod, pdir)
         if not bible_text:
             # the manifest-authoring brief's bible gate: the LLM will refuse
             # to plan without one (it just asks for the bible instead)
