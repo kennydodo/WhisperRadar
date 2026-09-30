@@ -395,7 +395,21 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     max_overlap = eff["script_max_overlap"]
     hard_overlap = eff["script_hard_overlap"]
     attempts_allowed = max(1, int(eff["script_max_attempts"]))
-    judge = studio.judge_provider(cfg, provider, eff["script_judge_provider"])
+    # Pin the judge for this production once resolved, and reuse it on every
+    # later resume/regenerate - same reasoning as shots_judge below. Without
+    # this, "best of attempts" (and "does a regenerate beat the existing
+    # script") silently compared scores from DIFFERENT judge models that do
+    # not agree on the same scale, since judge_provider() re-resolves from
+    # whichever provider happens to be ready each time it is called.
+    judge = db.stage_provider(prod, "script_judge")
+    if not judge:
+        judge = studio.judge_provider(cfg, provider, eff["script_judge_provider"])
+        if judge:
+            conn = _connect(cfg)
+            try:
+                db.set_stage_provider(conn, pid, "script_judge", judge)
+            finally:
+                conn.close()
 
     # A regenerate must never silently make things worse: rate the script
     # that is ALREADY there (if any) as a baseline this run's attempts have

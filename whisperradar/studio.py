@@ -2913,7 +2913,17 @@ RATING_RUBRIC = [    ("hook", "Does the first 15 seconds earn attention without 
 # asks whether claims are supported by the source, and without it the judge
 # demanded external citations the transcript never had (accuracy 7-8, so no
 # attempt could clear a 9.0 bar).
-JUDGE_SOURCE_CHARS = 12000
+#
+# This MUST match SOURCE_FACTS_MAX_CHARS, the cap the WRITER's own facts block
+# uses (script_prompt) - the judge grades against the exact same `facts` text
+# the writer was told to use. A smaller judge-side cap silently hid the back
+# half of `facts` from the judge only: any real fact past this cutoff that the
+# writer legitimately used got marked "absent from the SOURCE FACTS" on every
+# single attempt, no matter how accurate the script actually was. A typical
+# research-notes block runs 25-28k chars - well under the writer's 60k budget
+# but more than double the old 12k judge-side cap, so this was not a rare edge
+# case, it was hit on most real productions.
+JUDGE_SOURCE_CHARS = SOURCE_FACTS_MAX_CHARS
 
 
 def rating_prompt(title: str, genre: str, script: str, source: str,
