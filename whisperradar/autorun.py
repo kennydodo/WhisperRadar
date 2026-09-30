@@ -1055,6 +1055,12 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     if eff["engine"] == "flowbatch":
         result = studio.run_flowbatch_refs(cfg, pdir, pid, todo, log=log,
                                                cancel=cancel)
+    elif _default_render_mode(cfg, _get_prod(cfg, pid)) == "flow":
+        # renderly + flow: refs come from the Flow Driver too, so a flow
+        # channel never touches the :8022 API - one engine does everything.
+        result = studio.run_renderly_refs(cfg, pdir, pid, todo,
+                                          upscale=eff["upscale"],
+                                          log=log, cancel=cancel, flow=True)
     else:
         renderly_channel = studio.resolve_renderly_channel(
             cfg, eff["own_channel"], create=True)

@@ -1056,7 +1056,8 @@ def _update_ref_paths(pdir: Path, names: list[str]) -> None:
 
 
 def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
-                      upscale=None, log=None, cancel=None) -> dict:
+                      upscale=None, log=None, cancel=None,
+                      flow: bool = False) -> dict:
     """Render the missing reference images through the SAME Renderly image
     engine run_imagegen() uses for the production's real shots - so a
     Renderly channel never has to depend on FlowBatch (or a Flow login) just
@@ -1104,9 +1105,17 @@ def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
         (tmp_dir / "shotlist.json").write_text(
             json.dumps(job, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
-        _safe_log(log, f"refs: generating {len(refs)} reference image(s) "
-                       f"via Renderly")
-        run_imagegen(cfg, tmp_dir, channel=channel, upscale=upscale)
+        _safe_log(log, f"refs: generating {len(refs)} reference image(s) via "
+                       f"{'the Flow Driver' if flow else 'Renderly'}")
+        if flow:
+            # renderly + flow: make the refs through the Flow Driver (Google
+            # Flow), NOT the :8022 API - one engine does everything.
+            # local_upscale=True keeps the Renderly channel out of it (refs are
+            # inputs, not results to import), so no API call at all.
+            run_imagegen_flow(cfg, tmp_dir, pid=pid, upscale=upscale,
+                              local_upscale=True, log=log, cancel=cancel)
+        else:
+            run_imagegen(cfg, tmp_dir, channel=channel, upscale=upscale)
         out_dir = tmp_dir / "images"
         refs_dir = pdir / "refs"
         refs_dir.mkdir(parents=True, exist_ok=True)
