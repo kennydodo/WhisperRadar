@@ -3191,7 +3191,13 @@ Rules:
   new one rather than restating it "one more time" for emphasis. A script that
   circles back to summarize what it already explained is padding, not pacing.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
-- About {target_words} words. Conversational, second person, no stage directions, no scene labels.
+- About {target_words} words - this is a real target, not a ceiling. If you are
+  running short, do NOT pad by repeating a point already made; instead go deeper
+  on facts you have not fully unpacked yet, add another concrete example the
+  facts support, or slow down and narrate a moment instead of summarizing it.
+  Landing well under {target_words} words means you left facts unused, not that
+  you wrote a tighter script. Conversational, second person, no stage directions,
+  no scene labels.
 - Write ONE ending. Land the final point once, in a single short closing passage,
   then go straight into the call to action - do not summarize the video, restate
   the thesis, or add a second "so what does this all mean" passage before it.

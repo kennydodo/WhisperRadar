@@ -521,7 +521,18 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     # but "best" must include the script already on disk (the baseline), or a
     # run whose attempts are all worse would still overwrite it
     candidates = attempts + ([baseline] if baseline else [])
-    best = max(candidates, key=lambda a: ((a["score"] or 0), -a["overlap"]))
+    # A too-short draft has less surface area for the judge to find repetition
+    # or overreach in, so it can score HIGHER than a fuller draft purely by
+    # having less content to criticize - confirmed on a real run where a
+    # 1685-word attempt (44% of a 3827-word target, well under the 60%
+    # too_short floor) outscored four longer attempts and was picked as
+    # "best" on rating alone. Rank any non-too-short candidate above every
+    # too-short one first, and only fall back to a too-short candidate when
+    # NOTHING else is available - score (then overlap) still breaks ties
+    # within each group.
+    best = max(candidates,
+              key=lambda a: (not a["too_short"], (a["score"] or 0),
+                            -a["overlap"]))
     kept_existing = bool(baseline) and best is baseline
     text = best["text"]
     passed = best["passed"]
