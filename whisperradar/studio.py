@@ -3960,9 +3960,18 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
     for s in chunk:
         rng = cue_range(s.get("cues")) or (0, 0)
         narration = " ".join(cues.get(c, "") for c in range(rng[0], rng[1] + 1))
+        # No truncation: the manifest brief lets a single image prompt run up
+        # to ~2400 characters (shared with the "style" master prompt's own
+        # 1500-character budget), and a shot merging many cues into one
+        # INF/overview beat can produce narration well past a few hundred
+        # characters too. Clipping either one at a small fixed length (this
+        # used to be [:700]) hides real content from the judge - a fully
+        # detailed prompt that puts a required element after character 700
+        # was being marked "missing" for something that was actually there.
+        # chunk_size already bounds how much text one judge call carries.
         items.append(f'- asset: {s.get("asset")}\n'
-                     f'  cues {rng[0]}-{rng[1]} narrate: "{narration[:700]}"\n'
-                     f'  image prompt: "{str(s.get("prompt"))[:700]}"')
+                     f'  cues {rng[0]}-{rng[1]} narrate: "{narration}"\n'
+                     f'  image prompt: "{str(s.get("prompt"))}"')
     return (
         "You are auditing a video shotlist BEFORE its images are rendered. For "
         "each shot you get the narration at its cue range and the image prompt "
