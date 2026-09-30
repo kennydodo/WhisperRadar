@@ -118,6 +118,8 @@ class MaxTokensTests(unittest.TestCase):
         with mock.patch.object(studio, "llm_generate", fake_llm):
             rating = studio.rate_script(object(), "t", "g", "script", "src",
                                         "style", None)
+        # The judge budget was raised 900 -> 2200 (studio.rate_script); the
+        # test must track it or it fails on the intentional cap.
         self.assertEqual(captured["max_tokens"], 2200)
         self.assertEqual(rating["score"], 8.5)
 

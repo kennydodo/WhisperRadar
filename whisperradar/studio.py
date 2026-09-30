@@ -676,14 +676,47 @@ def renderly_upscale(value) -> int:
     return 2 if tier <= 2 else 4
 
 
-def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
+class RenderlyQuotaExhausted(RuntimeError):
+    """ImgToVideo.ImageGen (--renderly) stopped early (exit 3) because
+    Renderly/Gemini reported a quota or billing limit - not just one image
+    failing, the whole rest of the batch would fail the same way. `generated`
+    is how many images it produced before stopping, so a caller can add the
+    fallback generator's count to it rather than losing track."""
+
+    def __init__(self, generated: int, tail: str):
+        super().__init__(
+            f"Renderly quota/billing limit reached after {generated} "
+            f"image(s) this run: {tail}")
+        self.generated = generated
+
+
+def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
+                  motion_filter=None) -> int:
     """Render the production's shotlist images through ImgToVideo.ImageGen
     in Renderly mode. `channel` is the target Renderly channel id (the
     production's own channel mirror); None falls back to the legacy
-    'whisperradar' channel. Returns how many new images landed in images\\."""
+    'whisperradar' channel. Returns how many new images landed in images\\.
+
+    `motion_filter`, if given (an iterable of motion codes like ("PL", "PR")),
+    passes --motion-filter through to ImageGen so only shots with a matching
+    filename suffix go through the paid API this call - everything else in
+    the shotlist is left on the table for a separate free-generator call
+    (see autorun._run_images, which is the only caller that sets this).
+
+    Raises RenderlyQuotaExhausted (rather than plain RuntimeError) when the
+    tool stopped early on a quota/billing wall (exit 3) - see that class."""
     repo = cfg.imgtovideo_repo
     if not repo or not Path(repo, "src", "ImgToVideo.ImageGen").exists():
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
+    # Refresh out\image-batch.json first: ImgToVideo.ImageGen reads its
+    # per-shot "aspect" field (21:9 for PL/PR - see export-batch) to request
+    # the right ratio per file instead of one flat 16:9 for the whole batch.
+    # Best-effort: a failure here (e.g. no shotlist yet) surfaces the same
+    # way it always did, from the ImageGen call right below, so it is not
+    # worth a special error path of its own.
+    cli = _imgtovideo_cli(cfg)
+    if cli:
+        _run_imgtovideo_cli(cli, ["export-batch", str(pid_dir)])
     if channel is None:
         channel = ensure_renderly_channel(cfg)
     if upscale is None:
@@ -705,12 +738,18 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None) -> int:
     ]
     if scale:
         cmd += ["--upscale", str(scale)]
+    if motion_filter:
+        cmd += ["--motion-filter", ",".join(motion_filter)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+    img_dir = pid_dir / "images"
+    new = [p.name for p in img_dir.iterdir() if p.name not in before] \
+        if img_dir.exists() else []
+    if result.returncode == 3:
+        tail = (result.stderr or result.stdout or "")[-500:]
+        raise RenderlyQuotaExhausted(len(new), tail)
     if result.returncode != 0:
         tail = (result.stderr or result.stdout or "")[-500:]
         raise RuntimeError(f"ImageGen failed (exit {result.returncode}): {tail}")
-    img_dir = pid_dir / "images"
-    new = [p.name for p in img_dir.iterdir() if p.name not in before]
     return len(new)
 
 
@@ -771,6 +810,15 @@ FLOWBATCH_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "2k", 4: "4k"}
 # Flow refuses prompts over roughly 2450 characters with the SAME message it
 # uses for rate limiting, so the job-wide style is only sent when it fits.
 FLOWBATCH_MAX_PROMPT_CHARS = 2420
+
+# Per-shot aspect-ratio override for FlowBatch jobs (src/jobs/load.js already
+# reads item.aspectRatio, this just needed to be sent). Keyed by the motion
+# code suffix on the shot's file name (matches ImgToVideo.Cli export-batch's
+# own canvas/aspect table). Only motion codes Flow's own UI actually offers a
+# toggle for belong here - Flow's aspectRatioGroup is 16:9/4:3/1:1/3:4/9:16
+# with no 21:9, so PL/PR/PV pans stay on the job-wide "16:9" default and stay
+# push-ins after MotionEngine's overscan fallback; only PU/PD (1:1) benefit.
+FLOWBATCH_ASPECT_BY_MOTION = {"PU": "1:1", "PD": "1:1", "PV": "16:9"}
 
 
 def flowbatch_dir(cfg) -> Path | None:
@@ -1169,6 +1217,12 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
                 and item.get("prompt") and item["file"] not in existing):
             continue
         entry = {"file": item["file"], "prompt": item["prompt"]}
+        stem = (item["file"][:-4] if item["file"].lower().endswith(".png")
+                else item["file"])
+        motion = stem.rsplit("_", 1)[-1]
+        flow_aspect = FLOWBATCH_ASPECT_BY_MOTION.get(motion)
+        if flow_aspect:
+            entry["aspectRatio"] = flow_aspect
         if item.get("refs"):
             # only attach refs that actually resolve to a file (registry or
             # refs\\ folder); a ref that was never generated must not stall
