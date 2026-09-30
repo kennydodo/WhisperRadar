@@ -1185,10 +1185,49 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                         cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
                     source = "Flow Driver (Google Flow)"
                 else:
-                    count = studio.run_imagegen(cfg, pdir,
-                                                channel=renderly_channel,
-                                                upscale=flow_upscale)
-                    source = "Renderly"
+                    # Renderly engine, API mode: only PL/PR are worth a paid
+                    # API call (they need a canvas wider than 16:9, and the
+                    # API is the only path that can request 21:9). Everything
+                    # else in the shotlist - ST/ZI/ZO/PU/PD/PV - gets the same
+                    # or a strictly worse aspect from the API than it already
+                    # gets for free through Renderly's own Flow Driver, so it
+                    # is never sent to the API at all; one engine ("renderly")
+                    # still does the whole batch, it just always splits the
+                    # work between its two free/paid halves rather than
+                    # mixing only on quota failure.
+                    api_count = 0
+                    quota_hit = False
+                    try:
+                        api_count = studio.run_imagegen(
+                            cfg, pdir, channel=renderly_channel,
+                            upscale=flow_upscale, motion_filter=("PL", "PR"))
+                    except studio.RenderlyQuotaExhausted as exc:
+                        # Even the PL/PR slice hit a quota/billing wall.
+                        # api_count carries whatever it got through before
+                        # stopping; the Flow Driver pass below still picks up
+                        # the rest of PL/PR (as 16:9 push-ins, same tradeoff
+                        # as always) plus every other motion code.
+                        api_count = exc.generated
+                        quota_hit = True
+                        log(f"[auto-run] images: {exc} - the remaining PL/PR "
+                            "shots will fall through to the Flow Driver too")
+                    # Whatever the API pass above left untouched - the rest of
+                    # PL/PR on a quota failure, and ST/ZI/ZO/PU/PD/PV always -
+                    # goes through the Flow Driver. It reads shotlist.json
+                    # itself and skips any file already on disk, so this is
+                    # safe to call even when the API pass finished everything
+                    # it was asked for (it just finds nothing left to do).
+                    flow_count = studio.run_imagegen_flow(
+                        cfg, pdir, channel=flow_channel, project=flow_project,
+                        upscale=flow_upscale, master=flow_master, log=log,
+                        cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
+                    count = api_count + flow_count
+                    if quota_hit:
+                        source = "Renderly API (PL/PR, quota-limited) + Flow Driver (rest)"
+                    elif api_count:
+                        source = "Renderly API (PL/PR) + Flow Driver (rest)"
+                    else:
+                        source = "Flow Driver"
                 break
             except RuntimeError as exc:
                 # Flow gave up on some cards ("still busy"). Pause, then resume:
@@ -1501,6 +1540,12 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
         else:
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
+            # The split's Flow Driver half imports into the SAME Renderly
+            # channel as the API half so it also upscales through Renderly. The
+            # driver matches channels by NAME, not id, so the default
+            # "whisperradar" would fail on any production whose channel is
+            # named after the production.
+            params["flow_channel"] = studio._own_channel_name(eff["own_channel"])
         return params
     return {}
 
