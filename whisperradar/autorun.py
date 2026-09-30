@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import time
+from collections import Counter
 
 from pathlib import Path
 
@@ -794,6 +795,27 @@ def _shots_criteria_line(faults: list, matched: int, total: int,
            f"({ratio:.0%}, min {min_align:.0%})")
 
 
+_MOTION_ORDER = ["ZI", "ZO", "PL", "PR", "PU", "PD", "PV", "ST"]
+
+
+def _motion_breakdown_line(shots: list) -> str:
+    """Count each shot's motion code for the History panel. The manifest
+    brief caps any single motion at ~40% of shots and ST (static) at ~10% -
+    seeing the actual mix at a glance flags a plan leaning on one motion too
+    heavily before it ever reaches rendering, instead of only discovering it
+    once Renderly/Flow is already working through the batch."""
+    counts = Counter(s.get("motion") or "?" for s in shots)
+    total = len(shots) or 1
+    parts = []
+    for code in _MOTION_ORDER:
+        n = counts.pop(code, 0)
+        if n:
+            parts.append(f"{code} {n} ({n / total:.0%})")
+    for code, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        parts.append(f"{code} {n} ({n / total:.0%})")
+    return "motion: " + ", ".join(parts) if parts else ""
+
+
 def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
     t0 = time.monotonic()
     conn = _connect(cfg)
@@ -1072,11 +1094,14 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         criteria_line = _shots_criteria_line(
             best["faults"], best["matched"], best["total"], best["ratio"],
             min_align)
+        motion_line = _motion_breakdown_line(data.get("shots", []))
         detail = (f"{len(data.get('images', []))} image(s) in "
                   f"{len(data.get('shots', []))} shot(s) via manifest brief, "
                   f"{attempts_desc}, judged by {judge}, "
                   f"took {format_duration(time.monotonic() - t0)}"
                   f"\n{criteria_line}")
+        if motion_line:
+            detail += f"\n{motion_line}"
         if best.get("unreviewed"):
             detail += (f" | {best['unreviewed']} shot(s) could not be judged "
                        f"({best.get('error')})")
