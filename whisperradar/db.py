@@ -214,6 +214,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # touches its own work and never a production you are building by hand
     _add_column_if_missing(conn, "productions", "autorun", "INTEGER")
     _add_column_if_missing(conn, "productions", "last_attempt_at", "TEXT")
+    # a production may override the channel's style/bible; the flag says
+    # "use this production's own file" instead of the live channel value
+    _add_column_if_missing(conn, "productions", "style_override", "INTEGER")
+    _add_column_if_missing(conn, "productions", "bible_override", "INTEGER")
     # FlowImagesGen was renamed to FlowBatch (2026-09-25); carry the stored
     # engine choice over so channels keep their engine
     conn.execute("UPDATE own_channels SET default_engine = 'flowbatch'"
@@ -579,7 +583,8 @@ _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
                 "stage_extras", "stage_providers", "render_mode", "voice",
                 "own_channel_id", "warning", "flow_project_url",
-                "flow_project_id", "autorun", "last_attempt_at"}
+                "flow_project_id", "autorun", "last_attempt_at",
+                "style_override", "bible_override"}
 
 
 def stage_extra(prod, stage: str) -> str:

@@ -316,6 +316,14 @@
           </button>
         </form>
       </div>
+      <div class="muted" style="font-size:12px; margin:8px 0 4px">
+        {% if style_src == 'production' %}<b>Production override ✓</b> — this
+          production's own style guide is used, not the channel's.
+          <form method="post" action="/studio/{{ prod['id'] }}/style-bible/use-channel" style="display:inline"><input type="hidden" name="which" value="style"><button type="submit" class="secondary" style="padding:2px 8px;font-size:12px">use channel instead</button></form>
+        {% elif style_src == 'channel' %}Using the <b>channel</b> style guide — editing here overrides it for this production only.
+        {% else %}No style guide yet — set one on the channel or here.
+        {% endif %}
+      </div>
       <form method="post" action="/studio/{{ prod['id'] }}/style/save">
         <textarea name="style" placeholder="Write or paste your own style guide (markdown) - it will be passed to the LLM for the script and images...">{{ style_text }}</textarea>
         <div class="actions">
@@ -610,6 +618,14 @@
       </form>
       <h2>Character / reference bible (optional)</h2>
       <div class="muted" style="font-size:12px; margin-bottom:6px">Recurring characters, environments, wardrobe, objects - kept consistent across all generated images. Passed to the shotlist planner as its reference bible.</div>
+      <div class="muted" style="font-size:12px; margin-bottom:6px">
+        {% if bible_src == 'production' %}<b>Production override ✓</b> — this
+          production's own bible is used, not the channel's.
+          <form method="post" action="/studio/{{ prod['id'] }}/style-bible/use-channel" style="display:inline"><input type="hidden" name="which" value="bible"><button type="submit" class="secondary" style="padding:2px 8px;font-size:12px">use channel instead</button></form>
+        {% elif bible_src == 'channel' %}Using the <b>channel</b> bible — editing here overrides it for this production only.
+        {% else %}No bible yet — set one on the channel or here.
+        {% endif %}
+      </div>
       <form method="post" action="/studio/{{ prod['id'] }}/bible/save">
         <textarea name="bible" style="min-height:90px" placeholder="e.g. MAYA - woman in her 30s, shoulder-length black hair, olive skin, mustard scarf... The forest god appears as a white stag with antlers of branches.">{{ bible_text }}</textarea>
         <div class="actions">

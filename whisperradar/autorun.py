@@ -82,6 +82,37 @@ def _default_provider(cfg, pid: int) -> str | None:
     return _db_llm_default(cfg)
 
 
+def style_bible(cfg, conn, prod, pdir):
+    """Resolve the style guide + bible the planner should use.
+
+    The CHANNEL's live DB value is the source of truth, so editing the channel
+    propagates to every production of it immediately. A production can opt out
+    with `style_override` / `bible_override` - then its own style.md / bible.md
+    wins instead. Returns (style_guide, style_src, bible_text, bible_src) where
+    *_src is "production" | "channel" | "none" so the UI can show which is in
+    force. A file with no channel value still resolves as "production" (the
+    seed copy), so a channel-less production keeps working."""
+    eff = settings.for_production(conn, prod)
+
+    def pick(override, file_name, channel_val):
+        f = pdir / file_name
+        if override and f.exists():
+            return f.read_text(encoding="utf-8").strip(), "production"
+        if (channel_val or "").strip():
+            return channel_val.strip(), "channel"
+        if f.exists():
+            return f.read_text(encoding="utf-8").strip(), "production"
+        return "", "none"
+
+    style_guide, style_src = pick(
+        bool(settings.row_get(prod, "style_override", 0)), "style.md",
+        eff["style"])
+    bible_text, bible_src = pick(
+        bool(settings.row_get(prod, "bible_override", 0)), "bible.md",
+        eff["bible"])
+    return style_guide, style_src, bible_text, bible_src
+
+
 def _stage_provider(cfg, pid: int, stage: str,
                     override: str | None = None) -> str | None:
     """Which LLM one stage uses: an explicit choice for THIS action, else the
@@ -669,22 +700,20 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         srt = studio.find_srt(pdir)
         if not srt:
             raise RuntimeError("Generate or upload the subtitles first")
-        bible = studio.find_bible(pdir)
-        if not bible:
+        style_guide, style_src, bible_text, bible_src = style_bible(
+            cfg, conn, prod, pdir)
+        if not bible_text:
             # seed from the own channel / per-genre seed folder first, so an
             # unattended run does not have to pause at the bible gate
-            seeded = studio.seed_production(cfg, conn, prod)
-            if seeded["source"]:
-                bible = studio.find_bible(pdir)
-        if not bible:
+            studio.seed_production(cfg, conn, prod)
+            style_guide, style_src, bible_text, bible_src = style_bible(
+                cfg, conn, prod, pdir)
+        if not bible_text:
             # the manifest-authoring brief's bible gate: the LLM will refuse
             # to plan without one (it just asks for the bible instead)
             raise _Paused("no character/reference bible - the planning brief "
                           "requires one before planning - write it at the "
                           "shots stage, then Resume")
-        style = studio.find_style(pdir)
-        style_guide = style.read_text(encoding="utf-8") if style else ""
-        bible_text = bible.read_text(encoding="utf-8")
         brief = studio.load_manifest_brief(cfg)
         srt_text = srt.read_text(encoding="utf-8")
         cues = studio.parse_srt_cues(srt_text)
