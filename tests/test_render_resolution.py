@@ -51,6 +51,15 @@ class RenderResolutionTests(unittest.TestCase):
         self.assertEqual((opts["output"]["width"], opts["output"]["height"]),
                          (1376, 768))
 
+    def test_flow_native_forces_no_upscale(self):
+        from whisperradar import autorun
+        self.assertEqual(
+            autorun._upscale_for({"render_resolution": "flow-native",
+                                  "upscale": 3}), 0)
+        # any other resolution keeps the channel's upscale
+        self.assertEqual(
+            autorun._upscale_for({"render_resolution": "2k", "upscale": 3}), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

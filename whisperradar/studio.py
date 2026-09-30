@@ -997,7 +997,7 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
 
 
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
-                           log=None, cancel=None) -> dict:
+                       log=None, cancel=None, upscale: int | None = None) -> dict:
     """Render the missing reference images with FlowBatch, then place them
     so BOTH engines can use them: as files in the production's refs\\ (the
     Renderly driver resolves names there) and with the shotlist's registry
@@ -1015,7 +1015,8 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
             "studio.flowbatch_repo in config.yaml")
     repo = flowbatch_dir(cfg)
     job_path = _write_refs_job(cfg, pdir, pid, refs)
-    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale)
+    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
+                              else upscale)
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pdir / "flow_refs"),
                               "--no-color"])
