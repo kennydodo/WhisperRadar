@@ -60,6 +60,67 @@ class JudgeChunksRunConcurrentlyTests(unittest.TestCase):
         self.assertLess(elapsed, 0.7, "chunks did not run concurrently")
 
 
+class JudgeChunkRetryTests(unittest.TestCase):
+    def test_a_chunk_that_fails_once_then_succeeds_is_recovered(self):
+        data = _shotlist(20)
+        shots = [{**s, "prompt": "prompt for shot"} for s in data["shots"]]
+        calls = {"n": 0}
+
+        def _flaky_generate(cfg, prompt, provider=None, temperature=1.0):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("connection reset")
+            return '{"shots": []}'
+
+        with mock.patch.object(studio, "llm_generate", side_effect=_flaky_generate):
+            result = studio._judge_shot_chunks(
+                cfg=None, shots=shots, cue_text=CUE_TEXT, provider="p",
+                chunk_size=20, style_guide="", temperature=1.0)
+
+        self.assertEqual(calls["n"], 2, "expected exactly one retry")
+        self.assertEqual(result["unreviewed"], 0)
+        self.assertEqual(result["matched"], 20)
+        self.assertIsNone(result["error"])
+
+    def test_a_chunk_that_fails_twice_is_marked_unreviewed_not_retried_forever(self):
+        data = _shotlist(20)
+        shots = [{**s, "prompt": "prompt for shot"} for s in data["shots"]]
+        calls = {"n": 0}
+
+        def _always_fails(cfg, prompt, provider=None, temperature=1.0):
+            calls["n"] += 1
+            raise RuntimeError("still down")
+
+        with mock.patch.object(studio, "llm_generate", side_effect=_always_fails):
+            result = studio._judge_shot_chunks(
+                cfg=None, shots=shots, cue_text=CUE_TEXT, provider="p",
+                chunk_size=20, style_guide="", temperature=1.0)
+
+        self.assertEqual(calls["n"], 2, "expected exactly two tries, not more")
+        self.assertEqual(result["unreviewed"], 20)
+        self.assertEqual(result["matched"], 0)
+        self.assertIn("still down", result["error"])
+
+    def test_two_failing_chunks_out_of_several_dont_sink_the_passing_ones(self):
+        # 5 chunks of 20 (100 shots): chunks 0 and 2 fail every time, the
+        # rest succeed - the 3 good chunks' shots must still count.
+        data = _shotlist(100)
+        shots = [{**s, "prompt": "prompt for shot"} for s in data["shots"]]
+
+        def _selectively_flaky(cfg, prompt, provider=None, temperature=1.0):
+            if "S01_01.png" in prompt or "S41_01.png" in prompt:
+                raise RuntimeError("down for this chunk")
+            return '{"shots": []}'
+
+        with mock.patch.object(studio, "llm_generate", side_effect=_selectively_flaky):
+            result = studio._judge_shot_chunks(
+                cfg=None, shots=shots, cue_text=CUE_TEXT, provider="p",
+                chunk_size=20, style_guide="", temperature=1.0)
+
+        self.assertEqual(result["unreviewed"], 40)  # 2 chunks x 20 shots
+        self.assertEqual(result["matched"], 60)      # the other 3 chunks
+
+
 class ReviewShotlistPatchSkipsUnchangedShotsTests(unittest.TestCase):
     def test_only_patched_assets_are_sent_to_the_judge(self):
         data = _shotlist(10)

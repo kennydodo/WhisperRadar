@@ -4050,20 +4050,31 @@ def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
     for no reason - on a 100+ shot plan split into 20-shot chunks that is
     5-8 sequential LLM round trips stacked end to end. Running them
     concurrently turns that into roughly the time of the SLOWEST chunk,
-    not the sum of all of them."""
+    not the sum of all of them.
+
+    Each chunk also gets ONE immediate retry before it is given up on as
+    `unreviewed`. A transient failure (a dropped connection, a provider
+    hiccup) used to cost that chunk's shots the same way a genuine judge
+    outage does - 2 unlucky chunks out of 9 could drag an otherwise-passing
+    plan's ratio down for a reason that has nothing to do with the plan's
+    actual quality. One retry catches the common transient case without
+    turning a real, repeated failure into a silent retry loop."""
     chunks = [shots[i:i + chunk_size] for i in range(0, len(shots), chunk_size)]
     if not chunks:
         return {"matched": 0, "weak": [], "verdicts": {}, "unreviewed": 0,
                 "error": None}
 
     def _judge_one(chunk):
-        try:
-            reply = _parse_json_object(llm_generate(
-                cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide),
-                provider=provider, temperature=temperature))
-        except Exception as exc:  # noqa: BLE001 - a judge failure must not
-            return chunk, None, str(exc)[:200]    # lose an otherwise usable plan
-        return chunk, reply, None
+        last_err = None
+        for retry in range(2):  # first try + one retry
+            try:
+                reply = _parse_json_object(llm_generate(
+                    cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide),
+                    provider=provider, temperature=temperature))
+                return chunk, reply, None
+            except Exception as exc:  # noqa: BLE001 - a judge failure must
+                last_err = str(exc)[:200]  # not lose an otherwise usable plan
+        return chunk, None, last_err
 
     matched = 0
     weak: list[dict] = []

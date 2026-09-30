@@ -230,12 +230,16 @@ class ReviewShotlistJudgeFailureTests(unittest.TestCase):
         self.assertIsNotNone(review["error"])
 
     def test_a_partial_judge_failure_only_marks_its_own_chunk_unreviewed(self):
-        calls = {"n": 0}
-
+        # Chunk calls now run concurrently AND each gets one retry before
+        # being given up on (see _judge_shot_chunks), so the failure trigger
+        # has to be tied to WHICH chunk (an asset only that chunk contains),
+        # not a shared call counter - a counter races across threads and no
+        # longer reliably hits "only the first call" once retries are in
+        # play. The first chunk (assets 1-20) fails on BOTH its tries; the
+        # second chunk (asset 21) always succeeds.
         def fake_llm(cfg, prompt, provider=None, temperature=1.0,
                     max_tokens=None):
-            calls["n"] += 1
-            if calls["n"] == 1:
+            if "S01_01_SCN_ZI.png" in prompt:
                 raise RuntimeError("Unsupported parameter: 'temperature' is "
                                    "not supported with this model.")
             return ('{"shots": [{"asset": "S01_21_SCN_ZI.png", '
