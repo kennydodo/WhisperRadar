@@ -487,7 +487,14 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                 max_tokens=studio.script_max_tokens(target_words))
             if not more:
                 break
-            text = text.rstrip() + "\n\n" + more.lstrip()
+            # No separator inserted here on purpose - script_continuation_prompt
+            # tells the model whether a leading space belongs at the seam (it
+            # knows whether ITS OWN reply continues a word or starts a new
+            # one; we don't). A blind "\n\n" here once split the word "rather"
+            # into "r" + a paragraph break + "ather" mid-sentence, on a real
+            # attempt whose structure/pacing scores cratered as a direct
+            # result - see script_continuation_prompt's docstring.
+            text = text + more
         words = len(re.findall(r"\w+", text))
         overlap = studio.overlap_ratio(text, source_text)
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []

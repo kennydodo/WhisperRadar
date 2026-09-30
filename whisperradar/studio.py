@@ -2457,17 +2457,30 @@ def script_continuation_prompt(base_prompt: str, partial: str) -> str:
 
     Only the TAIL of what was written is re-sent - the base prompt already
     carries the facts and style guide - mirroring continuation_prompt's
-    approach for a cut-off shotlist."""
+    approach for a cut-off shotlist.
+
+    The reply is joined onto `partial` with NO separator inserted in code
+    (see the join in _run_script) - whether a space belongs at the seam is
+    the model's call, not something a blind "\n\n" or " " can get right for
+    both a mid-word cut and a mid-sentence one. Getting this wrong is not
+    cosmetic: a real run once produced "...out of necessity r\n\nather than
+    preference..." because the join inserted a paragraph break INSIDE the
+    word "rather", and the resulting mangled text tanked that attempt's
+    structure/pacing scores well below what the actual writing deserved."""
     tail = (partial or "")[-2000:]
     return (base_prompt.rstrip()
             + "\n\n---\n\nYOUR PREVIOUS OUTPUT WAS CUT OFF before it reached "
             "a conclusion. It ended with:\n" + tail
-            + "\n\nContinue from EXACTLY where it stopped - the same "
-            "sentence, the same voice - with no repetition of anything "
-            "already written, no restating the introduction, and no "
-            "commentary about continuing or being cut off. Write only the "
-            "remaining script, and bring it to ONE single, clear ending "
-            "(not several).")
+            + "\n\nYour reply will be joined DIRECTLY onto that text with "
+            "nothing inserted between them - so if it stopped mid-word, "
+            "start with the rest of that exact word and no leading space; "
+            "if it stopped between two complete words, start with a single "
+            "leading space before the next word. Continue from EXACTLY "
+            "where it stopped - the same sentence, the same voice - with no "
+            "repetition of anything already written, no restating the "
+            "introduction, and no commentary about continuing or being cut "
+            "off. Write only the remaining script, and bring it to ONE "
+            "single, clear ending (not several).")
 
 
 def _pinned_fallback_provider(cfg) -> str | None:
@@ -3181,6 +3194,12 @@ Rules:
   or uncertain, keep the script exactly that approximate, qualified, or uncertain -
   do not sharpen it into something more specific, dramatic, or certain than the
   facts actually support. When in doubt, describe it more vaguely, not more vividly.
+- Do not add a whole topic, comparison, example, or scenario that is not IN the
+  facts, even one that sounds plausible or is true in general (a comparison to a
+  different species, a historical period the facts do not cover, a hypothetical
+  process like "how a gathering would have worked"). If you need more material to
+  reach the target length, go deeper on a fact you already have - do not reach
+  for a new, ungrounded topic.
 - Match the facts' own confidence level. If a fact says "may have", "suggests",
   "is consistent with", or "one possible explanation", the script must carry that
   same hedge - never upgrade it into "proves", "shows that", "is why", or a flat
