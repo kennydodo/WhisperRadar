@@ -899,10 +899,22 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                                   "will flag what's missing")
                         break
                     data = studio.merge_shotlist_continuation(data, addition)
-            review = studio.review_shotlist(
-                cfg, data, cues, judge, max_hold_seconds=max_hold,
-                style_guide=style_guide,
-                temperature=eff["shotlist_judge_temperature"])
+            if patch_mode:
+                # Only the patched prompts changed - carry forward every
+                # other shot's verdict from the review that flagged them
+                # instead of re-judging the whole plan again (see
+                # review_shotlist_patch's docstring).
+                review = studio.review_shotlist_patch(
+                    cfg, data, cues, judge,
+                    prior_verdicts=(prior.get("verdicts") or {}) if prior else {},
+                    patched_assets=set(patches),
+                    max_hold_seconds=max_hold, style_guide=style_guide,
+                    temperature=eff["shotlist_judge_temperature"])
+            else:
+                review = studio.review_shotlist(
+                    cfg, data, cues, judge, max_hold_seconds=max_hold,
+                    style_guide=style_guide,
+                    temperature=eff["shotlist_judge_temperature"])
             if review["total"] and review["unreviewed"] == review["total"]:
                 # The judge never actually ran on a single shot - unlike a
                 # low completeness ratio (real information: some prompts are

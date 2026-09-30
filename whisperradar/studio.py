@@ -17,7 +17,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 log = logging.getLogger("whisperradar")
@@ -4034,20 +4034,99 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
     )
 
 
+def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
+                       provider: str | None, chunk_size: int,
+                       style_guide: str, temperature: float) -> dict:
+    """Run alignment_prompt over `shots` in chunk_size-sized batches, IN
+    PARALLEL. Returns {matched, weak, verdicts, unreviewed, error}.
+
+    `verdicts` maps every actually-judged asset to its verdict entry
+    ({"verdict": "ok"} for a pass, the full weak/missing/reason entry
+    otherwise) - review_shotlist_patch below carries these forward on a
+    later patch attempt instead of re-judging shots that did not change.
+
+    The chunk calls are independent of each other (each is its own
+    self-contained judge request), so they used to run one after another
+    for no reason - on a 100+ shot plan split into 20-shot chunks that is
+    5-8 sequential LLM round trips stacked end to end. Running them
+    concurrently turns that into roughly the time of the SLOWEST chunk,
+    not the sum of all of them."""
+    chunks = [shots[i:i + chunk_size] for i in range(0, len(shots), chunk_size)]
+    if not chunks:
+        return {"matched": 0, "weak": [], "verdicts": {}, "unreviewed": 0,
+                "error": None}
+
+    def _judge_one(chunk):
+        try:
+            reply = _parse_json_object(llm_generate(
+                cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide),
+                provider=provider, temperature=temperature))
+        except Exception as exc:  # noqa: BLE001 - a judge failure must not
+            return chunk, None, str(exc)[:200]    # lose an otherwise usable plan
+        return chunk, reply, None
+
+    matched = 0
+    weak: list[dict] = []
+    verdicts: dict[str, dict] = {}
+    unreviewed = 0
+    error = None
+    with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as pool:
+        for chunk, reply, err in pool.map(_judge_one, chunks):
+            if err is not None:
+                # These shots were never actually judged - they must NOT
+                # count as matched (that would silently pass unverified
+                # prompts) and must NOT be added to `weak` either (that
+                # would tell the next attempt to rewrite prompts that may be
+                # perfectly fine; only the judge call failed). `unreviewed`
+                # is how a caller tells "genuinely reviewed, some are weak"
+                # apart from "the judge never ran".
+                error = err
+                unreviewed += len(chunk)
+                continue
+            chunk_verdicts = (reply.get("shots")
+                              if isinstance(reply.get("shots"), list) else [])
+            by_asset = {str(v.get("asset")): v for v in chunk_verdicts
+                       if isinstance(v, dict)}
+            for s in chunk:
+                asset = str(s.get("asset"))
+                v = by_asset.get(asset)
+                if v is None or str(v.get("verdict") or "").lower() == "ok":
+                    # v is None: the judge skipped it - do not fail a shot on
+                    # silence
+                    matched += 1
+                    verdicts[asset] = {"verdict": "ok", "missing": [],
+                                       "reason": ""}
+                    continue
+                missing = [str(m) for m in (v.get("missing") or [])
+                          if str(m).strip()]
+                entry = {"asset": asset,
+                        "verdict": str(v.get("verdict") or "weak"),
+                        "missing": missing[:8],
+                        "reason": str(v.get("reason") or "")[:200],
+                        "narration": (cue_text.get(
+                            (cue_range(s.get("cues")) or (0, 0))[0], ""))[:200]}
+                weak.append(entry)
+                verdicts[asset] = entry
+    return {"matched": matched, "weak": weak, "verdicts": verdicts,
+            "unreviewed": unreviewed, "error": error}
+
+
 def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                     chunk_size: int = 20,
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                     style_guide: str = "", temperature: float = 1.0) -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
-    {faults, matched, total, weak, ratio, error, unreviewed, warnings}. Never
-    raises.
+    {faults, matched, total, weak, ratio, error, unreviewed, warnings,
+    verdicts}. Never raises.
 
     `matched` counts shots whose prompt carries everything its cues require;
-    `weak` lists the rest with the elements they fail to specify. `unreviewed`
-    counts shots whose judge call itself failed (network/provider error) -
-    those are excluded from BOTH `matched` and `weak`: they were never
-    actually graded, so neither counting them as passed nor telling the next
-    attempt to rewrite them would be honest. A caller should treat
+    `weak` lists the rest with the elements they fail to specify. `verdicts`
+    maps every actually-judged asset to its verdict, for review_shotlist_patch
+    to carry forward on a later patch attempt. `unreviewed` counts shots
+    whose judge call itself failed (network/provider error) - those are
+    excluded from BOTH `matched` and `weak`: they were never actually
+    graded, so neither counting them as passed nor telling the next attempt
+    to rewrite them would be honest. A caller should treat
     `unreviewed == total` (nothing could be judged at all) very differently
     from a partial `unreviewed` count mixed with real weak/matched verdicts."""
     faults = shotlist_structural_faults(data, len(cues))
@@ -4067,52 +4146,81 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
     if not shots:
         return {"faults": faults, "matched": 0, "total": 0, "weak": [],
                 "ratio": 0.0, "error": None, "unreviewed": 0,
-                "warnings": pacing_warnings}
-    weak: list[dict] = []
-    matched = 0
-    error = None
-    unreviewed = 0
-    for i in range(0, len(shots), chunk_size):
-        chunk = shots[i:i + chunk_size]
-        try:
-            reply = _parse_json_object(llm_generate(
-                cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide),
-                provider=provider, temperature=temperature))
-        except Exception as exc:  # noqa: BLE001 - a judge failure must not
-            error = str(exc)[:200]          # lose an otherwise usable shotlist
-            # These shots were never actually judged - they must NOT count as
-            # matched (that would silently pass unverified prompts) and must
-            # NOT be added to `weak` either (that would tell the next attempt
-            # to rewrite prompts that may be perfectly fine; only the judge
-            # call failed). `unreviewed` is how a caller tells "genuinely
-            # reviewed, some are weak" apart from "the judge never ran".
-            unreviewed += len(chunk)
-            continue
-        verdicts = reply.get("shots") if isinstance(reply.get("shots"),
-                                                    list) else []
-        by_asset = {str(v.get("asset")): v for v in verdicts
-                    if isinstance(v, dict)}
-        for s in chunk:
-            asset = str(s.get("asset"))
-            v = by_asset.get(asset)
-            if v is None:
-                # the judge skipped it: do not fail a shot on silence
-                matched += 1
-                continue
-            if str(v.get("verdict") or "").lower() == "ok":
-                matched += 1
-                continue
-            missing = [str(m) for m in (v.get("missing") or []) if str(m).strip()]
-            weak.append({"asset": asset,
-                         "verdict": str(v.get("verdict") or "weak"),
-                         "missing": missing[:8],
-                         "reason": str(v.get("reason") or "")[:200],
-                         "narration": (cue_text.get((cue_range(s.get("cues"))
-                                                     or (0, 0))[0], ""))[:200]})
+                "warnings": pacing_warnings, "verdicts": {}}
+    result = _judge_shot_chunks(cfg, shots, cue_text, provider, chunk_size,
+                                style_guide, temperature)
+    ratio = (result["matched"] / total) if total else 0.0
+    return {"faults": faults, "matched": result["matched"], "total": total,
+            "weak": result["weak"][:30], "ratio": ratio,
+            "error": result["error"], "unreviewed": result["unreviewed"],
+            "warnings": pacing_warnings, "verdicts": result["verdicts"]}
+
+
+def review_shotlist_patch(cfg, data: dict, cues: list[dict],
+                          provider: str | None, prior_verdicts: dict,
+                          patched_assets: set,
+                          chunk_size: int = 20,
+                          max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
+                          style_guide: str = "", temperature: float = 1.0
+                          ) -> dict:
+    """Same shape and contract as review_shotlist, but only re-runs the judge
+    on `patched_assets` - every other shot's alignment verdict is carried
+    forward from `prior_verdicts` (the previous attempt's per-asset
+    verdicts) unchanged.
+
+    Patch mode (_run_shots) only ever rewrites the specific prompts the last
+    review flagged as weak; every shot it did NOT touch already has a fresh
+    verdict from that same review, so re-judging the whole plan again on
+    every patch attempt was pure waste - on a 100+ shot plan, patching a
+    handful of prompts still meant re-running the judge over every one of
+    them for zero new information. A shot with no prior verdict (should not
+    normally happen - patch mode never adds or removes shots - but handled
+    defensively) is judged fresh rather than assumed to pass.
+
+    Faults and pacing are still recomputed from scratch every time: they are
+    free (no LLM call) and a patch could in principle create a new duplicate
+    prompt or similar, so there is no saving worth the risk in skipping them."""
+    faults = shotlist_structural_faults(data, len(cues))
+    pacing_faults, pacing_warnings = shotlist_pacing(data, cues, max_hold_seconds)
+    faults = faults + pacing_faults
+    cue_text = {c["index"]: c["text"] for c in cues}
+    prompt_by_file = {str(i.get("file")): i.get("prompt")
+                      for i in (data.get("images") or [])
+                      if isinstance(i, dict)}
+    shots = []
+    for s in (data.get("shots") or []):
+        if isinstance(s, dict) and s.get("asset"):
+            shots.append({**s, "prompt": prompt_by_file.get(str(s["asset"]), "")})
+    total = len(shots)
+    if not shots:
+        return {"faults": faults, "matched": 0, "total": 0, "weak": [],
+                "ratio": 0.0, "error": None, "unreviewed": 0,
+                "warnings": pacing_warnings, "verdicts": {}}
+    to_judge_assets = {str(s.get("asset")) for s in shots
+                       if str(s.get("asset")) in patched_assets
+                       or str(s.get("asset")) not in prior_verdicts}
+    to_judge = [s for s in shots if str(s.get("asset")) in to_judge_assets]
+    carried = [s for s in shots if str(s.get("asset")) not in to_judge_assets]
+    fresh = (_judge_shot_chunks(cfg, to_judge, cue_text, provider, chunk_size,
+                                style_guide, temperature) if to_judge else
+            {"matched": 0, "weak": [], "verdicts": {}, "unreviewed": 0,
+             "error": None})
+    matched = fresh["matched"]
+    weak = list(fresh["weak"])
+    verdicts = dict(fresh["verdicts"])
+    for s in carried:
+        asset = str(s.get("asset"))
+        entry = prior_verdicts[asset]
+        verdicts[asset] = entry
+        if entry.get("verdict") == "ok":
+            matched += 1
+        else:
+            weak.append(entry)
     ratio = (matched / total) if total else 0.0
     return {"faults": faults, "matched": matched, "total": total,
-            "weak": weak[:30], "ratio": ratio, "error": error,
-            "unreviewed": unreviewed, "warnings": pacing_warnings}
+            "weak": weak[:30], "ratio": ratio, "error": fresh["error"],
+            "unreviewed": fresh["unreviewed"], "warnings": pacing_warnings,
+            "verdicts": verdicts}
 
 
 # --------------------------------------------------- external tool hooks ---
