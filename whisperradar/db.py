@@ -218,6 +218,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # "use this production's own file" instead of the live channel value
     _add_column_if_missing(conn, "productions", "style_override", "INTEGER")
     _add_column_if_missing(conn, "productions", "bible_override", "INTEGER")
+    # set once a "ready" production is actually published (e.g. uploaded
+    # to YouTube) - distinct from status="ready", which only means it
+    # passed review and is waiting to be published
+    _add_column_if_missing(conn, "productions", "published_at", "TEXT")
     # FlowImagesGen was renamed to FlowBatch (2026-09-25); carry the stored
     # engine choice over so channels keep their engine
     conn.execute("UPDATE own_channels SET default_engine = 'flowbatch'"
@@ -584,7 +588,7 @@ _PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
                 "stage_extras", "stage_providers", "render_mode", "voice",
                 "own_channel_id", "warning", "flow_project_url",
                 "flow_project_id", "autorun", "last_attempt_at",
-                "style_override", "bible_override"}
+                "style_override", "bible_override", "published_at"}
 
 
 def stage_extra(prod, stage: str) -> str:
@@ -668,6 +672,25 @@ def update_production(conn, pid: int, **fields) -> None:
 
 def delete_production(conn, pid: int) -> None:
     conn.execute("DELETE FROM productions WHERE id = ?", (pid,))
+    conn.commit()
+
+
+def mark_production_published(conn, pid: int, published: bool = True) -> None:
+    """Flip a "ready" production to "published" (or back). Kept separate
+    from update_production so published_at always comes from SQLite's own
+    clock, matching created_at/updated_at's 'localtime' formatting instead
+    of a Python-side timestamp that could drift or format differently."""
+    if published:
+        conn.execute(
+            "UPDATE productions SET status = 'published',"
+            " published_at = datetime('now', 'localtime'),"
+            " updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (pid,))
+    else:
+        conn.execute(
+            "UPDATE productions SET status = 'ready', published_at = NULL,"
+            " updated_at = datetime('now', 'localtime') WHERE id = ?",
+            (pid,))
     conn.commit()
 
 

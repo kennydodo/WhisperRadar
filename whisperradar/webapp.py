@@ -1297,9 +1297,10 @@ def create_app(cfg) -> Flask:
         prods = []
         finished_count = 0
         for p in db.list_productions(conn):
-            if p["status"] == "ready":
-                # Approved productions move to their own "Finished" page
-                # instead of staying mixed into this in-progress list.
+            if p["status"] in ("ready", "published"):
+                # Approved/published productions move to their own
+                # "Finished" page instead of staying mixed into this
+                # in-progress list.
                 finished_count += 1
                 continue
             steps = db.latest_steps(conn, p["id"])
@@ -1334,7 +1335,8 @@ def create_app(cfg) -> Flask:
     def finished_list():
         """Productions that passed review sit here, off the in-progress
         Studio list, sortable by channel or date so a growing backlog of
-        approved-but-not-yet-published videos stays browsable."""
+        approved-but-not-yet-published videos stays browsable. Covers both
+        "ready" (approved, waiting to be published) and "published"."""
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         own_channels = db.list_own_channels(conn)
@@ -1346,15 +1348,28 @@ def create_app(cfg) -> Flask:
         direction = request.args.get("dir") or "desc"
         if direction not in ("asc", "desc"):
             direction = "desc"
+        status_filter = request.args.get("status") or "all"
+        if status_filter not in ("all", "ready", "published"):
+            status_filter = "all"
 
-        items = []
+        all_items, ready_count, published_count = [], 0, 0
         for p in db.list_productions(conn):
-            if p["status"] != "ready":
+            if p["status"] not in ("ready", "published"):
                 continue
-            items.append({
+            if p["status"] == "ready":
+                ready_count += 1
+            else:
+                published_count += 1
+            all_items.append({
                 "row": p,
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
             })
+        conn.close()
+
+        if status_filter == "all":
+            items = all_items
+        else:
+            items = [it for it in all_items if it["row"]["status"] == status_filter]
 
         key_fns = {
             "date": lambda it: it["row"]["updated_at"] or "",
@@ -1362,17 +1377,51 @@ def create_app(cfg) -> Flask:
             "title": lambda it: (it["row"]["title"] or "").lower(),
         }
         items.sort(key=key_fns[sort], reverse=(direction == "desc"))
-        conn.close()
 
         def qs(**overrides) -> str:
-            vals = {"sort": sort, "dir": direction}
+            vals = {"sort": sort, "dir": direction, "status": status_filter}
             vals.update(overrides)
             return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
-                            if v)
+                            if v and v != "all")
 
         return render_template(
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
+            status_filter=status_filter, ready_count=ready_count,
+            published_count=published_count,
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/publish")
+    def studio_publish(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/finished?error=" + quote("Unknown production"))
+            if prod["status"] != "ready":
+                return redirect("/finished?error="
+                                + quote("Only a ready production can be published"))
+            db.mark_production_published(conn, pid, published=True)
+            db.add_step(conn, pid, "review", "manual", detail="published")
+        finally:
+            conn.close()
+        return redirect("/finished?msg=" + quote("Marked published"))
+
+    @app.post("/studio/<int:pid>/unpublish")
+    def studio_unpublish(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return redirect("/finished?error=" + quote("Unknown production"))
+            if prod["status"] != "published":
+                return redirect("/finished?error="
+                                + quote("Only a published production can be un-published"))
+            db.mark_production_published(conn, pid, published=False)
+        finally:
+            conn.close()
+        return redirect("/finished?msg=" + quote("Moved back to ready"))
 
     @app.post("/studio/batch/queue")
     def studio_batch_queue():

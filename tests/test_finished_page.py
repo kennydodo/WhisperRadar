@@ -8,6 +8,11 @@ no way to tell at a glance how many were waiting to be published.
 
 Run: python -m unittest discover -s tests
 """
+
+# Also covers the "published" state added on top of "ready": a production
+# only says "ready to publish" until you explicitly mark it published (with
+# an undo), and the source video's own reenable button works the same way
+# regardless of which of the two states the production is in.
 import sys
 import tempfile
 import unittest
@@ -101,6 +106,72 @@ class FinishedPageTests(unittest.TestCase):
         # "No Source"'s row must not render a reenable form at all.
         no_source_section = body.split("No Source")[1].split("<tr>")[0]
         self.assertNotIn("reenable", no_source_section)
+
+    def test_publish_moves_a_ready_production_to_published(self):
+        pid = self._make("Ready One", self.chan_a, status="ready")
+        resp = self.client.post(f"/studio/{pid}/publish")
+        self.assertIn("msg=", resp.headers["Location"])
+        prod = db.get_production(self.conn, pid)
+        self.assertEqual(prod["status"], "published")
+        self.assertIsNotNone(prod["published_at"])
+
+    def test_publish_is_rejected_for_a_non_ready_production(self):
+        pid = self._make("Still Working", self.chan_a, status="active")
+        resp = self.client.post(f"/studio/{pid}/publish")
+        self.assertIn("error=", resp.headers["Location"])
+        prod = db.get_production(self.conn, pid)
+        self.assertEqual(prod["status"], "active")
+
+    def test_unpublish_moves_a_published_production_back_to_ready(self):
+        pid = self._make("Live One", self.chan_a, status="published")
+        resp = self.client.post(f"/studio/{pid}/unpublish")
+        self.assertIn("msg=", resp.headers["Location"])
+        prod = db.get_production(self.conn, pid)
+        self.assertEqual(prod["status"], "ready")
+        self.assertIsNone(prod["published_at"])
+
+    def test_unpublish_is_rejected_for_a_ready_production(self):
+        pid = self._make("Ready One", self.chan_a, status="ready")
+        resp = self.client.post(f"/studio/{pid}/unpublish")
+        self.assertIn("error=", resp.headers["Location"])
+        prod = db.get_production(self.conn, pid)
+        self.assertEqual(prod["status"], "ready")
+
+    def test_a_published_production_still_counts_as_finished_not_in_studio(self):
+        self._make("Live One", self.chan_a, status="published")
+        resp = self.client.get("/studio")
+        self.assertNotIn(b"Live One", resp.data)
+        self.assertIn(b"1 finished", resp.data)
+
+    def test_published_production_appears_on_the_finished_page(self):
+        self._make("Live One", self.chan_a, status="published")
+        resp = self.client.get("/finished")
+        self.assertIn(b"Live One", resp.data)
+        self.assertIn(b"published", resp.data)
+
+    def test_status_filter_ready_excludes_published(self):
+        self._make("Ready One", self.chan_a, status="ready")
+        self._make("Live One", self.chan_a, status="published")
+        resp = self.client.get("/finished?status=ready")
+        body = resp.data.decode()
+        self.assertIn("Ready One", body)
+        self.assertNotIn("Live One", body)
+
+    def test_status_filter_published_excludes_ready(self):
+        self._make("Ready One", self.chan_a, status="ready")
+        self._make("Live One", self.chan_a, status="published")
+        resp = self.client.get("/finished?status=published")
+        body = resp.data.decode()
+        self.assertIn("Live One", body)
+        self.assertNotIn("Ready One", body)
+
+    def test_status_filter_all_shows_both(self):
+        self._make("Ready One", self.chan_a, status="ready")
+        self._make("Live One", self.chan_a, status="published")
+        resp = self.client.get("/finished?status=all")
+        body = resp.data.decode()
+        self.assertIn("Ready One", body)
+        self.assertIn("Live One", body)
 
 
 if __name__ == "__main__":

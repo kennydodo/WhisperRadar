@@ -39,6 +39,12 @@
            font-size: 12px; font-weight: 600; }
   .badge.genre { background: rgba(79,140,255,.15); color: var(--accent); }
   .badge.chan { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.ready { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.published { background: rgba(63,185,111,.15); color: var(--green); }
+  .tabs { display:flex; gap:6px; margin-bottom:14px; }
+  .tabs a { padding:5px 12px; border-radius:20px; font-size:12px;
+            color:var(--muted); border:1px solid var(--border); }
+  .tabs a.active { color:#fff; background:var(--accent); border-color:var(--accent); }
   .muted { color: var(--muted); }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border);
@@ -65,6 +71,12 @@
   <h1>Finished</h1>
   <p class="sub">productions that passed review and are ready to publish</p>
 
+  <div class="tabs">
+    <a href="?{{ qs(status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All ({{ ready_count + published_count }})</a>
+    <a href="?{{ qs(status='ready') }}" class="{{ 'active' if status_filter == 'ready' }}">Ready to publish ({{ ready_count }})</a>
+    <a href="?{{ qs(status='published') }}" class="{{ 'active' if status_filter == 'published' }}">Published ({{ published_count }})</a>
+  </div>
+
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
@@ -79,7 +91,8 @@
                  class="{{ 'active' if sort == 'channel' }}">Channel</a></th>
           <th>Genre</th>
           <th><a href="?{{ qs(sort='date', dir=('asc' if sort != 'date' or dir == 'desc' else 'desc')) }}"
-                 class="{{ 'active' if sort == 'date' }}">Approved</a></th>
+                 class="{{ 'active' if sort == 'date' }}">Date</a></th>
+          <th>Status</th>
           <th></th>
         </tr>
       </thead>
@@ -89,9 +102,26 @@
           <td><a href="/studio/{{ item.row['id'] }}">{{ item.row["title"] }}</a></td>
           <td>{% if item.own_channel %}<span class="badge chan">{{ item.own_channel }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
           <td><span class="badge genre">{{ item.row["genre"] }}</span></td>
-          <td class="muted">{{ item.row["updated_at"] }}</td>
+          <td class="muted">{{ item.row["published_at"] if item.row["status"] == "published" else item.row["updated_at"] }}</td>
+          <td>
+            {% if item.row["status"] == "published" %}
+            <span class="badge published" title="Published {{ item.row['published_at'] }}">published</span>
+            {% else %}
+            <span class="badge ready">ready to publish</span>
+            {% endif %}
+          </td>
           <td class="actions">
             <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>
+            {% if item.row["status"] == "ready" %}
+            <form method="post" action="/studio/{{ item.row['id'] }}/publish" style="display:inline">
+              <button type="submit" title="Mark this production as published">Mark published</button>
+            </form>
+            {% else %}
+            <form method="post" action="/studio/{{ item.row['id'] }}/unpublish" style="display:inline"
+                  onsubmit="return wrConfirmSubmit(this, 'Move this production back to ready to publish?')">
+              <button type="submit" class="ghost" title="Undo - move back to ready to publish">unpublish</button>
+            </form>
+            {% endif %}
             {% if item.row["source_video_id"] %}
             <form method="post" action="/videos/action" style="display:inline"
                   onsubmit="return wrConfirmSubmit(this, 'Re-enable this source video so it can be used for another production?')">
