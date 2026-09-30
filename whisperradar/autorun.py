@@ -348,6 +348,26 @@ def _script_gate(words: int, target_words: int, overlap: float,
     return passed, reasons, too_long, too_short
 
 
+def _script_criteria_line(score: float | None, min_rating: float,
+                          overlap: float, max_overlap: float,
+                          hard_overlap: float, words: int,
+                          target_words: int, too_short: bool) -> str:
+    """A one-line ✓/✗ checklist for the History panel - the plain numbers
+    ("rating 6.9 (min 7.5)") made someone re-derive pass/fail from the
+    thresholds every time; this states it directly per criterion."""
+    rating_ok = score is not None and score >= min_rating
+    overlap_ok = overlap <= max_overlap and overlap <= hard_overlap
+    length_ok = not too_short
+    rating_mark = "✓" if rating_ok else "✗"
+    overlap_mark = "✓" if overlap_ok else "✗"
+    length_mark = "✓" if length_ok else "✗"
+    rating_text = score if score is not None else "n/a"
+    pct = f"{words / target_words:.0%}" if target_words else "?"
+    return (f"{rating_mark} rating {rating_text} (min {min_rating})  "
+           f"{overlap_mark} overlap {overlap:.1%} (max {max_overlap:.0%})  "
+           f"{length_mark} length {words}/{target_words} words ({pct})")
+
+
 def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     t0 = time.monotonic()
     conn = _connect(cfg)
@@ -582,12 +602,13 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                 f"judged by {judge}, "
                 f"took {format_duration(time.monotonic() - t0)}")
         else:
-            detail = (f"{provider}, best of {len(attempts)} attempt(s): rating "
-                      f"{best['score'] if best['score'] is not None else 'n/a'}, "
-                      f"overlap {best['overlap']:.1%}, target {target_words} "
-                      f"words (wrote ~{best.get('words', '?')}), "
-                      f"judged by {judge}, "
-                      f"took {format_duration(time.monotonic() - t0)}")
+            criteria_line = _script_criteria_line(
+                best["score"], min_rating, best["overlap"], max_overlap,
+                hard_overlap, best.get("words", 0), target_words,
+                best.get("too_short", False))
+            detail = (f"{provider}, best of {len(attempts)} attempt(s) via "
+                      f"{judge}, took {format_duration(time.monotonic() - t0)}"
+                      f"\n{criteria_line}")
         # the run's provider is NOT persisted onto the production: an implicit
         # pin made later runs ignore a changed Default LLM (a deleted provider
         # kept "coming back" through this row). Which LLM ran is in the step
@@ -606,12 +627,13 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
                     f"{min_rating}) - kept it unchanged rather than replace "
                     "it with something worse")
             else:
+                criteria_line = _script_criteria_line(
+                    best["score"], min_rating, best["overlap"], max_overlap,
+                    hard_overlap, best.get("words", 0), target_words,
+                    best.get("too_short", False))
                 warning = (
                     f"script gate failed after {len(attempts)} attempt(s) - "
-                    f"kept the best: rating "
-                    f"{best['score'] if best['score'] is not None else 'n/a'} "
-                    f"(min {min_rating}), overlap {best['overlap']:.1%} "
-                    f"(target {max_overlap:.0%})")
+                    f"kept the best:\n{criteria_line}")
             judge_err = best["rating"].get("error")
             if best["score"] is None and judge_err:
                 # otherwise "rating n/a" hides that the JUDGE failed, not the script
@@ -715,6 +737,20 @@ def _save_best_ever(pdir, entry: dict) -> None:
     except OSError as exc:
         logging.getLogger("whisperradar").debug(
             "could not save the best-ever shotlist: %s", exc)
+
+
+def _shots_criteria_line(faults: list, matched: int, total: int,
+                         ratio: float, min_align: float) -> str:
+    """A one-line ✓/✗ checklist for the History panel, mirroring
+    _script_criteria_line - "0 faults, 93% (min 90%)" still makes someone
+    check the threshold themselves; this states pass/fail directly."""
+    faults_ok = not faults
+    ratio_ok = ratio >= min_align
+    faults_mark = "✓" if faults_ok else "✗"
+    ratio_mark = "✓" if ratio_ok else "✗"
+    return (f"{faults_mark} faults {len(faults)}  "
+           f"{ratio_mark} detail {matched}/{total} shots "
+           f"({ratio:.0%}, min {min_align:.0%})")
 
 
 def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
@@ -994,14 +1030,14 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         pacing = best.get("warnings") or []
         attempts_desc = ("kept from an earlier run" if kept_prior
                          else f"best of {len(attempts)} attempt(s)")
+        criteria_line = _shots_criteria_line(
+            best["faults"], best["matched"], best["total"], best["ratio"],
+            min_align)
         detail = (f"{len(data.get('images', []))} image(s) in "
                   f"{len(data.get('shots', []))} shot(s) via manifest brief, "
-                  f"{attempts_desc}: prompts detailed "
-                  f"enough {best['matched']}/{best['total']} "
-                  f"({best['ratio']:.0%}, min {min_align:.0%}), "
-                  f"{len(best['faults'])} fault(s), "
-                  f"judged by {judge}, "
-                  f"took {format_duration(time.monotonic() - t0)}")
+                  f"{attempts_desc}, judged by {judge}, "
+                  f"took {format_duration(time.monotonic() - t0)}"
+                  f"\n{criteria_line}")
         if best.get("unreviewed"):
             detail += (f" | {best['unreviewed']} shot(s) could not be judged "
                        f"({best.get('error')})")

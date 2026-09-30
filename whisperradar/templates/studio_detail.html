@@ -83,6 +83,7 @@
   .thumb button { padding: 1px 8px; font-size: 11px; }
   .hist { list-style: none; margin: 0; padding: 0; }
   .hist li { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .hist li .detail { white-space: pre-line; display: block; margin-top: 2px; }
   .hist li:last-child { border-bottom: none; }
   audio, video { width: 100%; border-radius: 8px; }
   label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
@@ -980,7 +981,7 @@
       <li>
         <span class="badge done">{{ h["stage"] }}</span>
         <span class="muted">{{ h["method"] }}</span>
-        {{ h["detail"] }}
+        <span class="detail">{{ h["detail"] }}</span>
         <span class="muted" style="float:right">{{ h["created_at"] }}</span>
       </li>
       {% else %}
