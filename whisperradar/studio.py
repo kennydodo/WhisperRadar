@@ -2406,6 +2406,22 @@ def _rejects_temperature(exc: Exception) -> bool:
         or "does not support" in msg)
 
 
+def _rejects_max_tokens(exc: Exception) -> bool:
+    """True when a provider's error is specifically about the `max_tokens`
+    value itself (too large for the model, an unsupported parameter, etc) -
+    same narrow-on-purpose reasoning as _rejects_temperature. Added for
+    shotlist_max_tokens: an explicit budget sized from the narration (see its
+    docstring) is a generous ESTIMATE, not a verified-safe value for every
+    provider's real ceiling, so a provider that hard-rejects it must fall
+    back to no cap (the old behavior: truncate and continue) rather than
+    failing the whole attempt outright."""
+    msg = str(exc).lower()
+    return "max_tokens" in msg and (
+        "exceeds" in msg or "maximum" in msg or "too large" in msg
+        or "invalid" in msg or "not supported" in msg
+        or "unsupported parameter" in msg)
+
+
 # A big prompt can take a while to START streaming: deepseek needed ~118s for a
 # 32k-char prompt, so a short idle rule would kill a healthy call. Allow much
 # longer for the FIRST token than for the gaps between tokens. Keep-alive lines
@@ -2904,19 +2920,29 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
     except (LLMStalled, LLMEmpty) as exc:
         return _retry_on_different_provider(exc)
     except RuntimeError as exc:
-        if temperature == 1.0 or not _rejects_temperature(exc):
-            raise
-        # This specific model rejects a non-default temperature outright.
-        # Retry the SAME provider/model without one before ever swapping the
-        # judge out for a different model - a different judge may simply
-        # grade differently, which is the exact inconsistency temperature
-        # was introduced to remove (see cc75462). Only if the model still
+        # Retry the SAME provider/model with one offending parameter backed
+        # out, before ever swapping the model out for a different one - a
+        # different model may simply behave differently (grade differently
+        # as a judge, or write differently as a planner), which is exactly
+        # the inconsistency a fixed provider is meant to avoid (see cc75462
+        # for the temperature case this mirrors). Only if the model still
         # will not answer at all does it fall through to a different provider.
-        log.warning("%s - retrying '%s' without a custom temperature",
-                   exc, p["name"])
+        retry_temperature = temperature
+        retry_max_tokens = max_tokens
+        backed_out = []
+        if temperature != 1.0 and _rejects_temperature(exc):
+            retry_temperature = 1.0
+            backed_out.append("a custom temperature")
+        if max_tokens and _rejects_max_tokens(exc):
+            retry_max_tokens = None
+            backed_out.append("an explicit max_tokens")
+        if not backed_out:
+            raise
+        log.warning("%s - retrying '%s' without %s",
+                   exc, p["name"], " or ".join(backed_out))
         try:
-            return fn(p, prompt, timeout=timeout, max_tokens=max_tokens,
-                      temperature=1.0)
+            return fn(p, prompt, timeout=timeout, max_tokens=retry_max_tokens,
+                      temperature=retry_temperature)
         except (LLMStalled, LLMEmpty, RuntimeError) as exc2:
             return _retry_on_different_provider(exc2)
 
@@ -3648,6 +3674,65 @@ def compact_srt(srt_text: str) -> str:
     return "\n".join(lines)
 
 
+# Measured on two real, finished productions (bytes of combined shotlist.json
+# + batch_sheet.txt output, divided by shot count): ~513 b/shot and ~844
+# b/shot respectively, i.e. roughly 210-260 tokens/shot at a conservative
+# 3.3 chars/token. SHOTLIST_TOKENS_PER_SHOT keeps headroom above the higher
+# figure on purpose - this is a ceiling to avoid a cut-off reply, not a
+# target, and overshooting costs nothing (providers bill actual completion
+# tokens, not the requested max_tokens).
+SHOTLIST_TOKENS_PER_SHOT = 300
+SHOTLIST_TOKENS_OVERHEAD = 2000
+# A shot holds ~6s on average on both measured productions (6.02s on a
+# 178-shot/1072s plan) - between the brief's ST-only 5s ceiling and its
+# general ~12-15s one, which is exactly what "most shots span several cues,
+# ST only for the shortest ones" should produce. Used only to ESTIMATE
+# likely shot count for sizing the token budget; it has no bearing on the
+# actual plan the model writes.
+SHOTLIST_ASSUMED_AVG_HOLD = 6.0
+# An outer safety bound, not a design target: the largest narration seen so
+# far (812 cues, 1072s) needs ~37-45k tokens of actual output (measured
+# directly), so 64000 leaves real headroom above that without guessing at
+# what any given provider's hard ceiling is. If a provider rejects a value
+# this large outright, llm_generate's _rejects_max_tokens fallback retries
+# the same call with no cap at all (the old behavior: truncate and
+# continue) rather than failing the attempt.
+SHOTLIST_TOKENS_CEILING = 64000
+
+
+def shotlist_max_tokens(total_narration_seconds: float, cue_count: int,
+                        max_hold_seconds: float) -> int:
+    """A generous output-token budget for the shotlist generation call, sized
+    from the narration itself so a normal-sized plan finishes in one LLM
+    reply instead of needing SHOTLIST_CONTINUE_ROUNDS extra round trips to
+    finish a reply that was cut off mid-JSON. Each continuation round is a
+    full sequential LLM call (it depends on the previous one, so it can't be
+    parallelized) - pure added latency on every attempt that needs one.
+
+    Mirrors script_max_tokens's reasoning (no budget = ride the provider's
+    own default, which is what was silently truncating long plans) but
+    shots are not a 1:1 function of narration length the way script words
+    are, so this estimates an expected shot COUNT first: total narration
+    duration divided by a typical hold (SHOTLIST_ASSUMED_AVG_HOLD), with 40%
+    headroom for a more fragmented-than-average plan, never below the hard
+    pacing floor (every shot at the channel's max hold), and never above one
+    shot per cue (shotlist_pacing's FRAGMENTATION_SHARE cannot exceed that
+    by definition). This is an estimate for SIZING THE BUDGET ONLY - it does
+    not influence, cap, or validate how many shots the plan actually ends up
+    with; shotlist_pacing still does that, independently, after the fact."""
+    min_shots = (int(total_narration_seconds / max_hold_seconds)
+                + (1 if total_narration_seconds % max_hold_seconds else 0)
+                if max_hold_seconds > 0 and total_narration_seconds > 0
+                else 0)
+    expected = (total_narration_seconds / SHOTLIST_ASSUMED_AVG_HOLD
+               if total_narration_seconds > 0 else 0)
+    shots_estimate = max(min_shots, expected) * 1.4
+    if cue_count:
+        shots_estimate = min(shots_estimate, cue_count)
+    tokens = int(shots_estimate * SHOTLIST_TOKENS_PER_SHOT) + SHOTLIST_TOKENS_OVERHEAD
+    return max(SHOTLIST_TOKENS_OVERHEAD, min(tokens, SHOTLIST_TOKENS_CEILING))
+
+
 def cue_range(text: str) -> tuple[int, int] | None:
     m = _CUE_RANGE_RE.match(str(text or ""))
     if not m:
@@ -4100,7 +4185,14 @@ def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
     verdicts: dict[str, dict] = {}
     unreviewed = 0
     error = None
-    with ThreadPoolExecutor(max_workers=min(8, len(chunks))) as pool:
+    # 8 was a leftover from an unrelated ai33.py concurrency pattern -
+    # judge chunks are independent HTTP calls to the shotlist judge
+    # provider, so 8 meant a 228-shot/chunk_size-20 plan (12 chunks) ran
+    # in two waves instead of one. 16 clears that case in a single wave
+    # while still bounding worst-case concurrency for very large plans
+    # (800+ cues can mean 40+ chunks) against an API with no documented
+    # rate limit.
+    with ThreadPoolExecutor(max_workers=min(16, len(chunks))) as pool:
         for chunk, reply, err in pool.map(_judge_one, chunks):
             if err is not None:
                 # These shots were never actually judged - they must NOT

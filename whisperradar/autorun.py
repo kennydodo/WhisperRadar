@@ -905,6 +905,17 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         attempts: list[dict] = []
         data: dict = {}
         sheet = ""
+        # Stop burning attempts once a few in a row fail to beat the best
+        # this run has produced - a full re-plan does not reliably improve
+        # on a prior attempt (it can swing either way, including sharply
+        # worse: one production's attempt 2 came back as 282 shots at 13%
+        # detailed after attempt 1 had already reached a healthy ratio with
+        # no faults), and `best = max(attempts, key=_rank)` below already
+        # keeps whichever attempt was actually best regardless of when the
+        # loop stops - so a stalled run loses nothing by stopping early.
+        STALL_LIMIT = 2
+        best_rank_run = None
+        stall = 0
         for attempt in range(1, attempts_allowed + 1):
             prior = attempts[-1] if attempts else None
             # Once a plan has zero STRUCTURAL faults and only falls short on
@@ -947,7 +958,10 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                     bible=bible_text, feedback=feedback,
                     supplied_refs=studio.find_supplied_refs(pdir),
                     pacing_note=pacing_note, allow_refs=allow_refs)
-                text = studio.llm_generate(cfg, prompt, provider=provider)
+                text = studio.llm_generate(
+                    cfg, prompt, provider=provider,
+                    max_tokens=studio.shotlist_max_tokens(
+                        total_s, len(cues), max_hold))
                 data = sheet = None
                 for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
                     try:
@@ -1051,6 +1065,20 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                          if review.get("unreviewed") else ""))
             if passed:
                 break
+            rank_now = _rank(attempts[-1])
+            if best_rank_run is None or rank_now > best_rank_run:
+                best_rank_run = rank_now
+                stall = 0
+            else:
+                stall += 1
+                if stall >= STALL_LIMIT and attempt < attempts_allowed:
+                    _log_line(
+                        f"shotlist: stopping early after attempt {attempt} - "
+                        f"{stall} attempt(s) in a row did not beat this run's "
+                        f"best so far ({best_rank_run[1]:.0%} detailed"
+                        + (", fault-free" if best_rank_run[0] else "")
+                        + f"); {attempts_allowed - attempt} attempt(s) skipped")
+                    break
             feedback = _shotlist_feedback(review, min_align)
 
         if not attempts:
