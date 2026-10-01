@@ -1346,16 +1346,19 @@ def _adopt_flowbatch_outputs(pdir: Path, names: list[str],
                 adopted.append(name)
                 # FlowBatch writes BOTH the Flow master and the upscaled
                 # <stem>_<tier> file. Keep the master (the real source - a bad
-                # upscale gets redone later) and drop the upscaled copy from
-                # flow_images: images\<name> already holds it, so keeping it
-                # there is a duplicate. The glob keeps <stem>.<ext> (the master)
-                # and removes only the <stem>_<tier> variants.
-                for extra in out_dir.glob(f"{stem}_*"):
-                    if extra.is_file():
-                        try:
-                            extra.unlink()
-                        except OSError:
-                            pass
+                # upscale gets redone later) and drop ONLY the specific
+                # upscaled file just adopted - it is now duplicated under
+                # images\<name>. Do NOT glob-delete every "{stem}_*" file in
+                # flow_images: a stale "{stem}_<othertier>" left over from an
+                # earlier run/resume at a different tier setting was never
+                # copied anywhere THIS time, so deleting it would be real
+                # data loss, not cleanup - only `cand` itself (the file this
+                # adopt actually consumed) is a genuine duplicate.
+                if cand != name and cand.startswith(f"{stem}_"):
+                    try:
+                        src.unlink()
+                    except OSError:
+                        pass
                 break
     return adopted
 
