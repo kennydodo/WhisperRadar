@@ -1344,6 +1344,18 @@ def _adopt_flowbatch_outputs(pdir: Path, names: list[str],
             if src.is_file():
                 shutil.copy(src, img_dir / name)
                 adopted.append(name)
+                # FlowBatch writes BOTH the Flow master and the upscaled
+                # <stem>_<tier> file. Keep the master (the real source - a bad
+                # upscale gets redone later) and drop the upscaled copy from
+                # flow_images: images\<name> already holds it, so keeping it
+                # there is a duplicate. The glob keeps <stem>.<ext> (the master)
+                # and removes only the <stem>_<tier> variants.
+                for extra in out_dir.glob(f"{stem}_*"):
+                    if extra.is_file():
+                        try:
+                            extra.unlink()
+                        except OSError:
+                            pass
                 break
     return adopted
 
