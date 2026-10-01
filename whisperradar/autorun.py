@@ -24,7 +24,7 @@ from collections import Counter
 
 from pathlib import Path
 
-from . import ai33, db, services, settings, studio, transcribe
+from . import ai33, briefs, db, services, settings, studio, transcribe
 from .cli import format_duration
 
 
@@ -873,7 +873,6 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
             raise _Paused("no character/reference bible - the planning brief "
                           "requires one before planning - write it at the "
                           "shots stage, then Resume")
-        brief = studio.load_manifest_brief(cfg)
         srt_text = srt.read_text(encoding="utf-8")
         cues = studio.parse_srt_cues(srt_text)
         # The planner never writes timings (the cue ranges carry them), so send
@@ -888,7 +887,27 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                       f"numbers and durations kept)")
         eff = _effective(cfg, pid)
         min_align = eff["shotlist_min_alignment"]
-        max_hold = eff["shotlist_max_hold_seconds"]
+        # the channel's planning-brief profile: its motion policy fills the
+        # brief's motion/pacing slots AND sets what the review gates enforce
+        # (a long-hold profile carries its own hold range, which replaces the
+        # global 12s ceiling), its presentation text says who is on screen
+        profile = briefs.resolve_profile(
+            eff.get("brief_motion"), eff.get("brief_min_hold"),
+            eff.get("brief_max_hold"),
+            default_max=eff["shotlist_max_hold_seconds"])
+        presentation = eff.get("brief_presentation") or ""
+        max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
+        brief = studio.load_manifest_brief(cfg, profile, presentation)
+        _log_line(f"shotlist: planning brief - motion '{profile.key}'"
+                  + (f", hold {profile.min_hold:g}-{max_hold:g}s"
+                     if profile.min_hold else f", max hold {max_hold:g}s")
+                  + (", presentation set" if presentation.strip() else ""))
+        try:  # what this production was planned with (best-effort record)
+            used = pdir / "versions" / "shotlist" / "brief_used.md"
+            used.parent.mkdir(parents=True, exist_ok=True)
+            used.write_text(brief + "\n", encoding="utf-8")
+        except OSError:
+            pass
         # a channel with references off must get NO references at all - the
         # planner is told, and the gate rejects any plan that still uses refs
         allow_refs = bool(eff["generate_references"])
@@ -916,26 +935,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         # fails after a very expensive generation
         total_s = (studio._srt_seconds(cues[-1]["end"]) - 0.0
                    if cues else 0.0)
-        min_shots = (int(total_s / max_hold)
-                     + (1 if total_s % max_hold else 0)
-                     if max_hold > 0 and total_s > 0 else 0)
-        pacing_note = ""
-        if min_shots:
-            pacing_note = (
-                f"the narration runs ~{total_s:.0f}s across {len(cues)} cues "
-                f"(the (Ns) suffix on each line is that cue's length in "
-                f"seconds). How this plan will be judged on this channel: "
-                f"every cue covered exactly once, in order (the rule that "
-                f"outranks everything); no shot holding longer than "
-                f"{max_hold:.0f}s; detailed prompts on at least "
-                f"{min_align:.0%} of shots. Plan strictly from meaning per "
-                f"Section 2 - each new concrete detail deserves its own "
-                f"visual. {min_shots} is only the ABSOLUTE FLOOR (it assumes "
-                f"every shot runs the full {max_hold:.0f}s, but most cues are "
-                f"far shorter), so a meaning-driven plan lands WELL ABOVE "
-                f"{min_shots} - do not treat it as a target to stop at. A "
-                f"plan that merges many cues into long holds, or that leaves "
-                f"prompts terse, fails the review.")
+        pacing_note = briefs.pacing_note(profile, total_s, len(cues),
+                                         max_hold, min_align)
         attempts: list[dict] = []
         data: dict = {}
         sheet = ""
@@ -1061,12 +1062,14 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                     prior_verdicts=(prior.get("verdicts") or {}) if prior else {},
                     patched_assets=set(patches),
                     max_hold_seconds=max_hold, style_guide=style_guide,
-                    temperature=eff["shotlist_judge_temperature"])
+                    temperature=eff["shotlist_judge_temperature"],
+                    profile=profile)
             else:
                 review = studio.review_shotlist(
                     cfg, data, cues, judge, max_hold_seconds=max_hold,
                     style_guide=style_guide,
-                    temperature=eff["shotlist_judge_temperature"])
+                    temperature=eff["shotlist_judge_temperature"],
+                    profile=profile)
             if review["total"] and review["unreviewed"] == review["total"]:
                 # The judge never actually ran on a single shot - unlike a
                 # low completeness ratio (real information: some prompts are

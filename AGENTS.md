@@ -5,6 +5,37 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## NEXT SESSION — KILL button, no retry (images stage: both engines, both Renderly modes)
+
+Agreed with Kehinde 2026-10-01, replacing the current "Stop Flow batch" button
+(which only reaches the Flow Driver service, so it does nothing for a FlowBatch
+run - and even for a Flow driver run it never stops the pause/resume loop). The
+new action is destructive and honest: it kills, and it does NOT retry - no
+"pausing N minutes, then resuming ... round 1 of 2", no further rounds, no
+automatic re-render of whatever is left.
+
+It must cover every engine/mode the images stage can run:
+- set the WR job's cancel flag FIRST, so `_run_images`' resume loop exits
+  instead of pausing and trying again;
+- FlowBatch (`engine=flowbatch`, `studio.run_imagegen_flowbatch`): kill the
+  spawned `node src/cli.js generate` process TREE (it owns its own Chrome).
+  `_flowbatch_stream` already taskkills on cancel, but only when a stdout line
+  arrives - the runner has to remember the Popen and kill it directly, e.g. a
+  watchdog thread polling the cancel flag, or a kill handle the route can call;
+- Renderly + Flow (`run_imagegen_flow`): POST the Flow Driver's `/api/stop` -
+  already a hard tree kill (`server.js stopRun()` = `taskkill /PID <child> /T
+  /F`) - plus the cancel flag above, and tolerate the driver service being down;
+- Renderly + API (`studio.run_imagegen`): kill the `dotnet run` ImageGen tree,
+  which today is completely uncancellable (`subprocess.run(..., timeout=7200)`);
+- report what was killed, or say plainly that nothing was running.
+
+Current truth to build on: `studio.flow_stop()` -> driver `/api/stop`; the stop
+routes only honour `sjob.cancel` for kinds "batch auto-run" / "auto-run"; and
+`autorun.run_stage_and_advance()` takes no cancel parameter at all, so a manual
+"Render images" job cannot be stopped today. The dashboard surfaces the running
+job's kind in `sjob.kind` ("image rendering (FlowBatch)" / "(Flow Driver)" /
+"(Renderly)"), which is what the button should key off.
+
 ## DONE (2026-10-01) — local upscale AFTER download, for both engines
 
 Requested by Kehinde: stop upscaling inside the download loop. Download the
@@ -100,6 +131,38 @@ before trusting an "order" pairing.
 
 Tests: WR tests/test_recover.py; FlowBatch test/commands/recover.test.js +
 driver tests; Renderly tests/js/recover.test.js.
+
+## DONE (2026-10-01) — per-channel planning brief: motion profile + presentation
+
+Branch `feat/per-channel-brief-profile`. The manifest-authoring brief is no
+longer read from ImgToVideo: it is a TEMPLATE, `whisperradar/brief_template.md`,
+rendered per channel by `whisperradar/briefs.py` (ImgToVideo never reads the
+brief - it only consumes shotlist.json + SRT + audio - so its own copy is just
+a standalone paste-by-hand version and is left alone).
+- Slots in the template: `HOLD_RULE`, `MOTION_SECTION`, `MOTION_FIELD_RULE`,
+  `CANVAS_SPEC`, `CHECK_HOLD`, `CHECK_MOTION`, example codes `EX_A/B/C`, and
+  `PRESENTATION` (renders to nothing when empty). The STANDARD preset's text is
+  the original wording verbatim - `tests/test_brief_profiles.py` proves the
+  default render equals the original brief (needs the sibling ImgToVideo repo).
+- Per channel (`own_channels.brief_motion`, `brief_presentation`; NULL =
+  standard / empty): My Channels > Planning brief. No global Settings entry on
+  purpose - nothing set = today's behaviour.
+- Presets (`briefs.MOTION_PRESETS`): `standard`, `static` (ST only, no ST/share
+  caps), `long_holds` (10-30s, hold range replaces the global 12s ceiling).
+  A profile carries BOTH the prompt wording and the gate limits, so
+  `studio.shotlist_pacing(..., profile)` / `review_shotlist(..., profile=)`
+  enforce what the brief says. The planner's pacing note is
+  `briefs.pacing_note()` (profile-aware; standard text unchanged).
+- Hold range: `own_channels.brief_min_hold` / `brief_max_hold` (seconds, NULL =
+  the preset's / the global max) lie over the preset via
+  `briefs.resolve_profile()`. They feed the prompt text, the pacing note AND the
+  gates - editing the template alone would not change what the review enforces.
+- `autorun._run_shots` resolves the profile, renders the brief, logs it and
+  saves it as `versions/shotlist/brief_used.md`.
+- To add a preset: a `MotionProfile` in briefs.py + `MOTION_PRESETS`. To
+  change what the planner is told for all channels: edit brief_template.md.
+- Tunable: `briefs.MIN_HOLD_MAX_SHORT_SHARE` (0.35) - a min-hold channel faults
+  when more than this share of shots (last one exempt) hold under the minimum.
 
 ## DONE — refs now honor the image engine (fixed 2026-09-29)
 

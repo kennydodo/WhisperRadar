@@ -30,8 +30,8 @@ from flask import (
     send_file,
 )
 
-from . import (ai33, autorun, db, pipeline, producer, scheduler, services,
-               settings, studio)
+from . import (ai33, autorun, briefs, db, pipeline, producer, scheduler,
+               services, settings, studio)
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -919,6 +919,8 @@ def create_app(cfg) -> Flask:
             global_render_resolution=global_render_resolution,
             native_tiers=settings.FLOW_NATIVE_TIERS,
             native_tier_labels=settings.FLOW_NATIVE_TIER_LABELS,
+            brief_presets=briefs.MOTION_PRESETS,
+            brief_starters=briefs.PRESENTATION_STARTERS,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/my-channels/add")
@@ -1026,6 +1028,29 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("flow_native_upscale") or "").strip().lower()
             fields["flow_native_upscale"] = (
                 raw if raw in settings.FLOW_NATIVE_TIERS else None)  # ""=inherit
+        if "brief_motion" in request.form:
+            raw = (request.form.get("brief_motion") or "").strip().lower()
+            fields["brief_motion"] = (raw if raw in briefs.MOTION_PRESETS
+                                      and raw != briefs.STANDARD.key
+                                      else None)   # empty/standard = default
+        hold = {}
+        for key in ("brief_min_hold", "brief_max_hold"):
+            if key in request.form:
+                raw = (request.form.get(key) or "").strip()
+                try:   # empty = the preset's / the global value
+                    hold[key] = (max(1.0, min(300.0, float(raw)))
+                                 if raw else None)
+                except ValueError:
+                    hold[key] = None
+        if hold.get("brief_min_hold") and hold.get("brief_max_hold") \
+                and hold["brief_min_hold"] >= hold["brief_max_hold"]:
+            return redirect("/my-channels?error=" + quote(
+                "Planning brief: the minimum hold must be shorter than the "
+                "maximum hold - nothing was saved"))
+        fields.update(hold)
+        if "brief_presentation" in request.form:   # multi-line: keep newlines
+            fields["brief_presentation"] = (
+                (request.form.get("brief_presentation") or "").strip() or None)
         if "generate_references" in request.form:
             raw = (request.form.get("generate_references") or "").strip()
             fields["generate_references"] = (None if raw == ""
@@ -1688,6 +1713,11 @@ def create_app(cfg) -> Flask:
             nle_projects=nle_projects,
             refs=studio.shotlist_refs(pdir),
             generate_references=eff["generate_references"],
+            brief_profile=briefs.resolve_profile(
+                eff.get("brief_motion"), eff.get("brief_min_hold"),
+                eff.get("brief_max_hold"),
+                default_max=eff["shotlist_max_hold_seconds"]),
+            brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
             source_video=source_video, llm_ready=llm_ready,

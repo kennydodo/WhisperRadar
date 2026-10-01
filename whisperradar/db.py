@@ -208,7 +208,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("generate_references", "INTEGER"),
                          # Flow native: upscale level (off|1k|2k|4k) for the
                          # one local ESRGAN pass; NULL = inherit
-                         ("flow_native_upscale", "TEXT")):
+                         ("flow_native_upscale", "TEXT"),
+                         # planning-brief profile: motion preset key (NULL =
+                         # standard) + free-text presentation / narrator staging
+                         ("brief_motion", "TEXT"),
+                         ("brief_presentation", "TEXT"),
+                         # hold range (seconds) laid over the motion preset
+                         ("brief_min_hold", "REAL"),
+                         ("brief_max_hold", "REAL")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
@@ -791,7 +798,8 @@ _OWN_CHANNEL_FIELDS = {
     "script_judge_provider",
     "shotlist_min_alignment", "shotlist_max_attempts",
     "shotlist_judge_provider", "render_target", "render_resolution",
-    "generate_references", "flow_native_upscale",
+    "generate_references", "flow_native_upscale", "brief_motion", "brief_presentation",
+    "brief_min_hold", "brief_max_hold",
     "renderly_channel_id", "renderly_channel_name",
 }
 

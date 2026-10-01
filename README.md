@@ -99,9 +99,17 @@ production from any transcribed video in your library, then walk its stages:
   images, or the final video. Approve & advance, or send back for rework.
   Script and additional-direction can be saved under names and reloaded as
   versions to try different takes.
-- **Shots stage**: the LLM plans `shotlist.json` + per-image prompts using
-  ImgToVideo's `manifest-authoring-brief.md` (read fresh from the repo on
-  every run, so edits to the brief apply immediately). The brief's bible gate
+- **Shots stage**: the LLM plans `shotlist.json` + per-image prompts using the
+  manifest-authoring brief - WhisperRadar's own template
+  (`whisperradar/brief_template.md`, read fresh on every run), rendered per
+  channel: **My Channels > Planning brief** picks a motion & pacing profile
+  (Standard / Static only / Long holds 10-30s), an optional min/max hold
+  range in seconds (overrides the preset and lifts the global 12s ceiling for
+  that channel) and an optional presentation text (who is on screen, and
+  when). The review gates enforce the same
+  profile. A channel with nothing set gets the original brief, unchanged; the
+  brief a production was planned with is saved as
+  `versions\shotlist\brief_used.md`. The brief's bible gate
   requires a character/reference bible before planning - write or upload one
   in the bible box (auto-run pauses there until you do). The batch sheet is
   kept as `batch_sheet.txt`, and prompts can also be extracted from the

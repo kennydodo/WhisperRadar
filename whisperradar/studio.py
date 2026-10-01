@@ -20,6 +20,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from . import briefs
+
 log = logging.getLogger("whisperradar")
 
 # random directives so regenerating a script produces a genuinely fresh take
@@ -3623,29 +3625,34 @@ def shotlist_prompts(pid_dir: Path) -> list[str]:
             and by_file[s["asset"]]]
 
 
-def load_manifest_brief(cfg) -> str:
-    """The ImgToVideo manifest-authoring brief: the master planning prompt
-    that turns a narration SRT into shotlist.json + an image batch sheet.
+def load_manifest_brief(cfg, profile=None, presentation: str = "") -> str:
+    """The manifest-authoring brief: the master planning prompt that turns a
+    narration SRT into shotlist.json + an image batch sheet, rendered for ONE
+    channel.
 
-    Loaded from disk on every use so edits to the brief take effect
-    immediately. Path: studio.manifest_brief in config.yaml, or
-    <imgtovideo_repo>\\docs\\manifest-authoring-brief.md by default."""
+    The brief is a template (brief_template.md, shipped with WhisperRadar):
+    `profile` (a briefs.MotionProfile, or its key) fills the motion/pacing
+    slots and `presentation` (free text) the who-is-on-screen slot. With
+    neither it renders to exactly the original brief. Read from disk on every
+    use, so edits to the template take effect immediately. studio.manifest_brief
+    in config.yaml points at a custom template instead (a plain brief with no
+    slots still works for the standard profile; a leading how-to header above
+    the first `---` line is skipped)."""
+    if not isinstance(profile, briefs.MotionProfile):
+        profile = briefs.get_profile(profile)
     path = None
     if cfg.studio_manifest_brief:
         p = Path(cfg.studio_manifest_brief)
         path = p if p.is_absolute() else cfg.base_dir / p
-    elif cfg.imgtovideo_repo:
-        path = (Path(cfg.imgtovideo_repo) / "docs"
-                / "manifest-authoring-brief.md")
-    if not path or not path.exists():
-        raise RuntimeError(
-            "manifest-authoring-brief.md not found - clone ImgToVideo next "
-            "to this repo (sibling folder), or set studio.imgtovideo_repo "
-            "or studio.manifest_brief in config.yaml")
-    text = path.read_text(encoding="utf-8")
-    if "\n---\n" in text:  # skip the how-to header, keep the prompt itself
+        if not path.exists():
+            raise RuntimeError(
+                f"studio.manifest_brief points at {path}, which does not "
+                "exist - fix or clear it in config.yaml")
+    text = briefs.read_template(path)
+    if path is not None and "\n---\n" in text:
+        # a hand-made brief may keep ImgToVideo's how-to header: skip it
         text = text.split("\n---\n", 1)[1]
-    return text.strip()
+    return briefs.render_brief(text.strip(), profile, presentation)
 
 
 def _extract_json_object(text: str) -> tuple[dict, str]:
@@ -4080,19 +4087,22 @@ SHOT_MAX_HOLD_DEFAULT = 12.0
 # carries motion; ST is only for ~1-2-cue shots (~2-4s) and ~10% of shots; no
 # motion code above ~40% (PL/PR tighter, at ~15% - they default too easily);
 # most shots should span several cues.
-ST_MAX_HOLD_SECONDS = 5.0
-ST_MAX_SHARE = 0.10
-MOTION_MAX_SHARE = 0.40
+# (The limits themselves live in briefs.py, next to the brief wording they
+# mirror; a channel's motion profile can replace them - see shotlist_pacing.)
+ST_MAX_HOLD_SECONDS = briefs.ST_MAX_HOLD_SECONDS
+ST_MAX_SHARE = briefs.ST_MAX_SHARE
+MOTION_MAX_SHARE = briefs.MOTION_MAX_SHARE
 # PL/PR are the easiest motions to reach for by default (any left/right beat
 # "just works" with a pan), so a plan leans on them far more readily than the
 # others - a tighter, code-specific cap catches that before the general 40%
 # ceiling would ever trip.
-MOTION_MAX_SHARE_OVERRIDES = {"PL": 0.15, "PR": 0.15}
+MOTION_MAX_SHARE_OVERRIDES = briefs.MOTION_MAX_SHARE_OVERRIDES
 FRAGMENTATION_SHARE = 0.50
 
 
 def shotlist_pacing(data: dict, cues: list[dict],
-                    max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT
+                    max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
+                    profile: "briefs.MotionProfile | None" = None
                     ) -> tuple[list[str], list[str]]:
     """(faults, warnings) for how long the plan holds each image, derived from
     the SRT cue timings before anything is rendered.
@@ -4105,7 +4115,12 @@ def shotlist_pacing(data: dict, cues: list[dict],
     (Section 9 - sub-beat numbers are stable, never rename). The brief's other
     rules (no long STATIC hold, ST only on short holds and ~10% of shots, no
     motion code above ~40% - PL/PR tighter at ~15% - no fragmentation) are
-    enforced at the same time."""
+    enforced at the same time.
+
+    `profile` is the channel's motion profile (briefs.py): it can forbid
+    motion codes outright (a static-only channel), lift or drop the ST / motion
+    share limits, and set a minimum hold. None = the standard limits."""
+    prof = profile or briefs.STANDARD
     shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
     if not shots or not cues:
         return [], []
@@ -4145,6 +4160,19 @@ def shotlist_pacing(data: dict, cues: list[dict],
         # this only ever showed the worst 6, and re-plans kept the total
         # offender count roughly flat attempt to attempt (fixing the 6 shown,
         # breaking new ones elsewhere) instead of driving it to zero.
+        floor = int(duration / cap) + 1
+        if prof.min_hold:
+            count_note = (
+                f"Split only where the idea genuinely changes and do not cut "
+                f"shots below ~{prof.min_hold:.0f}s: this channel paces slowly "
+                f"({prof.min_hold:.0f}-{cap:.0f}s per shot). ")
+        else:
+            count_note = (
+                f"The count is NOT a target to hit: {floor} is only the "
+                f"absolute FLOOR (it assumes every shot runs the full {cap:.0f}s, "
+                f"but most cues are shorter), so splitting every long hold drives "
+                f"the real count WELL ABOVE {floor} - do not "
+                f"stop near that number. ")
         listed_desc = ("every shot over the maximum" if not omitted
                        else f"the {len(lines)} worst of {len(long)} (the rest "
                             "follow the identical rule)")
@@ -4153,12 +4181,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
             f"EVERY one of them at a meaning boundary (a number, statistic or "
             f"price arrives; a second character, object or location enters; the "
             f"narration pivots; the action changes; a list ends and the payoff "
-            f"begins) so no image holds longer than {cap:.0f}s. The count is "
-            f"NOT a target to hit: {int(duration / cap) + 1} is only the "
-            f"absolute FLOOR (it assumes every shot runs the full {cap:.0f}s, "
-            f"but most cues are shorter), so splitting every long hold drives "
-            f"the real count WELL ABOVE {int(duration / cap) + 1} - do not "
-            f"stop near that number. "
+            f"begins) so no image holds longer than {cap:.0f}s. {count_note}"
             f"Number each scene's images in order - the first image in scene S12 is "
             f"S12_01, the next S12_02, and so on - so a new image takes the next "
             f"unused sub-beat in its scene, with its own TYPE and MOTION codes and "
@@ -4167,24 +4190,54 @@ def shotlist_pacing(data: dict, cues: list[dict],
             f"the ones named here):\n  "
             + "\n  ".join(lines)
             + (f"\n  ...and {omitted} more of the same kind" if omitted else ""))
-    static_long = [(h, a) for h, m, a, _f, _l in holds if m == "ST" and h >= 15.0]
-    if static_long:
-        faults.append("a long STATIC hold is never acceptable: " + ", ".join(
-            f"{a} ({h:.0f}s, ST)" for h, a in static_long[:4]))
+    if prof.allowed:
+        banned = [(a, m) for _h, m, a, _f, _l in holds
+                  if m and m not in prof.allowed]
+        if banned:
+            only = "/".join(prof.allowed)
+            faults.append(
+                f"{len(banned)} shot(s) use a motion code this channel does "
+                f"not allow (allowed: {only} only): "
+                + ", ".join(f"{a} ({m})" for a, m in banned[:6])
+                + f". Set every shot's \"motion\" to {only} and end its asset "
+                f"file name with the same code (e.g. S01_03_SCN_"
+                f"{prof.allowed[0]}.png).")
+    if prof.static_long_hold is not None:
+        static_long = [(h, a) for h, m, a, _f, _l in holds
+                       if m == "ST" and h >= prof.static_long_hold]
+        if static_long:
+            faults.append("a long STATIC hold is never acceptable: " + ", ".join(
+                f"{a} ({h:.0f}s, ST)" for h, a in static_long[:4]))
     st = [(h, a) for h, m, a, _f, _l in holds if m == "ST"]
-    if st and len(st) / len(holds) > ST_MAX_SHARE:
+    if (prof.st_max_share is not None and st
+            and len(st) / len(holds) > prof.st_max_share):
         faults.append(f"ST is {len(st) / len(holds):.0%} of shots (cap ~"
-                      f"{ST_MAX_SHARE:.0%}) - ST is the exception, not the default")
-    st_long = [(h, a) for h, a in st if h > ST_MAX_HOLD_SECONDS]
-    if st_long:
-        faults.append(f"ST shots hold longer than {ST_MAX_HOLD_SECONDS:.0f}s: "
-                      + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
-    for code in sorted({m for _h, m, _a, _f, _l in holds if m}):
-        share = sum(1 for _h, m, _a, _f, _l in holds if m == code) / len(holds)
-        cap = MOTION_MAX_SHARE_OVERRIDES.get(code, MOTION_MAX_SHARE)
-        if share > cap:
-            faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
-                          f"{cap:.0%}) - vary the motion codes")
+                      f"{prof.st_max_share:.0%}) - ST is the exception, not "
+                      f"the default")
+    if prof.st_max_hold is not None:
+        st_long = [(h, a) for h, a in st if h > prof.st_max_hold]
+        if st_long:
+            faults.append(f"ST shots hold longer than {prof.st_max_hold:.0f}s: "
+                          + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
+    if prof.code_max_share is not None:
+        for code in sorted({m for _h, m, _a, _f, _l in holds if m}):
+            share = sum(1 for _h, m, _a, _f, _l in holds if m == code) / len(holds)
+            share_cap = prof.code_share_overrides.get(code, prof.code_max_share)
+            if share > share_cap:
+                faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
+                              f"{share_cap:.0%}) - vary the motion codes")
+    if prof.min_hold and len(holds) > 1:
+        body = holds[:-1]   # the last shot ends where the narration ends
+        short = [(h, a) for h, _m, a, _f, _l in body if h < prof.min_hold]
+        if short and len(short) / len(body) > briefs.MIN_HOLD_MAX_SHORT_SHARE:
+            faults.append(
+                f"{len(short)} of {len(body)} shots hold under the "
+                f"{prof.min_hold:.0f}s this channel expects - the plan is "
+                f"cutting the narration into too many short shots; group the "
+                f"cues that develop one idea into a single shot of "
+                f"{prof.min_hold:.0f}-{cap:.0f}s. Shortest: "
+                + ", ".join(f"{a} ({h:.0f}s)" for h, a in
+                            sorted(short)[:5]))
     one_cue = sum(1 for s in shots
                   if (r := cue_range(s.get("cues"))) and r[0] == r[1])
     if one_cue / len(holds) > FRAGMENTATION_SHARE:
@@ -4554,7 +4607,8 @@ def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
 def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                     chunk_size: int = 20,
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
-                    style_guide: str = "", temperature: float = 1.0) -> dict:
+                    style_guide: str = "", temperature: float = 1.0,
+                    profile: "briefs.MotionProfile | None" = None) -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
     {faults, matched, total, weak, ratio, error, unreviewed, warnings,
     verdicts}. Never raises.
@@ -4572,7 +4626,8 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
     faults = shotlist_structural_faults(data, len(cues))
     # Pacing is checked HERE, before any image renders: too few images for the
     # narration is far cheaper to fix in the plan than after 45 generations.
-    pacing_faults, pacing_warnings = shotlist_pacing(data, cues, max_hold_seconds)
+    pacing_faults, pacing_warnings = shotlist_pacing(
+        data, cues, max_hold_seconds, profile)
     faults = faults + pacing_faults
     cue_text = {c["index"]: c["text"] for c in cues}
     prompt_by_file = {str(i.get("file")): i.get("prompt")
@@ -4601,7 +4656,8 @@ def review_shotlist_patch(cfg, data: dict, cues: list[dict],
                           patched_assets: set,
                           chunk_size: int = 20,
                           max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
-                          style_guide: str = "", temperature: float = 1.0
+                          style_guide: str = "", temperature: float = 1.0,
+                          profile: "briefs.MotionProfile | None" = None
                           ) -> dict:
     """Same shape and contract as review_shotlist, but only re-runs the judge
     on `patched_assets` - every other shot's alignment verdict is carried
@@ -4621,7 +4677,8 @@ def review_shotlist_patch(cfg, data: dict, cues: list[dict],
     free (no LLM call) and a patch could in principle create a new duplicate
     prompt or similar, so there is no saving worth the risk in skipping them."""
     faults = shotlist_structural_faults(data, len(cues))
-    pacing_faults, pacing_warnings = shotlist_pacing(data, cues, max_hold_seconds)
+    pacing_faults, pacing_warnings = shotlist_pacing(
+        data, cues, max_hold_seconds, profile)
     faults = faults + pacing_faults
     cue_text = {c["index"]: c["text"] for c in cues}
     prompt_by_file = {str(i.get("file")): i.get("prompt")

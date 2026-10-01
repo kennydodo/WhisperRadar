@@ -278,6 +278,52 @@
                           placeholder="Recurring characters, environments, wardrobe, props - kept identical across images. Required before planning; a run pauses at the shots stage without it.">{{ ch['bible'] or '' }}</textarea>
               </label>
             </div>
+            <div class="muted" style="font-size:12px; margin:10px 0 6px">
+              Planning brief - how this channel's shots are paced and staged.
+              "Standard" is the brief exactly as it has always been; the
+              shotlist review checks the same limits the brief states.
+            </div>
+            <div class="inline">
+              <label>motion &amp; pacing
+                <select name="brief_motion" style="width:290px">
+                  {% for key, preset in brief_presets.items() %}
+                  <option value="{{ key }}" title="{{ preset.description }}" {{ 'selected' if (ch['brief_motion'] or 'standard') == key else '' }}>{{ preset.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>presentation starter
+                <select style="width:290px"
+                        onchange="if (this.value) { this.form.elements['brief_presentation'].value = this.value; this.selectedIndex = 0; }">
+                  <option value="">fill the box below from...</option>
+                  {% for key, starter in brief_starters.items() %}
+                  <option value="{{ starter[1] }}">{{ starter[0] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="inline" style="margin-top:8px">
+              <label>min hold (s)
+                <input type="number" name="brief_min_hold" min="1" max="300" step="any"
+                       value="{{ '%g' % ch['brief_min_hold'] if ch['brief_min_hold'] is not none else '' }}"
+                       placeholder="preset" style="width:100px">
+              </label>
+              <label>max hold (s)
+                <input type="number" name="brief_max_hold" min="1" max="300" step="any"
+                       value="{{ '%g' % ch['brief_max_hold'] if ch['brief_max_hold'] is not none else '' }}"
+                       placeholder="preset / global" style="width:120px">
+              </label>
+              <span class="muted" style="font-size:12px">
+                How long one image may hold. Empty = the preset's range (Standard
+                and Static use the global max in Settings). Lifts the 12s ceiling
+                for this channel; the shotlist review enforces it.
+              </span>
+            </div>
+            <div class="inline" style="margin-top:8px">
+              <label style="flex:1 1 90%">presentation - who is on screen, and when (optional)
+                <textarea name="brief_presentation" style="min-height:70px"
+                          placeholder="e.g. The host opens the video on screen, example characters carry the middle, the host returns for the advice. Empty = the planner decides.">{{ ch['brief_presentation'] or '' }}</textarea>
+              </label>
+            </div>
             <div class="inline" style="margin-top:8px">
               <label>bible folder
                 <span class="inline" style="gap:6px">

@@ -663,6 +663,14 @@ def for_production(conn, prod) -> dict:
         "images_resume_wait_minutes": int(glob["images_resume_wait_minutes"]),
         "images_still_busy_wait_minutes": int(
             glob["images_still_busy_wait_minutes"]),
+        # planning-brief profile (briefs.py): the channel's motion preset key
+        # (None = standard) and its free-text presentation / narrator staging.
+        # Per channel only - no global setting; nothing set = today's brief.
+        "brief_motion": row_get(own, "brief_motion") or None,
+        "brief_presentation": row_get(own, "brief_presentation") or "",
+        # hold range (s) over the preset; None = the preset's / the global max
+        "brief_min_hold": row_get(own, "brief_min_hold"),
+        "brief_max_hold": row_get(own, "brief_max_hold"),
         # the refs stage is per channel (a channel may have no refs at all)
         "generate_references": bool(row_get(own, "generate_references",
                                             int(glob["generate_references"]))),

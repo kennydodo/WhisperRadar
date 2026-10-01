@@ -89,9 +89,11 @@ studio:
   # Default Google Flow project URL for its jobs. Empty = FlowBatch's own
   # config/settings.json projectUrl, else Flow's most recent project.
   flowbatch_project_url: null
-  # Path to the master shotlist planning prompt (ImgToVideo's
-  # manifest-authoring-brief.md). Read fresh from disk on every run, so edits
-  # apply immediately. Default: <imgtovideo_repo>\docs\manifest-authoring-brief.md
+  # Optional path to a CUSTOM shotlist planning template. Default (null) = the
+  # built-in whisperradar\brief_template.md, rendered per channel from its
+  # motion profile + presentation (My Channels > Planning brief). A custom file
+  # is read fresh on every run; without the {{SLOT}} markers it only supports
+  # the Standard motion profile (see brief_template.md for the slots).
   manifest_brief: null
   imagegen_command: null # optional override; default routes through Renderly
   merge_command: null    # optional override; default runs ImgToVideo.Cli

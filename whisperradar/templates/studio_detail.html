@@ -617,6 +617,8 @@
         so N images = ~2N operations in its history.
         {% if cue_count %} This production has <b>{{ cue_count }}</b> subtitle cues.{% endif %}
         {% if shotlist_count %} Current shotlist: <b>{{ shotlist_count }}</b> images.{% endif %}
+        <br>Planning brief: <b>{{ brief_profile.label }}</b>{% if brief_profile.max_hold %} (holds {% if brief_profile.min_hold %}{{ '%g' % brief_profile.min_hold }}-{% else %}up to {% endif %}{{ '%g' % brief_profile.max_hold }}s){% endif %}{% if brief_presentation %}, with a presentation note{% endif %}
+        (set per channel on <a href="/my-channels">My Channels</a>).
       </div>
       <div class="actions">
         {% if providers %}
