@@ -143,7 +143,7 @@
 
   <form method="post" action="/settings/save" id="settings-form">
   {% macro field(entry, values, providers, seed_dirs_text) %}
-        <div class="fieldwrap">
+        <div class="fieldwrap" id="wrap-{{ entry.key }}">
           {% if entry.type == 'bool' %}
             <div class="checkrow">
               <input type="checkbox" name="{{ entry.key }}" id="f-{{ entry.key }}"
@@ -439,6 +439,17 @@
       try { wanted = sessionStorage.getItem(KEY); } catch (e) {}
     }
     show(wanted || tabs[0].getAttribute('data-tab'), false);
+  })();
+</script>
+<script>
+  // The Flow native upscale level is only shown while Render resolution is Flow native.
+  (function () {
+    var res = document.getElementById('f-render_resolution');
+    var wrap = document.getElementById('wrap-flow_native_upscale');
+    if (!res || !wrap) return;
+    function sync() { wrap.style.display = (res.value === 'flow-native') ? '' : 'none'; }
+    sync();
+    res.addEventListener('change', sync);
   })();
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>

@@ -9,6 +9,16 @@ own_channels and are NULL when the channel inherits these globals.
 import json
 import re
 
+# Flow native renders download at Flow's own size (1376x768); one local
+# Real-ESRGAN pass then upscales to one of FlowBatch's tiers.
+FLOW_NATIVE_TIERS = ("off", "1k", "2k", "4k")
+FLOW_NATIVE_TIER_LABELS = {
+    "off": "No upscale (keep 1376x768)",
+    "1k": "1080p (1920x1080)",
+    "2k": "2K (2560x1440)",
+    "4k": "4K (3840x2160)",
+}
+
 # Each entry: key, label, type, default, plus type-specific extras.
 # type is one of: bool | int | str | choice | time | map
 SPEC: list[dict] = [
@@ -361,6 +371,19 @@ SPEC: list[dict] = [
                 "preview draft stays at 960x540 for speed.",
     },
     {
+        "key": "flow_native_upscale", "type": "choice", "default": "off",
+        "choices": list(FLOW_NATIVE_TIERS),
+        "choice_labels": FLOW_NATIVE_TIER_LABELS,
+        "label": "Flow native: upscale level",
+        "help": "Only used when Render resolution is Flow native. Both image "
+                "engines (FlowBatch and the Renderly Flow Driver) download "
+                "the stills at Flow's native size, then ONE local Real-ESRGAN "
+                "pass (FlowBatch's upscaler - no Flow, no Renderly backend) "
+                "brings them to this level. Files already at the level are "
+                "skipped, so the pass can be re-run from the images stage. "
+                "The video output size is still the Render resolution above.",
+    },
+    {
         "key": "render_target", "type": "choice", "default": "premiere",
         "choices": ["premiere", "capcut"],
         "choice_labels": {"premiere": "Premiere Pro",
@@ -425,7 +448,8 @@ GROUPS: list[tuple[str, list[str]]] = [
         "images_still_busy_wait_minutes",
         "generate_references",
     ]),
-    ("Video render", ["render_target", "render_resolution"]),
+    ("Video render", ["render_target", "render_resolution",
+                      "flow_native_upscale"]),
     ("Scheduler", ["scheduler_enabled", "scheduler_interval_minutes"]),
     ("Notifications", [
         "notify_desktop", "notify_webhook_url", "notify_webhook_kind",
@@ -576,6 +600,11 @@ def for_production(conn, prod) -> dict:
                         or row_get(own, "default_render_mode")
                         or glob["default_render_mode"]),
         "upscale": int(own_upscale),
+        # Flow native: the level one local Real-ESRGAN pass upscales the
+        # downloaded stills to (per channel; only used when the resolved
+        # render resolution is "flow-native")
+        "flow_native_upscale": row_get(own, "flow_native_upscale",
+                                       glob["flow_native_upscale"]),
         "per_day": (int(own_per_day) if own_per_day is not None
                     else int(glob["per_day"])),
         "topic_pick": row_get(own, "topic_pick", glob["topic_pick"]),

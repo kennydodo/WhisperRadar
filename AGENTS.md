@@ -5,39 +5,101 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
-## NEXT SESSION - manual "Recover from Flow gallery" (images stage, both engines)
+## DONE (2026-10-01) — local upscale AFTER download, for both engines
 
-Requested by Kehinde 2026-10-01. When a batch stops on consecutive failures
-(or the session breaks), the images Flow DID generate are often still in the
-project's gallery - they were just never downloaded. Re-running the prompt
-regenerates them (burning the account); instead a MANUAL button should pull
-the existing results first.
+Requested by Kehinde: stop upscaling inside the download loop. Download the
+stills at native size, then upscale them locally in ONE pass once the batch
+has finished - the same pass whichever engine produced them.
 
-Scope:
-- A button under the IMAGES stage only (`studio_detail.html`), MANUAL trigger
-  (never automatic). POST `/studio/<pid>/images/recover` -> a job ->
-  `autorun.recover_images(cfg, pid)` -> dispatch by engine:
-  - `flowbatch`       -> `studio.run_flowbatch_recover(cfg, pid)`
-  - `renderly + flow` -> the Flow Driver's recover endpoint
-  - `renderly + api`  -> the Renderly API has no gallery; report "n/a"
-- Adopt ONLY files missing locally, match gallery tiles to shotlist items,
-  report `{recovered, still_missing}` -> a production step + the page. It
-  NEVER generates anything.
+- Setting: **Flow native upscale level** (`flow_native_upscale`: off / 1k /
+  2k / 4k, default off). It only appears (Settings -> Video render, and the
+  channel form) when Render resolution = "Flow native"; a channel value
+  overrides the global one. The old global `upscale_after_download` switch was
+  removed. Other render resolutions still upscale inline as before.
+- When the level is not "off", `autorun._run_images` drives the engine with
+  upscaling OFF (FlowBatch: `set_flowbatch_tier(..., 0)`; Flow Driver:
+  `flow_upscale=0` + `local_upscale=True`) so the native masters land, then
+  calls `studio.upscale_images_locally(..., tier=<level>)` once.
+- `studio.upscale_images_locally` uses ONLY FlowBatch's local upscaler for
+  BOTH engines - `node src/cli.js upscale <images dir> --tier <t> --in-place`
+  (Real-ESRGAN ncnn-Vulkan, Lanczos CPU fallback, warned in the log). There
+  is NO Renderly-backend upscaling; without `studio.flowbatch_repo` it
+  raises a clear error. `--in-place` skips files already at the tier, so a
+  re-run can never upscale an upscale.
+- Manual: the IMAGES stage's **"Upscale images (local)"** button ->
+  `POST /studio/<pid>/images/upscale` -> `autorun.upscale_images()` (records
+  an images step that is `done` only when no shotlist image is missing, so a
+  partial upscale cannot make the stage look complete). Safe to re-run at any
+  time; ideal for re-tiering or retrying.
+- Gallery **recovery** follows the same rule: recovered masters are adopted
+  first and the single local pass runs afterwards.
+- Side note: such a run leaves FlowBatch's own config tier at `off` (WR sets
+  the tier on every run anyway), and existing files already at the tier are
+  skipped, so the 189 stills on production 20 need no work.
 
-Matching a gallery tile to a shotlist item:
-- FlowBatch: a generated tile carries the redo ("Reuse prompt") control,
-  uploads never do (`driver.js:1116-1170`) - that is how to enumerate real
-  results. Read each tile's prompt through that redo control (it repopulates
-  the composer with the tile's prompt), normalise, and match it to the item's
-  prompt. Fall back to submission ORDER only when it is unambiguous.
-- Renderly driver (`extension-v2`): same idea with its own tile/redo handling;
-  add `/api/recover` (open project, list generated tiles, match by prompt,
-  download the missing into `images\`).
+## DONE (2026-10-01) — manual "Recover from Flow gallery" (images stage, both engines)
 
-Caveats: reading a tile's prompt via the redo control edits the composer - do
-it one tile at a time and never leave a pending generation; prompt matching
-needs normalisation + a duplicate-prompt fallback; needs real-Flow-UI
-iteration (calibrate the tile/prompt selectors).
+Requested by Kehinde 2026-10-01: when a batch stops on consecutive failures,
+the images Flow DID generate are often still in the project's gallery - never
+downloaded. Re-running the prompts regenerates them (burning the account);
+the manual button pulls the existing results first.
+
+Implemented across all three checkouts:
+- Button under the IMAGES stage (`studio_detail.html`, next to "Render
+  images") -> POST `/studio/<pid>/images/recover` (webapp.py, manual-only -
+  it never enters the pipeline plan) -> `autorun.recover_images(cfg, pid)` ->
+  dispatch by engine:
+  - `flowbatch`       -> `studio.run_flowbatch_recover` ->
+    `node src/cli.js recover --job <flowbatch.json> --output <flow_images>
+    --report <flowbatch_recover.json> --project-url <url>`; adoption still
+    goes through `_adopt_flowbatch_outputs` (which also sweeps flow_images
+    files a crashed run had downloaded but never adopted).
+  - `renderly + flow` -> `studio.run_flowdriver_recover` -> the Flow Driver's
+    new `POST /api/recover` (extension-v2): body {shotlistPath, reportPath,
+    outPath, flowProject, only}, poll /api/status, results land directly in
+    images\; report at flow_driver_recover.json.
+  - `renderly + api`  -> refused with "no gallery to recover from" (the API
+    stores its results itself).
+- Both runners adopt ONLY files missing locally, match gallery tiles to
+  shotlist items by prompt, report {recovered, still_missing}, record one
+  "images" step (method "manual"; status done ONLY when nothing is still
+  missing, so a partial recovery never flips the stage complete), and NEVER
+  generate. A stored Flow project URL is required: reading Flow's MOST
+  RECENT gallery could adopt another production's images under these names.
+- FlowBatch (commands/recover.js): enumerates finished result tiles via the
+  existing snapshotAssets facts (canRedo + finished host + not uploaded +
+  not failed) across a new `driver.scanAssets()` virtual-scroller sweep;
+  matches tile->item by label prefix (>=20 chars, never when ambiguous),
+  then by reading each tile's own "Reuse prompt" redo control
+  (`driver.readTilePrompt` - composer read + cleared again after EVERY tile,
+  generateButton never touched), then submission order ONLY when the counts
+  agree and all prompts are distinct; downloads via the same CDN-first
+  3-attempt path, upscales per config, writes the item under its exact job
+  `file` name, and marks its RunState item done. `recover --dry-run` plans
+  without a browser.
+- Renderly driver (flow.js --recover / server.js /api/recover): the same
+  three-pass matcher over collectTiles' new `title` field (the tile
+  container's aria-label, the prompt-derived name), `H.readTilePrompt` +
+  `clearComposerAfterRead`, saves under the exact shotlist card name, and
+  writes an atomic schema-1 report. The import/upscale pipeline is not
+  touched - recovered files are Flow masters.
+
+LIVE-CALIBRATED 2026-10-01 (production 20, FlowBatch engine): the first live
+run correctly did nothing - a RELOADED Flow project serves every gallery tile
+through the signed same-origin proxy `https://flow.google.com/asb/...=s1600-rw`
+(not the `flow-content.google/image/...` CDN URL a just-rendered tile has) and
+names tiles with Flow captions ("Woman auctioning vintage camera"), not the
+prompt. FlowBatch's `listGeneratedResults` now accepts both URL shapes for
+recovery (generation's new-result detection still requires the CDN URL), and a
+live probe confirmed the redo control restores the composer to exactly
+`item.prompt` (loadJob folds `job.style` in) - so prompt-read matching is
+correct for reloaded galleries and captions are never relied on. The gallery
+scroll sweep is still the slow part (~2-3 min on a large project) and is
+verified only by the probe's shallow scan; check a full run's tile count
+before trusting an "order" pairing.
+
+Tests: WR tests/test_recover.py; FlowBatch test/commands/recover.test.js +
+driver tests; Renderly tests/js/recover.test.js.
 
 ## DONE — refs now honor the image engine (fixed 2026-09-29)
 

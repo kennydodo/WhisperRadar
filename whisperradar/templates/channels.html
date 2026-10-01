@@ -224,10 +224,19 @@
                 </select>
               </label>
               <label>render resolution
-                <select name="render_resolution">
+                <select name="render_resolution" data-global="{{ global_render_resolution }}">
                   <option value="">inherit</option>
                   {% for r in render_resolutions %}
                   <option value="{{ r }}" {{ 'selected' if ch['render_resolution'] == r else '' }}>{{ render_resolution_labels[r] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="flow-native-level" style="display:none">upscale level (Flow native)
+                <select name="flow_native_upscale"
+                        title="Flow native downloads the stills at 1376x768; one local Real-ESRGAN pass then upscales them to this level (both engines, no Renderly backend)">
+                  <option value="">inherit</option>
+                  {% for t in native_tiers %}
+                  <option value="{{ t }}" {{ 'selected' if ch['flow_native_upscale'] == t else '' }}>{{ native_tier_labels[t] }}</option>
                   {% endfor %}
                 </select>
               </label>
@@ -548,6 +557,24 @@
           + ') - the saved voice ids are kept.';
         status.style.color = 'var(--amber)';
       });
+  })();
+</script>
+<script>
+  // The Flow native upscale level only means something when the channel's
+  // resolved Render resolution (its own pick, else the global one) is Flow native.
+  (function () {
+    function sync(form) {
+      var sel = form.querySelector('select[name="render_resolution"]');
+      var box = form.querySelector('.flow-native-level');
+      if (!sel || !box) return;
+      var res = sel.value || sel.getAttribute('data-global') || '';
+      box.style.display = (res === 'flow-native') ? '' : 'none';
+    }
+    document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
+      sync(form);
+      var sel = form.querySelector('select[name="render_resolution"]');
+      if (sel) sel.addEventListener('change', function () { sync(form); });
+    });
   })();
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>

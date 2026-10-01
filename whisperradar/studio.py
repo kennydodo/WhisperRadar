@@ -767,6 +767,21 @@ def flow_driver_ready(cfg) -> bool:
         and (d / "node_modules" / "playwright").exists()
 
 
+def shotlist_missing_images(pid_dir: Path) -> list[str]:
+    """Shotlist image file names that are still absent from images\\ (exact
+    file-name comparison, the same rule missing_flow_images uses)."""
+    shotlist_path = pid_dir / "shotlist.json"
+    if not shotlist_path.exists():
+        raise RuntimeError("Generate the shotlist first")
+    data = json.loads(shotlist_path.read_text(encoding="utf-8"))
+    img_dir = pid_dir / "images"
+    img_dir.mkdir(exist_ok=True)
+    existing = {p.name for p in img_dir.iterdir() if p.is_file()}
+    return [i["file"] for i in data.get("images", [])
+            if isinstance(i, dict) and i.get("file") and i.get("prompt")
+            and i["file"] not in existing]
+
+
 def missing_flow_images(cfg, pid_dir: Path) -> int:
     """How many shotlist images are still missing from images\\.
 
@@ -775,16 +790,7 @@ def missing_flow_images(cfg, pid_dir: Path) -> int:
     here - this used to also write a `flow_batch.json` that nothing consumed
     (flow.js only ever saw shotlist.json). flow.js has no skip-existing, so the
     caller needs the count to know how much is left."""
-    shotlist_path = pid_dir / "shotlist.json"
-    if not shotlist_path.exists():
-        raise RuntimeError("Generate the shotlist first")
-    data = json.loads(shotlist_path.read_text(encoding="utf-8"))
-    img_dir = pid_dir / "images"
-    img_dir.mkdir(exist_ok=True)
-    existing = {p.name for p in img_dir.iterdir() if p.is_file()}
-    todo = [i for i in data.get("images", [])
-            if isinstance(i, dict) and i.get("file") and i.get("prompt")
-            and i["file"] not in existing]
+    todo = shotlist_missing_images(pid_dir)
     if not todo:
         raise RuntimeError(
             "All shotlist images already exist - nothing to render")
@@ -1320,6 +1326,92 @@ def set_flowbatch_tier(cfg, upscale: int) -> str | None:
     return tier
 
 
+def upscale_images_locally(cfg, pid_dir: Path, tier=None,
+                           log=None, cancel=None) -> dict:
+    """Upscale a production's rendered stills IN PLACE with the local
+    Real-ESRGAN engine.
+
+    This is the engine-independent half of "download Flow native first, then
+    upscale when the downloads finish": the images stage runs either engine
+    at native size and calls this once at the end, and the IMAGES stage's
+    manual button can run it again at any time. It never talks to Flow and
+    never re-renders anything.
+
+    The upscaler is FlowBatch's (Real-ESRGAN ncnn-Vulkan; a Lanczos CPU
+    fallback only when no GPU can run it - that is logged and counted as
+    `lanczos`). The Renderly backend's upscaler is deliberately NOT used.
+    Idempotent: FlowBatch's --in-place pass skips files already at the tier,
+    so re-running it can never upscale an upscale.
+
+    `tier` is an int tier (0-4, like default_upscale) or a FlowBatch tier
+    name ("off" | "1k" | "2k" | "4k"); None = the configured default.
+
+    Returns {engine, tier, total, upscaled, skipped, failed} (+ `lanczos`
+    when some files used the CPU fallback)."""
+    log = log or (lambda m: None)
+    if tier is None:
+        tier = cfg.renderly_upscale
+    tier_name = (str(tier).strip().lower() if isinstance(tier, str)
+                 else FLOWBATCH_TIERS.get(int(tier or 0), "off"))
+    if tier_name not in ("1k", "2k", "4k"):
+        tier_name = "off"
+    result = {"engine": "off", "tier": tier_name, "total": 0,
+              "upscaled": 0, "skipped": 0, "failed": 0}
+    if tier_name == "off":
+        _safe_log(log, "Local upscale: tier is off - nothing to do")
+        return result
+    img_dir = pid_dir / "images"
+    files = sorted(img_dir.glob("*.png")) if img_dir.exists() else []
+    result["total"] = len(files)
+    if not files:
+        _safe_log(log, "Local upscale: no PNG images to upscale yet")
+        return result
+
+    if not flowbatch_ready(cfg):
+        raise RuntimeError(
+            "No local upscaler available: the local Real-ESRGAN upscaler is "
+            "FlowBatch's - set studio.flowbatch_repo in config.yaml to the "
+            "FlowBatch checkout (run `npm install` there; the engine lives in "
+            "its tools\\realesrgan folder)")
+    result["engine"] = "flowbatch"
+    repo = flowbatch_dir(cfg)
+    cmd = _flowbatch_cmd(["upscale", str(img_dir), "--tier", tier_name,
+                          "--in-place", "--no-color"])
+    _safe_log(log, f"Local upscale: {len(files)} image(s) to {tier_name} "
+                   f"in place with the local Real-ESRGAN upscaler - no Flow, "
+                   f"nothing downloaded or re-rendered")
+    _safe_log(log, "$ " + " ".join(cmd))
+    stats = {"upscaled": 0, "skipped": 0, "lanczos": 0}
+
+    def _count(line: str) -> None:
+        if ": skipped (" in line:
+            stats["skipped"] += 1
+        elif " (in place) " in line:
+            stats["upscaled"] += 1
+            if "Lanczos" in line:
+                stats["lanczos"] += 1
+
+    code, tail = _flowbatch_stream(cmd, repo, log, cancel, on_line=_count)
+    if code != 0:
+        raise RuntimeError(
+            "Local upscale failed (exit " + str(code) + "): "
+            + " | ".join(tail[-4:])[:400])
+    result["upscaled"] = stats["upscaled"]
+    result["skipped"] = stats["skipped"]
+    result["failed"] = max(
+        0, len(files) - stats["upscaled"] - stats["skipped"])
+    _safe_log(log, f"Local upscale: {stats['upscaled']} upscaled, "
+                   f"{stats['skipped']} already at {tier_name}, "
+                   f"{result['failed']} failed")
+    if stats["lanczos"]:
+        result["lanczos"] = stats["lanczos"]
+        _safe_log(log, f"Local upscale: WARNING - {stats['lanczos']} image(s) "
+                       f"used the CPU Lanczos fallback, not Real-ESRGAN (no "
+                       f"usable GPU/Vulkan device). Check `node src/cli.js "
+                       f"upscale` in FlowBatch for the detected device.")
+    return result
+
+
 def _adopt_flowbatch_outputs(pdir: Path, names: list[str],
                                  tier: str) -> list[str]:
     """Copy FlowBatch's results into images\\ under the shotlist's own
@@ -1381,6 +1473,8 @@ def _safe_log(log, message) -> None:
 
 FLOW_PREPARE_REPORT = "flow_prepare.json"
 FLOW_DRIVER_PREPARE_REPORT = "flow_driver_prepare.json"
+FLOW_RECOVER_REPORT = "flowbatch_recover.json"
+FLOW_DRIVER_RECOVER_REPORT = "flow_driver_recover.json"
 
 
 def _read_json_retry(path: Path, attempts: int = 3, delay: float = 1.5):
@@ -1680,6 +1774,109 @@ def image_batch_limits(cfg, pid: int) -> tuple[int, bool, int, int, int]:
         return 0, False, 5, 600, 300
 
 
+def _flowbatch_stream(cmd: list[str], repo, log, cancel,
+                      on_line=None) -> tuple[int, list[str]]:
+    """Run a FlowBatch CLI call, streaming its stdout into the job log.
+    Returns (exit code, the last output lines); `cancel` kills the process
+    tree - FlowBatch spawns its own Chrome, so a plain proc.kill() would
+    orphan the browser. `on_line`, when given, sees every line (the tail only
+    keeps the last 40, which is not enough to count a long upscale pass)."""
+    proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace")
+    tail: list[str] = []
+    try:
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            tail.append(line)
+            del tail[:-40]
+            _safe_log(log, line)
+            if on_line is not None:
+                try:
+                    on_line(line)
+                except Exception:  # noqa: BLE001 - never break the run
+                    log.debug("on_line callback failed", exc_info=True)
+            if cancel is not None and cancel():
+                raise RuntimeError("stopped by user")
+    finally:
+        if proc.poll() is None:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                               capture_output=True)
+            else:
+                proc.kill()
+        proc.wait(timeout=30)
+    return proc.returncode or 0, tail
+
+
+def run_flowbatch_recover(cfg, pid_dir: Path, pid: int,
+                          upscale: int | None = None, log=None,
+                          cancel=None,
+                          project_url: str | None = None) -> dict:
+    """Adopt images a stopped FlowBatch left in the Flow project's gallery.
+
+    Manual only (the IMAGES stage "Recover from Flow gallery" button): Flow
+    already generated them, so re-running the prompts would pay twice for the
+    same stills. Builds the same missing-only job `generate` uses, asks the
+    FlowBatch CLI to match gallery result tiles to those items and download
+    what is missing into flow_images\\, then adopts it (which also sweeps up
+    files a crashed run had downloaded but never adopted). Returns
+    {recovered, still_missing} as shotlist file names. It never generates."""
+    log = log or (lambda m: None)
+    if not flowbatch_ready(cfg):
+        raise RuntimeError("Set studio.flowbatch_repo in config.yaml to "
+                           "your FlowBatch checkout (and run npm install)")
+    names = shotlist_missing_images(pid_dir)
+    if not names:
+        return {"recovered": [], "still_missing": []}
+    url, source = flow_project_url_for(cfg, pid, project_url)
+    if not url:
+        # Without the production's own project, recover would read Flow's
+        # most recent gallery - another production's images could match a
+        # reused prompt and be adopted under the wrong name.
+        raise RuntimeError("Recovery needs this production's Flow project "
+                           "URL - none is stored. Run the images stage once "
+                           "(prepare records it), or set it on the channel.")
+    repo = flowbatch_dir(cfg)
+    job_path, _ = prepare_flowbatch_job(cfg, pid_dir, pid, project_url)
+    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
+                                   else upscale)
+    report_path = pid_dir / FLOW_RECOVER_REPORT
+    try:
+        report_path.unlink()
+    except OSError:
+        pass
+    cmd = _flowbatch_cmd(["recover", "--job", str(job_path),
+                          "--output", str(pid_dir / "flow_images"),
+                          "--report", str(report_path), "--no-color",
+                          "--project-url", url])
+    _safe_log(log, f"FlowBatch recover: {len(names)} missing image(s), Flow "
+                   f"project from {source}, upscale tier {tier} - nothing "
+                   f"will be generated")
+    _safe_log(log, "$ " + " ".join(cmd))
+    code, tail = _flowbatch_stream(cmd, repo, log, cancel)
+    if code != 0:
+        text = " ".join(tail).lower()
+        if "unknown command" in text:
+            raise RuntimeError(
+                "This FlowBatch checkout has no 'recover' command yet - "
+                "update FlowBatch, then try again")
+        raise RuntimeError("FlowBatch recover failed (exit " + str(code)
+                           + "): " + " | ".join(tail[-4:])[:400])
+    report = _read_json_retry(report_path)
+    if isinstance(report, dict) and "stillMissing" in report:
+        _safe_log(log, f"FlowBatch recover report: "
+                       f"{len(report.get('recovered') or [])} matched in the "
+                       f"gallery, {len(report.get('stillMissing') or [])} "
+                       f"unmatched")
+    adopted = _adopt_flowbatch_outputs(pid_dir, names, tier or "off")
+    still_missing = [n for n in names
+                     if not (pid_dir / "images" / n).exists()]
+    return {"recovered": adopted, "still_missing": still_missing}
+
+
 def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
                                cancel=None, project_url: str | None = None) -> int:
@@ -1764,29 +1961,8 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
         _safe_log(log, f"FlowBatch: {len(names)} image(s), "
                        f"upscale tier {tier}")
         _safe_log(log, "$ " + " ".join(cmd))
-    proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True,
-                            encoding="utf-8", errors="replace")
-    tail: list[str] = []
-    try:
-        for line in proc.stdout:
-            line = line.rstrip()
-            if not line:
-                continue
-            tail.append(line)
-            del tail[:-40]
-            _safe_log(log, line)
-            if cancel is not None and cancel():
-                raise RuntimeError("stopped by user")
-    finally:
-        if proc.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                               capture_output=True)
-            else:
-                proc.kill()
-        proc.wait(timeout=30)
-    if proc.returncode != 0:
+    proc_code, tail = _flowbatch_stream(cmd, repo, log, cancel)
+    if proc_code != 0:
         text = " ".join(tail).lower()
         if "failed in a row" in text:
             # FlowBatch's consecutive-failure guard stopped the batch: a broken
@@ -1818,9 +1994,9 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
                 "Playwright's browser is not installed - run "
                 f"`npx playwright install chromium` in {repo}, or configure "
                 "FlowBatch to use your system Chrome. (exit "
-                f"{proc.returncode})")
+                f"{proc_code})")
         raise RuntimeError(
-            f"FlowBatch failed (exit {proc.returncode}): "
+            f"FlowBatch failed (exit {proc_code}): "
             + " | ".join(tail[-4:])[:400]
             + f" - state is kept in its state\\wr-{pid}.json so a re-run "
               f"resumes")
@@ -2157,6 +2333,99 @@ def flow_stop(cfg) -> bool:
         return bool(result.get("stopped"))
     except Exception:
         return False
+
+
+def run_flowdriver_recover(cfg, pid_dir: Path, pid: int,
+                           log=None, cancel=None) -> dict:
+    """Adopt images a stopped Flow Driver batch left in the Flow project's
+    gallery, through the driver's /api/recover endpoint.
+
+    Manual only (the IMAGES stage "Recover from Flow gallery" button): the
+    driver opens the project, matches its finished result tiles to the
+    shotlist's still-missing cards by prompt, and downloads ONLY what is
+    missing straight into images\\. It never generates, uploads or imports.
+    Returns {recovered, still_missing} as shotlist file names."""
+    log = log or (lambda m: None)
+    d = flow_driver_dir(cfg)
+    if not d or not (d / "flow.js").exists():
+        raise RuntimeError(
+            "Set studio.flow_driver_dir in config.yaml to the Renderly "
+            "extension-v2 folder")
+    if not (d / "node_modules" / "playwright").exists():
+        raise RuntimeError(
+            f"Playwright not installed - run: cd {d} && npm install")
+    img_dir = pid_dir / "images"
+    img_dir.mkdir(exist_ok=True)
+    names = shotlist_missing_images(pid_dir)
+    if not names:
+        return {"recovered": [], "still_missing": []}
+    status = flow_service_status(cfg)
+    if status is None:
+        raise RuntimeError("Flow Driver service is not reachable on "
+                           + flow_service_url(cfg))
+    if status.get("running"):
+        raise RuntimeError("A Flow batch is already running - stop it "
+                           "before recovering from the gallery")
+    flow_project, source = flow_project_url_for(cfg, pid)
+    if not flow_project:
+        raise RuntimeError(
+            "Recovery needs this production's Flow project URL - none is "
+            "stored. Run the images stage once (prepare records it), or set "
+            "it on the channel.")
+    report_path = pid_dir / FLOW_DRIVER_RECOVER_REPORT
+    try:
+        report_path.unlink()
+    except OSError:
+        pass
+    body = {"shotlistPath": str(pid_dir / "shotlist.json"),
+            "reportPath": str(report_path),
+            "outPath": str(img_dir),
+            "flowProject": flow_project,
+            "only": ",".join(names)}
+    _safe_log(log, f"Flow Driver recover: adopting {len(names)} missing "
+                   f"image(s) from the project gallery ({source}) - nothing "
+                   f"will be generated")
+    try:
+        _driver_api(cfg, "/api/recover", method="POST", body=body,
+                    timeout=20)
+    except Exception as exc:  # noqa: BLE001 - surface the driver's reason
+        raise RuntimeError(f"Flow Driver rejected the recovery: {exc}")
+    seen = 0
+    deadline = time.monotonic() + 3600
+    while time.monotonic() < deadline:
+        if cancel is not None and cancel():
+            flow_stop(cfg)
+            raise BatchCancelled("stop requested during gallery recovery")
+        time.sleep(2)
+        st = flow_service_status(cfg, timeout=10)
+        if st is None:
+            continue
+        lines = st.get("log") or []
+        if len(lines) < seen:  # service log window wrapped
+            seen = 0
+        while seen < len(lines):
+            _safe_log(log, lines[seen])
+            seen += 1
+        if not st.get("running"):
+            break
+    else:
+        flow_stop(cfg)
+        raise RuntimeError("Flow Driver recovery timed out after 1h")
+    exit_code = (flow_service_status(cfg) or {}).get("exitCode")
+    report = _read_json_retry(report_path)
+    # The driver writes under the card stem; compare the same way the merge
+    # gate does (case-folded stem), so a .jpg saved for a .png name counts.
+    existing = {p.stem.lower() for p in img_dir.iterdir() if p.is_file()}
+    still_missing = [n for n in names if Path(n).stem.lower() not in existing]
+    recovered = [n for n in names if n not in still_missing]
+    if recovered:
+        _safe_log(log, f"Flow Driver recover: adopted "
+                       f"{len(recovered)} image(s) from the gallery")
+    if exit_code not in (0, None):
+        raise RuntimeError(
+            f"Flow Driver recovery failed (exit {exit_code}) - see the log. "
+            f"{len(recovered)} image(s) were still adopted.")
+    return {"recovered": recovered, "still_missing": still_missing}
 
 
 def sanitize_shotlist(pid_dir: Path) -> int:

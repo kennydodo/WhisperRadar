@@ -68,5 +68,53 @@ class ChannelJudgeSaveTests(unittest.TestCase):
         self.assertIsNone(row["script_judge_provider"])
 
 
+class FlowNativeLevelSaveTests(unittest.TestCase):
+    """The Flow native upscale level: channel form save + resolution."""
+
+    setUp = ChannelJudgeSaveTests.setUp
+
+    def _row(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        row = db.get_own_channel(conn, self.oc)
+        conn.close()
+        return row
+
+    def _post(self, value):
+        data = {"id": str(self.oc), "name": "Ch"}
+        if value is not None:
+            data["flow_native_upscale"] = value
+        self.assertIn(self.client.post("/my-channels/edit", data=data).status_code,
+                      (302, 303))
+
+    def test_level_saved_and_inherit_or_invalid_clears(self):
+        self._post("4k")
+        self.assertEqual(self._row()["flow_native_upscale"], "4k")
+        self._post("")
+        self.assertIsNone(self._row()["flow_native_upscale"])
+        self._post("2k")
+        self._post("bogus")
+        self.assertIsNone(self._row()["flow_native_upscale"])
+
+    def test_channel_level_beats_global(self):
+        from whisperradar import settings
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.set_setting(conn, "flow_native_upscale", "1k")
+        pid = db.create_production(conn, "P", "general", None, None)
+        db.update_production(conn, pid, own_channel_id=self.oc)
+        conn.commit()
+        prod = db.get_production(conn, pid)
+        self.assertEqual(settings.for_production(conn, prod)["flow_native_upscale"], "1k")
+        db.update_own_channel(conn, self.oc, flow_native_upscale="4k")
+        conn.commit()
+        self.assertEqual(settings.for_production(conn, prod)["flow_native_upscale"], "4k")
+        conn.close()
+
+    def test_pages_render_the_picker(self):
+        self.assertIn(b"flow_native_upscale", self.client.get("/my-channels").data)
+        self.assertIn(b"flow_native_upscale", self.client.get("/settings").data)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -114,14 +114,48 @@ def style_bible(cfg, conn, prod, pdir):
     return style_guide, style_src, bible_text, bible_src
 
 
+def is_flow_native(eff) -> bool:
+    """True when the production's render resolution is 'Flow native'."""
+    return str(eff.get("render_resolution") or "").lower() == "flow-native"
+
+
 def _upscale_for(eff) -> int:
-    """The upscale to use for a channel/production. 'Flow native' render
-    resolution means NONE (0): the images are already at Flow's master size
-    (1376x768), so upscaling them would defeat the point. Otherwise the
-    channel/global upscale setting."""
-    if str(eff.get("render_resolution") or "").lower() == "flow-native":
+    """The upscale the ENGINE applies while downloading. 'Flow native' render
+    resolution means NONE (0): the stills are downloaded at Flow's master
+    size (1376x768) - any upscaling happens afterwards, as one local pass
+    (post_download_tier). Otherwise the channel/global upscale setting."""
+    if is_flow_native(eff):
         return 0
     return eff["upscale"]
+
+
+def post_download_tier(eff) -> str:
+    """The FlowBatch tier ("1k" | "2k" | "4k") of the ONE local Real-ESRGAN
+    pass that runs after the stills are downloaded, or "off".
+
+    Only a Flow native production has one: it is the level picked next to
+    Render resolution (channel, else Settings). Every other resolution keeps
+    upscaling inside the engine, exactly as before."""
+    if not is_flow_native(eff):
+        return "off"
+    tier = str(eff.get("flow_native_upscale") or "off").strip().lower()
+    return tier if tier in ("1k", "2k", "4k") else "off"
+
+
+def manual_upscale_tier(eff) -> str:
+    """The tier the IMAGES stage's manual "Upscale images (local)" button
+    uses: the Flow native level, else the channel's upscale tier."""
+    if is_flow_native(eff):
+        return post_download_tier(eff)
+    return studio.FLOWBATCH_TIERS.get(int(eff.get("upscale") or 0), "off")
+
+
+def _upscale_text(eff) -> str:
+    """How the images step is described in a plan/step detail."""
+    post = post_download_tier(eff)
+    if post != "off":
+        return f"native size, then local Real-ESRGAN {post}"
+    return f"upscale {_upscale_for(eff)}"
 
 
 def _stage_provider(cfg, pid: int, stage: str,
@@ -1344,6 +1378,18 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         mode = "api"
     if log is None:
         log = lambda m: None
+    # Flow native: both engines download the stills at Flow's own size and,
+    # when a level is picked next to Render resolution, ONE local Real-ESRGAN
+    # pass upscales them once the batch has finished (below) - so the download
+    # phase is never stalled by upscaling, the Renderly backend upscaler is
+    # never involved, and the pass can be re-run from the images stage.
+    post_tier = post_download_tier(eff)
+    upscale_after_download = post_tier != "off"
+    if is_flow_native(eff) and flow_upscale is None:
+        flow_upscale = 0       # never fall back to the engine's own tier
+    if upscale_after_download:
+        flow_upscale = 0
+        flow_local_upscale = True   # the Flow Driver never imports to Renderly
     conn = _connect(cfg)
     try:
         db.update_production(conn, pid, render_mode=mode)
@@ -1446,13 +1492,155 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         # stop what we started, if the user opted in; never a service that was
         # already running
         services.MANAGER.release(cfg, managed, log_fn=log)
+    upscale_note = ""
+    if upscale_after_download:
+        try:
+            up = studio.upscale_images_locally(cfg, pdir, tier=post_tier,
+                                               log=log, cancel=cancel)
+            upscale_note = (f"; local upscale to {up['tier']}: "
+                            f"{up.get('upscaled', 0)} upscaled, "
+                            f"{up.get('skipped', 0)} already at tier"
+                            + (f", {up['lanczos']} via CPU Lanczos fallback"
+                               if up.get("lanczos") else ""))
+        except Exception as exc:  # noqa: BLE001 - never lose the downloads
+            log(f"[auto-run] images: local upscale failed - {exc}")
+            upscale_note = f"; local upscale FAILED ({exc})"
     conn = _connect(cfg)
     try:
         db.add_step(conn, pid, "images", "auto",
                     detail=f"{count} image(s) via {source}, "
-                           f"took {format_duration(time.monotonic() - t0)}")
+                           f"took {format_duration(time.monotonic() - t0)}"
+                           + upscale_note)
     finally:
         conn.close()
+
+
+def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
+    """Manual "Recover from Flow gallery": adopt the images a stopped batch
+    already generated into the Flow project's gallery instead of paying to
+    regenerate them.
+
+    Never automatic and never part of the pipeline (_RUNNERS) - only the
+    IMAGES stage button triggers it, and it NEVER generates anything.
+    Dispatch by the SAME engine/mode the images stage would use
+    (_stage_params' resolution): flowbatch drives the FlowBatch CLI's
+    recover command; renderly+flow drives the Flow Driver's /api/recover;
+    renderly+api is refused (the Renderly API stores its results itself,
+    there is no gallery to recover from). A partial adoption is honest in
+    the step: done only when nothing is left missing. Returns
+    {recovered, still_missing} as shotlist file names."""
+    t0 = time.monotonic()
+    log = log or (lambda m: None)
+    pdir = studio.prepare_project_folder(cfg, pid)
+    if not (pdir / "shotlist.json").exists():
+        raise _Paused("shotlist.json is missing - plan or save a shotlist "
+                      "first")
+    eff = _effective(cfg, pid)
+    engine = eff["engine"]
+    mode = _default_render_mode(cfg, _get_prod(cfg, pid))
+    if mode not in ("api", "flow"):
+        mode = "api"
+    if engine == "renderly" and mode == "api":
+        raise RuntimeError("The Renderly API has no gallery to recover from "
+                           "- its results live in Renderly itself. Switch the "
+                           "image source to Flow, or the engine to "
+                           "FlowBatch.")
+    conn = _connect(cfg)
+    try:
+        managed = bool(settings.load(conn).get("services_managed"))
+    finally:
+        conn.close()
+    # Flow native: recovery adopts the gallery's masters and the same single
+    # local pass runs at the end, exactly like the images stage - so the two
+    # download paths behave identically.
+    post_tier = post_download_tier(eff)
+    download_then_upscale = post_tier != "off"
+    try:
+        services.MANAGER.ensure(cfg, services.services_for(engine, mode),
+                                log_fn=log)
+        if engine == "flowbatch":
+            result = studio.run_flowbatch_recover(
+                cfg, pdir, pid,
+                upscale=_upscale_for(eff), log=log, cancel=cancel)
+            source = "FlowBatch"
+        else:
+            result = studio.run_flowdriver_recover(cfg, pdir, pid, log=log,
+                                                   cancel=cancel)
+            source = "Flow Driver"
+    finally:
+        services.MANAGER.release(cfg, managed, log_fn=log)
+    upscale_note = ""
+    if download_then_upscale:
+        try:
+            up = studio.upscale_images_locally(cfg, pdir, tier=post_tier,
+                                               log=log, cancel=cancel)
+            upscale_note = (f"; local upscale to {up['tier']}: "
+                            f"{up.get('upscaled', 0)} upscaled, "
+                            f"{up.get('skipped', 0)} already at tier"
+                            + (f", {up['lanczos']} via CPU Lanczos fallback"
+                               if up.get("lanczos") else ""))
+        except Exception as exc:  # noqa: BLE001 - the adoption still stands
+            log(f"[auto-run] images: local upscale failed - {exc}")
+            upscale_note = f"; local upscale FAILED ({exc})"
+    recovered = result["recovered"]
+    still_missing = result["still_missing"]
+    detail = (f"gallery recovery via {source}: {len(recovered)} image(s) "
+              f"adopted"
+              + (f" ({', '.join(recovered[:6])}"
+                 + (f" +{len(recovered) - 6} more"
+                    if len(recovered) > 6 else "") + ")"
+                 if recovered else "")
+              + f", {len(still_missing)} still missing"
+              + f", took {format_duration(time.monotonic() - t0)}"
+              + upscale_note)
+    conn = _connect(cfg)
+    try:
+        db.add_step(conn, pid, "images", "manual", detail=detail,
+                    status="done" if not still_missing else "failed")
+    finally:
+        conn.close()
+    return result
+
+
+def upscale_images(cfg, pid: int, log=None, cancel=None) -> dict:
+    """Manual IMAGES-stage action: upscale the stills already in images\\
+    in place with the LOCAL Real-ESRGAN engine - the same pass a Flow native
+    production runs at the end of a batch.
+
+    No Flow, no download, no re-render, and safe to re-run (files already at
+    the tier are skipped). Records an images step, done only when the
+    shotlist has no missing images, so a partial upscale can never make the
+    stage look complete."""
+    t0 = time.monotonic()
+    pdir = studio.prepare_project_folder(cfg, pid)
+    if not (pdir / "shotlist.json").exists():
+        raise _Paused("shotlist.json is missing - plan or save a shotlist "
+                      "first")
+    eff = _effective(cfg, pid)
+    tier = manual_upscale_tier(eff)
+    if tier == "off":
+        raise RuntimeError(
+            "No upscale level is set - pick one under Render resolution: "
+            "Flow native (My Channels or Settings), or set an upscale tier")
+    result = studio.upscale_images_locally(cfg, pdir, tier=tier, log=log,
+                                           cancel=cancel)
+    try:
+        missing = len(studio.shotlist_missing_images(pdir))
+    except RuntimeError:
+        missing = 0
+    detail = (f"local upscale to {result['tier']} via {result['engine']}: "
+              f"{result.get('upscaled', 0)} upscaled, "
+              f"{result.get('skipped', 0)} already at tier, "
+              f"{result.get('failed', 0)} failed"
+              + (f", {missing} image(s) still missing" if missing else "")
+              + f", took {format_duration(time.monotonic() - t0)}")
+    conn = _connect(cfg)
+    try:
+        db.add_step(conn, pid, "images", "manual", detail=detail,
+                    status="done" if not missing else "failed")
+    finally:
+        conn.close()
+    return result
 
 
 def _run_merge(cfg, pid: int, mode: str | None = None) -> None:
@@ -1661,19 +1849,19 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
             refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
                     if (pdir / "refs").exists() else 0)
             detail = (f"{len(missing)} missing image(s) via FlowBatch "
-                      f"(upscale {_upscale_for(eff)}"
+                      f"({_upscale_text(eff)}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
         elif mode == "flow":
             refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
                     if (pdir / "refs").exists() else 0)
             detail = (f"{len(missing)} missing image(s) via Flow Driver "
                       f"(channel {eff['renderly_channel_name']}, default "
-                      f"project, upscale {_upscale_for(eff)}"
+                      f"project, {_upscale_text(eff)}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
         else:
             detail = (f"{len(missing)} missing image(s) via Renderly API "
-                      f"(channel {eff['renderly_channel_name']}, upscale "
-                      f"{_upscale_for(eff)})")
+                      f"(channel {eff['renderly_channel_name']}, "
+                      f"{_upscale_text(eff)})")
         return {"stage": stage, "action": "run", "detail": detail}
     if stage == "merge":
         if studio.merge_done(pdir):

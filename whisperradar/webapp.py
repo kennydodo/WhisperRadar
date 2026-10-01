@@ -755,8 +755,8 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             form = dict(request.form)
-            form["autorun_enabled"] = ("1" if request.form.get("autorun_enabled")
-                                       else "0")
+            form["autorun_enabled"] = (
+                "1" if request.form.get("autorun_enabled") else "0")
             _, warnings = settings.save(conn, form)
         finally:
             conn.close()
@@ -904,6 +904,7 @@ def create_app(cfg) -> Flask:
                 " WHERE genre IS NOT NULL AND genre <> ''"
                 " ORDER BY genre COLLATE NOCASE")]
             source_genres = {g.lower() for g in genres}
+            global_render_resolution = settings.load(conn)["render_resolution"]
         finally:
             conn.close()
         return render_template(
@@ -915,6 +916,9 @@ def create_app(cfg) -> Flask:
             render_target_labels=studio.RENDER_TARGET_LABELS,
             render_resolutions=studio.RENDER_RESOLUTIONS,
             render_resolution_labels=studio.RENDER_RESOLUTION_LABELS,
+            global_render_resolution=global_render_resolution,
+            native_tiers=settings.FLOW_NATIVE_TIERS,
+            native_tier_labels=settings.FLOW_NATIVE_TIER_LABELS,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/my-channels/add")
@@ -1018,6 +1022,10 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("render_resolution") or "").strip().lower()
             fields["render_resolution"] = (raw if raw in studio.RENDER_RESOLUTIONS
                                            else None)   # empty = inherit
+        if "flow_native_upscale" in request.form:
+            raw = (request.form.get("flow_native_upscale") or "").strip().lower()
+            fields["flow_native_upscale"] = (
+                raw if raw in settings.FLOW_NATIVE_TIERS else None)  # ""=inherit
         if "generate_references" in request.form:
             raw = (request.form.get("generate_references") or "").strip()
             fields["generate_references"] = (None if raw == ""
@@ -1695,7 +1703,9 @@ def create_app(cfg) -> Flask:
             flow_ready=studio.flow_driver_ready(cfg),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
-            flow_upscale_default=eff["upscale"],
+            flow_upscale_default=autorun._upscale_for(eff),
+            local_upscale_tier=autorun.manual_upscale_tier(eff),
+            native_download=autorun.is_flow_native(eff),
             flow_channel_default=eff["renderly_channel_name"],
             default_render_mode=eff["render_mode"],
             default_engine=eff["engine"],
@@ -2428,11 +2438,13 @@ def create_app(cfg) -> Flask:
         flow_channel = (request.form.get("flow_channel")
                         or eff["renderly_channel_name"]).strip()
         flow_project = (request.form.get("flow_project") or "").strip()
+        # Flow native productions default to 0: the stills download at native
+        # size and the Flow-native level runs as one local pass afterwards
         try:
             flow_upscale = max(0, min(4, int(request.form.get("flow_upscale")
-                                             or eff["upscale"])))
+                                             or autorun._upscale_for(eff))))
         except ValueError:
-            flow_upscale = eff["upscale"]
+            flow_upscale = autorun._upscale_for(eff)
         flow_master = (request.form.get("flow_master") or "").strip()
         flow_project_url = (request.form.get("flow_project_url") or "").strip()
         renderly_channel = None
@@ -2461,6 +2473,77 @@ def create_app(cfg) -> Flask:
                  else "Flow Driver" if mode == "flow" else "Renderly")
         sjob.start(worker, f"image rendering ({label})")
         return _studio_url(pid, msg=f"Image rendering started ({label})")
+
+    @app.post("/studio/<int:pid>/images/recover")
+    def studio_images_recover(pid):
+        """Manual only: pull the images a stopped batch already generated in
+        Flow out of the project gallery into images\\. Never automatic, never
+        generates anything."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        if not (pdir / "shotlist.json").exists():
+            return _studio_url(pid, error="Generate the shotlist first")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            eff = settings.for_production(conn, prod)
+        finally:
+            conn.close()
+        engine = eff["engine"] or "renderly"
+        # same resolution the images stage uses (production choice ->
+        # channel default -> global; 'auto' picks Flow when installed)
+        mode = autorun._default_render_mode(cfg, prod)
+        if engine == "renderly" and mode == "api":
+            return _studio_url(
+                pid, error="The Renderly API has no gallery to recover from "
+                           "- its results live in Renderly itself. Use the "
+                           "Flow Driver or FlowBatch engine instead.")
+
+        def worker():
+            autorun.recover_images(cfg, pid, log=sjob.log.append,
+                                   cancel=lambda: sjob.cancel)
+
+        label = "FlowBatch" if engine == "flowbatch" else "Flow Driver"
+        sjob.start(worker, f"gallery recovery ({label})")
+        return _studio_url(
+            pid, msg=f"Gallery recovery started ({label}) - nothing will "
+                     f"be generated; check the job log below")
+
+    @app.post("/studio/<int:pid>/images/upscale")
+    def studio_images_upscale(pid):
+        """Manual: upscale the stills already in images\\ with the LOCAL
+        engine - no Flow, no download, no re-render. This is the same pass
+        a Flow native production runs at the end of a batch, and it is safe
+        to re-run: files already at the tier are skipped."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        img_dir = pdir / "images"
+        if not img_dir.exists() or not any(img_dir.glob("*.png")):
+            return _studio_url(pid, error="No rendered images to upscale yet")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+        finally:
+            conn.close()
+        tier = autorun.manual_upscale_tier(eff)
+        if tier == "off":
+            return _studio_url(
+                pid, error="No upscale level is set - pick one under Render "
+                           "resolution: Flow native (My Channels or Settings), "
+                           "or set an upscale tier first")
+
+        def worker():
+            autorun.upscale_images(cfg, pid, log=sjob.log.append,
+                                   cancel=lambda: sjob.cancel)
+
+        sjob.start(worker, f"local upscale ({tier})")
+        return _studio_url(
+            pid, msg="Local upscale started - nothing is downloaded or "
+                     "re-rendered; check the job log below")
 
     @app.post("/studio/<int:pid>/stage/done")
     def studio_stage_done(pid):

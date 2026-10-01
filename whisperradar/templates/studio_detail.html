@@ -774,7 +774,26 @@
           </button>
           <button type="button" class="ghost" onclick="stopFlow()" title="Stop a running Flow Driver batch">Stop Flow batch</button>
         </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/recover"
+              onsubmit="return wrConfirmSubmit(this, 'Pull the images the last Flow batch ALREADY generated in the project gallery into the images folder?\nOnly files still missing are adopted - nothing new is generated and nothing is uploaded.')">
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not shotlist_count else '' }}
+                  title="{{ 'Adopt a stopped batch&#39;s already-generated images from the Flow project gallery (uses the production&#39;s default engine; never generates)' if shotlist_count and not job.running else ('A job is already running' if job.running else 'Needs a shotlist first (shotlist stage)') }}">
+            {{ 'Working...' if job.running else 'Recover from Flow gallery' }}
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/upscale"
+              onsubmit="return wrConfirmSubmit(this, 'Upscale the images already in the images folder with the LOCAL upscaler, in place?\nNothing is downloaded or re-rendered. Files already at the tier are skipped, so this is safe to re-run.')">
+          <button type="submit" class="ghost" {{ 'disabled' if job.running or not images or local_upscale_tier == 'off' else '' }}
+                  title="{{ 'Upscale the rendered stills locally with Real-ESRGAN, in place to ' ~ local_upscale_tier ~ ' (no Flow, no re-render; safe to re-run)' if images and not job.running and local_upscale_tier != 'off' else ('A job is already running' if job.running else ('No images rendered yet' if not images else 'No upscale level set - pick one next to Render resolution: Flow native (My Channels or Settings)')) }}">
+            {{ 'Working...' if job.running else 'Upscale images (local)' }}
+          </button>
+        </form>
       </div>
+      {% if native_download %}
+      <div class="muted" style="font-size:12px; margin-top:8px">
+        Flow native: stills are downloaded at Flow's own size (1376x768){% if local_upscale_tier != 'off' %}, then ONE local Real-ESRGAN pass upscales them to <b>{{ local_upscale_tier }}</b> (both engines; no Renderly backend){% else %} and left as they are - pick an upscale level next to Render resolution on <a href="/my-channels">My Channels</a> or in <a href="/settings">Settings</a> to upscale them locally{% endif %}.
+      </div>
+      {% endif %}
       <div id="enginenote" class="muted" style="display:none; font-size:12px; margin-top:8px; border-left:2px solid var(--accent); padding-left:8px"></div>
       <div id="flowpanel" style="display:none; margin-top:10px; border:1px solid var(--border); border-radius:8px; padding:12px">
         <div style="font-weight:600; margin-bottom:6px">Flow Driver settings <span class="muted" style="font-weight:400">(same controls as the Flow Driver page in Renderly)</span></div>
