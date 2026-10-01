@@ -5,6 +5,40 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## NEXT SESSION - manual "Recover from Flow gallery" (images stage, both engines)
+
+Requested by Kehinde 2026-10-01. When a batch stops on consecutive failures
+(or the session breaks), the images Flow DID generate are often still in the
+project's gallery - they were just never downloaded. Re-running the prompt
+regenerates them (burning the account); instead a MANUAL button should pull
+the existing results first.
+
+Scope:
+- A button under the IMAGES stage only (`studio_detail.html`), MANUAL trigger
+  (never automatic). POST `/studio/<pid>/images/recover` -> a job ->
+  `autorun.recover_images(cfg, pid)` -> dispatch by engine:
+  - `flowbatch`       -> `studio.run_flowbatch_recover(cfg, pid)`
+  - `renderly + flow` -> the Flow Driver's recover endpoint
+  - `renderly + api`  -> the Renderly API has no gallery; report "n/a"
+- Adopt ONLY files missing locally, match gallery tiles to shotlist items,
+  report `{recovered, still_missing}` -> a production step + the page. It
+  NEVER generates anything.
+
+Matching a gallery tile to a shotlist item:
+- FlowBatch: a generated tile carries the redo ("Reuse prompt") control,
+  uploads never do (`driver.js:1116-1170`) - that is how to enumerate real
+  results. Read each tile's prompt through that redo control (it repopulates
+  the composer with the tile's prompt), normalise, and match it to the item's
+  prompt. Fall back to submission ORDER only when it is unambiguous.
+- Renderly driver (`extension-v2`): same idea with its own tile/redo handling;
+  add `/api/recover` (open project, list generated tiles, match by prompt,
+  download the missing into `images\`).
+
+Caveats: reading a tile's prompt via the redo control edits the composer - do
+it one tile at a time and never leave a pending generation; prompt matching
+needs normalisation + a duplicate-prompt fallback; needs real-Flow-UI
+iteration (calibrate the tile/prompt selectors).
+
 ## DONE — refs now honor the image engine (fixed 2026-09-29)
 
 Was: the refs stage always rendered reference images through FlowBatch,
