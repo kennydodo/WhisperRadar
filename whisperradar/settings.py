@@ -305,6 +305,27 @@ SPEC: list[dict] = [
                 "resumable either way.",
     },
     {
+        "key": "images_max_consecutive_failures", "type": "int", "default": 3,
+        "min": 1, "max": 50,
+        "label": "Stop after N failures in a row",
+        "help": "Stop the images batch once this many cards fail back-to-back "
+                "- a broken session/UI fails every card after the break, so "
+                "grinding on just burns the account. Shared by the Flow "
+                "Driver and the FlowBatch CLI, and by manual render and "
+                "auto-run alike. Independent of 'Stop the batch when images "
+                "start failing' above (which stops on the FIRST failure).",
+    },
+    {
+        "key": "images_resume_wait_minutes", "type": "int", "default": 10,
+        "min": 0, "max": 180,
+        "label": "Wait before auto-resuming after that stop",
+        "help": "How long to pause before automatically resuming the batch "
+                "after the consecutive-failure stop above (the account "
+                "usually needs a while to clear). Used by manual render and "
+                "auto-run alike. 0 = do not auto-resume - stop and wait for "
+                "you to click Resume.",
+    },
+    {
         "key": "generate_references", "type": "bool", "default": True,
         "label": "Generate missing references",
         "help": "Before rendering the shotlist images, generate the reference "
@@ -389,6 +410,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "default_engine", "default_render_mode", "default_upscale",
         "default_voice", "seed_dirs",
         "images_chunk_size", "images_stop_on_failure",
+        "images_max_consecutive_failures", "images_resume_wait_minutes",
         "generate_references",
     ]),
     ("Video render", ["render_target", "render_resolution"]),
@@ -595,6 +617,9 @@ def for_production(conn, prod) -> dict:
         # image-batch guards (global only - operational, not per production)
         "images_chunk_size": int(glob["images_chunk_size"]),
         "images_stop_on_failure": bool(glob["images_stop_on_failure"]),
+        "images_max_consecutive_failures": int(
+            glob["images_max_consecutive_failures"]),
+        "images_resume_wait_minutes": int(glob["images_resume_wait_minutes"]),
         # the refs stage is per channel (a channel may have no refs at all)
         "generate_references": bool(row_get(own, "generate_references",
                                             int(glob["generate_references"]))),

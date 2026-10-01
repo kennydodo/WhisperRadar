@@ -1280,21 +1280,39 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
 _RESUMABLE_IMAGE_ERRORS = ("were not produced", "is refusing this session")
 
 
-def _should_resume_images(exc: Exception, round_no: int) -> bool:
+def _should_resume_images(exc: Exception, round_no: int,
+                           resume_wait_seconds: int | None = None) -> bool:
     """True when a failed images round should pause and be resumed: ONLY
     Flow's 'N of M image(s) were not produced' wave (its 'still busy'
     timeout) or its 'is refusing this session' hard stop (studio.py's
-    3-failures-in-a-row guard, usually a reCAPTCHA score dip), and only
-    while rounds remain. Any other error is a real failure."""
+    configurable consecutive-failures guard, usually a reCAPTCHA score dip),
+    and only while rounds remain. Any other error is a real failure.
+
+    `resume_wait_seconds` is the production's images_resume_wait_minutes
+    setting (in seconds); a configured 0 disables auto-resume for the
+    'is refusing this session' stop specifically - the operator wants to
+    look at it before more credits are spent, so it stops like a plain
+    failure and waits for a manual Resume instead."""
     text = str(exc)
+    if "is refusing this session" in text and resume_wait_seconds == 0:
+        return False
     return (round_no < IMAGE_RESUME_ROUNDS
             and any(marker in text for marker in _RESUMABLE_IMAGE_ERRORS))
 
 
-def _resume_pause_seconds(exc: Exception) -> int:
+def _resume_pause_seconds(exc: Exception,
+                           resume_wait_seconds: int | None = None) -> int:
     """How long to wait before resuming - the refusal wave needs longer than
-    a plain 'still busy' timeout to actually clear."""
+    a plain 'still busy' timeout to actually clear.
+
+    `resume_wait_seconds` is the production's images_resume_wait_minutes
+    setting (in seconds); when given it replaces the fixed
+    FLOW_REFUSAL_PAUSE_SECONDS for the refusal case (the 'still busy' wave
+    below keeps its own fixed pause - that is a different, shorter-lived
+    condition, not the one the setting is about)."""
     if "is refusing this session" in str(exc):
+        if resume_wait_seconds is not None:
+            return resume_wait_seconds
         return FLOW_REFUSAL_PAUSE_SECONDS
     return IMAGE_RESUME_PAUSE_SECONDS
 
@@ -1329,6 +1347,11 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         conn.close()
     # bring up only what this engine/mode needs; a service that already
     # answers is the user's and is left alone
+    # the consecutive-failure stop (studio.py) and the wait before an
+    # auto-resume after it are both the images_max_consecutive_failures /
+    # images_resume_wait_minutes settings, shared by manual render and
+    # auto-run and by both engines
+    _, _, _, resume_wait_seconds = studio.image_batch_limits(cfg, pid)
     try:
         services.MANAGER.ensure(cfg, services.services_for(engine, mode),
                                 log_fn=log)
@@ -1402,9 +1425,10 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                 # Flow gave up on some cards ("still busy"). Pause, then resume:
                 # the driver skips what is already on disk, so the next round
                 # only attempts the gaps.
-                if not _should_resume_images(exc, round_no):
+                if not _should_resume_images(exc, round_no,
+                                             resume_wait_seconds):
                     raise
-                pause = _resume_pause_seconds(exc)
+                pause = _resume_pause_seconds(exc, resume_wait_seconds)
                 log(f"[auto-run] images: {exc}")
                 log(f"[auto-run] images: pausing {pause // 60} minutes, then "
                     f"resuming the missing card(s) - round {round_no} of "

@@ -1648,13 +1648,18 @@ def _apply_flowdriver_report(cfg, pid: int, report: dict, log=None) -> None:
                 f"project: {', '.join(missing[:8])}")
 
 
-def image_batch_limits(cfg, pid: int) -> tuple[int, bool]:
-    """(chunk_size, stop_on_failure) for the images stage.
+def image_batch_limits(cfg, pid: int) -> tuple[int, bool, int, int]:
+    """(chunk_size, stop_on_failure, max_consecutive_failures,
+    resume_wait_seconds) for the images stage.
 
     Flow tolerates roughly 80-100 automated generations on one account before
     it refuses, and both engines drive the SAME account, so a long shotlist is
     chunked across runs and a failing batch is stopped instead of ground
-    through. Both values are global settings."""
+    through. max_consecutive_failures is the Flow Driver's AND the FlowBatch
+    CLI's back-to-back-failure stop (a broken session fails every further
+    card); resume_wait_seconds is how long auto-run/manual render then waits
+    before automatically resuming. All global settings, shared by manual
+    render and auto-run."""
     from . import db, settings
 
     try:
@@ -1665,10 +1670,12 @@ def image_batch_limits(cfg, pid: int) -> tuple[int, bool]:
         finally:
             conn.close()
         return (max(0, int(eff.get("images_chunk_size") or 0)),
-                bool(eff.get("images_stop_on_failure")))
+                bool(eff.get("images_stop_on_failure")),
+                max(1, int(eff.get("images_max_consecutive_failures") or 3)),
+                max(0, int(eff.get("images_resume_wait_minutes") or 0)) * 60)
     except Exception as exc:  # noqa: BLE001 - never block a batch
         log.debug("could not read the image batch limits: %s", exc)
-        return 0, False
+        return 0, False, 3, 600
 
 
 def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
@@ -1725,7 +1732,8 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pid_dir / "flow_images"),
                               "--no-color"])
-    chunk, stop_on_failure = image_batch_limits(cfg, pid)
+    chunk, stop_on_failure, max_consecutive_failures, _resume_wait = (
+        image_batch_limits(cfg, pid))
     if chunk:
         # bound this run: Flow's tolerance is per account and both engines
         # share it, so the rest of the shotlist waits for the next run
@@ -1734,11 +1742,16 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
         # the CLI's own flag stops at the first failed item (its granularity);
         # anything rendered is kept and the production stays resumable
         cmd += ["--fail-fast"]
+    # same back-to-back-failure guard as the Flow Driver below (studio.py's
+    # own run_imagegen_flow), so both engines behave the same way under the
+    # one shared setting
+    cmd += ["--max-consecutive-failures", str(max_consecutive_failures)]
     if log and (chunk or stop_on_failure):
         _safe_log(log, "FlowBatch: batch guards - "
                        + (f"at most {chunk} image(s), " if chunk else "")
                        + ("stop on first failure" if stop_on_failure
-                          else "no failure guard"))
+                          else "no failure guard")
+                       + f", stop after {max_consecutive_failures} in a row")
     # prefer whatever prepare learned, then the DB/job resolution
     resolved_url, source = flow_project_url_for(cfg, pid, project_url)
     if resolved_url:
@@ -2001,7 +2014,8 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         deadline = time.monotonic() + 14400
         restarted = False
         shotlist_mtime = shotlist_file.stat().st_mtime
-        chunk, stop_on_failure = image_batch_limits(cfg, pid) if pid else (0, False)
+        chunk, stop_on_failure, max_consecutive_failures, _resume_wait = (
+            image_batch_limits(cfg, pid) if pid else (0, False, 3, 600))
         # the driver's counts cover the whole batch, so measure THIS run
         base_ok = int(((flow_service_status(cfg) or {}).get("counts") or {})
                       .get("ok") or 0)
@@ -2058,10 +2072,11 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
             elif ok_now > last_ok:
                 consecutive = 0
             last_ok, last_failed = ok_now, failed_now
-            if stop_on_failure and consecutive >= 3:
-                # three cards in a row failed: Flow is refusing, and every
-                # further card spends ~a minute failing (this is the ~98-image
-                # stall seen on productions 5 and 6)
+            if consecutive >= max_consecutive_failures:
+                # N cards in a row failed (images_max_consecutive_failures):
+                # Flow is refusing, and every further card spends ~a minute
+                # failing (this is the ~98-image stall seen on productions
+                # 5 and 6)
                 flow_stop(cfg)
                 raise RuntimeError(
                     f"Flow Driver: {consecutive} cards failed in a row after "
