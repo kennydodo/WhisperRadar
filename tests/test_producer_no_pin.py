@@ -31,6 +31,11 @@ class ProducerDoesNotPinProviderTests(unittest.TestCase):
         conn = db.connect(self.cfg.db_path)
         db.init_db(conn)
         db.set_setting(conn, "autorun_enabled", "1")
+        # Keep the Auto Run window permanently open (start == end is the
+        # documented always-open case): without this the producer correctly
+        # pauses outside 09:00-23:00 and this test fails just for running late.
+        db.set_setting(conn, "run_window_start", "00:00")
+        db.set_setting(conn, "run_window_end", "00:00")
         db.set_setting(conn, "producer_llm_provider", "deepseek")
         db.add_channel(conn, "Source", "src1", genre="general")
         db.upsert_video(conn, "src1", {
