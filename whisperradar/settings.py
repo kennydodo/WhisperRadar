@@ -305,7 +305,7 @@ SPEC: list[dict] = [
                 "resumable either way.",
     },
     {
-        "key": "images_max_consecutive_failures", "type": "int", "default": 3,
+        "key": "images_max_consecutive_failures", "type": "int", "default": 5,
         "min": 1, "max": 50,
         "label": "Stop after N failures in a row",
         "help": "Stop the images batch once this many cards fail back-to-back "
@@ -324,6 +324,17 @@ SPEC: list[dict] = [
                 "usually needs a while to clear). Used by manual render and "
                 "auto-run alike. 0 = do not auto-resume - stop and wait for "
                 "you to click Resume.",
+    },
+    {
+        "key": "images_still_busy_wait_minutes", "type": "int", "default": 5,
+        "min": 0, "max": 180,
+        "label": "Wait before auto-resuming a 'still busy' wave",
+        "help": "Flow's softer 'still busy' timeout leaves some cards "
+                "unrendered without the session being refused. This is how "
+                "long to pause before resuming those gaps (a shorter wait than "
+                "the refusal one above - the condition clears faster). Used by "
+                "manual render and auto-run alike. 0 = do not auto-resume - "
+                "wait for you to click Resume.",
     },
     {
         "key": "generate_references", "type": "bool", "default": True,
@@ -411,6 +422,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "default_voice", "seed_dirs",
         "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",
+        "images_still_busy_wait_minutes",
         "generate_references",
     ]),
     ("Video render", ["render_target", "render_resolution"]),
@@ -620,6 +632,8 @@ def for_production(conn, prod) -> dict:
         "images_max_consecutive_failures": int(
             glob["images_max_consecutive_failures"]),
         "images_resume_wait_minutes": int(glob["images_resume_wait_minutes"]),
+        "images_still_busy_wait_minutes": int(
+            glob["images_still_busy_wait_minutes"]),
         # the refs stage is per channel (a channel may have no refs at all)
         "generate_references": bool(row_get(own, "generate_references",
                                             int(glob["generate_references"]))),

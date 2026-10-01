@@ -1648,17 +1648,18 @@ def _apply_flowdriver_report(cfg, pid: int, report: dict, log=None) -> None:
                 f"project: {', '.join(missing[:8])}")
 
 
-def image_batch_limits(cfg, pid: int) -> tuple[int, bool, int, int]:
+def image_batch_limits(cfg, pid: int) -> tuple[int, bool, int, int, int]:
     """(chunk_size, stop_on_failure, max_consecutive_failures,
-    resume_wait_seconds) for the images stage.
+    refusal_wait_seconds, still_busy_wait_seconds) for the images stage.
 
     Flow tolerates roughly 80-100 automated generations on one account before
     it refuses, and both engines drive the SAME account, so a long shotlist is
     chunked across runs and a failing batch is stopped instead of ground
     through. max_consecutive_failures is the Flow Driver's AND the FlowBatch
     CLI's back-to-back-failure stop (a broken session fails every further
-    card); resume_wait_seconds is how long auto-run/manual render then waits
-    before automatically resuming. All global settings, shared by manual
+    card); refusal_wait_seconds is how long auto-run/manual render waits before
+    resuming after that refusal, and still_busy_wait_seconds the shorter wait
+    after a plain 'still busy' wave. All global settings, shared by manual
     render and auto-run."""
     from . import db, settings
 
@@ -1671,11 +1672,12 @@ def image_batch_limits(cfg, pid: int) -> tuple[int, bool, int, int]:
             conn.close()
         return (max(0, int(eff.get("images_chunk_size") or 0)),
                 bool(eff.get("images_stop_on_failure")),
-                max(1, int(eff.get("images_max_consecutive_failures") or 3)),
-                max(0, int(eff.get("images_resume_wait_minutes") or 0)) * 60)
+                max(1, int(eff.get("images_max_consecutive_failures") or 5)),
+                max(0, int(eff.get("images_resume_wait_minutes") or 0)) * 60,
+                max(0, int(eff.get("images_still_busy_wait_minutes") or 0)) * 60)
     except Exception as exc:  # noqa: BLE001 - never block a batch
         log.debug("could not read the image batch limits: %s", exc)
-        return 0, False, 3, 600
+        return 0, False, 5, 600, 300
 
 
 def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
@@ -1732,7 +1734,7 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pid_dir / "flow_images"),
                               "--no-color"])
-    chunk, stop_on_failure, max_consecutive_failures, _resume_wait = (
+    chunk, stop_on_failure, max_consecutive_failures, _refusal_wait, _busy = (
         image_batch_limits(cfg, pid))
     if chunk:
         # bound this run: Flow's tolerance is per account and both engines
@@ -1786,14 +1788,25 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
         proc.wait(timeout=30)
     if proc.returncode != 0:
         text = " ".join(tail).lower()
+        if "failed in a row" in text:
+            # FlowBatch's consecutive-failure guard stopped the batch: a broken
+            # session/UI. Say "refusing this session" so the auto-resume treats
+            # it like the Flow Driver's guard - waits the configured
+            # images_resume_wait_minutes (10 by default) before retrying, rather
+            # than the plain, shorter "were not produced" pause.
+            raise RuntimeError(
+                f"FlowBatch stopped after too many cards failed in a row - "
+                f"Flow is refusing this session. Whatever rendered is kept "
+                f"(state\\wr-{pid}.json); it resumes after the configured wait.")
         if "rate limit" in text or "refused the generation" in text:
             raise RuntimeError(
-                "Flow refused the generation (a reCAPTCHA score on this "
-                "browser profile, not a temporary limit). FlowBatch stops "
-                "the batch on purpose rather than lowering the score further. "
-                "Wait a while, then Resume - finished images are kept in its "
-                f"state\\wr-{pid}.json. Raising delayBetweenItemsMs in "
-                "FlowBatch's config/settings.json lowers the risk.")
+                "Flow is refusing this session - the generation was refused "
+                "(a reCAPTCHA score on this browser profile, not a temporary "
+                "limit). FlowBatch stops the batch on purpose rather than "
+                "lowering the score further. It resumes after the configured "
+                f"wait - finished images are kept in its state\\wr-{pid}.json. "
+                "Raising delayBetweenItemsMs in FlowBatch's config/settings.json "
+                "lowers the risk.")
         if "already in use" in text or "existing browser session" in text:
             raise RuntimeError(
                 "FlowBatch could not open its browser profile because "
@@ -1821,6 +1834,12 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
     # (nothing is lost, and a resume only re-renders the gaps), then report.
     missing = [n for n in names if not (pid_dir / "images" / n).exists()]
     if missing:
+        if "failed in a row" in " ".join(tail).lower():
+            raise RuntimeError(
+                f"FlowBatch stopped on back-to-back failures ({len(missing)} "
+                f"of {len(names)} not produced) - Flow is refusing this "
+                f"session. The {len(adopted)} that rendered are kept; it "
+                f"resumes after the configured wait.")
         raise RuntimeError(
             f"{len(missing)} of {len(names)} image(s) were not produced - "
             f"Flow refused them (usually content policy; see the "
@@ -2014,8 +2033,8 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         deadline = time.monotonic() + 14400
         restarted = False
         shotlist_mtime = shotlist_file.stat().st_mtime
-        chunk, stop_on_failure, max_consecutive_failures, _resume_wait = (
-            image_batch_limits(cfg, pid) if pid else (0, False, 3, 600))
+        chunk, stop_on_failure, max_consecutive_failures, _refusal_wait, _busy = (
+            image_batch_limits(cfg, pid) if pid else (0, False, 5, 600, 300))
         # the driver's counts cover the whole batch, so measure THIS run
         base_ok = int(((flow_service_status(cfg) or {}).get("counts") or {})
                       .get("ok") or 0)
