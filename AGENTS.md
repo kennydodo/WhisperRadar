@@ -5,7 +5,7 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
-## NEXT SESSION — KILL button, no retry (images stage: both engines, both Renderly modes)
+## NEXT SESSION — KILL switch, ONE mechanism for both engines (no retry)
 
 Agreed with Kehinde 2026-10-01, replacing the current "Stop Flow batch" button
 (which only reaches the Flow Driver service, so it does nothing for a FlowBatch
@@ -14,27 +14,36 @@ new action is destructive and honest: it kills, and it does NOT retry - no
 "pausing N minutes, then resuming ... round 1 of 2", no further rounds, no
 automatic re-render of whatever is left.
 
-It must cover every engine/mode the images stage can run:
-- set the WR job's cancel flag FIRST, so `_run_images`' resume loop exits
-  instead of pausing and trying again;
-- FlowBatch (`engine=flowbatch`, `studio.run_imagegen_flowbatch`): kill the
-  spawned `node src/cli.js generate` process TREE (it owns its own Chrome).
+Kehinde's requirement: implement the kill switch the SAME WAY for both engines.
+One mechanism for every engine and both Renderly modes - a PID **tree kill**
+(`taskkill /PID <pid> /T /F`; SIGTERM on POSIX) - with nothing engine-specific
+inside the kill path itself. Only the way the PID is obtained differs:
+
+- FlowBatch (`engine=flowbatch`, `studio.run_imagegen_flowbatch`): WR's own
+  spawned `node src/cli.js generate` Popen (its tree owns Chrome).
   `_flowbatch_stream` already taskkills on cancel, but only when a stdout line
-  arrives - the runner has to remember the Popen and kill it directly, e.g. a
-  watchdog thread polling the cancel flag, or a kill handle the route can call;
-- Renderly + Flow (`run_imagegen_flow`): POST the Flow Driver's `/api/stop` -
-  already a hard tree kill (`server.js stopRun()` = `taskkill /PID <child> /T
-  /F`) - plus the cancel flag above, and tolerate the driver service being down;
-- Renderly + API (`studio.run_imagegen`): kill the `dotnet run` ImageGen tree,
-  which today is completely uncancellable (`subprocess.run(..., timeout=7200)`);
-- report what was killed, or say plainly that nothing was running.
+  arrives, so keep the Popen and kill it directly on demand;
+- Renderly + API (`studio.run_imagegen`): WR's own spawned `dotnet run` ImageGen
+  Popen - today completely uncancellable (`subprocess.run(..., timeout=7200)`);
+- Renderly + Flow (`run_imagegen_flow`): the Flow Driver service runs `flow.js`
+  itself, so expose the running child's PID in `GET /api/status` (trivial:
+  `run.child.pid` - the state object already keeps `child`) and have WR taskkill
+  that tree with the SAME call as the other two engines, rather than an HTTP
+  stop. The driver's `POST /api/stop` (already `taskkill /T /F`, `server.js`
+  `stopRun()`) stays as the fallback for when the PID cannot be read, and for
+  the driver's own UI.
+
+Shape: the runners hand back the PID they spawn, one shared
+`studio.kill_image_batch(cfg)` performs the tree kill, and one route/button sets
+the WR job's cancel flag FIRST (so `_run_images`' resume loop exits instead of
+pausing and trying again) and then calls it. Report honestly what was killed,
+or that nothing was running.
 
 Current truth to build on: `studio.flow_stop()` -> driver `/api/stop`; the stop
 routes only honour `sjob.cancel` for kinds "batch auto-run" / "auto-run"; and
 `autorun.run_stage_and_advance()` takes no cancel parameter at all, so a manual
-"Render images" job cannot be stopped today. The dashboard surfaces the running
-job's kind in `sjob.kind` ("image rendering (FlowBatch)" / "(Flow Driver)" /
-"(Renderly)"), which is what the button should key off.
+"Render images" job cannot be stopped today. `sjob.kind` already names the
+engine ("image rendering (FlowBatch)" / "(Flow Driver)" / "(Renderly)").
 
 ## DONE (2026-10-01) — local upscale AFTER download, for both engines
 
