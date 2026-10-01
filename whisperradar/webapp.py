@@ -2447,6 +2447,13 @@ def create_app(cfg) -> Flask:
                 "flow_upscale": flow_upscale, "flow_master": flow_master,
                 "flow_project_url": flow_project_url,
                 "renderly_channel": renderly_channel,
+                # flow mode: upscale the raw Flow output with the Flow Driver's
+                # own local engine instead of importing every image through the
+                # Renderly backend and adopting a Renderly copy back - that
+                # round-trip per image is what made the manual button far
+                # slower than FlowBatch (and than auto-run, which already sets
+                # local_upscale=True).
+                "flow_local_upscale": True,
                 "log": sjob.log.append,
             }))
 
