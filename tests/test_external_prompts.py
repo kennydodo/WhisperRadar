@@ -624,5 +624,23 @@ class RefsStageRemoveImageTests(Base):
         self.assertTrue(outside.exists())
 
 
+class RefsStageDiskImageTests(Base):
+    _shotlist = RefsStageRemoveImageTests._shotlist
+
+    def test_image_on_disk_with_a_null_registry_entry_can_be_removed(self):
+        self._shotlist()                       # registry says CH_REIKO: null
+        refs = self.pdir / "refs"
+        refs.mkdir()
+        (refs / "CH_REIKO.png").write_bytes(b"\x89PNG")
+        client = create_app(self.cfg).test_client()
+        page = client.get(f"/studio/{self.pid}?stage=refs").data
+        self.assertTrue(b"image on disk" in page)
+        self.assertTrue(b"Remove image" in page)
+        client.post(f"/studio/{self.pid}/refs/delete",
+                    data={"name": "CH_REIKO"})
+        page = client.get(f"/studio/{self.pid}?stage=refs").data
+        self.assertTrue(b"will be generated" in page)
+
+
 if __name__ == "__main__":
     unittest.main()

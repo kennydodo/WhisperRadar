@@ -962,9 +962,20 @@ def shotlist_refs(pdir: Path) -> dict:
                 candidate = pdir / candidate
             path = candidate if candidate.is_file() else None
         prompt = prompts.get(name)
+        # an image sitting in refs\ under this name, whether or not the
+        # registry points at it (a seeded or uploaded file the plan declared
+        # as null): shown so it can be removed from the refs stage
+        disk = None
+        refs_dir = pdir / "refs"
+        if refs_dir.is_dir():
+            disk = next((f for f in sorted(refs_dir.iterdir())
+                         if f.is_file() and f.stem.lower() == name.lower()
+                         and f.suffix.lower() in (".png", ".jpg", ".jpeg",
+                                                  ".webp")), None)
         out[name] = {"path": raw, "prompt": (str(prompt).strip()
                                              if prompt else None),
-                     "file": path, "provided": path is not None}
+                     "file": path, "provided": path is not None,
+                     "disk": disk}
     return out
 
 

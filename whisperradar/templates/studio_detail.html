@@ -755,15 +755,16 @@
           <td class="mono">{{ name }}</td>
           <td>
             {% if r.provided %}<span class="badge on">supplied</span>
-              {% if r.file and r.file.parent.name == 'refs' %}
+            {% elif r.disk %}<span class="badge on">image on disk</span>
+            {% elif r.prompt %}<span class="badge warn">will be generated</span>
+            {% else %}<span class="badge off">no file, no prompt</span>{% endif %}
+              {% if r.disk %}
               <form class="row" method="post" action="/studio/{{ prod['id'] }}/refs/delete" style="display:inline; margin-left:6px"
                     onsubmit="return wrConfirmSubmit(this, 'Remove the image for {{ name }}? It will be generated from its prompt instead (if it has one).')">
-                <input type="hidden" name="name" value="{{ r.file.stem }}">
+                <input type="hidden" name="name" value="{{ r.disk.stem }}">
                 <button type="submit" class="ghost" style="padding:1px 8px; font-size:12px" title="Delete the supplied image so this reference is generated from its prompt">Remove image</button>
               </form>
               {% endif %}
-            {% elif r.prompt %}<span class="badge warn">will be generated</span>
-            {% else %}<span class="badge off">no file, no prompt</span>{% endif %}
           </td>
           <td class="muted" style="font-size:12px">
             {{ (r.prompt or '-')[:140] }}{% if r.prompt and r.prompt|length > 140 %}...{% endif %}
