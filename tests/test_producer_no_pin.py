@@ -37,6 +37,10 @@ class ProducerDoesNotPinProviderTests(unittest.TestCase):
         db.set_setting(conn, "run_window_start", "00:00")
         db.set_setting(conn, "run_window_end", "00:00")
         db.set_setting(conn, "producer_llm_provider", "deepseek")
+        # The default run window is 09:00-23:00 local time, so without this the
+        # test only passed during the day and "created" nothing at night.
+        db.set_setting(conn, "run_window_start", "00:00")
+        db.set_setting(conn, "run_window_end", "23:59")
         db.add_channel(conn, "Source", "src1", genre="general")
         db.upsert_video(conn, "src1", {
             "video_id": "vid1", "title": "A source video",
