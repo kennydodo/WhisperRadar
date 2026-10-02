@@ -211,8 +211,20 @@ class ShotlistPromptTests(Base):
     def test_judge_prompt_rejects_junk(self):
         with self.assertRaises(ep.PromptError):
             ep.shotlist_judge_prompt(self.cfg, self.pid, "not json")
-        with self.assertRaises(ep.PromptError):
-            ep.shotlist_judge_prompt(self.cfg, self.pid, "")
+
+    def test_judge_prompt_without_a_shotlist_asks_for_the_file(self):
+        text, local = ep.shotlist_judge_prompt(self.cfg, self.pid, "  ")
+        self.assertIsNone(local)
+        self.assertIn("shotlist.json", text)
+        self.assertIn("Missing: <the file names>", text)
+        self.assertIn("PART A - HARD RULES", text)
+        self.assertIn("1: Welcome to the video about old coins.", text)
+
+    def test_judge_prompt_without_a_shotlist_in_files_mode(self):
+        files = []
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, "", files=files)
+        self.assertEqual([f["name"] for f in files], ["narration.txt"])
+        self.assertIn("shotlist.json", text)
 
     def test_channel_hold_range_reaches_the_judge_rules(self):
         conn = db.connect(self.cfg.db_path)
@@ -267,7 +279,7 @@ class RouteTests(Base):
         self.assertIn("MY SCRIPT TEXT", body["prompt"])
 
     def test_missing_input_is_a_400_with_a_message(self):
-        resp = self._post(kind="shot_judge", shotlist="")
+        resp = self._post(kind="shot_judge", shotlist="not json")
         self.assertEqual(resp.status_code, 400)
         self.assertIn("error", resp.get_json())
         self.assertEqual(self._post(kind="bogus").status_code, 400)

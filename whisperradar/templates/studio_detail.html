@@ -672,7 +672,7 @@
       <details class="extbox" style="margin-top:10px; margin-bottom:10px">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the shotlist</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
-          The planner prompt carries this channel's planning brief (motion profile, hold range, presentation), the narration, the visual style, the bible and the reference rules. Paste the JSON it returns into the shotlist box above and save. The judge prompt carries the channel's hard rules and audits whatever shotlist is in the box above right now; the app's own code checks on it are shown here too.
+          The planner prompt carries this channel's planning brief (motion profile, hold range, presentation), the narration, the visual style, the bible and the reference rules. Paste the JSON it returns into the shotlist box above and save. The judge prompt carries the channel's hard rules and audits the shotlist in the box above (with the box empty, it asks the LLM for a shotlist.json you attach yourself); the app's own code checks on it are shown here too.
         </div>
         <div class="inline" style="gap:8px; align-items:flex-end; margin-bottom:8px">
           <label>Prompt as <select data-f="mode" title="Auto puts everything in the prompt, and switches to attached files when the prompt is over ~30,000 characters">

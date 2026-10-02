@@ -588,38 +588,47 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
     run on the pasted shotlist right now - shown to the user, not sent to the
     judge, so the external judge stays independent."""
     shotlist_text = (shotlist_text or "").strip()
-    if not shotlist_text:
-        raise PromptError("Paste the shotlist JSON to judge first")
-    try:
-        data, _sheet = studio.parse_shotlist_output(shotlist_text)
-    except RuntimeError as exc:
-        raise PromptError(f"That is not a usable shotlist: {exc}") from exc
+    # nothing in the box: the prompt asks for the user's own shotlist file
+    own_shotlist = not shotlist_text
+    data = None
+    if not own_shotlist:
+        try:
+            data, _sheet = studio.parse_shotlist_output(shotlist_text)
+        except RuntimeError as exc:
+            raise PromptError(f"That is not a usable shotlist: {exc}") from exc
     ctx = _context(cfg, pid)
     eff = ctx["eff"]
     plan = _plan_inputs(cfg, pid, ctx)
     cues, n = plan["cues"], len(plan["cues"])
-    local = (studio.shotlist_structural_faults(data, n)
+    local = (None if own_shotlist else
+             studio.shotlist_structural_faults(data, n)
              + studio.shotlist_pacing(data, cues, plan["max_hold"],
                                       plan["profile"])[0])
     rules = _hard_rules(plan, eff, ctx, n)
     audit = _alignment_rules(ctx["visual_style"])
-    shot_json = json.dumps(data, ensure_ascii=False, indent=1)
+    shot_json = ("" if own_shotlist else
+                 json.dumps(data, ensure_ascii=False, indent=1))
+    extra = ([{"name": SHOTLIST_FILE, "about": "the shotlist JSON under "
+               "review - attach your own shotlist file"}]
+             if own_shotlist else [])
+    out_files = []
     if files is not None:
-        out_files: list[dict] = []
         _add_file(out_files, NARRATION_FILE, plan["narration"],
                   "the narration, one line per cue: \"N: text (Ns)\"")
-        _add_file(out_files, SHOTLIST_FILE, shot_json,
-                  "the shotlist JSON under review")
+        if not own_shotlist:
+            _add_file(out_files, SHOTLIST_FILE, shot_json,
+                      "the shotlist JSON under review")
         files.extend(out_files)
         narr_block = (f"NARRATION: in the attached {NARRATION_FILE} (read "
                       f"all of it).")
+    else:
+        narr_block = f"NARRATION:\n{plan['narration'].strip()}"
+    if own_shotlist or files is not None:
         json_block = (f"SHOTLIST JSON: in the attached {SHOTLIST_FILE} "
                       f"(read all of it).")
     else:
-        out_files = []
-        narr_block = f"NARRATION:\n{plan['narration'].strip()}"
         json_block = f"SHOTLIST JSON:\n{shot_json}"
-    prompt = _gate(out_files) + (
+    prompt = _gate(out_files, extra) + (
         "You are an independent reviewer of a video SHOTLIST, before any "
         "image is rendered. You are given the narration (one line per cue: "
         "\"N: text (Ns)\" - N is the cue number, Ns its length in seconds) "
