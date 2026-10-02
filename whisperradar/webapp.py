@@ -2544,6 +2544,8 @@ def create_app(cfg) -> Flask:
             return jsonify({"saved": n, "message":
                             f"Saved {n} words as the research notes"})
 
+        local_note = [""]
+
         def build(files):
             """(text, local_faults) with `files` None (inline) or a list."""
             if kind == "style":
@@ -2552,7 +2554,7 @@ def create_app(cfg) -> Flask:
             if kind == "notes":
                 return external_prompts.notes_extraction_prompt(
                     cfg, pid, title), None
-            if kind in ("script_writer", "script_judge"):
+            if kind in ("script_writer", "script_judge", "script_revise"):
                 style = request.form.get("style")
                 notes = request.form.get("notes")
                 style = style if (style or "").strip() else None
@@ -2564,9 +2566,21 @@ def create_app(cfg) -> Flask:
                 if kind == "script_writer":
                     return external_prompts.script_writer_prompt(
                         cfg, pid, title, words, style, notes, files), None
-                return external_prompts.script_judge_prompt(
-                    cfg, pid, request.form.get("script") or "", title,
-                    style, notes, words, files), None
+                script = request.form.get("script") or ""
+                if kind == "script_revise":
+                    chk = external_prompts.script_local_checks(
+                        cfg, pid, script, words)
+                    local_note[0] = chk["note"]
+                    return external_prompts.script_revise_prompt(
+                        cfg, pid, script, request.form.get("feedback") or "",
+                        title, style, notes, words, files), chk["faults"]
+                text = external_prompts.script_judge_prompt(
+                    cfg, pid, script, title, style, notes, words, files)
+                chk = external_prompts.script_local_checks(
+                    cfg, pid, script, words)
+                local_note[0] = chk["note"]
+                return text, chk["faults"]
+
             if kind == "shot_planner":
                 return external_prompts.shotlist_planner_prompt(
                     cfg, pid, files), None
@@ -2590,6 +2604,7 @@ def create_app(cfg) -> Flask:
                           "about": f["about"]} for f in (files or [])]}
         if local_faults is not None:
             out["local_faults"] = local_faults
+            out["local_note"] = local_note[0]
         return jsonify(out)
 
     @app.post("/studio/<int:pid>/shotlist/save")

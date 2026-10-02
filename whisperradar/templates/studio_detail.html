@@ -395,9 +395,11 @@
         {% if not has_research_notes %}<div class="muted" style="font-size:12px; margin-top:8px">No research notes yet - the writer prompt will have no facts. Use "Notes prompt" to get them from the reference script, then paste them below and save.</div>
         {% else %}<div class="muted" style="font-size:12px; margin-top:8px">Research notes are on file and used automatically. Paste notes below only to use different ones (they override the file in the prompts you build here); "Save as research notes" makes them the production's notes for good.</div>{% endif %}
         <textarea data-f="notes" style="min-height:70px; margin-top:6px" placeholder="Optional - paste research notes (facts only) here"></textarea>
+        <textarea data-f="feedback" style="min-height:60px; margin-top:6px" placeholder="For the Revise prompt - paste the judge's feedback / fixes here (optional)"></textarea>
         <div class="actions" style="margin-top:8px">
           <button type="button" class="secondary" onclick="wrExt(this,'script_writer')">Writer prompt</button>
           <button type="button" class="secondary" onclick="wrExt(this,'script_judge')">Judge prompt</button>
+          <button type="button" class="secondary" onclick="wrExt(this,'script_revise')" title="A retry prompt for the writer: new angle, measured overlap, lifted passages and the judge's fixes">Revise prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'style')" title="Asks an LLM to extract the reference script's writing style">Writing style prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'notes')" title="Asks an LLM to turn the reference script into neutral fact notes">Notes prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'save_notes')" title="Save the pasted notes as this production's research notes (kept; never rebuilt from the source)">Save as research notes</button>
@@ -405,6 +407,7 @@
         </div>
         <div class="extfiles" style="display:none; margin-top:8px"></div>
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
+        <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
       </details>
       {% if script_versions %}
       <div class="actions" style="margin-top:4px">
@@ -1246,7 +1249,7 @@
     var fd = new FormData();
     fd.append('kind', kind);
     box.querySelectorAll('[data-f]').forEach(function (el) { fd.append(el.dataset.f, el.value); });
-    if (kind === 'script_judge') {
+    if (kind === 'script_judge' || kind === 'script_revise') {
       var sc = document.querySelector('textarea[name=script]');
       fd.append('script', sc ? sc.value : '');
     }
@@ -1267,12 +1270,13 @@
         out.value = res.j.prompt;
         wrExtFiles(box, res.j.files || []);
         msg.textContent = res.j.chars.toLocaleString() + ' characters' +
-          ((res.j.files || []).length ? ' + ' + res.j.files.length + ' file(s) to attach' : ' - ready to copy');
+          ((res.j.files || []).length ? ' + ' + res.j.files.length + ' file(s) to attach' : (res.j.chars > 60000 ? ' - large; if the chat truncates it, choose "Attach files"' : ' - ready to copy'));
         if (faults && res.j.local_faults !== undefined) {
           faults.style.display = 'block';
+          var note = res.j.local_note ? ' (' + res.j.local_note + ')' : '';
           faults.textContent = res.j.local_faults.length
-            ? 'The app\'s own checks on this shotlist found:\n- ' + res.j.local_faults.join('\n- ')
-            : 'The app\'s own code checks found no structural or pacing faults in this shotlist.';
+            ? 'The app\'s own checks found' + note + ':\n- ' + res.j.local_faults.join('\n- ')
+            : 'The app\'s own code checks found no faults' + note + '.';
         }
       })
       .catch(function () { msg.textContent = 'Request failed'; });

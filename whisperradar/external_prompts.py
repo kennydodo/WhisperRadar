@@ -218,7 +218,8 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
                          target_words: int | None = None,
                          style_guide: str | None = None,
                          notes: str | None = None,
-                         files: list | None = None) -> str:
+                         files: list | None = None,
+                         variation: str = "") -> str:
     ctx = _context(cfg, pid)
     eff, prod = ctx["eff"], ctx["prod"]
     style = (style_guide if style_guide is not None
@@ -237,7 +238,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         _title(ctx, title), prod["genre"],
         _FACTS_TOKEN if (files is not None and facts) else facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
-        target_words=int(target_words),
+        target_words=int(target_words), variation=variation,
         extra_direction=db.stage_extra(prod, "script"))
     lo, hi = _length_window(int(target_words))
     bar = (f"\n\nQUALITY BAR - a script is only accepted when ALL of these "
@@ -330,6 +331,79 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
         files.extend(out_files)
         text = _gate(out_files) + text
     return text + bar
+
+
+def script_local_checks(cfg, pid: int, script: str,
+                        target_words: int | None = None) -> dict:
+    """The app's own code checks on a pasted script (the same measurements the
+    built-in gate uses): overlap with the reference, length against the
+    window, cut-off ending. Shown next to the judge prompt; never sent to the
+    external judge, so it stays independent. {"faults": [...], "note": str}."""
+    script = (script or "").strip()
+    if not script:
+        raise PromptError("Paste the script first")
+    ctx = _context(cfg, pid)
+    eff = ctx["eff"]
+    source = autorun._source_transcript_text(cfg, pid)
+    target = _target_words(cfg, pid, target_words)
+    lo, hi = _length_window(target)
+    words = len(re.findall(r"\w+", script))
+    overlap = studio.overlap_ratio(script, source) if source.strip() else 0.0
+    faults = []
+    max_ov = float(eff["script_max_overlap"])
+    hard = float(eff["script_hard_overlap"])
+    if overlap > hard:
+        faults.append(f"overlap {overlap:.1%} is above the hard limit "
+                      f"{hard:.0%} - rejected however good it reads")
+    elif overlap > max_ov:
+        faults.append(f"overlap {overlap:.1%} is above this channel's "
+                      f"maximum {max_ov:.0%}")
+    if words < lo:
+        faults.append(f"{words} words is under the {lo}-word minimum "
+                      f"(target {target})")
+    elif words > hi:
+        faults.append(f"{words} words is over the {hi}-word maximum "
+                      f"(target {target})")
+    if studio.script_looks_truncated(script):
+        faults.append("the script does not end on a complete sentence "
+                      "(looks cut off)")
+    return {"faults": faults,
+            "note": f"{words} words (window {lo}-{hi}), overlap "
+                    f"{overlap:.1%} (max {max_ov:.0%})",
+            "overlap": overlap, "words": words, "target": target,
+            "runs": studio.overlap_runs(script, source) if source.strip()
+            else []}
+
+
+def _feedback_lines(text: str) -> list[str]:
+    out = []
+    for line in (text or "").splitlines():
+        line = re.sub(r"^\s*(?:[-*\u2022]|\d+[.)])\s*", "", line).strip()
+        if line:
+            out.append(line[:400])
+    return out[:12]
+
+
+def script_revise_prompt(cfg, pid: int, script: str, judge_feedback: str = "",
+                         title: str = "", style_guide: str | None = None,
+                         notes: str | None = None,
+                         target_words: int | None = None,
+                         files: list | None = None) -> str:
+    """The writer prompt for a RETRY: the same prompt the built-in retry sends
+    (new angle, the measured overlap, the lifted passages, the editor's fixes,
+    length corrections) so a rejected script is rewritten, not re-rolled."""
+    chk = script_local_checks(cfg, pid, script, target_words)
+    var = studio.variation_nudge(
+        attempt=2, overlap=chk["overlap"], runs=chk["runs"],
+        feedback=_feedback_lines(judge_feedback) or None)
+    if chk["words"] > int(chk["target"] * LEN_MAX_RATIO):
+        var += (f"\nThe previous draft was too long. Keep this one at or "
+                f"under {chk['target']} words.")
+    if chk["words"] < int(chk["target"] * LEN_MIN_RATIO):
+        var += (f"\nThe previous draft was far too short. Write the full "
+                f"{chk['target']} words and cover every fact in the notes.")
+    return script_writer_prompt(cfg, pid, title, chk["target"], style_guide,
+                                notes, files, variation=var)
 
 
 # ---- shotlist ---------------------------------------------------------------
