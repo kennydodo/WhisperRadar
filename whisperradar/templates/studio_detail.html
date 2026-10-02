@@ -382,6 +382,11 @@
       {% if script_versions %}
       <div class="actions" style="margin-top:4px">
         <span class="muted" style="font-size:12px">Saved versions (click to load):</span>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/clear"
+              onsubmit="return wrConfirmSubmit(this, 'Delete all {{ script_versions|length }} saved script versions?')">
+          <input type="hidden" name="kind" value="script">
+          <button type="submit" class="ghost" title="Delete every saved script version">Clear all</button>
+        </form>
         {% for v in script_versions %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
               onsubmit="return wrConfirmSubmit(this, 'Replace the current script with version {{ v }}?')">
@@ -1007,6 +1012,12 @@
     {% if direction_versions %}
     <div class="actions" style="margin-top:4px">
       <span class="muted" style="font-size:12px">Saved versions for {{ STAGE_DISPLAY.get(stage, stage) }} (click to load):</span>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/clear"
+            onsubmit="return wrConfirmSubmit(this, 'Delete all {{ direction_versions|length }} saved {{ STAGE_DISPLAY.get(stage, stage) }} versions?')">
+        <input type="hidden" name="kind" value="direction">
+        <input type="hidden" name="stage" value="{{ stage }}">
+        <button type="submit" class="ghost" title="Delete every saved version for this stage">Clear all</button>
+      </form>
       {% for v in direction_versions %}
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/versions/load"
             onsubmit="return wrConfirmSubmit(this, 'Replace the {{ STAGE_DISPLAY.get(stage, stage) }} direction with version {{ v }}?')">

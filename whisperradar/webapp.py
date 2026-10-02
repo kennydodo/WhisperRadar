@@ -2414,6 +2414,24 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, msg=f"Version '{name}' deleted")
         return _studio_url(pid, error="Version not found")
 
+    @app.post("/studio/<int:pid>/versions/clear")
+    def studio_versions_clear(pid):
+        """Delete every saved version of one kind (script, or one stage's
+        direction) in a single click - the same files the list shows."""
+        kind = request.form.get("kind") or ""
+        stage = request.form.get("stage") or ""
+        if kind not in ("script", "direction"):
+            return _studio_url(pid, error="Unknown version type")
+        if kind == "direction" and stage not in db.STAGES:
+            return _studio_url(pid, error="Unknown stage")
+        pdir = studio.prod_dir(cfg, pid)
+        names = _version_names(pdir, kind, stage or None)
+        for name in names:
+            _version_path(pdir, kind, stage, name).unlink(missing_ok=True)
+        if not names:
+            return _studio_url(pid, error="No saved versions to clear")
+        return _studio_url(pid, msg=f"Cleared {len(names)} saved version(s)")
+
     @app.post("/studio/<int:pid>/shotlist/generate")
     def studio_shotlist_generate(pid):
         if sjob.running:
