@@ -318,7 +318,7 @@ def _run_style(cfg, pid: int, provider: str | None = None) -> None:
         if not text:
             raise RuntimeError("LLM returned an empty style guide")
         pdir = studio.prod_dir(cfg, pid)
-        (pdir / "style.md").write_text(text + "\n", encoding="utf-8")
+        (pdir / "writing_style.md").write_text(text + "\n", encoding="utf-8")
         db.add_step(conn, pid, "style", "auto",
                     detail=f"{provider}, source ~{word_count} words")
     finally:
@@ -326,6 +326,26 @@ def _run_style(cfg, pid: int, provider: str | None = None) -> None:
 
 
 RESEARCH_NOTES_FILE = "research_notes.md"
+# Records what the cached notes were built from. Notes made before this existed
+# (or from a different source) are re-checked instead of trusted blindly: an old
+# one-shot build could stop partway through the transcript.
+RESEARCH_NOTES_META = "research_notes.json"
+# A notes file with no meta that is shorter than this share of the source's
+# word count is treated as cut off and rebuilt once.
+NOTES_LEGACY_MIN_RATIO = 0.35
+
+
+def _notes_cache_valid(pdir: Path, notes: str, source_text: str) -> bool:
+    try:
+        meta = json.loads((Path(pdir) / RESEARCH_NOTES_META)
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = None
+    if isinstance(meta, dict) and "source_chars" in meta:
+        return meta["source_chars"] == len(source_text or "")
+    src_words = len((source_text or "").split())
+    return not src_words or (len(notes.split())
+                             >= NOTES_LEGACY_MIN_RATIO * src_words)
 
 # Flow's "still busy" wave leaves some cards unrendered. Rather than failing the
 # stage, pause (the account settles) and resume: both engines skip what already
@@ -356,31 +376,53 @@ def _research_notes(cfg, pdir: Path, title: str, genre: str,
     if not refresh:
         try:
             cached = path.read_text(encoding="utf-8").strip()
-            if cached:
+            if cached and _notes_cache_valid(pdir, cached, source_text):
                 _log_line(f"using cached {RESEARCH_NOTES_FILE} "
                           f"({len(cached.split())} words)")
                 return cached
+            if cached:
+                _log_line(f"cached {RESEARCH_NOTES_FILE} looks incomplete "
+                          f"({len(cached.split())} words for a "
+                          f"{len((source_text or '').split())}-word source) - "
+                          f"rebuilding it")
         except OSError:
             pass
     elif path.exists():
         _log_line(f"regenerate: rebuilding {RESEARCH_NOTES_FILE} for a fresh take")
+    parts = studio.split_for_notes(source_text)
+    pieces: list[str] = []
     try:
-        notes = studio.llm_generate(
-            cfg, studio.notes_prompt(title, genre, source_text),
-            provider=provider, max_tokens=studio.NOTES_MAX_TOKENS)
+        for i, chunk in enumerate(parts, 1):
+            if len(parts) > 1:
+                _log_line(f"building research notes: part {i}/{len(parts)}")
+            out = studio.llm_generate(
+                cfg, studio.notes_prompt(title, genre, chunk,
+                                         part=(i, len(parts))),
+                provider=provider, max_tokens=studio.NOTES_MAX_TOKENS)
+            out = (out or "").strip()
+            if not out:
+                raise RuntimeError(f"part {i}/{len(parts)} came back empty")
+            chunk_words = len(chunk.split())
+            if chunk_words and len(out.split()) < 0.08 * chunk_words:
+                _log_line(f"warning: notes for part {i}/{len(parts)} are very "
+                          f"short ({len(out.split())} words for {chunk_words})")
+            pieces.append(out)
     except Exception as exc:  # noqa: BLE001 - notes are an optimisation
         _log_line(f"could not build research notes ({exc}); writing from the "
                   f"transcript")
         return source_text
-    notes = (notes or "").strip()
-    if not notes:
-        _log_line("research notes came back empty; writing from the transcript")
-        return source_text
+    notes = "\n\n".join(pieces).strip()
     try:
         path.write_text(notes + "\n", encoding="utf-8")
+        (pdir / RESEARCH_NOTES_META).write_text(
+            json.dumps({"source_chars": len(source_text or ""),
+                        "parts": len(parts),
+                        "words": len(notes.split())}) + "\n",
+            encoding="utf-8")
     except OSError:
         pass
-    _log_line(f"built {RESEARCH_NOTES_FILE} ({len(notes.split())} words)")
+    _log_line(f"built {RESEARCH_NOTES_FILE} ({len(notes.split())} words, "
+              f"{len(parts)} part(s))")
     return notes
 
 
@@ -456,8 +498,14 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
     finally:
         conn.close()
     pdir = studio.prod_dir(cfg, pid)
-    style = studio.find_style(pdir)
+    # The script is written and judged against the WRITING style guide from
+    # stage 1 (writing_style.md). The channel's art style (style.md) is for
+    # images only and must never be handed to the writer/judge as a voice guide.
+    style = studio.find_writing_style(pdir)
     style_guide = style.read_text(encoding="utf-8") if style else ""
+    if not style_guide.strip():
+        _log_line("no writing style guide (run the style stage first) - "
+                  "writing without one")
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
     target_words = studio.script_target_words(cfg.studio_script_words,
                                               source_words)
@@ -530,7 +578,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         existing_words = len(re.findall(r"\w+", existing_text))
         existing_rating = studio.rate_script(
             cfg, prod["title"], prod["genre"], existing_text, facts,
-            style_guide, judge, temperature=eff["script_judge_temperature"])
+            style_guide, judge, temperature=eff["script_judge_temperature"],
+            extra_direction=db.stage_extra(prod, "script"))
         existing_passed, _why, _tl, _ts = _script_gate(
             existing_words, target_words, existing_overlap,
             existing_rating["score"], min_rating, max_overlap, hard_overlap,
@@ -603,7 +652,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
                                     facts, style_guide, judge,
-                                    temperature=eff["script_judge_temperature"])
+                                    temperature=eff["script_judge_temperature"],
+                                    extra_direction=db.stage_extra(prod, "script"))
         score = rating["score"]
         passed, why, too_long, too_short = _script_gate(
             words, target_words, overlap, score, min_rating, max_overlap,
@@ -1753,9 +1803,9 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
     {stage, action: 'skip'|'run'|'pause', detail}."""
     pdir = studio.prod_dir(cfg, pid)
     if stage == "style":
-        if studio.find_style(pdir):
+        if studio.find_writing_style(pdir):
             return {"stage": stage, "action": "skip",
-                    "detail": "style guide already exists"}
+                    "detail": "writing style guide already exists"}
         if not _source_transcript_text(cfg, pid):
             return {"stage": stage, "action": "pause",
                     "detail": "no source transcript - write the style "

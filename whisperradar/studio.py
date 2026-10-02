@@ -200,7 +200,7 @@ def pick_folder(initial_dir: str | None = None) -> str | None:
     return chosen or None
 
 
-MOVE_ITEMS = ["script.md", "style.md", "bible.md", "source_transcript.txt",
+MOVE_ITEMS = ["script.md", "style.md", "writing_style.md", "bible.md", "source_transcript.txt",
               "subtitles.srt", "shotlist.json", "shotlist.json.bak",
               "imgtovideo.json", "prompts.txt", "batch_sheet.txt", "final.mp4",
               "audio", "audio_previous", "images", "refs", "out", "versions"]
@@ -260,7 +260,18 @@ def find_script(pid_dir: Path) -> Path | None:
 
 
 def find_style(pid_dir: Path) -> Path | None:
+    """The production's ART style (style.md): image/shot direction only. It is
+    seeded from the channel's style text and is NOT the script's writing guide -
+    see find_writing_style."""
     p = pid_dir / "style.md"
+    return p if p.exists() else None
+
+
+def find_writing_style(pid_dir: Path) -> Path | None:
+    """The WRITING style guide of the source video (writing_style.md), made by
+    stage 1 (style) and read only by the script stage and its judge. Kept apart
+    from style.md so the channel's art direction can never stand in for it."""
+    p = pid_dir / "writing_style.md"
     return p if p.exists() else None
 
 
@@ -3348,9 +3359,24 @@ JUDGE_SOURCE_CHARS = SOURCE_FACTS_MAX_CHARS
 
 
 def rating_prompt(title: str, genre: str, script: str, source: str,
-                  style_guide: str, overlap: float) -> str:
+                  style_guide: str, overlap: float,
+                  extra_direction: str = "") -> str:
     rubric = "\n".join(f"- {name}: {desc}" for name, desc in RATING_RUBRIC)
     facts = (source or "").strip()[:JUDGE_SOURCE_CHARS]
+    # The writer is told to follow the creator's additional direction, so the
+    # judge must see it too. Without it the judge penalised a script for doing
+    # exactly what the creator asked (e.g. matching the title's number of
+    # points when the source's own count differed).
+    direction = (extra_direction or "").strip()
+    direction_block = ""
+    if direction:
+        direction_block = (
+            f"CREATOR'S ADDITIONAL DIRECTION (the writer was told to follow "
+            f"it): {direction}\n"
+            f"Judge whether the script follows this direction, and do NOT "
+            f"penalise it for doing what the direction asks, even where that "
+            f"differs from the title, the SOURCE FACTS' own structure or "
+            f"count. Invented facts are still penalised.\n\n")
     return (
         f"You are a ruthless YouTube script editor for the channel genre "
         f"'{genre}'. Score this script for the video \"{title}\".\n\n"
@@ -3363,6 +3389,7 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"are absent from, or contradict, the SOURCE FACTS.\n\n"
         f"SOURCE FACTS:\n{facts or '(none)'}\n\n"
         f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:3000]}\n\n"
+        f"{direction_block}"
         f"SCRIPT:\n{script or ''}\n\n"
         f"Reply with ONLY a JSON object:\n"
         f'{{"score": <1-10 overall, one decimal>, '
@@ -3395,7 +3422,7 @@ def _parse_json_object(text: str) -> dict:
 
 def rate_script(cfg, title: str, genre: str, script: str, source: str,
                 style_guide: str, provider: str | None,
-                temperature: float = 1.0) -> dict:
+                temperature: float = 1.0, extra_direction: str = "") -> dict:
     """LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
     Never raises: a judge failure must not lose a usable draft.
 
@@ -3403,7 +3430,8 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     script stage passes a low value here - the writer must keep varying
     between attempts, the judge scoring it should not."""
     overlap = overlap_ratio(script, source)
-    prompt = rating_prompt(title, genre, script, source, style_guide, overlap)
+    prompt = rating_prompt(title, genre, script, source, style_guide, overlap,
+                           extra_direction=extra_direction)
     try:
         # 900 was a flat guess (see 9aafa69) sized for a bare score - it never
         # accounted for the 7-field criteria object plus feedback[] plus
@@ -3529,7 +3557,10 @@ hook pattern, structure, and CTA style all come from it):
     var_block = f"\n{variation}" if variation else ""
     extra = (extra_direction or "").strip()
     if extra:
-        extra = f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
+        extra = (f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it; where it "
+                 f"conflicts with the facts on structure or the number of "
+                 f"points, the direction wins - but never invent facts to "
+                 f"satisfy it):\n{extra}\n")
     return f"""You are an original YouTube scriptwriter for a {genre} channel.
 
 {style_block}
@@ -3582,10 +3613,41 @@ Rules:
 Output ONLY the script text."""
 
 
-NOTES_MAX_TOKENS = 2000
+# Notes are built PART BY PART. One call over a whole transcript used to hit a
+# 2000-token cap and stop mid-word partway through the list (a 4,500-word, 11-rule
+# transcript produced notes that ended at rule 7), so the writer and the judge
+# never saw the later facts: the script could not cover them and the judge
+# flagged them as invented. Each part is small enough that its notes fit the
+# budget, and together the parts cover the whole transcript.
+NOTES_MAX_TOKENS = 4000          # per part
+NOTES_CHUNK_WORDS = 1200
 
 
-def notes_prompt(title: str, genre: str, source_text: str) -> str:
+def split_for_notes(text: str, max_words: int = NOTES_CHUNK_WORDS) -> list[str]:
+    """Split a transcript into parts of about `max_words` words, cutting at a
+    sentence end when one is near. Short texts stay in one part."""
+    words = (text or "").split()
+    if len(words) <= int(max_words * 1.25):
+        return [(text or "").strip()]
+    chunks: list[list[str]] = []
+    start = 0
+    while start < len(words):
+        end = min(len(words), start + max_words)
+        if end < len(words):
+            floor = start + int(max_words * 0.7)
+            for i in range(end - 1, floor - 1, -1):
+                if words[i].endswith((".", "!", "?")):
+                    end = i + 1
+                    break
+        chunks.append(words[start:end])
+        start = end
+    if len(chunks) > 1 and len(chunks[-1]) < int(max_words * 0.25):
+        chunks[-2].extend(chunks.pop())
+    return [" ".join(c) for c in chunks]
+
+
+def notes_prompt(title: str, genre: str, source_text: str,
+                 part: tuple[int, int] | None = None) -> str:
     """Turn a source transcript into neutral research NOTES for the writer.
 
     Feeding the transcript itself as the 'facts' made the writer echo it: the
@@ -3595,8 +3657,13 @@ def notes_prompt(title: str, genre: str, source_text: str) -> str:
     text = (source_text or "").strip()
     if len(text) > SOURCE_FACTS_MAX_CHARS:
         text = text[:SOURCE_FACTS_MAX_CHARS] + " ..."
+    part_note = ""
+    if part and part[1] > 1:
+        part_note = (f"\nThis is part {part[0]} of {part[1]} of the transcript. "
+                     f"Extract the facts from THIS part only - the other parts "
+                     f"are handled separately.\n")
     return f"""You are a researcher for a {genre} YouTube channel. Below is a transcript of an existing video titled "{title}".
-
+{part_note}
 Extract the FACTS it contains as a terse bulleted list - every claim, number, name, place and example, one per line.
 
 Rules:

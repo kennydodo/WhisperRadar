@@ -274,7 +274,7 @@ def _page_size(value, default: int) -> int:
 # Generated artifacts per stage, deleted by the start-over reset. Named
 # version libraries, refs, the bible and notes are inputs - kept.
 RESET_FILES = {
-    "style": ["style.md"],
+    "style": ["writing_style.md"],
     "script": ["script.md"],
     "audio": ["audio.mp3", "audio.wav", "audio.m4a", "audio.flac",
               "audio.ogg"],
@@ -1611,7 +1611,9 @@ def create_app(cfg) -> Flask:
 
         script = studio.find_script(pdir)
         script_text = _read_text(script)
-        style = studio.find_style(pdir)
+        # stage 1 / script stage show the WRITING style guide; the art style
+        # (style.md) is managed on the channel and used by the shots stage
+        style = studio.find_writing_style(pdir)
         style_text = _read_text(style)
         bible = studio.find_bible(pdir)
         bible_text = _read_text(bible)
@@ -2045,18 +2047,17 @@ def create_app(cfg) -> Flask:
             text = f.read().decode("utf-8", "ignore").strip()
         if not text:
             return _studio_url(pid, error="Nothing to save")
-        (pdir / "style.md").write_text(text + "\n", encoding="utf-8")
+        (pdir / "writing_style.md").write_text(text + "\n", encoding="utf-8")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            # a production-page edit is an explicit per-production override
-            db.update_production(conn, pid, style_override=1)
+            # the writing guide is per production; it does not touch the
+            # channel's art style or the style_override flag
             db.add_step(conn, pid, "style", "manual")
             autorun._advance(cfg, pid, "style")
         finally:
             conn.close()
-        return _studio_url(pid, msg="Style guide saved (this production now "
-                                     "overrides the channel style)")
+        return _studio_url(pid, msg="Writing style guide saved")
 
     @app.post("/studio/<int:pid>/script/generate")
     def studio_script_generate(pid):

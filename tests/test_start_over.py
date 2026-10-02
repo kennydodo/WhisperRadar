@@ -25,7 +25,7 @@ from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
 
 ALL_STAGE_FILES = {
-    "style.md": "s", "script.md": "s", "audio.mp3": "a",
+    "writing_style.md": "s", "script.md": "s", "audio.mp3": "a",
     "subtitles.srt": "s", "shotlist.json": "{}", "final.mp4": "m",
 }
 
@@ -65,7 +65,7 @@ class StartOverTests(unittest.TestCase):
     def test_review_is_rejected(self):
         resp = self._post("review")
         self.assertIn("error=", resp.headers["Location"])
-        self.assertTrue((self.pdir / "style.md").exists())
+        self.assertTrue((self.pdir / "writing_style.md").exists())
 
     def test_unknown_stage_is_rejected(self):
         resp = self._post("not-a-stage")
@@ -107,7 +107,7 @@ class StartOverTests(unittest.TestCase):
         self._post("audio")
         self.assertFalse((self.pdir / "audio.mp3").exists())
         self.assertFalse((self.pdir / "subtitles.srt").exists())
-        self.assertTrue((self.pdir / "style.md").exists())
+        self.assertTrue((self.pdir / "writing_style.md").exists())
         self.assertTrue((self.pdir / "script.md").exists())
 
     def test_reset_from_script_keeps_audio_by_default(self):

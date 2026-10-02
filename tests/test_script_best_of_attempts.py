@@ -60,7 +60,7 @@ class ScriptBestOfAttemptsTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _rate(self, cfg, title, genre, script, source, style_guide,
-             provider, temperature=1.0):
+             provider, temperature=1.0, extra_direction=""):
         score = 9.0 if script.strip() == SHORT_HIGH_SCORE else 7.0
         return {"score": score, "criteria": {}, "feedback": [],
                 "weak_spans": [], "error": None}

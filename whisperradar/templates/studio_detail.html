@@ -325,12 +325,12 @@
       {% if style %}
       <div class="artifact">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-          <span style="font-weight:600; color:var(--green)">Style guide extracted from the source video - this is passed to the LLM</span>
+          <span style="font-weight:600; color:var(--green)">Writing style guide extracted from the source video - passed to the LLM for the script</span>
         </div>
         <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:340px; overflow-y:auto">{{ style_text }}</pre>
       </div>
       {% else %}
-      <div class="muted" style="margin-bottom:8px">No style guide yet. Generate one from the source transcript's writing style, or write your own below - whatever is here gets passed to the LLM for the script and images.</div>
+      <div class="muted" style="margin-bottom:8px">No writing style guide yet. Generate one from the source transcript's writing style, or write your own below - it is passed to the LLM for the script only (image art direction is set on the channel).</div>
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/generate">
@@ -340,18 +340,10 @@
           </button>
         </form>
       </div>
-      <div class="muted" style="font-size:12px; margin:8px 0 4px">
-        {% if style_src == 'production' %}<b>Production override ✓</b> — this
-          production's own style guide is used, not the channel's.
-          <form method="post" action="/studio/{{ prod['id'] }}/style-bible/use-channel" style="display:inline"><input type="hidden" name="which" value="style"><button type="submit" class="secondary" style="padding:2px 8px;font-size:12px">use channel instead</button></form>
-        {% elif style_src == 'channel' %}Using the <b>channel</b> style guide — editing here overrides it for this production only.
-        {% else %}No style guide yet — set one on the channel or here.
-        {% endif %}
-      </div>
       <form method="post" action="/studio/{{ prod['id'] }}/style/save">
-        <textarea name="style" placeholder="Write or paste your own style guide (markdown) - it will be passed to the LLM for the script and images...">{{ style_text }}</textarea>
+        <textarea name="style" placeholder="Write or paste your own writing style guide (markdown) - voice, pacing, hook, structure, CTA. It is used for the script only...">{{ style_text }}</textarea>
         <div class="actions">
-          <button type="submit">Save style guide</button>
+          <button type="submit">Save writing style guide</button>
         </div>
       </form>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/save" enctype="multipart/form-data" style="margin-top:10px">
@@ -363,7 +355,7 @@
       {% if style %}
       <div class="artifact">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-          <span style="font-weight:600; color:var(--green)">Style guide the LLM follows (extracted from the source video)</span>
+          <span style="font-weight:600; color:var(--green)">Writing style guide the LLM follows (extracted from the source video)</span>
           <a class="muted" style="font-size:12px" href="/studio/{{ prod['id'] }}?stage=style">edit at style stage</a>
         </div>
         <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>
@@ -424,9 +416,9 @@
         </form>
       </div>
       {% if style %}
-      <div class="muted" style="font-size:12px; margin-top:8px">Style guide is applied to this generation - <a href="/studio/{{ prod['id'] }}?stage=style">view / edit it</a>.</div>
+      <div class="muted" style="font-size:12px; margin-top:8px">Writing style guide is applied to this generation - <a href="/studio/{{ prod['id'] }}?stage=style">view / edit it</a>.</div>
       {% else %}
-      <div class="warn" style="font-size:12px; margin-top:8px">No style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the style stage</a> for a consistent voice.</div>
+      <div class="warn" style="font-size:12px; margin-top:8px">No writing style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the style stage</a> for a consistent voice.</div>
       {% endif %}
 
     {% elif stage == "audio" %}

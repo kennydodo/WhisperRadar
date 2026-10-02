@@ -96,19 +96,30 @@ class StyleSaveSetsOverrideTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_style_save_marks_override(self):
+    def test_style_save_writes_writing_guide_only(self):
+        # stage 1's manual save is the WRITING guide: it must land in
+        # writing_style.md and must not touch the art style or the override flag
+        pdir = studio.prod_dir(self.cfg, self.pid)
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "style.md").write_text("art: watercolor\n", encoding="utf-8")
         r = self.client.post(f"/studio/{self.pid}/style/save",
-                             data={"style": "my style"},
+                             data={"style": "my writing style"},
                              follow_redirects=False)
         self.assertEqual(r.status_code, 302)
+        self.assertEqual((pdir / "writing_style.md").read_text(encoding="utf-8").strip(),
+                         "my writing style")
+        self.assertEqual((pdir / "style.md").read_text(encoding="utf-8").strip(),
+                         "art: watercolor")
         conn = db.connect(self.cfg.db_path)
         prod = db.get_production(conn, self.pid)
         conn.close()
-        self.assertEqual(prod["style_override"], 1)
+        self.assertEqual(prod["style_override"] or 0, 0)
 
     def test_use_channel_clears_override(self):
-        self.client.post(f"/studio/{self.pid}/style/save",
-                         data={"style": "my style"}, follow_redirects=False)
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, style_override=1)
+        conn.commit()
+        conn.close()
         self.client.post(f"/studio/{self.pid}/style-bible/use-channel",
                          data={"which": "style"}, follow_redirects=False)
         conn = db.connect(self.cfg.db_path)
