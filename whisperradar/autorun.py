@@ -335,12 +335,24 @@ RESEARCH_NOTES_META = "research_notes.json"
 NOTES_LEGACY_MIN_RATIO = 0.35
 
 
+def save_manual_notes(pdir: Path, text: str) -> None:
+    """Store user-supplied research notes and mark them manual, so the cache
+    check keeps them instead of rebuilding them from the source."""
+    pdir = Path(pdir)
+    (pdir / RESEARCH_NOTES_FILE).write_text(text.strip() + "\n",
+                                            encoding="utf-8")
+    (pdir / RESEARCH_NOTES_META).write_text(
+        json.dumps({"manual": True}), encoding="utf-8")
+
+
 def _notes_cache_valid(pdir: Path, notes: str, source_text: str) -> bool:
     try:
         meta = json.loads((Path(pdir) / RESEARCH_NOTES_META)
                           .read_text(encoding="utf-8"))
     except (OSError, ValueError):
         meta = None
+    if isinstance(meta, dict) and meta.get("manual"):
+        return True  # written or pasted by the user: never rebuilt
     if isinstance(meta, dict) and "source_chars" in meta:
         return meta["source_chars"] == len(source_text or "")
     src_words = len((source_text or "").split())

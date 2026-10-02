@@ -45,6 +45,10 @@ def _context(cfg, pid: int) -> dict:
             raise PromptError("Unknown production")
         pdir = studio.prod_dir(cfg, pid)
         from . import settings
+        # same as the built-in shots stage: copy the channel's bible / refs
+        # into the production first, so the prompt sees the reference files
+        studio.seed_production(cfg, conn, prod)
+        prod = db.get_production(conn, pid)
         eff = settings.for_production(conn, prod)
         style_guide, _s, bible, _b = autorun.style_bible(cfg, conn, prod, pdir)
     finally:
@@ -62,6 +66,17 @@ def _read(path) -> str:
 
 def _writing_style(ctx) -> str:
     return _read(studio.find_writing_style(ctx["pdir"]))
+
+
+def save_notes(cfg, pid: int, text: str) -> int:
+    """Persist pasted research notes as the production's notes (kept as-is by
+    the built-in stages too). Returns the word count."""
+    text = (text or "").strip()
+    if not text:
+        raise PromptError("Paste the notes first")
+    ctx = _context(cfg, pid)
+    autorun.save_manual_notes(ctx["pdir"], text)
+    return len(text.split())
 
 
 def _research_notes(ctx) -> str:
@@ -197,7 +212,8 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
     profile = briefs.resolve_profile(
         eff.get("brief_motion"), eff.get("brief_min_hold"),
         eff.get("brief_max_hold"),
-        default_max=eff["shotlist_max_hold_seconds"])
+        default_max=eff["shotlist_max_hold_seconds"],
+        custom=eff.get("brief_custom"))
     max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
     total_s = studio._srt_seconds(cues[-1]["end"])
     return {"srt_text": srt_text, "cues": cues, "profile": profile,

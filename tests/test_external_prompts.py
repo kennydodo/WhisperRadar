@@ -298,3 +298,55 @@ class RouteTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CustomProfileTests(Base):
+    channel_fields = {"brief_motion": "custom", "brief_custom": json.dumps(
+        {"allowed": ["ZI", "ZO"], "rules": "ONLY-MY-CUSTOM-RULE"})}
+
+    def test_custom_motion_profile_reaches_planner_and_judge(self):
+        planner = ep.shotlist_planner_prompt(self.cfg, self.pid)
+        self.assertIn("ONLY-MY-CUSTOM-RULE", planner)
+        plan = json.dumps({"shots": [
+            {"asset": "a", "cues": [1, 3]}], "images": [
+            {"file": "a", "prompt": "x"}]})
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, plan)
+        self.assertIn("only ZI/ZO is allowed", text)
+
+
+class SeedAndNotesTests(Base):
+    def test_channel_reference_files_are_listed_for_the_planner(self):
+        refs = Path(self.tmp.name) / "chanrefs"
+        refs.mkdir()
+        (refs / "MAYA.png").write_bytes(b"\x89PNG")
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_own_channel(conn, self.chan, refs_dir=str(refs))
+        conn.commit()
+        conn.close()
+        self.assertFalse((self.pdir / "refs" / "MAYA.png").exists())
+        text = ep.shotlist_planner_prompt(self.cfg, self.pid)
+        self.assertIn("MAYA.png", text)
+        self.assertTrue((self.pdir / "refs" / "MAYA.png").exists())
+
+    def test_saved_notes_are_kept_by_the_built_in_cache_check(self):
+        from whisperradar import autorun
+        words = ep.save_notes(self.cfg, self.pid, "- a fact\n- another fact")
+        self.assertEqual(words, 6)
+        notes = (self.pdir / "research_notes.md").read_text("utf-8")
+        # far shorter than 35% of a long source, still trusted
+        self.assertTrue(autorun._notes_cache_valid(
+            self.pdir, notes, "word " * 5000))
+
+    def test_save_notes_needs_text(self):
+        with self.assertRaises(ep.PromptError):
+            ep.save_notes(self.cfg, self.pid, "  ")
+
+    def test_route_saves_notes(self):
+        app = create_app(self.cfg)
+        r = app.test_client().post(f"/studio/{self.pid}/external-prompt",
+                                   data={"kind": "save_notes",
+                                         "notes": "- saved fact"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("saved fact",
+                      (self.pdir / "research_notes.md").read_text("utf-8"))

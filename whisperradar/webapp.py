@@ -2538,6 +2538,11 @@ def create_app(cfg) -> Flask:
                 text = external_prompts.style_extraction_prompt(cfg, pid, title)
             elif kind == "notes":
                 text = external_prompts.notes_extraction_prompt(cfg, pid, title)
+            elif kind == "save_notes":
+                n = external_prompts.save_notes(
+                    cfg, pid, request.form.get("notes") or "")
+                return jsonify({"saved": n, "message":
+                                f"Saved {n} words as the research notes"})
             elif kind in ("script_writer", "script_judge"):
                 style = request.form.get("style")
                 notes = request.form.get("notes")

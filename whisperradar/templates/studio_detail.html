@@ -390,13 +390,15 @@
           <label>Target words <input type="number" data-f="words" min="100" placeholder="channel default" style="width:130px"></label>
         </div>
         {% if not style %}<div class="warn" style="margin-top:8px">No writing style guide yet (the visual style is a different thing and is not used here) - use "Writing style prompt" below to get one from the reference script, paste the result into the writing style stage, then build the writer prompt.</div>{% endif %}
-        {% if not has_research_notes %}<div class="muted" style="font-size:12px; margin-top:8px">No research notes yet - the writer prompt will have no facts. Use "Notes prompt" to get them from the reference script (the notes box below is optional: paste them here instead of saving).</div>
-        <textarea data-f="notes" style="min-height:70px; margin-top:6px" placeholder="Optional - paste research notes (facts only) here"></textarea>{% endif %}
+        {% if not has_research_notes %}<div class="muted" style="font-size:12px; margin-top:8px">No research notes yet - the writer prompt will have no facts. Use "Notes prompt" to get them from the reference script, then paste them below and save.</div>
+        {% else %}<div class="muted" style="font-size:12px; margin-top:8px">Research notes are on file and used automatically. Paste notes below only to use different ones (they override the file in the prompts you build here); "Save as research notes" makes them the production's notes for good.</div>{% endif %}
+        <textarea data-f="notes" style="min-height:70px; margin-top:6px" placeholder="Optional - paste research notes (facts only) here"></textarea>
         <div class="actions" style="margin-top:8px">
           <button type="button" class="secondary" onclick="wrExt(this,'script_writer')">Writer prompt</button>
           <button type="button" class="secondary" onclick="wrExt(this,'script_judge')">Judge prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'style')" title="Asks an LLM to extract the reference script's writing style">Writing style prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'notes')" title="Asks an LLM to turn the reference script into neutral fact notes">Notes prompt</button>
+          <button type="button" class="ghost" onclick="wrExt(this,'save_notes')" title="Save the pasted notes as this production's research notes (kept; never rebuilt from the source)">Save as research notes</button>
           <span class="extmsg muted" style="font-size:12px"></span>
         </div>
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
@@ -1214,6 +1216,7 @@
       .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
       .then(function (res) {
         if (!res.ok) { out.value = ''; msg.textContent = res.j.error || 'Could not build the prompt'; return; }
+        if (res.j.message) { msg.textContent = res.j.message; return; }
         out.value = res.j.prompt;
         msg.textContent = res.j.chars.toLocaleString() + ' characters - ready to copy';
         if (faults && res.j.local_faults !== undefined) {
