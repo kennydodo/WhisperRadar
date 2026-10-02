@@ -328,6 +328,10 @@ class CustomChannelTests(_ChannelCase):
             self.assertEqual(where.get(name), title, name)
         self.assertTrue("</details>" in edit and edit.count("<details") == 6)
 
+    def test_the_groups_keep_their_contents_off_the_border(self):
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertTrue("padding: 0 16px 16px;" in page)
+
     def test_the_form_shows_the_saved_spec(self):
         self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"],
                    custom_rules="unique-rule-text")
