@@ -283,7 +283,7 @@
               "Standard" is the brief exactly as it has always been; the
               shotlist review checks the same limits the brief states.
             </div>
-            <div class="inline">
+            <div class="inline" style="gap:28px">
               <label>motion &amp; pacing
                 <select name="brief_motion" style="width:290px">
                   {% for key, preset in brief_presets.items() %}
@@ -294,8 +294,9 @@
               </label>
               <label>presentation starter
                 <select style="width:290px"
-                        onchange="if (this.value) { this.form.elements['brief_presentation'].value = this.value; this.selectedIndex = 0; }">
+                        onchange="var box = this.form.elements['brief_presentation']; if (this.value === '__custom__') { box.value = ''; box.focus(); } else if (this.value) { box.value = this.value; } this.selectedIndex = 0;">
                   <option value="">fill the box below from...</option>
+                  <option value="__custom__">Custom - write my own</option>
                   {% for key, starter in brief_starters.items() %}
                   <option value="{{ starter[1] }}">{{ starter[0] }}</option>
                   {% endfor %}

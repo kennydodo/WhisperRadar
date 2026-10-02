@@ -286,6 +286,20 @@ class CustomChannelTests(_ChannelCase):
                      "custom_code_share", "custom_rules"):
             self.assertTrue(f'name="{name}"' in page, name)
 
+    def test_the_presenter_starter_has_a_custom_option_that_clears_the_box(self):
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertTrue('<option value="__custom__">Custom - write my own</option>'
+                        in page)
+        self.assertTrue("box.value = ''; box.focus()" in page)
+        # the starters still fill the box, and the dropdown resets afterwards
+        self.assertTrue("box.value = this.value" in page)
+        self.assertTrue("this.selectedIndex = 0" in page)
+
+    def test_the_two_brief_dropdowns_have_room_between_them(self):
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertTrue('<div class="inline" style="gap:28px">\n'
+                        '              <label>motion &amp; pacing' in page)
+
     def test_the_form_shows_the_saved_spec(self):
         self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"],
                    custom_rules="unique-rule-text")
