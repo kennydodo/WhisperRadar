@@ -182,13 +182,342 @@ LONG_HOLDS = MotionProfile(
             "carries motion — never on ST; no shot exceeds [[MAX]]s."),
     })
 
+# ---- more presets -----------------------------------------------------------
+# Rows of the standard composition table, minus the codes a preset does not use.
+_FLOW_SAFE_TABLE = """\
+| Visual | Motion | Why |
+|---|---|---|
+| INF diagram | ZI | push into the mechanism |
+| INF wide comparison | ZO | pull back to reveal the full span |
+| CMP left/right split | ZI | no horizontal pan on this channel: compose the pair as one centered frame and push in |
+| CMP top/bottom split | PU / PD | the tilt performs the comparison - reveal A, then B |
+| SCN character beat | ZI | pulls the viewer inward |
+| SCN environment | ZO | pulls back to establish the space |
+| CU detail | ZO | short hold, pulls out to context |
+| HYB scene + graphics | ZI | scene first, graphics revealed by the push |
+| PROC stages | PD | stack the stages top to bottom and tilt down through them |
+| OVR wide concept | ZO | pull back to reveal the whole idea |"""
+
+FLOW_SAFE = MotionProfile(
+    key="flow_safe",
+    label="Flow-safe - zooms and vertical tilts only",
+    description="ST, ZI, ZO, PU, PD. No horizontal pans or panoramas: Google "
+                "Flow cannot render the wide canvases PL/PR/PV need, so "
+                "they would only render as push-ins.",
+    allowed=("ST", "ZI", "ZO", "PU", "PD"),
+    code_share_overrides={},
+    slots={
+        "MOTION_SECTION": f"""\
+### Motion is assigned with composition, not after it
+
+This channel uses only these motion codes: ST, ZI, ZO, PU and PD. Never use PL, PR or PV - the image generator cannot render the extra-wide canvas a horizontal pan or a panorama needs, and a plan that uses them fails review. Ignore every rule elsewhere in this brief that asks for PL, PR or PV.
+
+ST (static) is the exception, not the default. Every other shot carries motion chosen while designing the image - the motion code determines the canvas and the subject placement, so it can never be stamped on afterward. Motion and composition must agree.
+
+{_FLOW_SAFE_TABLE}
+
+Motion must vary. A video where every shot is ZI has the same problem as one where every shot is ST - motion stops reading as expressive and becomes wallpaper. No single motion code above ~40% of shots.""",
+        "MOTION_FIELD_RULE": (
+            "- `motion`: ST | ZI | ZO | PU | PD — **must match the motion code in the asset's own filename**. Never write PL, PR or PV on this channel. **ST is rare and special:** use it only on very short holds — roughly 1–2 cues (~2–4 seconds) — and cap it at ~10% of shots, reserving it for compositions that cannot tolerate overscan. Every shot that holds longer must carry motion. Vary the codes — no single motion code above ~40% of shots."),
+        "CANVAS_SPEC": "ST/ZI/ZO: 2304x1296 · PU/PD: 2304x2160",
+        "CHECK_MOTION": (
+            "Only ST, ZI, ZO, PU and PD are used - no PL, PR or PV anywhere. ST appears only on ~1–2-cue shots, capped at ~10% of shots. Every other shot carries motion that matches its composition and canvas. No single motion code exceeds ~40% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions only CROSSFADE/DIP/DIP_WHITE, sparingly, never on the last shot."),
+        "EX_A": "PD", "EX_B": "ST", "EX_C": "ZI",
+    })
+
+ZOOMS_ONLY = MotionProfile(
+    key="zooms_only",
+    label="Zooms only - push in and pull out",
+    description="ST, ZI, ZO. No pans or tilts at all: the calmest look, "
+                "for channels where side-scrolling feels wrong.",
+    allowed=("ST", "ZI", "ZO"),
+    code_max_share=0.65, code_share_overrides={},
+    slots={
+        "MOTION_SECTION": """\
+### Motion — zooms only
+
+This channel uses only three motion codes: ZI (slow push in), ZO (slow pull out) and ST (static). Never use PL, PR, PU, PD or PV - there are no pans or tilts here, and a plan that uses them fails review. Ignore every rule elsewhere in this brief that asks for them.
+
+ST is the exception: only on very short holds (~1-2 cues) and ~10% of shots at most. Every other shot carries a zoom chosen while designing the image: push IN (ZI) to move toward a detail, a character or a mechanism; pull OUT (ZO) to reveal context, scale or a whole comparison. Because every canvas is the standard 2304x1296 with centered overscan, keep the main subject near the center and leave breathing room around it - nothing parked in a side third.
+
+Alternate the two zooms so the video breathes in and out: neither ZI nor ZO above ~65% of shots, and avoid more than three of the same zoom in a row.""",
+        "MOTION_FIELD_RULE": (
+            "- `motion`: ST | ZI | ZO — **must match the motion code in the asset's own filename**. This channel has no pans or tilts: never write PL, PR, PU, PD or PV. **ST is rare and special:** only on very short holds — roughly 1–2 cues (~2–4 seconds) — and capped at ~10% of shots. Every other shot is ZI or ZO; neither above ~65% of shots."),
+        "CANVAS_SPEC": "ST/ZI/ZO: 2304x1296",
+        "CHECK_MOTION": (
+            "Only ST, ZI and ZO are used - no PL/PR/PU/PD/PV anywhere. ST appears only on ~1–2-cue shots, capped at ~10% of shots. Neither ZI nor ZO exceeds ~65% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions only CROSSFADE/DIP/DIP_WHITE, sparingly, never on the last shot."),
+        "EX_A": "ZO", "EX_B": "ST", "EX_C": "ZI",
+    })
+
+FAST_PACED = MotionProfile(
+    key="fast_paced",
+    label="Fast-paced - short holds, all motions",
+    description="A shot holds up to 6s (usually 2-5s), ST on up to ~25% of "
+                "shots. For high-energy, news or list-style channels.",
+    st_max_share=0.25, st_max_hold=4.0, max_hold=6.0,
+    slots={
+        "HOLD_RULE": (
+            "This channel is fast-paced: a shot normally holds 2 to [[MAX]] "
+            "seconds (hard maximum [[MAX]]s), so the picture changes "
+            "whenever the narration reaches a new concrete detail, example "
+            "or beat. Split generously - each new detail deserves its own "
+            "visual - but never cut one idea into one-cue fragments just to "
+            "change the image. A hold of 4 seconds or more should carry "
+            "motion."),
+        "MOTION_FIELD_RULE": STANDARD_SLOTS["MOTION_FIELD_RULE"].replace(
+            "cap it at ~10% of shots", "cap it at ~25% of shots"),
+        "CHECK_HOLD": (
+            "no shot exceeds [[MAX]]s; the picture changes with the "
+            "narration's beats, and holds of 4s or more carry motion."),
+        "CHECK_MOTION": STANDARD_SLOTS["CHECK_MOTION"].replace(
+            "capped at ~10% of shots", "capped at ~25% of shots"),
+    })
+
+DOCUMENTARY = MotionProfile(
+    key="documentary",
+    label="Documentary - slow zooms, holds 8-20s",
+    description="Mostly slow ZI/ZO, each held 8-20s; pans and tilts "
+                "are rare accents (~10% each), ST almost never.",
+    st_max_share=0.05, code_max_share=0.55,
+    code_share_overrides={c: 0.10 for c in ("PL", "PR", "PU", "PD", "PV")},
+    min_hold=8.0, max_hold=20.0,
+    slots={
+        "HOLD_RULE": LONG_HOLDS.slots["HOLD_RULE"],
+        "CHECK_HOLD": LONG_HOLDS.slots["CHECK_HOLD"],
+        "MOTION_FIELD_RULE": (
+            "- `motion`: ST | ZI | ZO | PL | PR | PU | PD | PV — **must match the motion code in the asset's own filename** (the image was composed for that motion and overscan). **This channel is slow and observational:** ZI and ZO carry most shots (each up to ~55%); every pan or tilt (PL, PR, PU, PD, PV) is a rare accent, ~10% of shots at most per code; ST is almost never used (~5% of shots, only on a ~1–2-cue hold). Every long hold carries a slow motion."),
+        "CHECK_MOTION": (
+            "ZI and ZO carry most shots (neither above ~55%); each of PL/PR/PU/PD/PV stays at ~10% of shots or less; ST is ~5% of shots at most, only on ~1–2-cue holds. Every other shot carries motion that matches its composition and canvas. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions only CROSSFADE/DIP/DIP_WHITE, sparingly, never on the last shot."),
+    })
+
 MOTION_PRESETS: dict[str, MotionProfile] = {
-    p.key: p for p in (STANDARD, STATIC, LONG_HOLDS)}
+    p.key: p for p in (STANDARD, STATIC, LONG_HOLDS, FLOW_SAFE, ZOOMS_ONLY,
+                       FAST_PACED, DOCUMENTARY)}
 
 
 def get_profile(key) -> MotionProfile:
     """The channel's motion profile; unknown / empty = standard."""
     return MOTION_PRESETS.get(str(key or "").strip().lower(), STANDARD)
+
+
+# ---- the Custom profile: a channel types its own motion policy ---------------
+CUSTOM_KEY = "custom"
+CUSTOM_LABEL = "Custom - your own motion codes and limits"
+CUSTOM_DESCRIPTION = ("Tick the motion codes the planner may use, set the "
+                      "limits, and add your own motion rules in words.")
+
+MOTION_CODES = ("ST", "ZI", "ZO", "PL", "PR", "PU", "PD", "PV")
+# (what the camera does, canvas the image is composed on)
+MOTION_CODE_INFO: dict[str, tuple[str, str]] = {
+    "ST": ("static - no camera move", "2304x1296"),
+    "ZI": ("slow push in", "2304x1296"),
+    "ZO": ("slow pull out", "2304x1296"),
+    "PL": ("pan left (subject in the right third)", "2880x1296"),
+    "PR": ("pan right (subject in the left third)", "2880x1296"),
+    "PU": ("tilt up", "2304x2160"),
+    "PD": ("tilt down", "2304x2160"),
+    "PV": ("panoramic reveal across the whole idea", "3840x1296"),
+}
+
+
+def _frac(value, lo=0.01, hi=1.0):
+    """A 0-1 share from a number (or numeric text); None if empty / bad."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v > 1:           # typed as a percentage
+        v = v / 100.0
+    return round(min(hi, max(lo, v)), 4) if v > 0 else None
+
+
+def _secs(value):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(min(300.0, max(1.0, v)), 2) if v > 0 else None
+
+
+def normalize_custom(spec) -> dict | None:
+    """A clean custom spec from stored JSON / a dict, or None if unusable.
+
+    Keys: allowed (motion codes, in canonical order), st_max_share (0-1),
+    st_max_hold (s), code_max_share (0-1), rules (free text). Empty numbers
+    mean "the standard limit"."""
+    if isinstance(spec, str):
+        import json
+        try:
+            spec = json.loads(spec)
+        except ValueError:
+            return None
+    if not isinstance(spec, dict):
+        return None
+    raw = spec.get("allowed")
+    raw = [raw] if isinstance(raw, str) else (raw or [])
+    allowed = [c for c in MOTION_CODES
+               if c in {str(x).strip().upper() for x in raw}]
+    if not allowed:
+        return None
+    return {
+        "allowed": allowed,
+        "st_max_share": _frac(spec.get("st_max_share")),
+        "st_max_hold": _secs(spec.get("st_max_hold")),
+        "code_max_share": _frac(spec.get("code_max_share")),
+        "rules": str(spec.get("rules") or "").strip(),
+    }
+
+
+def _caps(spec: dict):
+    """(st_share, per-code default cap, overrides) the spec resolves to."""
+    allowed = spec["allowed"]
+    moving = [c for c in allowed if c != "ST"]
+    st_share = (spec["st_max_share"] or ST_MAX_SHARE) if "ST" in allowed else 0.0
+    cap, overrides = spec["code_max_share"], {}
+    if cap is None and len(moving) >= 4:      # the standard caps, if they fit
+        cap, overrides = MOTION_MAX_SHARE, {
+            c: v for c, v in MOTION_MAX_SHARE_OVERRIDES.items() if c in moving}
+    if cap is not None and moving:
+        total = sum(overrides.get(c, cap) for c in moving)
+        if total + 1e-9 < 1.0 - st_share:
+            if spec["code_max_share"] is None:
+                return st_share, None, {}      # defaults cannot fit: no cap
+    return st_share, cap, overrides
+
+
+def custom_error(spec) -> str | None:
+    """Why this custom spec cannot work (None = fine)."""
+    spec = normalize_custom(spec)
+    if spec is None:
+        return "tick at least one motion code"
+    moving = [c for c in spec["allowed"] if c != "ST"]
+    if "ST" not in spec["allowed"] and not moving:
+        return "tick at least one motion code"
+    if spec["code_max_share"] is not None and moving:
+        st_share = ((spec["st_max_share"] or ST_MAX_SHARE)
+                    if "ST" in spec["allowed"] else 0.0)
+        if spec["code_max_share"] * len(moving) + 1e-9 < 1.0 - st_share:
+            return (f"a {spec['code_max_share']:.0%} cap per code cannot cover "
+                    f"the shots with only {len(moving)} moving code(s) - "
+                    "raise the cap or tick more codes")
+    return None
+
+
+def _canvas_spec(allowed) -> str:
+    groups: dict[str, list[str]] = {}
+    for c in allowed:
+        groups.setdefault(MOTION_CODE_INFO[c][1], []).append(c)
+    return " · ".join(f"{'/'.join(codes)}: {size}"
+                      for size, codes in groups.items())
+
+
+def custom_profile(spec) -> MotionProfile:
+    """A MotionProfile built from a channel's own custom spec; an unusable
+    spec gives the standard profile."""
+    spec = normalize_custom(spec)
+    if spec is None or custom_error(spec):
+        return STANDARD
+    allowed = tuple(spec["allowed"])
+    moving = [c for c in allowed if c != "ST"]
+    has_st = "ST" in allowed
+    if allowed == ("ST",):                    # all-static = the Static preset
+        base = replace(STATIC, key=CUSTOM_KEY, label=CUSTOM_LABEL,
+                       description=CUSTOM_DESCRIPTION)
+        if spec["rules"]:
+            slots = dict(base.slots)
+            slots["MOTION_SECTION"] += ("\n\nCreator's own rules for this "
+                                        "channel (follow them):\n"
+                                        + spec["rules"])
+            base = replace(base, slots=slots)
+        return base
+    st_share, cap, overrides = _caps(spec)
+    st_hold = (spec["st_max_hold"] or ST_MAX_HOLD_SECONDS) if has_st else None
+    not_allowed = [c for c in MOTION_CODES if c not in allowed]
+
+    rows = "\n".join(f"| {c} | {MOTION_CODE_INFO[c][0]} | "
+                     f"{MOTION_CODE_INFO[c][1]} |" for c in allowed)
+    limits = []
+    if has_st:
+        limits.append(
+            f"ST (static) is the exception: only on very short holds "
+            f"(~{_num(st_hold)}s or less, roughly 1-2 cues) and at most "
+            f"~{st_share:.0%} of shots.")
+    else:
+        limits.append("There is no static code on this channel: every shot "
+                      "carries motion, and a long hold on a still frame is "
+                      "never acceptable.")
+    if cap is not None:
+        limits.append(
+            f"No single motion code above ~{cap:.0%} of shots"
+            + ("" if not overrides else " (" + ", ".join(
+                f"{c} ~{v:.0%}" for c, v in sorted(overrides.items()))
+               + " are capped tighter)") + ".")
+    if len(moving) > 1:
+        limits.append("Vary the codes - one code on every shot reads as "
+                      "wallpaper.")
+    section = (
+        "### Motion — this channel's own rules\n\n"
+        f"Allowed motion codes on this channel: {', '.join(allowed)}."
+        + (f" Never use {', '.join(not_allowed)} - a plan that uses a code "
+           "outside this list fails review, and every rule elsewhere in this "
+           "brief that asks for one does NOT apply here." if not_allowed
+           else "")
+        + "\n\nThe motion code determines the canvas and the subject "
+        "placement, so choose it while designing the image, never stamp it on "
+        "afterward. Motion and composition must agree.\n\n"
+        "| Code | Camera move | Canvas |\n|---|---|---|\n" + rows + "\n\n"
+        + " ".join(limits))
+    if spec["rules"]:
+        section += ("\n\nCreator's own motion rules for this channel (follow "
+                    "them; they decide which allowed code suits which "
+                    "image):\n" + spec["rules"])
+
+    field_rule = (
+        f"- `motion`: {' | '.join(allowed)} — **must match the motion code in "
+        "the asset's own filename** (the image was composed for that motion "
+        "and overscan)."
+        + (f" Never write {', '.join(not_allowed)}." if not_allowed else "")
+        + (f" **ST is rare and special:** only on very short holds (~"
+           f"{_num(st_hold)}s or less) and at most ~{st_share:.0%} of shots; "
+           "every shot that holds longer must carry motion." if has_st else
+           " Every shot carries motion.")
+        + (f" No single motion code above ~{cap:.0%} of shots." if cap is not None
+           else ""))
+    check_motion = (
+        f"Only {', '.join(allowed)} are used"
+        + (f" - never {', '.join(not_allowed)}" if not_allowed else "") + ". "
+        + (f"ST appears only on short holds, at most ~{st_share:.0%} of "
+           "shots. " if has_st else "Every shot carries motion. ")
+        + (f"No single motion code exceeds ~{cap:.0%} of shots. "
+           if cap is not None else "")
+        + "Every motion code in `shots[].motion` matches the motion code in "
+        "that shot's own filename. Transitions only CROSSFADE/DIP/DIP_WHITE, "
+        "sparingly, never on the last shot.")
+    seq = moving or ["ST"]
+    slots = {
+        "MOTION_SECTION": section,
+        "MOTION_FIELD_RULE": field_rule,
+        "CANVAS_SPEC": _canvas_spec(allowed),
+        "CHECK_MOTION": check_motion,
+        "EX_A": seq[0],
+        "EX_B": "ST" if has_st else seq[1 % len(seq)],
+        "EX_C": seq[2 % len(seq)] if len(seq) > 2 else seq[-1],
+    }
+    if not has_st:
+        slots["CHECK_HOLD"] = (
+            "long holds are acceptable only where the idea keeps developing "
+            "- every shot carries motion on this channel.")
+        slots["HOLD_RULE"] = (
+            "A hold that runs long (roughly 15 seconds or more) is "
+            "acceptable only when the idea keeps developing - every shot "
+            "carries motion on this channel (Section 7).")
+    return MotionProfile(
+        key=CUSTOM_KEY, label=CUSTOM_LABEL, description=CUSTOM_DESCRIPTION,
+        allowed=None if len(allowed) == len(MOTION_CODES) else allowed,
+        st_max_share=st_share if has_st else None,
+        st_max_hold=st_hold,
+        static_long_hold=STATIC_LONG_HOLD_SECONDS if has_st else None,
+        code_max_share=cap, code_share_overrides=overrides, slots=slots)
 
 
 _RANGE_HOLD_RULE = (
@@ -202,13 +531,17 @@ _RANGE_HOLD_RULE = (
 
 
 def resolve_profile(key, min_hold=None, max_hold=None,
-                    default_max: float | None = None) -> MotionProfile:
+                    default_max: float | None = None,
+                    custom=None) -> MotionProfile:
     """The channel's effective profile: its motion preset, with the channel's
     own hold range (seconds) laid over it. The range feeds the prompt AND the
     review gates (briefs.pacing_note, studio.shotlist_pacing) so they cannot
     disagree. A minimum needs a maximum: the preset's, else `default_max`
-    (the global shotlist_max_hold_seconds). A min >= max is ignored."""
-    base = get_profile(key)
+    (the global shotlist_max_hold_seconds). A min >= max is ignored.
+    `custom` is the channel's own spec, used when the key is "custom"."""
+    base = (custom_profile(custom)
+            if str(key or "").strip().lower() == CUSTOM_KEY
+            else get_profile(key))
     mn = float(min_hold) if min_hold else base.min_hold
     mx = float(max_hold) if max_hold else base.max_hold
     if mn and not mx and default_max:
@@ -257,6 +590,43 @@ PRESENTATION_STARTERS: dict[str, tuple[str, str]] = {
         "narration is about and show only the subject matter - its setting, "
         "the mechanism, the people or things the narration describes - for "
         "the whole video."),
+    "two_hosts": (
+        "Two hosts in conversation",
+        "Two recurring hosts (the supplied bible characters) carry the video "
+        "as a conversation: show both of them on screen together while they "
+        "talk, and vary who is in the foreground, their expressions and the "
+        "setting from image to image. When the narration describes an "
+        "example, cut to what it describes and return to the hosts after it. "
+        "Keep each host's look identical every time they appear."),
+    "first_person": (
+        "First-person view - only hands on screen",
+        "Show the video from the viewer's own point of view: no face and no "
+        "full-body narrator, only hands, forearms and what they are doing - "
+        "holding, pointing, writing, opening, using the objects the narration "
+        "mentions - against changing settings. When the narration is about "
+        "an idea rather than an action, show the subject matter itself."),
+    "mascot": (
+        "A recurring mascot that reacts",
+        "A single recurring mascot (the supplied bible character) appears in "
+        "most scenes as a silent companion who reacts to what the narration "
+        "says - curious, surprised, worried, relieved - while the setting "
+        "changes with the topic. The mascot never speaks and never blocks the "
+        "subject; where a diagram or a close-up needs the full frame, show "
+        "it without the mascot."),
+    "host_bookends": (
+        "Host only in the opening and closing scenes",
+        "The channel's host (the supplied bible character) appears only in "
+        "the opening scenes, introducing the topic, and in the closing "
+        "scenes, wrapping up and handing off to the call to action. Every "
+        "scene in between shows only the subject matter - settings, "
+        "mechanisms, examples - with no host on screen."),
+    "subject_only": (
+        "Subject only - no people at all",
+        "No person is ever shown, not even as a silhouette or a pair of "
+        "hands. Show only the subject matter: places, animals, objects, "
+        "mechanisms, diagrams and symbolic images. When the narration "
+        "describes something a person does, show its tools, its setting or "
+        "its result instead of the person."),
 }
 
 

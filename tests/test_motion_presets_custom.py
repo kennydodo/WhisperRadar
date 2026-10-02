@@ -1,0 +1,299 @@
+"""More motion presets, the Custom profile and the extra presentation starters.
+
+Each preset/custom spec fills the brief's motion slots AND sets what the
+shotlist review enforces, so the prompt and the gate cannot disagree.
+"""
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from whisperradar import briefs, db, settings, studio  # noqa: E402
+from whisperradar.config import load_config  # noqa: E402
+from whisperradar.webapp import create_app  # noqa: E402
+
+
+def _ts(t):
+    m, s = divmod(int(t), 60)
+    return f"00:{m:02d}:{s:02d},000"
+
+
+def _cues(count, secs):
+    return [{"index": i + 1, "start": _ts(i * secs), "end": _ts((i + 1) * secs),
+             "text": f"cue {i + 1}"} for i in range(count)]
+
+
+def _plan(motions, span=2):
+    """One shot per motion code, `span` cues each."""
+    shots = [{"cues": f"{i * span + 1}-{(i + 1) * span}",
+              "asset": f"S01_{i + 1:02d}_SCN_{m}.png", "scene": "S01",
+              "motion": m} for i, m in enumerate(motions)]
+    return {"shots": shots,
+            "images": [{"file": s["asset"], "prompt": "p"} for s in shots]}
+
+
+def _faults(motions, profile, secs=3, span=2, cap=12.0):
+    cues = _cues(len(motions) * span, secs)
+    return studio.shotlist_pacing(_plan(motions, span), cues, cap, profile)[0]
+
+
+class PresetRenderTests(unittest.TestCase):
+    def setUp(self):
+        self.template = briefs.read_template()
+
+    def render(self, profile):
+        return briefs.render_brief(self.template, profile)
+
+    def test_new_presets_are_registered_with_distinct_labels(self):
+        keys = {"flow_safe", "zooms_only", "fast_paced", "documentary"}
+        self.assertTrue(keys <= set(briefs.MOTION_PRESETS))
+        labels = [p.label for p in briefs.MOTION_PRESETS.values()]
+        self.assertEqual(len(labels), len(set(labels)))
+
+    def test_flow_safe_never_offers_horizontal_pans(self):
+        text = self.render(briefs.FLOW_SAFE)
+        self.assertIn("ST, ZI, ZO, PU and PD", text)
+        self.assertIn("ST/ZI/ZO: 2304x1296 · PU/PD: 2304x2160", text)
+        self.assertNotIn("2880x1296", text)
+
+    def test_zooms_only_names_only_zooms(self):
+        text = self.render(briefs.ZOOMS_ONLY)
+        self.assertIn("ST/ZI/ZO: 2304x1296", text)
+        self.assertIn("zooms only", text)
+
+    def test_fast_paced_states_its_hold_and_st_share(self):
+        text = self.render(briefs.FAST_PACED)
+        self.assertIn("fast-paced", text)
+        self.assertIn("~25% of shots", text)
+        self.assertEqual(briefs.FAST_PACED.max_hold, 6.0)
+
+    def test_documentary_states_its_hold_range(self):
+        text = self.render(briefs.resolve_profile("documentary"))
+        self.assertIn("between 8 and 20 seconds", text)
+
+
+class PresetGateTests(unittest.TestCase):
+    def test_flow_safe_rejects_pans_but_accepts_tilts_and_zooms(self):
+        bad = _faults(["ZI", "PL", "ZO", "PD", "PU"], briefs.FLOW_SAFE)
+        self.assertTrue(any("does not allow" in f and "PL" in f for f in bad))
+        ok = _faults(["ZI", "ZO", "PD", "PU", "ZI", "ZO", "PD", "PU", "ZI", "ST"],
+                     briefs.FLOW_SAFE, secs=2)
+        self.assertEqual(ok, [])
+
+    def test_zooms_only_rejects_any_tilt(self):
+        bad = _faults(["ZI", "ZO", "PU"], briefs.ZOOMS_ONLY)
+        self.assertTrue(any("does not allow" in f for f in bad))
+        self.assertEqual(
+            _faults(["ZI", "ZO"] * 5, briefs.ZOOMS_ONLY), [])
+
+    def test_fast_paced_allows_more_st_than_standard(self):
+        motions = ["ST", "ZI", "ZO", "ZI"] * 2          # ST = 25%
+        std = _faults(motions, briefs.STANDARD)
+        fast = _faults(motions, briefs.FAST_PACED)
+        self.assertTrue(any("ST is" in f for f in std))
+        self.assertFalse(any("ST is" in f for f in fast))
+
+    def test_documentary_caps_pans_tighter_than_zooms(self):
+        motions = ["ZI", "ZO", "ZI", "ZO", "PL", "ZI", "ZO", "ZI", "ZO", "PU"]
+        faults = _faults(motions, briefs.resolve_profile("documentary"),
+                         secs=5, span=2, cap=30)
+        self.assertEqual([f for f in faults if "motion" in f and "cap" in f],
+                         [])
+        heavy = ["ZI", "ZO", "PL", "PL", "ZI", "ZO", "ZI", "ZO"]
+        faults = _faults(heavy, briefs.resolve_profile("documentary"),
+                         secs=5, span=2, cap=30)
+        self.assertTrue(any("motion PL" in f for f in faults))
+
+
+class CustomSpecTests(unittest.TestCase):
+    def test_normalize_orders_codes_and_drops_junk(self):
+        spec = briefs.normalize_custom({
+            "allowed": ["zo", "ZI", "XX", "st"], "st_max_share": "20",
+            "st_max_hold": "3", "code_max_share": "", "rules": "  hi  "})
+        self.assertEqual(spec["allowed"], ["ST", "ZI", "ZO"])
+        self.assertEqual(spec["st_max_share"], 0.2)
+        self.assertEqual(spec["st_max_hold"], 3.0)
+        self.assertIsNone(spec["code_max_share"])
+        self.assertEqual(spec["rules"], "hi")
+
+    def test_normalize_accepts_stored_json_and_rejects_empty(self):
+        self.assertEqual(
+            briefs.normalize_custom(json.dumps({"allowed": ["ZI"]}))["allowed"],
+            ["ZI"])
+        for bad in (None, "", "not json", {"allowed": []}, {"allowed": ["QQ"]}):
+            self.assertIsNone(briefs.normalize_custom(bad))
+
+    def test_an_impossible_cap_is_an_error(self):
+        err = briefs.custom_error({"allowed": ["ZI"], "code_max_share": 40})
+        self.assertIn("cannot cover", err)
+        self.assertIsNone(briefs.custom_error(
+            {"allowed": ["ZI", "ZO"], "code_max_share": 60}))
+        self.assertIsNotNone(briefs.custom_error({"allowed": []}))
+
+    def test_profile_mirrors_the_spec(self):
+        p = briefs.custom_profile({
+            "allowed": ["ST", "ZI", "PU", "PD"], "st_max_share": 20,
+            "st_max_hold": 3, "code_max_share": 50})
+        self.assertEqual(p.key, "custom")
+        self.assertEqual(p.allowed, ("ST", "ZI", "PU", "PD"))
+        self.assertEqual((p.st_max_share, p.st_max_hold, p.code_max_share),
+                         (0.2, 3.0, 0.5))
+        self.assertEqual(p.slots["CANVAS_SPEC"],
+                         "ST/ZI: 2304x1296 · PU/PD: 2304x2160")
+
+    def test_no_st_means_no_st_limits_and_every_shot_moves(self):
+        p = briefs.custom_profile({"allowed": ["ZI", "ZO"]})
+        self.assertIsNone(p.st_max_share)
+        self.assertIsNone(p.static_long_hold)
+        self.assertIn("no static code", p.slots["MOTION_SECTION"])
+
+    def test_all_codes_allowed_means_no_restriction(self):
+        p = briefs.custom_profile({"allowed": list(briefs.MOTION_CODES)})
+        self.assertIsNone(p.allowed)
+
+    def test_st_only_is_the_static_policy(self):
+        p = briefs.custom_profile({"allowed": ["ST"], "rules": "keep it calm"})
+        self.assertEqual(p.allowed, ("ST",))
+        self.assertIn("keep it calm", p.slots["MOTION_SECTION"])
+        self.assertEqual(_faults(["ST", "ST"], p), [])
+
+    def test_unusable_spec_falls_back_to_standard(self):
+        self.assertIs(briefs.custom_profile(None), briefs.STANDARD)
+        self.assertIs(briefs.custom_profile(
+            {"allowed": ["ZI"], "code_max_share": 30}), briefs.STANDARD)
+
+    def test_the_brief_carries_codes_canvas_and_the_creators_rules(self):
+        p = briefs.custom_profile({
+            "allowed": ["ZI", "ZO", "PU"], "rules": "ZO on every list."})
+        text = briefs.render_brief(briefs.read_template(), p)
+        self.assertNotIn("{{", text)
+        self.assertIn("Allowed motion codes on this channel: ZI, ZO, PU.", text)
+        self.assertIn("Never use ST, PL, PR, PD, PV", text)
+        self.assertIn("ZO on every list.", text)
+        self.assertIn("ZI/ZO: 2304x1296 · PU: 2304x2160", text)
+        self.assertIn("`motion`: ZI | ZO | PU", text)
+
+    def test_the_gate_enforces_the_ticked_codes_and_caps(self):
+        p = briefs.custom_profile({"allowed": ["ZI", "ZO", "PU"],
+                                   "code_max_share": 50})
+        self.assertTrue(any("does not allow" in f
+                            for f in _faults(["ZI", "ZO", "PL"], p)))
+        self.assertTrue(any("motion ZI" in f
+                            for f in _faults(["ZI", "ZI", "ZI", "ZO"], p)))
+        self.assertEqual(_faults(["ZI", "ZO", "PU", "ZI", "ZO", "PU"], p), [])
+
+    def test_the_hold_range_still_lies_over_a_custom_profile(self):
+        p = briefs.resolve_profile("custom", 6, 15,
+                                   custom={"allowed": ["ZI", "ZO"]})
+        self.assertEqual((p.min_hold, p.max_hold), (6.0, 15.0))
+        text = briefs.render_brief(briefs.read_template(), p)
+        self.assertIn("between 6 and 15 seconds", text)
+
+    def test_custom_without_a_spec_is_standard(self):
+        self.assertIs(briefs.resolve_profile("custom"), briefs.STANDARD)
+
+
+class StarterTests(unittest.TestCase):
+    def test_the_new_starters_exist_and_are_distinct(self):
+        starters = briefs.PRESENTATION_STARTERS
+        for key in ("two_hosts", "first_person", "mascot", "host_bookends",
+                    "subject_only"):
+            self.assertIn(key, starters)
+        texts = [t for _l, t in starters.values()]
+        self.assertEqual(len(texts), len(set(texts)))
+        self.assertGreaterEqual(len(starters), 8)
+
+
+class _ChannelCase(unittest.TestCase):
+    def setUp(self):
+        self.cfg = load_config(ROOT / "config.yaml")
+        self.cfg.db_path = Path(tempfile.mkdtemp()) / "wr.db"
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        self.oc = db.create_own_channel(conn, "Ch")
+        conn.commit()
+        conn.close()
+        self.client = create_app(self.cfg).test_client()
+
+    def _row(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        try:
+            return db.get_own_channel(conn, self.oc)
+        finally:
+            conn.close()
+
+    def _post(self, **fields):
+        return self.client.post("/my-channels/edit",
+                                data={"id": str(self.oc), "name": "Ch", **fields})
+
+
+class CustomChannelTests(_ChannelCase):
+    def test_custom_is_saved_with_its_spec(self):
+        resp = self._post(brief_motion="custom",
+                          custom_allowed=["ZI", "ZO", "PU"],
+                          custom_st_share="", custom_st_hold="",
+                          custom_code_share="60", custom_rules=" ZO on lists ")
+        self.assertIn(resp.status_code, (302, 303))
+        row = self._row()
+        self.assertEqual(row["brief_motion"], "custom")
+        spec = json.loads(row["brief_custom"])
+        self.assertEqual(spec["allowed"], ["ZI", "ZO", "PU"])
+        self.assertEqual(spec["code_max_share"], 0.6)
+        self.assertEqual(spec["rules"], "ZO on lists")
+
+    def test_a_bad_custom_saves_nothing(self):
+        self._post(brief_motion="static")
+        for data in ({"custom_allowed": []},
+                     {"custom_allowed": ["ZI"], "custom_code_share": "30"}):
+            resp = self._post(brief_motion="custom", **data)
+            self.assertIn("Custom%20motion", resp.headers["Location"])
+            row = self._row()
+            self.assertEqual(row["brief_motion"], "static")
+            self.assertIsNone(row["brief_custom"])
+
+    def test_switching_to_a_preset_keeps_the_custom_spec(self):
+        self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"])
+        self._post(brief_motion="static")
+        row = self._row()
+        self.assertEqual(row["brief_motion"], "static")
+        self.assertEqual(json.loads(row["brief_custom"])["allowed"],
+                         ["ZI", "ZO"])
+
+    def test_effective_settings_and_the_profile_carry_the_spec(self):
+        self._post(brief_motion="custom", custom_allowed=["ZI", "PU"],
+                   custom_rules="tilt for comparisons")
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        pid = db.create_production(conn, "P", "general", None, None)
+        db.update_production(conn, pid, own_channel_id=self.oc)
+        eff = settings.for_production(conn, db.get_production(conn, pid))
+        conn.close()
+        self.assertEqual(eff["brief_motion"], "custom")
+        self.assertEqual(eff["brief_custom"]["allowed"], ["ZI", "PU"])
+        prof = briefs.resolve_profile(eff["brief_motion"],
+                                      custom=eff["brief_custom"])
+        self.assertEqual(prof.allowed, ("ZI", "PU"))
+
+    def test_the_form_offers_custom_and_its_fields(self):
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertTrue(briefs.CUSTOM_LABEL in page)
+        for name in ("custom_allowed", "custom_st_share", "custom_st_hold",
+                     "custom_code_share", "custom_rules"):
+            self.assertTrue(f'name="{name}"' in page, name)
+
+    def test_the_form_shows_the_saved_spec(self):
+        self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"],
+                   custom_rules="unique-rule-text")
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertTrue("unique-rule-text" in page)
+        self.assertTrue('value="PL" checked' not in page)
+        self.assertTrue('value="ZI" checked' in page)
+
+
+if __name__ == "__main__":
+    unittest.main()

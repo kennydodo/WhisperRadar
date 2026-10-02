@@ -318,6 +318,8 @@ def create_app(cfg) -> Flask:
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live
     app.jinja_env.filters["dur"] = format_duration
     app.jinja_env.filters["views"] = format_views
+    app.jinja_env.filters["fromjson"] = (
+        lambda v: briefs.normalize_custom(v) or {})
     ai33.warm_cache(cfg)  # background prefetch so the voice picker is instant
 
     @app.before_request
@@ -920,6 +922,8 @@ def create_app(cfg) -> Flask:
             native_tiers=settings.FLOW_NATIVE_TIERS,
             native_tier_labels=settings.FLOW_NATIVE_TIER_LABELS,
             brief_presets=briefs.MOTION_PRESETS,
+            brief_custom_label=briefs.CUSTOM_LABEL,
+            brief_motion_codes=briefs.MOTION_CODE_INFO,
             brief_starters=briefs.PRESENTATION_STARTERS,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
@@ -1030,9 +1034,26 @@ def create_app(cfg) -> Flask:
                 raw if raw in settings.FLOW_NATIVE_TIERS else None)  # ""=inherit
         if "brief_motion" in request.form:
             raw = (request.form.get("brief_motion") or "").strip().lower()
-            fields["brief_motion"] = (raw if raw in briefs.MOTION_PRESETS
-                                      and raw != briefs.STANDARD.key
-                                      else None)   # empty/standard = default
+            fields["brief_motion"] = (
+                raw if (raw in briefs.MOTION_PRESETS
+                        and raw != briefs.STANDARD.key)
+                or raw == briefs.CUSTOM_KEY
+                else None)   # empty/standard = default
+            if raw == briefs.CUSTOM_KEY:
+                spec = briefs.normalize_custom({
+                    "allowed": request.form.getlist("custom_allowed"),
+                    "st_max_share": request.form.get("custom_st_share"),
+                    "st_max_hold": request.form.get("custom_st_hold"),
+                    "code_max_share": request.form.get("custom_code_share"),
+                    "rules": request.form.get("custom_rules"),
+                })
+                problem = briefs.custom_error(spec)
+                if problem:
+                    return redirect("/my-channels?error=" + quote(
+                        f"Custom motion: {problem} - nothing was saved"))
+                # kept when the channel switches back to a preset, so the
+                # custom settings are still there next time
+                fields["brief_custom"] = json.dumps(spec)
         hold = {}
         for key in ("brief_min_hold", "brief_max_hold"):
             if key in request.form:
@@ -1718,7 +1739,8 @@ def create_app(cfg) -> Flask:
             brief_profile=briefs.resolve_profile(
                 eff.get("brief_motion"), eff.get("brief_min_hold"),
                 eff.get("brief_max_hold"),
-                default_max=eff["shotlist_max_hold_seconds"]),
+                default_max=eff["shotlist_max_hold_seconds"],
+                custom=eff.get("brief_custom")),
             brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],

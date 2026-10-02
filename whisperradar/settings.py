@@ -9,6 +9,8 @@ own_channels and are NULL when the channel inherits these globals.
 import json
 import re
 
+from . import briefs
+
 # Flow native renders download at Flow's own size (1376x768); one local
 # Real-ESRGAN pass then upscales to one of FlowBatch's tiers.
 FLOW_NATIVE_TIERS = ("off", "1k", "2k", "4k")
@@ -671,6 +673,8 @@ def for_production(conn, prod) -> dict:
         # hold range (s) over the preset; None = the preset's / the global max
         "brief_min_hold": row_get(own, "brief_min_hold"),
         "brief_max_hold": row_get(own, "brief_max_hold"),
+        # the channel's own motion spec, used when brief_motion == "custom"
+        "brief_custom": briefs.normalize_custom(row_get(own, "brief_custom")),
         # the refs stage is per channel (a channel may have no refs at all)
         "generate_references": bool(row_get(own, "generate_references",
                                             int(glob["generate_references"]))),

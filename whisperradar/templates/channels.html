@@ -289,6 +289,7 @@
                   {% for key, preset in brief_presets.items() %}
                   <option value="{{ key }}" title="{{ preset.description }}" {{ 'selected' if (ch['brief_motion'] or 'standard') == key else '' }}>{{ preset.label }}</option>
                   {% endfor %}
+                  <option value="custom" title="Tick the motion codes, set the limits and type your own motion rules" {{ 'selected' if ch['brief_motion'] == 'custom' else '' }}>{{ brief_custom_label }}</option>
                 </select>
               </label>
               <label>presentation starter
@@ -301,6 +302,50 @@
                 </select>
               </label>
             </div>
+            {% set cs = (ch['brief_custom'] | fromjson) if ch['brief_custom'] else {} %}
+            <div class="custom-motion" style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px; {{ '' if ch['brief_motion'] == 'custom' else 'display:none' }}">
+              <div class="muted" style="font-size:12px; margin-bottom:6px">
+                Custom motion - the planner may only use the ticked codes, and the shotlist review checks the same limits.
+                Empty numbers = the standard limit. Canvas sizes follow the ticked codes.
+              </div>
+              <div class="inline">
+                {% for code, info in brief_motion_codes.items() %}
+                <label title="{{ info[0] }} ({{ info[1] }})" style="white-space:nowrap">
+                  <input type="checkbox" name="custom_allowed" value="{{ code }}" {{ 'checked' if code in (cs.get('allowed') or ['ST','ZI','ZO','PL','PR','PU','PD','PV']) else '' }}> {{ code }}
+                </label>
+                {% endfor %}
+              </div>
+              <div class="inline" style="margin-top:6px">
+                <label>ST max share (%)
+                  <input type="number" name="custom_st_share" min="1" max="100" step="any" style="width:90px"
+                         value="{{ '%g' % (cs.st_max_share * 100) if cs.get('st_max_share') else '' }}" placeholder="10">
+                </label>
+                <label>ST max hold (s)
+                  <input type="number" name="custom_st_hold" min="1" max="300" step="any" style="width:90px"
+                         value="{{ '%g' % cs.st_max_hold if cs.get('st_max_hold') else '' }}" placeholder="5">
+                </label>
+                <label>max share per code (%)
+                  <input type="number" name="custom_code_share" min="1" max="100" step="any" style="width:90px"
+                         value="{{ '%g' % (cs.code_max_share * 100) if cs.get('code_max_share') else '' }}" placeholder="40">
+                </label>
+              </div>
+              <label style="display:block; margin-top:6px">your own motion rules (optional)
+                <textarea name="custom_rules" style="min-height:60px; width:100%"
+                          placeholder="e.g. Use ZI on every character beat, ZO when a list is revealed, PU/PD only for before/after comparisons.">{{ cs.get('rules') or '' }}</textarea>
+              </label>
+            </div>
+            <script>
+              (function () {
+                var form = document.currentScript.closest('form');
+                if (!form || form.dataset.customMotion) return;
+                form.dataset.customMotion = '1';
+                var sel = form.elements['brief_motion'];
+                var box = form.querySelector('.custom-motion');
+                if (sel && box) sel.addEventListener('change', function () {
+                  box.style.display = sel.value === 'custom' ? '' : 'none';
+                });
+              })();
+            </script>
             <div class="inline" style="margin-top:8px">
               <label>min hold (s)
                 <input type="number" name="brief_min_hold" min="1" max="300" step="any"
