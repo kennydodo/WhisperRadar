@@ -577,5 +577,52 @@ class StructureTests(Base):
             self.assertIn("keep cause before effect", flat)
 
 
+class RefsStageRemoveImageTests(Base):
+    def _shotlist(self):
+        (self.pdir / "shotlist.json").write_text(json.dumps({
+            "refs": {"CH_REIKO": None},
+            "refPrompts": {"CH_REIKO": "a woman"},
+            "images": [{"file": "a", "prompt": "p", "refs": ["CH_REIKO"]}],
+            "shots": [{"asset": "a", "cues": [1, 3]}]}), "utf-8")
+
+    def test_refs_stage_can_remove_a_supplied_image(self):
+        self._shotlist()
+        refs = self.pdir / "refs"
+        refs.mkdir()
+        (refs / "CH_REIKO.png").write_bytes(b"\x89PNG")
+        # a supplied ref resolves through its registry path
+        data = json.loads((self.pdir / "shotlist.json").read_text("utf-8"))
+        data["refs"]["CH_REIKO"] = "refs/CH_REIKO.png"
+        (self.pdir / "shotlist.json").write_text(json.dumps(data), "utf-8")
+        client = create_app(self.cfg).test_client()
+        page = client.get(f"/studio/{self.pid}?stage=refs").data
+        self.assertTrue(b"Remove image" in page)
+        r = client.post(f"/studio/{self.pid}/refs/delete",
+                        data={"name": "CH_REIKO"})
+        self.assertEqual(r.status_code, 302)
+        self.assertFalse((refs / "CH_REIKO.png").exists())
+        page = client.get(f"/studio/{self.pid}?stage=refs").data
+        self.assertTrue(b"will be generated" in page)
+        self.assertFalse(b"Remove image" in page)
+
+    def test_delete_matches_seeded_names_with_spaces_and_case(self):
+        refs = self.pdir / "refs"
+        refs.mkdir()
+        (refs / "Reiko Ref.PNG").write_bytes(b"x")
+        client = create_app(self.cfg).test_client()
+        client.post(f"/studio/{self.pid}/refs/delete",
+                    data={"name": "Reiko Ref"})
+        self.assertFalse((refs / "Reiko Ref.PNG").exists())
+
+    def test_delete_never_leaves_the_refs_folder(self):
+        (self.pdir / "refs").mkdir()
+        outside = self.pdir / "keep.png"
+        outside.write_bytes(b"x")
+        client = create_app(self.cfg).test_client()
+        client.post(f"/studio/{self.pid}/refs/delete",
+                    data={"name": "../keep"})
+        self.assertTrue(outside.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

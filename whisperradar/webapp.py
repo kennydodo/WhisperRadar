@@ -5,6 +5,7 @@ Start with:  python wr.py serve          (http://127.0.0.1:8000)
 
 import io
 import ipaddress
+import glob
 import json
 import logging
 import os
@@ -2300,12 +2301,18 @@ def create_app(cfg) -> Flask:
 
     @app.post("/studio/<int:pid>/refs/delete")
     def studio_refs_delete(pid):
-        name = _slugify(request.form.get("name") or "", 60)
+        raw = (request.form.get("name") or "").strip()
         rdir = studio.prod_dir(cfg, pid) / "refs"
-        if name:
-            for f in sorted(rdir.glob(f"{name}.*")) if rdir.exists() else []:
+        # the exact file stem first (seeded refs keep their own names, e.g.
+        # CH_REIKO or "Reiko Ref"), then the slugified upload name
+        stems = [s for s in (raw, _slugify(raw, 60))
+                 if s and "/" not in s and "\\" not in s and ".." not in s]
+        for name in stems:
+            for f in sorted(rdir.glob(f"{glob.escape(name)}.*")) \
+                    if rdir.exists() else []:
                 if f.is_file() and f.suffix.lower() in (
-                        ".png", ".jpg", ".jpeg", ".webp"):
+                        ".png", ".jpg", ".jpeg", ".webp") \
+                        and f.stem == name:
                     f.unlink()
                     return _studio_url(pid, msg="Reference image removed")
         return _studio_url(pid, error="Reference image not found")
