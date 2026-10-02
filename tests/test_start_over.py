@@ -139,6 +139,25 @@ class StartOverTests(unittest.TestCase):
         self.assertFalse((self.pdir / "shotlist.json").exists())
         self.assertTrue((named / "keep.md").exists())   # named versions stay
 
+    def test_reset_from_script_clears_generated_versions_keeps_named(self):
+        vd = self.pdir / "versions" / "script"
+        vd.mkdir(parents=True)
+        for name in ("attempt-1.md", "attempt-2.md", "auto-20261001-120000.md",
+                     "review.json", "mine.md"):
+            (vd / name).write_text("x", encoding="utf-8")
+        self._post("script")
+        for name in ("attempt-1.md", "attempt-2.md", "auto-20261001-120000.md",
+                     "review.json"):
+            self.assertFalse((vd / name).exists(), name)
+        self.assertTrue((vd / "mine.md").exists())      # named version stays
+
+    def test_reset_from_later_stage_keeps_script_attempts(self):
+        vd = self.pdir / "versions" / "script"
+        vd.mkdir(parents=True)
+        (vd / "attempt-1.md").write_text("x", encoding="utf-8")
+        self._post("shots")
+        self.assertTrue((vd / "attempt-1.md").exists())
+
     def test_reset_from_later_stage_keeps_the_saved_best_plan(self):
         sd = self.pdir / "versions" / "shotlist"
         sd.mkdir(parents=True)

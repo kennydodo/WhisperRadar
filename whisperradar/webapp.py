@@ -1817,6 +1817,20 @@ def create_app(cfg) -> Flask:
                         if f.exists():
                             f.unlink()
                             removed.append(name)
+                    if stage == "script":
+                        # the script stage's own output lives in versions/script
+                        # too: every attempt, the archived previous scripts and
+                        # the judge's review. They fill the "Saved versions"
+                        # list and (auto-*) make the next run look like a
+                        # regenerate. Versions the user saved by name stay.
+                        sdir = pdir / "versions" / "script"
+                        if sdir.is_dir():
+                            for f in list(sdir.glob("attempt-*.md")) + \
+                                    list(sdir.glob("auto-*.md")) + \
+                                    [sdir / "review.json"]:
+                                if f.is_file():
+                                    f.unlink()
+                                    removed.append(f"versions/script/{f.name}")
                     if stage == "shots":
                         # the saved best-ever plan, its review and the brief it
                         # was planned with are generated output too: left behind,
