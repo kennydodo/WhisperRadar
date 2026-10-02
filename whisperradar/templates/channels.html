@@ -56,6 +56,12 @@
   td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   tr:last-child td { border-bottom: none; }
   label { font-size: 12px; color: var(--muted); }
+  .grp { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; padding: 0 12px; }
+  .grp > summary { cursor: pointer; font-weight: 600; padding: 9px 0; list-style-position: inside; }
+  .grp > summary .muted { font-weight: 400; font-size: 12px; margin-left: 8px; }
+  .grp[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+  .grp-sub { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 12px 0 4px; }
+  .grp-tools { font-size: 12px; margin: 10px 0 0; text-align: right; }
 </style>
 </head>
 <body>
@@ -161,6 +167,9 @@
         <td colspan="6" style="background:var(--panel2)">
           <form method="post" action="/my-channels/edit">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
+            <div class="grp-tools muted"><a href="#" onclick="return wrGroups(this, true)">expand all</a> &middot; <a href="#" onclick="return wrGroups(this, false)">collapse all</a></div>
+            <details class="grp" open>
+              <summary>Basics <span class="muted">name, genre, handle, state</span></summary>
             <div class="inline">
               <label>name
                 <input type="text" name="name" value="{{ ch['name'] }}" style="width:180px">
@@ -181,6 +190,9 @@
                 </select>
               </label>
             </div>
+            </details>
+            <details class="grp">
+              <summary>Production defaults <span class="muted">voice, image engine, render, upscale, auto run, caps</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Production - "inherit" uses the global value from
               <a href="/settings">Settings</a>.
@@ -268,6 +280,9 @@
                 </select>
               </label>
             </div>
+            </details>
+            <details class="grp">
+              <summary>Style, bible &amp; references <span class="muted">art style, characters, seed folders</span></summary>
             <div class="inline" style="margin-top:8px">
               <label style="flex:1 1 45%">style guide (seeds style.md)
                 <textarea name="style" style="min-height:90px"
@@ -278,6 +293,29 @@
                           placeholder="Recurring characters, environments, wardrobe, props - kept identical across images. Required before planning; a run pauses at the shots stage without it.">{{ ch['bible'] or '' }}</textarea>
               </label>
             </div>
+            <div class="inline" style="margin-top:8px">
+              <label>bible folder
+                <span class="inline" style="gap:6px">
+                  <input type="text" id="bible-dir-{{ ch['id'] }}" name="bible_dir"
+                         value="{{ ch['bible_dir'] or '' }}" placeholder="folder holding bible.md (optional)"
+                         style="width:280px">
+                  <button type="button" class="ghost" onclick="pickFolder('bible-dir-{{ ch['id'] }}')"
+                          title="Choose a folder on this PC">Browse...</button>
+                </span>
+              </label>
+              <label>refs folder
+                <span class="inline" style="gap:6px">
+                  <input type="text" id="refs-dir-{{ ch['id'] }}" name="refs_dir"
+                         value="{{ ch['refs_dir'] or '' }}" placeholder="folder copied into refs\ (optional)"
+                         style="width:280px">
+                  <button type="button" class="ghost" onclick="pickFolder('refs-dir-{{ ch['id'] }}')"
+                          title="Choose a folder on this PC">Browse...</button>
+                </span>
+              </label>
+            </div>
+            </details>
+            <details class="grp">
+              <summary>Planning brief <span class="muted">motion &amp; pacing, hold range, presentation</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Planning brief - how this channel's shots are paced and staged.
               "Standard" is the brief exactly as it has always been; the
@@ -370,26 +408,9 @@
                           placeholder="e.g. The host opens the video on screen, example characters carry the middle, the host returns for the advice. Empty = the planner decides.">{{ ch['brief_presentation'] or '' }}</textarea>
               </label>
             </div>
-            <div class="inline" style="margin-top:8px">
-              <label>bible folder
-                <span class="inline" style="gap:6px">
-                  <input type="text" id="bible-dir-{{ ch['id'] }}" name="bible_dir"
-                         value="{{ ch['bible_dir'] or '' }}" placeholder="folder holding bible.md (optional)"
-                         style="width:280px">
-                  <button type="button" class="ghost" onclick="pickFolder('bible-dir-{{ ch['id'] }}')"
-                          title="Choose a folder on this PC">Browse...</button>
-                </span>
-              </label>
-              <label>refs folder
-                <span class="inline" style="gap:6px">
-                  <input type="text" id="refs-dir-{{ ch['id'] }}" name="refs_dir"
-                         value="{{ ch['refs_dir'] or '' }}" placeholder="folder copied into refs\ (optional)"
-                         style="width:280px">
-                  <button type="button" class="ghost" onclick="pickFolder('refs-dir-{{ ch['id'] }}')"
-                          title="Choose a folder on this PC">Browse...</button>
-                </span>
-              </label>
-            </div>
+            </details>
+            <details class="grp">
+              <summary>Auto Run <span class="muted">run window, candidate window, producer LLM</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Auto Run for this channel - "inherit" uses the global value from
               <a href="/settings">Settings</a>.
@@ -417,6 +438,10 @@
                 </select>
               </label>
             </div>
+            </details>
+            <details class="grp">
+              <summary>Quality gates <span class="muted">script rating &amp; overlap, shotlist alignment, judges</span></summary>
+            <div class="grp-sub">Script</div>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Script - a draft must rate at least this and overlap
               no more than this, or it is rewritten (best of N is kept).
@@ -448,6 +473,7 @@
                 </select>
               </label>
             </div>
+            <div class="grp-sub">Shotlist</div>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Shotlist - checks each shot's image prompt against the
               narration at its SRT cues before any image is rendered.
@@ -481,6 +507,7 @@
                 </select>
               </label>
             </div>
+            </details>
             <div style="margin-top:10px">
               <button type="submit">save</button>
               <button type="button" class="ghost" onclick="cancelEdit({{ ch['id'] }})">cancel</button>
@@ -660,6 +687,14 @@
       if (sel) sel.addEventListener('change', function () { sync(form); });
     });
   })();
+</script>
+<script>
+  // expand / collapse every group of one channel's edit form
+  function wrGroups(link, open) {
+    var form = link.closest('form');
+    if (form) form.querySelectorAll('details.grp').forEach(function (d) { d.open = open; });
+    return false;
+  }
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>

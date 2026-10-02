@@ -300,6 +300,34 @@ class CustomChannelTests(_ChannelCase):
         self.assertTrue('<div class="inline" style="gap:28px">\n'
                         '              <label>motion &amp; pacing' in page)
 
+    def test_the_edit_form_is_grouped_and_keeps_every_field(self):
+        import re
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        edit = page[page.index('action="/my-channels/edit"'):]
+        edit = edit[:edit.index("</form>")]
+        titles = re.findall(r'<summary>(.*?) <span', edit)
+        self.assertEqual(titles, [
+            "Basics", "Production defaults", "Style, bible &amp; references",
+            "Planning brief", "Auto Run", "Quality gates"])
+        groups = re.split(r'<details class="grp"', edit)[1:]
+        self.assertEqual(len(groups), 6)
+        where = {}
+        for title, body in zip(titles, groups):
+            for name in re.findall(r'name="([a-z_]+)"', body):
+                where[name] = title
+        for name, title in (
+                ("name", "Basics"), ("default_voice", "Production defaults"),
+                ("style", "Style, bible &amp; references"),
+                ("bible_dir", "Style, bible &amp; references"),
+                ("brief_motion", "Planning brief"),
+                ("brief_presentation", "Planning brief"),
+                ("custom_allowed", "Planning brief"),
+                ("run_window_start", "Auto Run"),
+                ("script_min_rating", "Quality gates"),
+                ("shotlist_min_alignment", "Quality gates")):
+            self.assertEqual(where.get(name), title, name)
+        self.assertTrue("</details>" in edit and edit.count("<details") == 6)
+
     def test_the_form_shows_the_saved_spec(self):
         self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"],
                    custom_rules="unique-rule-text")
