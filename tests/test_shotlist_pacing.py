@@ -38,17 +38,19 @@ def _shots(spec):
 
 class PacingTests(unittest.TestCase):
     def test_a_well_paced_plan_has_no_faults(self):
-        # PL/PR appear once each out of 8 shots (12.5%) - under their own
-        # tighter ~15% cap, not just the general ~40% one.
-        cues = _cues(16, 5)  # 80s
+        # PL/PR appear once each out of 10 shots (10%) - under their own
+        # tighter ~10% cap, not just the general ~40% one.
+        cues = _cues(20, 5)  # 100s
         data = _shots([("S01_01_SCN_ZI.png", 1, 2, "ZI"),
                        ("S01_02_SCN_ZO.png", 3, 4, "ZO"),
                        ("S01_03_SCN_PL.png", 5, 6, "PL"),
                        ("S01_04_SCN_PR.png", 7, 8, "PR"),
                        ("S01_05_INF_PU.png", 9, 10, "PU"),
-                       ("S01_06_INF_PV.png", 11, 12, "PV"),
-                       ("S01_07_SCN_ZI.png", 13, 14, "ZI"),
-                       ("S01_08_SCN_ZO.png", 15, 16, "ZO")])
+                       ("S01_06_INF_PD.png", 11, 12, "PD"),
+                       ("S01_07_INF_PV.png", 13, 14, "PV"),
+                       ("S01_08_SCN_ZI.png", 15, 16, "ZI"),
+                       ("S01_09_SCN_ZO.png", 17, 18, "ZO"),
+                       ("S01_10_INF_PU.png", 19, 20, "PU")])
         faults, warnings = studio.shotlist_pacing(data, cues)
         self.assertEqual(faults, [])
         self.assertEqual(warnings, [])
@@ -88,19 +90,19 @@ class PacingTests(unittest.TestCase):
 
     def test_pl_and_pr_are_capped_tighter_than_the_general_motion_limit(self):
         # 2 of 8 shots = 25% - under the general ~40% cap but over PL/PR's
-        # own tighter ~15% cap (they default too easily, so a plan leaning
+        # own tighter ~10% cap (they default too easily, so a plan leaning
         # on them needs to be caught well before the general ceiling).
         cues = _cues(16, 2)
         motions = ["PL", "PL", "ZI", "ZO", "PU", "PD", "PV", "ZI"]
         data = _shots([(f"S01_0{i}_SCN_{m}.png", i * 2 - 1, i * 2, m)
                        for i, m in enumerate(motions, 1)])
         faults, _ = studio.shotlist_pacing(data, cues)
-        self.assertTrue(any("motion PL is 25% of shots (cap ~15%)" in f
+        self.assertTrue(any("motion PL is 25% of shots (cap ~10%)" in f
                             for f in faults), faults)
 
-    def test_pl_and_pr_under_15_percent_each_is_not_a_fault(self):
-        cues = _cues(16, 2)
-        motions = ["PL", "PR", "ZI", "ZO", "PU", "PD", "PV", "ZI"]
+    def test_pl_and_pr_under_10_percent_each_is_not_a_fault(self):
+        cues = _cues(20, 2)
+        motions = ["PL", "PR", "ZI", "ZO", "PU", "PD", "PV", "ZI", "ZO", "PU"]
         data = _shots([(f"S01_0{i}_SCN_{m}.png", i * 2 - 1, i * 2, m)
                        for i, m in enumerate(motions, 1)])
         faults, _ = studio.shotlist_pacing(data, cues)
@@ -126,7 +128,7 @@ class PacingTests(unittest.TestCase):
 
     def test_dense_plans_are_legal_when_every_hold_is_short(self):
         # the count is never fixed: 6 images a minute is fine if each holds
-        # 10s. PL/PR appear once each (8.3%, under their tighter ~15% cap) -
+        # 10s. PL/PR appear once each (8.3%, under their tighter ~10% cap) -
         # the other motions fill out the rest of the variety.
         cues = _cues(24, 5)  # 120s
         motions = ["ZI", "ZO", "PL", "PR", "PU", "PV",
@@ -140,7 +142,7 @@ class PacingTests(unittest.TestCase):
 
     def test_the_max_hold_is_tunable(self):
         # not testing motion variety here, so no PL/PR - avoids their
-        # tighter ~15% cap being incidentally what fails this fixture.
+        # tighter ~10% cap being incidentally what fails this fixture.
         cues = _cues(18, 10)  # 180s; six 30s shots
         motions = ["ZI", "ZO", "PU", "PD", "PV", "ZO"]
         data = _shots([(f"S01_0{i}_SCN_{m}.png", i * 3 + 1, i * 3 + 3, m)

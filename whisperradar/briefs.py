@@ -26,12 +26,12 @@ TEMPLATE_PATH = Path(__file__).with_name("brief_template.md")
 
 # ---- the standard limits (what the review gates have always enforced) ------
 # ST is only for ~1-2-cue shots (~2-4s) and ~10% of shots; no motion code above
-# ~40% (PL/PR tighter, at ~15% - they default too easily); a static hold of
+# ~40% (PL/PR tighter, at ~10% - they default too easily); a static hold of
 # 15s+ is never acceptable.
 ST_MAX_HOLD_SECONDS = 5.0
 ST_MAX_SHARE = 0.10
 MOTION_MAX_SHARE = 0.40
-MOTION_MAX_SHARE_OVERRIDES = {"PL": 0.15, "PR": 0.15}
+MOTION_MAX_SHARE_OVERRIDES = {"PL": 0.10, "PR": 0.10}
 STATIC_LONG_HOLD_SECONDS = 15.0
 # On a channel with a minimum hold, more than this share of shots (the last
 # one is exempt - it ends where the narration ends) holding under the minimum
@@ -62,9 +62,9 @@ ST (static) is the exception, not the default. Every other shot carries motion c
 | PROC stages | PR | pan through the sequence |
 | OVR wide concept | PV | panoramic reveal across the whole idea |
 
-Motion must vary. A video where every shot is ZI has the same problem as one where every shot is ST — motion stops reading as expressive and becomes wallpaper. No single motion code above ~40% of shots. PL and PR specifically are capped tighter, at 10-15% each: they are the easiest motions to reach for by default, and a plan that leans on them flattens into a side-scroll instead of varying with the composition table above.""",
+Motion must vary. A video where every shot is ZI has the same problem as one where every shot is ST — motion stops reading as expressive and becomes wallpaper. No single motion code above ~40% of shots. PL and PR specifically are capped tighter, at 10% each: they are the easiest motions to reach for by default, and a plan that leans on them flattens into a side-scroll instead of varying with the composition table above.""",
     "MOTION_FIELD_RULE": (
-        "- `motion`: ST | ZI | ZO | PL | PR | PU | PD | PV — **must match the motion code in the asset's own filename** (the image was composed for that motion and overscan). Deviate only with a deliberate reason. **ST is rare and special:** use it only on very short holds — roughly 1–2 cues (~2–4 seconds) — and cap it at ~10% of shots, reserving it for compositions that cannot tolerate overscan (tight symmetric close-ups, exact diagrams). Every shot that holds longer must carry motion. Assign motion with composition per the table in Section 5 and vary the codes — no single motion code above ~40% of shots, and PL/PR each capped at 10-15% of shots (they default too easily; lean on ZI/ZO/PU/PD/PV for the rest of the variety)."),
+        "- `motion`: ST | ZI | ZO | PL | PR | PU | PD | PV — **must match the motion code in the asset's own filename** (the image was composed for that motion and overscan). Deviate only with a deliberate reason. **ST is rare and special:** use it only on very short holds — roughly 1–2 cues (~2–4 seconds) — and cap it at ~10% of shots, reserving it for compositions that cannot tolerate overscan (tight symmetric close-ups, exact diagrams). Every shot that holds longer must carry motion. Assign motion with composition per the table in Section 5 and vary the codes — no single motion code above ~40% of shots, and PL/PR each capped at 10% of shots (they default too easily; lean on ZI/ZO/PU/PD/PV for the rest of the variety)."),
     "CANVAS_SPEC": (
         "ST/ZI/ZO: 2304x1296 · PL/PR: 2880x1296 (subject left third for PR, right third for PL) · PU/PD: 2304x2160 · PV: 3840x1296"),
     "CHECK_HOLD": (
@@ -117,7 +117,7 @@ STANDARD = MotionProfile(
     key="standard",
     label="Standard - all motions, short holds",
     description="The brief's own policy: every motion code, ST only on short "
-                "holds (~10% of shots), no code above ~40% (PL/PR ~15%).")
+                "holds (~10% of shots), no code above ~40% (PL/PR ~10%).")
 
 STATIC = MotionProfile(
     key="static",

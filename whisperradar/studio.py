@@ -4170,7 +4170,7 @@ def _srt_seconds(ts: str) -> float:
 SHOT_MAX_HOLD_DEFAULT = 12.0
 # The planning brief's own rules: a long hold (~15s+) is acceptable only when it
 # carries motion; ST is only for ~1-2-cue shots (~2-4s) and ~10% of shots; no
-# motion code above ~40% (PL/PR tighter, at ~15% - they default too easily);
+# motion code above ~40% (PL/PR tighter, at ~10% - they default too easily);
 # most shots should span several cues.
 # (The limits themselves live in briefs.py, next to the brief wording they
 # mirror; a channel's motion profile can replace them - see shotlist_pacing.)
@@ -4199,7 +4199,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
     give the new image the next unused sub-beat index in the SAME scene
     (Section 9 - sub-beat numbers are stable, never rename). The brief's other
     rules (no long STATIC hold, ST only on short holds and ~10% of shots, no
-    motion code above ~40% - PL/PR tighter at ~15% - no fragmentation) are
+    motion code above ~40% - PL/PR tighter at ~10% - no fragmentation) are
     enforced at the same time.
 
     `profile` is the channel's motion profile (briefs.py): it can forbid
