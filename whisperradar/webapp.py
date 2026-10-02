@@ -1817,6 +1817,17 @@ def create_app(cfg) -> Flask:
                         if f.exists():
                             f.unlink()
                             removed.append(name)
+                    if stage == "shots":
+                        # the saved best-ever plan, its review and the brief it
+                        # was planned with are generated output too: left behind,
+                        # a fresh run is ranked against (and can be replaced by)
+                        # the very plan the user just threw away
+                        for name in ("best_ever.json", "review.json",
+                                     "brief_used.md"):
+                            f = pdir / "versions" / "shotlist" / name
+                            if f.exists():
+                                f.unlink()
+                                removed.append(f"versions/shotlist/{name}")
                     if stage == "refs":
                         # only the refs WE generated (tracked in the manifest):
                         # supplied refs are inputs and must survive a reset

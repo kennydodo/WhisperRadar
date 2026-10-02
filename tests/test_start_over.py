@@ -125,5 +125,26 @@ class StartOverTests(unittest.TestCase):
             self.assertFalse((self.pdir / name).exists(), name)
 
 
+    def test_reset_from_shots_also_clears_the_saved_best_plan(self):
+        sd = self.pdir / "versions" / "shotlist"
+        sd.mkdir(parents=True)
+        for name in ("best_ever.json", "review.json", "brief_used.md"):
+            (sd / name).write_text("x", encoding="utf-8")
+        named = self.pdir / "versions" / "script"
+        named.mkdir(parents=True)
+        (named / "keep.md").write_text("k", encoding="utf-8")
+        self._post("shots")
+        for name in ("best_ever.json", "review.json", "brief_used.md"):
+            self.assertFalse((sd / name).exists(), name)
+        self.assertFalse((self.pdir / "shotlist.json").exists())
+        self.assertTrue((named / "keep.md").exists())   # named versions stay
+
+    def test_reset_from_later_stage_keeps_the_saved_best_plan(self):
+        sd = self.pdir / "versions" / "shotlist"
+        sd.mkdir(parents=True)
+        (sd / "best_ever.json").write_text("x", encoding="utf-8")
+        self._post("images")
+        self.assertTrue((sd / "best_ever.json").exists())
+
 if __name__ == "__main__":
     unittest.main()
