@@ -958,6 +958,76 @@ def create_app(cfg) -> Flask:
                    f"{result.get('error')}")
         return redirect("/my-channels?msg=" + quote(msg))
 
+    def _brief_fields(form):
+        """The planning-brief settings posted in `form` -> (fields, error).
+        Only keys present in the form are read, so the same parsing serves
+        the whole channel form and the planning-brief section's own save."""
+        fields = {}
+        if "brief_motion" in form:
+            raw = (form.get("brief_motion") or "").strip().lower()
+            fields["brief_motion"] = (
+                raw if (raw in briefs.MOTION_PRESETS
+                        and raw != briefs.STANDARD.key)
+                or raw == briefs.CUSTOM_KEY
+                else None)   # empty/standard = default
+            if raw == briefs.CUSTOM_KEY:
+                spec = briefs.normalize_custom({
+                    "allowed": form.getlist("custom_allowed"),
+                    "st_max_share": form.get("custom_st_share"),
+                    "st_max_hold": form.get("custom_st_hold"),
+                    "code_max_share": form.get("custom_code_share"),
+                    "rules": form.get("custom_rules"),
+                })
+                problem = briefs.custom_error(spec)
+                if problem:
+                    return fields, (f"Custom motion: {problem} - "
+                                    "nothing was saved")
+                # kept when the channel switches back to a preset, so the
+                # custom settings are still there next time
+                fields["brief_custom"] = json.dumps(spec)
+        hold = {}
+        for key in ("brief_min_hold", "brief_max_hold"):
+            if key in form:
+                raw = (form.get(key) or "").strip()
+                try:   # empty = the preset's / the global value
+                    hold[key] = (max(1.0, min(300.0, float(raw)))
+                                 if raw else None)
+                except ValueError:
+                    hold[key] = None
+        if hold.get("brief_min_hold") and hold.get("brief_max_hold") \
+                and hold["brief_min_hold"] >= hold["brief_max_hold"]:
+            return fields, ("Planning brief: the minimum hold must be "
+                            "shorter than the maximum hold - nothing was saved")
+        fields.update(hold)
+        if "brief_presentation" in form:   # multi-line: keep newlines
+            fields["brief_presentation"] = (
+                (form.get("brief_presentation") or "").strip() or None)
+        return fields, None
+
+    @app.post("/my-channels/brief")
+    def my_channels_brief():
+        """Save only the planning-brief settings (motion preset or custom
+        spec, hold range, presentation) - nothing else on the channel form is
+        read, so a half-edited name or gate elsewhere is left alone."""
+        oc_id = _own_channel_id()
+        if not oc_id:
+            return redirect("/my-channels?error=Unknown+channel")
+        fields, error = _brief_fields(request.form)
+        if error:
+            return redirect("/my-channels?error=" + quote(error)
+                            + f"#edit-{oc_id}-brief")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_own_channel(conn, oc_id):
+                return redirect("/my-channels?error=Unknown+channel")
+            if fields:
+                db.update_own_channel(conn, oc_id, **fields)
+        finally:
+            conn.close()
+        return redirect("/my-channels?msg=" + quote("Planning brief saved")
+                        + f"#edit-{oc_id}-brief")
+
     @app.post("/my-channels/edit")
     def my_channels_edit():
         oc_id = _own_channel_id()
@@ -1032,46 +1102,10 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("flow_native_upscale") or "").strip().lower()
             fields["flow_native_upscale"] = (
                 raw if raw in settings.FLOW_NATIVE_TIERS else None)  # ""=inherit
-        if "brief_motion" in request.form:
-            raw = (request.form.get("brief_motion") or "").strip().lower()
-            fields["brief_motion"] = (
-                raw if (raw in briefs.MOTION_PRESETS
-                        and raw != briefs.STANDARD.key)
-                or raw == briefs.CUSTOM_KEY
-                else None)   # empty/standard = default
-            if raw == briefs.CUSTOM_KEY:
-                spec = briefs.normalize_custom({
-                    "allowed": request.form.getlist("custom_allowed"),
-                    "st_max_share": request.form.get("custom_st_share"),
-                    "st_max_hold": request.form.get("custom_st_hold"),
-                    "code_max_share": request.form.get("custom_code_share"),
-                    "rules": request.form.get("custom_rules"),
-                })
-                problem = briefs.custom_error(spec)
-                if problem:
-                    return redirect("/my-channels?error=" + quote(
-                        f"Custom motion: {problem} - nothing was saved"))
-                # kept when the channel switches back to a preset, so the
-                # custom settings are still there next time
-                fields["brief_custom"] = json.dumps(spec)
-        hold = {}
-        for key in ("brief_min_hold", "brief_max_hold"):
-            if key in request.form:
-                raw = (request.form.get(key) or "").strip()
-                try:   # empty = the preset's / the global value
-                    hold[key] = (max(1.0, min(300.0, float(raw)))
-                                 if raw else None)
-                except ValueError:
-                    hold[key] = None
-        if hold.get("brief_min_hold") and hold.get("brief_max_hold") \
-                and hold["brief_min_hold"] >= hold["brief_max_hold"]:
-            return redirect("/my-channels?error=" + quote(
-                "Planning brief: the minimum hold must be shorter than the "
-                "maximum hold - nothing was saved"))
-        fields.update(hold)
-        if "brief_presentation" in request.form:   # multi-line: keep newlines
-            fields["brief_presentation"] = (
-                (request.form.get("brief_presentation") or "").strip() or None)
+        brief_fields, brief_error = _brief_fields(request.form)
+        if brief_error:
+            return redirect("/my-channels?error=" + quote(brief_error))
+        fields.update(brief_fields)
         if "generate_references" in request.form:
             raw = (request.form.get("generate_references") or "").strip()
             fields["generate_references"] = (None if raw == ""

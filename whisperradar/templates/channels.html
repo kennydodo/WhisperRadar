@@ -168,7 +168,7 @@
           <form method="post" action="/my-channels/edit">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
             <div class="grp-tools muted"><a href="#" onclick="return wrGroups(this, true)">expand all</a> &middot; <a href="#" onclick="return wrGroups(this, false)">collapse all</a></div>
-            <details class="grp" open>
+            <details class="grp" id="edit-{{ ch['id'] }}-basics" open>
               <summary>Basics <span class="muted">name, genre, handle, state</span></summary>
             <div class="inline">
               <label>name
@@ -191,7 +191,7 @@
               </label>
             </div>
             </details>
-            <details class="grp">
+            <details class="grp" id="edit-{{ ch['id'] }}-production">
               <summary>Production defaults <span class="muted">voice, image engine, render, upscale, auto run, caps</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Production - "inherit" uses the global value from
@@ -281,7 +281,7 @@
               </label>
             </div>
             </details>
-            <details class="grp">
+            <details class="grp" id="edit-{{ ch['id'] }}-creative">
               <summary>Style, bible &amp; references <span class="muted">art style, characters, seed folders</span></summary>
             <div class="inline" style="margin-top:8px">
               <label style="flex:1 1 45%">style guide (seeds style.md)
@@ -314,7 +314,7 @@
               </label>
             </div>
             </details>
-            <details class="grp">
+            <details class="grp" id="edit-{{ ch['id'] }}-brief">
               <summary>Planning brief <span class="muted">motion &amp; pacing, hold range, presentation</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Planning brief - how this channel's shots are paced and staged.
@@ -408,8 +408,12 @@
                           placeholder="e.g. The host opens the video on screen, example characters carry the middle, the host returns for the advice. Empty = the planner decides.">{{ ch['brief_presentation'] or '' }}</textarea>
               </label>
             </div>
+                          <div style="margin-top:12px">
+                <button type="submit" formaction="/my-channels/brief"
+                        title="Saves only the planning-brief settings above; the rest of this form is left as it is">save planning brief</button>
+              </div>
             </details>
-            <details class="grp">
+            <details class="grp" id="edit-{{ ch['id'] }}-autorun">
               <summary>Auto Run <span class="muted">run window, candidate window, producer LLM</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Auto Run for this channel - "inherit" uses the global value from
@@ -439,7 +443,7 @@
               </label>
             </div>
             </details>
-            <details class="grp">
+            <details class="grp" id="edit-{{ ch['id'] }}-gates">
               <summary>Quality gates <span class="muted">script rating &amp; overlap, shotlist alignment, judges</span></summary>
             <div class="grp-sub">Script</div>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
@@ -695,6 +699,18 @@
     if (form) form.querySelectorAll('details.grp').forEach(function (d) { d.open = open; });
     return false;
   }
+</script>
+<script>
+  // after "save planning brief" the page comes back at #edit-<id>-<group>:
+  // open that channel's edit row and group again
+  (function () {
+    var m = /^#edit-(\d+)-(\w+)$/.exec(location.hash);
+    if (!m) return;
+    var row = document.getElementById('edit-' + m[1]);
+    var grp = document.getElementById(location.hash.slice(1));
+    if (row) row.style.display = '';
+    if (grp) { grp.open = true; grp.scrollIntoView(); }
+  })();
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>

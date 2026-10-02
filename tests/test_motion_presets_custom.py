@@ -332,6 +332,55 @@ class CustomChannelTests(_ChannelCase):
         page = self.client.get("/my-channels").get_data(as_text=True)
         self.assertTrue("padding: 0 16px 16px;" in page)
 
+    def _brief_post(self, **fields):
+        return self.client.post("/my-channels/brief",
+                                data={"id": str(self.oc), **fields})
+
+    def test_the_planning_brief_saves_on_its_own(self):
+        self._post(brief_motion="static", genre="Keep", style="old style")
+        resp = self._brief_post(
+            brief_motion="custom", custom_allowed=["ZI", "ZO"],
+            custom_rules="r", brief_min_hold="5", brief_max_hold="9",
+            brief_presentation=" Host opens. ",
+            # everything else on the form is ignored by this save
+            name="IGNORED", genre="Ignored", style="new style")
+        self.assertIn(f"#edit-{self.oc}-brief", resp.headers["Location"])
+        row = self._row()
+        self.assertEqual(row["brief_motion"], "custom")
+        self.assertEqual(json.loads(row["brief_custom"])["allowed"], ["ZI", "ZO"])
+        self.assertEqual((row["brief_min_hold"], row["brief_max_hold"]), (5.0, 9.0))
+        self.assertEqual(row["brief_presentation"], "Host opens.")
+        self.assertEqual(row["name"], "Ch")
+        self.assertEqual(row["genre"], "Keep")
+        self.assertEqual(row["style"], "old style")
+
+    def test_a_preset_pick_with_its_own_hold_range_overrides_the_preset(self):
+        self._brief_post(brief_motion="documentary", brief_min_hold="6",
+                         brief_max_hold="14")
+        row = self._row()
+        prof = briefs.resolve_profile(row["brief_motion"], row["brief_min_hold"],
+                                      row["brief_max_hold"])
+        self.assertEqual(prof.key, "documentary")
+        self.assertEqual((prof.min_hold, prof.max_hold), (6.0, 14.0))
+
+    def test_a_bad_brief_save_changes_nothing_and_says_why(self):
+        self._brief_post(brief_motion="static")
+        for data in ({"brief_motion": "custom"},
+                     {"brief_min_hold": "9", "brief_max_hold": "5"}):
+            resp = self._brief_post(**data)
+            self.assertIn("error=", resp.headers["Location"])
+            self.assertIn(f"#edit-{self.oc}-brief", resp.headers["Location"])
+            self.assertEqual(self._row()["brief_motion"], "static")
+            self.assertIsNone(self._row()["brief_min_hold"])
+
+    def test_the_brief_save_button_and_group_ids_are_on_the_form(self):
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertTrue('formaction="/my-channels/brief"' in page)
+        self.assertTrue("save planning brief" in page)
+        for gid in ("basics", "production", "creative", "brief", "autorun",
+                    "gates"):
+            self.assertTrue(f'id="edit-{self.oc}-{gid}"' in page, gid)
+
     def test_the_form_shows_the_saved_spec(self):
         self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"],
                    custom_rules="unique-rule-text")
