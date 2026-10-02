@@ -103,6 +103,7 @@ def _bar(value) -> str:
 WRITING_STYLE_FILE = "writing_style.md"
 NOTES_FILE = "research_notes.md"
 SOURCE_FACTS_FILE = "source_facts.txt"
+SCRIPT_FILE = "script.txt"
 BRIEF_FILE = "planning_brief.md"
 INPUTS_FILE = "shotlist_inputs.md"
 NARRATION_FILE = "narration.txt"
@@ -111,7 +112,8 @@ SHOTLIST_FILE = "shotlist.json"
 AUTO_FILES_CHARS = 30000
 
 
-def _gate(files: list[dict]) -> str:
+def _gate(files: list[dict], extra: list[dict] | None = None) -> str:
+    files = list(files) + list(extra or [])
     if not files:
         return ""
     names = ", ".join(f["name"] for f in files)
@@ -274,8 +276,9 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                         target_words: int | None = None,
                         files: list | None = None) -> str:
     script = (script or "").strip()
-    if not script:
-        raise PromptError("Paste the script to judge first")
+    # no script in the box: the prompt asks for the user's own script file
+    # instead (it cannot be measured here, and the LLM must ask if missing)
+    own_script = not script
     ctx = _context(cfg, pid)
     eff, prod = ctx["eff"], ctx["prod"]
     style = (style_guide if style_guide is not None
@@ -315,21 +318,33 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
     lo, hi = _length_window(target)
     words = len(re.findall(r"\w+", script))
     cut = studio.script_looks_truncated(script)
+    extra = []
+    if own_script:
+        text = text.replace("SCRIPT:\n\n", f"SCRIPT: in the attached "
+                            f"{SCRIPT_FILE} (read all of it).\n\n")
+        text = re.sub(r"Measured 5-gram overlap with the source transcript: "
+                      r"[\d.]+%\. ", "Overlap with the source was not "
+                      "measured: estimate it yourself by comparing the "
+                      "script with the SOURCE FACTS. ", text)
+        extra = [{"name": SCRIPT_FILE, "about": "the script to judge - "
+                  "attach your own script file"}]
+    measured = ("" if own_script else
+                f" Measured by software, do not re-estimate: overlap above; "
+                f"length {words} words; ending "
+                f"{'LOOKS CUT OFF' if cut else 'is complete'}.")
     bar = (f"\n\nTHE CHANNEL'S BAR: the script passes only if ALL hold - "
            f"overall score at least {_bar(eff['script_min_rating'])}; "
            f"5-gram overlap at most {float(eff['script_max_overlap']):.0%} "
            f"(above {float(eff['script_hard_overlap']):.0%} is a hard "
            f"rejection however well it reads); length {lo}-{hi} words "
-           f"(target {target}); ends on a complete sentence. Measured by "
-           f"software, do not re-estimate: overlap above; length {words} "
-           f"words; ending "
-           f"{'LOOKS CUT OFF' if cut else 'is complete'}.\n"
+           f"(target {target}); ends on a complete sentence.{measured}\n"
            f"Score the writing honestly on its own merits - do not raise or "
            f"lower a score to fit the bar. After the scores, state PASS or "
            f"FAIL separately and list which bar items failed.")
     if files is not None:
         files.extend(out_files)
-        text = _gate(out_files) + text
+    if files is not None or own_script:
+        text = _gate(out_files, extra) + text
     return text + bar
 
 

@@ -383,7 +383,7 @@
       <details class="extbox" style="margin-top:10px">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the script</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
-          Builds copy-paste prompts from this channel's settings. Run the writer prompt in your own LLM, paste the result into the script box above and save; use the judge prompt to have another LLM score it. The judge uses whatever script is in the box above right now.
+          Builds copy-paste prompts from this channel's settings. Run the writer prompt in your own LLM, paste the result into the script box above and save; use the judge prompt to have another LLM score it. With a script in the box above, the judge prompt includes it (and the app shows its own checks). With the box empty, the prompt asks the LLM for a script.txt you attach yourself.
         </div>
         <div class="inline" style="gap:8px; align-items:flex-end; flex-wrap:wrap">
           <label>Title <input type="text" data-f="title" value="{{ prod['title'] }}" style="width:380px"></label>

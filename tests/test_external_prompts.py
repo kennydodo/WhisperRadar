@@ -125,9 +125,13 @@ class ScriptPromptTests(Base):
         self.assertIn("THE CHANNEL'S BAR", text)
         self.assertNotIn(BIBLE, text)
 
-    def test_judge_prompt_needs_a_script(self):
-        with self.assertRaises(ep.PromptError):
-            ep.script_judge_prompt(self.cfg, self.pid, "   ")
+    def test_judge_prompt_without_a_script_asks_for_the_script_file(self):
+        text = ep.script_judge_prompt(self.cfg, self.pid, "   ")
+        self.assertIn("script.txt", text)
+        self.assertIn("Missing: <the file names>", text)
+        self.assertIn("not measured", text)
+        self.assertNotIn("Measured by software", text)
+        self.assertIn(WSTYLE, text)       # inline mode keeps the rest inline
 
     def test_style_and_notes_prompts_use_the_reference_script(self):
         self.assertIn("Reference narration about hidden value",
@@ -263,7 +267,7 @@ class RouteTests(Base):
         self.assertIn("MY SCRIPT TEXT", body["prompt"])
 
     def test_missing_input_is_a_400_with_a_message(self):
-        resp = self._post(kind="script_judge", script="")
+        resp = self._post(kind="shot_judge", shotlist="")
         self.assertEqual(resp.status_code, 400)
         self.assertIn("error", resp.get_json())
         self.assertEqual(self._post(kind="bogus").status_code, 400)
@@ -546,7 +550,9 @@ class LocalChecksAndReviseTests(Base):
         self.assertIn("fix the hook", r.get_json()["prompt"])
         r = client.post(f"/studio/{self.pid}/external-prompt",
                         data={"kind": "script_judge", "script": " "})
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("script.txt", r.get_json()["prompt"])
+        self.assertNotIn("local_faults", r.get_json())
 
 
 if __name__ == "__main__":

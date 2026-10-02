@@ -2576,6 +2576,9 @@ def create_app(cfg) -> Flask:
                         title, style, notes, words, files), chk["faults"]
                 text = external_prompts.script_judge_prompt(
                     cfg, pid, script, title, style, notes, words, files)
+                if not script.strip():
+                    local_note[0] = ""
+                    return text, None
                 chk = external_prompts.script_local_checks(
                     cfg, pid, script, words)
                 local_note[0] = chk["note"]
