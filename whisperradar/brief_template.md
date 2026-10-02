@@ -153,6 +153,22 @@ All timing derives from the SRT. A shot begins when its visual idea begins and e
 
 If you approach your output limit: stop after the last COMPLETE entry, close all brackets cleanly, end the message, then continue in the next message with only the missing content. Never end mid-token — a file ending like `"asset": "S03_15_CU_ST` is a hard failure. When you resume, pick up the cue ranges exactly where you stopped and continue through the final cue of the SRT — a message that stops early must always be followed by continuation messages until every cue is covered.
 
+## SECTION 11A — IMAGE CONTENT POLICY (the image generator REFUSES prompts that break it)
+
+Every image prompt goes to Google Flow / Gemini image generation, which refuses a prompt that trips its content policy. A refused shot leaves a hole in the video, so write every prompt so it passes the first time. The narration may be dark or clinical; the PICTURE never has to be. Show it by implication, never by depiction.
+
+Never put any of these in a prompt:
+- **Real, named people** (celebrities, politicians, historical figures, the video's own subject if a real person) and look-alikes of them. Describe a generic figure by role, age range, clothing and action instead ("an elderly scientist in a lab coat"), never a name or "looks like X".
+- **Children or teenagers in any distress, danger, medical, undressed or romantic context.** Keep minors fully clothed, safe and ordinary, or show the scene without them (hands, a backpack, an empty swing).
+- **Graphic violence, gore, blood, wounds, corpses, injuries, surgery in progress, or torture.** Show the aftermath or the cause from a distance: a closed door, an empty chair, a wide dusk shot, a silhouette, a symbolic object.
+- **Nudity, sexual or fetish content, and suggestive poses.** Anyone shown is fully and ordinarily dressed.
+- **Self-harm, suicide, overdose, eating-disorder behaviour.** Use metaphor: a lone figure at a window, a wilting plant, a clock, a stormy sky.
+- **Drug use, close-ups of weapons being used or aimed, bombs, terrorism, extremist or hate symbols.**
+- **Real brands, logos, trademarks and copyrighted characters.** Use a generic, unbranded version of the object.
+- **Disasters and tragedies shown with identifiable victims or real events** (a named attack, a named crash). Show the setting before or after, empty and quiet.
+
+Rewrite instead of dropping the idea: keep the beat, change the depiction (wide shot instead of close-up, object instead of person, symbol instead of act, before/after instead of the moment itself). Animals, nature, everyday life and neutral infographics need no softening - do not water down a safe prompt. This rule applies to refPrompts too. If a creator direction conflicts with it, follow the direction's intent in the safest depiction that still communicates it.
+
 ## SECTION 11B — SHOWING WHAT IS SAID, NOT JUST WHO IS THERE
 
 When the narration describes a communicative or expressive act — signing, speaking, naming, pointing, gesturing — directed at a specific subject, the prompt must state the concrete VISIBLE gesture or action toward THAT subject. Placing the subjects near each other is not enough: "a researcher holds a cat while Coco watches" does not show Coco naming or signing to the cat; "Coco's hands form a sign directed at the cat" does. If a sub-beat says the same action applies to several parallel subjects in one image (e.g. one PROC/sequence shot covering several cats she named over the years), describe or repeat that action for EACH subject shown, not only the last or most prominent one — a sequence where only one of several parallel figures carries the described action is incomplete.
@@ -174,3 +190,4 @@ Before output, verify:
 6. Prompts are as detailed as the image needs and describe only what makes this image different from every other: subject, action, composition, spatial layout, where the scene's light comes from. Zero style language anywhere in a prompt — no palette, no grade, no "photorealistic", "cinematic", film grain, or mood adjectives belonging to the channel. The master prompt (`style` field) is the only place style is stated; the batch app merges master + card at generation time. **Length self-check:** the master stays under 1500 characters (~220–230 words) and every prompt under 2400 (~350–375 words) — re-read the master and the 2–3 longest prompts before output and trim anything over budget.
 7. Document 2 (JSON) output first, raw and complete; Document 1 second, grouped by beat, master prompt on top.
 8. Every `refs` name on an image exists in the top-level `refs` registry, spelled exactly as the reference bible supplies it; refs appear only where the subject is actually visible, chosen to fit the beat (never all of them); first ref is the dominant subject; no image carries more than 10 refs; INF/PROC diagrams carry none; a supplied recurring character is actually cast somewhere in the plan. Omit the whole registry when no reference bible exists.
+9. Content policy (Section 11A): no prompt or refPrompt names a real person, shows a minor in distress or undressed, depicts gore, wounds, nudity, self-harm, drug use, weapons in use, hate symbols, real brands or logos. Anything dark is shown by implication (aftermath, silhouette, object, wide shot), not depiction.
