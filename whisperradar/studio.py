@@ -3577,6 +3577,13 @@ Rules:
 - The facts are NOTES, not prose: write entirely new sentences and do not follow
   their wording or order. No run of five or more consecutive words may match the
   facts or any source material.
+- Choose your OWN story structure. The notes follow the order of an existing
+  video, which is not a story order: decide what the viewer should learn first,
+  where the tension or surprise lands, and how it ends, then arrange the facts
+  to serve that - a different opening beat, a different sequence and a different
+  closing from the order the notes list them in. The new order must still make
+  sense: set a fact up before the one that depends on it, keep cause before
+  effect, and never move a fact where it loses its meaning or its qualifiers.
 - Never state a specific number, measurement, legal claim, or behavioral/causal
   detail unless it appears in the facts above. If a fact is approximate, qualified,
   or uncertain, keep the script exactly that approximate, qualified, or uncertain -

@@ -555,5 +555,15 @@ class LocalChecksAndReviseTests(Base):
         self.assertNotIn("local_faults", r.get_json())
 
 
+class StructureTests(Base):
+    def test_writer_is_told_to_choose_its_own_sensible_structure(self):
+        for text in (ep.script_writer_prompt(self.cfg, self.pid),
+                     ep.script_revise_prompt(self.cfg, self.pid, "A script.")):
+            flat = " ".join(text.split())
+            self.assertIn("Choose your OWN story structure", flat)
+            self.assertIn("must still make sense", flat)
+            self.assertIn("keep cause before effect", flat)
+
+
 if __name__ == "__main__":
     unittest.main()
