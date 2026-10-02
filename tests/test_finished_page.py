@@ -57,12 +57,16 @@ class FinishedPageTests(unittest.TestCase):
 
     def test_an_active_production_stays_on_the_studio_page(self):
         self._make("Still Working", self.chan_a, status="active")
+        self.client.post("/studio/channel",
+                         data={"own_channel_id": self.chan_a})
         resp = self.client.get("/studio")
         self.assertIn(b"Still Working", resp.data)
 
     def test_the_studio_page_links_to_finished_with_a_count(self):
         self._make("Ready One", self.chan_a, status="ready")
         self._make("Ready Two", self.chan_a, status="ready")
+        self.client.post("/studio/channel",
+                         data={"own_channel_id": self.chan_a})
         resp = self.client.get("/studio")
         self.assertIn(b"2 finished", resp.data)
 
@@ -139,6 +143,8 @@ class FinishedPageTests(unittest.TestCase):
 
     def test_a_published_production_still_counts_as_finished_not_in_studio(self):
         self._make("Live One", self.chan_a, status="published")
+        self.client.post("/studio/channel",
+                         data={"own_channel_id": self.chan_a})
         resp = self.client.get("/studio")
         self.assertNotIn(b"Live One", resp.data)
         self.assertIn(b"1 finished", resp.data)

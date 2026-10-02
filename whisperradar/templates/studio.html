@@ -96,6 +96,36 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   {% if job.running %}<div class="banner job">Working: {{ job.kind }} - <a href="#" onclick="location.reload();return false">refresh</a> to see results</div>{% endif %}
+  {% for o in also_running %}<div class="banner job" style="opacity:.85">Also running in <b>{{ o.who }}</b>: {{ o.kind }}</div>{% endfor %}
+
+  {% if gated and not in_channel %}
+  <div class="panel">
+    <h2 style="margin:0 0 6px">Choose a channel</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:12px">The studio works inside one channel at a time - its productions, its sources and its defaults. A job in one channel keeps running while you work in another.</div>
+    <div class="inline" style="gap:10px; flex-wrap:wrap">
+      {% for oc in own_channels %}
+      <form method="post" action="/studio/channel">
+        <input type="hidden" name="own_channel_id" value="{{ oc['id'] }}">
+        <button type="submit" class="secondary" style="padding:10px 18px">{{ oc['name'] }}
+          <span class="muted" style="font-size:12px">&nbsp;{{ channel_counts.get(oc['id'], 0) }} in progress</span></button>
+      </form>
+      {% endfor %}
+      {% if unassigned_count %}
+      <form method="post" action="/studio/channel">
+        <input type="hidden" name="own_channel_id" value="0">
+        <button type="submit" class="ghost" style="padding:10px 18px">No channel
+          <span class="muted" style="font-size:12px">&nbsp;{{ unassigned_count }} in progress</span></button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  {% if gated %}
+  <div class="inline" style="justify-content:space-between; margin:0 0 12px">
+    <div><span class="muted">Channel:</span> <b>{{ selected_name }}</b></div>
+    <form method="post" action="/studio/channel/leave"><button type="submit" class="ghost" title="Back to the channel list">Switch channel</button></form>
+  </div>
+  {% endif %}
 
   <div class="panel">
     <div class="inline" style="justify-content:space-between">
@@ -113,6 +143,7 @@
         <label>Genre</label>
         <input type="text" name="genre" placeholder="e.g. lifestyle" style="width:130px">
       </div>
+      {% if gated %}<input type="hidden" name="own_channel_id" value="{{ selected_channel or '' }}">{% else %}
       <div>
         <label>My channel</label>
         <select name="own_channel_id" style="width:180px">
@@ -122,6 +153,7 @@
           {% endfor %}
         </select>
       </div>
+      {% endif %}
       <div>
         <label for="source-search">Based on (optional)</label>
         <select id="source-channel" style="width:340px; margin-bottom:4px"
@@ -240,8 +272,10 @@
   {% else %}
   <div class="panel muted">No productions yet. Pick a transcribed video above and create your first one.</div>
   {% endif %}
+  {% endif %}
 </div>
 
+{% if in_channel %}
 <script>
   // "Based on" is a searchable combobox, not a plain <select>: with 100+
   // transcripts, typing into a separate box then opening a native select to
@@ -423,6 +457,7 @@
     location.reload();
   }
 </script>
+{% endif %}
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
 </body>
 </html>

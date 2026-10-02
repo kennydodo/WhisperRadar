@@ -218,7 +218,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("brief_max_hold", "REAL"),
                          # the "custom" motion preset: JSON spec (allowed
                          # codes, limits, free-text rules)
-                         ("brief_custom", "TEXT")):
+                         ("brief_custom", "TEXT"),
+                         # monitored (watched) channels whose videos this
+                         # channel draws its sources from: JSON list of
+                         # channels.channel_id; empty = all of them
+                         ("watched_channels", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
@@ -802,9 +806,19 @@ _OWN_CHANNEL_FIELDS = {
     "shotlist_min_alignment", "shotlist_max_attempts",
     "shotlist_judge_provider", "render_target", "render_resolution",
     "generate_references", "flow_native_upscale", "brief_motion", "brief_presentation",
-    "brief_min_hold", "brief_max_hold", "brief_custom",
+    "brief_min_hold", "brief_max_hold", "brief_custom", "watched_channels",
     "renderly_channel_id", "renderly_channel_name",
 }
+
+
+def own_channel_watched(row) -> list[str]:
+    """The watched channel ids linked to an own channel ([] = no filter)."""
+    try:
+        raw = row["watched_channels"] if row is not None else None
+        data = json.loads(raw) if raw else []
+    except (KeyError, IndexError, ValueError, TypeError):
+        return []
+    return [str(x) for x in data if str(x).strip()] if isinstance(data, list) else []
 
 
 def list_own_channels(conn, active_only: bool = False):

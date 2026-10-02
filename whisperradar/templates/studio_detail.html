@@ -149,6 +149,13 @@
         </div>
       </details>
       {% endif %}
+      {% if channel_locked %}
+      <div style="flex:1; font-size:13px">
+        <span class="muted" style="font-size:12px">channel</span>
+        <b>{{ own_channel_name }}</b>
+        <span class="muted" style="font-size:12px">- you are working inside this channel. <a href="/studio">Leave the production</a> to switch.</span>
+      </div>
+      {% else %}
       <details style="flex:1">
         <summary class="muted" style="font-size:12px; cursor:pointer">change channel</summary>
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/own-channel">
@@ -166,6 +173,7 @@
           {% endif %}
         </form>
       </details>
+      {% endif %}
       <details style="flex:1">
         <summary class="muted" style="font-size:12px; cursor:pointer">change folder</summary>
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/workdir"
@@ -1145,7 +1153,7 @@
   }
   async function poll() {
     try {
-      const s = await (await fetch('/studio/job')).json();
+      const s = await (await fetch('/studio/job?pid={{ prod["id"] }}')).json();
       const box = document.getElementById('jobbox');
       const bar = document.getElementById('jobbar');
       // a job can start and finish between two polls - its seq bump gives

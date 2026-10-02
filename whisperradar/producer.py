@@ -185,9 +185,10 @@ def _resume_entry(conn, prod) -> dict:
             "title": prod["title"]}
 
 
-def build_plan(cfg, conn) -> list[dict]:
+def build_plan(cfg, conn, only_channel: int | None = None) -> list[dict]:
     """What Auto Run would do right now, per own channel (no LLM calls, so
-    the confirm modal is free to open)."""
+    the confirm modal is free to open). `only_channel` limits it to one own
+    channel (its productions to resume, its own run)."""
     vals = settings.load(conn)
     plan: list[dict] = []
     if not vals["autorun_enabled"]:
@@ -201,6 +202,8 @@ def build_plan(cfg, conn) -> list[dict]:
     if vals["autorun_resume"]:
         for prod in resumable(conn, vals["resume_cooldown_minutes"],
                              int(vals["resume_per_run"]) or 2):
+            if only_channel and prod["own_channel_id"] != only_channel:
+                continue
             plan.append(_resume_entry(conn, prod))
     global_cap = int(vals["per_day"] or 0)
     made_today = _created_today(conn)
@@ -209,6 +212,8 @@ def build_plan(cfg, conn) -> list[dict]:
                         "detail": f"daily cap reached ({made_today}/{global_cap} "
                                   f"created today)"}]
     for oc in db.list_own_channels(conn, active_only=True):
+        if only_channel and oc["id"] != only_channel:
+            continue
         eff = settings.for_production(conn, {"own_channel_id": oc["id"]})
         entry = {"own_channel_id": oc["id"], "own_channel": oc["name"],
                  "genre": oc["genre"], "engine": eff["engine"],
@@ -256,7 +261,8 @@ def build_plan(cfg, conn) -> list[dict]:
     return plan
 
 
-def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
+def run(cfg, log=None, job=None, stop_before: str | None = None,
+        only_channel: int | None = None) -> dict:
     """Create + queue a production per runnable channel, then run each one.
 
     `stop_before` halts each production's pipeline at that stage (e.g.
@@ -274,7 +280,7 @@ def run(cfg, log=None, job=None, stop_before: str | None = None) -> dict:
     db.init_db(conn)
     try:
         vals = settings.load(conn)
-        plan = build_plan(cfg, conn)
+        plan = build_plan(cfg, conn, only_channel)
         global_provider = vals.get("producer_llm_provider") or None
         created: list[dict] = []
         resumed: list[dict] = []

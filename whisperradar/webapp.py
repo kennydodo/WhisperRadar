@@ -23,6 +23,8 @@ from urllib.parse import quote, urlparse
 from flask import (
     Flask,
     abort,
+    g,
+    has_request_context,
     jsonify,
     make_response,
     redirect,
@@ -110,10 +112,17 @@ def _version_path(pdir: Path, kind: str, stage: str, name: str) -> Path:
     return sub / f"{name}.md"
 
 
+# The job whose worker thread is running right now: code inside a worker reads
+# the studio job (sjob) without a request, so the thread remembers which one.
+_job_tls = threading.local()
+
+
 class _Job:
     """Tracks a pipeline job running in a background thread."""
 
-    def __init__(self):
+    def __init__(self, channel_id: int = 0, label: str = ""):
+        self.channel_id = channel_id   # own channel this slot belongs to (0 = none)
+        self.label = label             # shown in "also running" notes
         self.running = False
         self.kind = ""
         self.error = None
@@ -150,6 +159,7 @@ class _Job:
         self.log.append(f"=== {kind}: started ===")
 
         def worker():
+            _job_tls.job = self
             try:
                 fn()
                 self.log.append(f"=== {kind}: finished ===")
@@ -158,6 +168,7 @@ class _Job:
                 self.log.append(f"=== {kind}: FAILED: {exc} ===")
             finally:
                 self.running = False
+                _job_tls.job = None
 
         threading.Thread(target=worker, daemon=True).start()
         return True
@@ -281,7 +292,8 @@ RESET_FILES = {
     "audio": ["audio.mp3", "audio.wav", "audio.m4a", "audio.flac",
               "audio.ogg"],
     "srt": ["subtitles.srt"],
-    "shots": ["shotlist.json", "shotlist.json.bak", "batch_sheet.txt"],
+    "shots": ["shotlist.json", "shotlist.json.bak", "batch_sheet.txt",
+              "prompts.txt"],
     "images": [],
     "merge": ["final.mp4"],
 }
@@ -370,14 +382,124 @@ def create_app(cfg) -> Flask:
         return None
 
     job = _Job()
-    sjob = _Job()  # studio jobs (LLM generation, SRT alignment)
+
+    # Studio jobs (LLM generation, SRT alignment, auto-run, rendering...) run
+    # in ONE slot PER OWN CHANNEL: a channel does one thing at a time, but a
+    # run in channel A never blocks work in channel B. `sjob` is a handle that
+    # resolves to the right slot: the worker's own slot inside a job thread,
+    # else the slot of the request's production's channel, else of the channel
+    # selected in the studio (cookie), else the "no channel" slot (0).
+    channel_jobs: dict[int, _Job] = {}
+    channel_jobs_lock = threading.Lock()
+    CHANNEL_COOKIE = "wr_channel"
+
+    def _job_for_channel(cid: int) -> _Job:
+        with channel_jobs_lock:
+            slot = channel_jobs.get(cid)
+            if slot is None:
+                slot = channel_jobs[cid] = _Job(cid)
+            return slot
+
+    def _active_channel_id() -> int:
+        """The own channel selected in the studio (0 = none selected)."""
+        try:
+            return max(0, int(request.cookies.get(CHANNEL_COOKIE) or 0))
+        except (ValueError, RuntimeError):
+            return 0
+
+    def _selected_channel() -> int | None:
+        """The studio's selected channel: an own channel id, 0 for the
+        'no channel' bucket, None when nothing is selected yet."""
+        raw = request.cookies.get(CHANNEL_COOKIE)
+        if raw is None or raw == "":
+            return None
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            return None
+
+    def _remember_channel(resp, cid: int):
+        resp.set_cookie(CHANNEL_COOKIE, str(int(cid or 0)),
+                        max_age=60 * 60 * 24 * 365, samesite="Lax")
+        return resp
+
+    def _current_job() -> _Job:
+        tls_job = getattr(_job_tls, "job", None)
+        if tls_job is not None:
+            return tls_job
+        if has_request_context():
+            cached = getattr(g, "_wr_job", None)
+            if cached is not None:
+                return cached
+            cid = 0
+            pid = ((request.view_args or {}).get("pid")
+                   or request.args.get("pid", type=int))
+            if pid:
+                conn = db.connect(cfg.db_path)
+                try:
+                    row = db.get_production(conn, pid)
+                    cid = int(row["own_channel_id"] or 0) if row else 0
+                finally:
+                    conn.close()
+            else:
+                cid = _active_channel_id()
+            slot = _job_for_channel(cid)
+            g._wr_job = slot
+            return slot
+        return _job_for_channel(0)
+
+    class _JobHandle:
+        """Forwards every attribute to the current slot (see above)."""
+
+        def __getattr__(self, name):
+            return getattr(_current_job(), name)
+
+        def __setattr__(self, name, value):
+            setattr(_current_job(), name, value)
+
+        def _real(self) -> _Job:
+            return _current_job()
+
+    sjob = _JobHandle()
+    # the scheduled "produce from channels" run spans channels, so it keeps a
+    # slot of its own
+    scheduler_job = _Job(-1, "scheduled auto-run")
+
+    def _other_running_jobs() -> list[dict]:
+        """Jobs running in channels other than the current one, for the
+        'also running' note."""
+        here = _current_job()
+        with channel_jobs_lock:
+            slots = list(channel_jobs.values())
+        slots.append(scheduler_job)
+        return [{"channel_id": j.channel_id, "kind": j.kind, "pid": j.pid,
+                 "scheduled": j.channel_id == -1}
+                for j in slots if j is not here and j.running]
 
     # Manual batch: queue productions that auto-run one after another, each
     # stopping after merge (review stays a human decision). Optionally shut the
     # PC down a few minutes after the LAST one finishes, so an unattended run
     # can power the machine off.
     BATCH_SHUTDOWN_SECONDS = 300
-    batch = {"queue": [], "lock": threading.Lock(), "shutdown_at": None}
+    batches: dict[int, dict] = {}
+
+    def _batch_for(cid: int) -> dict:
+        with channel_jobs_lock:
+            if cid not in batches:
+                batches[cid] = {"queue": [], "lock": threading.Lock(),
+                                "shutdown_at": None}
+            return batches[cid]
+
+    class _BatchHandle:
+        """The batch queue of the current channel (same indexing as a dict)."""
+
+        def __getitem__(self, key):
+            return _batch_for(_current_job().channel_id)[key]
+
+        def __setitem__(self, key, value):
+            _batch_for(_current_job().channel_id)[key] = value
+
+    batch = _BatchHandle()
 
     def _batch_shutdown_cmd() -> list[str]:
         if os.name == "nt":
@@ -411,14 +533,17 @@ def create_app(cfg) -> Flask:
                 conn.close()
             sjob.pid = pid
             sjob.log.append(f"[batch] production {pid} ({title}): auto-run")
-            result = autorun.run_pipeline(cfg, pid, job=sjob,
+            result = autorun.run_pipeline(cfg, pid, job=sjob._real(),
                                           log=sjob.log.append)
             done.append((pid, result))
             sjob.log.append(f"[batch] production {pid}: {result}")
         ok = sum(1 for _, r in done if r == "ok")
         sjob.log.append(f"[batch] finished: {len(done)} job(s) run, {ok} "
                         f"reached merge - review stays manual")
-        if shutdown and not sjob.cancel:
+        if shutdown and not sjob.cancel and _other_running_jobs():
+            sjob.log.append("[batch] not shutting down: another channel is "
+                            "still running a job")
+        elif shutdown and not sjob.cancel:
             _batch_spawn(_batch_shutdown_cmd())
             batch["shutdown_at"] = time.time() + BATCH_SHUTDOWN_SECONDS
             cancel = ("shutdown /a" if os.name == "nt" else "shutdown -c")
@@ -437,19 +562,21 @@ def create_app(cfg) -> Flask:
 
     def _start_producer(channels: int, log_fn) -> None:
         """Start an Auto Run in the studio job slot (used by the scheduler)."""
-        if sjob.running:
-            log_fn("producer: a job is already running - skipping")
+        if scheduler_job.running:
+            log_fn("producer: a scheduled run is already going - skipping")
             return
 
         def worker():
-            result = producer.run(cfg, log=sjob.log.append, job=sjob)
-            sjob.log.append(
+            result = producer.run(cfg, log=scheduler_job.log.append,
+                                  job=scheduler_job)
+            scheduler_job.log.append(
                 f"=== scheduled produce: {len(result['created'])} created, "
                 f"{len(result['skipped'])} skipped, result={result['result']} ===")
 
-        sjob.start(worker, f"scheduled auto-run ({channels} channel(s))")
+        scheduler_job.start(worker,
+                            f"scheduled auto-run ({channels} channel(s))")
 
-    sched = scheduler.Scheduler(cfg, sjob, _start_producer)
+    sched = scheduler.Scheduler(cfg, scheduler_job, _start_producer)
     sched.start()
 
     def _autostart_services() -> None:
@@ -909,10 +1036,14 @@ def create_app(cfg) -> Flask:
                 " ORDER BY genre COLLATE NOCASE")]
             source_genres = {g.lower() for g in genres}
             global_render_resolution = settings.load(conn)["render_resolution"]
+            watched_channels = db.list_channels(conn)
+            watched_by_oc = {c["id"]: db.own_channel_watched(c)
+                             for c in own_channels}
         finally:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            watched_channels=watched_channels, watched_by_oc=watched_by_oc,
             renderly_url=cfg.renderly_url, genres=genres,
             source_genres=source_genres,
             providers=[p["name"] for p in studio.providers(cfg)],
@@ -1041,6 +1172,14 @@ def create_app(cfg) -> Flask:
                 fields[key] = (request.form.get(key) or "").strip()
         if "genre" in fields and not fields["genre"]:
             fields["genre"] = "general"
+        if "watched_present" in request.form:
+            conn = db.connect(cfg.db_path)
+            try:
+                known = {c["channel_id"] for c in db.list_channels(conn)}
+            finally:
+                conn.close()
+            picked = [w for w in request.form.getlist("watched") if w in known]
+            fields["watched_channels"] = json.dumps(picked) if picked else None
         if "active" in request.form:
             fields["active"] = 1 if request.form.get("active") in ("1", "on",
                                                                   "true") else 0
@@ -1383,15 +1522,31 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         own_channels = db.list_own_channels(conn)
+        active_channels = [c for c in own_channels if c["active"]]
         own_by_id = {c["id"]: c["name"] for c in own_channels}
+        selected = _selected_channel()
+        # no own channels yet: nothing to choose between, show everything as
+        # before. Otherwise the studio works inside ONE channel at a time.
+        gated = bool(active_channels)
+        if gated and selected is not None and selected \
+                and selected not in {c["id"] for c in active_channels}:
+            selected = None          # a removed / deactivated channel
+        in_channel = (not gated) or selected is not None
         prods = []
         finished_count = 0
+        counts: dict[int, int] = {}
         for p in db.list_productions(conn):
             if p["status"] in ("ready", "published"):
                 # Approved/published productions move to their own
                 # "Finished" page instead of staying mixed into this
                 # in-progress list.
-                finished_count += 1
+                if (not gated) or selected is None \
+                        or (p["own_channel_id"] or 0) == selected:
+                    finished_count += 1
+                continue
+            cid = p["own_channel_id"] or 0
+            counts[cid] = counts.get(cid, 0) + 1
+            if gated and (selected is None or cid != selected):
                 continue
             steps = db.latest_steps(conn, p["id"])
             done = sum(1 for s in db.STAGES if s in steps)
@@ -1402,6 +1557,13 @@ def create_app(cfg) -> Flask:
         # it back into this picker.
         sources = db.get_videos(conn, status="transcribed", produced=0,
                                 limit=500)
+        # a channel linked to specific watched channels draws sources only
+        # from them (none linked = all of them, as before)
+        selected_row = (db.get_own_channel(conn, selected)
+                        if selected else None)
+        watched = db.own_channel_watched(selected_row) if selected_row else []
+        if watched:
+            sources = [v for v in sources if v["channel_id"] in set(watched)]
         conn.close()
         title_by_id = {p["row"]["id"]: p["row"]["title"] for p in prods}
         with batch["lock"]:
@@ -1411,15 +1573,57 @@ def create_app(cfg) -> Flask:
                                 and batch["shutdown_at"] > time.time())
         if batch["shutdown_at"] and not shutdown_pending:
             batch["shutdown_at"] = None  # the countdown already elapsed
-        return render_template(
+        also_running = []
+        for o in _other_running_jobs():
+            who = ("Scheduled auto-run" if o["scheduled"]
+                   else own_by_id.get(o["channel_id"]) or "No channel")
+            also_running.append({"who": who, "kind": o["kind"]})
+        response = make_response(render_template(
             "studio.html", prods=prods, sources=sources,
-            own_channels=[c for c in own_channels if c["active"]],
-            job=sjob, msg=request.args.get("msg"),
+            own_channels=active_channels,
+            gated=gated, in_channel=in_channel,
+            selected_channel=selected,
+            selected_name=(own_by_id.get(selected) if selected
+                           else ("No channel" if selected == 0 else None)),
+            channel_counts=counts,
+            unassigned_count=counts.get(0, 0),
+            also_running=also_running,
+            job=sjob._real(), msg=request.args.get("msg"),
             error=request.args.get("error"),
             batch_queue=queued,
             batch_running=(sjob.running and sjob.kind == "batch auto-run"),
             batch_shutdown_pending=shutdown_pending,
-            finished_count=finished_count)
+            finished_count=finished_count))
+        if gated and selected is None and request.cookies.get(CHANNEL_COOKIE):
+            response.delete_cookie(CHANNEL_COOKIE)
+        return response
+
+    @app.post("/studio/channel")
+    def studio_select_channel():
+        """Select the channel the studio works in (0 = productions with no
+        channel)."""
+        raw = (request.form.get("own_channel_id") or "").strip()
+        try:
+            cid = max(0, int(raw or 0))
+        except ValueError:
+            cid = 0
+        if cid:
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                ok = db.get_own_channel(conn, cid) is not None
+            finally:
+                conn.close()
+            if not ok:
+                return redirect("/studio?error=Unknown+channel")
+        return _remember_channel(redirect("/studio"), cid)
+
+    @app.post("/studio/channel/leave")
+    def studio_leave_channel():
+        """Back to the channel picker."""
+        response = redirect("/studio")
+        response.delete_cookie(CHANNEL_COOKIE)
+        return response
 
     @app.get("/finished")
     def finished_list():
@@ -1442,9 +1646,14 @@ def create_app(cfg) -> Flask:
         if status_filter not in ("all", "ready", "published"):
             status_filter = "all"
 
+        # inside a selected channel the page shows that channel's videos only
+        # (?all=1 shows every channel)
+        scope = None if request.args.get("all") else _selected_channel()
         all_items, ready_count, published_count = [], 0, 0
         for p in db.list_productions(conn):
             if p["status"] not in ("ready", "published"):
+                continue
+            if scope is not None and (p["own_channel_id"] or 0) != scope:
                 continue
             if p["status"] == "ready":
                 ready_count += 1
@@ -1478,6 +1687,8 @@ def create_app(cfg) -> Flask:
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
             status_filter=status_filter, ready_count=ready_count,
             published_count=published_count,
+            scope_name=(None if scope is None
+                        else own_by_id.get(scope) or "No channel"),
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/studio/<int:pid>/publish")
@@ -1758,7 +1969,7 @@ def create_app(cfg) -> Flask:
             "merge": bool(cfg.studio_merge_command) or
                      bool(cfg.imgtovideo_repo),
         }
-        return render_template(
+        page = render_template(
             "studio_detail.html", prod=prod, steps=steps, history=history,
             stages=db.STAGES, stage=stage, script_text=script_text,
             style=style, style_text=style_text, source_tr=source_tr,
@@ -1786,7 +1997,7 @@ def create_app(cfg) -> Flask:
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
             stage_labels=stage_labels, hooks=hooks,
-            renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob,
+            renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob._real(),
             prod_voice=prod["voice"] or eff["voice"],
             voice_from=("this production" if prod["voice"]
                         else f"channel: {eff['own_channel_name']}"
@@ -1813,7 +2024,11 @@ def create_app(cfg) -> Flask:
             direction_versions=_version_names(pdir, "direction", stage),
             shotlist_count=shotlist_count, cue_count=cue_count,
             msg=request.args.get("msg"), error=request.args.get("error"),
+            channel_locked=bool(prod["own_channel_id"]),
         )
+        # opening a production selects (and locks you into) its channel
+        return _remember_channel(make_response(page),
+                                 prod["own_channel_id"] or 0)
 
     @app.post("/studio/<int:pid>/delete")
     def studio_delete(pid):
@@ -2727,7 +2942,7 @@ def create_app(cfg) -> Flask:
 
         def worker():
             autorun.recover_images(cfg, pid, log=sjob.log.append,
-                                   cancel=lambda: sjob.cancel)
+                                   cancel=(lambda _j=sjob._real(): _j.cancel))
 
         label = "FlowBatch" if engine == "flowbatch" else "Flow Driver"
         sjob.start(worker, f"gallery recovery ({label})")
@@ -2762,7 +2977,7 @@ def create_app(cfg) -> Flask:
 
         def worker():
             autorun.upscale_images(cfg, pid, log=sjob.log.append,
-                                   cancel=lambda: sjob.cancel)
+                                   cancel=(lambda _j=sjob._real(): _j.cancel))
 
         sjob.start(worker, f"local upscale ({tier})")
         return _studio_url(
@@ -2963,7 +3178,8 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            plan = producer.build_plan(cfg, conn)
+            plan = producer.build_plan(cfg, conn,
+                                       _selected_channel() or None)
         finally:
             conn.close()
         return {"plan": plan, "running": sjob.running}
@@ -2974,8 +3190,11 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return redirect("/studio?error=A+job+is+already+running")
 
+        only = _selected_channel() or None   # read before the thread starts
+
         def worker():
-            result = producer.run(cfg, log=sjob.log.append, job=sjob)
+            result = producer.run(cfg, log=sjob.log.append,
+                                  job=sjob._real(), only_channel=only)
             sjob.log.append(
                 f"=== produce: {len(result['created'])} created, "
                 f"{len(result['skipped'])} skipped, result={result['result']} ===")
@@ -3027,7 +3246,7 @@ def create_app(cfg) -> Flask:
         provider = (request.form.get("provider") or "").strip() or None
 
         def worker():
-            result = autorun.run_pipeline(cfg, pid, job=sjob,
+            result = autorun.run_pipeline(cfg, pid, job=sjob._real(),
                                           log=sjob.log.append,
                                           provider=provider)
             if result.startswith("failed:"):

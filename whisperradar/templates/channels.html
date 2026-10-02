@@ -190,6 +190,19 @@
                 </select>
               </label>
             </div>
+            <div style="margin-top:10px">
+              <input type="hidden" name="watched_present" value="1">
+              <div class="muted" style="font-size:12px; margin-bottom:4px">Watched channels this channel draws its source videos from (the Studio's "Based on" list shows only these). None ticked = all watched channels.</div>
+              <div class="inline" style="gap:4px 14px; flex-wrap:wrap">
+                {% for wc in watched_channels %}
+                <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px">
+                  <input type="checkbox" name="watched" value="{{ wc['channel_id'] }}" {{ 'checked' if wc['channel_id'] in watched_by_oc.get(ch['id'], []) else '' }}>
+                  {{ wc['name'] }}</label>
+                {% else %}
+                <span class="muted" style="font-size:12px">No watched channels yet - add some on <a href="/watched">Watched Channels</a>.</span>
+                {% endfor %}
+              </div>
+            </div>
             </details>
             <details class="grp" id="edit-{{ ch['id'] }}-production">
               <summary>Production defaults <span class="muted">voice, image engine, render, upscale, auto run, caps</span></summary>

@@ -26,7 +26,8 @@ from whisperradar.webapp import create_app  # noqa: E402
 
 ALL_STAGE_FILES = {
     "writing_style.md": "s", "script.md": "s", "audio.mp3": "a",
-    "subtitles.srt": "s", "shotlist.json": "{}", "final.mp4": "m",
+    "subtitles.srt": "s", "shotlist.json": "{}", "prompts.txt": "p",
+    "final.mp4": "m",
 }
 
 
