@@ -93,6 +93,28 @@ def _bar(value) -> str:
 
 # ---- script -----------------------------------------------------------------
 
+# the same window autorun._script_gate enforces
+LEN_MIN_RATIO = 0.8
+LEN_MAX_RATIO = 1.15
+
+_NO_STYLE_ASK = (
+    "STYLE GUIDE: none has been provided with this prompt. Do NOT invent "
+    "one. Before writing anything, ask me to paste or attach the writing "
+    "style guide, and wait for it. Only if I say there is none, write in a "
+    "clear, natural spoken voice.")
+
+
+def _target_words(cfg, pid: int, target_words) -> int:
+    if target_words:
+        return int(target_words)
+    source = autorun._source_transcript_text(cfg, pid)
+    return studio.script_target_words(
+        cfg.studio_script_words, len(re.findall(r"\w+", source or "")))
+
+
+def _length_window(target: int) -> tuple[int, int]:
+    return int(target * LEN_MIN_RATIO), int(target * LEN_MAX_RATIO)
+
 _SCRIPT_REPLY_FORMAT = (
     "\n\nREPLY FORMAT: the finished script as plain text only - no title "
     "line, no headings, no scene labels, no notes before or after it. If you "
@@ -142,25 +164,34 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
     style = (style_guide if style_guide is not None
              else _writing_style(ctx)).strip()
     facts = (notes if notes is not None else _research_notes(ctx)).strip()
-    if not target_words:
-        source = autorun._source_transcript_text(cfg, pid)
-        target_words = studio.script_target_words(
-            cfg.studio_script_words, len(re.findall(r"\w+", source or "")))
+    target_words = _target_words(cfg, pid, target_words)
     text = studio.script_prompt(
         _title(ctx, title), prod["genre"], facts, style_guide=style,
         target_words=int(target_words),
         extra_direction=db.stage_extra(prod, "script"))
-    bar = (f"\n\nQUALITY BAR this channel holds a script to: an overall "
-           f"rating of at least {_bar(eff['script_min_rating'])}/10 from a "
-           f"strict editor, and no more than "
-           f"{float(eff['script_max_overlap']):.0%} of its 5-word runs "
-           f"shared with the source material.")
+    lo, hi = _length_window(int(target_words))
+    bar = (f"\n\nQUALITY BAR - a script is only accepted when ALL of these "
+           f"hold:\n"
+           f"- length between {lo} and {hi} words (target {int(target_words)}); "
+           f"shorter or longer is rejected\n"
+           f"- an overall rating of at least {_bar(eff['script_min_rating'])}"
+           f"/10 from a strict editor\n"
+           f"- no more than {float(eff['script_max_overlap']):.0%} of its "
+           f"5-word runs shared with the source material (above "
+           f"{float(eff['script_hard_overlap']):.0%} is rejected outright)\n"
+           f"- it ends on a complete sentence, never cut off")
+    if not style:
+        text = text.replace("No style guide provided.", _NO_STYLE_ASK)
+        text = text.replace("Follow the STYLE GUIDE above precisely.",
+                            "Follow the STYLE GUIDE precisely once I give "
+                            "it to you.")
     return text + bar + _SCRIPT_REPLY_FORMAT
 
 
 def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                         style_guide: str | None = None,
-                        notes: str | None = None) -> str:
+                        notes: str | None = None,
+                        target_words: int | None = None) -> str:
     script = (script or "").strip()
     if not script:
         raise PromptError("Paste the script to judge first")
@@ -177,13 +208,22 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
     text = studio.rating_prompt(
         _title(ctx, title), prod["genre"], script, facts, style, overlap,
         extra_direction=db.stage_extra(prod, "script"))
-    bar = (f"\n\nTHE CHANNEL'S BAR (use it for your verdict): the script "
-           f"passes at an overall score of at least "
-           f"{_bar(eff['script_min_rating'])} with 5-gram overlap at most "
-           f"{float(eff['script_max_overlap']):.0%}; overlap above "
-           f"{float(eff['script_hard_overlap']):.0%} is a hard rejection "
-           f"however well it reads. The overlap figure above was measured by "
-           f"software; do not re-estimate it.")
+    target = _target_words(cfg, pid, target_words)
+    lo, hi = _length_window(target)
+    words = len(re.findall(r"\w+", script))
+    cut = studio.script_looks_truncated(script)
+    bar = (f"\n\nTHE CHANNEL'S BAR: the script passes only if ALL hold - "
+           f"overall score at least {_bar(eff['script_min_rating'])}; "
+           f"5-gram overlap at most {float(eff['script_max_overlap']):.0%} "
+           f"(above {float(eff['script_hard_overlap']):.0%} is a hard "
+           f"rejection however well it reads); length {lo}-{hi} words "
+           f"(target {target}); ends on a complete sentence. Measured by "
+           f"software, do not re-estimate: overlap above; length {words} "
+           f"words; ending "
+           f"{'LOOKS CUT OFF' if cut else 'is complete'}.\n"
+           f"Score the writing honestly on its own merits - do not raise or "
+           f"lower a score to fit the bar. After the scores, state PASS or "
+           f"FAIL separately and list which bar items failed.")
     return text + bar
 
 

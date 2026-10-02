@@ -2556,9 +2556,13 @@ def create_app(cfg) -> Flask:
                     text = external_prompts.script_writer_prompt(
                         cfg, pid, title, words, style, notes)
                 else:
+                    try:
+                        jwords = int(request.form.get("words") or 0) or None
+                    except ValueError:
+                        jwords = None
                     text = external_prompts.script_judge_prompt(
                         cfg, pid, request.form.get("script") or "", title,
-                        style, notes)
+                        style, notes, jwords)
             elif kind == "shot_planner":
                 text = external_prompts.shotlist_planner_prompt(cfg, pid)
             elif kind == "shot_judge":

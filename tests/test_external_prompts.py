@@ -350,3 +350,27 @@ class SeedAndNotesTests(Base):
         self.assertEqual(r.status_code, 200)
         self.assertIn("saved fact",
                       (self.pdir / "research_notes.md").read_text("utf-8"))
+
+
+class LengthAndStyleTests(Base):
+    def test_length_window_reaches_writer_and_judge(self):
+        w = ep.script_writer_prompt(self.cfg, self.pid, target_words=1000)
+        self.assertIn("between 800 and 1150 words", w)
+        self.assertIn("complete sentence", w)
+        j = ep.script_judge_prompt(self.cfg, self.pid, "Short script here.",
+                                   target_words=1000)
+        self.assertIn("800-1150 words", j)
+        self.assertIn("length 3 words", j)
+        self.assertIn("ending is complete", j)
+        self.assertIn("do not raise or lower", j)
+
+    def test_judge_flags_a_cut_off_script(self):
+        j = ep.script_judge_prompt(self.cfg, self.pid, "It stops mid")
+        self.assertIn("LOOKS CUT OFF", j)
+
+    def test_missing_writing_style_asks_instead_of_contradicting(self):
+        (self.pdir / "writing_style.md").unlink()
+        w = ep.script_writer_prompt(self.cfg, self.pid, target_words=900)
+        self.assertNotIn("No style guide provided.", w)
+        self.assertNotIn("STYLE GUIDE above", w)
+        self.assertIn("ask me to paste or attach the writing style guide", w)
