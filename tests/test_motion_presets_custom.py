@@ -307,7 +307,7 @@ class CustomChannelTests(_ChannelCase):
         edit = edit[:edit.index("</form>")]
         titles = re.findall(r'<summary>(.*?) <span', edit)
         self.assertEqual(titles, [
-            "Basics", "Production defaults", "Style, bible &amp; references",
+            "Basics", "Production defaults", "Visual style, bible &amp; references",
             "Planning brief", "Auto Run", "Quality gates"])
         groups = re.split(r'<details class="grp"', edit)[1:]
         self.assertEqual(len(groups), 6)
@@ -317,8 +317,8 @@ class CustomChannelTests(_ChannelCase):
                 where[name] = title
         for name, title in (
                 ("name", "Basics"), ("default_voice", "Production defaults"),
-                ("style", "Style, bible &amp; references"),
-                ("bible_dir", "Style, bible &amp; references"),
+                ("style", "Visual style, bible &amp; references"),
+                ("bible_dir", "Visual style, bible &amp; references"),
                 ("brief_motion", "Planning brief"),
                 ("brief_presentation", "Planning brief"),
                 ("custom_allowed", "Planning brief"),

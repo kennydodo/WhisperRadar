@@ -190,10 +190,10 @@
   <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</div>
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
 
-  {% set STAGE_DISPLAY = {'shots': 'shotlist', 'srt': 'subtitles',
+  {% set STAGE_DISPLAY = {'style': 'writing style', 'shots': 'shotlist', 'srt': 'subtitles',
                           'refs': 'references', 'merge': 'merge & export'} %}
   {% set RESET_BLURB = {
-    'style': 'everything re-runs, starting from a fresh style guide',
+    'style': 'everything re-runs, starting from a fresh writing style guide',
     'script': 'also deletes the subtitles and shotlist (a new script is generated; kept audio will no longer match it)',
     'audio': 'deletes the audio - you will need to upload or regenerate it (subtitles/shotlist/images are also cleared, since they were timed to it)',
     'srt': 'deletes the subtitles and shotlist, then re-transcribes from the kept audio',
@@ -313,8 +313,8 @@
         </form>
         {% endif %}
       {% endif %}
-      {% if stage in ("script", "shots", "images") and style %}
-      <span class="badge genre" title="Style guide is passed to the LLM">style guide applied</span>
+      {% if stage == "script" and style %}
+      <span class="badge genre" title="The writing style guide (how the script sounds) is passed to the LLM">writing style applied</span>
       {% endif %}
     </h2>
     {% if steps.get(stage) and steps[stage]["detail"] %}
@@ -325,18 +325,19 @@
       {% if style %}
       <div class="artifact">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-          <span style="font-weight:600; color:var(--green)">Writing style guide extracted from the source video - passed to the LLM for the script</span>
+          <span style="font-weight:600; color:var(--green)">Writing style guide - how the script sounds, extracted from the source video; used only for the script</span>
         </div>
         <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:340px; overflow-y:auto">{{ style_text }}</pre>
       </div>
       {% else %}
-      <div class="muted" style="margin-bottom:8px">No writing style guide yet. Generate one from the source transcript's writing style, or write your own below - it is passed to the LLM for the script only (image art direction is set on the channel).</div>
+      <div class="muted" style="margin-bottom:8px">No writing style guide yet. Generate one from the source transcript's writing style, or write your own below - it is passed to the LLM for the script only.</div>
       {% endif %}
+      <div class="muted" style="font-size:12px; margin-bottom:8px"><b>Writing style</b> = how the script sounds (voice, pacing, hook, structure, CTA). It is not the <b>visual style</b> - how the images look - which is set on the channel (My Channels &gt; Style, bible &amp; references) and used at the shotlist stage.</div>
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/generate">
           <button type="submit" class="green" {{ 'disabled' if job.running or not (source_tr and llm_ready) else '' }}
-                  title="{{ 'Analyze the source transcript and extract its style' if source_tr and llm_ready and not job.running else 'Needs a source video with a transcript and a configured LLM' }}">
-            {{ 'Working...' if job.running else 'Generate style guide from source' }}
+                  title="{{ 'Analyze the source transcript and extract its writing style' if source_tr and llm_ready and not job.running else 'Needs a source video with a transcript and a configured LLM' }}">
+            {{ 'Working...' if job.running else 'Generate writing style guide from source' }}
           </button>
         </form>
       </div>
@@ -361,7 +362,7 @@
         <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>
       </div>
       {% else %}
-      <div class="warn" style="margin-bottom:8px">No style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the style stage</a> so the script matches the source video's voice.</div>
+      <div class="warn" style="margin-bottom:8px">No writing style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the writing style stage</a> so the script matches the source video's voice.</div>
       {% endif %}
       <form method="post" action="/studio/{{ prod['id'] }}/script/save">
         <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
@@ -379,6 +380,27 @@
           </button>
         </div>
       </form>
+      <details class="extbox" style="margin-top:10px">
+        <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the script</summary>
+        <div class="muted" style="font-size:12px; margin:8px 0">
+          Builds copy-paste prompts from this channel's settings. Run the writer prompt in your own LLM, paste the result into the script box above and save; use the judge prompt to have another LLM score it. The judge uses whatever script is in the box above right now.
+        </div>
+        <div class="inline" style="gap:8px; align-items:flex-end; flex-wrap:wrap">
+          <label>Title <input type="text" data-f="title" value="{{ prod['title'] }}" style="width:380px"></label>
+          <label>Target words <input type="number" data-f="words" min="100" placeholder="channel default" style="width:130px"></label>
+        </div>
+        {% if not style %}<div class="warn" style="margin-top:8px">No writing style guide yet (the visual style is a different thing and is not used here) - use "Writing style prompt" below to get one from the reference script, paste the result into the writing style stage, then build the writer prompt.</div>{% endif %}
+        {% if not has_research_notes %}<div class="muted" style="font-size:12px; margin-top:8px">No research notes yet - the writer prompt will have no facts. Use "Notes prompt" to get them from the reference script (the notes box below is optional: paste them here instead of saving).</div>
+        <textarea data-f="notes" style="min-height:70px; margin-top:6px" placeholder="Optional - paste research notes (facts only) here"></textarea>{% endif %}
+        <div class="actions" style="margin-top:8px">
+          <button type="button" class="secondary" onclick="wrExt(this,'script_writer')">Writer prompt</button>
+          <button type="button" class="secondary" onclick="wrExt(this,'script_judge')">Judge prompt</button>
+          <button type="button" class="ghost" onclick="wrExt(this,'style')" title="Asks an LLM to extract the reference script's writing style">Writing style prompt</button>
+          <button type="button" class="ghost" onclick="wrExt(this,'notes')" title="Asks an LLM to turn the reference script into neutral fact notes">Notes prompt</button>
+          <span class="extmsg muted" style="font-size:12px"></span>
+        </div>
+        <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
+      </details>
       {% if script_versions %}
       <div class="actions" style="margin-top:4px">
         <span class="muted" style="font-size:12px">Saved versions (click to load):</span>
@@ -639,6 +661,25 @@
           {% endif %}
         </div>
       </form>
+      <details class="extbox" style="margin-top:10px; margin-bottom:10px">
+        <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the shotlist</summary>
+        <div class="muted" style="font-size:12px; margin:8px 0">
+          The planner prompt carries this channel's planning brief (motion profile, hold range, presentation), the narration, the visual style, the bible and the reference rules. Paste the JSON it returns into the shotlist box above and save. The judge prompt carries the channel's hard rules and audits whatever shotlist is in the box above right now; the app's own code checks on it are shown here too.
+        </div>
+        <div class="actions">
+          <button type="button" class="secondary" onclick="wrExt(this,'shot_planner')">Planner prompt</button>
+          <button type="button" class="secondary" onclick="wrExt(this,'shot_judge')">Judge prompt</button>
+          <span class="extmsg muted" style="font-size:12px"></span>
+        </div>
+        <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
+        <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
+      </details>
+      <h2>Visual style (how the images look)</h2>
+      <div class="muted" style="font-size:12px; margin-bottom:6px">
+        The art direction passed to the shotlist planner and applied to every image. It is not the writing style (how the script sounds).
+        {% if style_src == 'production' %}<b>Production override</b> - this production's own style.md is in force.{% elif style_src == 'channel' %}Taken live from the channel - edit it on <a href="/my-channels">My Channels</a> &gt; Style, bible &amp; references.{% else %}None set - the planner is asked to write a concise one itself; set one on the channel.{% endif %}
+      </div>
+      {% if visual_style_text %}<pre class="copyable" style="margin:0 0 12px; font-size:12px; white-space:pre-wrap; max-height:220px; overflow-y:auto">{{ visual_style_text }}</pre>{% endif %}
       <h2>Character / reference bible (optional)</h2>
       <div class="muted" style="font-size:12px; margin-bottom:6px">Recurring characters, environments, wardrobe, objects - kept consistent across all generated images. Passed to the shotlist planner as its reference bible.</div>
       <div class="muted" style="font-size:12px; margin-bottom:6px">
@@ -1150,6 +1191,41 @@
   }
 </script>
 
+<script>
+  // External-LLM prompt builder (script + shotlist panels)
+  function wrExt(btn, kind) {
+    var box = btn.closest('.extbox');
+    var fd = new FormData();
+    fd.append('kind', kind);
+    box.querySelectorAll('[data-f]').forEach(function (el) { fd.append(el.dataset.f, el.value); });
+    if (kind === 'script_judge') {
+      var sc = document.querySelector('textarea[name=script]');
+      fd.append('script', sc ? sc.value : '');
+    }
+    if (kind === 'shot_judge') {
+      var sl = document.querySelector('textarea[name=shotlist]');
+      fd.append('shotlist', sl ? sl.value : '');
+    }
+    var out = box.querySelector('.extout'), msg = box.querySelector('.extmsg');
+    var faults = box.querySelector('.extfaults');
+    msg.textContent = 'Building...';
+    if (faults) faults.style.display = 'none';
+    fetch('/studio/{{ prod["id"] }}/external-prompt', {method: 'POST', body: fd})
+      .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); })
+      .then(function (res) {
+        if (!res.ok) { out.value = ''; msg.textContent = res.j.error || 'Could not build the prompt'; return; }
+        out.value = res.j.prompt;
+        msg.textContent = res.j.chars.toLocaleString() + ' characters - ready to copy';
+        if (faults && res.j.local_faults !== undefined) {
+          faults.style.display = 'block';
+          faults.textContent = res.j.local_faults.length
+            ? 'The app\'s own checks on this shotlist found:\n- ' + res.j.local_faults.join('\n- ')
+            : 'The app\'s own code checks found no structural or pacing faults in this shotlist.';
+        }
+      })
+      .catch(function () { msg.textContent = 'Request failed'; });
+  }
+</script>
 <script>
   // Copy button on every textarea and read-only text block
   (function () {

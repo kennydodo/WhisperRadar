@@ -30,6 +30,7 @@ from flask import (
     send_file,
 )
 
+from . import external_prompts
 from . import (ai33, autorun, briefs, db, pipeline, producer, scheduler,
                services, settings, studio)
 from .cli import _slugify, format_duration
@@ -1677,7 +1678,7 @@ def create_app(cfg) -> Flask:
         _c = db.connect(cfg.db_path)
         db.init_db(_c)
         try:
-            _sg, style_src, _bt, bible_src = autorun.style_bible(
+            visual_style_text, style_src, _bt, bible_src = autorun.style_bible(
                 cfg, _c, prod, pdir)
         finally:
             _c.close()
@@ -1761,8 +1762,10 @@ def create_app(cfg) -> Flask:
             stages=db.STAGES, stage=stage, script_text=script_text,
             style=style, style_text=style_text, source_tr=source_tr,
             style_src=style_src, bible_src=bible_src,
+            visual_style_text=visual_style_text,
             source_tr_text=source_tr_text,
             shotlist_text=shotlist_text, audio=audio, srt=srt,
+            has_research_notes=bool(_read_text(pdir / autorun.RESEARCH_NOTES_FILE).strip()),
             srt_text=srt_text, prompts_text=prompts_text, images=images,
             final=final, final_url=final_url,
             preview=preview, preview_url=preview_url,
@@ -2522,6 +2525,48 @@ def create_app(cfg) -> Flask:
 
         sjob.start(worker, "shotlist planning")
         return _studio_url(pid, msg="Shotlist planning started")
+
+    @app.post("/studio/<int:pid>/external-prompt")
+    def studio_external_prompt(pid):
+        """Build a copy-paste prompt for running a stage in an external LLM
+        (see external_prompts.py). Returns JSON; never calls an LLM."""
+        kind = request.form.get("kind") or ""
+        title = request.form.get("title") or ""
+        local_faults = None
+        try:
+            if kind == "style":
+                text = external_prompts.style_extraction_prompt(cfg, pid, title)
+            elif kind == "notes":
+                text = external_prompts.notes_extraction_prompt(cfg, pid, title)
+            elif kind in ("script_writer", "script_judge"):
+                style = request.form.get("style")
+                notes = request.form.get("notes")
+                style = style if (style or "").strip() else None
+                notes = notes if (notes or "").strip() else None
+                if kind == "script_writer":
+                    try:
+                        words = int(request.form.get("words") or 0) or None
+                    except ValueError:
+                        words = None
+                    text = external_prompts.script_writer_prompt(
+                        cfg, pid, title, words, style, notes)
+                else:
+                    text = external_prompts.script_judge_prompt(
+                        cfg, pid, request.form.get("script") or "", title,
+                        style, notes)
+            elif kind == "shot_planner":
+                text = external_prompts.shotlist_planner_prompt(cfg, pid)
+            elif kind == "shot_judge":
+                text, local_faults = external_prompts.shotlist_judge_prompt(
+                    cfg, pid, request.form.get("shotlist") or "")
+            else:
+                return jsonify({"error": "Unknown prompt kind"}), 400
+        except external_prompts.PromptError as exc:
+            return jsonify({"error": str(exc)}), 400
+        out = {"prompt": text, "chars": len(text)}
+        if local_faults is not None:
+            out["local_faults"] = local_faults
+        return jsonify(out)
 
     @app.post("/studio/<int:pid>/shotlist/save")
     def studio_shotlist_save(pid):

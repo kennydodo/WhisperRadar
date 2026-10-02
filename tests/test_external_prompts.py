@@ -1,0 +1,300 @@
+"""External-LLM prompt builder: copy-paste prompts for the script and shotlist
+stages, built from the same prompt functions and channel settings as the
+built-in stages. Nothing here may call an LLM."""
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from whisperradar import db, external_prompts as ep, studio  # noqa: E402
+from whisperradar.config import load_config  # noqa: E402
+from whisperradar.webapp import create_app  # noqa: E402
+
+SRT = """1
+00:00:00,000 --> 00:00:06,000
+Welcome to the video about old coins.
+
+2
+00:00:06,000 --> 00:00:14,000
+A jar of pennies can hide something valuable.
+
+3
+00:00:14,000 --> 00:00:30,000
+Check the year on every one of them before you spend them.
+"""
+SOURCE = ("Reference narration about hidden value in coin jars. " * 30)
+NOTES = "- pennies from 1943 can be steel\n- check the date and mint mark"
+WSTYLE = "## Voice & Tone\nCalm, direct, second person."
+BIBLE = "MAYA - a woman in a mustard scarf."
+VSTYLE = "Flat vector illustration, no text in images."
+
+
+class Base(unittest.TestCase):
+    channel_fields: dict = {}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = load_config(ROOT / "config.yaml")
+        self.cfg.db_path = Path(self.tmp.name) / "wr.db"
+        self.cfg.studio_dir = Path(self.tmp.name) / "studio"
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        self.chan = db.create_own_channel(conn, "Ch", style=VSTYLE,
+                                          bible=BIBLE, **self.channel_fields)
+        self.pid = db.create_production(conn, "Coin Jar Secrets", "finance",
+                                        None, None)
+        db.update_production(conn, self.pid, own_channel_id=self.chan)
+        conn.commit()
+        conn.close()
+        self.pdir = studio.prod_dir(self.cfg, self.pid)
+        self.pdir.mkdir(parents=True, exist_ok=True)
+        (self.pdir / "source_transcript.txt").write_text(SOURCE, "utf-8")
+        (self.pdir / "writing_style.md").write_text(WSTYLE, "utf-8")
+        (self.pdir / "research_notes.md").write_text(NOTES, "utf-8")
+        (self.pdir / "subtitles.srt").write_text(SRT, "utf-8")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+
+class ScriptPromptTests(Base):
+    def test_writer_prompt_carries_title_style_notes_and_bar(self):
+        text = ep.script_writer_prompt(self.cfg, self.pid, title="My Own Title",
+                                       target_words=900)
+        self.assertIn('titled "My Own Title"', text)
+        self.assertIn(WSTYLE, text)
+        self.assertIn("pennies from 1943", text)
+        self.assertIn("About 900 words", text)
+        self.assertIn("QUALITY BAR", text)
+        self.assertIn("plain text", text)
+
+    def test_writer_prompt_never_includes_the_reference_script(self):
+        text = ep.script_writer_prompt(self.cfg, self.pid)
+        self.assertNotIn("Reference narration about hidden value", text)
+
+    def test_writer_prompt_has_no_visual_style_or_bible(self):
+        text = ep.script_writer_prompt(self.cfg, self.pid)
+        self.assertNotIn(VSTYLE, text)
+        self.assertNotIn(BIBLE, text)
+
+    def test_default_title_is_the_production_title(self):
+        self.assertIn('titled "Coin Jar Secrets"',
+                      ep.script_writer_prompt(self.cfg, self.pid))
+
+    def test_pasted_notes_and_style_override_the_files(self):
+        text = ep.script_writer_prompt(self.cfg, self.pid, style_guide="STYLE-X",
+                                       notes="- NOTE-Y")
+        self.assertIn("STYLE-X", text)
+        self.assertIn("NOTE-Y", text)
+        self.assertNotIn(WSTYLE, text)
+
+    def test_production_direction_reaches_the_prompt(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_production(conn, self.pid, stage_extras=json.dumps(
+            {"script": "Open with a question."}))
+        conn.commit()
+        conn.close()
+        self.assertIn("Open with a question.",
+                      ep.script_writer_prompt(self.cfg, self.pid))
+
+    def test_channel_pass_bar_reaches_both_script_prompts(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_own_channel(conn, self.chan, script_min_rating=8.3,
+                              script_max_overlap=0.07)
+        conn.commit()
+        conn.close()
+        writer = ep.script_writer_prompt(self.cfg, self.pid)
+        judge = ep.script_judge_prompt(self.cfg, self.pid, "A script.")
+        for text in (writer, judge):
+            self.assertIn("8.3", text)
+            self.assertIn("7%", text)
+
+    def test_judge_prompt_has_script_overlap_and_channel_bar(self):
+        script = SOURCE[:300]   # lifted straight from the source
+        text = ep.script_judge_prompt(self.cfg, self.pid, script)
+        self.assertIn(script, text)
+        self.assertIn(WSTYLE, text)
+        self.assertIn("5-gram overlap with the source transcript", text)
+        self.assertIn("THE CHANNEL'S BAR", text)
+        self.assertNotIn(BIBLE, text)
+
+    def test_judge_prompt_needs_a_script(self):
+        with self.assertRaises(ep.PromptError):
+            ep.script_judge_prompt(self.cfg, self.pid, "   ")
+
+    def test_style_and_notes_prompts_use_the_reference_script(self):
+        self.assertIn("Reference narration about hidden value",
+                      ep.style_extraction_prompt(self.cfg, self.pid))
+        self.assertIn("Reference narration about hidden value",
+                      ep.notes_extraction_prompt(self.cfg, self.pid))
+
+    def test_style_prompt_without_a_reference_is_a_clear_error(self):
+        (self.pdir / "source_transcript.txt").unlink()
+        with self.assertRaises(ep.PromptError):
+            ep.style_extraction_prompt(self.cfg, self.pid)
+
+
+class ShotlistPromptTests(Base):
+    channel_fields = {"brief_motion": "static",
+                      "brief_presentation": "MAYA hosts on screen throughout."}
+
+    def test_planner_prompt_has_brief_profile_inputs_and_output_rules(self):
+        text = ep.shotlist_planner_prompt(self.cfg, self.pid)
+        self.assertIn("MAYA hosts on screen throughout.", text)   # presentation
+        self.assertIn(VSTYLE, text)                               # visual style
+        self.assertIn(BIBLE, text)                                # bible
+        self.assertIn("1: Welcome to the video about old coins.", text)
+        self.assertIn("PACING MATH FOR THIS CHANNEL", text)
+        self.assertIn("OUTPUT RULES FOR THIS CHAT", text)
+        self.assertIn("```json", text)
+        self.assertIn("continue", text)
+
+    def test_planner_prompt_has_no_writing_style(self):
+        self.assertNotIn(WSTYLE, ep.shotlist_planner_prompt(self.cfg, self.pid))
+
+    def test_planner_prompt_needs_subtitles(self):
+        (self.pdir / "subtitles.srt").unlink()
+        with self.assertRaises(ep.PromptError):
+            ep.shotlist_planner_prompt(self.cfg, self.pid)
+
+    def test_no_bible_says_so_instead_of_triggering_the_gate(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_own_channel(conn, self.chan, bible=None)
+        conn.commit()
+        conn.close()
+        text = ep.shotlist_planner_prompt(self.cfg, self.pid)
+        self.assertIn("this channel has none", text)
+
+    def _plan(self):
+        return json.dumps({
+            "style": "x",
+            "images": [{"file": "S01_01_SCN_ST.png", "prompt": "a jar of coins"},
+                       {"file": "S01_02_SCN_ST.png", "prompt": "a hand counting"}],
+            "shots": [{"asset": "S01_01_SCN_ST.png", "cues": "1-2",
+                       "scene": "S01", "motion": "ST"},
+                      {"asset": "S01_02_SCN_ST.png", "cues": "3",
+                       "scene": "S01", "motion": "ST"}]})
+
+    def test_judge_prompt_states_the_channel_rules_and_has_the_plan(self):
+        text, local = ep.shotlist_judge_prompt(self.cfg, self.pid, self._plan())
+        self.assertIn("PART A - HARD RULES", text)
+        self.assertIn("MAXIMUM HOLD", text)
+        self.assertIn("only ST is allowed", text)   # the static profile
+        self.assertIn("1: Welcome to the video about old coins.", text)
+        self.assertIn("a jar of coins", text)
+        self.assertIn("PART B", text)
+        self.assertIn('"detailed_ratio"', text)
+        # the completeness instructions are reused, but its own reply format is not
+        self.assertNotIn('{"shots": [{"asset": "<asset>", "verdict": "ok"', text)
+        self.assertNotIn(WSTYLE, text)
+        self.assertIsInstance(local, list)
+
+    def test_judge_prompt_reports_the_apps_local_faults(self):
+        plan = json.loads(self._plan())
+        plan["shots"].pop()   # cue 3 uncovered
+        _text, local = ep.shotlist_judge_prompt(self.cfg, self.pid,
+                                                json.dumps(plan))
+        self.assertTrue(any("no shot" in f for f in local), local)
+
+    def test_judge_prompt_rejects_junk(self):
+        with self.assertRaises(ep.PromptError):
+            ep.shotlist_judge_prompt(self.cfg, self.pid, "not json")
+        with self.assertRaises(ep.PromptError):
+            ep.shotlist_judge_prompt(self.cfg, self.pid, "")
+
+    def test_channel_hold_range_reaches_the_judge_rules(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_own_channel(conn, self.chan, brief_motion="long_holds",
+                              brief_min_hold=10, brief_max_hold=30)
+        conn.commit()
+        conn.close()
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, self._plan())
+        self.assertIn("no shot holds longer than 30s", text)
+        self.assertIn("MINIMUM HOLD", text)
+        self.assertIn("10-30s", text)
+
+    def test_alignment_reply_marker_still_exists(self):
+        # the judge prompt reuses alignment_prompt minus its reply format; if
+        # that wording changes the split must be revisited
+        self.assertIn(ep._ALIGN_REPLY_MARK, studio.alignment_prompt([], {}))
+
+    def test_references_off_rule_is_stated(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.update_own_channel(conn, self.chan, generate_references=0)
+        conn.commit()
+        conn.close()
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, self._plan())
+        self.assertIn("REFERENCES ARE OFF", text)
+
+
+class RouteTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.client = create_app(self.cfg).test_client()
+
+    def _post(self, **data):
+        return self.client.post(f"/studio/{self.pid}/external-prompt", data=data)
+
+    def test_never_calls_an_llm(self):
+        with mock.patch.object(studio, "llm_generate",
+                               side_effect=AssertionError("LLM called")):
+            for kind in ("script_writer", "style", "notes", "shot_planner"):
+                self.assertEqual(self._post(kind=kind).status_code, 200, kind)
+
+    def test_script_writer_returns_json_prompt(self):
+        resp = self._post(kind="script_writer", title="T1", words="800")
+        body = resp.get_json()
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('titled "T1"', body["prompt"])
+        self.assertEqual(body["chars"], len(body["prompt"]))
+
+    def test_judge_uses_the_posted_script(self):
+        body = self._post(kind="script_judge", script="MY SCRIPT TEXT").get_json()
+        self.assertIn("MY SCRIPT TEXT", body["prompt"])
+
+    def test_missing_input_is_a_400_with_a_message(self):
+        resp = self._post(kind="script_judge", script="")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("error", resp.get_json())
+        self.assertEqual(self._post(kind="bogus").status_code, 400)
+
+    def test_shot_judge_returns_local_faults(self):
+        plan = json.dumps({"images": [{"file": "A.png", "prompt": "p"}],
+                           "shots": [{"asset": "A.png", "cues": "1",
+                                      "motion": "ST"}]})
+        body = self._post(kind="shot_judge", shotlist=plan).get_json()
+        self.assertIn("local_faults", body)
+        self.assertTrue(body["local_faults"])
+
+    def test_views_tell_writing_style_and_visual_style_apart(self):
+        page = lambda stage: self.client.get(
+            f"/studio/{self.pid}?stage={stage}").data.decode()
+        self.assertIn("writing style", page("style"))
+        self.assertIn("how the script sounds", page("style"))
+        self.assertIn("not the", page("style"))
+        shots = page("shots")
+        self.assertIn("Visual style (how the images look)", shots)
+        self.assertIn(VSTYLE, shots)              # the channel's visual style
+        self.assertNotIn("style guide applied", page("script"))
+        self.assertIn("writing style applied", page("script"))
+        chans = self.client.get("/my-channels").data.decode()
+        self.assertIn("visual style - how the images look", chans)
+
+    def test_studio_page_shows_the_collapsible_panels(self):
+        for stage in ("script", "shots"):
+            html = self.client.get(f"/studio/{self.pid}?stage={stage}").data
+            self.assertIn(b"Use an external LLM", html, stage)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -45,6 +45,43 @@ routes only honour `sjob.cancel` for kinds "batch auto-run" / "auto-run"; and
 "Render images" job cannot be stopped today. `sjob.kind` already names the
 engine ("image rendering (FlowBatch)" / "(Flow Driver)" / "(Renderly)").
 
+## DONE (2026-10-02) - writing style vs visual style, named apart in the UI
+
+Two different things were both called "style": the WRITING style (how the
+script sounds; `writing_style.md`, made at stage 1, used only by the script
+prompts and judge) and the VISUAL style (how the images look; the channel's
+"style" field seeding `style.md`, used by the shotlist stage). Now: stage 1
+is labelled "writing style"; the style stage explains it is not the visual
+style; the script stage shows "writing style applied" (shots/images no longer
+claim a style guide is applied); the shots stage has a "Visual style (how the
+images look)" block showing the text in force and where to edit it; the
+channel form says "visual style - how the images look". No file or field
+names changed.
+
+## DONE (2026-10-02) - external-LLM prompts for the script and shotlist stages
+
+Studio -> script stage and shots stage each have a collapsible **"Use an
+external LLM (ChatGPT / Claude)"** block that builds copy-paste prompts
+(`whisperradar/external_prompts.py`, `POST /studio/<pid>/external-prompt`,
+JSON out; it never calls an LLM). Everything reuses the built-in stages'
+prompt functions and the channel's settings:
+- script: writer prompt (`studio.script_prompt` + title + WRITING style +
+  research notes - never the raw reference script - + target words + the
+  channel's min rating / max overlap) and judge prompt (`studio.rating_prompt`
+  + the pasted script, the software-measured overlap and the channel's bar).
+  Optional "Style prompt" / "Notes prompt" extract those from the reference.
+- shotlist: planner prompt (`studio.shotlist_prompt`: brief with the channel's
+  motion profile / hold range / presentation, narration, visual style, bible,
+  refs policy, pacing note + output rules so the JSON stays readable and long
+  plans continue cleanly) and judge prompt (the channel's hard rules in plain
+  text + `studio.alignment_prompt`'s completeness audit + narration + the
+  pasted shotlist). The app's own code checks run on the pasted shotlist and
+  show next to the judge prompt.
+- The judge uses what is in the script / shotlist box on the page. Results
+  are pasted back through the normal Save script / Save shotlist boxes.
+- Style and bible go only where needed: writing style -> script prompts;
+  visual style + bible -> shotlist prompts.
+
 ## DONE (2026-10-01) — local upscale AFTER download, for both engines
 
 Requested by Kehinde: stop upscaling inside the download loop. Download the
