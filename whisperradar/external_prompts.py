@@ -91,11 +91,70 @@ def _bar(value) -> str:
     return f"{float(value):g}"
 
 
+# ---- files mode -------------------------------------------------------------
+# Instead of pasting big inputs into the prompt, the prompt can name files the
+# user attaches to the same chat message. Each builder takes an optional
+# `files` list: when given, big inputs are appended to it as
+# {"name", "text", "about"} and the prompt carries a short reference plus a
+# hard gate - the LLM must stop and ask for any listed file that is not
+# attached. (Attach them to the message itself, not to Project knowledge: a
+# retrieval index would summarise narration cues or a shotlist under review.)
+
+WRITING_STYLE_FILE = "writing_style.md"
+NOTES_FILE = "research_notes.md"
+SOURCE_FACTS_FILE = "source_facts.txt"
+BRIEF_FILE = "planning_brief.md"
+INPUTS_FILE = "shotlist_inputs.md"
+NARRATION_FILE = "narration.txt"
+SHOTLIST_FILE = "shotlist.json"
+# 'auto' builds inline and switches to files above this size
+AUTO_FILES_CHARS = 30000
+
+
+def _gate(files: list[dict]) -> str:
+    if not files:
+        return ""
+    names = ", ".join(f["name"] for f in files)
+    listing = "\n".join(f"- {f['name']}: {f['about']}" for f in files)
+    return (
+        f"REQUIRED FILES - these {len(files)} file(s) must be attached to "
+        f"THIS message:\n{listing}\n"
+        f"Check this first, before anything else. If any of them is not "
+        f"attached, or you cannot read it in full, reply with ONLY "
+        f"`Missing: <the file names>` and stop - do not guess, do not write "
+        f"from memory, do not start the task. (Required: {names}.)\n\n")
+
+
+def _add_file(files: list, name: str, text: str, about: str) -> None:
+    files.append({"name": name, "text": text.strip() + "\n", "about": about})
+
+
 # ---- script -----------------------------------------------------------------
 
 # the same window autorun._script_gate enforces
 LEN_MIN_RATIO = 0.8
 LEN_MAX_RATIO = 1.15
+
+_STYLE_TOKEN = "@@STYLE-FILE@@"
+_FACTS_TOKEN = "@@FACTS-FILE@@"
+
+
+def _swap_blocks(text: str, out_files: list, style_ref: str = "",
+                 facts_ref: str = "", facts_label: str = "") -> str:
+    """Replace the token-marked style / facts blocks of a studio prompt with
+    short references to the attached files."""
+    text = re.sub(r"STYLE GUIDE \(match this exactly.*?\):\n" +
+                  re.escape(_STYLE_TOKEN), lambda m: style_ref, text,
+                  flags=re.S)
+    text = re.sub(r"FACTS gathered from research \(use these, nothing "
+                  r"else\):\n" + re.escape(_FACTS_TOKEN),
+                  lambda m: facts_ref, text)
+    text = re.sub(r"SOURCE FACTS:\n" + re.escape(_FACTS_TOKEN),
+                  lambda m: facts_ref, text)
+    text = re.sub(r"CHANNEL STYLE GUIDE:\n" + re.escape(_STYLE_TOKEN),
+                  lambda m: style_ref, text)
+    return text
+
 
 _NO_STYLE_ASK = (
     "STYLE GUIDE: none has been provided with this prompt. Do NOT invent "
@@ -158,15 +217,26 @@ def notes_extraction_prompt(cfg, pid: int, title: str = "") -> str:
 def script_writer_prompt(cfg, pid: int, title: str = "",
                          target_words: int | None = None,
                          style_guide: str | None = None,
-                         notes: str | None = None) -> str:
+                         notes: str | None = None,
+                         files: list | None = None) -> str:
     ctx = _context(cfg, pid)
     eff, prod = ctx["eff"], ctx["prod"]
     style = (style_guide if style_guide is not None
              else _writing_style(ctx)).strip()
     facts = (notes if notes is not None else _research_notes(ctx)).strip()
     target_words = _target_words(cfg, pid, target_words)
+    out_files: list[dict] = []
+    if files is not None:
+        if style:
+            _add_file(out_files, WRITING_STYLE_FILE, style,
+                      "the writing style guide - match it exactly")
+        if facts:
+            _add_file(out_files, NOTES_FILE, facts,
+                      "the research notes - the only facts you may use")
     text = studio.script_prompt(
-        _title(ctx, title), prod["genre"], facts, style_guide=style,
+        _title(ctx, title), prod["genre"],
+        _FACTS_TOKEN if (files is not None and facts) else facts,
+        style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words),
         extra_direction=db.stage_extra(prod, "script"))
     lo, hi = _length_window(int(target_words))
@@ -185,13 +255,23 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         text = text.replace("Follow the STYLE GUIDE above precisely.",
                             "Follow the STYLE GUIDE precisely once I give "
                             "it to you.")
+    if files is not None:
+        text = _swap_blocks(text, out_files,
+                            style_ref=f"STYLE GUIDE: in the attached "
+                            f"{WRITING_STYLE_FILE} (read all of it).",
+                            facts_ref=f"FACTS gathered from research (use "
+                            f"these, nothing else): in the attached "
+                            f"{NOTES_FILE} (read all of it).")
+        files.extend(out_files)
+        text = _gate(out_files) + text
     return text + bar + _SCRIPT_REPLY_FORMAT
 
 
 def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                         style_guide: str | None = None,
                         notes: str | None = None,
-                        target_words: int | None = None) -> str:
+                        target_words: int | None = None,
+                        files: list | None = None) -> str:
     script = (script or "").strip()
     if not script:
         raise PromptError("Paste the script to judge first")
@@ -205,9 +285,31 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
     # source is the only ground truth there is
     facts = facts or source
     overlap = studio.overlap_ratio(script, source) if source.strip() else 0.0
+    out_files: list[dict] = []
+    if files is not None:
+        if facts:
+            from_notes = bool((notes if notes is not None
+                               else _research_notes(ctx)).strip())
+            _add_file(out_files, NOTES_FILE if from_notes
+                      else SOURCE_FACTS_FILE, facts,
+                      "the facts the script must be accurate against")
+        if style:
+            _add_file(out_files, WRITING_STYLE_FILE, style,
+                      "the writing style guide the script should match")
     text = studio.rating_prompt(
-        _title(ctx, title), prod["genre"], script, facts, style, overlap,
+        _title(ctx, title), prod["genre"], script,
+        _FACTS_TOKEN if (files is not None and facts) else facts,
+        _STYLE_TOKEN if (files is not None and style) else style, overlap,
         extra_direction=db.stage_extra(prod, "script"))
+    if files is not None:
+        by = {f["name"]: f for f in out_files}
+        fname = (NOTES_FILE if NOTES_FILE in by else SOURCE_FACTS_FILE)
+        text = _swap_blocks(
+            text, out_files,
+            style_ref=f"CHANNEL STYLE GUIDE: in the attached "
+                      f"{WRITING_STYLE_FILE} (read all of it).",
+            facts_ref=f"SOURCE FACTS: in the attached {fname} (read all of "
+                      f"it).")
     target = _target_words(cfg, pid, target_words)
     lo, hi = _length_window(target)
     words = len(re.findall(r"\w+", script))
@@ -224,10 +326,15 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"Score the writing honestly on its own merits - do not raise or "
            f"lower a score to fit the bar. After the scores, state PASS or "
            f"FAIL separately and list which bar items failed.")
+    if files is not None:
+        files.extend(out_files)
+        text = _gate(out_files) + text
     return text + bar
 
 
 # ---- shotlist ---------------------------------------------------------------
+
+_BRIEF_TOKEN = "@@BRIEF-FILE@@"
 
 _SHOTLIST_OUTPUT_RULES = """
 
@@ -263,7 +370,7 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
             "allow_refs": bool(eff["generate_references"])}
 
 
-def shotlist_planner_prompt(cfg, pid: int) -> str:
+def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
     ctx = _context(cfg, pid)
     eff = ctx["eff"]
     plan = _plan_inputs(cfg, pid, ctx)
@@ -274,7 +381,8 @@ def shotlist_planner_prompt(cfg, pid: int) -> str:
                                 plan["max_hold"], plan["min_align"])
     bible = ctx["bible"]
     text = studio.shotlist_prompt(
-        brief, plan["narration"], ctx["visual_style"],
+        _BRIEF_TOKEN if files is not None else brief,
+        plan["narration"], ctx["visual_style"],
         extra_direction=db.stage_extra(ctx["prod"], "shots"),
         bible=bible, supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
         pacing_note=pacing, allow_refs=plan["allow_refs"])
@@ -282,6 +390,26 @@ def shotlist_planner_prompt(cfg, pid: int) -> str:
         # the brief's bible gate otherwise makes the LLM ask for one
         text += ("\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE: this channel "
                  "has none. Do not ask for one - plan without it.")
+    if files is not None:
+        head = f"{_BRIEF_TOKEN}\n\n---\n\n"
+        inputs = text[len(head):] if text.startswith(head) else text
+        out_files: list[dict] = []
+        _add_file(out_files, BRIEF_FILE, brief,
+                  "the full planning brief - your instructions; follow it "
+                  "exactly (it is the same for every video on this channel)")
+        _add_file(out_files, INPUTS_FILE, inputs,
+                  "this video's inputs: INPUT 1 narration (one line per "
+                  "cue), the visual style, the character bible, creator "
+                  "direction, supplied reference files and the pacing math")
+        files.extend(out_files)
+        return (_gate(out_files)
+                + f"You are planning the shotlist for a video. "
+                f"{BRIEF_FILE} is your instruction set; {INPUTS_FILE} holds "
+                f"its inputs (the brief's \"INPUT 1..N\"). Follow the brief "
+                f"exactly, and where {INPUTS_FILE} has a PACING MATH "
+                f"section, it overrides the brief's duration guidance. Do "
+                f"not ask for anything that {INPUTS_FILE} already contains."
+                + _SHOTLIST_OUTPUT_RULES)
     return text + _SHOTLIST_OUTPUT_RULES
 
 
@@ -365,7 +493,8 @@ def _alignment_rules(style_guide: str) -> str:
     return (head[:cut] if cut != -1 else head).rstrip()
 
 
-def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str) -> tuple[str, list[str]]:
+def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
+                          files: list | None = None) -> tuple[str, list[str]]:
     """(prompt, local_faults). `local_faults` are the app's own code checks
     run on the pasted shotlist right now - shown to the user, not sent to the
     judge, so the external judge stays independent."""
@@ -386,7 +515,22 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str) -> tuple[str, list[
     rules = _hard_rules(plan, eff, ctx, n)
     audit = _alignment_rules(ctx["visual_style"])
     shot_json = json.dumps(data, ensure_ascii=False, indent=1)
-    prompt = (
+    if files is not None:
+        out_files: list[dict] = []
+        _add_file(out_files, NARRATION_FILE, plan["narration"],
+                  "the narration, one line per cue: \"N: text (Ns)\"")
+        _add_file(out_files, SHOTLIST_FILE, shot_json,
+                  "the shotlist JSON under review")
+        files.extend(out_files)
+        narr_block = (f"NARRATION: in the attached {NARRATION_FILE} (read "
+                      f"all of it).")
+        json_block = (f"SHOTLIST JSON: in the attached {SHOTLIST_FILE} "
+                      f"(read all of it).")
+    else:
+        out_files = []
+        narr_block = f"NARRATION:\n{plan['narration'].strip()}"
+        json_block = f"SHOTLIST JSON:\n{shot_json}"
+    prompt = _gate(out_files) + (
         "You are an independent reviewer of a video SHOTLIST, before any "
         "image is rendered. You are given the narration (one line per cue: "
         "\"N: text (Ns)\" - N is the cue number, Ns its length in seconds) "
@@ -399,8 +543,7 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str) -> tuple[str, list[
         "section for that shot's \"cues\", and \"the image prompt\" is the "
         "shot's entry in \"images\" (matched by asset = file):\n"
         f"{audit}\n\n"
-        f"NARRATION:\n{plan['narration'].strip()}\n\n"
-        f"SHOTLIST JSON:\n{shot_json}\n\n"
+        f"{narr_block}\n\n{json_block}\n\n"
         "Reply with ONLY one JSON object, no commentary:\n"
         '{"faults": ["<hard-rule violation, with assets and cue numbers>", '
         '...], "shots": [{"asset": "<asset>", "verdict": "weak"|"missing", '

@@ -294,10 +294,10 @@ class RouteTests(Base):
         for stage in ("script", "shots"):
             html = self.client.get(f"/studio/{self.pid}?stage={stage}").data
             self.assertIn(b"Use an external LLM", html, stage)
-
-
-if __name__ == "__main__":
-    unittest.main()
+            self.assertTrue(b'data-f="mode"' in html, stage + " mode select")
+            self.assertTrue(b'class="extfiles"' in html, stage + " files")
+        script = self.client.get(f"/studio/{self.pid}?stage=script").data
+        self.assertTrue(b"Save as research notes" in script)
 
 
 class CustomProfileTests(Base):
@@ -374,3 +374,126 @@ class LengthAndStyleTests(Base):
         self.assertNotIn("No style guide provided.", w)
         self.assertNotIn("STYLE GUIDE above", w)
         self.assertIn("ask me to paste or attach the writing style guide", w)
+
+
+class FilesModeTests(Base):
+    channel_fields = {"brief_motion": "static"}
+
+    def _by_name(self, files):
+        return {f["name"]: f["text"] for f in files}
+
+    def test_writer_references_style_and_notes_as_files(self):
+        files = []
+        text = ep.script_writer_prompt(self.cfg, self.pid, target_words=900,
+                                       files=files)
+        by = self._by_name(files)
+        self.assertEqual(set(by), {"writing_style.md", "research_notes.md"})
+        self.assertIn(WSTYLE, by["writing_style.md"])
+        self.assertIn("pennies from 1943", by["research_notes.md"])
+        self.assertNotIn(WSTYLE, text)
+        self.assertNotIn("pennies from 1943", text)
+        self.assertIn("Missing: <the file names>", text)
+        self.assertIn("attached writing_style.md", text)
+        self.assertIn("attached research_notes.md", text)
+        self.assertIn("QUALITY BAR", text)       # limits stay in the prompt
+        self.assertNotIn("@@", text)
+
+    def test_pasted_notes_become_the_notes_file(self):
+        files = []
+        ep.script_writer_prompt(self.cfg, self.pid, notes="- PASTED-N",
+                                files=files)
+        self.assertIn("PASTED-N", self._by_name(files)["research_notes.md"])
+
+    def test_writer_files_only_lists_what_exists(self):
+        (self.pdir / "writing_style.md").unlink()
+        files = []
+        text = ep.script_writer_prompt(self.cfg, self.pid, files=files)
+        self.assertEqual([f["name"] for f in files], ["research_notes.md"])
+        self.assertNotIn("writing_style.md", text.split("QUALITY BAR")[0]
+                         .split("TASK:")[0])
+        self.assertIn("ask me to paste or attach the writing style", text)
+
+    def test_script_judge_files(self):
+        files = []
+        text = ep.script_judge_prompt(self.cfg, self.pid, "Judge me.",
+                                      files=files)
+        self.assertEqual({f["name"] for f in files},
+                         {"writing_style.md", "research_notes.md"})
+        self.assertNotIn(WSTYLE, text)
+        self.assertIn("Judge me.", text)         # the script stays inline
+        self.assertIn("Missing:", text)
+        self.assertNotIn("@@", text)
+
+    def test_judge_without_notes_attaches_the_source_as_facts(self):
+        (self.pdir / "research_notes.md").unlink()
+        files = []
+        ep.script_judge_prompt(self.cfg, self.pid, "x.", files=files)
+        self.assertIn("source_facts.txt", [f["name"] for f in files])
+
+    def test_planner_files_split_brief_and_inputs(self):
+        files = []
+        text = ep.shotlist_planner_prompt(self.cfg, self.pid, files=files)
+        by = self._by_name(files)
+        self.assertEqual(set(by), {"planning_brief.md", "shotlist_inputs.md"})
+        self.assertGreater(len(by["planning_brief.md"]), 10000)
+        inputs = by["shotlist_inputs.md"]
+        self.assertIn("Welcome to the video about old coins.", inputs)
+        self.assertIn(VSTYLE, inputs)
+        self.assertIn(BIBLE, inputs)
+        self.assertIn("PACING MATH", inputs)
+        self.assertLess(len(text), 6000)
+        self.assertNotIn("Welcome to the video about old coins.", text)
+        self.assertIn("Missing: <the file names>", text)
+        self.assertIn("OUTPUT RULES FOR THIS CHAT", text)
+        self.assertNotIn("@@", text + inputs)
+
+    def test_shot_judge_files(self):
+        plan = json.dumps({"shots": [{"asset": "a", "cues": [1, 3]}],
+                           "images": [{"file": "a", "prompt": "a jar"}]})
+        files = []
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, plan,
+                                           files=files)
+        by = self._by_name(files)
+        self.assertEqual(set(by), {"narration.txt", "shotlist.json"})
+        self.assertIn("a jar", by["shotlist.json"])
+        self.assertNotIn("a jar", text)
+        self.assertIn("PART A - HARD RULES", text)
+
+
+class FilesRouteTests(Base):
+    def _post(self, **data):
+        app = create_app(self.cfg)
+        r = app.test_client().post(f"/studio/{self.pid}/external-prompt",
+                                   data=data)
+        return r.status_code, r.get_json()
+
+    def test_inline_has_no_files(self):
+        code, j = self._post(kind="script_writer", mode="inline")
+        self.assertEqual((code, j["files"]), (200, []))
+        self.assertIn(WSTYLE, j["prompt"])
+
+    def test_files_mode_returns_files(self):
+        code, j = self._post(kind="script_writer", mode="files")
+        self.assertEqual(code, 200)
+        self.assertEqual({f["name"] for f in j["files"]},
+                         {"writing_style.md", "research_notes.md"})
+        self.assertNotIn(WSTYLE, j["prompt"])
+
+    def test_auto_stays_inline_when_small(self):
+        _c, j = self._post(kind="script_writer")
+        self.assertEqual(j["files"], [])
+
+    def test_auto_switches_to_files_when_big(self):
+        with mock.patch.object(ep, "AUTO_FILES_CHARS", 500):
+            _c, j = self._post(kind="script_writer")
+        self.assertTrue(j["files"])
+
+    def test_planner_auto_uses_files_over_the_threshold(self):
+        with mock.patch.object(ep, "AUTO_FILES_CHARS", 20000):
+            _c, j = self._post(kind="shot_planner")
+        self.assertEqual({f["name"] for f in j["files"]},
+                         {"planning_brief.md", "shotlist_inputs.md"})
+
+
+if __name__ == "__main__":
+    unittest.main()

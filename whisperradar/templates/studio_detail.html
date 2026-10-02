@@ -388,6 +388,8 @@
         <div class="inline" style="gap:8px; align-items:flex-end; flex-wrap:wrap">
           <label>Title <input type="text" data-f="title" value="{{ prod['title'] }}" style="width:380px"></label>
           <label>Target words <input type="number" data-f="words" min="100" placeholder="channel default" style="width:130px"></label>
+          <label>Prompt as <select data-f="mode" title="Auto puts everything in the prompt, and switches to attached files when the prompt is over ~30,000 characters">
+            <option value="auto">Auto</option><option value="inline">Everything in the prompt</option><option value="files">Attach files</option></select></label>
         </div>
         {% if not style %}<div class="warn" style="margin-top:8px">No writing style guide yet (the visual style is a different thing and is not used here) - use "Writing style prompt" below to get one from the reference script, paste the result into the writing style stage, then build the writer prompt.</div>{% endif %}
         {% if not has_research_notes %}<div class="muted" style="font-size:12px; margin-top:8px">No research notes yet - the writer prompt will have no facts. Use "Notes prompt" to get them from the reference script, then paste them below and save.</div>
@@ -401,6 +403,7 @@
           <button type="button" class="ghost" onclick="wrExt(this,'save_notes')" title="Save the pasted notes as this production's research notes (kept; never rebuilt from the source)">Save as research notes</button>
           <span class="extmsg muted" style="font-size:12px"></span>
         </div>
+        <div class="extfiles" style="display:none; margin-top:8px"></div>
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
       </details>
       {% if script_versions %}
@@ -668,11 +671,16 @@
         <div class="muted" style="font-size:12px; margin:8px 0">
           The planner prompt carries this channel's planning brief (motion profile, hold range, presentation), the narration, the visual style, the bible and the reference rules. Paste the JSON it returns into the shotlist box above and save. The judge prompt carries the channel's hard rules and audits whatever shotlist is in the box above right now; the app's own code checks on it are shown here too.
         </div>
+        <div class="inline" style="gap:8px; align-items:flex-end; margin-bottom:8px">
+          <label>Prompt as <select data-f="mode" title="Auto puts everything in the prompt, and switches to attached files when the prompt is over ~30,000 characters">
+            <option value="auto">Auto</option><option value="inline">Everything in the prompt</option><option value="files">Attach files</option></select></label>
+        </div>
         <div class="actions">
           <button type="button" class="secondary" onclick="wrExt(this,'shot_planner')">Planner prompt</button>
           <button type="button" class="secondary" onclick="wrExt(this,'shot_judge')">Judge prompt</button>
           <span class="extmsg muted" style="font-size:12px"></span>
         </div>
+        <div class="extfiles" style="display:none; margin-top:8px"></div>
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
         <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
       </details>
@@ -1195,6 +1203,44 @@
 
 <script>
   // External-LLM prompt builder (script + shotlist panels)
+  function wrExtFiles(box, files) {
+    var area = box.querySelector('.extfiles');
+    if (!area) return;
+    area.innerHTML = '';
+    area.style.display = files.length ? 'block' : 'none';
+    if (!files.length) return;
+    var note = document.createElement('div');
+    note.className = 'muted';
+    note.style.cssText = 'font-size:12px; margin-bottom:6px';
+    note.textContent = 'Attach these file(s) to the same chat message as the prompt (not to Project knowledge). The prompt tells the LLM to reply "Missing: ..." if any is not attached.';
+    area.appendChild(note);
+    files.forEach(function (f) {
+      var row = document.createElement('div');
+      row.className = 'inline';
+      row.style.cssText = 'gap:8px; align-items:center; margin-bottom:4px';
+      var label = document.createElement('span');
+      label.style.fontSize = '13px';
+      label.innerHTML = '<b></b> <span class="muted"></span>';
+      label.firstChild.textContent = f.name;
+      label.lastChild.textContent = '(' + f.text.length.toLocaleString() + ' chars) ' + f.about;
+      var dl = document.createElement('button');
+      dl.type = 'button'; dl.className = 'secondary'; dl.textContent = 'Download';
+      dl.onclick = function () {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([f.text], {type: 'text/plain'}));
+        a.download = f.name;
+        document.body.appendChild(a); a.click(); a.remove();
+      };
+      var cp = document.createElement('button');
+      cp.type = 'button'; cp.className = 'ghost'; cp.textContent = 'Copy';
+      cp.onclick = function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(f.text);
+        cp.textContent = 'Copied'; setTimeout(function () { cp.textContent = 'Copy'; }, 1200);
+      };
+      row.appendChild(label); row.appendChild(dl); row.appendChild(cp);
+      area.appendChild(row);
+    });
+  }
   function wrExt(btn, kind) {
     var box = btn.closest('.extbox');
     var fd = new FormData();
@@ -1210,6 +1256,7 @@
     }
     var out = box.querySelector('.extout'), msg = box.querySelector('.extmsg');
     var faults = box.querySelector('.extfaults');
+    wrExtFiles(box, []);
     msg.textContent = 'Building...';
     if (faults) faults.style.display = 'none';
     fetch('/studio/{{ prod["id"] }}/external-prompt', {method: 'POST', body: fd})
@@ -1218,7 +1265,9 @@
         if (!res.ok) { out.value = ''; msg.textContent = res.j.error || 'Could not build the prompt'; return; }
         if (res.j.message) { msg.textContent = res.j.message; return; }
         out.value = res.j.prompt;
-        msg.textContent = res.j.chars.toLocaleString() + ' characters - ready to copy';
+        wrExtFiles(box, res.j.files || []);
+        msg.textContent = res.j.chars.toLocaleString() + ' characters' +
+          ((res.j.files || []).length ? ' + ' + res.j.files.length + ' file(s) to attach' : ' - ready to copy');
         if (faults && res.j.local_faults !== undefined) {
           faults.style.display = 'block';
           faults.textContent = res.j.local_faults.length
