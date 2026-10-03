@@ -23,10 +23,11 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 # (path of keys inside Local State, value) - the multi-state prefs of recent
-# Chrome versions (0 = off) plus the older boolean for Memory Saver
+# Chrome versions (0 = off). Verified against Chrome 153: it keeps exactly
+# these and drops any other key (an extra "enabled" flag was stripped on every
+# exit, which made every launch look like a change).
 _OFF = (
     (("performance_tuning", "high_efficiency_mode", "state"), 0),
-    (("performance_tuning", "high_efficiency_mode", "enabled"), False),
     (("performance_tuning", "battery_saver_mode", "state"), 0),
 )
 

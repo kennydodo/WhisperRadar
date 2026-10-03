@@ -34,15 +34,14 @@ class TurnOffTests(unittest.TestCase):
     def test_sets_both_switches_off_and_keeps_everything_else(self):
         self.state.write_text(json.dumps(
             {"browser": {"x": 1}, "performance_tuning": {
-                "high_efficiency_mode": {"state": 1, "enabled": True},
+                "high_efficiency_mode": {"state": 1},
                 "battery_saver_mode": {"state": 2}}}), encoding="utf-8")
         self.assertEqual(chrome_profile.turn_off_efficiency_mode(self.profile),
                          "changed")
         d = self._load()
         self.assertEqual(d["browser"], {"x": 1})
         pt = d["performance_tuning"]
-        self.assertEqual(pt["high_efficiency_mode"], {"state": 0,
-                                                      "enabled": False})
+        self.assertEqual(pt["high_efficiency_mode"], {"state": 0})
         self.assertEqual(pt["battery_saver_mode"]["state"], 0)
 
     def test_second_call_changes_nothing(self):
@@ -52,6 +51,15 @@ class TurnOffTests(unittest.TestCase):
         self.assertEqual(chrome_profile.turn_off_efficiency_mode(self.profile),
                          "already off")
         self.assertEqual(self.state.read_text(encoding="utf-8"), before)
+
+    def test_the_shape_chrome_keeps_counts_as_already_off(self):
+        # what Chrome itself wrote back into a real automation profile
+        self.state.write_text(json.dumps(
+            {"performance_tuning": {"battery_saver_mode": {"state": 0},
+                                    "high_efficiency_mode": {"state": 0}}}),
+            encoding="utf-8")
+        self.assertEqual(chrome_profile.turn_off_efficiency_mode(self.profile),
+                         "already off")
 
     def test_a_missing_local_state_is_created(self):
         self.assertEqual(chrome_profile.turn_off_efficiency_mode(self.profile),
