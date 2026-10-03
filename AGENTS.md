@@ -1445,3 +1445,17 @@ the images-stage form — persisting them per production is optional polish.
   stored file. parse_shotlist_output still tolerates a sheet after the JSON
   (custom briefs). The external planner prompt carries the channel's brief
   inline; in files mode the only attachment is narration.txt.
+
+## Consolidated engines (branch feat/consolidate-engines)
+
+- `engines/flowbatch/` is FlowBatch (Playwright Flow CLI) and
+  `engines/renderly-api/` is the Renderly FastAPI backend (port 8022, API
+  contract unchanged, own `renderly.db` + `storage/`). Both are plain copies;
+  runtime data (`node_modules`, `profile`, `state`, `renderly.db`, `storage`)
+  is git-ignored and must be copied or recreated (`npm install`, `npm run login`).
+- `studio.flowbatch_repo` and `studio.renderly_api_dir` default to those
+  folders. `services._start_renderly` runs `uvicorn main:app` from
+  `engines/renderly-api` with the repo `.venv` (packages are in
+  requirements.txt - rerun setup.cmd after pulling).
+- Still external: ImgToVideo (.NET) and the Flow Driver (to be retired once
+  FlowBatch-only batches and PL/PR/PV via the API are verified).

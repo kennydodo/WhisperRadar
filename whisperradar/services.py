@@ -16,8 +16,10 @@ Rules, deliberately conservative:
   windows you may be using.
 """
 
+import importlib.util
 import logging
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -56,12 +58,12 @@ def _driver_url(cfg) -> str:
 
 
 def _renderly_dir(cfg) -> Path | None:
-    """The Renderly checkout, derived from the Flow Driver folder."""
-    d = getattr(cfg, "flow_driver_dir", None)
+    """The Renderly web API folder (engines\\renderly-api in this repo)."""
+    d = getattr(cfg, "renderly_api_dir", None)
     if not d:
         return None
-    root = Path(d).expanduser().parent
-    return root if root.exists() else None
+    root = Path(d).expanduser()
+    return root if (root / "main.py").exists() else None
 
 
 def _driver_dir(cfg) -> Path | None:
@@ -229,30 +231,19 @@ class ServiceManager:
             log_fn("Renderly folder not found - images will keep Flow's "
                    "native size (no import/upscale)")
             return False
-        backend = root / "backend"
-        venv_python = backend / ".venv" / "Scripts" / "python.exe"
         port = (cfg.renderly_url or "http://127.0.0.1:8022").rsplit(":", 1)[-1]
-        if venv_python.exists():
-            log_fn("starting the Renderly backend (managed)...")
-            self._spawn("renderly",
-                        [str(venv_python), "-m", "uvicorn", "main:app",
-                         "--port", port],
-                        backend, logfile="whisperradar-backend.log")
-        else:
-            start_bat = root / "start.bat"
-            if not start_bat.exists():
-                log_fn("Renderly backend is not running and cannot be started")
-                return False
-            log_fn("starting Renderly via start.bat (NOT managed - its "
-                   "windows stay open)...")
-            subprocess.Popen(["cmd", "/c", str(start_bat)], cwd=str(root),
-                             creationflags=getattr(subprocess,
-                                                   "CREATE_NEW_CONSOLE", 0))
-            for _ in range(READY_TIMEOUT):
-                if _up(_backend_url(cfg)):
-                    break
-                time.sleep(1)
-            return False  # unmanaged: never stopped by release()
+        # its own .venv when one exists, otherwise the Python running
+        # WhisperRadar (the API's packages are in requirements.txt)
+        own = root / ".venv" / "Scripts" / "python.exe"
+        python = str(own) if own.exists() else sys.executable
+        if not own.exists() and importlib.util.find_spec("fastapi") is None:
+            log_fn("The Renderly API needs its packages - run setup.cmd "
+                   "(pip install -r requirements.txt) once")
+            return False
+        log_fn("starting the Renderly backend (managed)...")
+        self._spawn("renderly",
+                    [python, "-m", "uvicorn", "main:app", "--port", port],
+                    root, logfile="whisperradar-backend.log")
         for _ in range(READY_TIMEOUT):
             if _up(_backend_url(cfg)):
                 log_fn("Renderly backend is up")
