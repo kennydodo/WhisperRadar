@@ -308,13 +308,14 @@ SPEC: list[dict] = [
                 "shotlist spreads it across sessions. 0 = no limit.",
     },
     {
-        "key": "images_stop_on_failure", "type": "bool", "default": True,
-        "label": "Stop the batch when images start failing",
-        "help": "Stop instead of grinding through the remaining cards. "
-                "FlowBatch uses --fail-fast (stops at the first failed "
-                "item); the Flow Driver stops after 3 consecutive failed cards. "
-                "Everything rendered is kept and the production stays "
-                "resumable either way.",
+        "key": "images_stop_on_failure", "type": "bool", "default": False,
+        "label": "Stop the batch at the first failed image",
+        "help": "Stop instead of grinding through the remaining cards: the "
+                "Flow Driver and FlowBatch (--fail-fast) both stop at the "
+                "FIRST failed card. Everything rendered is kept and the "
+                "production stays resumable. Off (the default) = keep going "
+                "and only stop on the 'N failures in a row' rule below. "
+                "Flow's 'unusual activity' block always stops the batch.",
     },
     {
         "key": "images_max_consecutive_failures", "type": "int", "default": 5,
@@ -324,8 +325,8 @@ SPEC: list[dict] = [
                 "- a broken session/UI fails every card after the break, so "
                 "grinding on just burns the account. Shared by the Flow "
                 "Driver and the FlowBatch CLI, and by manual render and "
-                "auto-run alike. Independent of 'Stop the batch when images "
-                "start failing' above (which stops on the FIRST failure).",
+                "auto-run alike. Independent of 'Stop the batch at the first "
+                "failed image' above (which stops on the FIRST failure).",
     },
     {
         "key": "images_resume_wait_minutes", "type": "int", "default": 10,
@@ -347,6 +348,20 @@ SPEC: list[dict] = [
                 "the refusal one above - the condition clears faster). Used by "
                 "manual render and auto-run alike. 0 = do not auto-resume - "
                 "wait for you to click Resume.",
+    },
+    {
+        "key": "images_throttle_wait_minutes", "type": "int", "default": 60,
+        "min": 0, "max": 720,
+        "label": "Wait after Flow's 'unusual activity' block",
+        "help": "Google's 'We noticed some unusual activity' refusal means "
+                "the account/session is being throttled: retrying at once "
+                "only makes it worse, and it can take an hour or more to "
+                "clear (FlowBatch has seen 2h40m-4h after heavy use). The "
+                "batch stops at the first such refusal, waits this long, "
+                "then resumes the missing cards. Applies to both the Flow "
+                "Driver and FlowBatch, manual render and auto-run alike. "
+                "0 = do not auto-resume - stop and wait for you to click "
+                "Resume.",
     },
     {
         "key": "generate_references", "type": "bool", "default": True,
@@ -447,7 +462,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "default_voice", "seed_dirs",
         "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",
-        "images_still_busy_wait_minutes",
+        "images_still_busy_wait_minutes", "images_throttle_wait_minutes",
         "generate_references",
     ]),
     ("Video render", ["render_target", "render_resolution",
@@ -665,6 +680,8 @@ def for_production(conn, prod) -> dict:
         "images_resume_wait_minutes": int(glob["images_resume_wait_minutes"]),
         "images_still_busy_wait_minutes": int(
             glob["images_still_busy_wait_minutes"]),
+        "images_throttle_wait_minutes": int(
+            glob["images_throttle_wait_minutes"]),
         # planning-brief profile (briefs.py): the channel's motion preset key
         # (None = standard) and its free-text presentation / narrator staging.
         # Per channel only - no global setting; nothing set = today's brief.

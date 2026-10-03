@@ -146,6 +146,7 @@
         <div class="fieldwrap" id="wrap-{{ entry.key }}">
           {% if entry.type == 'bool' %}
             <div class="checkrow">
+              <input type="hidden" name="{{ entry.key }}" value="0">
               <input type="checkbox" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      {{ 'checked' if values[entry.key] else '' }}>
               <label class="field" style="margin:0" for="f-{{ entry.key }}">{{ entry.label }}</label>

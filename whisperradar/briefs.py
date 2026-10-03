@@ -99,6 +99,8 @@ class MotionProfile:
     code_max_share: float | None = MOTION_MAX_SHARE
     code_share_overrides: dict = field(
         default_factory=lambda: dict(MOTION_MAX_SHARE_OVERRIDES))
+    # ((codes...), share): those codes TOGETHER may take at most this share
+    group_caps: tuple = ()
     # None = inherit (the channel / global shotlist_max_hold_seconds)
     min_hold: float | None = None
     max_hold: float | None = None
@@ -308,13 +310,14 @@ CUSTOM_DESCRIPTION = ("Tick the motion codes the planner may use, set the "
 
 MOTION_CODES = ("ST", "ZI", "ZO", "PL", "PR", "PU", "PD", "PV")
 # (what the camera does, canvas the image is composed on)
-# the share caps are set per family of codes (each code in the family gets the
-# cap): the custom spec key and the codes it covers
+# custom share caps are set per family of codes, for the family TOGETHER (the
+# custom spec key and the codes it covers). ZI/ZO have no cap of their own:
+# they take whatever the others leave.
 CODE_GROUPS: dict[str, tuple[str, ...]] = {
     "pan_max_share": ("PL", "PR"),
     "tilt_max_share": ("PU", "PD", "PV"),
-    "zoom_max_share": ("ZI", "ZO"),
 }
+ZOOM_CODES = ("ZI", "ZO")
 MOTION_CODE_INFO: dict[str, tuple[str, str]] = {
     "ST": ("static - no camera move", "2304x1296"),
     "ZI": ("slow push in", "2304x1296"),
@@ -377,26 +380,59 @@ def normalize_custom(spec) -> dict | None:
 
 
 def _caps(spec: dict):
-    """(st_share, per-code default cap, per-code overrides) the spec resolves
-    to. A family cap (PL/PR, PU/PD/PV, ZI/ZO) applies to each code of its
-    family. A pan/tilt family left empty keeps the standard cap; an empty
-    ZI/ZO family has no cap of its own - it takes whatever share the other
-    codes leave. (None = no cap at all.)"""
+    """(st_share, default per-code cap, per-code overrides, group caps).
+
+    A pan / tilt family cap limits that family's codes TOGETHER; a family left
+    empty keeps the standard per-code cap. ZI/ZO are never capped on their own
+    - they take whatever share the others leave. cap None = no cap at all."""
     allowed = spec["allowed"]
     moving = [c for c in allowed if c != "ST"]
     st_share = (spec["st_max_share"] or ST_MAX_SHARE) if "ST" in allowed else 0.0
-    cap, overrides = spec["code_max_share"], {}
-    if cap is None and len(moving) >= 4:      # the standard caps for the pans
-        overrides = {c: v for c, v in MOTION_MAX_SHARE_OVERRIDES.items()
-                     if c in moving}
-        overrides.update({c: MOTION_MAX_SHARE for c in ("PU", "PD", "PV")
-                          if c in moving})
+    cap, overrides, groups = spec["code_max_share"], {}, []
+    if cap is None and len(moving) >= 4:      # the standard caps, per code
+        if not spec.get("pan_max_share"):
+            overrides.update({c: v for c, v in MOTION_MAX_SHARE_OVERRIDES.items()
+                              if c in moving})
+        if not spec.get("tilt_max_share"):
+            overrides.update({c: MOTION_MAX_SHARE for c in ("PU", "PD", "PV")
+                              if c in moving})
     for key, codes in CODE_GROUPS.items():
-        if spec.get(key):
-            overrides.update({c: spec[key] for c in codes if c in moving})
-    if overrides and cap is None:
+        inside = tuple(c for c in codes if c in moving)
+        if spec.get(key) and inside:
+            groups.append((inside, spec[key]))
+    if (overrides or groups) and cap is None:
         cap = 1.0                              # only the family caps apply
-    return st_share, cap, overrides
+    return st_share, cap, overrides, tuple(groups)
+
+
+def _room(spec: dict) -> float:
+    """The most share the caps let the ticked codes cover (>= 1 is fine)."""
+    st_share, cap, overrides, groups = _caps(spec)
+    moving = [c for c in spec["allowed"] if c != "ST"]
+    grouped = {c for codes, _v in groups for c in codes}
+    room = st_share + sum(v for _c, v in groups)
+    room += sum(overrides.get(c, cap if cap is not None else 1.0)
+                for c in moving if c not in grouped)
+    return room
+
+
+def share_text(cap, overrides, groups) -> str:
+    """The share limits as one sentence for the prompt ('' = none)."""
+    parts = []
+    if cap is not None and cap < 1.0:
+        parts.append(
+            f"No single motion code above ~{cap:.0%} of shots"
+            + ("" if not overrides else " (" + ", ".join(
+                f"{c} ~{v:.0%}" for c, v in sorted(overrides.items()))
+               + " are capped tighter)") + ".")
+    elif overrides:
+        parts.append("Share caps, per code: " + ", ".join(
+            f"{c} ~{v:.0%}" for c, v in sorted(overrides.items())) + ".")
+    if groups:
+        parts.append("Share caps, codes of a group together: " + ", ".join(
+            f"{'/'.join(codes)} at most ~{v:.0%} of shots"
+            for codes, v in groups) + ".")
+    return " ".join(parts)
 
 
 def custom_error(spec) -> str | None:
@@ -408,11 +444,15 @@ def custom_error(spec) -> str | None:
     if "ST" not in spec["allowed"] and not moving:
         return "tick at least one motion code"
     if moving:
-        st_share, cap, overrides = _caps(spec)
-        if cap is not None and (spec["code_max_share"] is not None
-                                or any(spec.get(k) for k in CODE_GROUPS)):
-            room = sum(overrides.get(c, cap) for c in moving)
-            if room + 1e-9 < 1.0 - st_share:
+        st_share, cap, overrides, groups = _caps(spec)
+        if cap is not None:
+            zoom = [c for c in ZOOM_CODES if c in moving]
+            taken = st_share + sum(v for _c, v in groups)
+            if zoom and groups and taken >= 1.0 - 1e-9:
+                return ("the other shares already use 100% of the shots - "
+                        "nothing is left for " + " / ".join(zoom))
+            room = _room(spec)
+            if room + 1e-9 < 1.0:
                 return (f"the share caps allow at most {room:.0%} of shots "
                         f"across the {len(moving)} moving code(s) - raise a "
                         "cap or tick more codes")
@@ -446,7 +486,7 @@ def custom_profile(spec) -> MotionProfile:
                                         + spec["rules"])
             base = replace(base, slots=slots)
         return base
-    st_share, cap, overrides = _caps(spec)
+    st_share, cap, overrides, groups = _caps(spec)
     st_hold = (spec["st_max_hold"] or ST_MAX_HOLD_SECONDS) if has_st else None
     not_allowed = [c for c in MOTION_CODES if c not in allowed]
 
@@ -462,15 +502,9 @@ def custom_profile(spec) -> MotionProfile:
         limits.append("There is no static code on this channel: every shot "
                       "carries motion, and a long hold on a still frame is "
                       "never acceptable.")
-    if cap is not None and cap < 1.0:
-        limits.append(
-            f"No single motion code above ~{cap:.0%} of shots"
-            + ("" if not overrides else " (" + ", ".join(
-                f"{c} ~{v:.0%}" for c, v in sorted(overrides.items()))
-               + " are capped tighter)") + ".")
-    elif overrides:
-        limits.append("Share caps, per code: " + ", ".join(
-            f"{c} ~{v:.0%}" for c, v in sorted(overrides.items())) + ".")
+    shares = share_text(cap, overrides, groups)
+    if shares:
+        limits.append(shares)
     if len(moving) > 1:
         limits.append("Vary the codes - one code on every shot reads as "
                       "wallpaper.")
@@ -500,21 +534,13 @@ def custom_profile(spec) -> MotionProfile:
            f"{_num(st_hold)}s or less) and at most ~{st_share:.0%} of shots; "
            "every shot that holds longer must carry motion." if has_st else
            " Every shot carries motion.")
-        + (f" No single motion code above ~{cap:.0%} of shots."
-           if cap is not None and cap < 1.0 else "")
-        + (" Share caps, per code: " + ", ".join(
-            f"{c} ~{v:.0%}" for c, v in sorted(overrides.items())) + "."
-           if overrides and (cap is None or cap >= 1.0) else ""))
+        + (" " + shares if shares else ""))
     check_motion = (
         f"Only {', '.join(allowed)} are used"
         + (f" - never {', '.join(not_allowed)}" if not_allowed else "") + ". "
         + (f"ST appears only on short holds, at most ~{st_share:.0%} of "
            "shots. " if has_st else "Every shot carries motion. ")
-        + (f"No single motion code exceeds ~{cap:.0%} of shots. "
-           if cap is not None and cap < 1.0 else "")
-        + ("Share caps, per code: " + ", ".join(
-            f"{c} ~{v:.0%}" for c, v in sorted(overrides.items())) + ". "
-           if overrides and (cap is None or cap >= 1.0) else "")
+        + (shares + " " if shares else "")
         + "Every motion code in `shots[].motion` matches the motion code in "
         "that shot's own filename. Transitions only CROSSFADE/DIP/DIP_WHITE, "
         "sparingly, never on the last shot.")
@@ -542,7 +568,8 @@ def custom_profile(spec) -> MotionProfile:
         st_max_share=st_share if has_st else None,
         st_max_hold=st_hold,
         static_long_hold=STATIC_LONG_HOLD_SECONDS if has_st else None,
-        code_max_share=cap, code_share_overrides=overrides, slots=slots)
+        code_max_share=cap, code_share_overrides=overrides,
+        group_caps=groups, slots=slots)
 
 
 _RANGE_HOLD_RULE = (

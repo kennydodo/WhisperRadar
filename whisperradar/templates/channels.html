@@ -369,22 +369,25 @@
               </div>
               {% set cap_fallback = cs.get('code_max_share') %}
               <div class="muted" style="font-size:12px; margin:8px 0 2px">
-                Max share of shots (%) - applies to each code in the group; greyed out when none of its codes is ticked.
-                Pan and tilt need a value; ZI / ZO may stay empty and take whatever is left.
+                Max share of shots (%) - the codes of a group count together. A group is greyed out (0) while none of its codes is ticked.
+                ZI / ZO is calculated: whatever the others leave.
               </div>
               <div class="inline cm-limits">
                 {% for name, label, key, ph, codes, req in [
                     ('custom_st_share',   'ST',       'st_max_share',   '10', 'ST', false),
                     ('custom_pan_share',  'PL / PR',  'pan_max_share',  '10', 'PL,PR', true),
-                    ('custom_tilt_share', 'PU / PD / PV', 'tilt_max_share', '40', 'PU,PD,PV', true),
-                    ('custom_zoom_share', 'ZI / ZO',  'zoom_max_share', 'the rest', 'ZI,ZO', false)] %}
-                {% set v = cs.get(key) or (cap_fallback if key not in ('st_max_share', 'zoom_max_share') else none) %}
+                    ('custom_tilt_share', 'PU / PD / PV', 'tilt_max_share', '40', 'PU,PD,PV', true)] %}
+                {% set v = cs.get(key) or (cap_fallback if key != 'st_max_share' else none) %}
                 <label>{{ label }}
                   <input type="number" name="{{ name }}" min="1" max="100" step="any" style="width:72px"
                          data-codes="{{ codes }}" data-req="{{ '1' if req else '' }}"
                          value="{{ '%g' % (v * 100) if v else '' }}" placeholder="{{ ph }}">
                 </label>
                 {% endfor %}
+                <label>ZI / ZO (the rest)
+                  <input type="number" id="cm-zoom-rest" style="width:72px" readonly tabindex="-1"
+                         data-codes="ZI,ZO" title="100% minus ST, PL / PR and PU / PD / PV">
+                </label>
                 <label>ST max hold (s)
                   <input type="number" name="custom_st_hold" min="1" max="300" step="any" style="width:72px"
                          data-codes="ST" value="{{ '%g' % cs.st_max_hold if cs.get('st_max_hold') else '' }}" placeholder="5">
@@ -398,14 +401,22 @@
                   var form = box.closest('form');
                   var ticks = box.querySelectorAll('input[name="custom_allowed"]');
                   var fields = box.querySelectorAll('input[data-codes]');
+                  var zoom = box.querySelector('#cm-zoom-rest');
                   function ticked(code) {
                     for (var i = 0; i < ticks.length; i++)
                       if (ticks[i].value === code && ticks[i].checked) return true;
                     return false;
                   }
+                  function val(name, dflt) {
+                    var f = box.querySelector('input[name="' + name + '"]');
+                    if (!f || f.disabled) return 0;
+                    var v = parseFloat(f.value);
+                    return isNaN(v) ? (dflt || 0) : v;
+                  }
                   function sync() {
                     var visible = box.style.display !== 'none';
                     fields.forEach(function (f) {
+                      if (f === zoom) return;
                       var on = f.dataset.codes.split(',').some(ticked);
                       if (!on && !f.disabled) f.dataset.kept = f.value;
                       if (on && f.disabled) f.value = f.dataset.kept || '';
@@ -414,8 +425,18 @@
                       if (!on) f.value = '0';
                       f.required = on && visible && f.dataset.req === '1';
                     });
+                    var zOn = ticked('ZI') || ticked('ZO');
+                    var left = 100 - val('custom_st_share', 10) - val('custom_pan_share')
+                               - val('custom_tilt_share');
+                    zoom.disabled = !zOn;
+                    zoom.style.opacity = zOn ? '' : '0.45';
+                    zoom.value = zOn ? String(Math.max(0, Math.round(left * 100) / 100)) : '0';
+                    zoom.style.outline = (zOn && left <= 0) ? '2px solid #d33' : '';
                   }
                   ticks.forEach(function (t) { t.addEventListener('change', sync); });
+                  box.querySelectorAll('input[type="number"]').forEach(function (f) {
+                    f.addEventListener('input', sync);
+                  });
                   var sel = form && form.elements['brief_motion'];
                   if (sel) sel.addEventListener('change', sync);
                   sync();

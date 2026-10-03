@@ -1766,6 +1766,44 @@ def _apply_flowdriver_report(cfg, pid: int, report: dict, log=None) -> None:
                 f"project: {', '.join(missing[:8])}")
 
 
+# Google's "We noticed some unusual activity" refusal = the account/session is
+# being throttled. Waiting a short while does not clear it, and every further
+# attempt lowers the standing, so the batch stops at the FIRST one and the
+# auto-resume waits images_throttle_wait_minutes (default 60) before resuming.
+THROTTLE_PATTERN = re.compile(r"unusual activity", re.I)
+THROTTLE_MARKER = "Flow is throttling this account"
+
+
+def throttle_error(where: str, wait_minutes: int | None = None) -> RuntimeError:
+    """The one error both engines raise for the 'unusual activity' block."""
+    wait = (f"it resumes after the configured wait "
+            f"({wait_minutes} min)" if wait_minutes
+            else "it resumes after the configured wait")
+    return RuntimeError(
+        f"{THROTTLE_MARKER} ({where}: \"We noticed some unusual activity\"). "
+        f"Retrying straight away only lowers the account's standing, so the "
+        f"batch stopped at the first refusal; {wait}. Whatever rendered is "
+        f"kept. Raising the delay between images lowers the risk.")
+
+
+def image_throttle_wait_seconds(cfg, pid: int) -> int:
+    """Seconds to wait after Flow's 'unusual activity' block (the
+    images_throttle_wait_minutes setting; 0 = no auto-resume)."""
+    from . import db, settings
+
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+        finally:
+            conn.close()
+        return max(0, int(eff.get("images_throttle_wait_minutes", 60))) * 60
+    except Exception as exc:  # noqa: BLE001 - never block a batch
+        log.debug("could not read the throttle wait: %s", exc)
+        return 3600
+
+
 def image_batch_limits(cfg, pid: int) -> tuple[int, bool, int, int, int]:
     """(chunk_size, stop_on_failure, max_consecutive_failures,
     refusal_wait_seconds, still_busy_wait_seconds) for the images stage.
@@ -1988,6 +2026,9 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
     proc_code, tail = _flowbatch_stream(cmd, repo, log, cancel)
     if proc_code != 0:
         text = " ".join(tail).lower()
+        if THROTTLE_PATTERN.search(text):
+            raise throttle_error(
+                "FlowBatch", image_throttle_wait_seconds(cfg, pid) // 60)
         if "failed in a row" in text:
             # FlowBatch's consecutive-failure guard stopped the batch: a broken
             # session/UI. Say "refusing this session" so the auto-resume treats
@@ -2239,6 +2280,9 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         base_ok = int(((flow_service_status(cfg) or {}).get("counts") or {})
                       .get("ok") or 0)
         last_ok, last_failed, consecutive = base_ok, 0, 0
+        # only log lines from THIS run count for the throttle check (the
+        # service's log window still holds earlier batches' lines)
+        base_log = len((flow_service_status(cfg) or {}).get("log") or [])
         while True:
             if cancel and cancel():
                 log("cancel requested - stopping the Flow Driver batch")
@@ -2270,9 +2314,20 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
             lines = st.get("log") or []
             if len(lines) < seen:  # service log window wrapped
                 seen = 0
+            if len(lines) < base_log:
+                base_log = 0
+            throttled = None
             while seen < len(lines):
                 _safe_log(log, lines[seen])
+                if (seen >= base_log and throttled is None
+                        and THROTTLE_PATTERN.search(str(lines[seen]))):
+                    throttled = str(lines[seen])
                 seen += 1
+            if throttled:
+                flow_stop(cfg)
+                raise throttle_error(
+                    "Flow Driver",
+                    image_throttle_wait_seconds(cfg, pid) // 60 if pid else None)
             # collapse duplicates as they appear (flow.js versions before the
             # in-place upscale wrote "-upscaled.png" copies alongside)
             for up in img_dir.glob("*-upscaled.png"):
@@ -2286,6 +2341,14 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
             counts = st.get("counts") or {}
             ok_now = int(counts.get("ok") or 0)
             failed_now = int(counts.get("failed") or 0)
+            if stop_on_failure and failed_now > last_failed:
+                # "Stop the batch at the first failed image" is ticked
+                flow_stop(cfg)
+                raise RuntimeError(
+                    f"Flow Driver: a card failed after {ok_now} rendered - "
+                    f"stopped at the first failure (the 'Stop the batch at "
+                    f"the first failed image' setting). The {ok_now} "
+                    f"image(s) are kept - look at the log, then Resume.")
             if failed_now > last_failed and ok_now <= last_ok:
                 consecutive += 1
             elif ok_now > last_ok:
@@ -4311,6 +4374,12 @@ def shotlist_pacing(data: dict, cues: list[dict],
             if share > share_cap:
                 faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
                               f"{share_cap:.0%}) - vary the motion codes")
+    for codes, share_cap in getattr(prof, "group_caps", ()):
+        share = sum(1 for _h, m, _a, _f, _l in holds if m in codes) / len(holds)
+        if share > share_cap + 1e-9:
+            faults.append(f"{'/'.join(codes)} together are {share:.0%} of "
+                          f"shots (cap ~{share_cap:.0%}) - vary the motion "
+                          f"codes")
     if prof.min_hold and len(holds) > 1:
         body = holds[:-1]   # the last shot ends where the narration ends
         short = [(h, a) for h, _m, a, _f, _l in body if h < prof.min_hold]

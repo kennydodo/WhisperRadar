@@ -117,16 +117,42 @@ def _version_path(pdir: Path, kind: str, stage: str, name: str) -> Path:
 _job_tls = threading.local()
 
 
+class _TeeLog(deque):
+    """Job log that also lands on disk: the in-memory deque dies with the
+    server process - which is exactly when a stopped batch's real reason
+    used to vanish (the Flow Driver kept its own batch log in RAM too)."""
+
+    def __init__(self, path: Path | None = None, maxlen: int | None = 400):
+        super().__init__(maxlen=maxlen)
+        self._path = path
+
+    def append(self, item):
+        super().append(item)
+        if not self._path:
+            return
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._path, "a", encoding="utf-8") as f:
+                f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + str(item) + "\n")
+        except OSError:
+            pass
+
+
+def _studio_log_path(cfg) -> Path:
+    return Path(cfg.db_path).parent / "logs" / "studio.log"
+
+
 class _Job:
     """Tracks a pipeline job running in a background thread."""
 
-    def __init__(self, channel_id: int = 0, label: str = ""):
+    def __init__(self, channel_id: int = 0, label: str = "",
+                 log_path: Path | None = None):
         self.channel_id = channel_id   # own channel this slot belongs to (0 = none)
         self.label = label             # shown in "also running" notes
         self.running = False
         self.kind = ""
         self.error = None
-        self.log: deque = deque(maxlen=400)
+        self.log: deque = _TeeLog(log_path)
         self._lock = threading.Lock()
         self.seq = 0               # increments per job start (poll reloads)
         self.pid = None            # production the current/last auto-run belongs to
@@ -381,7 +407,7 @@ def create_app(cfg) -> Flask:
             return "Blocked: cross-origin request", 403
         return None
 
-    job = _Job()
+    job = _Job(log_path=_studio_log_path(cfg))
 
     # Studio jobs (LLM generation, SRT alignment, auto-run, rendering...) run
     # in ONE slot PER OWN CHANNEL: a channel does one thing at a time, but a
@@ -397,7 +423,8 @@ def create_app(cfg) -> Flask:
         with channel_jobs_lock:
             slot = channel_jobs.get(cid)
             if slot is None:
-                slot = channel_jobs[cid] = _Job(cid)
+                slot = channel_jobs[cid] = _Job(cid,
+                                                log_path=_studio_log_path(cfg))
             return slot
 
     def _active_channel_id() -> int:
@@ -463,7 +490,8 @@ def create_app(cfg) -> Flask:
     sjob = _JobHandle()
     # the scheduled "produce from channels" run spans channels, so it keeps a
     # slot of its own
-    scheduler_job = _Job(-1, "scheduled auto-run")
+    scheduler_job = _Job(-1, "scheduled auto-run",
+                         log_path=_studio_log_path(cfg))
 
     def _other_running_jobs() -> list[dict]:
         """Jobs running in channels other than the current one, for the
@@ -885,9 +913,9 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            form = dict(request.form)
-            form["autorun_enabled"] = (
-                "1" if request.form.get("autorun_enabled") else "0")
+            # every checkbox posts a hidden "0" first, so an unticked box
+            # arrives as "0"; the LAST value of a key is the real one
+            form = {k: request.form.getlist(k)[-1] for k in request.form}
             _, warnings = settings.save(conn, form)
         finally:
             conn.close()
@@ -1111,14 +1139,12 @@ def create_app(cfg) -> Flask:
                     "code_max_share": form.get("custom_code_share"),
                     "pan_max_share": form.get("custom_pan_share"),
                     "tilt_max_share": form.get("custom_tilt_share"),
-                    "zoom_max_share": form.get("custom_zoom_share"),
                     "rules": form.get("custom_rules"),
                 })
                 problem = briefs.custom_error(spec)
                 if spec and not problem:
                     for key, codes in briefs.CODE_GROUPS.items():
-                        # ZI/ZO may stay empty: they take what is left
-                        if key == "zoom_max_share" or spec.get(key):
+                        if spec.get(key):    # (ZI/ZO take what is left)
                             continue
                         if any(c in spec["allowed"] for c in codes):
                             problem = (f"enter a max share for "

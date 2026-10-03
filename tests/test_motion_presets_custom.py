@@ -237,55 +237,59 @@ class GroupCapTests(unittest.TestCase):
 
     def test_normalize_reads_the_family_caps(self):
         spec = briefs.normalize_custom({
-            "allowed": self.ALL, "pan_max_share": "15",
-            "tilt_max_share": 0.3, "zoom_max_share": ""})
-        self.assertEqual((spec["pan_max_share"], spec["tilt_max_share"],
-                          spec["zoom_max_share"]), (0.15, 0.3, None))
+            "allowed": self.ALL, "pan_max_share": "15", "tilt_max_share": 0.3})
+        self.assertEqual((spec["pan_max_share"], spec["tilt_max_share"]),
+                         (0.15, 0.3))
 
-    def test_each_family_cap_lands_on_its_codes(self):
+    def test_a_family_cap_limits_its_codes_together(self):
         p = briefs.custom_profile({
-            "allowed": self.ALL, "pan_max_share": 5,
-            "tilt_max_share": 20, "zoom_max_share": 50})
-        o = p.code_share_overrides
-        self.assertEqual((o["PL"], o["PR"]), (0.05, 0.05))
-        self.assertEqual((o["PU"], o["PD"], o["PV"]), (0.2, 0.2, 0.2))
-        self.assertEqual((o["ZI"], o["ZO"]), (0.5, 0.5))
+            "allowed": self.ALL, "st_max_share": 15,
+            "pan_max_share": 5, "tilt_max_share": 10})
+        self.assertEqual(p.group_caps, ((("PL", "PR"), 0.05),
+                                        (("PU", "PD", "PV"), 0.10)))
+        self.assertEqual(p.code_share_overrides, {})
+        text = p.slots["MOTION_SECTION"]
+        self.assertIn("PL/PR at most ~5%", text)
+        self.assertIn("PU/PD/PV at most ~10%", text)
 
-    def test_an_unset_family_keeps_the_standard_cap(self):
-        p = briefs.custom_profile({"allowed": self.ALL, "tilt_max_share": 25})
-        self.assertEqual(p.code_share_overrides["PL"], 0.10)
-        self.assertEqual(p.code_share_overrides["PU"], 0.25)
-
-    def test_zoom_left_empty_takes_whatever_is_left(self):
-        p = briefs.custom_profile({"allowed": self.ALL})
+    def test_zoom_is_never_capped_on_its_own(self):
+        p = briefs.custom_profile({"allowed": self.ALL, "pan_max_share": 5,
+                                   "tilt_max_share": 10})
         self.assertNotIn("ZI", p.code_share_overrides)
         self.assertNotIn("ZO", p.code_share_overrides)
-        # 90% ZI/ZO is fine when the pans are barely used
-        motions = ["ZI", "ZO"] * 4 + ["PL", "PU"]
-        faults = _faults(motions, p, secs=5, span=2, cap=30)
-        self.assertEqual([f for f in faults if "motion" in f and "cap" in f], [])
 
-    def test_family_caps_work_with_few_codes(self):
-        p = briefs.custom_profile({"allowed": ["ZI", "PR"],
-                                   "pan_max_share": 30, "zoom_max_share": 70})
-        self.assertEqual(p.code_share_overrides, {"ZI": 0.7, "PR": 0.3})
-        self.assertIn("ZI ~70%", p.slots["MOTION_SECTION"])
-        self.assertNotIn("100%", p.slots["MOTION_SECTION"])
+    def test_an_unset_family_keeps_the_standard_per_code_cap(self):
+        p = briefs.custom_profile({"allowed": self.ALL, "tilt_max_share": 25})
+        self.assertEqual(p.code_share_overrides["PL"], 0.10)
+        self.assertEqual(p.code_share_overrides["PR"], 0.10)
+        self.assertEqual(p.group_caps, ((("PU", "PD", "PV"), 0.25),))
+
+    def test_only_ticked_codes_count_in_a_family(self):
+        p = briefs.custom_profile({"allowed": ["ZI", "PR", "PU"],
+                                   "pan_max_share": 30, "tilt_max_share": 20})
+        self.assertEqual(p.group_caps, ((("PR",), 0.3), (("PU",), 0.2)))
 
     def test_caps_that_cannot_cover_the_shots_are_an_error(self):
-        err = briefs.custom_error({"allowed": ["ZI", "PR"],
-                                   "pan_max_share": 10, "zoom_max_share": 30})
+        err = briefs.custom_error({"allowed": ["PR", "PU"],
+                                   "pan_max_share": 10, "tilt_max_share": 30})
         self.assertIn("raise a cap", err)
         self.assertIsNone(briefs.custom_error(
-            {"allowed": ["ZI", "PR"], "pan_max_share": 30,
-             "zoom_max_share": 70}))
+            {"allowed": ["ZI", "PR"], "pan_max_share": 30}))
 
-    def test_the_gate_enforces_a_family_cap(self):
-        prof = briefs.custom_profile({
-            "allowed": self.ALL, "pan_max_share": 10})
-        motions = ["PL", "PL", "ZI", "ZO", "PU", "PD", "PV", "ZI", "ZO", "ST"]
+    def test_nothing_left_for_zoom_is_an_error(self):
+        err = briefs.custom_error({"allowed": self.ALL, "st_max_share": 50,
+                                   "pan_max_share": 30, "tilt_max_share": 20})
+        self.assertIn("nothing is left for ZI / ZO", err)
+
+    def test_the_gate_enforces_the_family_total(self):
+        prof = briefs.custom_profile({"allowed": self.ALL,
+                                      "pan_max_share": 10})
+        motions = ["PL", "PR", "ZI", "ZO", "PU", "PD", "PV", "ZI", "ZO", "ST"]
         faults = _faults(motions, prof, secs=5, span=2, cap=30)
-        self.assertTrue(any("motion PL" in f for f in faults))
+        self.assertTrue(any("PL/PR together" in f for f in faults))
+        ok = ["PL", "ZI", "ZO", "ZI", "PU", "PD", "PV", "ZI", "ZO", "ST"]
+        self.assertFalse(any("together" in f for f in
+                             _faults(ok, prof, secs=5, span=2, cap=30)))
 
 
 class CustomChannelTests(_ChannelCase):
@@ -305,16 +309,17 @@ class CustomChannelTests(_ChannelCase):
         page = self.client.get("/my-channels").get_data(as_text=True)
         self.assertIn('data-codes="PL,PR"', page)
         self.assertIn("f.disabled = !on", page)
+        self.assertIn('id="cm-zoom-rest"', page)
 
     def test_family_caps_are_saved_and_shown(self):
         self._post(brief_motion="custom",
                    custom_allowed=["ST", "ZI", "ZO", "PL", "PR", "PU", "PD", "PV"], custom_pan_share="8",
-                   custom_tilt_share="25", custom_zoom_share="45")
+                   custom_tilt_share="25")
         spec = json.loads(self._row()["brief_custom"])
-        self.assertEqual((spec["pan_max_share"], spec["tilt_max_share"],
-                          spec["zoom_max_share"]), (0.08, 0.25, 0.45))
+        self.assertEqual((spec["pan_max_share"], spec["tilt_max_share"]),
+                         (0.08, 0.25))
         page = self.client.get("/my-channels").get_data(as_text=True)
-        for v in ('value="8"', 'value="25"', 'value="45"'):
+        for v in ('value="8"', 'value="25"'):
             self.assertIn(v, page)
 
     def test_custom_is_saved_with_its_spec(self):
@@ -368,7 +373,7 @@ class CustomChannelTests(_ChannelCase):
         self.assertTrue(briefs.CUSTOM_LABEL in page)
         for name in ("custom_allowed", "custom_st_share", "custom_st_hold",
                      "custom_pan_share", "custom_tilt_share",
-                     "custom_zoom_share", "custom_rules"):
+                     "custom_rules"):
             self.assertTrue(f'name="{name}"' in page, name)
 
     def test_the_presenter_starter_has_a_custom_option_that_clears_the_box(self):

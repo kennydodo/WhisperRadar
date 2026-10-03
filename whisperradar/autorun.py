@@ -370,6 +370,9 @@ IMAGE_RESUME_ROUNDS = 3
 # ~80-100 generations), not just a "still busy" timeout - the same skip-what-
 # exists resume works, but it needs longer to clear, so it gets its own pause.
 FLOW_REFUSAL_PAUSE_SECONDS = 600
+# Google's "unusual activity" block (the account is being throttled) needs far
+# longer: about an hour at least, so it has its own wait.
+THROTTLE_PAUSE_SECONDS = 3600
 
 
 def _research_notes(cfg, pdir: Path, title: str, genre: str,
@@ -1377,12 +1380,14 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     _step(detail)
 
 
-_RESUMABLE_IMAGE_ERRORS = ("were not produced", "is refusing this session")
+_RESUMABLE_IMAGE_ERRORS = ("were not produced", "is refusing this session",
+                           studio.THROTTLE_MARKER)
 
 
 def _should_resume_images(exc: Exception, round_no: int,
                           resume_wait_seconds: int | None = None,
-                          still_busy_wait_seconds: int | None = None) -> bool:
+                          still_busy_wait_seconds: int | None = None,
+                          throttle_wait_seconds: int | None = None) -> bool:
     """True when a failed images round should pause and be resumed: ONLY
     Flow's 'N of M image(s) were not produced' wave (its 'still busy'
     timeout) or its 'is refusing this session' hard stop (studio.py's
@@ -1395,7 +1400,10 @@ def _should_resume_images(exc: Exception, round_no: int,
     wants to look at it before more credits are spent, so it stops like a plain
     failure and waits for a manual Resume instead."""
     text = str(exc)
-    if "is refusing this session" in text:
+    if studio.THROTTLE_MARKER in text:
+        if throttle_wait_seconds == 0:
+            return False
+    elif "is refusing this session" in text:
         if resume_wait_seconds == 0:
             return False
     elif still_busy_wait_seconds == 0:
@@ -1406,13 +1414,18 @@ def _should_resume_images(exc: Exception, round_no: int,
 
 def _resume_pause_seconds(exc: Exception,
                           resume_wait_seconds: int | None = None,
-                          still_busy_wait_seconds: int | None = None) -> int:
+                          still_busy_wait_seconds: int | None = None,
+                          throttle_wait_seconds: int | None = None) -> int:
     """How long to wait before resuming - the refusal wave needs longer than
     a plain 'still busy' timeout to actually clear.
 
     `resume_wait_seconds` / `still_busy_wait_seconds` are the production's
     images_resume_wait_minutes / images_still_busy_wait_minutes settings (in
     seconds); each replaces the matching fixed default when given."""
+    if studio.THROTTLE_MARKER in str(exc):
+        if throttle_wait_seconds is not None:
+            return throttle_wait_seconds
+        return THROTTLE_PAUSE_SECONDS
     if "is refusing this session" in str(exc):
         if resume_wait_seconds is not None:
             return resume_wait_seconds
@@ -1420,6 +1433,19 @@ def _resume_pause_seconds(exc: Exception,
     if still_busy_wait_seconds is not None:
         return still_busy_wait_seconds
     return IMAGE_RESUME_PAUSE_SECONDS
+
+
+def _pause(seconds: int, cancel=None) -> None:
+    """Sleep `seconds`, in short steps so a Stop request ends a long wait
+    (an hour after Flow's throttle block) at once."""
+    left = max(0, int(seconds))
+    while left > 0:
+        if cancel and cancel():
+            raise studio.BatchCancelled("stop requested while waiting to "
+                                        "resume the images stage")
+        step = min(5, left)
+        time.sleep(step)
+        left -= step
 
 
 def _run_images(cfg, pid: int, mode: str | None = None,
@@ -1470,6 +1496,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     # auto-run and by both engines
     (_, _, _, refusal_wait_seconds,
      still_busy_wait_seconds) = studio.image_batch_limits(cfg, pid)
+    throttle_wait_seconds = studio.image_throttle_wait_seconds(cfg, pid)
     try:
         services.MANAGER.ensure(cfg, services.services_for(engine, mode),
                                 log_fn=log)
@@ -1545,15 +1572,17 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                 # only attempts the gaps.
                 if not _should_resume_images(exc, round_no,
                                              refusal_wait_seconds,
-                                             still_busy_wait_seconds):
+                                             still_busy_wait_seconds,
+                                             throttle_wait_seconds):
                     raise
                 pause = _resume_pause_seconds(exc, refusal_wait_seconds,
-                                              still_busy_wait_seconds)
+                                              still_busy_wait_seconds,
+                                              throttle_wait_seconds)
                 log(f"[auto-run] images: {exc}")
                 log(f"[auto-run] images: pausing {pause // 60} minutes, then "
                     f"resuming the missing card(s) - round {round_no} of "
                     f"{IMAGE_RESUME_ROUNDS - 1}")
-                time.sleep(pause)
+                _pause(pause, cancel)
     finally:
         # stop what we started, if the user opted in; never a service that was
         # already running

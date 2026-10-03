@@ -542,6 +542,9 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
                           + (f" ({caps} are capped lower)" if caps else ""))
         elif caps:
             motion.append(f"motion code share caps: {caps}")
+    for codes, share_cap in getattr(profile, "group_caps", ()):
+        motion.append(f"{'/'.join(codes)} together may be at most "
+                      f"{share_cap:.0%} of shots")
     if motion:
         lines.append("MOTION MIX: " + "; ".join(motion) + ".")
     lines.append(
