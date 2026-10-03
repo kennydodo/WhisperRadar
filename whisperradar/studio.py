@@ -1047,6 +1047,8 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
     job_path = _write_refs_job(cfg, pdir, pid, refs)
     tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
                               else upscale)
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flowbatch", log)
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pdir / "flow_refs"),
                               "--no-color"])
@@ -1530,6 +1532,8 @@ def run_flowbatch_prepare(cfg, pid_dir: Path, job_path: Path,
     log = log or (lambda m: None)
     report_path = pid_dir / FLOW_PREPARE_REPORT
     repo = flowbatch_dir(cfg)
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flowbatch", log)
     cmd = _flowbatch_cmd(["prepare", "--job", str(job_path),
                               "--report", str(report_path), "--no-color"])
     _safe_log(log, "$ " + " ".join(cmd))
@@ -1655,6 +1659,8 @@ def _flowdriver_prepare_call(cfg, pid_dir: Path, log, flow_project: str) -> dict
     body = {"shotlistPath": str(pid_dir / "shotlist.json"),
             "reportPath": str(report_path),
             "flowProject": flow_project or ""}
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flow_driver", log)   # Efficiency mode off
     try:
         _driver_api(cfg, "/api/prepare", method="POST", body=body, timeout=20)
     except Exception as exc:  # noqa: BLE001 - never block a batch
@@ -1910,6 +1916,8 @@ def run_flowbatch_recover(cfg, pid_dir: Path, pid: int,
         report_path.unlink()
     except OSError:
         pass
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flowbatch", log)
     cmd = _flowbatch_cmd(["recover", "--job", str(job_path),
                           "--output", str(pid_dir / "flow_images"),
                           "--report", str(report_path), "--no-color",
@@ -1990,6 +1998,8 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
     _apply_prepare_report(cfg, pid_dir, pid, job_path, report, log)
     tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
                                   else upscale)
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flowbatch", log)
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pid_dir / "flow_images"),
                               "--no-color"])
@@ -2263,6 +2273,8 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
                 f"({counts.get('ok', 0)}/{counts.get('total', todo)} done, "
                 f"{counts.get('failed', 0)} failed) - not starting another")
         else:
+            from . import chrome_profile
+            chrome_profile.apply(cfg, "flow_driver", log)   # Efficiency mode off
             _driver_api(cfg, "/api/config", method="POST", body=config,
                         timeout=15)
             try:
@@ -2472,6 +2484,8 @@ def run_flowdriver_recover(cfg, pid_dir: Path, pid: int,
     _safe_log(log, f"Flow Driver recover: adopting {len(names)} missing "
                    f"image(s) from the project gallery ({source}) - nothing "
                    f"will be generated")
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flow_driver", log)   # Efficiency mode off
     try:
         _driver_api(cfg, "/api/recover", method="POST", body=body,
                     timeout=20)

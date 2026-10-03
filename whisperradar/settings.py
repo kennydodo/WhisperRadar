@@ -364,6 +364,16 @@ SPEC: list[dict] = [
                 "Resume.",
     },
     {
+        "key": "chrome_efficiency_off", "type": "bool", "default": True,
+        "label": "Turn off Chrome Efficiency mode while rendering",
+        "help": "Before an image engine opens its Chrome, switch Memory Saver "
+                "and Energy Saver off in that engine's own automation profile "
+                "(the Flow Driver's and FlowBatch's profile folders - never "
+                "your everyday Chrome). Efficiency mode can slow or freeze "
+                "the rendering window. Applied before every launch; skipped "
+                "while that Chrome is already open.",
+    },
+    {
         "key": "generate_references", "type": "bool", "default": True,
         "label": "Generate missing references",
         "help": "Before rendering the shotlist images, generate the reference "
@@ -463,7 +473,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",
         "images_still_busy_wait_minutes", "images_throttle_wait_minutes",
-        "generate_references",
+        "chrome_efficiency_off", "generate_references",
     ]),
     ("Video render", ["render_target", "render_resolution",
                       "flow_native_upscale"]),
@@ -682,6 +692,7 @@ def for_production(conn, prod) -> dict:
             glob["images_still_busy_wait_minutes"]),
         "images_throttle_wait_minutes": int(
             glob["images_throttle_wait_minutes"]),
+        "chrome_efficiency_off": bool(glob["chrome_efficiency_off"]),
         # planning-brief profile (briefs.py): the channel's motion preset key
         # (None = standard) and its free-text presentation / narrator staging.
         # Per channel only - no global setting; nothing set = today's brief.
