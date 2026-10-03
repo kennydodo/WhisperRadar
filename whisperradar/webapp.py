@@ -1590,11 +1590,11 @@ def create_app(cfg) -> Flask:
             done = sum(1 for s in db.STAGES if s in steps)
             prods.append({"row": p, "done": done, "total": len(db.STAGES),
                           "own_channel": own_by_id.get(p["own_channel_id"])})
-        # produced=0 excludes videos already turned into a "ready" production -
-        # re-enabling one on the dashboard (produced back to 0) is what brings
-        # it back into this picker.
-        sources = db.get_videos(conn, status="transcribed", produced=0,
-                                limit=500)
+        # Every transcribed video is listed; the ones this channel has already
+        # built (in production, failed, ready, published) are greyed out with
+        # a tag instead of hidden. Per channel: another channel's production
+        # of the same video does not block this one.
+        sources = db.get_videos(conn, status="transcribed", limit=500)
         # a channel linked to specific watched channels draws sources only
         # from them (none linked = all of them, as before)
         selected_row = (db.get_own_channel(conn, selected)
@@ -1602,6 +1602,7 @@ def create_app(cfg) -> Flask:
         watched = db.own_channel_watched(selected_row) if selected_row else []
         if watched:
             sources = [v for v in sources if v["channel_id"] in set(watched)]
+        source_tags = db.source_use_tags(conn, selected, sources)
         conn.close()
         title_by_id = {p["row"]["id"]: p["row"]["title"] for p in prods}
         with batch["lock"]:
@@ -1618,6 +1619,7 @@ def create_app(cfg) -> Flask:
             also_running.append({"who": who, "kind": o["kind"]})
         response = make_response(render_template(
             "studio.html", prods=prods, sources=sources,
+            source_tags=source_tags,
             own_channels=active_channels,
             gated=gated, in_channel=in_channel,
             selected_channel=selected,
@@ -1853,6 +1855,14 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
+            if source:
+                taken = db.source_in_channel(
+                    conn, source, int(own_channel) if own_channel else 0)
+                if taken:
+                    return redirect("/studio?error=" + quote(
+                        f"That topic already has a production in this "
+                        f"channel: #{taken['id']} {taken['title'][:60]} "
+                        f"({db.SOURCE_USE_LABELS.get(taken['status'], taken['status'])})"))
             pid = db.create_production(conn, title, genre, source, work_dir)
             row = db.get_video(conn, source) if source else None
             seeded = {"source": "", "bible": False, "style": False, "refs": 0}

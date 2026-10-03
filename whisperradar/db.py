@@ -537,6 +537,64 @@ def get_videos(conn, status: str | None = None, genre: str | None = None,
     return conn.execute(sql, params).fetchall()
 
 
+# what the topic picker shows next to a source that is taken, by the status of
+# the production built on it
+SOURCE_USE_LABELS = {"active": "in production", "ready": "ready",
+                     "published": "published", "failed": "failed"}
+
+
+def source_use_tags(conn, own_channel_id, videos) -> dict[str, str]:
+    """{video_id: label} for the source videos that are already taken IN THIS
+    CHANNEL, so the topic picker greys them out. Per channel: the same video
+    used by another channel's production stays free here. `own_channel_id` is
+    the channel's id, 0 for "no channel" (productions without one), None for
+    no channel at all (nothing is matched).
+
+    A video flagged `produced` with no production anywhere (marked by hand on
+    the dashboard) is taken for every channel - there is no channel to ask."""
+    ids = [v["video_id"] for v in videos]
+    if not ids:
+        return {}
+    tags: dict[str, str] = {}
+    if own_channel_id is not None:
+        where = ("own_channel_id IS NULL" if not own_channel_id
+                 else "own_channel_id = ?")
+        params = [] if not own_channel_id else [own_channel_id]
+        rows = conn.execute(
+            "SELECT source_video_id, status FROM productions"
+            f" WHERE source_video_id IS NOT NULL AND {where}", params
+        ).fetchall()
+        best: dict[str, int] = {}
+        order = ["active", "ready", "published", "failed"]
+        for r in rows:
+            status = r["status"] if r["status"] in order else "active"
+            rank = order.index(status)
+            if r["source_video_id"] not in best or rank < best[
+                    r["source_video_id"]]:
+                best[r["source_video_id"]] = rank
+                tags[r["source_video_id"]] = SOURCE_USE_LABELS[status]
+    anywhere = {r[0] for r in conn.execute(
+        "SELECT DISTINCT source_video_id FROM productions"
+        " WHERE source_video_id IS NOT NULL")}
+    for v in videos:
+        if v["produced"] and v["video_id"] not in anywhere:
+            tags.setdefault(v["video_id"], "marked produced")
+    wanted = set(ids)
+    return {vid: tag for vid, tag in tags.items() if vid in wanted}
+
+
+def source_in_channel(conn, video_id: str, own_channel_id):
+    """The production already built on this source in this channel (the
+    newest), or None."""
+    where = ("own_channel_id IS NULL" if not own_channel_id
+             else "own_channel_id = ?")
+    params = [video_id] + ([] if not own_channel_id else [own_channel_id])
+    return conn.execute(
+        "SELECT id, title, status FROM productions"
+        f" WHERE source_video_id = ? AND {where} ORDER BY id DESC LIMIT 1",
+        params).fetchone()
+
+
 def get_videos_page(conn, status: str | None = None, genre: str | None = None,
                     backlog: bool = False, channel: str | None = None,
                     q: str | None = None, sort: str | None = None,

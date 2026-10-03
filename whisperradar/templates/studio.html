@@ -48,6 +48,10 @@
   .combo-item { padding: 7px 10px; font-size: 13px; cursor: pointer;
                 border-bottom: 1px solid var(--border); }
   .combo-item:last-child { border-bottom: none; }
+  .combo-item.used { opacity: .45; cursor: not-allowed; }
+  .combo-item.used:hover { background: transparent; color: inherit; }
+  .combo-item .tag { font-size: 11px; margin-left: 6px; padding: 1px 6px;
+                     border: 1px solid currentColor; border-radius: 8px; }
   .combo-item:hover, .combo-item.active { background: var(--accent); color: #fff; }
   .combo-item .muted { color: inherit; opacity: .7; }
   .combo-empty { padding: 10px; font-size: 13px; color: var(--muted); }
@@ -168,7 +172,7 @@
           <input type="hidden" name="source_video_id" id="source-value" value="">
           <select id="source-data" style="display:none" aria-hidden="true">
             {% for v in sources %}
-            <option value="{{ v['video_id'] }}" data-channel="{{ v['channel_name'] }}" data-search="{{ (v['channel_name'] ~ ' ' ~ v['title'])|lower }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
+            <option value="{{ v['video_id'] }}" data-channel="{{ v['channel_name'] }}" data-used="{{ source_tags.get(v['video_id'], '') }}" data-search="{{ (v['channel_name'] ~ ' ' ~ v['title'])|lower }}">[{{ v["channel_name"] }}] {{ v["title"][:70] }}</option>
             {% endfor %}
           </select>
           <div class="combo-panel" id="source-panel" style="display:none"></div>
@@ -294,6 +298,7 @@
       function (o) {
         return { id: o.value, text: o.textContent,
                  channel: o.dataset.channel || '',
+                 used: o.dataset.used || '',
                  hay: (o.dataset.search || o.textContent).toLowerCase() };
       });
     var active = -1;  // index into the currently rendered matches
@@ -348,6 +353,9 @@
       var pool = chan ? all.filter(function (v) { return v.channel === chan; }) : all;
       matches = q ? pool.filter(function (v) { return v.hay.indexOf(q) !== -1; })
                   : pool;
+      // topics this channel already has a production for go last, greyed out
+      matches = matches.filter(function (v) { return !v.used; })
+        .concat(matches.filter(function (v) { return v.used; }));
       active = -1;
       panel.innerHTML = '';
       if (!matches.length) {
@@ -360,19 +368,29 @@
       } else {
         matches.slice(0, 200).forEach(function (v) {
           var item = document.createElement('div');
-          item.className = 'combo-item';
+          item.className = 'combo-item' + (v.used ? ' used' : '');
           item.textContent = v.text;
+          if (v.used) {
+            var tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.textContent = v.used;
+            item.appendChild(tag);
+            item.title = 'Already ' + v.used + ' in this channel - open that production instead';
+          }
           item.addEventListener('mousedown', function (e) {
             e.preventDefault();  // keep focus so 'blur' doesn't close first
-            choose(v);
+            if (!v.used) choose(v);
           });
           panel.appendChild(item);
         });
       }
       panel.style.display = '';
-      hint.textContent = q
+      var free = pool.filter(function (v) { return !v.used; }).length;
+      var taken = pool.length - free;
+      hint.textContent = (q
         ? matches.length + ' of ' + pool.length + ' transcript(s) match'
-        : pool.length + ' transcript(s) available' + (chan ? ' in ' + chan : '');
+        : free + ' transcript(s) available' + (chan ? ' in ' + chan : ''))
+        + (taken ? ' - ' + taken + ' greyed out (already used in this channel)' : '');
     }
 
     search.addEventListener('input', function () {
@@ -384,7 +402,8 @@
     search.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
         e.preventDefault();
-        if (active >= 0 && matches[active]) choose(matches[active]);
+        if (active >= 0 && matches[active] && !matches[active].used)
+          choose(matches[active]);
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
         if (panel.style.display === 'none') { render(); return; }
@@ -398,10 +417,13 @@
         close();
       }
     });
-    hint.textContent = all.length + ' transcript(s) available';
+    var freeAll = all.filter(function (v) { return !v.used; }).length;
+    hint.textContent = freeAll + ' transcript(s) available'
+      + (all.length - freeAll ? ' - ' + (all.length - freeAll)
+         + ' greyed out (already used in this channel)' : '');
     if (channelSel) {
       var channelCount = {};
-      all.forEach(function (v) { channelCount[v.channel] = (channelCount[v.channel] || 0) + 1; });
+      all.forEach(function (v) { if (!v.used) channelCount[v.channel] = (channelCount[v.channel] || 0) + 1; });
       Array.prototype.forEach.call(channelSel.options, function (opt) {
         if (opt.value) opt.textContent = opt.value + ' (' + (channelCount[opt.value] || 0) + ')';
       });
