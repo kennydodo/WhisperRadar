@@ -536,9 +536,12 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
     if profile.code_max_share is not None:
         caps = ", ".join(f"{c} {v:.0%}" for c, v in
                          sorted(profile.code_share_overrides.items()))
-        motion.append(f"no single motion code may exceed "
-                      f"{profile.code_max_share:.0%} of shots"
-                      + (f" ({caps} are capped lower)" if caps else ""))
+        if profile.code_max_share < 1.0:
+            motion.append(f"no single motion code may exceed "
+                          f"{profile.code_max_share:.0%} of shots"
+                          + (f" ({caps} are capped lower)" if caps else ""))
+        elif caps:
+            motion.append(f"motion code share caps: {caps}")
     if motion:
         lines.append("MOTION MIX: " + "; ".join(motion) + ".")
     lines.append(

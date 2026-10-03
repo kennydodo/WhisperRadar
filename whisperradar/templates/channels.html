@@ -358,7 +358,7 @@
             <div class="custom-motion" style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px; {{ '' if ch['brief_motion'] == 'custom' else 'display:none' }}">
               <div class="muted" style="font-size:12px; margin-bottom:6px">
                 Custom motion - the planner may only use the ticked codes, and the shotlist review checks the same limits.
-                Empty numbers = the standard limit. Canvas sizes follow the ticked codes.
+                Empty = the standard limit. Canvas sizes follow the ticked codes.
               </div>
               <div class="inline">
                 {% for code, info in brief_motion_codes.items() %}
@@ -367,18 +367,25 @@
                 </label>
                 {% endfor %}
               </div>
-              <div class="inline" style="margin-top:6px">
-                <label>ST max share (%)
-                  <input type="number" name="custom_st_share" min="1" max="100" step="any" style="width:90px"
-                         value="{{ '%g' % (cs.st_max_share * 100) if cs.get('st_max_share') else '' }}" placeholder="10">
+              {% set cap_fallback = cs.get('code_max_share') %}
+              <div class="muted" style="font-size:12px; margin:8px 0 2px">
+                Max share of shots (%) - each code in a group gets the cap
+              </div>
+              <div class="inline">
+                {% for name, label, key, ph in [
+                    ('custom_st_share',   'ST',       'st_max_share',   10),
+                    ('custom_pan_share',  'PL / PR',  'pan_max_share',  10),
+                    ('custom_tilt_share', 'PU / PD / PV', 'tilt_max_share', 40),
+                    ('custom_zoom_share', 'ZI / ZO',  'zoom_max_share', 40)] %}
+                {% set v = cs.get(key) or (cap_fallback if key != 'st_max_share' else none) %}
+                <label>{{ label }}
+                  <input type="number" name="{{ name }}" min="1" max="100" step="any" style="width:72px"
+                         value="{{ '%g' % (v * 100) if v else '' }}" placeholder="{{ ph }}">
                 </label>
+                {% endfor %}
                 <label>ST max hold (s)
-                  <input type="number" name="custom_st_hold" min="1" max="300" step="any" style="width:90px"
+                  <input type="number" name="custom_st_hold" min="1" max="300" step="any" style="width:72px"
                          value="{{ '%g' % cs.st_max_hold if cs.get('st_max_hold') else '' }}" placeholder="5">
-                </label>
-                <label>max share per code (%)
-                  <input type="number" name="custom_code_share" min="1" max="100" step="any" style="width:90px"
-                         value="{{ '%g' % (cs.code_max_share * 100) if cs.get('code_max_share') else '' }}" placeholder="40">
                 </label>
               </div>
               <label style="display:block; margin-top:6px">your own motion rules (optional)

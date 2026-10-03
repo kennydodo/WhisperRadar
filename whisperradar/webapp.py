@@ -1109,6 +1109,9 @@ def create_app(cfg) -> Flask:
                     "st_max_share": form.get("custom_st_share"),
                     "st_max_hold": form.get("custom_st_hold"),
                     "code_max_share": form.get("custom_code_share"),
+                    "pan_max_share": form.get("custom_pan_share"),
+                    "tilt_max_share": form.get("custom_tilt_share"),
+                    "zoom_max_share": form.get("custom_zoom_share"),
                     "rules": form.get("custom_rules"),
                 })
                 problem = briefs.custom_error(spec)

@@ -129,7 +129,7 @@ class CustomSpecTests(unittest.TestCase):
 
     def test_an_impossible_cap_is_an_error(self):
         err = briefs.custom_error({"allowed": ["ZI"], "code_max_share": 40})
-        self.assertIn("cannot cover", err)
+        self.assertIn("raise a cap", err)
         self.assertIsNone(briefs.custom_error(
             {"allowed": ["ZI", "ZO"], "code_max_share": 60}))
         self.assertIsNotNone(briefs.custom_error({"allowed": []}))
@@ -232,7 +232,66 @@ class _ChannelCase(unittest.TestCase):
                                 data={"id": str(self.oc), "name": "Ch", **fields})
 
 
+class GroupCapTests(unittest.TestCase):
+    ALL = ["ST", "ZI", "ZO", "PL", "PR", "PU", "PD", "PV"]
+
+    def test_normalize_reads_the_family_caps(self):
+        spec = briefs.normalize_custom({
+            "allowed": self.ALL, "pan_max_share": "15",
+            "tilt_max_share": 0.3, "zoom_max_share": ""})
+        self.assertEqual((spec["pan_max_share"], spec["tilt_max_share"],
+                          spec["zoom_max_share"]), (0.15, 0.3, None))
+
+    def test_each_family_cap_lands_on_its_codes(self):
+        p = briefs.custom_profile({
+            "allowed": self.ALL, "pan_max_share": 5,
+            "tilt_max_share": 20, "zoom_max_share": 50})
+        o = p.code_share_overrides
+        self.assertEqual((o["PL"], o["PR"]), (0.05, 0.05))
+        self.assertEqual((o["PU"], o["PD"], o["PV"]), (0.2, 0.2, 0.2))
+        self.assertEqual((o["ZI"], o["ZO"]), (0.5, 0.5))
+
+    def test_an_unset_family_keeps_the_standard_cap(self):
+        p = briefs.custom_profile({"allowed": self.ALL, "tilt_max_share": 25})
+        self.assertEqual(p.code_max_share, briefs.MOTION_MAX_SHARE)
+        self.assertEqual(p.code_share_overrides["PL"], 0.10)
+        self.assertEqual(p.code_share_overrides["PU"], 0.25)
+
+    def test_family_caps_work_with_few_codes(self):
+        p = briefs.custom_profile({"allowed": ["ZI", "PR"],
+                                   "pan_max_share": 30, "zoom_max_share": 70})
+        self.assertEqual(p.code_share_overrides, {"ZI": 0.7, "PR": 0.3})
+        self.assertIn("ZI ~70%", p.slots["MOTION_SECTION"])
+        self.assertNotIn("100%", p.slots["MOTION_SECTION"])
+
+    def test_caps_that_cannot_cover_the_shots_are_an_error(self):
+        err = briefs.custom_error({"allowed": ["ZI", "PR"],
+                                   "pan_max_share": 10, "zoom_max_share": 30})
+        self.assertIn("raise a cap", err)
+        self.assertIsNone(briefs.custom_error(
+            {"allowed": ["ZI", "PR"], "pan_max_share": 30,
+             "zoom_max_share": 70}))
+
+    def test_the_gate_enforces_a_family_cap(self):
+        prof = briefs.custom_profile({
+            "allowed": self.ALL, "pan_max_share": 10})
+        motions = ["PL", "PL", "ZI", "ZO", "PU", "PD", "PV", "ZI", "ZO", "ST"]
+        faults = _faults(motions, prof, secs=5, span=2, cap=30)
+        self.assertTrue(any("motion PL" in f for f in faults))
+
+
 class CustomChannelTests(_ChannelCase):
+    def test_family_caps_are_saved_and_shown(self):
+        self._post(brief_motion="custom",
+                   custom_allowed=["ST", "ZI", "ZO", "PL", "PR", "PU", "PD", "PV"], custom_pan_share="8",
+                   custom_tilt_share="25", custom_zoom_share="45")
+        spec = json.loads(self._row()["brief_custom"])
+        self.assertEqual((spec["pan_max_share"], spec["tilt_max_share"],
+                          spec["zoom_max_share"]), (0.08, 0.25, 0.45))
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        for v in ('value="8"', 'value="25"', 'value="45"'):
+            self.assertIn(v, page)
+
     def test_custom_is_saved_with_its_spec(self):
         resp = self._post(brief_motion="custom",
                           custom_allowed=["ZI", "ZO", "PU"],
@@ -283,7 +342,8 @@ class CustomChannelTests(_ChannelCase):
         page = self.client.get("/my-channels").get_data(as_text=True)
         self.assertTrue(briefs.CUSTOM_LABEL in page)
         for name in ("custom_allowed", "custom_st_share", "custom_st_hold",
-                     "custom_code_share", "custom_rules"):
+                     "custom_pan_share", "custom_tilt_share",
+                     "custom_zoom_share", "custom_rules"):
             self.assertTrue(f'name="{name}"' in page, name)
 
     def test_the_presenter_starter_has_a_custom_option_that_clears_the_box(self):
