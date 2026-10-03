@@ -27,18 +27,32 @@ whisperradar/
 
 ## Setup
 
-1. Install [ffmpeg](https://ffmpeg.org) (needed by yt-dlp and Whisper):
+Prerequisites: Python 3.11+ (tick "Add python.exe to PATH"), Google Chrome, and
+Node.js 20+ if you use FlowBatch (Google Flow image engine).
 
-   ```powershell
-   winget install Gyan.FFmpeg
-   ```
+Easiest: clone the repo and double-click **`setup.cmd`**. It creates `.venv`,
+installs everything in `requirements.txt` (including the Renderly API in
+`engines\renderly-api`), installs ffmpeg through winget if it is missing, and
+runs `npm install` in `engines\flowbatch`. Safe to run again (do so after pulling
+changes that touch `requirements.txt`). Then:
+
+- start the dashboard with `start_dashboard.cmd`;
+- for Google Flow, once per computer: `cd engines\flowbatch` then
+  `npm run login`, and sign in to Google in the Chrome window that opens
+  (the session is kept in the git-ignored `engines\flowbatch\profile`);
+- for PL/PR wide shots through the Renderly API, put `GEMINI_API_KEY=...` in
+  `engines\renderly-api\.env` (git-ignored).
+
+Manual equivalent:
+
+1. Install [ffmpeg](https://ffmpeg.org): `winget install Gyan.FFmpeg`
 
 2. Create a virtual environment and install dependencies:
 
    ```powershell
-   cd C:\Users\Kehinde\source\whisperradar
    python -m venv .venv
    .venv\Scripts\pip install -r requirements.txt
+   cd engines\flowbatch; npm install
    ```
 
 3. Add your channels:
