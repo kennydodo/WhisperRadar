@@ -183,5 +183,16 @@ class ChannelFormRoundTrip(unittest.TestCase):
         self.assertRegex(page, re.compile(r"max share", re.I))
 
 
+    def test_a_blocked_save_opens_the_group_that_blocks_it(self):
+        # A ticked pan/tilt group makes its share required. A required field
+        # inside a collapsed group stops the browser's submit with no message
+        # (Save looks dead and nothing is posted), so the page must open the
+        # group of the first invalid field.
+        page = self._page()
+        self.assertIn("addEventListener('invalid'", page)
+        self.assertIn("form[action=\"/my-channels/edit\"]", page)
+        self.assertIn('data-req="1"', page)   # the shares that can be required
+
+
 if __name__ == "__main__":
     unittest.main()

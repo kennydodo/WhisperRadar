@@ -767,6 +767,18 @@
   })();
 </script>
 <script>
+  // A required field inside a collapsed group blocks the browser's submit
+  // without any message (the browser cannot focus a hidden field), so Save
+  // looked dead. Open the group of the first invalid field so the browser
+  // can point at it.
+  document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
+    form.addEventListener('invalid', function (e) {
+      var d = e.target.closest && e.target.closest('details');
+      while (d) { d.open = true; d = d.parentElement && d.parentElement.closest('details'); }
+    }, true);
+  });
+</script>
+<script>
   // expand / collapse every group of one channel's edit form
   function wrGroups(link, open) {
     var form = link.closest('form');
