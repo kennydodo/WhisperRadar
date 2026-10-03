@@ -41,6 +41,7 @@ FAVORITES = "favorites"
 _voices_cache: dict = {"at": 0.0, "data": []}
 _curated_cache: dict = {"key": None, "at": 0.0, "data": []}
 _favorites_cache: dict = {"at": 0.0, "data": []}
+_clones_cache: dict = {"at": 0.0, "data": []}
 
 
 def curated_ids(cfg) -> list[str]:
@@ -148,6 +149,29 @@ def favorites(cfg, refresh: bool = False) -> list[dict]:
         out.append(_normalize({**data, "voice_id": vid}, provider))
     _favorites_cache["at"] = now
     _favorites_cache["data"] = out
+    return out
+
+
+def cloned_voices(cfg, refresh: bool = False) -> list[dict]:
+    """The voice clones on this OpenSpeaker account.
+
+    Clones are the catalog of the 'clone' provider (GET /v3/voices
+    ?provider=clone): cloning in the OpenSpeaker app adds your own voices
+    under voice_ids like 'clone_2674277', and an account only ever sees
+    its own clones there (verified live 2026-10-03: 3 on this account, no
+    shared catalog). Metadata is normalized like the catalog and cached
+    like favorites for VOICES_CACHE_TTL seconds."""
+    key = api_key(cfg)
+    if not key:
+        raise RuntimeError("no OpenSpeaker API key - add one in Settings > "
+                           "LLM, or set WR_AI33_API_KEY")
+    now = time.monotonic()
+    if not refresh and _clones_cache["data"] \
+            and now - _clones_cache["at"] < VOICES_CACHE_TTL:
+        return _clones_cache["data"]
+    out = _fetch_voices(cfg, "clone", page_size=100)
+    _clones_cache["at"] = now
+    _clones_cache["data"] = out
     return out
 
 
@@ -293,8 +317,9 @@ def voices(cfg, provider: str | None = None, page_size: int = 100,
 
     source='favorites' (or studio.ai33_voice_source: favorites, or the
     ["favorites"] sentinel in studio.ai33_voices) returns the voices starred
-    in OpenSpeaker; an empty favorites list falls back to the shortlist /
-    full catalog. Otherwise: when `studio.ai33_voices` is configured, only
+    in OpenSpeaker plus the account's cloned voices (deduped by voice_id);
+    favorites and clones both empty falls back to the shortlist / full
+    catalog. Otherwise: when `studio.ai33_voices` is configured, only
     those voices are returned (in config order, metadata resolved via the
     API's id search). Otherwise the full catalog is fetched (cached ~10 min,
     providers in parallel). provider + search narrow the raw catalog; each
@@ -304,9 +329,17 @@ def voices(cfg, provider: str | None = None, page_size: int = 100,
     if source and source.strip().lower() == FAVORITES \
             and provider is None and search is None:
         starred = favorites(cfg, refresh=refresh)
-        if starred:
-            return starred
-        _log("no OpenSpeaker favorites - falling back to the shortlist/catalog")
+        try:
+            clones = cloned_voices(cfg, refresh=refresh)
+        except RuntimeError as exc:
+            _log(f"clone voices unavailable - favorites only: {exc}")
+            clones = []
+        ids = {v["voice_id"] for v in starred}
+        merged = starred + [c for c in clones if c["voice_id"] not in ids]
+        if merged:
+            return merged
+        _log("no OpenSpeaker favorites or clones - falling back to the "
+             "shortlist/catalog")
     # the sentinel is a mode switch, never a real voice id
     ids = [i for i in curated_ids(cfg) if i.lower() != FAVORITES]
     if provider is None and search is None and ids:

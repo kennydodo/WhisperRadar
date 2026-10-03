@@ -2467,7 +2467,8 @@ def create_app(cfg) -> Flask:
     def studio_voices():
         """Voice catalog for the Studio audio stage - fetched server-side
         with the OpenSpeaker API key, cached ~10 min in the ai33 module.
-        ?source=favorites lists the voices starred in the OpenSpeaker app."""
+        ?source=favorites lists the voices starred in the OpenSpeaker app
+        plus the account's cloned voices."""
         provider = (request.args.get("provider") or "").strip() or None
         source = (request.args.get("source") or "").strip() or None
         try:
