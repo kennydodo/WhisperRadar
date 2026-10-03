@@ -1115,6 +1115,15 @@ def create_app(cfg) -> Flask:
                     "rules": form.get("custom_rules"),
                 })
                 problem = briefs.custom_error(spec)
+                if spec and not problem:
+                    for key, codes in briefs.CODE_GROUPS.items():
+                        # ZI/ZO may stay empty: they take what is left
+                        if key == "zoom_max_share" or spec.get(key):
+                            continue
+                        if any(c in spec["allowed"] for c in codes):
+                            problem = (f"enter a max share for "
+                                       f"{' / '.join(codes)}")
+                            break
                 if problem:
                     return fields, (f"Custom motion: {problem} - "
                                     "nothing was saved")

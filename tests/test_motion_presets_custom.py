@@ -253,9 +253,17 @@ class GroupCapTests(unittest.TestCase):
 
     def test_an_unset_family_keeps_the_standard_cap(self):
         p = briefs.custom_profile({"allowed": self.ALL, "tilt_max_share": 25})
-        self.assertEqual(p.code_max_share, briefs.MOTION_MAX_SHARE)
         self.assertEqual(p.code_share_overrides["PL"], 0.10)
         self.assertEqual(p.code_share_overrides["PU"], 0.25)
+
+    def test_zoom_left_empty_takes_whatever_is_left(self):
+        p = briefs.custom_profile({"allowed": self.ALL})
+        self.assertNotIn("ZI", p.code_share_overrides)
+        self.assertNotIn("ZO", p.code_share_overrides)
+        # 90% ZI/ZO is fine when the pans are barely used
+        motions = ["ZI", "ZO"] * 4 + ["PL", "PU"]
+        faults = _faults(motions, p, secs=5, span=2, cap=30)
+        self.assertEqual([f for f in faults if "motion" in f and "cap" in f], [])
 
     def test_family_caps_work_with_few_codes(self):
         p = briefs.custom_profile({"allowed": ["ZI", "PR"],
@@ -281,6 +289,23 @@ class GroupCapTests(unittest.TestCase):
 
 
 class CustomChannelTests(_ChannelCase):
+    def test_a_ticked_pan_or_tilt_group_needs_its_share(self):
+        self._post(brief_motion="static")
+        for allowed, share in ((["ZI", "PL"], {}),
+                               (["ZI", "PU"], {"custom_pan_share": "10"})):
+            resp = self._post(brief_motion="custom", custom_allowed=allowed,
+                              **share)
+            self.assertIn("enter%20a%20max%20share", resp.headers["Location"])
+            self.assertEqual(self._row()["brief_motion"], "static")
+        # ZI/ZO alone, no share at all, is fine: they take what is left
+        self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"])
+        self.assertEqual(self._row()["brief_motion"], "custom")
+
+    def test_the_boxes_grey_out_with_their_codes(self):
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn('data-codes="PL,PR"', page)
+        self.assertIn("f.disabled = !on", page)
+
     def test_family_caps_are_saved_and_shown(self):
         self._post(brief_motion="custom",
                    custom_allowed=["ST", "ZI", "ZO", "PL", "PR", "PU", "PD", "PV"], custom_pan_share="8",
@@ -295,7 +320,7 @@ class CustomChannelTests(_ChannelCase):
     def test_custom_is_saved_with_its_spec(self):
         resp = self._post(brief_motion="custom",
                           custom_allowed=["ZI", "ZO", "PU"],
-                          custom_st_share="", custom_st_hold="",
+                          custom_tilt_share="40", custom_st_share="", custom_st_hold="",
                           custom_code_share="60", custom_rules=" ZO on lists ")
         self.assertIn(resp.status_code, (302, 303))
         row = self._row()
@@ -325,7 +350,7 @@ class CustomChannelTests(_ChannelCase):
 
     def test_effective_settings_and_the_profile_carry_the_spec(self):
         self._post(brief_motion="custom", custom_allowed=["ZI", "PU"],
-                   custom_rules="tilt for comparisons")
+                   custom_tilt_share="40", custom_rules="tilt for comparisons")
         conn = db.connect(self.cfg.db_path)
         db.init_db(conn)
         pid = db.create_production(conn, "P", "general", None, None)

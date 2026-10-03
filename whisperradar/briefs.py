@@ -378,18 +378,19 @@ def normalize_custom(spec) -> dict | None:
 
 def _caps(spec: dict):
     """(st_share, per-code default cap, per-code overrides) the spec resolves
-    to. A family cap (PL/PR, PU/PD/PV, ZI/ZO) overrides the default for its
-    codes; codes nobody capped keep the default (None = no cap)."""
+    to. A family cap (PL/PR, PU/PD/PV, ZI/ZO) applies to each code of its
+    family. A pan/tilt family left empty keeps the standard cap; an empty
+    ZI/ZO family has no cap of its own - it takes whatever share the other
+    codes leave. (None = no cap at all.)"""
     allowed = spec["allowed"]
     moving = [c for c in allowed if c != "ST"]
     st_share = (spec["st_max_share"] or ST_MAX_SHARE) if "ST" in allowed else 0.0
     cap, overrides = spec["code_max_share"], {}
-    if cap is None and len(moving) >= 4:      # the standard caps, if they fit
-        cap, overrides = MOTION_MAX_SHARE, {
-            c: v for c, v in MOTION_MAX_SHARE_OVERRIDES.items() if c in moving}
-        total = sum(overrides.get(c, cap) for c in moving)
-        if total + 1e-9 < 1.0 - st_share:
-            cap, overrides = None, {}          # defaults cannot fit: no cap
+    if cap is None and len(moving) >= 4:      # the standard caps for the pans
+        overrides = {c: v for c, v in MOTION_MAX_SHARE_OVERRIDES.items()
+                     if c in moving}
+        overrides.update({c: MOTION_MAX_SHARE for c in ("PU", "PD", "PV")
+                          if c in moving})
     for key, codes in CODE_GROUPS.items():
         if spec.get(key):
             overrides.update({c: spec[key] for c in codes if c in moving})

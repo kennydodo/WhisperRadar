@@ -369,25 +369,58 @@
               </div>
               {% set cap_fallback = cs.get('code_max_share') %}
               <div class="muted" style="font-size:12px; margin:8px 0 2px">
-                Max share of shots (%) - each code in a group gets the cap
+                Max share of shots (%) - applies to each code in the group; greyed out when none of its codes is ticked.
+                Pan and tilt need a value; ZI / ZO may stay empty and take whatever is left.
               </div>
-              <div class="inline">
-                {% for name, label, key, ph in [
-                    ('custom_st_share',   'ST',       'st_max_share',   10),
-                    ('custom_pan_share',  'PL / PR',  'pan_max_share',  10),
-                    ('custom_tilt_share', 'PU / PD / PV', 'tilt_max_share', 40),
-                    ('custom_zoom_share', 'ZI / ZO',  'zoom_max_share', 40)] %}
-                {% set v = cs.get(key) or (cap_fallback if key != 'st_max_share' else none) %}
+              <div class="inline cm-limits">
+                {% for name, label, key, ph, codes, req in [
+                    ('custom_st_share',   'ST',       'st_max_share',   '10', 'ST', false),
+                    ('custom_pan_share',  'PL / PR',  'pan_max_share',  '10', 'PL,PR', true),
+                    ('custom_tilt_share', 'PU / PD / PV', 'tilt_max_share', '40', 'PU,PD,PV', true),
+                    ('custom_zoom_share', 'ZI / ZO',  'zoom_max_share', 'the rest', 'ZI,ZO', false)] %}
+                {% set v = cs.get(key) or (cap_fallback if key not in ('st_max_share', 'zoom_max_share') else none) %}
                 <label>{{ label }}
                   <input type="number" name="{{ name }}" min="1" max="100" step="any" style="width:72px"
+                         data-codes="{{ codes }}" data-req="{{ '1' if req else '' }}"
                          value="{{ '%g' % (v * 100) if v else '' }}" placeholder="{{ ph }}">
                 </label>
                 {% endfor %}
                 <label>ST max hold (s)
                   <input type="number" name="custom_st_hold" min="1" max="300" step="any" style="width:72px"
-                         value="{{ '%g' % cs.st_max_hold if cs.get('st_max_hold') else '' }}" placeholder="5">
+                         data-codes="ST" value="{{ '%g' % cs.st_max_hold if cs.get('st_max_hold') else '' }}" placeholder="5">
                 </label>
               </div>
+              <div class="muted" style="font-size:12px; margin-top:2px">Empty ST boxes use the standard (10% share, 5 s hold).</div>
+              <script>
+                (function () {
+                  var box = document.currentScript.closest('.custom-motion');
+                  if (!box) return;
+                  var form = box.closest('form');
+                  var ticks = box.querySelectorAll('input[name="custom_allowed"]');
+                  var fields = box.querySelectorAll('input[data-codes]');
+                  function ticked(code) {
+                    for (var i = 0; i < ticks.length; i++)
+                      if (ticks[i].value === code && ticks[i].checked) return true;
+                    return false;
+                  }
+                  function sync() {
+                    var visible = box.style.display !== 'none';
+                    fields.forEach(function (f) {
+                      var on = f.dataset.codes.split(',').some(ticked);
+                      if (!on && !f.disabled) f.dataset.kept = f.value;
+                      if (on && f.disabled) f.value = f.dataset.kept || '';
+                      f.disabled = !on;
+                      f.style.opacity = on ? '' : '0.45';
+                      if (!on) f.value = '0';
+                      f.required = on && visible && f.dataset.req === '1';
+                    });
+                  }
+                  ticks.forEach(function (t) { t.addEventListener('change', sync); });
+                  var sel = form && form.elements['brief_motion'];
+                  if (sel) sel.addEventListener('change', sync);
+                  sync();
+                })();
+              </script>
               <label style="display:block; margin-top:6px">your own motion rules (optional)
                 <textarea name="custom_rules" style="min-height:60px; width:100%"
                           placeholder="e.g. Use ZI on every character beat, ZO when a list is revealed, PU/PD only for before/after comparisons.">{{ cs.get('rules') or '' }}</textarea>
