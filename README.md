@@ -111,9 +111,9 @@ production from any transcribed video in your library, then walk its stages:
   brief a production was planned with is saved as
   `versions\shotlist\brief_used.md`. The brief's bible gate
   requires a character/reference bible before planning - write or upload one
-  in the bible box (auto-run pauses there until you do). The batch sheet is
-  kept as `batch_sheet.txt`, and prompts can also be extracted from the
-  shotlist. Per-image `refs` entries in the shotlist resolve against the
+  in the bible box (auto-run pauses there until you do). The LLM writes only the
+  shotlist JSON; the readable batch sheet (Studio > View batch sheet) is built from
+  it on demand, and prompts can also be extracted from the shotlist. Per-image `refs` entries in the shotlist resolve against the
   production's `refs\` folder in the Flow Driver.
 - **Images stage**: render the missing shotlist images via the **Flow Driver**
   (default - Renderly's extension-v2 drives Google Flow in a real Chrome

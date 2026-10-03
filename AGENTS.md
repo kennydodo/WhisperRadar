@@ -1437,3 +1437,11 @@ are unrendered instead of letting sanitize_shotlist shrink the plan.
 
 Notes: settings for upscale/auto-download already exist in Renderly; flow fields come from
 the images-stage form — persisting them per production is optional polish.
+
+- Batch sheet: the planning brief, the external planner prompt and the
+  cut-off continuation prompt ask for the shotlist JSON ONLY (Document 1 is
+  gone). `studio.batch_sheet_text(data)` builds the readable sheet from
+  shotlist.json; `/studio/file/<pid>/batch_sheet.txt` serves that, never a
+  stored file. parse_shotlist_output still tolerates a sheet after the JSON
+  (custom briefs). The external planner prompt carries the channel's brief
+  inline; in files mode the only attachment is narration.txt.

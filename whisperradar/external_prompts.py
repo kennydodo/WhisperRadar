@@ -104,8 +104,6 @@ WRITING_STYLE_FILE = "writing_style.md"
 NOTES_FILE = "research_notes.md"
 SOURCE_FACTS_FILE = "source_facts.txt"
 SCRIPT_FILE = "script.txt"
-BRIEF_FILE = "planning_brief.md"
-INPUTS_FILE = "shotlist_inputs.md"
 NARRATION_FILE = "narration.txt"
 SHOTLIST_FILE = "shotlist.json"
 # 'auto' builds inline and switches to files above this size
@@ -423,14 +421,12 @@ def script_revise_prompt(cfg, pid: int, script: str, judge_feedback: str = "",
 
 # ---- shotlist ---------------------------------------------------------------
 
-_BRIEF_TOKEN = "@@BRIEF-FILE@@"
-
 _SHOTLIST_OUTPUT_RULES = """
 
 ---
 
 OUTPUT RULES FOR THIS CHAT (you are being used outside the app; these keep the file machine-readable):
-1. Reply with the shotlist JSON in ONE fenced ```json code block - valid JSON, double quotes, no comments, no trailing commas, no text inside the block that is not JSON. If you also write the image batch sheet (Section 7), put it AFTER the JSON in a separate ```text block.
+1. Reply with the shotlist JSON in ONE fenced ```json code block - valid JSON, double quotes, no comments, no trailing commas, no text inside the block that is not JSON. Write nothing after the JSON - no image batch sheet, no text copy of the prompts, no summary.
 2. If you approach your output limit: stop after the last COMPLETE entry (never mid-token or mid-string), and end the message. When I reply "continue", output ONLY the remaining content, picking up at the exact next entry with no repetition, no commentary and no second "style" field, in a new ```json block that continues the same document, and finish every cue through the last one, closing every bracket cleanly. Keep going on each "continue" until the last cue is covered and the JSON is closed.
 3. Every cue from 1 to the last must be covered exactly once. A message that ends before the final cue is a hard failure."""
 
@@ -469,9 +465,19 @@ def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
     pacing = briefs.pacing_note(profile, plan["total_s"], len(plan["cues"]),
                                 plan["max_hold"], plan["min_align"])
     bible = ctx["bible"]
+    # The brief is already chosen for this channel, so it goes in the prompt
+    # itself and nothing about it has to be attached. Only the narration (the
+    # long, per-video part) becomes a file in files mode.
+    out_files: list[dict] = []
+    narration = plan["narration"]
+    if files is not None:
+        _add_file(out_files, NARRATION_FILE, narration,
+                  "INPUT 1 of the brief: the narration, one line per cue: "
+                  "\"N: text (Ns)\" - read all of it")
+        narration = (f"in the attached {NARRATION_FILE} (read all of it; "
+                     f"one line per cue).")
     text = studio.shotlist_prompt(
-        _BRIEF_TOKEN if files is not None else brief,
-        plan["narration"], ctx["visual_style"],
+        brief, narration, ctx["visual_style"],
         extra_direction=db.stage_extra(ctx["prod"], "shots"),
         bible=bible, supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
         pacing_note=pacing, allow_refs=plan["allow_refs"])
@@ -480,25 +486,8 @@ def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
         text += ("\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE: this channel "
                  "has none. Do not ask for one - plan without it.")
     if files is not None:
-        head = f"{_BRIEF_TOKEN}\n\n---\n\n"
-        inputs = text[len(head):] if text.startswith(head) else text
-        out_files: list[dict] = []
-        _add_file(out_files, BRIEF_FILE, brief,
-                  "the full planning brief - your instructions; follow it "
-                  "exactly (it is the same for every video on this channel)")
-        _add_file(out_files, INPUTS_FILE, inputs,
-                  "this video's inputs: INPUT 1 narration (one line per "
-                  "cue), the visual style, the character bible, creator "
-                  "direction, supplied reference files and the pacing math")
         files.extend(out_files)
-        return (_gate(out_files)
-                + f"You are planning the shotlist for a video. "
-                f"{BRIEF_FILE} is your instruction set; {INPUTS_FILE} holds "
-                f"its inputs (the brief's \"INPUT 1..N\"). Follow the brief "
-                f"exactly, and where {INPUTS_FILE} has a PACING MATH "
-                f"section, it overrides the brief's duration guidance. Do "
-                f"not ask for anything that {INPUTS_FILE} already contains."
-                + _SHOTLIST_OUTPUT_RULES)
+        text = _gate(out_files) + text
     return text + _SHOTLIST_OUTPUT_RULES
 
 

@@ -446,22 +446,26 @@ class FilesModeTests(Base):
         ep.script_judge_prompt(self.cfg, self.pid, "x.", files=files)
         self.assertIn("source_facts.txt", [f["name"] for f in files])
 
-    def test_planner_files_split_brief_and_inputs(self):
+    def test_planner_attaches_only_the_narration(self):
         files = []
         text = ep.shotlist_planner_prompt(self.cfg, self.pid, files=files)
         by = self._by_name(files)
-        self.assertEqual(set(by), {"planning_brief.md", "shotlist_inputs.md"})
-        self.assertGreater(len(by["planning_brief.md"]), 10000)
-        inputs = by["shotlist_inputs.md"]
-        self.assertIn("Welcome to the video about old coins.", inputs)
-        self.assertIn(VSTYLE, inputs)
-        self.assertIn(BIBLE, inputs)
-        self.assertIn("PACING MATH", inputs)
-        self.assertLess(len(text), 6000)
+        # the brief is already chosen for the channel: it is in the prompt,
+        # never a file to attach again
+        self.assertEqual(set(by), {"narration.txt"})
+        self.assertIn("Welcome to the video about old coins.",
+                      by["narration.txt"])
         self.assertNotIn("Welcome to the video about old coins.", text)
+        self.assertGreater(len(text), 10000)           # the brief itself
+        self.assertIn("SECTION 7", text)
+        self.assertIn(VSTYLE, text)
+        self.assertIn(BIBLE, text)
+        self.assertIn("PACING MATH", text)
+        self.assertIn("in the attached narration.txt", text)
         self.assertIn("Missing: <the file names>", text)
+        self.assertNotIn("planning_brief.md", text)
         self.assertIn("OUTPUT RULES FOR THIS CHAT", text)
-        self.assertNotIn("@@", text + inputs)
+        self.assertNotIn("@@", text)
 
     def test_shot_judge_files(self):
         plan = json.dumps({"shots": [{"asset": "a", "cues": [1, 3]}],
@@ -507,8 +511,7 @@ class FilesRouteTests(Base):
     def test_planner_auto_uses_files_over_the_threshold(self):
         with mock.patch.object(ep, "AUTO_FILES_CHARS", 20000):
             _c, j = self._post(kind="shot_planner")
-        self.assertEqual({f["name"] for f in j["files"]},
-                         {"planning_brief.md", "shotlist_inputs.md"})
+        self.assertEqual({f["name"] for f in j["files"]}, {"narration.txt"})
 
 
 class LocalChecksAndReviseTests(Base):

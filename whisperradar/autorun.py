@@ -1039,10 +1039,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                 patches = studio.parse_shotlist_patch(patch_text)
                 if patches:
                     data = studio.apply_shotlist_patch(prior["data"], patches)
-                    # batch_sheet.txt is a human-readable export, not read by
-                    # rendering (which reads shotlist.json) - carrying the
-                    # prior text forward means it can go stale after a patch,
-                    # which is cosmetic only.
+                    # any text the LLM wrote after the JSON is ignored: the
+                    # batch sheet is built from shotlist.json on demand.
                     sheet = prior["sheet"]
                     _log_line(f"shotlist attempt {attempt}: patched "
                               f"{len(patches)}/{len(prior['weak'])} flagged "
@@ -1209,9 +1207,6 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
         (pdir / "shotlist.json").write_text(
             json.dumps(data, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
-        if sheet:
-            (pdir / "batch_sheet.txt").write_text(
-                sheet + "\n", encoding="utf-8")
         review_dir = pdir / "versions" / "shotlist"
         review_dir.mkdir(parents=True, exist_ok=True)
         (review_dir / "review.json").write_text(

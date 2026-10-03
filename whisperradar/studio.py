@@ -3789,7 +3789,7 @@ def shotlist_prompts(pid_dir: Path) -> list[str]:
 
 def load_manifest_brief(cfg, profile=None, presentation: str = "") -> str:
     """The manifest-authoring brief: the master planning prompt that turns a
-    narration SRT into shotlist.json + an image batch sheet, rendered for ONE
+    narration SRT into shotlist.json, rendered for ONE
     channel.
 
     The brief is a template (brief_template.md, shipped with WhisperRadar):
@@ -3860,9 +3860,11 @@ def _extract_json_object(text: str) -> tuple[dict, str]:
 
 
 def parse_shotlist_output(text: str) -> tuple[dict, str]:
-    """Parse the LLM's two-document output (manifest-authoring brief):
-    shotlist.json first, optional IMAGE BATCH SHEET second.
-    Returns (shotlist_data, batch_sheet_text)."""
+    """Parse the LLM's shotlist reply (manifest-authoring brief): the
+    shotlist JSON. Anything written after it (older briefs, or a custom brief,
+    still ask for an IMAGE BATCH SHEET) is returned as the tail and is not
+    needed - batch_sheet_text() builds the sheet from the JSON.
+    Returns (shotlist_data, tail_text)."""
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
@@ -3875,6 +3877,41 @@ def parse_shotlist_output(text: str) -> tuple[dict, str]:
         if not isinstance(item, dict) or not item.get("file") or not item.get("prompt"):
             raise RuntimeError("images[] entries need 'file' and 'prompt'")
     return data, tail.strip()
+
+
+def batch_sheet_text(data: dict) -> str:
+    """The readable image batch sheet, built from shotlist.json (no LLM, no
+    stored copy that can go stale): master prompt, canvas per motion code,
+    then one line per image grouped by main beat (S01, S02, ...)."""
+    images = [i for i in (data.get("images") or [])
+              if isinstance(i, dict) and i.get("file")]
+
+    def code(fname: str) -> str:
+        return Path(str(fname)).stem.rsplit("_", 1)[-1].upper()
+
+    used = [c for c in briefs.MOTION_CODE_INFO
+            if any(code(i["file"]) == c for i in images)]
+    lines = ["=== DOCUMENT 1: IMAGE BATCH SHEET ===", "",
+             "=== MASTER PROMPT ===", (data.get("style") or "").strip(), "",
+             "=== CANVAS SPEC (by motion code in the filename) ===",
+             briefs._canvas_spec(used) or "ST/ZI/ZO: 2304x1296",
+             "Larger canvases are fine if the aspect and overscan direction "
+             "are preserved. Always 8-bit RGB or RGBA with a solid (white) "
+             "background - no transparency."]
+    scene = None
+    for img in images:
+        m = re.match(r"^(S\d+)_", str(img["file"]))
+        beat = m.group(1) if m else "OTHER"
+        if beat != scene:
+            scene = beat
+            lines += ["", f"=== {beat} ==="]
+        info = briefs.MOTION_CODE_INFO.get(code(img["file"]))
+        size = f" [{info[1]}]" if info else ""
+        refs = [str(r) for r in (img.get("refs") or []) if str(r).strip()]
+        tail = f" \u00b7 refs: {', '.join(refs)}" if refs else ""
+        lines.append(f"{img['file']}{size} \u2014 "
+                     f"{(img.get('prompt') or '').strip()}{tail}")
+    return "\n".join(lines) + "\n"
 
 
 # A long plan's reply can be cut off mid-JSON (the brief's Section 11 says to
@@ -3897,8 +3934,8 @@ def continuation_prompt(base_prompt: str, partial: str) -> str:
             "document, the same entry, no repetition of anything already "
             "written, no commentary, no markdown fences, no second \"style\" "
             "field. Output only the remaining content, close every bracket "
-            "cleanly, and finish every cue through the last one. Then write the "
-            "IMAGE BATCH SHEET if it is still missing.")
+            "cleanly, and finish every cue through the last one. Write "
+            "nothing after the JSON.")
 
 
 def shotlist_tail_gap(data: dict, cue_count: int) -> int | None:

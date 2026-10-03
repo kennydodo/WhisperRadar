@@ -2058,7 +2058,7 @@ def create_app(cfg) -> Flask:
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
             bible_text=bible_text,
-            batch_sheet=(pdir / "batch_sheet.txt").exists(),
+            batch_sheet=(pdir / "shotlist.json").exists(),
             direction_versions=_version_names(pdir, "direction", stage),
             shotlist_count=shotlist_count, cue_count=cue_count,
             msg=request.args.get("msg"), error=request.args.get("error"),
@@ -3184,6 +3184,16 @@ def create_app(cfg) -> Flask:
             target.relative_to(pdir)
         except ValueError:
             abort(404)
+        if rel == "batch_sheet.txt" and (pdir / "shotlist.json").is_file():
+            # built from shotlist.json every time, so it never goes stale
+            try:
+                data = json.loads((pdir / "shotlist.json").read_text(
+                    encoding="utf-8"))
+            except ValueError:
+                abort(404)
+            resp = make_response(studio.batch_sheet_text(data))
+            resp.headers["Content-Type"] = "text/plain; charset=utf-8"
+            return resp
         if not target.is_file():
             abort(404)
         return send_file(target)
