@@ -236,6 +236,8 @@ class FlowDriverLoopTests(unittest.TestCase):
         self.pdir = Path(self.tmp.name) / "p"
         self.pdir.mkdir()
         (self.pdir / "shotlist.json").write_text("{}", encoding="utf-8")
+        self.api = []
+        self.delay = 0
         self.driver = Path(self.tmp.name) / "drv"
         (self.driver / "node_modules" / "playwright").mkdir(parents=True)
         (self.driver / "flow.js").write_text("", encoding="utf-8")
@@ -264,7 +266,8 @@ class FlowDriverLoopTests(unittest.TestCase):
             flow_project_url_for=lambda c, p, o=None: ("", "none"),
             missing_flow_images=lambda c, d: 3,
             flow_service_status=status,
-            _driver_api=lambda *a, **k: {},
+            _driver_api=lambda *a, **k: self.api.append((a, k)) or {},
+            image_delay_seconds=lambda c, p=None: self.delay,
             flow_stop=lambda c: stopped.append(1),
             image_batch_limits=lambda c, p: limits,
             image_throttle_wait_seconds=lambda c, p: throttle_minutes * 60)
@@ -316,3 +319,43 @@ class FlowDriverLoopTests(unittest.TestCase):
         exc, stopped = self._run(st, stop_on_failure=False)
         self.assertNotIn("first failure", str(exc))
         self.assertEqual(stopped, [])
+
+    def test_the_pacing_setting_reaches_the_driver_config(self):
+        self.delay = 20
+        base = {"running": False, "log": [], "counts": {"ok": 0}}
+        self._run([base, base, base, base,
+                   {"running": False, "log": [], "counts": {"ok": 1}}])
+        bodies = [k["body"] for a, k in self.api
+                  if a[1:2] == ("/api/config",)]
+        self.assertEqual(bodies[0]["delaySeconds"], 20)
+
+
+class ImageDelayTests(unittest.TestCase):
+    """images_delay_seconds: one pacing setting for both engines."""
+
+    def setUp(self):
+        self.cfg = load_config(ROOT / "config.yaml")
+        self.cfg.db_path = Path(tempfile.mkdtemp()) / "wr.db"
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        conn.close()
+
+    def _set(self, value):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.set_setting(conn, "images_delay_seconds", value)
+        conn.close()
+
+    def test_default_is_zero_and_the_setting_is_read(self):
+        from whisperradar import settings
+        self.assertEqual(studio.image_delay_seconds(self.cfg), 0)
+        self.assertIn("images_delay_seconds",
+                      dict(settings.GROUPS)["Production & images"])
+        self._set("20")
+        self.assertEqual(studio.image_delay_seconds(self.cfg), 20)
+        self.assertEqual(studio.image_delay_seconds(self.cfg, 5), 20)
+
+    def test_a_bad_value_never_blocks_a_batch(self):
+        self._set("abc")
+        self.assertEqual(studio.image_delay_seconds(self.cfg), 0)
+

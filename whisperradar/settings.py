@@ -364,6 +364,19 @@ SPEC: list[dict] = [
                 "Resume.",
     },
     {
+        "key": "images_delay_seconds", "type": "int", "default": 0,
+        "min": 0, "max": 600,
+        "label": "Seconds between images",
+        "help": "Wait after each rendered image, for BOTH engines (Flow "
+                "Driver and FlowBatch). Google's reCAPTCHA scores the session "
+                "partly on how fast it generates, so a longer gap means fewer "
+                "'unusual activity' blocks, at the cost of a slower batch "
+                "(e.g. 20 s x 75 images = 25 extra minutes). 0 = each "
+                "engine's own default (FlowBatch: its config\\settings.json, "
+                "5 s; Flow Driver: only its short built-in pause). A value "
+                "replaces FlowBatch's gap and is added to the Flow Driver's.",
+    },
+    {
         "key": "chrome_efficiency_off", "type": "bool", "default": True,
         "label": "Turn off Chrome Efficiency mode while rendering",
         "help": "Before an image engine opens its Chrome, switch Memory Saver "
@@ -473,7 +486,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",
         "images_still_busy_wait_minutes", "images_throttle_wait_minutes",
-        "chrome_efficiency_off", "generate_references",
+        "images_delay_seconds", "chrome_efficiency_off", "generate_references",
     ]),
     ("Video render", ["render_target", "render_resolution",
                       "flow_native_upscale"]),
@@ -692,6 +705,7 @@ def for_production(conn, prod) -> dict:
             glob["images_still_busy_wait_minutes"]),
         "images_throttle_wait_minutes": int(
             glob["images_throttle_wait_minutes"]),
+        "images_delay_seconds": int(glob["images_delay_seconds"]),
         "chrome_efficiency_off": bool(glob["chrome_efficiency_off"]),
         # planning-brief profile (briefs.py): the channel's motion preset key
         # (None = standard) and its free-text presentation / narrator staging.
