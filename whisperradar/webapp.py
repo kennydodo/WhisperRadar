@@ -120,7 +120,7 @@ _job_tls = threading.local()
 class _TeeLog(deque):
     """Job log that also lands on disk: the in-memory deque dies with the
     server process - which is exactly when a stopped batch's real reason
-    used to vanish (the Flow Driver kept its own batch log in RAM too)."""
+    used to vanish."""
 
     def __init__(self, path: Path | None = None, maxlen: int | None = 400):
         super().__init__(maxlen=maxlen)
@@ -618,7 +618,7 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         try:
-            services.MANAGER.ensure(cfg, ["renderly", "flow-driver"],
+            services.MANAGER.ensure(cfg, ["renderly"],
                                     log_fn=lambda m: logging.getLogger(
                                         "whisperradar").info("autostart: %s", m))
         except Exception as exc:  # noqa: BLE001 - never block the dashboard
@@ -891,7 +891,7 @@ def create_app(cfg) -> Flask:
     def services_control(name, action):
         """Start/stop one external tool from the dashboard, so no .bat file is
         needed. Stop only ever touches a service WhisperRadar started."""
-        if name not in ("renderly", "flow-driver"):
+        if name != "renderly":
             return redirect("/settings?error=Unknown+service")
         log = logging.getLogger("whisperradar")
         notes: list[str] = []
@@ -2051,15 +2051,14 @@ def create_app(cfg) -> Flask:
                         else f"channel: {eff['own_channel_name']}"
                         if eff["own_channel_name"] and eff["voice"]
                         else "Settings" if eff["voice"] else ""), ai33_ready=bool(ai33.api_key(cfg)),
-            flow_ready=studio.flow_driver_ready(cfg),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
             flow_upscale_default=autorun._upscale_for(eff),
             local_upscale_tier=autorun.manual_upscale_tier(eff),
             native_download=autorun.is_flow_native(eff),
-            flow_channel_default=eff["renderly_channel_name"],
             default_render_mode=eff["render_mode"],
-            default_engine=eff["engine"],
+            default_engine=studio.effective_engine(eff["engine"],
+                                                   eff["render_mode"]),
             own_channel_name=eff["own_channel_name"],
             flow_project_url_default=(eff["flow_project_url"]
                                       or cfg.flowbatch_project_url or ""),
@@ -2127,8 +2126,6 @@ def create_app(cfg) -> Flask:
             # redone) or the user explicitly opted in via with_audio.
             reset = [s for s in db.STAGES[db.STAGES.index(from_stage):]
                      if s != "audio" or from_stage == "audio" or with_audio]
-            # a live Flow batch would repopulate images\ while we delete it
-            studio.flow_stop(cfg)
             with sjob._lock:
                 if sjob.running:  # re-check under the lock (check-then-act)
                     return _studio_url(pid, error="A job is already running")
@@ -2543,7 +2540,7 @@ def create_app(cfg) -> Flask:
 
     @app.post("/studio/<int:pid>/refs/upload")
     def studio_refs_upload(pid):
-        """Upload character/reference images used by the Flow Driver."""
+        """Upload character/reference images used by the image engines."""
         pdir = studio.prod_dir(cfg, pid)
         rdir = pdir / "refs"
         rdir.mkdir(exist_ok=True)
@@ -2579,14 +2576,6 @@ def create_app(cfg) -> Flask:
                     f.unlink()
                     return _studio_url(pid, msg="Reference image removed")
         return _studio_url(pid, error="Reference image not found")
-
-    @app.post("/studio/<int:pid>/flow/stop")
-    def studio_flow_stop(pid):
-        stopped = studio.flow_stop(cfg)
-        if stopped:
-            return _studio_url(pid, msg="Flow Driver batch stopped")
-        return _studio_url(
-            pid, error="Nothing to stop (service down or batch not running)")
 
     @app.post("/studio/<int:pid>/prompts/save")
     def studio_prompts_save(pid):
@@ -2918,13 +2907,11 @@ def create_app(cfg) -> Flask:
             conn.close()
         mode = request.form.get("render_mode") or eff["render_mode"]
         if mode not in ("api", "flow"):
-            mode = "flow" if studio.flow_driver_ready(cfg) else "api"
+            mode = "api"
         engine = (request.form.get("engine") or eff["engine"] or "renderly")
         if engine not in ("renderly", "flowbatch"):
             engine = "renderly"
-        flow_channel = (request.form.get("flow_channel")
-                        or eff["renderly_channel_name"]).strip()
-        flow_project = (request.form.get("flow_project") or "").strip()
+        engine = studio.effective_engine(engine, mode)
         # Flow native productions default to 0: the stills download at native
         # size and the Flow-native level runs as one local pass afterwards
         try:
@@ -2932,32 +2919,23 @@ def create_app(cfg) -> Flask:
                                              or autorun._upscale_for(eff))))
         except ValueError:
             flow_upscale = autorun._upscale_for(eff)
-        flow_master = (request.form.get("flow_master") or "").strip()
         flow_project_url = (request.form.get("flow_project_url") or "").strip()
         renderly_channel = None
-        if engine == "renderly" and mode == "api":
+        if engine == "renderly":
             renderly_channel = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
 
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(cfg, pid, "images", {
-                "mode": mode, "engine": engine, "flow_channel": flow_channel,
-                "flow_project": flow_project,
-                "flow_upscale": flow_upscale, "flow_master": flow_master,
+                "mode": mode, "engine": engine,
+                "flow_upscale": flow_upscale,
                 "flow_project_url": flow_project_url,
                 "renderly_channel": renderly_channel,
-                # flow mode: upscale the raw Flow output with the Flow Driver's
-                # own local engine instead of importing every image through the
-                # Renderly backend and adopting a Renderly copy back - that
-                # round-trip per image is what made the manual button far
-                # slower than FlowBatch (and than auto-run, which already sets
-                # local_upscale=True).
-                "flow_local_upscale": True,
                 "log": sjob.log.append,
             }))
 
         label = ("FlowBatch" if engine == "flowbatch"
-                 else "Flow Driver" if mode == "flow" else "Renderly")
+                 else "Renderly API + FlowBatch")
         sjob.start(worker, f"image rendering ({label})")
         return _studio_url(pid, msg=f"Image rendering started ({label})")
 
@@ -2978,21 +2956,21 @@ def create_app(cfg) -> Flask:
             eff = settings.for_production(conn, prod)
         finally:
             conn.close()
-        engine = eff["engine"] or "renderly"
         # same resolution the images stage uses (production choice ->
-        # channel default -> global; 'auto' picks Flow when installed)
+        # channel default -> global)
         mode = autorun._default_render_mode(cfg, prod)
-        if engine == "renderly" and mode == "api":
+        engine = studio.effective_engine(eff["engine"] or "renderly", mode)
+        if engine == "renderly":
             return _studio_url(
                 pid, error="The Renderly API has no gallery to recover from "
                            "- its results live in Renderly itself. Use the "
-                           "Flow Driver or FlowBatch engine instead.")
+                           "FlowBatch engine (or render mode Flow) instead.")
 
         def worker():
             autorun.recover_images(cfg, pid, log=sjob.log.append,
                                    cancel=(lambda _j=sjob._real(): _j.cancel))
 
-        label = "FlowBatch" if engine == "flowbatch" else "Flow Driver"
+        label = "FlowBatch"
         sjob.start(worker, f"gallery recovery ({label})")
         return _studio_url(
             pid, msg=f"Gallery recovery started ({label}) - nothing will "

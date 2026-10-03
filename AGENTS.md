@@ -1457,5 +1457,13 @@ the images-stage form — persisting them per production is optional polish.
   folders. `services._start_renderly` runs `uvicorn main:app` from
   `engines/renderly-api` with the repo `.venv` (packages are in
   requirements.txt - rerun setup.cmd after pulling).
-- Still external: ImgToVideo (.NET) and the Flow Driver (to be retired once
-  FlowBatch-only batches and PL/PR/PV via the API are verified).
+- The Flow Driver (Renderly's extension-v2) is RETIRED: its code, config
+  (`flow_driver_dir`, `flow_driver_url`), service (`flow-driver`), stop route
+  and Settings row are gone. Engines now: `flowbatch` = every shot on FlowBatch;
+  `renderly` = PL/PR through the API (`run_imagegen(... motion_filter=("PL",
+  "PR"))`) then FlowBatch for the rest (it skips files already on disk).
+  Render mode `flow` (stored per channel/production) now means "all shots on
+  FlowBatch": `studio.effective_engine(engine, mode)` maps engine renderly +
+  mode flow to flowbatch; `auto` means api. Older AGENTS sections below that
+  describe the Flow Driver are historical.
+- Still external: ImgToVideo (.NET) only.

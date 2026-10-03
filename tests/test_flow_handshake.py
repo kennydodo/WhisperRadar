@@ -122,39 +122,6 @@ class ProjectPrecedenceTests(unittest.TestCase):
         self.assertEqual(studio.flow_project_url_for(self.cfg, self.pid), (None, "none"))
 
 
-class PrepareRetryTests(unittest.TestCase):
-    """An empty handshake must ask prepare to CREATE a new project."""
-
-    def _run(self, resolved, reports):
-        calls = []
-
-        def fake_call(cfg, pid_dir, log, flow_project):
-            calls.append(flow_project)
-            return reports[len(calls) - 1]
-
-        with mock.patch.object(studio, "flow_project_url_for",
-                               lambda cfg, pid, ov=None: resolved), \
-                mock.patch.object(studio, "_flowdriver_prepare_call", fake_call):
-            report = studio.run_flowdriver_prepare(
-                object(), Path("."), 10, log=lambda m: None)
-        return calls, report
-
-    def test_a_dead_stored_project_triggers_a_create(self):
-        calls, report = self._run(
-            (DEAD, "production"), [{}, {"projectUrl": PROJECT, "refs": []}])
-        self.assertEqual(calls, [DEAD, ""])  # second call: no project -> create
-        self.assertEqual(report["projectUrl"], PROJECT)
-
-    def test_a_usable_handshake_is_not_retried(self):
-        calls, _ = self._run((PROJECT, "production"), [{"projectUrl": PROJECT}])
-        self.assertEqual(calls, [PROJECT])
-
-    def test_with_no_stored_url_there_is_nothing_to_retry(self):
-        calls, report = self._run((None, "none"), [{}])
-        self.assertEqual(calls, [None])  # one call, no project to replace
-        self.assertEqual(report, {})
-
-
 class ImagesPrecedenceGuard(unittest.TestCase):
     """The bug that fed prepare a dead channel URL: the images stage must let
     flow_project_url_for resolve production -> channel -> global itself."""

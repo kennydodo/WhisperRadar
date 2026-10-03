@@ -264,9 +264,9 @@ class ImagesUpscaleHookTests(unittest.TestCase):
         up.assert_not_called()
         self.assertNotIn("local upscale", self._image_steps()[0]["detail"])
 
-    def test_flow_native_covers_the_flow_driver_engine_too(self):
-        """The Flow Driver path must send an explicit 0: omitting --upscale
-        would let the driver fall back to its own 2K default and upscale
+    def test_flow_native_covers_the_flow_mode_too(self):
+        """The flow-mode (FlowBatch) path must send an explicit 0: omitting
+        --upscale would let the engine fall back to its own tier and upscale
         during the download, which is exactly what this mode avoids."""
         self._native("2k")
         conn = db.connect(self.cfg.db_path)
@@ -276,14 +276,12 @@ class ImagesUpscaleHookTests(unittest.TestCase):
         conn.close()
         seen = {}
 
-        def fake_flow(cfg, pdir, channel=None, project="", upscale=None,
-                      master="", log=None, cancel=None, pid=None,
-                      local_upscale=False):
+        def fake_flow(cfg, pdir, pid, upscale=None, log=None, cancel=None,
+                      project_url=None):
             seen["upscale"] = upscale
-            seen["local_upscale"] = local_upscale
             return 1
 
-        with mock.patch.object(studio, "run_imagegen_flow",
+        with mock.patch.object(studio, "run_imagegen_flowbatch",
                                side_effect=fake_flow), \
                 mock.patch.object(studio, "upscale_images_locally",
                                   side_effect=lambda *a, **k: {
@@ -295,7 +293,6 @@ class ImagesUpscaleHookTests(unittest.TestCase):
             autorun._run_images(self.cfg, self.pid)
 
         self.assertEqual(seen["upscale"], 0)
-        self.assertIs(seen["local_upscale"], True)
         up.assert_called_once()
 
     def test_recover_follows_the_same_rule(self):
@@ -373,14 +370,13 @@ class ImagesUpscaleHookTests(unittest.TestCase):
             seen["api_upscale"] = upscale
             return 0
 
-        def fake_flow(cfg, pdir, channel=None, project="", upscale=None,
-                      master="", log=None, cancel=None, pid=None,
-                      local_upscale=False):
+        def fake_flow(cfg, pdir, pid, upscale=None, log=None, cancel=None,
+                      project_url=None):
             seen["flow_upscale"] = upscale
             return 1
 
         with mock.patch.object(studio, "run_imagegen", side_effect=fake_api), \
-                mock.patch.object(studio, "run_imagegen_flow",
+                mock.patch.object(studio, "run_imagegen_flowbatch",
                                   side_effect=fake_flow), \
                 mock.patch.object(studio, "upscale_images_locally",
                                   side_effect=lambda *a, **k: {

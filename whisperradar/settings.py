@@ -55,17 +55,17 @@ SPEC: list[dict] = [
     {
         "key": "services_autostart", "type": "bool", "default": False,
         "label": "Start tools with the dashboard",
-        "help": "Bring Renderly's backend and the Flow Driver up when the "
-                "dashboard starts, so there is no .bat to run. Off = they are "
-                "started on demand by the images stage.",
+        "help": "Bring the Renderly API up when the dashboard starts, so "
+                "there is no console to open. Off = it is started on demand "
+                "by the images stage.",
     },
     {
         "key": "services_managed", "type": "bool", "default": False,
         "label": "Stop services after the images stage",
         "help": "WhisperRadar starts what the images stage needs and, with this "
                 "on, stops the ones it started when the stage finishes (the "
-                "Flow Driver; the Renderly backend is shared and left alone). "
-                "Services you started yourself are never touched.",
+                "Renderly API). Services you started yourself are never "
+                "touched.",
     },
     {
         "key": "notify_desktop", "type": "bool", "default": False,
@@ -272,15 +272,17 @@ SPEC: list[dict] = [
         "choices": ["renderly", "flowbatch"],
         "label": "Image engine",
         "help": "Which image pipeline new productions use. Renderly = its "
-                "API + Flow driver; FlowBatch = the standalone Flow CLI.",
+                "API for PL/PR wide shots, FlowBatch for everything else; "
+                "FlowBatch = every shot on Google Flow.",
     },
     {
         "key": "default_render_mode", "type": "choice", "default": "auto",
         "choices": ["auto", "flow", "api"],
         "label": "Render mode",
-        "help": "flow = drive Google Flow; api = the engine's direct API "
-                "(Gemini); auto = Flow when its driver is installed, "
-                "otherwise the API. Only meaningful for the Renderly engine.",
+        "help": "flow = every shot on Google Flow through FlowBatch (same as "
+                "the FlowBatch engine); api = the Renderly engine (PL/PR "
+                "through the API (Gemini), the rest through FlowBatch); "
+                "auto = api.",
     },
     {
         "key": "default_upscale", "type": "int", "default": 2, "min": 0, "max": 4,
@@ -311,7 +313,7 @@ SPEC: list[dict] = [
         "key": "images_stop_on_failure", "type": "bool", "default": False,
         "label": "Stop the batch at the first failed image",
         "help": "Stop instead of grinding through the remaining cards: the "
-                "Flow Driver and FlowBatch (--fail-fast) both stop at the "
+                "FlowBatch (--fail-fast) stops at the "
                 "FIRST failed card. Everything rendered is kept and the "
                 "production stays resumable. Off (the default) = keep going "
                 "and only stop on the 'N failures in a row' rule below. "
@@ -323,9 +325,8 @@ SPEC: list[dict] = [
         "label": "Stop after N failures in a row",
         "help": "Stop the images batch once this many cards fail back-to-back "
                 "- a broken session/UI fails every card after the break, so "
-                "grinding on just burns the account. Shared by the Flow "
-                "Driver and the FlowBatch CLI, and by manual render and "
-                "auto-run alike. Independent of 'Stop the batch at the first "
+                "grinding on just burns the account. Shared by manual "
+                "render and auto-run. Independent of 'Stop the batch at the first "
                 "failed image' above (which stops on the FIRST failure).",
     },
     {
@@ -358,8 +359,8 @@ SPEC: list[dict] = [
                 "only makes it worse, and it can take an hour or more to "
                 "clear (FlowBatch has seen 2h40m-4h after heavy use). The "
                 "batch stops at the first such refusal, waits this long, "
-                "then resumes the missing cards. Applies to both the Flow "
-                "Driver and FlowBatch, manual render and auto-run alike. "
+                "then resumes the missing cards. Applies to manual render "
+                "and auto-run alike. "
                 "0 = do not auto-resume - stop and wait for you to click "
                 "Resume.",
     },
@@ -367,22 +368,19 @@ SPEC: list[dict] = [
         "key": "images_delay_seconds", "type": "int", "default": 0,
         "min": 0, "max": 600,
         "label": "Seconds between images",
-        "help": "Wait after each rendered image, for BOTH engines (Flow "
-                "Driver and FlowBatch). Google's reCAPTCHA scores the session "
+        "help": "Wait after each rendered image. Google's reCAPTCHA scores the session "
                 "partly on how fast it generates, so a longer gap means fewer "
                 "'unusual activity' blocks, at the cost of a slower batch "
-                "(e.g. 20 s x 75 images = 25 extra minutes). 0 = each "
-                "engine's own default (FlowBatch: its config\\settings.json, "
-                "5 s; Flow Driver: only its short built-in pause). A value "
-                "replaces FlowBatch's gap and is added to the Flow Driver's.",
+                "(e.g. 20 s x 75 images = 25 extra minutes). 0 = "
+                "FlowBatch's own default (its config\\settings.json, 1.5 s). "
+                "A value replaces FlowBatch's gap.",
     },
     {
         "key": "chrome_efficiency_off", "type": "bool", "default": True,
         "label": "Turn off Chrome Efficiency mode while rendering",
-        "help": "Before an image engine opens its Chrome, switch Memory Saver "
-                "and Energy Saver off in that engine's own automation profile "
-                "(the Flow Driver's and FlowBatch's profile folders - never "
-                "your everyday Chrome). Efficiency mode can slow or freeze "
+        "help": "Before FlowBatch opens its Chrome, switch Memory Saver "
+                "and Energy Saver off in its own automation profile "
+                "(FlowBatch's profile folder - never your everyday Chrome). Efficiency mode can slow or freeze "
                 "the rendering window. Applied before every launch; skipped "
                 "while that Chrome is already open.",
     },
@@ -415,9 +413,8 @@ SPEC: list[dict] = [
         "choices": list(FLOW_NATIVE_TIERS),
         "choice_labels": FLOW_NATIVE_TIER_LABELS,
         "label": "Flow native: upscale level",
-        "help": "Only used when Render resolution is Flow native. Both image "
-                "engines (FlowBatch and the Renderly Flow Driver) download "
-                "the stills at Flow's native size, then ONE local Real-ESRGAN "
+        "help": "Only used when Render resolution is Flow native. FlowBatch "
+                "downloads the stills at Flow's native size, then ONE local Real-ESRGAN "
                 "pass (FlowBatch's upscaler - no Flow, no Renderly backend) "
                 "brings them to this level. Files already at the level are "
                 "skipped, so the pass can be re-run from the images stage. "

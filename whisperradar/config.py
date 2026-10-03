@@ -106,10 +106,6 @@ class Config:
         self.flowbatch_project_url = \
             (studio.get("flowbatch_project_url") or "").strip() or None
         self.studio_manifest_brief = studio.get("manifest_brief") or None
-        self.flow_driver_dir = studio.get("flow_driver_dir") \
-            or _sibling("Renderly", "extension-v2")
-        self.flow_driver_url = studio.get("flow_driver_url") \
-            or "http://127.0.0.1:8030"
         self.studio_dir = base_dir / "data" / "studio"
 
 

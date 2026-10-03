@@ -90,9 +90,9 @@
   <div class="tabpanel" data-tab="Tools">
   <div class="panel">
     <div class="muted" style="font-size:12px; margin-bottom:10px">
-      External tools are consumed in place from their own checkouts. Start and
-      stop them here instead of keeping .bat windows open - WhisperRadar only
-      ever stops a service it started itself. The <b>FlowBatch</b> engine
+      The Renderly API lives in this repo (engines\renderly-api). Start and
+      stop it here instead of keeping a console window open - WhisperRadar
+      only ever stops a service it started itself. The <b>FlowBatch</b> engine
       needs no service at all: it is a CLI that drives its own browser.
     </div>
     {% macro svc(name, label, up, port, note) %}
@@ -117,8 +117,6 @@
     {% endmacro %}
     {{ svc("renderly", "Renderly backend", services.renderly, "8022",
            "Gemini image API, imports and upscaling - needed by the Renderly engine") }}
-    {{ svc("flow-driver", "Flow Driver", services["flow-driver"], "8030",
-           "extension-v2 - drives Google Flow for the Renderly engine's flow mode") }}
     <div class="inline" style="justify-content:space-between; padding:6px 0">
       <div>
         <b>FlowBatch</b>
@@ -126,7 +124,7 @@
         {% if flowbatch_ready %}<span class="badge on">installed</span>
         {% else %}<span class="badge off">not configured</span>{% endif %}
         <div class="muted" style="font-size:12px">
-          Standalone Flow CLI (studio.flowbatch_repo). Spawns its own
+          Flow CLI (engines\flowbatch in this repo). Spawns its own
           browser per batch; nothing to keep running.
         </div>
       </div>

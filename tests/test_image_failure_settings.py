@@ -2,7 +2,7 @@
 auto-resume after it / after a 'still busy' wave are settings
 (images_max_consecutive_failures, images_resume_wait_minutes,
 images_still_busy_wait_minutes) instead of hardcoded constants, shared by
-manual render and auto-run and by both engines (Flow Driver + FlowBatch).
+manual render and auto-run and by both engines (Renderly API + FlowBatch).
 
 Run: python -m unittest discover -s tests
 """
@@ -107,7 +107,7 @@ class ThrottleBlockTests(unittest.TestCase):
         self.pid = db.create_production(conn, "T")
         conn.commit()
         conn.close()
-        self.exc = studio.throttle_error("Flow Driver", 60)
+        self.exc = studio.throttle_error("FlowBatch", 60)
 
     def test_the_pattern_matches_flows_wording_only(self):
         for text in ("We noticed some unusual activity. Please visit the Help "
@@ -217,117 +217,6 @@ class SettingsCheckboxTests(unittest.TestCase):
         self.client.post("/settings/save", data={"autorun_resume": ["0", "on"]})
         self.client.post("/settings/save", data={"images_chunk_size": "10"})
         self.assertTrue(self._value("autorun_resume"))
-
-
-class FlowDriverLoopTests(unittest.TestCase):
-    """The Flow Driver polling loop: first-failure stop (setting) and the
-    'unusual activity' throttle stop, both calling flow_stop."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.cfg = load_config(ROOT / "config.yaml")
-        self.cfg.db_path = Path(self.tmp.name) / "wr.db"
-        self.cfg.studio_dir = Path(self.tmp.name) / "studio"
-        conn = db.connect(self.cfg.db_path)
-        db.init_db(conn)
-        self.pid = db.create_production(conn, "T")
-        conn.commit()
-        conn.close()
-        self.pdir = Path(self.tmp.name) / "p"
-        self.pdir.mkdir()
-        (self.pdir / "shotlist.json").write_text("{}", encoding="utf-8")
-        self.api = []
-        self.delay = 0
-        self.driver = Path(self.tmp.name) / "drv"
-        (self.driver / "node_modules" / "playwright").mkdir(parents=True)
-        (self.driver / "flow.js").write_text("", encoding="utf-8")
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def _run(self, statuses, stop_on_failure=False, throttle_minutes=60):
-        stopped = []
-        seq = iter(statuses)
-        last = [statuses[-1]]
-
-        def status(cfg, timeout=4):
-            try:
-                last[0] = next(seq)
-            except StopIteration:
-                pass
-            return last[0]
-
-        limits = (0, stop_on_failure, 5, 600, 300)
-        mocks = unittest.mock.patch.multiple(
-            studio, flow_driver_dir=lambda c: self.driver,
-            ensure_flow_services=lambda c, log=None: None,
-            run_flowdriver_prepare=lambda *a, **k: {},
-            _apply_flowdriver_report=lambda *a, **k: None,
-            flow_project_url_for=lambda c, p, o=None: ("", "none"),
-            missing_flow_images=lambda c, d: 3,
-            flow_service_status=status,
-            _driver_api=lambda *a, **k: self.api.append((a, k)) or {},
-            image_delay_seconds=lambda c, p=None: self.delay,
-            flow_stop=lambda c: stopped.append(1),
-            image_batch_limits=lambda c, p: limits,
-            image_throttle_wait_seconds=lambda c, p: throttle_minutes * 60)
-        with mocks, unittest.mock.patch("time.sleep", lambda s: None):
-            try:
-                studio.run_imagegen_flow(self.cfg, self.pdir, pid=self.pid,
-                                         log=lambda m: None)
-            except RuntimeError as exc:
-                return exc, stopped
-        return None, stopped
-
-    def test_unusual_activity_stops_at_the_first_refusal(self):
-        st = [{"running": False, "log": [], "counts": {"ok": 0}},   # prepare
-              {"running": False, "log": [], "counts": {"ok": 0}},   # attach
-              {"running": False, "log": [], "counts": {"ok": 0}},   # base ok
-              {"running": False, "log": [], "counts": {"ok": 0}},   # base log
-              {"running": True, "counts": {"ok": 1, "failed": 0},
-               "log": ["saved a", "Flow refused the generation for \"b\": "
-                       "We noticed some unusual activity"]}]
-        exc, stopped = self._run(st)
-        self.assertIn(studio.THROTTLE_MARKER, str(exc))
-        self.assertIn("60 min", str(exc))
-        self.assertEqual(len(stopped), 1)
-
-    def test_an_old_unusual_activity_line_is_ignored(self):
-        old = ["earlier batch: We noticed some unusual activity"]
-        st = [{"running": False, "log": old, "counts": {"ok": 0}},
-              {"running": False, "log": old, "counts": {"ok": 0}},
-              {"running": False, "log": old, "counts": {"ok": 0}},
-              {"running": False, "log": old + ["saved a"],
-               "counts": {"ok": 1}}]
-        exc, _ = self._run(st)
-        self.assertNotIn(studio.THROTTLE_MARKER, str(exc))
-
-    def test_the_first_failure_stops_the_batch_when_ticked(self):
-        base = {"running": False, "log": [], "counts": {"ok": 0}}
-        st = [base, base, base,
-              {"running": True, "log": [], "counts": {"ok": 2, "failed": 0}},
-              {"running": True, "log": [], "counts": {"ok": 2, "failed": 1}}]
-        exc, stopped = self._run(st, stop_on_failure=True)
-        self.assertIn("first failure", str(exc))
-        self.assertEqual(len(stopped), 1)
-
-    def test_a_single_failure_is_tolerated_when_unticked(self):
-        base = {"running": False, "log": [], "counts": {"ok": 0}}
-        st = [base, base, base,
-              {"running": True, "log": [], "counts": {"ok": 2, "failed": 1}},
-              {"running": False, "log": [], "counts": {"ok": 2, "failed": 1}}]
-        exc, stopped = self._run(st, stop_on_failure=False)
-        self.assertNotIn("first failure", str(exc))
-        self.assertEqual(stopped, [])
-
-    def test_the_pacing_setting_reaches_the_driver_config(self):
-        self.delay = 20
-        base = {"running": False, "log": [], "counts": {"ok": 0}}
-        self._run([base, base, base, base,
-                   {"running": False, "log": [], "counts": {"ok": 1}}])
-        bodies = [k["body"] for a, k in self.api
-                  if a[1:2] == ("/api/config",)]
-        self.assertEqual(bodies[0]["delaySeconds"], 20)
 
 
 class ImageDelayTests(unittest.TestCase):

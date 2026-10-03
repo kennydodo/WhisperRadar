@@ -1,9 +1,8 @@
 """Turn Chrome's Efficiency mode (Memory Saver + Energy Saver) off in the
 automation profiles the image engines drive.
 
-Both engines open their own Chrome from a dedicated profile folder (the Flow
-Driver's `profileDir` in extension-v2\\driver-config.json, default `profile`;
-FlowBatch's `paths.profileDir` in config\\settings.json, default `profile`).
+FlowBatch opens its own Chrome from a dedicated profile folder (its
+`paths.profileDir` in config\\settings.json, default `profile`).
 Chrome keeps these two switches in `Local State` at the root of that folder,
 so editing that one file BEFORE the engine launches Chrome is enough: no
 process has to be found, and the user's everyday Chrome (a different folder)
@@ -107,14 +106,6 @@ def _resolve(base: Path, raw, default: str) -> Path:
     return p if p.is_absolute() else base / p
 
 
-def flow_driver_profile(driver_dir) -> Path:
-    """The Flow Driver's Chrome profile: driver-config.json `profileDir`
-    (relative to the extension-v2 folder), else `profile`."""
-    base = Path(driver_dir)
-    cfg = _read_json(base / "driver-config.json") or {}
-    return _resolve(base, cfg.get("profileDir"), "profile")
-
-
 def flowbatch_profile(repo) -> Path:
     """FlowBatch's Chrome profile: `paths.profileDir` of config\\settings.json
     (settings.local.json wins), relative to the FlowBatch folder."""
@@ -145,8 +136,8 @@ def enabled(cfg) -> bool:
 
 def apply(cfg, engine: str, say=None) -> str | None:
     """Before an engine launches Chrome: turn Efficiency mode off in that
-    engine's profile when the setting is on. `engine` is "flow_driver" or
-    "flowbatch". Returns the outcome (None = setting off / engine not set
+    engine's profile when the setting is on. `engine` is "flowbatch" (the only
+    engine that opens a browser). Returns the outcome (None = setting off / engine not set
     up). Says something only when it changed the profile or could not."""
     from . import studio
 
@@ -154,12 +145,10 @@ def apply(cfg, engine: str, say=None) -> str | None:
         return None      # the test suite must never edit a real profile
     if not enabled(cfg):
         return None
-    if engine == "flowbatch":
-        repo = studio.flowbatch_dir(cfg)
-        profile = flowbatch_profile(repo) if repo else None
-    else:
-        driver = studio.flow_driver_dir(cfg)
-        profile = flow_driver_profile(driver) if driver else None
+    if engine != "flowbatch":
+        return None
+    repo = studio.flowbatch_dir(cfg)
+    profile = flowbatch_profile(repo) if repo else None
     if profile is None:
         return None
     result = turn_off_efficiency_mode(profile)

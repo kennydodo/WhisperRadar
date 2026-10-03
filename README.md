@@ -114,16 +114,15 @@ production from any transcribed video in your library, then walk its stages:
   in the bible box (auto-run pauses there until you do). The LLM writes only the
   shotlist JSON; the readable batch sheet (Studio > View batch sheet) is built from
   it on demand, and prompts can also be extracted from the shotlist. Per-image `refs` entries in the shotlist resolve against the
-  production's `refs\` folder in the Flow Driver.
-- **Images stage**: render the missing shotlist images via the **Flow Driver**
-  (default - Renderly's extension-v2 drives Google Flow in a real Chrome
-  window; import + upscale via Renderly) or the **Renderly API** (Gemini
-  backend). The choice is remembered per production. Flow mode adds
-  per-production reference images (refs\\ folder - uploaded on the images
-  stage, attached where the shotlist's per-image refs name them), channel /
-  upscale / master controls like the Flow Driver page, and auto-starts the
-  driver service and Renderly's start.bat when needed. Upload your own images
-  anytime.
+  production's `refs\` folder.
+- **Images stage**: render the missing shotlist images with **FlowBatch**
+  (`engines\flowbatch`: Playwright drives Google Flow in its own signed-in
+  Chrome profile and upscales on the way out) or the **Renderly** engine
+  (`engines\renderly-api`: PL/PR wide shots through its Gemini API, every other
+  shot through FlowBatch). The choice is remembered per production. Reference
+  images live in the production's refs\\ folder (uploaded on the images stage,
+  attached where the shotlist's per-image refs name them); WhisperRadar starts
+  the Renderly API itself when needed. Upload your own images anytime.
 - **Style guide**: the LLM analyzes the source transcript's writing style
   (tone, pacing, hooks, structure) into an editable `style.md`, and every
   script/image generation must match it while using only the facts - original
