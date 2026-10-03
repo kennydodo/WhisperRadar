@@ -1792,6 +1792,24 @@ def throttle_error(where: str, wait_minutes: int | None = None) -> RuntimeError:
         f"kept. Raising the delay between images lowers the risk.")
 
 
+def image_delay_seconds(cfg, pid: int | None = None) -> int:
+    """Extra seconds to wait between rendered images (images_delay_seconds
+    setting; 0 = each engine's own default)."""
+    from . import db, settings
+
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            glob = settings.load(conn)
+        finally:
+            conn.close()
+        return max(0, int(glob.get("images_delay_seconds") or 0))
+    except Exception as exc:  # noqa: BLE001 - never block a batch
+        log.debug("could not read the image delay: %s", exc)
+        return 0
+
+
 def image_throttle_wait_seconds(cfg, pid: int) -> int:
     """Seconds to wait after Flow's 'unusual activity' block (the
     images_throttle_wait_minutes setting; 0 = no auto-resume)."""
@@ -2009,6 +2027,10 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
         # bound this run: Flow's tolerance is per account and both engines
         # share it, so the rest of the shotlist waits for the next run
         cmd += ["--limit", str(chunk)]
+    delay = image_delay_seconds(cfg, pid)
+    if delay:
+        # pacing: Google scores the session partly on generation speed
+        cmd += ["--delay", str(delay)]
     if stop_on_failure:
         # the CLI's own flag stops at the first failed item (its granularity);
         # anything rendered is kept and the production stays resumable
@@ -2236,6 +2258,8 @@ def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperrada
         "upscale": renderly_upscale(upscale if upscale is not None
                                     else (cfg.renderly_upscale or 0)),
         "localUpscale": bool(local_upscale),
+        # pacing: extra seconds between rendered cards (0 = the driver's own)
+        "delaySeconds": image_delay_seconds(cfg, pid),
     }
     shotlist_file = pid_dir / "shotlist.json"
     todo = 0
