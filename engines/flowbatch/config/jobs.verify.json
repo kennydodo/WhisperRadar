@@ -1,0 +1,26 @@
+{
+  "name": "verify",
+  "projectUrl": "https://flow.google.com/project/b9973189-0df6-4e9d-9cf4-2eb4175ff9f8",
+  "outputsDir": "output/verify",
+
+  "defaults": {
+    "mode": "image",
+    "agent": false,
+    "model": "Nano Banana 2",
+    "aspectRatio": "16:9",
+    "outputs": 1
+  },
+
+  "items": [
+    {
+      "id": "no-ref",
+      "prompt": "A glossy red ceramic mug on a plain light grey seamless sweep, soft studio lighting, product photo, sharp focus.",
+      "refs": []
+    },
+    {
+      "id": "with-ref",
+      "prompt": "Product photo of the character from the reference image standing on a plain white seamless background, soft studio lighting.",
+      "refs": ["refs/character-a.png"]
+    }
+  ]
+}

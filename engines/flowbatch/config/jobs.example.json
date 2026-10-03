@@ -1,0 +1,34 @@
+{
+  "name": "example-explicit",
+  "project": "FlowBatch",
+  "outputsDir": "output/example-explicit",
+
+  "defaults": {
+    "mode": "image",
+    "aspectRatio": "16:9",
+    "outputs": 1,
+    "model": "Nano Banana 2",
+    "refs": ["refs/character-a.png"],
+    "promptPrefix": "",
+    "promptSuffix": ""
+  },
+
+  "items": [
+    {
+      "id": "portrait",
+      "prompt": "Studio portrait of @ref, neutral background, soft key light, 50mm lens.",
+      "refs": ["refs/character-a.png"]
+    },
+    {
+      "id": "street",
+      "prompt": "Wide shot of @ref walking through a rainy neon street at night, cinematic.",
+      "refs": ["refs/character-a.png", "refs/street-style.png"],
+      "aspectRatio": "9:16"
+    },
+    {
+      "id": "no-refs",
+      "prompt": "Minimal product shot of a ceramic mug on a plain grey sweep.",
+      "refs": []
+    }
+  ]
+}

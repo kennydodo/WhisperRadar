@@ -1,0 +1,28 @@
+{
+  "name": "smoke",
+  "projectUrl": "https://flow.google.com/project/b9973189-0df6-4e9d-9cf4-2eb4175ff9f8",
+  "outputsDir": "output/smoke",
+
+  "defaults": {
+    "mode": "image",
+    "agent": false,
+    "model": "Nano Banana 2",
+    "aspectRatio": "16:9",
+    "outputs": 1,
+    "refs": ["refs/character-a.png"],
+    "promptPrefix": "",
+    "promptSuffix": ""
+  },
+
+  "items": [
+    {
+      "id": "smoke-01",
+      "prompt": "Product photo of the character from the reference image, standing on a plain white seamless background, soft studio lighting, sharp focus."
+    },
+    {
+      "id": "smoke-02",
+      "prompt": "The same character from the reference image sitting on a wooden desk beside a small houseplant, warm afternoon window light, 35mm photo.",
+      "aspectRatio": "1:1"
+    }
+  ]
+}

@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FlowBatch</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #171a21;
+        --panel-2: #1d212a;
+        --line: #2a2f3a;
+        --text: #e6e9ef;
+        --muted: #98a2b3;
+        --accent: #4f8cff;
+        --ok: #3ddc97;
+        --warn: #ffb454;
+        --err: #ff6b6b;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+      header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+      header .sub { color: var(--muted); font-size: 12px; }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+      .pill.running { color: var(--ok); border-color: #1f4d3a; }
+      .pill.running .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(61,220,151,.15); }
+
+      main { flex: 1; display: grid; grid-template-columns: 380px 1fr; min-height: 0; }
+      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+      .panel { padding: 18px; overflow: auto; }
+      .panel.controls { border-right: 1px solid var(--line); background: var(--panel); }
+
+      label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+      .field { margin-bottom: 18px; }
+      .row { display: flex; gap: 8px; }
+      input[type="text"], select {
+        width: 100%;
+        padding: 9px 11px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        font: inherit;
+        outline: none;
+      }
+      input[type="text"]:focus, select:focus { border-color: var(--accent); }
+      input::placeholder { color: #5d6675; }
+      .hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+      button {
+        padding: 9px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button:hover:not(:disabled) { border-color: #3a4150; background: #232833; }
+      button:disabled { opacity: .45; cursor: not-allowed; }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #06122b; font-weight: 600; }
+      button.primary:hover:not(:disabled) { background: #6a9cff; }
+      button.danger { border-color: #5a2a2a; color: var(--err); }
+      button.danger:hover:not(:disabled) { background: #2a1a1a; }
+
+      .actions { display: flex; gap: 10px; margin-top: 22px; }
+      .actions button { flex: 1; }
+
+      .check { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: 13px; }
+      .check input { accent-color: var(--accent); width: 15px; height: 15px; }
+
+      .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .62); display: flex; align-items: center; justify-content: center; z-index: 50; }
+      .modal[hidden] { display: none; }
+      .modal-card {
+        background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+        padding: 22px; width: min(540px, 92vw); max-height: 88vh; overflow: auto;
+      }
+      .modal-card h2 { margin: 0 0 20px; font-size: 15px; font-weight: 600; }
+      .modal-actions { display: flex; gap: 10px; margin-top: 24px; }
+      .modal-actions button { flex: 1; }
+      .saved { font-size: 11px; color: var(--muted); margin-top: 14px; min-height: 16px; }
+      .profile-line { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+      .profile-line b { color: var(--text); font-weight: 500; }
+
+      .console-wrap { display: flex; flex-direction: column; min-height: 0; padding: 0; }
+      .console-head {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 18px; border-bottom: 1px solid var(--line);
+        font-size: 12px; color: var(--muted);
+      }
+      .console-head .spacer { flex: 1; }
+      #console {
+        flex: 1;
+        overflow: auto;
+        padding: 12px 16px 24px;
+        font-family: var(--mono);
+        font-size: 12.5px;
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #0b0d11;
+      }
+      .line { display: flex; gap: 10px; }
+      .line .ts { color: #4b5464; flex: none; }
+      .line.stderr .msg { color: var(--err); }
+      .line.meta .msg { color: var(--accent); }
+      .line .msg { flex: 1; }
+      .line.warn .msg { color: var(--warn); }
+      .empty { color: #4b5464; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>FlowBatch</h1>
+      <span class="sub">Google Flow batch image generation</span>
+      <span class="profile-line" id="profileLabel"></span>
+      <span class="pill" id="status"><span class="dot"></span><span id="statusText">idle</span></span>
+      <button type="button" id="settingsBtn">Settings</button>
+    </header>
+
+    <main>
+      <section class="panel controls">
+        <div class="field">
+          <label for="job">Job JSON</label>
+          <select id="jobSelect"></select>
+          <div class="row" style="margin-top: 8px">
+            <input type="text" id="jobPath" placeholder="D:\path\to\job.json" />
+            <button type="button" id="pickJob">Choose…</button>
+          </div>
+          <div class="hint">Pick a job from <code>config/</code> or browse for any JSON file.</div>
+        </div>
+
+        <div class="field">
+          <label for="output">Save images to</label>
+          <div class="row">
+            <input type="text" id="output" placeholder="(job default)" />
+            <button type="button" id="pickFolder">Choose…</button>
+          </div>
+          <div class="hint">Leave empty to use the job's own <code>outputsDir</code>.</div>
+        </div>
+
+        <div class="field">
+          <label for="upscale">Upscale tier</label>
+          <select id="upscale">
+            <option value="off">Off — keep the ~720p master only</option>
+            <option value="1k">1K — 1920 × 1080 (Full HD)</option>
+            <option value="2k">2K — 2560 × 1440 (default)</option>
+            <option value="4k">4K — 3840 × 2160</option>
+          </select>
+          <div class="hint" id="upscaleHint">Saved as you change it.</div>
+        </div>
+
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" id="dryRun" />
+            Dry run — print the plan without generating
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="primary" id="start">Start Batch</button>
+          <button type="button" class="danger" id="stop" disabled>End Process</button>
+        </div>
+      </section>
+
+      <section class="panel console-wrap">
+        <div class="console-head">
+          <span>Console</span>
+          <span class="spacer"></span>
+          <span id="pidLabel"></span>
+          <button type="button" id="clear">Clear</button>
+        </div>
+        <div id="console"><div class="empty">Waiting… output from the batch run appears here.</div></div>
+      </section>
+    </main>
+
+    <div class="modal" id="settingsModal" hidden>
+      <div class="modal-card">
+        <h2>Settings</h2>
+
+        <div class="field">
+          <label for="profileSelect">Google profile</label>
+          <select id="profileSelect"></select>
+          <div class="hint">
+            The browser profile decides which Google account generates. A profile that is not signed
+            in, or one whose account Flow has flagged, will be refused with "unusual activity".
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" id="agentToggle" />
+            Agent mode ON
+          </label>
+          <div class="hint">
+            Off keeps per-item control of model, aspect ratio and outputs. Turn this ON only if
+            generations start being refused — Agent OFF is what tips a distrusted session over.
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="cooldownInput">Cooldown after a refusal (seconds)</label>
+          <input type="text" id="cooldownInput" />
+          <div class="hint">
+            0 stops the batch at the first refusal, which is the safest for the account's standing.
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="primary" id="settingsSave">Save</button>
+          <button type="button" id="settingsClose">Close</button>
+        </div>
+        <div class="saved" id="settingsSaved"></div>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const consoleEl = $('console');
+      const statusPill = $('status');
+      const statusText = $('statusText');
+      const pidLabel = $('pidLabel');
+      let running = false;
+      let autoScroll = true;
+      let lineCount = 0;
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+      }
+
+      function appendLine(text, stream) {
+        if (lineCount === 0) consoleEl.innerHTML = '';
+        if (lineCount > 4000) {
+          for (let i = 0; i < 500 && consoleEl.firstChild; i += 1) consoleEl.removeChild(consoleEl.firstChild);
+          lineCount -= 500;
+        }
+        const div = document.createElement('div');
+        div.className = 'line ' + (stream || 'stdout');
+        div.innerHTML = '<span class="msg">' + escapeHtml(text) + '</span>';
+        consoleEl.appendChild(div);
+        lineCount += 1;
+        if (autoScroll) consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+
+      function setRunning(next, status) {
+        running = next;
+        statusPill.classList.toggle('running', next);
+        statusText.textContent = next ? 'running' : 'idle';
+        pidLabel.textContent = next && status?.pid ? 'pid ' + status.pid : '';
+        $('start').disabled = next;
+        $('stop').disabled = !next;
+        $('pickJob').disabled = next;
+        $('pickFolder').disabled = next;
+        $('jobSelect').disabled = next;
+      }
+
+      async function post(url, body) {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        return data;
+      }
+
+      async function loadJobs() {
+        try {
+          const res = await fetch('/api/jobs');
+          const data = await res.json();
+          const select = $('jobSelect');
+          select.innerHTML = '<option value="">— pick a job file —</option>';
+          for (const job of data.jobs) {
+            const option = document.createElement('option');
+            option.value = job.path;
+            option.textContent = job.label;
+            select.appendChild(option);
+          }
+        } catch (error) {
+          appendLine('Could not list jobs: ' + error.message, 'stderr');
+        }
+      }
+
+      $('jobSelect').addEventListener('change', (event) => {
+        if (event.target.value) $('jobPath').value = event.target.value;
+      });
+
+      $('pickJob').addEventListener('click', async () => {
+        try {
+          const data = await post('/api/pick-file', { initialDir: $('jobPath').value || null });
+          if (data.path) $('jobPath').value = data.path;
+        } catch (error) {
+          appendLine('File dialog failed: ' + error.message, 'stderr');
+        }
+      });
+
+      $('pickFolder').addEventListener('click', async () => {
+        try {
+          const data = await post('/api/pick-folder', { initialDir: $('output').value || null });
+          if (data.path) $('output').value = data.path;
+        } catch (error) {
+          appendLine('Folder dialog failed: ' + error.message, 'stderr');
+        }
+      });
+
+      $('start').addEventListener('click', async () => {
+        const job = $('jobPath').value.trim();
+        if (!job) {
+          appendLine('Choose a job JSON file first.', 'stderr');
+          return;
+        }
+        try {
+          const status = await post('/api/start', {
+            job,
+            output: $('output').value.trim() || null,
+            dryRun: $('dryRun').checked,
+          });
+          setRunning(true, status);
+        } catch (error) {
+          appendLine(error.message, 'stderr');
+        }
+      });
+
+      $('stop').addEventListener('click', async () => {
+        try {
+          const status = await post('/api/stop');
+          setRunning(false, status);
+        } catch (error) {
+          appendLine(error.message, 'stderr');
+        }
+      });
+
+      $('clear').addEventListener('click', async () => {
+        consoleEl.innerHTML = '';
+        lineCount = 0;
+        await post('/api/clear').catch(() => {});
+      });
+
+      consoleEl.addEventListener('scroll', () => {
+        autoScroll = consoleEl.scrollHeight - consoleEl.scrollTop - consoleEl.clientHeight < 40;
+      });
+
+      function renderUpscale(info) {
+        $('upscale').value = info.tier;
+        const device = info.engineAvailable
+          ? info.deviceName || 'device detected on first use'
+          : 'engine not installed — CPU only';
+        const target = info.target16x9 ? ` · 16:9 → ${info.target16x9}` : '';
+        const superSample = info.supersample && info.tier !== 'off' ? ' · supersampled' : '';
+        $('upscaleHint').textContent =
+          `${info.model} · ${device}${target}${superSample} · remembered between runs`;
+      }
+
+      async function loadUpscale() {
+        try {
+          const res = await fetch('/api/upscale');
+          renderUpscale(await res.json());
+        } catch (error) {
+          $('upscaleHint').textContent = 'Could not read upscale settings.';
+        }
+      }
+
+      $('upscale').addEventListener('change', async (event) => {
+        try {
+          const res = await fetch('/api/upscale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tier: event.target.value }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+          renderUpscale(data);
+        } catch (error) {
+          appendLine('Could not save the upscale level: ' + error.message, 'stderr');
+        }
+      });
+
+      function renderSettings(info) {
+        const select = $('profileSelect');
+        select.innerHTML = '';
+        for (const profile of info.profiles) {
+          const option = document.createElement('option');
+          option.value = profile.name;
+          option.textContent = profile.account
+            ? `${profile.name} — ${profile.account}`
+            : `${profile.name} (not signed in)`;
+          select.appendChild(option);
+        }
+        select.value = info.profileDir;
+        $('agentToggle').checked = info.agent;
+        $('cooldownInput').value = String(info.cooldownSeconds);
+        $('settingsSaved').textContent = `Saved to ${info.localFile}`;
+
+        // Surface the active account in the header so a wrong profile is obvious.
+        const active = info.profiles.find((p) => p.name === info.profileDir);
+        const label = $('profileLabel');
+        if (label) {
+          label.innerHTML = active
+            ? `profile <b>${active.name}</b>${active.account ? ` · <b>${active.account}</b>` : ' · not signed in'}`
+            : `profile <b>${info.profileDir}</b>`;
+        }
+      }
+
+      async function loadSettings() {
+        try {
+          renderSettings(await (await fetch('/api/settings')).json());
+        } catch (error) {
+          $('settingsSaved').textContent = 'Could not read settings: ' + error.message;
+        }
+      }
+
+      $('settingsBtn').addEventListener('click', async () => {
+        await loadSettings();
+        $('settingsModal').hidden = false;
+      });
+
+      $('settingsClose').addEventListener('click', () => {
+        $('settingsModal').hidden = true;
+      });
+
+      $('settingsModal').addEventListener('click', (event) => {
+        if (event.target === $('settingsModal')) $('settingsModal').hidden = true;
+      });
+
+      $('settingsSave').addEventListener('click', async () => {
+        try {
+          const res = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              profileDir: $('profileSelect').value,
+              agent: $('agentToggle').checked,
+              cooldownSeconds: Number($('cooldownInput').value),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+          renderSettings(data);
+          appendLine(
+            `Settings saved: profile "${data.profileDir}"${data.agent ? ', agent mode ON' : ''}, ` +
+              `cooldown ${data.cooldownSeconds}s.`,
+            'meta',
+          );
+          $('settingsModal').hidden = true;
+        } catch (error) {
+          $('settingsSaved').textContent = 'Error: ' + error.message;
+        }
+      });
+
+      function connect() {
+        const events = new EventSource('/api/events');
+        events.onmessage = (event) => {
+          let message;
+          try {
+            message = JSON.parse(event.data);
+          } catch {
+            return;
+          }
+          if (message.type === 'log') {
+            appendLine(message.text, message.stream);
+          } else if (message.type === 'status') {
+            setRunning(message.running, message);
+          } else if (message.type === 'cleared') {
+            consoleEl.innerHTML = '';
+            lineCount = 0;
+          }
+        };
+        events.onerror = () => {
+          statusText.textContent = 'disconnected';
+          statusPill.classList.remove('running');
+        };
+      }
+
+      loadJobs();
+      loadUpscale();
+      loadSettings();
+      fetch('/api/status')
+        .then((res) => res.json())
+        .then((status) => setRunning(status.running, status))
+        .catch(() => {});
+      connect();
+    </script>
+  </body>
+</html>

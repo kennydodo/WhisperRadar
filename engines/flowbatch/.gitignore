@@ -1,0 +1,29 @@
+node_modules/
+
+# Playwright persistent browser profile (contains the Google session)
+profile/
+profile-*/
+
+# Runtime artefacts
+output/*
+!output/.gitkeep
+downloads/
+state/
+debug/
+discover/
+
+# Local overrides
+config/settings.local.json
+config/selectors.local.json
+config/upscale.local.json
+
+# Upscaler engine scratch state
+tools/realesrgan/device_cache.json
+tools/realesrgan/_probe*.png
+
+# User media
+refs/*
+!refs/.gitkeep
+
+.env
+*.log

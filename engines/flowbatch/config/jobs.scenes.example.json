@@ -1,0 +1,33 @@
+{
+  "name": "scenes-example",
+  "projectUrl": "https://flow.google.com/project/REPLACE-WITH-YOUR-PROJECT-ID",
+  "outputsDir": "output/scenes-example",
+
+  "refs": {
+    "Maya": "E:/YOUTUBE/PERSONAL FINANCE/Refs/Maya.png",
+    "Dana": "E:/YOUTUBE/PERSONAL FINANCE/Refs/Dana.png",
+    "BG_LIVING_ROOM_01": "E:/YOUTUBE/PERSONAL FINANCE/Refs/BG_LIVING_ROOM_01.png"
+  },
+
+  "defaults": {
+    "mode": "image",
+    "agent": false,
+    "model": "Nano Banana 2",
+    "aspectRatio": "16:9",
+    "outputs": 1,
+    "refMode": "reuse"
+  },
+
+  "images": [
+    {
+      "file": "S01_01_HYB_PR.png",
+      "prompt": "Maya stands at the open glass door of her grandmother's warm wood display cabinet in the living room, one hand reaching in to lift a delicate porcelain cup from its lace doily while the other gestures toward the shelf. Her expression is a puzzled, slightly exasperated question - head tilted, one eyebrow raised, eyes on the tea set. The cabinet occupies the left third of the frame with the porcelain tea set on the middle shelf, two commemorative floral collector plates behind, one half-wrapped in bubble wrap with its box open on the shelf below. An armchair with a folded throw sits at the right edge. Soft daylight from a window off to the left.",
+      "refs": ["Maya", "BG_LIVING_ROOM_01"]
+    },
+    {
+      "file": "S01_02_CU_ZI.png",
+      "prompt": "Close-up of Maya's hands holding an ornate floral porcelain collector plate up at eye level. Her right thumb and forefinger grip the gilded rim, where a small handwritten paper price tag bearing the single numeral 20 is stuck; her left hand steadies the bubble-wrapped edge behind it. Thin dust film on the porcelain, a hairline of light catching the gilt and her fingertips. Single soft light source from the upper left. Plate centred with clear space around it and Maya's face just out of frame at the top.",
+      "refs": ["Maya"]
+    }
+  ]
+}

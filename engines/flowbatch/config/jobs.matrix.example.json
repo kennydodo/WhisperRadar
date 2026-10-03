@@ -1,0 +1,26 @@
+{
+  "name": "example-matrix",
+  "project": "FlowBatch",
+  "outputsDir": "output/example-matrix",
+
+  "defaults": {
+    "mode": "image",
+    "aspectRatio": "16:9",
+    "outputs": 2,
+    "model": null,
+    "promptPrefix": "",
+    "promptSuffix": ""
+  },
+
+  "matrix": {
+    "prompts": [
+      "Full-body studio shot of @ref in a plain white outfit, seamless backdrop.",
+      "Close-up portrait of @ref looking directly at camera, rim lighting.",
+      "Action shot of @ref sprinting through shallow water at golden hour."
+    ],
+    "refSets": {
+      "alice": ["refs/alice-front.png", "refs/alice-side.png"],
+      "bob": ["refs/bob-front.png"]
+    }
+  }
+}
