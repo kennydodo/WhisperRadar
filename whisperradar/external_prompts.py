@@ -428,7 +428,8 @@ _SHOTLIST_OUTPUT_RULES = """
 OUTPUT RULES FOR THIS CHAT (you are being used outside the app; these keep the file machine-readable):
 1. Reply with the shotlist JSON in ONE fenced ```json code block - valid JSON, double quotes, no comments, no trailing commas, no text inside the block that is not JSON. Write nothing after the JSON - no image batch sheet, no text copy of the prompts, no summary.
 2. If you approach your output limit: stop after the last COMPLETE entry (never mid-token or mid-string), and end the message. When I reply "continue", output ONLY the remaining content, picking up at the exact next entry with no repetition, no commentary and no second "style" field, in a new ```json block that continues the same document, and finish every cue through the last one, closing every bracket cleanly. Keep going on each "continue" until the last cue is covered and the JSON is closed.
-3. Every cue from 1 to the last must be covered exactly once. A message that ends before the final cue is a hard failure."""
+3. Every cue from 1 to the last must be covered exactly once. A message that ends before the final cue is a hard failure.
+4. If this chat can create a file or artifact for the reply, name it exactly `shotlist.json` (JSON only inside it); otherwise just use the code block."""
 
 
 def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
@@ -536,6 +537,14 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
                       f"{share_cap:.0%} of shots")
     if motion:
         lines.append("MOTION MIX: " + "; ".join(motion) + ".")
+    mix = briefs.mix_text(profile)
+    if mix:
+        lines.append("MOTION TARGETS: " + mix + " Plans of "
+                     f"{briefs.MIX_MIN_SHOTS}+ shots are checked: a listed "
+                     f"code below {briefs.MIX_FLOOR_RATIO:.0%} of its share, "
+                     f"or ZI outside {briefs.ZOOM_SPLIT[0]:.0%}-"
+                     f"{briefs.ZOOM_SPLIT[1]:.0%} of the ZI+ZO shots, is a "
+                     f"fault.")
     lines.append(
         f"FRAGMENTATION: more than {studio.FRAGMENTATION_SHARE:.0%} of "
         f"the shots spanning a single cue is a fault - images should change "
