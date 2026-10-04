@@ -3027,6 +3027,23 @@ def create_app(cfg) -> Flask:
         sjob.start(worker, f"image rendering ({label})")
         return _studio_url(pid, msg=f"Image rendering started ({label})")
 
+    _IMAGE_JOB_KINDS = ("image rendering", "image generation",
+                        "gallery recovery", "local upscale", "auto-run")
+
+    @app.post("/studio/<int:pid>/images/stop")
+    def studio_images_stop(pid):
+        """Stop the running image job from the images stage: the render
+        (Renderly API + FlowBatch or FlowBatch alone), a gallery recovery, a
+        local upscale, or the auto-run that is currently on this stage. The
+        card being generated finishes first, then the run stops; images that
+        are already rendered are kept and a re-run only fills the gaps."""
+        if not sjob.running or not str(sjob.kind or "").startswith(
+                _IMAGE_JOB_KINDS):
+            return _studio_url(pid, error="No image job is running")
+        sjob.cancel = True
+        return _studio_url(pid, msg="Stopping after the current image "
+                                    "finishes - rendered images are kept")
+
     @app.post("/studio/<int:pid>/images/recover")
     def studio_images_recover(pid):
         """Manual only: pull the images a stopped batch already generated in

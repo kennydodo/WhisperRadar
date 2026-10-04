@@ -1197,8 +1197,73 @@ def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
     return {"generated": generated, "missing": missing}
 
 
+def _shot_motion(file_name: str) -> str:
+    """The motion code of a shotlist image file name (S01_02_SCN_PL.png -> PL)."""
+    stem = file_name[:-4] if file_name.lower().endswith(".png") else file_name
+    return stem.rsplit("_", 1)[-1].upper()
+
+
+def missing_shot_files(pid_dir: Path, motions=None, exclude=None) -> list[str]:
+    """Shotlist image files not yet in images\\, optionally only those whose
+    motion code is in `motions` or not in `exclude` (e.g. ("PL", "PR"))."""
+    try:
+        data = json.loads((pid_dir / "shotlist.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    img_dir = pid_dir / "images"
+    have = ({p.name for p in img_dir.iterdir() if p.is_file()}
+            if img_dir.exists() else set())
+    keep = {m.upper() for m in motions} if motions else None
+    drop = {m.upper() for m in exclude} if exclude else set()
+    out = []
+    for item in data.get("images", []):
+        if not (isinstance(item, dict) and item.get("file")
+                and item.get("prompt") and item["file"] not in have):
+            continue
+        motion = _shot_motion(item["file"])
+        if (keep is not None and motion not in keep) or motion in drop:
+            continue
+        out.append(item["file"])
+    return out
+
+
+def _set_production_warning(cfg, pid: int, text: str) -> None:
+    """Best-effort: put a notice on the production so it is seen, not just
+    logged."""
+    from . import db
+
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.update_production(conn, pid, warning=text)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _clear_style_warning(cfg, pid: int) -> None:
+    """Drop a stale "style not attached" notice once the style fits again."""
+    from . import db
+
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            warn = (prod["warning"] if prod is not None else None) or ""
+            if warn.startswith("Visual style NOT attached"):
+                db.update_production(conn, pid, warning=None)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
-                              project_url: str | None = None) -> tuple[Path, list[str]]:
+                              project_url: str | None = None,
+                              skip_motion=None) -> tuple[Path, list[str]]:
     """Build a FlowBatch job from the production's shotlist: only the
     images still missing from images\\.
 
@@ -1225,10 +1290,13 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
     img_dir.mkdir(exist_ok=True)
     existing = {p.name for p in img_dir.iterdir() if p.is_file()}
     todo = []
+    skip = {m.upper() for m in skip_motion} if skip_motion else set()
     for item in data.get("images", []):
         if not (isinstance(item, dict) and item.get("file")
                 and item.get("prompt") and item["file"] not in existing):
             continue
+        if skip and _shot_motion(item["file"]) in skip:
+            continue    # left for another engine (PL/PR go to the API)
         entry = {"file": item["file"], "prompt": item["prompt"]}
         stem = (item["file"][:-4] if item["file"].lower().endswith(".png")
                 else item["file"])
@@ -1282,18 +1350,39 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
                 conn.close()
         except Exception:  # noqa: BLE001
             pass
-    # The shotlist's `style` used to be a Flow "master prompt"; here the
-    # per-image prompts already carry the art direction and
-    # the style alone can exceed Flow's limit, so it is only sent when the
-    # whole prompt would still fit.
+    # The art direction (the shotlist's `style`, else the production's
+    # style.md - the same source the refs job uses) is prefixed to EVERY
+    # prompt by FlowBatch, and Flow refuses a prompt over its ceiling, so it is
+    # sent only when it fits. That decision is made against the longest prompt
+    # of the WHOLE shotlist, not just the images still missing: otherwise a
+    # resume (a different remainder) could attach the style to some images and
+    # silently not to others. When it cannot fit the production gets a visible
+    # warning instead of a log line nobody reads.
     style = (data.get("style") or "").strip()
-    longest = max((len(i["prompt"]) for i in todo), default=0)
+    if not style:
+        style_path = find_style(pid_dir)
+        if style_path:
+            try:
+                style = style_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                style = ""
+    longest = max((len(str(i.get("prompt") or ""))
+                   for i in data.get("images", []) if isinstance(i, dict)),
+                  default=0)
     if style and longest + len(style) + 1 <= FLOWBATCH_MAX_PROMPT_CHARS:
         job["style"] = style
+        _clear_style_warning(cfg, pid)
     elif style:
-        log.info("FlowBatch: omitting the %d-char style - prompts would "
-                 "exceed Flow's %d-char limit (longest prompt %d)",
-                 len(style), FLOWBATCH_MAX_PROMPT_CHARS, longest)
+        note = (f"Visual style NOT attached to the Flow images: the style is "
+                f"{len(style)} chars and the longest image prompt {longest}, "
+                f"over Flow's {FLOWBATCH_MAX_PROMPT_CHARS}-char limit. Shorten "
+                f"the style or the longest prompts, then re-plan or resume.")
+        log.warning("FlowBatch: %s", note)
+        _set_production_warning(cfg, pid, note)
+    else:
+        note = ("No visual style found (shotlist style / style.md empty): "
+                "the Flow images are rendered from their own prompts only.")
+        log.warning("FlowBatch: %s", note)
     job_path = pid_dir / "flowbatch.json"
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
@@ -1864,7 +1953,8 @@ def run_flowbatch_recover(cfg, pid_dir: Path, pid: int,
 
 def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
-                               cancel=None, project_url: str | None = None) -> int:
+                               cancel=None, project_url: str | None = None,
+                               skip_motion=None) -> int:
     """Render the production's missing shotlist images with FlowBatch.
 
     Returns how many new images landed in images\\. Long-running by design:
@@ -1874,7 +1964,8 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
         raise RuntimeError("Set studio.flowbatch_repo in config.yaml to "
                            "your FlowBatch checkout (and run npm install)")
     repo = flowbatch_dir(cfg)
-    job_path, names = prepare_flowbatch_job(cfg, pid_dir, pid, project_url)
+    job_path, names = prepare_flowbatch_job(cfg, pid_dir, pid, project_url,
+                                            skip_motion=skip_motion)
     # No stored project -> CREATE a fresh one (never adopt Flow's most recent).
     # A stored project -> open it; if it is dead, strip it and create instead.
     # Both are verified below: reusing a previous project is a hard failure.

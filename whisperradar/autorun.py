@@ -1521,36 +1521,66 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                         cancel=cancel, project_url=flow_project_url)
                     source = "FlowBatch"
                 else:
-                    # Renderly engine: only PL/PR are worth a paid API call
-                    # (they need a canvas wider than 16:9, and the API is the
-                    # only path that can request 21:9). Everything else in
-                    # the shotlist is rendered by FlowBatch, which skips what
-                    # is already on disk, so it also picks up whatever the
-                    # API pass could not do.
+                    # Renderly engine: FlowBatch renders the bulk of the
+                    # shotlist FIRST (it is the slow, throttle-prone part and
+                    # most images come from it), skipping PL/PR. Only then does
+                    # the paid API render PL/PR (they need a canvas wider than
+                    # 16:9, and the API is the only path that can request
+                    # 21:9) - so a stalled, cancelled or re-planned production
+                    # has not spent money on them yet, and a resume round
+                    # never repeats the API pass. Whatever PL/PR the API could
+                    # not do (quota, outage) is finished by FlowBatch as 16:9
+                    # push-ins, same tradeoff as always.
+                    wide = ("PL", "PR")
+                    if round_no == 1 and studio.missing_shot_files(
+                            pdir, motions=wide):
+                        # the API pass comes last, so find out now, not hours
+                        # from now, that Renderly is not answering
+                        try:
+                            _chs, chan_err, _known = studio.renderly_channel_list(cfg)
+                        except Exception as exc:  # noqa: BLE001
+                            chan_err = str(exc)
+                        if chan_err:
+                            log(f"[auto-run] images: Renderly is not "
+                                f"answering ({chan_err}) - PL/PR will be "
+                                "rendered by FlowBatch as 16:9 if it is "
+                                "still down after the main batch")
+                    flow_count = 0
+                    if studio.missing_shot_files(pdir, exclude=wide):
+                        flow_count = studio.run_imagegen_flowbatch(
+                            cfg, pdir, pid, upscale=flow_upscale, log=log,
+                            cancel=cancel, project_url=flow_project_url,
+                            skip_motion=wide)
+                    if cancel and cancel():
+                        raise studio.BatchCancelled(
+                            "stop requested - the PL/PR pass was not started")
                     api_count = 0
                     quota_hit = False
-                    try:
-                        api_count = studio.run_imagegen(
-                            cfg, pdir, channel=renderly_channel,
-                            upscale=flow_upscale, motion_filter=("PL", "PR"))
-                    except studio.RenderlyQuotaExhausted as exc:
-                        # Even the PL/PR slice hit a quota/billing wall.
-                        # api_count carries whatever it got through before
-                        # stopping; FlowBatch below renders the rest of PL/PR
-                        # (as 16:9 push-ins, same tradeoff as always) plus
-                        # every other motion code.
-                        api_count = exc.generated
-                        quota_hit = True
-                        log(f"[auto-run] images: {exc} - the remaining PL/PR "
-                            "shots will go to FlowBatch too")
-                    flow_count = studio.run_imagegen_flowbatch(
-                        cfg, pdir, pid, upscale=flow_upscale, log=log,
-                        cancel=cancel, project_url=flow_project_url)
+                    api_note = False
+                    if studio.missing_shot_files(pdir, motions=wide):
+                        try:
+                            api_count = studio.run_imagegen(
+                                cfg, pdir, channel=renderly_channel,
+                                upscale=flow_upscale, motion_filter=wide)
+                        except studio.RenderlyQuotaExhausted as exc:
+                            api_count = exc.generated
+                            quota_hit = True
+                            log(f"[auto-run] images: {exc} - the remaining "
+                                "PL/PR shots will go to FlowBatch too")
+                        if studio.missing_shot_files(pdir, motions=wide):
+                            api_note = True
+                            flow_count += studio.run_imagegen_flowbatch(
+                                cfg, pdir, pid, upscale=flow_upscale, log=log,
+                                cancel=cancel, project_url=flow_project_url)
                     count = api_count + flow_count
                     if quota_hit:
-                        source = "Renderly API (PL/PR, quota-limited) + FlowBatch (rest)"
+                        source = ("FlowBatch (rest) + Renderly API "
+                                  "(PL/PR, quota-limited)")
+                    elif api_count and api_note:
+                        source = ("FlowBatch (rest) + Renderly API (PL/PR) + "
+                                  "FlowBatch (PL/PR it missed)")
                     elif api_count:
-                        source = "Renderly API (PL/PR) + FlowBatch (rest)"
+                        source = "FlowBatch (rest) + Renderly API (PL/PR)"
                     else:
                         source = "FlowBatch"
                 break

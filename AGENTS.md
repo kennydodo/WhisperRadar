@@ -1486,8 +1486,18 @@ the images-stage form — persisting them per production is optional polish.
 - The Flow Driver (Renderly's extension-v2) is RETIRED: its code, config
   (`flow_driver_dir`, `flow_driver_url`), service (`flow-driver`), stop route
   and Settings row are gone. Engines now: `flowbatch` = every shot on FlowBatch;
-  `renderly` = PL/PR through the API (`run_imagegen(... motion_filter=("PL",
-  "PR"))`) then FlowBatch for the rest (it skips files already on disk).
+  `renderly` = FlowBatch FIRST for every shot except PL/PR
+  (`run_imagegen_flowbatch(... skip_motion=("PL", "PR"))`), then the API for
+  PL/PR (`run_imagegen(... motion_filter=("PL", "PR"))`), then - only if the API
+  missed some (quota/outage) - a FlowBatch pass for the leftover PL/PR as 16:9.
+  The API goes last so nothing is paid for while the bulk is unfinished, and a
+  resume round never repeats it (`studio.missing_shot_files` decides which
+  passes are needed). A start-of-run Renderly check logs early if it is down.
+  The job-wide art style is judged against the WHOLE shotlist's longest prompt
+  (never just the remainder), falls back to style.md, and a style that cannot
+  fit Flow's 2420-char ceiling puts a visible warning on the production.
+  Stage 7 has a "Stop image generation" button (`/studio/<pid>/images/stop`,
+  sets the job's cancel flag; the card being generated finishes first).
   Render mode `flow` (stored per channel/production) now means "all shots on
   FlowBatch": `studio.effective_engine(engine, mode)` maps engine renderly +
   mode flow to flowbatch; `auto` means api. Older AGENTS sections below that

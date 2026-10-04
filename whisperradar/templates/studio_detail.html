@@ -814,8 +814,8 @@
       {% endif %}
       <div class="muted" style="font-size:12px; margin-bottom:8px">
         Render the missing shotlist images with the <b>Renderly</b> engine
-        (PL/PR wide shots through its API / Gemini, every other shot through
-        FlowBatch) or with <b>FlowBatch</b> alone (every shot on Google Flow,
+        (every shot except PL/PR through FlowBatch first, then the PL/PR wide
+        shots through its API / Gemini last) or with <b>FlowBatch</b> alone (every shot on Google Flow,
         in its own signed-in profile, upscaled on the way out). Your choice is
         remembered per production. Existing images are
         kept, only gaps are rendered. Upload your own images anytime.
@@ -824,7 +824,7 @@
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/render"
               onsubmit="return confirmRender(this)">
           <select name="engine" id="engine" title="Image engine">
-            <option value="renderly" {{ 'selected' if default_engine != 'flowbatch' else '' }}>Renderly (API for PL/PR + FlowBatch)</option>
+            <option value="renderly" {{ 'selected' if default_engine != 'flowbatch' else '' }}>Renderly (FlowBatch, then API for PL/PR)</option>
             <option value="flowbatch" {{ 'selected' if default_engine == 'flowbatch' else '' }} {{ 'disabled' if not flowbatch_ready else '' }}>FlowBatch{{ '' if flowbatch_ready else ' - not installed' }}</option>
           </select>
           <input type="hidden" name="render_mode" value="api">
@@ -838,6 +838,13 @@
             {{ 'Working...' if job.running else 'Render images' }}
           </button>
         </form>
+        {% if job.running and (job.kind.startswith('image') or job.kind.startswith('gallery') or job.kind.startswith('local upscale') or job.kind == 'auto-run') %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/stop"
+              onsubmit="return wrConfirmSubmit(this, 'Stop image generation? The image being generated finishes first, then the run stops. Images already rendered are kept; Render images later only fills the gaps.')">
+          <button type="submit" class="secondary" style="background:var(--red); color:#fff"
+                  title="Stop after the current image finishes (rendered images are kept)">&#9632; Stop image generation</button>
+        </form>
+        {% endif %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/recover"
               onsubmit="return wrConfirmSubmit(this, 'Pull the images the last Flow batch ALREADY generated in the project gallery into the images folder?\nOnly files still missing are adopted - nothing new is generated and nothing is uploaded.')">
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not shotlist_count else '' }}
@@ -887,7 +894,7 @@
       </div>
       <script>
         var ENGINE_NOTE = {
-          renderly: 'PL/PR wide shots are rendered through the Renderly API first (paid Gemini credits); FlowBatch then renders every other shot on Google Flow.',
+          renderly: 'FlowBatch renders every shot except PL/PR on Google Flow first; the Renderly API (paid Gemini credits) then renders the PL/PR wide shots last. PL/PR the API cannot do are finished by FlowBatch as 16:9.',
           flowbatch: 'FlowBatch drives Google Flow in its own signed-in Chrome profile and upscales the results itself. It waits out Flow rate limits, so a batch can take a long time.'
         };
         function currentEngine() {
@@ -909,7 +916,7 @@
           var engine = currentEngine();
           var what = engine === 'flowbatch'
             ? 'FlowBatch will open Chrome, drive Google Flow with your account and upscale the results.\nKeep the machine running until the batch finishes.'
-            : 'PL/PR shots go through the Renderly API and consume your Gemini credits; FlowBatch then opens Chrome and drives Google Flow for the rest.\nKeep the machine running until the batch finishes.';
+            : 'FlowBatch opens Chrome and drives Google Flow for every shot except PL/PR first; the PL/PR shots then go through the Renderly API and consume your Gemini credits.\nKeep the machine running until the batch finishes.';
           wrConfirm('Render the missing shotlist images now?\n\n' + what).then(function (ok) {
             if (!ok) return;
             form.dataset.wrConfirmed = '1';

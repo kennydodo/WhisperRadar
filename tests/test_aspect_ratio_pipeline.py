@@ -177,18 +177,26 @@ class RenderlyExportBatchTests(unittest.TestCase):
 
 
 class RenderlySplitTests(unittest.TestCase):
-    """autorun._run_images, engine=renderly/mode=api: the API is only ever
-    called for the PL/PR slice (motion_filter=("PL", "PR")); FlowBatch
-    always runs afterward for the rest of the shotlist, quota wall or not."""
+    """autorun._run_images, engine=renderly/mode=api: FlowBatch renders the
+    bulk FIRST (skipping PL/PR), then the paid API renders only PL/PR; what the
+    API could not do is finished by FlowBatch as 16:9 push-ins."""
 
-    def _run(self, motions, fake_run_imagegen, fake_run_imagegen_flowbatch,
-             label):
+    WIDE = ("PL", "PR")
+
+    def _run(self, motions, fake_api, fake_flow, label, preexisting=()):
+        """Run _run_images with fakes that really write files, so the
+        "what is still missing" decisions behave as in production. Returns
+        (step detail, call order)."""
+        calls = []
         with tempfile.TemporaryDirectory() as d:
             cfg = _cfg(Path(d) / "wr.db")
             pid_dir = Path(d) / "studio"
-            pid_dir.mkdir()
+            (pid_dir / "images").mkdir(parents=True)
+            data = _shotlist(motions)
             (pid_dir / "shotlist.json").write_text(
-                json.dumps(_shotlist(motions)), encoding="utf-8")
+                json.dumps(data), encoding="utf-8")
+            for name in preexisting:
+                (pid_dir / "images" / name).write_bytes(b"x")
 
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
@@ -201,6 +209,25 @@ class RenderlySplitTests(unittest.TestCase):
                 db.init_db(c2)
                 return c2
 
+            def write(pdir, wanted):
+                n = 0
+                for item in data["images"]:
+                    f = item["file"]
+                    if (not (pdir / "images" / f).exists()
+                            and wanted(_motion_of(f))):
+                        (pdir / "images" / f).write_bytes(b"x")
+                        n += 1
+                return n
+
+            def api(cfg_, pdir, channel=None, upscale=None, motion_filter=None):
+                calls.append(("api", tuple(motion_filter or ())))
+                return fake_api(pdir, write)
+
+            def flow(cfg_, pdir, pid_, **kwargs):
+                skip = tuple(kwargs.get("skip_motion") or ())
+                calls.append(("flow", skip))
+                return fake_flow(pdir, write, skip)
+
             with mock.patch.object(studio, "prepare_project_folder",
                                    lambda c, p: pid_dir), \
                     mock.patch.object(autorun, "_effective",
@@ -210,100 +237,90 @@ class RenderlySplitTests(unittest.TestCase):
                                       lambda *a, **k: []), \
                     mock.patch.object(services.MANAGER, "release",
                                       lambda *a, **k: []), \
-                    mock.patch.object(studio, "run_imagegen",
-                                      fake_run_imagegen), \
-                    mock.patch.object(studio, "run_imagegen_flowbatch",
-                                      fake_run_imagegen_flowbatch):
-                autorun._run_images(cfg, pid, mode="api", engine="renderly",
-                                    log=lambda m: None)
+                    mock.patch.object(studio, "renderly_channel_list",
+                                      lambda c: ([], None, set())), \
+                    mock.patch.object(studio, "run_imagegen", api), \
+                    mock.patch.object(studio, "run_imagegen_flowbatch", flow):
+                try:
+                    autorun._run_images(cfg, pid, mode="api",
+                                        engine="renderly",
+                                        log=lambda m: None)
+                finally:
+                    conn = db.connect(cfg.db_path)
+                    db.init_db(conn)
+                    steps = db.latest_steps(conn, pid)
+                    conn.close()
+            detail = steps["images"]["detail"] if "images" in steps else ""
+            return detail, calls
 
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            detail = db.latest_steps(conn, pid)["images"]["detail"]
-            conn.close()
-            return detail
+    @staticmethod
+    def _flow_all(pdir, write, skip):
+        return write(pdir, lambda m: m not in skip)
 
-    def test_the_api_call_is_scoped_to_pl_pr_and_flow_finishes_the_rest(self):
-        seen = {"api_filter": None, "flow": 0}
+    @staticmethod
+    def _api_wide(pdir, write):
+        return write(pdir, lambda m: m in ("PL", "PR"))
 
-        def fake_run_imagegen(cfg, pdir, channel=None, upscale=None,
-                              motion_filter=None):
-            seen["api_filter"] = motion_filter
-            return 2  # the PL/PR pair in MOTIONS
-
-        def fake_run_imagegen_flowbatch(cfg, pdir, pid, **kwargs):
-            seen["flow"] += 1
-            return 6  # everything else in MOTIONS (ST/ZI/ZO/PU/PD/PV)
-
-        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flowbatch,
-                           "TEST aspect split - normal")
-
-        self.assertEqual(seen["api_filter"], ("PL", "PR"))
-        self.assertEqual(seen["flow"], 1)
+    def test_flow_renders_the_bulk_first_then_the_api_does_pl_pr(self):
+        detail, calls = self._run(MOTIONS, self._api_wide, self._flow_all,
+                                  "TEST order - normal")
+        self.assertEqual(calls, [("flow", self.WIDE), ("api", self.WIDE)])
         self.assertIn("8 image(s)", detail)
+        self.assertIn("FlowBatch (rest) + Renderly API (PL/PR)", detail)
         self.assertNotIn("quota-limited", detail)
 
-    def test_quota_exhaustion_on_the_pl_pr_slice_still_finishes_via_flow(self):
-        seen = {"flow": 0}
+    def test_quota_wall_on_pl_pr_is_finished_by_flow_afterwards(self):
+        def api(pdir, write):
+            # got one PL through, then the wall
+            (pdir / "images" / "A04_PL.png").write_bytes(b"x")
+            raise studio.RenderlyQuotaExhausted(1, "quota exceeded")
 
-        def fake_run_imagegen(cfg, pdir, channel=None, upscale=None,
-                              motion_filter=None):
-            self.assertEqual(motion_filter, ("PL", "PR"))
-            raise studio.RenderlyQuotaExhausted(2, "quota exceeded")
-
-        def fake_run_imagegen_flowbatch(cfg, pdir, pid, **kwargs):
-            seen["flow"] += 1
-            return 3
-
-        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flowbatch,
-                           "TEST aspect split - quota")
-
-        self.assertEqual(seen["flow"], 1)
-        self.assertIn("5 image(s)", detail)
+        detail, calls = self._run(MOTIONS, api, self._flow_all,
+                                  "TEST order - quota")
+        self.assertEqual(calls, [("flow", self.WIDE), ("api", self.WIDE),
+                                 ("flow", ())])
+        self.assertIn("8 image(s)", detail)
         self.assertIn("quota-limited", detail)
 
-    def test_a_plain_renderly_failure_does_not_fall_back(self):
-        def fake_run_imagegen(cfg, pdir, channel=None, upscale=None,
-                              motion_filter=None):
+    def test_api_that_silently_misses_shots_is_topped_up_by_flow(self):
+        def api(pdir, write):
+            (pdir / "images" / "A04_PL.png").write_bytes(b"x")
+            return 1          # PR never made it
+
+        detail, calls = self._run(MOTIONS, api, self._flow_all,
+                                  "TEST order - partial api")
+        self.assertEqual([c[0] for c in calls], ["flow", "api", "flow"])
+        self.assertIn("PL/PR it missed", detail)
+
+    def test_a_plain_api_failure_does_not_fall_back(self):
+        def api(pdir, write):
             raise RuntimeError("ImageGen failed (exit 1): boom")
 
-        def fake_run_imagegen_flowbatch(cfg, pdir, pid, **kwargs):
-            self.fail("must not fall back on a plain failure")
+        with self.assertRaises(RuntimeError):
+            self._run(MOTIONS, api, self._flow_all, "TEST order - api failure")
 
-        with tempfile.TemporaryDirectory() as d:
-            cfg = _cfg(Path(d) / "wr.db")
-            pid_dir = Path(d) / "studio"
-            pid_dir.mkdir()
-            (pid_dir / "shotlist.json").write_text(
-                json.dumps(_shotlist(["ST"])), encoding="utf-8")
+    def test_the_api_is_never_called_when_flow_fails(self):
+        def flow(pdir, write, skip):
+            raise RuntimeError("FlowBatch failed (exit 1): boom")
 
-            conn = db.connect(cfg.db_path)
-            db.init_db(conn)
-            pid = db.create_production(conn, "TEST aspect plain failure")
-            conn.commit()
-            conn.close()
+        def api(pdir, write):
+            self.fail("PL/PR must not be paid for while the bulk is unfinished")
 
-            def fake_connect(c):
-                c2 = db.connect(c.db_path)
-                db.init_db(c2)
-                return c2
+        with self.assertRaises(RuntimeError):
+            self._run(MOTIONS, api, flow, "TEST order - flow failure")
 
-            with mock.patch.object(studio, "prepare_project_folder",
-                                   lambda c, p: pid_dir), \
-                    mock.patch.object(autorun, "_effective",
-                                      lambda c, p: {"engine": "renderly"}), \
-                    mock.patch.object(autorun, "_connect", fake_connect), \
-                    mock.patch.object(services.MANAGER, "ensure",
-                                      lambda *a, **k: []), \
-                    mock.patch.object(services.MANAGER, "release",
-                                      lambda *a, **k: []), \
-                    mock.patch.object(studio, "run_imagegen",
-                                      fake_run_imagegen), \
-                    mock.patch.object(studio, "run_imagegen_flowbatch",
-                                      fake_run_imagegen_flowbatch):
-                with self.assertRaises(RuntimeError):
-                    autorun._run_images(cfg, pid, mode="api", engine="renderly",
-                                        log=lambda m: None)
+    def test_a_resume_skips_flow_when_only_pl_pr_are_left(self):
+        done = [f"A{i:02d}_{m}.png" for i, m in enumerate(MOTIONS, 1)
+                if m not in self.WIDE]
+        detail, calls = self._run(MOTIONS, self._api_wide, self._flow_all,
+                                  "TEST order - resume", preexisting=done)
+        self.assertEqual(calls, [("api", self.WIDE)])
+
+    def test_no_pl_pr_in_the_plan_means_flow_only(self):
+        detail, calls = self._run(["ST", "ZI", "ZO"], self._api_wide,
+                                  self._flow_all, "TEST order - no wide")
+        self.assertEqual(calls, [("flow", self.WIDE)])
+        self.assertIn("FlowBatch", detail)
 
 
 class EngineResolutionTests(unittest.TestCase):
