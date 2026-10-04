@@ -63,13 +63,20 @@ def _export_row(row) -> dict:
     return out
 
 
-def export_channels(conn, key=None) -> dict:
-    """The export document for one channel (`key` = id or name) or all."""
-    if key not in (None, ""):
-        row = db.get_own_channel(conn, key)
-        rows = [row] if row is not None else []
-    else:
+def export_channels(conn, keys=None) -> dict:
+    """The export document for the channels in `keys` (ids or names; a single
+    id/name is fine) or, with none given, for all of them."""
+    if keys in (None, "", []):
         rows = db.list_own_channels(conn)
+    else:
+        if not isinstance(keys, (list, tuple)):
+            keys = [keys]
+        rows, seen = [], set()
+        for key in keys:
+            row = db.get_own_channel(conn, key)
+            if row is not None and row["id"] not in seen:
+                seen.add(row["id"])
+                rows.append(row)
     return {"format": FORMAT, "version": VERSION,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
             "channels": [_export_row(r) for r in rows]}

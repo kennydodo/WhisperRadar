@@ -117,20 +117,27 @@
     <form class="inline" method="post" action="/my-channels/import"
           enctype="multipart/form-data" style="margin-top:12px; gap:8px; align-items:center">
       <span class="muted" style="font-size:12px"><b>Save / load settings</b> (JSON):</span>
-      {% if own_channels %}<a class="btn ghost" href="/my-channels/export"
+      {% if own_channels %}<button type="submit" form="export-form" class="ghost"
+         title="Tick channels in the table first">download selected</button>
+      <a class="btn ghost" href="/my-channels/export"
          title="All channels, every setting except the Renderly link">download all</a>{% endif %}
       <input type="file" name="channels_file" accept=".json,application/json" required>
       <label class="muted" style="font-size:12px"><input type="checkbox" name="overwrite" value="1">
         replace channels that already exist (same name)</label>
       <button type="submit">Import</button>
     </form>
+    <form id="export-form" method="get" action="/my-channels/export"
+          onsubmit="if(!document.querySelector('input.exp-pick:checked')){alert('Tick at least one channel first.');return false;}"></form>
     <table style="margin-top:12px">
       <tr>
+        <th style="width:24px"><input type="checkbox" title="select all"
+            onclick="document.querySelectorAll('input.exp-pick').forEach(function(c){c.checked=this.checked}.bind(this))"></th>
         <th>Name</th><th>Genre</th><th>Handle</th><th>State</th>
         <th>Renderly</th><th></th>
       </tr>
       {% for ch in own_channels %}
       <tr>
+        <td><input type="checkbox" class="exp-pick" name="id" value="{{ ch['id'] }}" form="export-form"></td>
         <td>{{ ch["name"] }}
           {% if ch["description"] %}<div class="muted" style="font-size:12px">{{ ch["description"] }}</div>{% endif %}
           <div class="muted mono" style="font-size:11px">
@@ -179,7 +186,7 @@
         </td>
       </tr>
       <tr id="edit-{{ ch['id'] }}" style="display:none">
-        <td colspan="6" style="background:var(--panel2)">
+        <td colspan="7" style="background:var(--panel2)">
           <form method="post" action="/my-channels/edit">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
             <div class="grp-tools muted"><a href="#" onclick="return wrGroups(this, true)">expand all</a> &middot; <a href="#" onclick="return wrGroups(this, false)">collapse all</a></div>
@@ -648,7 +655,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">
+      <tr><td colspan="7" class="muted">
         No own channels yet. Create one above, then click
         <b>edit / defaults</b> on its row - that is where its narration voice,
         image engine, render mode, upscale, Auto Run window, candidate window,

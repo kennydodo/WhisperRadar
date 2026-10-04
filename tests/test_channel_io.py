@@ -150,10 +150,26 @@ class RouteTests(unittest.TestCase):
             content_type="multipart/form-data")
         self.assertIn("error=", r.headers["Location"])
 
+    def test_export_selected_channels_only(self):
+        conn = db.connect(self.cfg.db_path)
+        b = db.create_own_channel(conn, "Epsilon", per_day=2)
+        db.create_own_channel(conn, "Zeta")
+        conn.close()
+        r = self.client.get(f"/my-channels/export?id={self.oc}&id={b}")
+        names = [c["name"] for c in json.loads(r.data)["channels"]]
+        self.assertEqual(sorted(names), ["Epsilon", "Gamma"])
+        self.assertIn("channels-2-", r.headers["Content-Disposition"])
+        r = self.client.get(f"/my-channels/export?id={b}&id={b}")
+        self.assertEqual(len(json.loads(r.data)["channels"]), 1)
+        self.assertEqual(len(json.loads(
+            self.client.get("/my-channels/export").data)["channels"]), 3)
+
     def test_page_shows_buttons(self):
         html = self.client.get("/my-channels").get_data(as_text=True)
         self.assertIn("/my-channels/import", html)
         self.assertIn(f"/my-channels/export?id={self.oc}", html)
+        self.assertIn('form="export-form"', html)
+        self.assertIn(f'name="id" value="{self.oc}" form="export-form"', html)
 
 
 if __name__ == "__main__":
