@@ -343,9 +343,9 @@
       <div class="muted" style="font-size:12px; margin-bottom:8px"><b>Writing style</b> = how the script sounds (voice, pacing, hook, structure, CTA). It is not the <b>visual style</b> - how the images look - which is set on the channel (My Channels &gt; Style, bible &amp; references) and used at the shotlist stage.</div>
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/generate">
-          <button type="submit" class="green" {{ 'disabled' if job.running or not (source_tr and llm_ready) else '' }}
-                  title="{{ 'Analyze the source transcript and extract its writing style' if source_tr and llm_ready and not job.running else 'Needs a source video with a transcript and a configured LLM' }}">
-            {{ 'Working...' if job.running else 'Generate writing style guide from source' }}
+          <button type="submit" class="green" {{ 'disabled' if job.running or not llm_ready else '' }}
+                  title="{{ ('Analyze the source transcript and extract its writing style' if source_tr else 'No source transcript: the style is written from the title, the channel and the direction box below') if llm_ready and not job.running else ('A job is already running' if job.running else 'Needs a configured LLM') }}">
+            {{ 'Working...' if job.running else ('Generate writing style guide from source' if source_tr else 'Generate writing style guide (no source: from title and channel)') }}
           </button>
         </form>
       </div>

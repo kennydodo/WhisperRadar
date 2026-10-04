@@ -306,21 +306,31 @@ def _run_style(cfg, pid: int, provider: str | None = None) -> None:
         if not prod:
             return
         source_text = _source_transcript_text(cfg, pid)
-        if not source_text:
-            raise _Paused(
-                "No source transcript - write the style guide manually")
         word_count = len(re.findall(r"\w+", source_text))
-        prompt = studio.style_prompt(prod["title"], prod["genre"],
-                                     source_text,
-                                     extra_direction=db.stage_extra(
-                                         prod, "style"))
+        if source_text:
+            prompt = studio.style_prompt(prod["title"], prod["genre"],
+                                         source_text,
+                                         extra_direction=db.stage_extra(
+                                             prod, "style"))
+        else:
+            # no source to analyse: write it from the title, the channel and
+            # the creator's direction instead of pausing
+            eff = settings.for_production(conn, prod)
+            prompt = studio.style_prompt_from_scratch(
+                prod["title"], prod["genre"],
+                channel=eff.get("own_channel_name") or "",
+                channel_notes=settings.row_get(eff.get("own_channel"),
+                                           "description") or "",
+                extra_direction=db.stage_extra(prod, "style"))
         text = studio.llm_generate(cfg, prompt, provider=provider)
         if not text:
             raise RuntimeError("LLM returned an empty style guide")
         pdir = studio.prod_dir(cfg, pid)
         (pdir / "writing_style.md").write_text(text + "\n", encoding="utf-8")
         db.add_step(conn, pid, "style", "auto",
-                    detail=f"{provider}, source ~{word_count} words")
+                    detail=(f"{provider}, source ~{word_count} words"
+                            if source_text else
+                            f"{provider}, from title/channel (no source)"))
     finally:
         conn.close()
 
@@ -1808,11 +1818,12 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
         if studio.find_writing_style(pdir):
             return {"stage": stage, "action": "skip",
                     "detail": "writing style guide already exists"}
-        if not _source_transcript_text(cfg, pid):
-            return {"stage": stage, "action": "pause",
-                    "detail": "no source transcript - write the style "
-                              "guide manually, then Resume"}
         provider = _default_provider(cfg, pid)
+        if not _source_transcript_text(cfg, pid):
+            return {"stage": stage, "action": "run",
+                    "detail": f"style guide via LLM "
+                              f"({studio.llm_label(cfg, provider)}) from the "
+                              f"title and channel - no source transcript"}
         return {"stage": stage, "action": "run",
                 "detail": f"style guide via LLM "
                           f"({studio.llm_label(cfg, provider)})"}

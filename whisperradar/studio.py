@@ -3049,6 +3049,42 @@ def judge_provider(cfg, writer: str | None, preferred: str | None) -> str | None
     return ready[0]["name"] if ready else writer
 
 
+def style_prompt_from_scratch(title: str, genre: str, channel: str = "",
+                              channel_notes: str = "",
+                              extra_direction: str = "") -> str:
+    """The writing style guide for a production with NO source transcript:
+    written from the title, the channel and the creator's own direction
+    instead of analysed from a reference narration."""
+    about = ""
+    if (channel or "").strip():
+        about += f'\nThe channel is called "{channel.strip()}".'
+    if (channel_notes or "").strip():
+        about += f"\nAbout the channel: {channel_notes.strip()}"
+    extra = (extra_direction or "").strip()
+    if extra:
+        extra = f"\nDIRECTION FROM THE CREATOR (follow it):\n{extra}\n"
+    return f"""You are a writing coach for a {genre} YouTube channel.
+There is no reference transcript. Design the narration WRITING STYLE for a
+video titled "{title}".{about}
+{extra}
+Produce a STYLE GUIDE in markdown with exactly these sections:
+## Voice & Tone
+## Pacing & Rhythm
+## Sentence Style
+## Hook Pattern
+## Structure (beats in order, with rough timing)
+## CTA Style
+## Vocabulary & Register
+## Things to Avoid
+
+Rules:
+- Describe patterns abstractly (e.g. "short punchy sentences, averages 8-12 words").
+- Fit the genre and the channel; do not invent facts about the topic.
+- Be concrete enough that another writer could follow the style without seeing any example.
+
+Output ONLY the style guide markdown."""
+
+
 def style_prompt(title: str, genre: str, source_text: str,
                  word_count: int | None = None,
                  extra_direction: str = "") -> str:
