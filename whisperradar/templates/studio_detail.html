@@ -1309,6 +1309,13 @@
 </div>
 <script>
   const AR_PID = {{ prod['id'] }};
+  // Only the images stage has an engine picker (and its own helper); every
+  // other stage must not depend on it, so the popup resolves the engine itself.
+  const AR_ENGINE = {{ (default_engine or 'renderly')|tojson }};
+  function arEngine() {
+    const e = document.getElementById('engine');
+    return e ? e.value : AR_ENGINE;
+  }
   function closeAutorunModal() {
     document.getElementById('autorunmodal').style.display = 'none';
   }
@@ -1354,7 +1361,7 @@
     html += '</ul>';
     if (credits > 0) {
         html += '<div class="warn">⚠ The images stage will render ' + credits + ' image(s) - ' +
-          (currentEngine() === 'flowbatch'
+          (arEngine() === 'flowbatch'
             ? 'FlowBatch drives Google Flow with your account and can take a long time.'
             : 'this consumes your Renderly / Flow credits.') + '</div>';
     }
