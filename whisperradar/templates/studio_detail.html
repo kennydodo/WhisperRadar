@@ -673,6 +673,7 @@
       </div>
       <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
         <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
+        <div id="shotcount" class="muted" style="font-size:12px; margin-top:3px"></div>
         <div class="actions">
           <button type="submit" {{ 'disabled' if job.running else '' }}>Save shotlist</button>
           {% if batch_sheet %}
@@ -703,7 +704,8 @@
         The art direction passed to the shotlist planner and applied to every image. It is not the writing style (how the script sounds).
         {% if style_src == 'production' %}<b>Production override</b> - this production's own style.md is in force.{% elif style_src == 'channel' %}Taken live from the channel - edit it on <a href="/my-channels">My Channels</a> &gt; Style, bible &amp; references.{% else %}None set - the planner is asked to write a concise one itself; set one on the channel.{% endif %}
       </div>
-      {% if visual_style_text %}<pre class="copyable" style="margin:0 0 12px; font-size:12px; white-space:pre-wrap; max-height:220px; overflow-y:auto">{{ visual_style_text }}</pre>{% endif %}
+      {% if visual_style_text %}<pre class="copyable" id="vstyletext" style="margin:0 0 4px; font-size:12px; white-space:pre-wrap; max-height:220px; overflow-y:auto">{{ visual_style_text }}</pre>
+      <div id="vstylecount" class="muted" style="font-size:12px; margin-bottom:12px"></div>{% endif %}
       <h2>Character / reference bible (optional)</h2>
       <div class="muted" style="font-size:12px; margin-bottom:6px">Recurring characters, environments, wardrobe, objects - kept consistent across all generated images. Passed to the shotlist planner as its reference bible.</div>
       <div class="muted" style="font-size:12px; margin-bottom:6px">
@@ -1432,5 +1434,17 @@
   });
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
+<script src="{{ url_for('static', filename='style_counter.js') }}"></script>
+<script>
+  (function () {
+    var LIMIT = {{ flow_prompt_limit }};
+    var sl = document.querySelector('textarea[name=shotlist]');
+    var so = document.getElementById('shotcount');
+    if (sl && so) wrShotlistCount(sl, so, LIMIT);
+    var vt = document.getElementById('vstyletext');
+    var vo = document.getElementById('vstylecount');
+    if (vt && vo) wrStyleCount({ value: vt.textContent, addEventListener: function () {} }, vo, LIMIT);
+  })();
+</script>
 </body>
 </html>
