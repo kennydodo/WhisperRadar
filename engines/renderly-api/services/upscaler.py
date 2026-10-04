@@ -6,6 +6,7 @@ import re
 import struct
 import subprocess
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -32,6 +33,36 @@ _NOT_INSTALLED = (
 )
 
 _PROBE_SIZE = 64
+
+# The batch route handles several /generate requests at once, and each one
+# upscales its own image. Running several engines on one small GPU at the same
+# time makes them crash or emit garbage, and concurrent first-run probes share
+# one probe file, so every probe "fails" and the machine gets cached as
+# CPU-only. One engine process at a time.
+_ENGINE_LOCK = threading.RLock()
+
+
+def _suppress_crash_dialogs() -> None:
+    """Stop Windows popping "Application Error" when the engine crashes.
+
+    realesrgan-ncnn-vulkan dereferences null when a Vulkan device/driver is
+    missing. Without this, Windows shows a modal dialog that nobody clicks, the
+    subprocess never exits and the whole batch hangs. The error mode is
+    inherited by child processes.
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        # SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+        ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
+    except Exception:
+        pass
+
+
+_suppress_crash_dialogs()
+_CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
 def _write_probe_png(path: Path) -> None:
@@ -242,7 +273,14 @@ def _run(exe: Path, src: Path, dst: Path, gpu: int | None):
         cmd += ["-g", str(gpu)]
     env = os.environ.copy()
     env.update(_icd_env())
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=1800, env=env)
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        timeout=1800,
+        env=env,
+        creationflags=_CREATE_NO_WINDOW,
+    )
 
 
 def _device_name(result, gpu: int | None) -> str:
@@ -284,14 +322,23 @@ def _probe_devices(exe: Path) -> dict[int, str]:
     """Probe Vulkan device indices 0..5; return {index: device_name} for working ones."""
     _write_probe_png(_PROBE_PNG)
     devices: dict[int, str] = {}
+    misses = 0
     for idx in range(6):
+        # Device indices are contiguous: after two dead ones in a row there is
+        # nothing further to find, and each dead index is an engine crash.
+        if misses >= 2:
+            break
         if _PROBE_OUT.exists():
             _PROBE_OUT.unlink()
         try:
             result = _run(exe, _PROBE_PNG, _PROBE_OUT, idx)
             if _PROBE_OUT.exists() and _content_ok(_PROBE_PNG, _PROBE_OUT, 4):
                 devices[idx] = _device_name(result, idx)
+                misses = 0
+            else:
+                misses += 1
         except Exception:
+            misses += 1
             continue
     if _PROBE_OUT.exists():
         _PROBE_OUT.unlink()
@@ -356,7 +403,7 @@ def upscale(src: Path, dst: Path, tier: str) -> tuple[int, int]:
     if width >= target_w and height >= target_h:
         return _resize(src, dst, (target_w, target_h))
 
-    with tempfile.TemporaryDirectory(prefix="renderly_upscale_") as tmp:
+    with _ENGINE_LOCK, tempfile.TemporaryDirectory(prefix="renderly_upscale_") as tmp:
         flat = _flatten_to_rgb(src, Path(tmp))
         out_tmp = Path(tmp) / "engine_out.png"
 

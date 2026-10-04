@@ -1,6 +1,7 @@
 """Thin wrapper around the google-genai SDK for image generation."""
 
 import logging
+import time
 
 from google import genai
 from google.genai import types
@@ -44,6 +45,23 @@ def _is_quota_error(exc: Exception) -> bool:
     return code == 403 or ("billing" in text and "403" in text)
 
 
+# Google answers 503 "high demand" / 500 / 504 when the model is overloaded. The
+# request was not processed (and not billed), so retrying is safe. Quota and
+# billing errors are never retried.
+TRANSIENT_RETRY_DELAYS = (4.0, 12.0, 30.0)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    code = getattr(exc, "code", None)
+    if code in (500, 502, 503, 504):
+        return True
+    text = str(exc).lower()
+    return any(
+        marker in text
+        for marker in ("503", "unavailable", "high demand", "overloaded", "deadline_exceeded")
+    )
+
+
 def generate_image(
     prompt: str,
     reference_images: list[tuple[bytes, str]] | None = None,
@@ -57,7 +75,8 @@ def generate_image(
     aspect_ratio: optional "1:1", "16:9", "9:16", "4:3", "3:4", "21:9".
     image_size: optional "1K", "2K", "4K".
 
-    No automatic retries: a failed request is retried manually by the user.
+    Transient overload errors (503 etc.) are retried with backoff; quota/billing
+    errors and everything else fail immediately.
     """
     client = get_client()
 
@@ -77,19 +96,28 @@ def generate_image(
             image_config=types.ImageConfig(**image_config_kwargs)
         )
 
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_IMAGE_MODEL,
-            contents=contents,
-            config=config,
-        )
-    except Exception as exc:  # noqa: BLE001 - classify before surfacing
-        if _is_quota_error(exc):
-            logger.warning("Quota/billing limit hit: %s", exc)
-            raise QuotaExceededError(
-                f"Quota/billing limit reached — generation stopped. ({exc})"
-            ) from exc
-        raise
+    attempt = 0
+    while True:
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_IMAGE_MODEL,
+                contents=contents,
+                config=config,
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 - classify before surfacing
+            if _is_quota_error(exc):
+                logger.warning("Quota/billing limit hit: %s", exc)
+                raise QuotaExceededError(
+                    f"Quota/billing limit reached — generation stopped. ({exc})"
+                ) from exc
+            if _is_transient_error(exc) and attempt < len(TRANSIENT_RETRY_DELAYS):
+                delay = TRANSIENT_RETRY_DELAYS[attempt]
+                attempt += 1
+                logger.warning("Gemini overloaded (%s); retry %d in %.0fs", exc, attempt, delay)
+                time.sleep(delay)
+                continue
+            raise
 
     for part in response.parts:
         inline = getattr(part, "inline_data", None)
