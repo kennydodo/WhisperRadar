@@ -22,10 +22,6 @@ from whisperradar import autorun, briefs, db, settings, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
 
-# the brief as it was before it became a template (sibling ImgToVideo repo);
-# the equivalence test is skipped when that checkout is not next to this one
-ORIGINAL = ROOT.parent / "ImgToVideo" / "docs" / "manifest-authoring-brief.md"
-
 
 def _ts(t):
     m, s = divmod(int(t), 60)
@@ -49,10 +45,12 @@ class RenderTests(unittest.TestCase):
     def setUp(self):
         self.template = briefs.read_template()
 
-    @unittest.skipUnless(ORIGINAL.exists(), "ImgToVideo checkout not found")
-    def test_the_default_render_is_the_original_brief_exactly(self):
-        original = ORIGINAL.read_text(encoding="utf-8").split("\n---\n", 1)[1]
-        self.assertEqual(briefs.render_brief(self.template), original.strip())
+    def test_the_default_render_asks_for_the_shotlist_json_only(self):
+        # the brief deliberately diverged from ImgToVideo's two-document
+        # original: the LLM writes the JSON only, the batch sheet is local
+        text = briefs.render_brief(self.template)
+        self.assertIn("one document: a shotlist (JSON)", text)
+        self.assertNotIn("image batch sheet and a", text)
 
     def test_every_preset_renders_with_no_slot_left_over(self):
         for key, profile in briefs.MOTION_PRESETS.items():
