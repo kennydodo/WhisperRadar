@@ -360,6 +360,8 @@ def create_app(cfg) -> Flask:
     app.jinja_env.filters["views"] = format_views
     app.jinja_env.filters["fromjson"] = (
         lambda v: briefs.normalize_custom(v) or {})
+    app.jinja_env.filters["typesjson"] = (
+        lambda v: briefs.normalize_types(v) or {})
     ai33.warm_cache(cfg)  # background prefetch so the voice picker is instant
 
     @app.before_request
@@ -1086,6 +1088,7 @@ def create_app(cfg) -> Flask:
             brief_custom_label=briefs.CUSTOM_LABEL,
             brief_motion_codes=briefs.MOTION_CODE_INFO,
             brief_starters=briefs.PRESENTATION_STARTERS,
+            brief_type_codes=briefs.TYPE_CODES,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/my-channels/add")
@@ -1170,6 +1173,21 @@ def create_app(cfg) -> Flask:
             return fields, ("Planning brief: the minimum hold must be "
                             "shorter than the maximum hold - nothing was saved")
         fields.update(hold)
+        if "types_form" in form:   # the shot-type block was on the form
+            raw = {"max": {}, "host": {},
+                   "host_ref": (form.get("type_host_ref") or "").strip()}
+            gv = (form.get("type_max_graphics") or "").strip()
+            if gv:
+                raw["graphics_max"] = gv
+            for code in briefs.TYPE_CODES:
+                mv = (form.get(f"type_max_{code}") or "").strip()
+                hv = (form.get(f"type_host_{code}") or "").strip()
+                if mv:
+                    raw["max"][code] = mv
+                if hv:
+                    raw["host"][code] = hv
+            spec = briefs.normalize_types(raw)
+            fields["brief_types"] = json.dumps(spec) if spec else None
         if "brief_presentation" in form:   # multi-line: keep newlines
             fields["brief_presentation"] = (
                 (form.get("brief_presentation") or "").strip() or None)
@@ -2038,7 +2056,8 @@ def create_app(cfg) -> Flask:
                 eff.get("brief_motion"), eff.get("brief_min_hold"),
                 eff.get("brief_max_hold"),
                 default_max=eff["shotlist_max_hold_seconds"],
-                custom=eff.get("brief_custom")),
+                custom=eff.get("brief_custom"),
+                types=eff.get("brief_types")),
             brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],

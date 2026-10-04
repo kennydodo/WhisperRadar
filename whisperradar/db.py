@@ -219,6 +219,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          # the "custom" motion preset: JSON spec (allowed
                          # codes, limits, free-text rules)
                          ("brief_custom", "TEXT"),
+                         # shot-type caps + host-in-frame shares (JSON, see
+                         # briefs.normalize_types); NULL = inherit the global caps
+                         ("brief_types", "TEXT"),
                          # monitored (watched) channels whose videos this
                          # channel draws its sources from: JSON list of
                          # channels.channel_id; empty = all of them
@@ -864,7 +867,8 @@ _OWN_CHANNEL_FIELDS = {
     "shotlist_min_alignment", "shotlist_max_attempts",
     "shotlist_judge_provider", "render_target", "render_resolution",
     "generate_references", "flow_native_upscale", "brief_motion", "brief_presentation",
-    "brief_min_hold", "brief_max_hold", "brief_custom", "watched_channels",
+    "brief_min_hold", "brief_max_hold", "brief_custom", "brief_types",
+    "watched_channels",
     "renderly_channel_id", "renderly_channel_name",
 }
 

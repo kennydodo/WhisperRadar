@@ -17,6 +17,7 @@ channel with nothing set plans exactly as before.
 """
 from __future__ import annotations
 
+import json
 import math
 import re
 from dataclasses import dataclass, field, replace
@@ -117,6 +118,8 @@ class MotionProfile:
     min_hold: float | None = None
     max_hold: float | None = None
     slots: dict = field(default_factory=dict)
+    # shot-type caps + host-in-frame shares (see normalize_types); None = none
+    types: dict | None = None
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -129,6 +132,12 @@ class MotionProfile:
         if mix and "MOTION_SECTION" in out:
             out["MOTION_SECTION"] = out["MOTION_SECTION"].rstrip() + "\n\n" + mix
             out["CHECK_MOTION"] = out["CHECK_MOTION"].rstrip() + " " + mix
+        kinds = types_text(self.types)
+        if kinds and "MOTION_SECTION" in out:
+            out["MOTION_SECTION"] = (
+                adapt_motion_table(out["MOTION_SECTION"], self.types,
+                                   self.allowed).rstrip() + "\n\n" + kinds)
+            out["CHECK_MOTION"] = out["CHECK_MOTION"].rstrip() + " " + kinds
         return out
 
 
@@ -644,7 +653,198 @@ _RANGE_HOLD_RULE = (
     "deserves its own visual' guidance above for this channel.")
 
 
-def resolve_profile(key, min_hold=None, max_hold=None,
+# ---- shot types: per-type caps and host-in-frame shares -----------------------
+# The brief's TYPE codes (the third part of an asset name, S01_04_INF_ZI.png).
+TYPE_CODES: dict[str, str] = {
+    "SCN": "scene / character / environment",
+    "CU": "close-up / detail",
+    "INF": "infographic / diagram",
+    "CMP": "comparison (A vs B, before/after)",
+    "PROC": "process / stages",
+    "HYB": "scene + explanatory graphics",
+    "OVR": "conceptual overview",
+}
+# The types that are diagrams / infographics rather than a plain scene: one
+# combined cap ("graphics_max") limits how much of the video they take together.
+GRAPHIC_CODES = ("INF", "CMP", "PROC", "HYB", "OVR")
+# a type's host share counts as met within this many percentage points (plans
+# with fewer than TYPE_MIN_SHOTS shots of that type only enforce 0% and 100%)
+HOST_TOLERANCE = 15
+TYPE_MIN_SHOTS = 4
+# plans shorter than this only enforce a 0% cap (rounding makes small plans noisy)
+TYPE_CAP_MIN_PLAN = 10
+
+
+def _pct(value) -> int | None:
+    try:
+        text = str(value).strip().rstrip("%")
+        if text == "":
+            return None
+        return max(0, min(100, int(round(float(text)))))
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_types(raw) -> dict | None:
+    """Clean a shot-type spec: {"max": {CODE: 0-100}, "host_ref": "CH_X",
+    "host": {CODE: 0-100}} or None when nothing is set. `max` is the largest
+    share of ALL shots a type may take (0 = the type is never used, absent =
+    no limit); `host` is the share of THAT type's shots that show the host
+    (0 = never, 100 = always, absent = no rule) and only applies when the
+    channel names its host's ref in `host_ref`."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw.strip() else None
+        except ValueError:
+            return None
+    if not isinstance(raw, dict):
+        return None
+    out: dict = {}
+    caps = {}
+    for code, v in (raw.get("max") or {}).items():
+        code = str(code).upper()
+        pct = _pct(v)
+        if code in TYPE_CODES and pct is not None:
+            caps[code] = pct
+    if caps:
+        out["max"] = caps
+    gmax = _pct(raw.get("graphics_max"))
+    if gmax is not None:
+        out["graphics_max"] = gmax
+    ref = str(raw.get("host_ref") or "").strip()
+    host = {}
+    if ref:
+        for code, v in (raw.get("host") or {}).items():
+            code = str(code).upper()
+            pct = _pct(v)
+            if code in TYPE_CODES and pct is not None:
+                host[code] = pct
+        out["host_ref"] = ref
+    if host:
+        out["host"] = host
+    elif "host_ref" in out and not caps and "graphics_max" not in out:
+        return None   # a host name alone sets no rule
+    return out or None
+
+
+def effective_types(global_max: dict | None, channel_raw,
+                    global_graphics: int | None = None) -> dict | None:
+    """The caps a production runs with: the global per-type caps, overridden
+    per code by the channel's own; host rules come from the channel only."""
+    chan = normalize_types(channel_raw) or {}
+    caps = dict(global_max or {})
+    caps.update(chan.get("max") or {})
+    caps = {c: p for c, p in caps.items() if p < 100}   # 100% = no limit
+    spec = {}
+    if caps:
+        spec["max"] = caps
+    g = chan.get("graphics_max", global_graphics)
+    if g is not None and g < 100:
+        spec["graphics_max"] = g
+    if chan.get("host_ref") and chan.get("host"):
+        spec["host_ref"] = chan["host_ref"]
+        spec["host"] = chan["host"]
+    return spec or None
+
+
+# Motion codes whose only table rows belong to a diagram/comparison type: when
+# that type is banned the code needs another visual to be reachable at all.
+_FALLBACK_ROWS = {
+    "PU": ("SCN tall subject (a person head to toe, a tower, a staircase)",
+           "PU / PD", "the tilt reveals the height"),
+    "PD": ("SCN tall subject (a person head to toe, a tower, a staircase)",
+           "PU / PD", "the tilt reveals the height"),
+    "PV": ("SCN panoramic landscape or crowd", "PV",
+           "panoramic reveal across the whole scene"),
+    "PL": ("SCN environment", "PL / PR", "establishes space"),
+    "PR": ("SCN environment", "PL / PR", "establishes space"),
+}
+_ROW_RE = re.compile(r"^\| (SCN|CU|INF|CMP|PROC|HYB|OVR)\b[^|]*\|([^|]*)\|")
+
+
+def adapt_motion_table(text: str, spec, allowed=None) -> str:
+    """Make the brief's visual -> motion table agree with the type spec: rows
+    of a banned type (cap 0, or any diagram type when graphics_max is 0) are
+    removed, a motion code that thereby loses every row gets a plain-scene row
+    instead (so PU/PD, PV, PL/PR stay reachable), and rows of types that may
+    share the frame with the host / never do say so."""
+    spec = normalize_types(spec)
+    if not spec or "|---|" not in text:
+        return text
+    banned = {c for c, p in (spec.get("max") or {}).items() if p == 0}
+    if spec.get("graphics_max") == 0:
+        banned |= set(GRAPHIC_CODES)
+    host = spec.get("host") or {}
+    lines = text.split("\n")
+    kept, lost = [], set()
+    for line in lines:
+        m = _ROW_RE.match(line)
+        if m and m.group(1) in banned:
+            lost.update(c.strip() for c in m.group(2).split("/"))
+            continue
+        if m and m.group(1) in host and spec.get("host_ref"):
+            note = ("the host may share the frame" if host[m.group(1)]
+                    else "never with the host")
+            line = line.rstrip().rstrip("|").rstrip() + f" ({note}) |"
+        kept.append(line)
+    left = set()
+    for line in kept:
+        m = _ROW_RE.match(line)
+        if m:
+            left.update(c.strip() for c in m.group(2).split("/"))
+    extra = []
+    for code in sorted(lost - left):
+        row = _FALLBACK_ROWS.get(code)
+        if row and (allowed is None or code in allowed):
+            text_row = f"| {row[0]} | {row[1]} | {row[2]} |"
+            if text_row not in extra:
+                extra.append(text_row)
+    if extra:
+        last = max(i for i, ln in enumerate(kept) if _ROW_RE.match(ln))
+        kept[last + 1:last + 1] = extra
+    return "\n".join(kept)
+
+
+def types_text(spec) -> str:
+    """The prompt/check text for a type spec ('' when there is none)."""
+    spec = normalize_types(spec)
+    if not spec:
+        return ""
+    parts = []
+    for code, pct in (spec.get("max") or {}).items():
+        if pct == 0:
+            parts.append(f"{code} ({TYPE_CODES[code]}) is NEVER used on this "
+                         f"channel - not one shot.")
+        else:
+            parts.append(f"{code} ({TYPE_CODES[code]}) takes at most {pct}% "
+                         f"of all shots.")
+    if "graphics_max" in spec:
+        g = spec["graphics_max"]
+        names = "/".join(GRAPHIC_CODES)
+        parts.append(f"Diagrams and infographics ({names}) together are "
+                     + (f"NEVER used - every shot is a scene or close-up."
+                        if g == 0 else f"at most {g}% of all shots."))
+    host = spec.get("host") or {}
+    ref = spec.get("host_ref")
+    for code, pct in host.items():
+        if pct == 0:
+            parts.append(f"The host ({ref}) NEVER appears in {code} shots.")
+        elif pct == 100:
+            parts.append(f"The host ({ref}) appears in EVERY {code} shot.")
+        else:
+            lo, hi = max(0, pct - HOST_TOLERANCE), min(100, pct + HOST_TOLERANCE)
+            parts.append(f"The host ({ref}) appears in about {pct}% of the "
+                         f"{code} shots ({lo}-{hi}%).")
+    if not parts:
+        return ""
+    tail = (f" A shot shows the host only when its image entry lists "
+            f"\"{ref}\" in `refs`, and lists it whenever the host is in the "
+            f"frame." if ref and host else "")
+    return ("SHOT TYPE TARGETS (checked as hard faults): "
+            + " ".join(parts) + tail)
+
+
+def _resolve_motion(key, min_hold=None, max_hold=None,
                     default_max: float | None = None,
                     custom=None) -> MotionProfile:
     """The channel's effective profile: its motion preset, with the channel's
@@ -677,6 +877,17 @@ def resolve_profile(key, min_hold=None, max_hold=None,
             + (" and the shot carries motion — never on ST" if motion
                else "") + "; no shot exceeds [[MAX]]s.")
     return replace(base, min_hold=mn, max_hold=mx, slots=slots)
+
+
+def resolve_profile(key, min_hold=None, max_hold=None,
+                    default_max: float | None = None,
+                    custom=None, types=None) -> MotionProfile:
+    """The channel's effective profile: its motion preset, the channel's own
+    hold range (seconds) and its shot-type spec (`types`, see
+    normalize_types / effective_types). Nothing set = today's profile."""
+    prof = _resolve_motion(key, min_hold, max_hold, default_max, custom)
+    spec = normalize_types(types)
+    return replace(prof, types=spec) if spec else prof
 
 
 # ---- presentation (who is on screen, and when) -----------------------------

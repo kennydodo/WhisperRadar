@@ -457,6 +457,34 @@ SPEC: list[dict] = [
     },
 ]
 
+# Brief defaults: the motion preset and the per-shot-type caps every channel
+# inherits until it sets its own (My Channels > Planning brief).
+SPEC.append({
+    "key": "brief_motion_default", "type": "choice", "default": "standard",
+    "choices": list(briefs.MOTION_PRESETS),
+    "label": "Default motion preset",
+    "help": "The motion preset a channel uses until it picks its own "
+            "(standard = the usual limits: ST ~10%, no code above ~40%). A "
+            "channel's own preset, or its custom limits, always wins.",
+})
+SPEC.append({
+    "key": "brief_max_graphics", "type": "int", "default": 100,
+    "min": 0, "max": 100,
+    "label": "Max share of diagram / infographic shots (%)",
+    "help": "INF + CMP + PROC + HYB + OVR together - how much of the video may "
+            "be diagrams, infographics and comparisons instead of plain "
+            "scenes. 100 = no limit, 0 = none at all. Checked as a hard fault "
+            "on every shotlist; a channel can set its own.",
+})
+for _code, _what in briefs.TYPE_CODES.items():
+    SPEC.append({
+        "key": f"brief_max_{_code}", "type": "int", "default": 100,
+        "min": 0, "max": 100,
+        "label": f"Max share of {_code} shots (%)",
+        "help": f"{_code} = {_what}. The most that type may take of ALL "
+                f"shots: 100 = no limit, 0 = never used. Checked as a hard "
+                f"fault on every shotlist; a channel can set its own.",
+    })
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 
 # The settings page renders these groups in order; a key missing from every
@@ -469,6 +497,8 @@ GROUPS: list[tuple[str, list[str]]] = [
         "candidate_window_days", "topic_pick",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
+    ("Brief defaults", ["brief_motion_default", "brief_max_graphics"]
+     + [f"brief_max_{c}" for c in briefs.TYPE_CODES]),
     ("Script & shotlist", [
         "script_min_rating", "script_max_overlap", "script_hard_overlap",
         "script_max_attempts", "script_judge_provider",
@@ -707,7 +737,15 @@ def for_production(conn, prod) -> dict:
         # planning-brief profile (briefs.py): the channel's motion preset key
         # (None = standard) and its free-text presentation / narrator staging.
         # Per channel only - no global setting; nothing set = today's brief.
-        "brief_motion": row_get(own, "brief_motion") or None,
+        "brief_motion": (row_get(own, "brief_motion")
+                         or (glob["brief_motion_default"]
+                             if glob["brief_motion_default"] != "standard"
+                             else None)),
+        # shot-type caps: the global per-type caps, overridden per type by the
+        # channel's own; host-in-frame shares are per channel only
+        "brief_types": briefs.effective_types(
+            {c: glob[f"brief_max_{c}"] for c in briefs.TYPE_CODES},
+            row_get(own, "brief_types"), glob["brief_max_graphics"]),
         "brief_presentation": row_get(own, "brief_presentation") or "",
         # hold range (s) over the preset; None = the preset's / the global max
         "brief_min_hold": row_get(own, "brief_min_hold"),

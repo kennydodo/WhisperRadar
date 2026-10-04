@@ -3809,6 +3809,83 @@ MOTION_MAX_SHARE_OVERRIDES = briefs.MOTION_MAX_SHARE_OVERRIDES
 FRAGMENTATION_SHARE = 0.50
 
 
+def shotlist_type_faults(data: dict, profile) -> list[str]:
+    """Hard faults against the channel's shot-type spec (briefs.normalize_types):
+    a type over its cap (0% = never used) and the host-in-frame share per type.
+    A shot's type is the third part of its asset name (S01_04_INF_ZI.png); it
+    shows the host when its image entry lists the channel's host ref. Nothing
+    set = no faults."""
+    spec = getattr(profile, "types", None) if profile else None
+    if not spec:
+        return []
+    shots = [x for x in (data.get("shots") or []) if isinstance(x, dict)
+             and x.get("asset")]
+    if not shots:
+        return []
+    refs_by_file = {}
+    for img in (data.get("images") or []):
+        if isinstance(img, dict) and img.get("file"):
+            refs_by_file[str(img["file"])] = {
+                ref_name(r).lower() for r in (img.get("refs") or []) if r}
+    by_type: dict[str, list[str]] = {}
+    for x in shots:
+        parts = Path(str(x["asset"])).stem.split("_")
+        code = parts[-2].upper() if len(parts) >= 3 else ""
+        by_type.setdefault(code, []).append(str(x["asset"]))
+    total = len(shots)
+    faults: list[str] = []
+    for code, cap in (spec.get("max") or {}).items():
+        n = len(by_type.get(code, []))
+        if not n:
+            continue
+        if cap == 0:
+            faults.append(
+                f"{n} {code} shot(s) but {code} is never used on this "
+                f"channel: {', '.join(by_type[code][:4])}"
+                f"{' ...' if n > 4 else ''}")
+        elif total >= briefs.TYPE_CAP_MIN_PLAN and n * 100 > cap * total:
+            faults.append(
+                f"{code} is {n / total:.0%} of the shots ({n} of {total}); "
+                f"this channel allows at most {cap}%")
+    if "graphics_max" in spec:
+        g = spec["graphics_max"]
+        names = [f for c in briefs.GRAPHIC_CODES for f in by_type.get(c, [])]
+        n = len(names)
+        if n and (g == 0 or (total >= briefs.TYPE_CAP_MIN_PLAN
+                             and n * 100 > g * total)):
+            faults.append(
+                f"diagram/infographic shots ({'/'.join(briefs.GRAPHIC_CODES)}) "
+                f"are {n / total:.0%} of the shots ({n} of {total}); this "
+                f"channel allows "
+                + ("none" if g == 0 else f"at most {g}%"))
+    ref = str(spec.get("host_ref") or "").strip().lower()
+    for code, want in (spec.get("host") or {}).items():
+        files = by_type.get(code, [])
+        if not ref or not files:
+            continue
+        shown = [f for f in files if ref in refs_by_file.get(f, set())]
+        n, h = len(files), len(shown)
+        share = h * 100 / n
+        label = spec.get("host_ref")
+        if want == 0 and h:
+            faults.append(f"the host ({label}) is in {h} of {n} {code} shots "
+                          f"but must never appear in them: "
+                          f"{', '.join(shown[:4])}{' ...' if h > 4 else ''}")
+        elif want == 100 and h < n:
+            missing = [f for f in files if f not in shown]
+            faults.append(f"the host ({label}) must be in every {code} shot "
+                          f"but is missing from {n - h} of {n}: "
+                          f"{', '.join(missing[:4])}"
+                          f"{' ...' if len(missing) > 4 else ''}")
+        elif 0 < want < 100 and n >= briefs.TYPE_MIN_SHOTS \
+                and abs(share - want) > briefs.HOST_TOLERANCE:
+            faults.append(f"the host ({label}) is in {h} of {n} {code} shots "
+                          f"({share:.0f}%); this channel wants about {want}% "
+                          f"({max(0, want - briefs.HOST_TOLERANCE)}-"
+                          f"{min(100, want + briefs.HOST_TOLERANCE)}%)")
+    return faults
+
+
 def shotlist_pacing(data: dict, cues: list[dict],
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                     profile: "briefs.MotionProfile | None" = None
@@ -3989,6 +4066,8 @@ def shotlist_pacing(data: dict, cues: list[dict],
         faults.append(f"{one_cue} of {len(holds)} shots span a single cue - "
                       f"changing images more often than the ideas change is "
                       f"fragmentation; group the cues that develop one idea")
+    faults.extend(shotlist_type_faults(data, prof))
+    faults.extend(shotlist_type_faults(data, prof))
     # No count warning: the count is never fixed - if every hold is under the
     # maximum the plan is legal, however many images that takes.
     return faults, []

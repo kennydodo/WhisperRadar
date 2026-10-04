@@ -476,6 +476,45 @@
                 for this channel; the shotlist review enforces it.
               </span>
             </div>
+            {% set bt = ch['brief_types'] | typesjson %}
+            <input type="hidden" name="types_form" value="1">
+            <div class="custom-motion" style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px">
+              <div class="muted" style="font-size:12px; margin-bottom:6px">
+                <b>Diagrams, infographics and the host</b> - how much of the video each shot type may take
+                (percent of ALL shots; empty = the global default in Settings &gt; Brief defaults, 0 = never used).
+                The shotlist review treats a breach as a hard fault.
+              </div>
+              <div class="inline">
+                <label>diagrams + infographics together, max %
+                  <input type="number" min="0" max="100" step="1" name="type_max_graphics" style="width:80px"
+                         value="{{ (bt.get('graphics_max') if bt.get('graphics_max') is not none else '') }}"
+                         title="INF + CMP + PROC + HYB + OVR combined">
+                </label>
+                {% for code, what in brief_type_codes.items() %}
+                <label title="{{ what }}">{{ code }} max %
+                  <input type="number" min="0" max="100" step="1" name="type_max_{{ code }}" style="width:70px"
+                         value="{{ ((bt.get('max') or {}).get(code) if (bt.get('max') or {}).get(code) is not none else '') }}">
+                </label>
+                {% endfor %}
+              </div>
+              <div class="muted" style="font-size:12px; margin:8px 0 4px">
+                <b>Host in frame</b> - only for channels with an on-screen host. Name the host's reference, then set
+                what share of each type's shots show the host (0 = never, 100 = always, empty = no rule).
+                Leave the host reference empty and nothing about the host is checked.
+              </div>
+              <div class="inline">
+                <label>host reference name
+                  <input type="text" name="type_host_ref" style="width:150px" placeholder="e.g. CH_REIKO"
+                         value="{{ bt.get('host_ref') or '' }}">
+                </label>
+                {% for code, what in brief_type_codes.items() if code in ('INF', 'CMP', 'SCN', 'HYB', 'PROC') %}
+                <label title="{{ what }}">{{ code }} with host %
+                  <input type="number" min="0" max="100" step="1" name="type_host_{{ code }}" style="width:70px"
+                         value="{{ ((bt.get('host') or {}).get(code) if (bt.get('host') or {}).get(code) is not none else '') }}">
+                </label>
+                {% endfor %}
+              </div>
+            </div>
             <div class="inline" style="margin-top:8px">
               <label style="flex:1 1 90%">presentation - who is on screen, and when (optional)
                 <textarea name="brief_presentation" style="min-height:70px"

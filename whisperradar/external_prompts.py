@@ -446,7 +446,7 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
         eff.get("brief_motion"), eff.get("brief_min_hold"),
         eff.get("brief_max_hold"),
         default_max=eff["shotlist_max_hold_seconds"],
-        custom=eff.get("brief_custom"))
+        custom=eff.get("brief_custom"), types=eff.get("brief_types"))
     max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
     total_s = studio._srt_seconds(cues[-1]["end"])
     return {"srt_text": srt_text, "cues": cues, "profile": profile,
@@ -548,6 +548,9 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
                      f"or ZI outside {briefs.ZOOM_SPLIT[0]:.0%}-"
                      f"{briefs.ZOOM_SPLIT[1]:.0%} of the ZI+ZO shots, is a "
                      f"fault.")
+    kinds = briefs.types_text(profile.types)
+    if kinds:
+        lines.append(kinds)
     lines.append(
         f"FRAGMENTATION: more than {studio.FRAGMENTATION_SHARE:.0%} of "
         f"the shots spanning a single cue is a fault - images should change "
