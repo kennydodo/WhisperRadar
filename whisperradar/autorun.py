@@ -238,6 +238,18 @@ def _default_render_mode(cfg, prod) -> str:
     return mode
 
 
+def coverage_gap(pdir: Path) -> str | None:
+    """Why the saved shotlist does not cover the whole narration, or None when
+    every subtitle cue has a shot (or there is nothing to compare yet). A plan
+    that stops at cue 460 of 521 must never reach the paid images stage."""
+    rep = studio.shotlist_coverage_report(pdir)
+    if not rep or not rep["faults"]:
+        return None
+    return (f"the shotlist covers cues 1-{rep['covered_to']} of "
+            f"{rep['cues']}: {rep['faults'][0]} - fix or re-plan the "
+            f"shotlist, then Resume")
+
+
 def _missing_images(pdir: Path) -> list[str]:
     """Shotlist image files that have not been rendered yet.
 
@@ -1860,6 +1872,9 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
                 "detail": f"Whisper alignment ({cfg.whisper_model})"}
     if stage == "shots":
         if (pdir / "shotlist.json").exists():
+            gap = coverage_gap(pdir)
+            if gap:
+                return {"stage": stage, "action": "pause", "detail": gap}
             return {"stage": stage, "action": "skip",
                     "detail": "shotlist already exists"}
         if not studio.find_bible(pdir):
@@ -1904,6 +1919,9 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
             return {"stage": stage, "action": "pause",
                     "detail": "shotlist.json is missing - plan or save a "
                               "shotlist, then Resume"}
+        gap = coverage_gap(pdir)
+        if gap:
+            return {"stage": stage, "action": "pause", "detail": gap}
         missing = _missing_images(pdir)
         if not missing:
             return {"stage": stage, "action": "skip",

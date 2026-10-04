@@ -644,6 +644,9 @@
       </form>
 
     {% elif stage == "shots" %}
+      {% if coverage_gap %}
+      <div class="banner err" id="coveragegap">&#9888; Narration not fully covered: {{ coverage_gap }}</div>
+      {% endif %}
       <div class="muted" style="font-size:12px; margin-bottom:8px">
         Plan the shots with ImgToVideo's manifest-authoring brief: the LLM reads
         your full subtitles (narration is the source of truth - no image-count

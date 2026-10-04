@@ -2025,6 +2025,7 @@ def create_app(cfg) -> Flask:
             visual_style_text=visual_style_text,
             source_tr_text=source_tr_text,
             shotlist_text=shotlist_text, audio=audio, srt=srt,
+            coverage_gap=autorun.coverage_gap(pdir),
             has_research_notes=bool(_read_text(pdir / autorun.RESEARCH_NOTES_FILE).strip()),
             srt_text=srt_text, prompts_text=prompts_text, images=images,
             final=final, final_url=final_url,
@@ -2882,6 +2883,12 @@ def create_app(cfg) -> Flask:
             return _studio_url(
                 pid, error=f"Invalid JSON: {quote(str(exc)[:120])}")
         (pdir / "shotlist.json").write_text(text + "\n", encoding="utf-8")
+        # Saved, but not accepted as the finished stage while a narration cue
+        # has no shot (a plan cut off at cue 460 of 521 looks complete).
+        gap = autorun.coverage_gap(pdir)
+        if gap:
+            return _studio_url(pid, error="Shotlist saved but NOT accepted: "
+                               + gap)
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -2900,6 +2907,9 @@ def create_app(cfg) -> Flask:
         pdir = studio.prepare_project_folder(cfg, pid)
         if not (pdir / "shotlist.json").exists():
             return _studio_url(pid, error="Generate the shotlist first")
+        gap = autorun.coverage_gap(pdir)
+        if gap:
+            return _studio_url(pid, error="Not rendering: " + gap)
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:

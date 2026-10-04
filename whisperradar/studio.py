@@ -4040,19 +4040,12 @@ def declared_refs(data: dict) -> dict:
     return out
 
 
-def shotlist_structural_faults(data: dict, cue_count: int,
-                               limit: int = 12) -> list[str]:
-    """Objective faults in a shotlist - no LLM, so these must always be zero:
-    cue coverage, ordering, ranges, orphan assets, duplicate prompts, and the
-    reference registry (naming convention + every used name declared)."""
+def shotlist_cue_faults(shots: list[dict], cue_count: int,
+                        limit: int = 12) -> list[str]:
+    """Cue-coverage faults of a shotlist's shots: a bad range, a cue with no
+    shot (typically the tail of a plan that stopped early), cue numbers past
+    the SRT, shots out of order, overlapping ranges. No LLM - always exact."""
     faults: list[str] = []
-    shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
-    images = [i for i in (data.get("images") or []) if isinstance(i, dict)]
-    if not shots:
-        return ["no shots in the shotlist"]
-    if not images:
-        faults.append("no images in the shotlist")
-
     ranges: list[tuple[int, int]] = []
     for s in shots:
         rng = cue_range(s.get("cues"))
@@ -4087,6 +4080,44 @@ def shotlist_structural_faults(data: dict, cue_count: int,
                               f"({ranges[i - 1][0]}-{ranges[i - 1][1]} then "
                               f"{ranges[i][0]}-{ranges[i][1]})")
                 break
+    return faults
+
+
+def shotlist_coverage_report(pdir: Path) -> dict | None:
+    """{cues, covered_to, faults} for the production's saved shotlist against
+    its subtitles, or None when either is missing/unreadable. `faults` is
+    empty exactly when every cue 1..cues is covered once, in order."""
+    try:
+        data = json.loads((Path(pdir) / "shotlist.json")
+                          .read_text(encoding="utf-8"))
+        cues = parse_srt_cues((Path(pdir) / "subtitles.srt")
+                              .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not cues or not isinstance(data, dict):
+        return None
+    shots = [x for x in (data.get("shots") or []) if isinstance(x, dict)]
+    ends = [r[1] for x in shots if (r := cue_range(x.get("cues")))]
+    faults = shotlist_cue_faults(shots, len(cues)) if shots else \
+        ["no shots in the shotlist"]
+    return {"cues": len(cues), "covered_to": max(ends) if ends else 0,
+            "faults": faults}
+
+
+def shotlist_structural_faults(data: dict, cue_count: int,
+                               limit: int = 12) -> list[str]:
+    """Objective faults in a shotlist - no LLM, so these must always be zero:
+    cue coverage, ordering, ranges, orphan assets, duplicate prompts, and the
+    reference registry (naming convention + every used name declared)."""
+    faults: list[str] = []
+    shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
+    images = [i for i in (data.get("images") or []) if isinstance(i, dict)]
+    if not shots:
+        return ["no shots in the shotlist"]
+    if not images:
+        faults.append("no images in the shotlist")
+
+    faults.extend(shotlist_cue_faults(shots, cue_count, limit))
 
     names = {str(i.get("file")) for i in images if i.get("file")}
     orphans = sorted({str(s.get("asset")) for s in shots if s.get("asset")}

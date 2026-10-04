@@ -497,7 +497,10 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
     lines = [
         f"COVERAGE: every cue from 1 to {n_cues} is covered by exactly one "
         f"shot - no gaps, no overlaps, in narration order, and the last shot "
-        f"ends at cue {n_cues}.",
+        f"ends at cue {n_cues}. CHECK THIS FIRST: read the \"cues\" of the "
+        f"LAST shot - if it does not end at cue {n_cues}, the plan stopped "
+        f"early; report it as a fault and list every cue number after the "
+        f"last covered one.",
         "ASSETS: every shot's \"asset\" has a matching entry in "
         "\"images\" (by \"file\"); no two image prompts are identical.",
         f"MAXIMUM HOLD: no shot holds longer than {cap:g}s. A shot's hold "
