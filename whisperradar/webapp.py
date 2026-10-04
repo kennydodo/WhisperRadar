@@ -1093,21 +1093,23 @@ def create_app(cfg) -> Flask:
 
     @app.get("/my-channels/export")
     def my_channels_export():
-        """Download channel settings as JSON: one channel (?id=) or all."""
-        key = (request.args.get("id") or "").strip()
+        """Download channel settings as JSON: the channels picked with
+        repeated ?id= or, with none, all of them."""
+        keys = [k.strip() for k in request.args.getlist("id") if k.strip()]
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            doc = channel_io.export_channels(conn, key or None)
+            doc = channel_io.export_channels(conn, keys or None)
         finally:
             conn.close()
         if not doc["channels"]:
             return redirect("/my-channels?error=" + quote(
-                "Unknown channel" if key else "No channels to export"))
-        if key:
+                "Unknown channel" if keys else "No channels to export"))
+        if len(doc["channels"]) == 1:
             slug = _slugify(doc["channels"][0]["name"]) or "channel"
         else:
-            slug = "channels-" + time.strftime("%Y%m%d")
+            slug = (f"channels-{len(doc['channels'])}-"
+                    + time.strftime("%Y%m%d"))
         resp = make_response(json.dumps(doc, indent=2, ensure_ascii=False))
         resp.headers["Content-Type"] = "application/json; charset=utf-8"
         resp.headers["Content-Disposition"] = (
