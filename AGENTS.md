@@ -1495,18 +1495,18 @@ the images-stage form — persisting them per production is optional polish.
 
 ## Shot-type caps and host-in-frame (briefs.normalize_types)
 
-- Settings > **Brief defaults**: a default motion preset and a max share (%) for
-  each shot type (SCN, CU, INF, CMP, PROC, HYB, OVR) plus one combined cap for
-  all diagram/infographic types (INF+CMP+PROC+HYB+OVR). 100 = no limit, 0 = never.
-- My Channels > Planning brief: the same caps per channel (override the global
-  ones) and the **host in frame** rules. Host rules exist only when the channel
-  names its host's ref (e.g. CH_REIKO); then each type has a share of ITS shots
-  that must show the host (0 never, 100 always, +/-15 points otherwise). A shot
-  shows the host when its image entry lists that ref in `refs`.
-- Stored as JSON in `own_channels.brief_types`; `settings.for_production` merges
-  global + channel into `eff["brief_types"]`; `briefs.resolve_profile(types=)`
-  carries it on the MotionProfile. Nothing set = today's brief, byte for byte.
+- Per channel only (My Channels > Planning brief; there is deliberately no
+  global setting): a max share (%) for each shot type (SCN, CU, INF, CMP, PROC,
+  HYB, OVR) plus one combined cap for all diagram/infographic types
+  (INF+CMP+PROC+HYB+OVR). Empty = no limit, 0 = never used.
+- **Host in frame** rules exist only when the channel names its host's ref
+  (e.g. CH_REIKO); then each type has a share of ITS shots that must show the
+  host (0 never, 100 always, +/-15 points otherwise). A shot shows the host when
+  its image entry lists that ref in `refs`.
+- Stored as JSON in `own_channels.brief_types`; `settings.for_production` puts
+  it in `eff["brief_types"]`; `briefs.resolve_profile(types=)` carries it on the
+  MotionProfile. Nothing set = today's brief, byte for byte.
 - Enforced as hard faults in `studio.shotlist_type_faults` (called from
-  `shotlist_pacing`), and written into the planner/judge prompts. The brief's
+  `shotlist_pacing`) and written into the planner/judge prompts. The brief's
   visual->motion table follows the caps (`briefs.adapt_motion_table`): rows of a
   banned type are dropped and PU/PD, PV, PL/PR get a plain-scene row instead.

@@ -1,5 +1,4 @@
-"""Shot-type caps (diagrams/infographics) and host-in-frame shares: global
-defaults, per-channel overrides, the planner/judge text, and the hard-fault gate.
+"""Shot-type caps (diagrams/infographics) and host-in-frame shares per channel: the planner/judge text, and the hard-fault gate.
 
 Run: python -m unittest discover -s tests
 """
@@ -180,28 +179,12 @@ class SettingsAndChannelTests(unittest.TestCase):
         self.assertIsNone(e["brief_types"])
         self.assertIsNone(e["brief_motion"])
 
-    def test_global_defaults_flow_to_the_production(self):
-        settings.save(self.conn, {"brief_max_INF": "10",
-                                  "brief_max_graphics": "25",
-                                  "brief_motion_default": "static"})
-        e = self.eff()
-        self.assertEqual(e["brief_types"],
-                         {"max": {"INF": 10}, "graphics_max": 25})
-        self.assertEqual(e["brief_motion"], "static")
-
-    def test_channel_overrides_global(self):
-        settings.save(self.conn, {"brief_max_INF": "10"})
+    def test_channel_spec_reaches_the_production(self):
         db.update_own_channel(self.conn, self.chan, brief_types=json.dumps(
             {"max": {"INF": 40}, "host_ref": "CH_H", "host": {"INF": 100}}))
         e = self.eff()
         self.assertEqual(e["brief_types"]["max"], {"INF": 40})
         self.assertEqual(e["brief_types"]["host"], {"INF": 100})
-
-    def test_settings_page_has_the_brief_defaults_tab(self):
-        html = create_app(self.cfg).test_client().get("/settings").get_data(
-            as_text=True)
-        self.assertIn("Brief defaults", html)
-        self.assertIn("brief_max_graphics", html)
 
     def test_channels_page_shows_the_saved_values(self):
         db.update_own_channel(self.conn, self.chan, brief_types=json.dumps(
