@@ -33,6 +33,9 @@
   button.ghost { background: transparent; border: 1px solid var(--border);
                  color: var(--muted); padding: 4px 10px; font-weight: 500; }
   button.ghost:hover { color: var(--red); border-color: var(--red); filter: none; }
+  a.btn.ghost { background: transparent; border: 1px solid var(--border);
+                color: var(--muted); text-decoration: none; }
+  a.btn.ghost:hover { color: var(--accent); border-color: var(--accent); filter: none; }
   input, select, textarea { background: #0c0e12; color: var(--text);
                   border: 1px solid var(--border); border-radius: 7px;
                   padding: 7px 10px; font-size: 13px; font-family: inherit; }
@@ -111,6 +114,16 @@
              style="flex:0 0 160px">
       <button type="submit">Create channel</button>
     </form>
+    <form class="inline" method="post" action="/my-channels/import"
+          enctype="multipart/form-data" style="margin-top:12px; gap:8px; align-items:center">
+      <span class="muted" style="font-size:12px"><b>Save / load settings</b> (JSON):</span>
+      {% if own_channels %}<a class="btn ghost" href="/my-channels/export"
+         title="All channels, every setting except the Renderly link">download all</a>{% endif %}
+      <input type="file" name="channels_file" accept=".json,application/json" required>
+      <label class="muted" style="font-size:12px"><input type="checkbox" name="overwrite" value="1">
+        replace channels that already exist (same name)</label>
+      <button type="submit">Import</button>
+    </form>
     <table style="margin-top:12px">
       <tr>
         <th>Name</th><th>Genre</th><th>Handle</th><th>State</th>
@@ -156,6 +169,8 @@
             <button type="submit" class="ghost"
                     style="color:var(--accent);border-color:var(--accent)">sync</button>
           </form>
+          <a class="btn ghost" href="/my-channels/export?id={{ ch['id'] }}"
+             title="Save this channel's settings as a JSON file">save</a>
           <form class="row" method="post" action="/my-channels/remove" style="display:inline"
                 onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch['name'] }} from WhisperRadar? The Renderly channel is left untouched.')">
             <input type="hidden" name="id" value="{{ ch['id'] }}">

@@ -34,7 +34,7 @@ from flask import (
 )
 
 from . import external_prompts
-from . import (ai33, autorun, briefs, db, pipeline, producer, scheduler,
+from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, scheduler,
                services, settings, studio)
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
@@ -1090,6 +1090,62 @@ def create_app(cfg) -> Flask:
             brief_starters=briefs.PRESENTATION_STARTERS,
             brief_type_codes=briefs.TYPE_CODES,
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.get("/my-channels/export")
+    def my_channels_export():
+        """Download channel settings as JSON: one channel (?id=) or all."""
+        key = (request.args.get("id") or "").strip()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            doc = channel_io.export_channels(conn, key or None)
+        finally:
+            conn.close()
+        if not doc["channels"]:
+            return redirect("/my-channels?error=" + quote(
+                "Unknown channel" if key else "No channels to export"))
+        if key:
+            slug = _slugify(doc["channels"][0]["name"]) or "channel"
+        else:
+            slug = "channels-" + time.strftime("%Y%m%d")
+        resp = make_response(json.dumps(doc, indent=2, ensure_ascii=False))
+        resp.headers["Content-Type"] = "application/json; charset=utf-8"
+        resp.headers["Content-Disposition"] = (
+            f'attachment; filename="whisperradar-{slug}.json"')
+        return resp
+
+    @app.post("/my-channels/import")
+    def my_channels_import():
+        """Load channel settings from an exported JSON file. A channel is
+        matched by name; existing ones are kept unless 'overwrite' is ticked."""
+        f = request.files.get("channels_file")
+        if f is None or not f.filename:
+            return redirect("/my-channels?error=" + quote("Choose a JSON file"))
+        try:
+            payload = json.loads(f.read().decode("utf-8-sig"))
+        except (ValueError, UnicodeDecodeError):
+            return redirect("/my-channels?error=" + quote(
+                "That file is not valid JSON"))
+        overwrite = request.form.get("overwrite") in ("1", "on", "true")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            res = channel_io.import_channels(conn, cfg, payload, overwrite)
+        finally:
+            conn.close()
+        if res["error"]:
+            return redirect("/my-channels?error=" + quote(res["error"]))
+        parts = []
+        for label, key in (("created", "created"), ("updated", "updated"),
+                           ("kept as they were", "skipped")):
+            if res[key]:
+                parts.append(f"{label}: {', '.join(res[key])}")
+        msg = "Import done - " + ("; ".join(parts) or "nothing to import")
+        if res["notes"]:
+            msg += " | " + " | ".join(res["notes"][:6])
+            if len(res["notes"]) > 6:
+                msg += f" | +{len(res['notes']) - 6} more"
+        return redirect("/my-channels?msg=" + quote(msg))
 
     @app.post("/my-channels/add")
     def my_channels_add():

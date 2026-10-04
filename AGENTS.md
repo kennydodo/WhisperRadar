@@ -670,6 +670,7 @@ per-channel setting on the settings page.
 Two pages, both on the normal dashboard port (no extra service):
 - `/settings` - global Auto Run criteria only.
 - `/my-channels` - the channels the USER publishes on, with add/edit/remove
+- Channel settings save/load: `channel_io.py` + `/my-channels/export[?id=]` (JSON download) and `/my-channels/import` (upload). Matched by NAME; existing channels are kept unless 'replace' is ticked, and a replace from a real export puts unlisted settings back to inherit. `id` and the Renderly link (`renderly_channel_*`) are never exported or imported; unknown watched channels, providers and invalid values are dropped and reported. New channel field => add it to `db._OWN_CHANNEL_FIELDS` and it travels automatically (add a type rule in `channel_io` if it is not text).
   and a per-channel Renderly sync.
 
 `channels` (Dashboard, unchanged) = competitor/source channels you monitor for
