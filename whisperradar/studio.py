@@ -1268,7 +1268,7 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
         # is never adopted silently.
         log.info("FlowBatch: no stored Flow project for production %s - a new "
                  "one will be created before rendering", pid)
-        from . import db, settings as _settings
+        from . import db, settings
 
         try:
             conn = db.connect(cfg.db_path)

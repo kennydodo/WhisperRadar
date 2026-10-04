@@ -255,5 +255,39 @@ class ImagesStageRequiresNewProject(unittest.TestCase):
             self.assertIn("NEW Flow project", str(ctx.exception))
 
 
+class NoStoredProjectWarningTests(unittest.TestCase):
+    """prepare_flowbatch_job clears a production's old warning when no Flow
+    project is stored (it used to hit a NameError that was swallowed)."""
+
+    def test_warning_is_cleared_without_a_stored_project(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from whisperradar import db, studio
+        from whisperradar.config import load_config
+        with tempfile.TemporaryDirectory() as d:
+            cfg = load_config(Path(__file__).resolve().parents[1]
+                              / "config.yaml")
+            cfg.db_path = Path(d) / "wr.db"
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            pid = db.create_production(conn, "t")
+            db.update_production(conn, pid, warning="old project warning")
+            conn.close()
+            pid_dir = Path(d) / "p"
+            pid_dir.mkdir()
+            (pid_dir / "shotlist.json").write_text(json.dumps(
+                {"style": "s", "images": [
+                    {"file": "A01_ZI.png", "prompt": "x"}]}),
+                encoding="utf-8")
+            studio.prepare_flowbatch_job(cfg, pid_dir, pid)
+            conn = db.connect(cfg.db_path)
+            try:
+                prod = db.get_production(conn, pid)
+                self.assertFalse(prod["warning"])
+            finally:
+                conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
