@@ -3,8 +3,8 @@
 A batch that stopped on consecutive failures often left its already-generated
 images sitting in the Flow project gallery, never downloaded - re-running the
 prompts paid twice. Recovery is MANUAL only, dispatches by the production's
-own engine (flowbatch -> the FlowBatch CLI's recover command; renderly+flow ->
-the Flow Driver's /api/recover; renderly+api -> refused: no gallery), adopts
+own engine (flowbatch, or renderly+flow -> the FlowBatch CLI's recover
+command; renderly+api -> refused: no gallery), adopts
 ONLY files still missing, and NEVER generates. These tests stub every
 subprocess/HTTP call - no browser, no paid API, no network.
 
@@ -114,80 +114,6 @@ class FlowbatchRecoverTests(unittest.TestCase):
         stream.assert_not_called()
 
 
-class FlowdriverRecoverTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.cfg = load_config(ROOT / "config.yaml")
-        self.pdir = Path(self.tmp.name) / "prod"
-        (self.pdir / "images").mkdir(parents=True)
-        (self.pdir / "shotlist.json").write_text(
-            json.dumps(SHOTLIST), encoding="utf-8")
-        self.driver = Path(self.tmp.name) / "ext"
-        (self.driver / "node_modules" / "playwright").mkdir(parents=True)
-        (self.driver / "flow.js").write_text("", encoding="utf-8")
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_recover_posts_the_missing_list_and_adopts_the_files(self):
-        calls = []
-
-        def fake_api(cfg, path, method="GET", body=None, timeout=8):
-            calls.append((path, body))
-            img = self.pdir / "images"
-            (img / "S01_01.png").write_bytes(b"gallery")
-            (img / "S02_01.png").write_bytes(b"gallery")
-            report = Path(body["reportPath"])
-            report.write_text(json.dumps(
-                {"schemaVersion": 1, "recovered": [{"name": "S01_01"},
-                                                   {"name": "S02_01"}]}),
-                encoding="utf-8")
-            return {"started": True, "mode": "recover"}
-
-        statuses = [{"running": False, "log": ["  saved x (recovered, via label)"],
-                     "exitCode": 0}]
-
-        with mock.patch.object(studio, "flow_driver_dir",
-                               lambda c: self.driver), \
-                mock.patch.object(studio, "flow_project_url_for",
-                                  lambda c, p, o=None: ("https://flow.google.com/project/x", "production")), \
-                mock.patch.object(studio, "flow_service_status",
-                                  side_effect=lambda c, timeout=4: statuses[0]), \
-                mock.patch.object(studio, "_driver_api", fake_api), \
-                mock.patch("time.sleep", lambda s: None):
-            result = studio.run_flowdriver_recover(self.cfg, self.pdir, 42)
-
-        (path, body), = [(p, b) for p, b in calls if b is not None]
-        self.assertEqual(path, "/api/recover")
-        self.assertEqual(sorted(body["only"].split(",")),
-                         ["S01_01.png", "S02_01.png"])
-        self.assertEqual(body["outPath"], str(self.pdir / "images"))
-        self.assertEqual(result, {"recovered": ["S01_01.png", "S02_01.png"],
-                                  "still_missing": []})
-
-    def test_a_running_batch_is_not_disturbed(self):
-        with mock.patch.object(studio, "flow_driver_dir",
-                               lambda c: self.driver), \
-                mock.patch.object(studio, "flow_service_status",
-                                  lambda c, timeout=4: {"running": True}), \
-                mock.patch.object(studio, "_driver_api") as api:
-            with self.assertRaises(RuntimeError) as ctx:
-                studio.run_flowdriver_recover(self.cfg, self.pdir, 42)
-        self.assertIn("already running", str(ctx.exception))
-        api.assert_not_called()
-
-    def test_without_a_project_url_recovery_refuses(self):
-        with mock.patch.object(studio, "flow_driver_dir",
-                               lambda c: self.driver), \
-                mock.patch.object(studio, "flow_service_status",
-                                  lambda c, timeout=4: {"running": False}), \
-                mock.patch.object(studio, "flow_project_url_for",
-                                  lambda c, p, o=None: (None, "none")):
-            with self.assertRaises(RuntimeError) as ctx:
-                studio.run_flowdriver_recover(self.cfg, self.pdir, 42)
-        self.assertIn("Flow project URL", str(ctx.exception))
-
-
 class RecoverDispatchTests(unittest.TestCase):
     """recover_images() must honor the SAME engine/mode the images stage
     would use, record an honest step, and touch no other engine."""
@@ -231,13 +157,11 @@ class RecoverDispatchTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_flowbatch_engine_never_calls_the_driver(self):
+    def test_flowbatch_engine_recovers_via_flowbatch(self):
         self._set(default_engine="flowbatch")
-        boom = lambda *a, **k: self.fail("flow mode runner must not run")
         with mock.patch.object(studio, "run_flowbatch_recover",
                                return_value={"recovered": ["S01_01.png"],
                                              "still_missing": []}) as fig, \
-                mock.patch.object(studio, "run_flowdriver_recover", boom), \
                 mock.patch.object(services.MANAGER, "ensure"), \
                 mock.patch.object(services.MANAGER, "release"):
             result = autorun.recover_images(self.cfg, self.pid)
@@ -247,18 +171,16 @@ class RecoverDispatchTests(unittest.TestCase):
         self.assertEqual(steps[0]["status"], "done")
         self.assertIn("gallery recovery via FlowBatch", steps[0]["detail"])
 
-    def test_renderly_flow_engine_never_calls_flowbatch(self):
+    def test_renderly_flow_mode_recovers_via_flowbatch(self):
         self._set(render_mode="flow")
-        boom = lambda *a, **k: self.fail("flowbatch runner must not run")
-        with mock.patch.object(studio, "run_flowdriver_recover",
+        with mock.patch.object(studio, "run_flowbatch_recover",
                                return_value={"recovered": [],
                                              "still_missing": ["S01_01.png",
-                                                               "S02_01.png"]}) as drv, \
-                mock.patch.object(studio, "run_flowbatch_recover", boom), \
+                                                               "S02_01.png"]}) as fig, \
                 mock.patch.object(services.MANAGER, "ensure"), \
                 mock.patch.object(services.MANAGER, "release"):
             autorun.recover_images(self.cfg, self.pid)
-        drv.assert_called_once()
+        fig.assert_called_once()
         steps = self._steps()
         # A partial recovery must NOT mark the images stage complete.
         self.assertEqual(steps[0]["status"], "failed")
@@ -266,12 +188,10 @@ class RecoverDispatchTests(unittest.TestCase):
 
     def test_renderly_api_engine_is_refused(self):
         self._set(render_mode="api")
-        with mock.patch.object(studio, "run_flowdriver_recover") as drv, \
-                mock.patch.object(studio, "run_flowbatch_recover") as fig:
+        with mock.patch.object(studio, "run_flowbatch_recover") as fig:
             with self.assertRaises(RuntimeError) as ctx:
                 autorun.recover_images(self.cfg, self.pid)
         self.assertIn("no gallery to recover from", str(ctx.exception))
-        drv.assert_not_called()
         fig.assert_not_called()
 
 
@@ -286,18 +206,14 @@ class MissingImagesHelperTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_exact_name_missing_list_and_count_parity(self):
+    def test_exact_name_missing_list(self):
         self.assertEqual(studio.shotlist_missing_images(self.pdir),
                          ["S01_01.png", "S02_01.png"])
         (self.pdir / "images" / "S01_01.png").write_bytes(b"x")
         self.assertEqual(studio.shotlist_missing_images(self.pdir),
                          ["S02_01.png"])
-        self.assertEqual(studio.missing_flow_images(None, self.pdir), 1)
         (self.pdir / "images" / "S02_01.png").write_bytes(b"x")
         self.assertEqual(studio.shotlist_missing_images(self.pdir), [])
-        with self.assertRaises(RuntimeError) as ctx:
-            studio.missing_flow_images(None, self.pdir)
-        self.assertIn("nothing to render", str(ctx.exception))
 
 
 if __name__ == "__main__":

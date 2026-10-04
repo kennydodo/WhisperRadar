@@ -1,0 +1,261 @@
+{
+  "_readme": [
+    "Each key maps to an ORDERED list of Playwright selectors. The first one that",
+    "resolves to a visible (or existing) element wins, so put the most specific",
+    "selector first and broad fallbacks last.",
+    "Any Playwright selector engine works: CSS, role=, text=, :has-text(), etc.",
+    "Flow (flow.google.com) is an Angular Material app with NO data-testid",
+    "attributes; it labels controls with aria-label and stable CSS classes, so",
+    "those are the most reliable handles. Everything below was verified against",
+    "the live signed-in app on 2026-09-21.",
+    "Keys starting with _ are ignored by the loader."
+  ],
+
+  "consentDismiss": [
+    "div:has-text(\"uses cookies from Google\") button",
+    "button:text-is(\"Hide\")",
+    "button:has-text('Hide')",
+    "[aria-label='Dismiss banner']"
+  ],
+
+  "signedIn": [
+    "a[href*='myaccount.google.com']",
+    "[aria-label*='Google Account' i]:not([aria-label*='Help Center' i])"
+  ],
+
+  "signedOut": [
+    "text=/^sign in$/i",
+    "button:has-text('Sign in')",
+    "a:has-text('Sign in')",
+    "text=/sign in with google/i"
+  ],
+
+  "promptBox": [
+    "flow-rich-text-editor .ProseMirror[contenteditable='true']",
+    "div.base-prompt-box div[contenteditable='true']",
+    "div[contenteditable='true']"
+  ],
+
+  "projectTitle": [
+    "input.editable-text-input",
+    "flow-editable-text input",
+    "[aria-label='Editable text']"
+  ],
+
+  "newProjectButton": [
+    "button[aria-label='Start new session']",
+    "button:has-text('New project')",
+    "text=/new project/i"
+  ],
+
+  "projectCard": [
+    "[data-testid='project-card']",
+    "a[href*='/project/']",
+    "mat-card:has(img)"
+  ],
+
+  "agentToggle": [
+    "flow-agent-mode-toggle-chip button",
+    "button.agent-mode-chip-checked",
+    "button.agent-mode-chip"
+  ],
+
+  "projectSettingsButton": [
+    "button[aria-label='Settings']",
+    "button[aria-label*='project settings' i]"
+  ],
+
+  "projectModelButton": [
+    "button[aria-label='Image generation default model']"
+  ],
+
+  "projectAspectGroup": [
+    "flow-toggles[aria-label='Image generation default aspect ratio']"
+  ],
+
+  "projectOutputGroup": [
+    "flow-toggles[aria-label='Image generation default output count']"
+  ],
+
+  "projectSettingsSave": [
+    "button:text-is('Save')",
+    "button:has-text('Save')"
+  ],
+
+  "projectSettingsClose": [
+    "button[aria-label='Back']",
+    "button[aria-label='Close']",
+    "button[aria-label*='close' i]"
+  ],
+
+  "settingsTriggerButton": [
+    "button.settings-trigger-button",
+    "button[aria-label='Settings trigger']"
+  ],
+
+  "settingsOverlay": [
+    "flow-prompt-box-settings.settings-content-overlay",
+    "div.settings-content-overlay"
+  ],
+
+  "modeGroup": [
+    "flow-toggles[aria-label='Mode']"
+  ],
+
+  "modeImageOption": [
+    "flow-toggles[aria-label='Mode'] button:has-text('Image')"
+  ],
+
+  "modeVideoOption": [
+    "flow-toggles[aria-label='Mode'] button:has-text('Video')"
+  ],
+
+  "aspectRatioGroup": [
+    "flow-toggles[aria-label='Aspect ratio']"
+  ],
+
+  "outputCountGroup": [
+    "flow-toggles[aria-label='Output count']"
+  ],
+
+  "modelFamilyButton": [
+    "button[aria-label='Select model family']",
+    "div.settings-content-overlay button:has-text('Nano Banana')",
+    "div.settings-content-overlay button:has-text('Omni')"
+  ],
+
+  "modelMenu": [
+    "div[role='menu']",
+    "[role='menuitem']"
+  ],
+
+  "addIngredientsButton": [
+    "button[aria-label='Add ingredients to the prompt box']",
+    "button.add-menu-trigger"
+  ],
+
+  "addMediaOption": [
+    "button:has-text('Upload media')",
+    "[role='menuitem']:has-text('Upload media')",
+    "[role='menuitem']:has-text('Upload')",
+    "[role='menuitem']:has-text('Media')"
+  ],
+
+  "fileInput": [
+    "input[type='file']"
+  ],
+
+  "assetPickerDialog": [
+    "flow-add-menu-asset-list",
+    "input.search-input[aria-label='Search assets']",
+    ".asset-list-viewport",
+    ".cdk-overlay-container flow-add-menu-popover-content"
+  ],
+
+  "assetPickerSearch": [
+    "input.search-input[aria-label='Search assets']",
+    "input[placeholder='Search assets']",
+    ".cdk-overlay-container input[aria-label='Search assets']"
+  ],
+
+  "assetPickerItem": [
+    "button.asset-item[role='option']",
+    ".cdk-overlay-container button[role='option'].asset-item",
+    "flow-add-menu-asset-item"
+  ],
+
+  "assetPickerItemTitle": [
+    "span.asset-title",
+    ".asset-text .asset-title"
+  ],
+
+  "addToPromptButton": [
+    "button:has-text('Add to prompt')",
+    "flow-asset-picker button:has-text('Add')"
+  ],
+
+  "promptIngredientBar": [
+    "flow-ingredient-bar",
+    "div.prompt-ingredient-bar",
+    "div.prompt-top-row.has-ingredient-bar"
+  ],
+
+  "promptReferenceChip": [
+    "flow-image-ingredient-chip button.chip-container",
+    "button[aria-label='Ingredient']",
+    "flow-ingredient-bar .chip-container",
+    "div.prompt-ingredient-bar img.chip-image"
+  ],
+
+  "promptReferenceRemoveButton": [
+    "flow-image-ingredient-chip div.hover-icon-overlay",
+    "flow-image-ingredient-chip mat-icon.hover-icon",
+    "flow-image-ingredient-chip button.chip-container div.hover-icon-overlay"
+  ],
+
+  "clearPromptButton": [
+    "button[aria-label='Clear prompt']",
+    "button.clear-button"
+  ],
+
+  "generateButton": [
+    "button[aria-label='Start generation']",
+    "button.generate-icon-button",
+    "button:has-text('Generate')"
+  ],
+
+  "generatingIndicator": [
+    "button[aria-label='Start generation'].mat-mdc-button-disabled",
+    "button.generate-icon-button.mat-mdc-button-disabled",
+    "[role='progressbar']"
+  ],
+
+  "assetTile": [
+    "flow-grid-tile-container",
+    "flow-tile-container",
+    "flow-image-tile",
+    "div.tile-row flow-grid-tile-container"
+  ],
+
+  "assetTileImage": [
+    "img.image",
+    "img"
+  ],
+
+  "tileRedoButton": [
+    "button[aria-label='Reuse prompt']",
+    "button[aria-label*='reuse prompt' i]"
+  ],
+
+  "overlayPane": [
+    ".cdk-overlay-container > .cdk-overlay-popover",
+    ".cdk-overlay-container > .cdk-overlay-connected-position-bounding-box",
+    ".cdk-overlay-container > .cdk-overlay-backdrop"
+  ],
+
+  "assetMenuButton": [
+    "button[aria-label='More options']",
+    "button[aria-label*='more options' i]"
+  ],
+
+  "downloadMenuItem": [
+    "[role='menuitem']:has-text('Download')",
+    "text=/^Download$/"
+  ],
+
+  "generationRefusal": [
+    "text=/unusual activity/i",
+    "text=/You have not been charged/i",
+    "main :text-is('Failed')",
+    "text=/generation failed/i"
+  ],
+
+  "errorBanner": [
+    "[data-testid='error-banner']",
+    "[role='alert']",
+    "text=/something went wrong/i",
+    "text=/try again/i",
+    "text=/out of credits/i",
+    "text=/limit reached/i"
+  ]
+}

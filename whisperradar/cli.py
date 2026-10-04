@@ -18,8 +18,7 @@ log = logging.getLogger("whisperradar")
 def _utf8_console() -> None:
     """Make stdout/stderr survive non-ASCII output.
 
-    Stage logs carry text from other tools (the Flow Driver prints warnings
-    with U+26A0, FlowBatch prints box drawing), and a Windows console is
+    Stage logs carry text from other tools (FlowBatch prints box drawing), and a Windows console is
     cp1252 by default, so a plain print() raises UnicodeEncodeError and kills
     the stage. Replacing unencodable characters is always better than dying.
     """
@@ -479,7 +478,7 @@ def cmd_serve(cfg, args):
     # real in the spawned child, which Werkzeug marks by setting
     # WERKZEUG_RUN_MAIN=true in its environment. create_app() is not just a
     # Flask() call - it starts background threads (the Auto Run scheduler
-    # ticker, the renderly/flow-driver autostart), so calling it in the outer
+    # ticker, the renderly autostart), so calling it in the outer
     # copy too would start a SECOND, unsynchronized scheduler thread with its
     # own in-memory "is a job running" flag that the real one can't see -
     # both could decide to fire off Auto Run at the same time against the

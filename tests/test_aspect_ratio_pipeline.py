@@ -9,7 +9,7 @@ Covers the 2026-09 aspect work in WhisperRadar without any network or spend:
   FlowBatch      prepare_flowbatch_job writes per-item aspectRatio (PU/PD =
                  1:1); every other motion keeps the job default 16:9.
   Quota fallback run_imagegen's exit 3 becomes RenderlyQuotaExhausted, and
-                 autorun._run_images finishes the rest through the Flow Driver.
+                 autorun._run_images finishes the rest through FlowBatch.
 
 The expected values below mirror the source tables exactly:
   ImgToVideo.Cli/Program.cs      `canvas` / `aspect`
@@ -178,10 +178,10 @@ class RenderlyExportBatchTests(unittest.TestCase):
 
 class RenderlySplitTests(unittest.TestCase):
     """autorun._run_images, engine=renderly/mode=api: the API is only ever
-    called for the PL/PR slice (motion_filter=("PL", "PR")); the Flow Driver
+    called for the PL/PR slice (motion_filter=("PL", "PR")); FlowBatch
     always runs afterward for the rest of the shotlist, quota wall or not."""
 
-    def _run(self, motions, fake_run_imagegen, fake_run_imagegen_flow,
+    def _run(self, motions, fake_run_imagegen, fake_run_imagegen_flowbatch,
              label):
         with tempfile.TemporaryDirectory() as d:
             cfg = _cfg(Path(d) / "wr.db")
@@ -212,8 +212,8 @@ class RenderlySplitTests(unittest.TestCase):
                                       lambda *a, **k: []), \
                     mock.patch.object(studio, "run_imagegen",
                                       fake_run_imagegen), \
-                    mock.patch.object(studio, "run_imagegen_flow",
-                                      fake_run_imagegen_flow):
+                    mock.patch.object(studio, "run_imagegen_flowbatch",
+                                      fake_run_imagegen_flowbatch):
                 autorun._run_images(cfg, pid, mode="api", engine="renderly",
                                     log=lambda m: None)
 
@@ -231,11 +231,11 @@ class RenderlySplitTests(unittest.TestCase):
             seen["api_filter"] = motion_filter
             return 2  # the PL/PR pair in MOTIONS
 
-        def fake_run_imagegen_flow(cfg, pdir, **kwargs):
+        def fake_run_imagegen_flowbatch(cfg, pdir, pid, **kwargs):
             seen["flow"] += 1
             return 6  # everything else in MOTIONS (ST/ZI/ZO/PU/PD/PV)
 
-        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flow,
+        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flowbatch,
                            "TEST aspect split - normal")
 
         self.assertEqual(seen["api_filter"], ("PL", "PR"))
@@ -251,11 +251,11 @@ class RenderlySplitTests(unittest.TestCase):
             self.assertEqual(motion_filter, ("PL", "PR"))
             raise studio.RenderlyQuotaExhausted(2, "quota exceeded")
 
-        def fake_run_imagegen_flow(cfg, pdir, **kwargs):
+        def fake_run_imagegen_flowbatch(cfg, pdir, pid, **kwargs):
             seen["flow"] += 1
             return 3
 
-        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flow,
+        detail = self._run(MOTIONS, fake_run_imagegen, fake_run_imagegen_flowbatch,
                            "TEST aspect split - quota")
 
         self.assertEqual(seen["flow"], 1)
@@ -267,7 +267,7 @@ class RenderlySplitTests(unittest.TestCase):
                               motion_filter=None):
             raise RuntimeError("ImageGen failed (exit 1): boom")
 
-        def fake_run_imagegen_flow(cfg, pdir, **kwargs):
+        def fake_run_imagegen_flowbatch(cfg, pdir, pid, **kwargs):
             self.fail("must not fall back on a plain failure")
 
         with tempfile.TemporaryDirectory() as d:
@@ -299,11 +299,54 @@ class RenderlySplitTests(unittest.TestCase):
                                       lambda *a, **k: []), \
                     mock.patch.object(studio, "run_imagegen",
                                       fake_run_imagegen), \
-                    mock.patch.object(studio, "run_imagegen_flow",
-                                      fake_run_imagegen_flow):
+                    mock.patch.object(studio, "run_imagegen_flowbatch",
+                                      fake_run_imagegen_flowbatch):
                 with self.assertRaises(RuntimeError):
                     autorun._run_images(cfg, pid, mode="api", engine="renderly",
                                         log=lambda m: None)
+
+
+class EngineResolutionTests(unittest.TestCase):
+    """effective_engine / services_for / _default_render_mode after the Flow
+    Driver was retired: 'flow' mode always means FlowBatch."""
+
+    def test_effective_engine_truth_table(self):
+        for engine, mode, want in (
+                ("flowbatch", "api", "flowbatch"),
+                ("flowbatch", "flow", "flowbatch"),
+                ("flowbatch", None, "flowbatch"),
+                ("renderly", "flow", "flowbatch"),
+                ("renderly", "api", "renderly"),
+                ("renderly", "auto", "renderly"),
+                ("renderly", None, "renderly"),
+                (None, "api", "renderly"),
+                (None, "flow", "flowbatch")):
+            self.assertEqual(studio.effective_engine(engine, mode), want,
+                             (engine, mode))
+
+    def test_services_for_table(self):
+        self.assertEqual(services.services_for("flowbatch", "api"), [])
+        self.assertEqual(services.services_for("flowbatch", "flow"), [])
+        self.assertEqual(services.services_for("renderly", "flow"), [])
+        self.assertEqual(services.services_for("renderly", "api"),
+                         ["renderly"])
+
+    def test_auto_render_mode_means_the_api(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = _cfg(Path(d) / "wr.db")
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            pid = db.create_production(conn, "TEST auto mode")
+            db.set_setting(conn, "default_render_mode", "auto")
+            conn.commit()
+            conn.close()
+            prod = autorun._get_prod(cfg, pid)
+            with mock.patch.object(autorun, "_connect",
+                                   lambda c: db.init_db(
+                                       db.connect(c.db_path)) or
+                                   db.connect(c.db_path)):
+                self.assertEqual(autorun._default_render_mode(cfg, prod),
+                                 "api")
 
 
 class AspectMatrixDocumentation(unittest.TestCase):

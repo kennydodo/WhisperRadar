@@ -1,23 +1,22 @@
 """Per-stage service management for the images stage.
 
-The images stage is the only stage that needs external services (Renderly's
-backend for imports/upscaling, and the Flow Driver for Flow automation). Once
-a batch finishes those processes are dead weight - the Flow Driver keeps a
-Chrome profile warm and Renderly holds its backend open - so Auto Run should
-stop what it started.
+The only external service the images stage needs is the Renderly API (it now
+lives in engines\\renderly-api: PL/PR wide shots, imports and upscaling).
+FlowBatch is a CLI that starts and stops its own browser, so it is not a
+service. Once a batch finishes the API process is dead weight, so Auto Run
+should stop what it started.
 
 Rules, deliberately conservative:
 - A service that already answers is treated as YOURS: it is never tracked and
-  never stopped, so manually started Renderly/Flow Driver windows are safe.
+  never stopped, so a manually started API window is safe.
 - Only processes this module spawned are stopped, and only when
   `services_managed` is on in Settings.
-- Renderly started through its own start.bat (which opens console windows for
-  the backend + frontend) is marked unmanaged, because killing it would close
-  windows you may be using.
 """
 
+import importlib.util
 import logging
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -34,7 +33,7 @@ def _up(url: str, timeout: int = 4) -> bool:
 
     A 4xx/5xx still proves the service is up, and urllib RAISES HTTPError for
     those, so an error response must not be read as "down" - that mistake made
-    the manager start a second Flow Driver, which died with EADDRINUSE and
+    the manager start a second API process, which died with EADDRINUSE and
     failed the images stage.
     """
     try:
@@ -50,26 +49,13 @@ def _backend_url(cfg) -> str:
     return (cfg.renderly_url or "http://127.0.0.1:8022").rstrip("/") + "/api/channels"
 
 
-def _driver_url(cfg) -> str:
-    # the driver exposes /api/status (server.js), not /status
-    return (cfg.flow_driver_url or "http://127.0.0.1:8030").rstrip("/") + "/api/status"
-
-
 def _renderly_dir(cfg) -> Path | None:
-    """The Renderly checkout, derived from the Flow Driver folder."""
-    d = getattr(cfg, "flow_driver_dir", None)
+    """The Renderly web API folder (engines\\renderly-api in this repo)."""
+    d = getattr(cfg, "renderly_api_dir", None)
     if not d:
         return None
-    root = Path(d).expanduser().parent
-    return root if root.exists() else None
-
-
-def _driver_dir(cfg) -> Path | None:
-    d = getattr(cfg, "flow_driver_dir", None)
-    if not d:
-        return None
-    p = Path(d).expanduser()
-    return p if p.exists() else None
+    root = Path(d).expanduser()
+    return root if (root / "main.py").exists() else None
 
 
 class ServiceManager:
@@ -83,14 +69,12 @@ class ServiceManager:
         """Live probes - only use where a small wait is acceptable."""
         return {
             "renderly": _up(_backend_url(cfg)),
-            "flow-driver": _up(_driver_url(cfg)),
             "managed": [n for n in self._started if self._alive(n)],
         }
 
     def _refresh_probe_cache(self, cfg) -> None:
         try:
-            data = {"renderly": _up(_backend_url(cfg)),
-                    "flow-driver": _up(_driver_url(cfg))}
+            data = {"renderly": _up(_backend_url(cfg))}
         except Exception as exc:  # noqa: BLE001
             log.warning("service probe failed: %s", exc)
             data = {}
@@ -118,7 +102,6 @@ class ServiceManager:
                 self._refresh_in_background(cfg)
         managed = [n for n in self._started if self._alive(n)]
         return {"renderly": data.get("renderly"),
-                "flow-driver": data.get("flow-driver"),
                 "known": known, "managed": managed}
 
     def _alive(self, name: str) -> bool:
@@ -137,11 +120,6 @@ class ServiceManager:
                 log_fn("Renderly backend is already running (not managed)")
                 return True
             return self._start_renderly(cfg, log_fn)
-        if name == "flow-driver":
-            if _up(_driver_url(cfg)):
-                log_fn("Flow Driver is already running (not managed)")
-                return True
-            return self._start_driver(cfg, log_fn)
         raise ValueError(f"unknown service '{name}'")
 
     def stop(self, cfg, name: str, log_fn=None, force: bool = False) -> bool:
@@ -171,7 +149,7 @@ class ServiceManager:
     def _kill_by_name(self, cfg, name: str, log_fn) -> bool:
         """Force-stop a service we did not start (the pid is unknown, so this
         matches on the listening port)."""
-        url = _backend_url(cfg) if name == "renderly" else _driver_url(cfg)
+        url = _backend_url(cfg)
         port = url.rsplit(":", 1)[-1].split("/")[0]
         if not hasattr(subprocess, "CREATE_NO_WINDOW"):
             log_fn(f"force stop is Windows-only - use your own tool for {name}")
@@ -216,11 +194,6 @@ class ServiceManager:
                     continue
                 if self._start_renderly(cfg, log_fn):
                     started.append(name)
-            elif name == "flow-driver":
-                if _up(_driver_url(cfg)):
-                    continue
-                if self._start_driver(cfg, log_fn):
-                    started.append(name)
         return started
 
     def _start_renderly(self, cfg, log_fn) -> bool:
@@ -229,30 +202,19 @@ class ServiceManager:
             log_fn("Renderly folder not found - images will keep Flow's "
                    "native size (no import/upscale)")
             return False
-        backend = root / "backend"
-        venv_python = backend / ".venv" / "Scripts" / "python.exe"
         port = (cfg.renderly_url or "http://127.0.0.1:8022").rsplit(":", 1)[-1]
-        if venv_python.exists():
-            log_fn("starting the Renderly backend (managed)...")
-            self._spawn("renderly",
-                        [str(venv_python), "-m", "uvicorn", "main:app",
-                         "--port", port],
-                        backend, logfile="whisperradar-backend.log")
-        else:
-            start_bat = root / "start.bat"
-            if not start_bat.exists():
-                log_fn("Renderly backend is not running and cannot be started")
-                return False
-            log_fn("starting Renderly via start.bat (NOT managed - its "
-                   "windows stay open)...")
-            subprocess.Popen(["cmd", "/c", str(start_bat)], cwd=str(root),
-                             creationflags=getattr(subprocess,
-                                                   "CREATE_NEW_CONSOLE", 0))
-            for _ in range(READY_TIMEOUT):
-                if _up(_backend_url(cfg)):
-                    break
-                time.sleep(1)
-            return False  # unmanaged: never stopped by release()
+        # its own .venv when one exists, otherwise the Python running
+        # WhisperRadar (the API's packages are in requirements.txt)
+        own = root / ".venv" / "Scripts" / "python.exe"
+        python = str(own) if own.exists() else sys.executable
+        if not own.exists() and importlib.util.find_spec("fastapi") is None:
+            log_fn("The Renderly API needs its packages - run setup.cmd "
+                   "(pip install -r requirements.txt) once")
+            return False
+        log_fn("starting the Renderly backend (managed)...")
+        self._spawn("renderly",
+                    [python, "-m", "uvicorn", "main:app", "--port", port],
+                    root, logfile="whisperradar-backend.log")
         for _ in range(READY_TIMEOUT):
             if _up(_backend_url(cfg)):
                 log_fn("Renderly backend is up")
@@ -260,26 +222,6 @@ class ServiceManager:
             time.sleep(1)
         log_fn("Renderly backend did not come up in time")
         return False
-
-    def _start_driver(self, cfg, log_fn) -> bool:
-        d = _driver_dir(cfg)
-        if d is None or not (d / "server.js").exists():
-            raise RuntimeError(
-                "Flow Driver service is not running and studio.flow_driver_dir "
-                "is not configured")
-        if not (d / "node_modules" / "playwright").exists():
-            raise RuntimeError(
-                f"Playwright not installed - run: cd {d} && npm install")
-        log_fn("starting the Flow Driver service (managed)...")
-        self._spawn("flow-driver", ["node", "server.js"], d,
-                    logfile="driver-service.log")
-        for _ in range(40):
-            if _up(_driver_url(cfg)):
-                log_fn("Flow Driver is up")
-                return True
-            time.sleep(0.5)
-        raise RuntimeError("Flow Driver service did not come up on "
-                           + (cfg.flow_driver_url or "http://127.0.0.1:8030"))
 
     # ---------------------------------------------------------- stop ----
 
@@ -313,5 +255,5 @@ def services_for(engine: str, mode: str) -> list[str]:
     if engine == "flowbatch":
         return []          # a CLI: it starts and stops its own browser
     if mode == "flow":
-        return ["renderly", "flow-driver"]
-    return ["renderly"]    # Renderly API needs the backend for Gemini
+        return []          # all shots on FlowBatch: no API involved
+    return ["renderly"]    # PL/PR go through the API (Gemini)

@@ -1,7 +1,6 @@
 """The studio job log must outlive the server process.
 
-A stopped batch's real reason used to exist only in the in-memory deque: the
-Flow Driver keeps its batch log in RAM (and its service was stopped), and a
+A stopped batch's real reason used to exist only in the in-memory deque: a
 WhisperRadar restart (dev reloader or manual) wiped sjob.log - production
 12's image batch stopped with 57 of 64 images missing and left no trace of
 why anywhere on disk. _TeeLog mirrors every line into data\\logs\\studio.log

@@ -7,3 +7,12 @@ nvidia-cudnn-cu12>=9,<10
 PyYAML>=6.0
 Flask>=3.0
 waitress>=3.0
+
+# Renderly web API (engines\renderly-api)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+python-dotenv>=1.0
+python-multipart>=0.0.9
+google-genai>=1.0
+Pillow>=10

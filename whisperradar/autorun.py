@@ -223,8 +223,8 @@ def _effective(cfg, pid: int) -> dict:
 def _default_render_mode(cfg, prod) -> str:
     """Resolve the image source to 'flow' or 'api': the production's saved
     choice wins, then its own channel's default, then the global setting.
-    'auto' (the global default) means Flow when its driver is installed,
-    otherwise the Renderly API."""
+    'auto' (the global default) means the Renderly API. 'flow' means every
+    shot on Flow through FlowBatch (see studio.effective_engine)."""
     if prod is not None and settings.row_get(prod, "render_mode"):
         mode = prod["render_mode"]
     else:
@@ -234,7 +234,7 @@ def _default_render_mode(cfg, prod) -> str:
         finally:
             conn.close()
     if mode not in ("flow", "api"):
-        mode = "flow" if studio.flow_driver_ready(cfg) else "api"
+        mode = "api"
     return mode
 
 
@@ -1347,16 +1347,12 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     # production's real shots. Mirrors the engine branch in _run_images() and
     # the channel/upscale resolution _stage_params() does for the images
     # stage.
-    if eff["engine"] == "flowbatch":
+    if studio.effective_engine(
+            eff["engine"],
+            _default_render_mode(cfg, _get_prod(cfg, pid))) == "flowbatch":
         result = studio.run_flowbatch_refs(cfg, pdir, pid, todo, log=log,
                                            cancel=cancel,
                                            upscale=_upscale_for(eff))
-    elif _default_render_mode(cfg, _get_prod(cfg, pid)) == "flow":
-        # renderly + flow: refs come from the Flow Driver too, so a flow
-        # channel never touches the :8022 API - one engine does everything.
-        result = studio.run_renderly_refs(cfg, pdir, pid, todo,
-                                          upscale=_upscale_for(eff),
-                                          log=log, cancel=cancel, flow=True)
     else:
         renderly_channel = studio.resolve_renderly_channel(
             cfg, eff["own_channel"], create=True)
@@ -1445,11 +1441,9 @@ def _pause(seconds: int, cancel=None) -> None:
 
 def _run_images(cfg, pid: int, mode: str | None = None,
                 engine: str | None = None,
-                flow_channel: str = "whisperradar",
-                flow_project: str = "", flow_upscale: int | None = None,
-                flow_master: str = "", renderly_channel=None,
+                flow_upscale: int | None = None,
+                renderly_channel=None,
                 flow_project_url: str | None = None,
-                flow_local_upscale: bool = False,
                 log=None, cancel=None) -> None:
     t0 = time.monotonic()
     pdir = studio.prepare_project_folder(cfg, pid)
@@ -1463,6 +1457,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
     if mode not in ("api", "flow"):
         mode = "api"
+    engine = studio.effective_engine(engine, mode)
     if log is None:
         log = lambda m: None
     # Flow native: both engines download the stills at Flow's own size and,
@@ -1476,7 +1471,6 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         flow_upscale = 0       # never fall back to the engine's own tier
     if upscale_after_download:
         flow_upscale = 0
-        flow_local_upscale = True   # the Flow Driver never imports to Renderly
     conn = _connect(cfg)
     try:
         db.update_production(conn, pid, render_mode=mode)
@@ -1499,34 +1493,18 @@ def _run_images(cfg, pid: int, mode: str | None = None,
             try:
                 if engine == "flowbatch":
                     # FlowBatch drives Flow itself and upscales on the way
-                    # out, so the Renderly channel/project and the Flow Driver
-                    # do not apply.
+                    # out, so the Renderly channel/project do not apply.
                     count = studio.run_imagegen_flowbatch(
                         cfg, pdir, pid, upscale=flow_upscale, log=log,
                         cancel=cancel, project_url=flow_project_url)
                     source = "FlowBatch"
-                elif mode == "flow":
-                    # per-image refs come from the shotlist's own refs registry,
-                    # which flow.js resolves itself; the production refs\ folder
-                    # is just the library it resolves names against - attaching
-                    # every file globally would blow past Flow's 3-ingredient
-                    # limit
-                    count = studio.run_imagegen_flow(
-                        cfg, pdir, channel=flow_channel, project=flow_project,
-                        upscale=flow_upscale, master=flow_master, log=log,
-                        cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
-                    source = "Flow Driver (Google Flow)"
                 else:
-                    # Renderly engine, API mode: only PL/PR are worth a paid
-                    # API call (they need a canvas wider than 16:9, and the
-                    # API is the only path that can request 21:9). Everything
-                    # else in the shotlist - ST/ZI/ZO/PU/PD/PV - gets the same
-                    # or a strictly worse aspect from the API than it already
-                    # gets for free through Renderly's own Flow Driver, so it
-                    # is never sent to the API at all; one engine ("renderly")
-                    # still does the whole batch, it just always splits the
-                    # work between its two free/paid halves rather than
-                    # mixing only on quota failure.
+                    # Renderly engine: only PL/PR are worth a paid API call
+                    # (they need a canvas wider than 16:9, and the API is the
+                    # only path that can request 21:9). Everything else in
+                    # the shotlist is rendered by FlowBatch, which skips what
+                    # is already on disk, so it also picks up whatever the
+                    # API pass could not do.
                     api_count = 0
                     quota_hit = False
                     try:
@@ -1536,30 +1514,23 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                     except studio.RenderlyQuotaExhausted as exc:
                         # Even the PL/PR slice hit a quota/billing wall.
                         # api_count carries whatever it got through before
-                        # stopping; the Flow Driver pass below still picks up
-                        # the rest of PL/PR (as 16:9 push-ins, same tradeoff
-                        # as always) plus every other motion code.
+                        # stopping; FlowBatch below renders the rest of PL/PR
+                        # (as 16:9 push-ins, same tradeoff as always) plus
+                        # every other motion code.
                         api_count = exc.generated
                         quota_hit = True
                         log(f"[auto-run] images: {exc} - the remaining PL/PR "
-                            "shots will fall through to the Flow Driver too")
-                    # Whatever the API pass above left untouched - the rest of
-                    # PL/PR on a quota failure, and ST/ZI/ZO/PU/PD/PV always -
-                    # goes through the Flow Driver. It reads shotlist.json
-                    # itself and skips any file already on disk, so this is
-                    # safe to call even when the API pass finished everything
-                    # it was asked for (it just finds nothing left to do).
-                    flow_count = studio.run_imagegen_flow(
-                        cfg, pdir, channel=flow_channel, project=flow_project,
-                        upscale=flow_upscale, master=flow_master, log=log,
-                        cancel=cancel, pid=pid, local_upscale=flow_local_upscale)
+                            "shots will go to FlowBatch too")
+                    flow_count = studio.run_imagegen_flowbatch(
+                        cfg, pdir, pid, upscale=flow_upscale, log=log,
+                        cancel=cancel, project_url=flow_project_url)
                     count = api_count + flow_count
                     if quota_hit:
-                        source = "Renderly API (PL/PR, quota-limited) + Flow Driver (rest)"
+                        source = "Renderly API (PL/PR, quota-limited) + FlowBatch (rest)"
                     elif api_count:
-                        source = "Renderly API (PL/PR) + Flow Driver (rest)"
+                        source = "Renderly API (PL/PR) + FlowBatch (rest)"
                     else:
-                        source = "Flow Driver"
+                        source = "FlowBatch"
                 break
             except RuntimeError as exc:
                 # Flow gave up on some cards ("still busy"). Pause, then resume:
@@ -1613,9 +1584,8 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     Never automatic and never part of the pipeline (_RUNNERS) - only the
     IMAGES stage button triggers it, and it NEVER generates anything.
     Dispatch by the SAME engine/mode the images stage would use
-    (_stage_params' resolution): flowbatch drives the FlowBatch CLI's
-    recover command; renderly+flow drives the Flow Driver's /api/recover;
-    renderly+api is refused (the Renderly API stores its results itself,
+    (_stage_params' resolution): flowbatch (and renderly+flow) drives the
+    FlowBatch CLI's recover command; renderly+api is refused (the Renderly API stores its results itself,
     there is no gallery to recover from). A partial adoption is honest in
     the step: done only when nothing is left missing. Returns
     {recovered, still_missing} as shotlist file names."""
@@ -1626,11 +1596,11 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
         raise _Paused("shotlist.json is missing - plan or save a shotlist "
                       "first")
     eff = _effective(cfg, pid)
-    engine = eff["engine"]
     mode = _default_render_mode(cfg, _get_prod(cfg, pid))
     if mode not in ("api", "flow"):
         mode = "api"
-    if engine == "renderly" and mode == "api":
+    engine = studio.effective_engine(eff["engine"], mode)
+    if engine == "renderly":
         raise RuntimeError("The Renderly API has no gallery to recover from "
                            "- its results live in Renderly itself. Switch the "
                            "image source to Flow, or the engine to "
@@ -1648,15 +1618,10 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     try:
         services.MANAGER.ensure(cfg, services.services_for(engine, mode),
                                 log_fn=log)
-        if engine == "flowbatch":
-            result = studio.run_flowbatch_recover(
-                cfg, pdir, pid,
-                upscale=_upscale_for(eff), log=log, cancel=cancel)
-            source = "FlowBatch"
-        else:
-            result = studio.run_flowdriver_recover(cfg, pdir, pid, log=log,
-                                                   cancel=cancel)
-            source = "Flow Driver"
+        result = studio.run_flowbatch_recover(
+            cfg, pdir, pid,
+            upscale=_upscale_for(eff), log=log, cancel=cancel)
+        source = "FlowBatch"
     finally:
         services.MANAGER.release(cfg, managed, log_fn=log)
     upscale_note = ""
@@ -1935,23 +1900,17 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
         prod = _get_prod(cfg, pid)
         mode = _default_render_mode(cfg, prod)
         eff = _effective(cfg, pid)
-        if eff["engine"] == "flowbatch":
-            refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
-                    if (pdir / "refs").exists() else 0)
+        refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
+                if (pdir / "refs").exists() else 0)
+        if studio.effective_engine(eff["engine"], mode) == "flowbatch":
             detail = (f"{len(missing)} missing image(s) via FlowBatch "
                       f"({_upscale_text(eff)}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
-        elif mode == "flow":
-            refs = (len([p for p in (pdir / "refs").glob("*") if p.is_file()])
-                    if (pdir / "refs").exists() else 0)
-            detail = (f"{len(missing)} missing image(s) via Flow Driver "
-                      f"(channel {eff['renderly_channel_name']}, default "
-                      f"project, {_upscale_text(eff)}"
-                      + (f", {refs} ref image(s)" if refs else "") + ")")
         else:
-            detail = (f"{len(missing)} missing image(s) via Renderly API "
-                      f"(channel {eff['renderly_channel_name']}, "
-                      f"{_upscale_text(eff)})")
+            detail = (f"{len(missing)} missing image(s): PL/PR via Renderly "
+                      f"API (channel {eff['renderly_channel_name']}), the "
+                      f"rest via FlowBatch ({_upscale_text(eff)}"
+                      + (f", {refs} ref image(s)" if refs else "") + ")")
         return {"stage": stage, "action": "run", "detail": detail}
     if stage == "merge":
         if studio.merge_done(pdir):
@@ -1994,37 +1953,15 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
     if stage == "images":
         eff = _effective(cfg, pid)
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
-        params = {"mode": mode, "engine": eff["engine"], "flow_project": "",
-                  "flow_upscale": _upscale_for(eff), "log": log, "cancel": cancel}
-        if eff["engine"] == "flowbatch":
-            pass  # drives Flow itself; no Renderly channel/project involved
-        elif mode == "flow":
-            # Renderly engine + flow mode (Google Flow via the Flow Driver):
-            # never import/upload the results into a Renderly channel - so
-            # there is no channel to auto-create here either (that earlier
-            # fix is superseded; nothing is ever sent for Flow-mode autorun).
-            # Renderly's own upscale needs an imported generation's id, which
-            # is exactly the round-trip being avoided, so instead the Flow
-            # Driver is told to upscale the raw Flow output itself by calling
-            # Renderly's own backend upscaler module directly (Real-ESRGAN,
-            # no import, no HTTP round-trip) - see extension-v2's
-            # --local-upscale flag, wired through
-            # run_imagegen_flow(local_upscale=True). This is the manual
-            # images-stage UI's own choice to make, not autorun's - it keeps
-            # using a real Renderly channel by default.
-            params["flow_channel"] = ""
-            params["flow_local_upscale"] = True
-            # flow_upscale (set above from eff["upscale"]) still selects the
-            # tier for that local engine.
-        else:
+        engine = studio.effective_engine(eff["engine"], mode)
+        params = {"mode": mode, "engine": engine,
+                  "flow_upscale": _upscale_for(eff), "log": log,
+                  "cancel": cancel}
+        if engine != "flowbatch":
+            # FlowBatch drives Flow itself (no Renderly channel involved);
+            # the Renderly engine sends PL/PR to the API through a channel.
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
-            # The split's Flow Driver half imports into the SAME Renderly
-            # channel as the API half so it also upscales through Renderly. The
-            # driver matches channels by NAME, not id, so the default
-            # "whisperradar" would fail on any production whose channel is
-            # named after the production.
-            params["flow_channel"] = studio._own_channel_name(eff["own_channel"])
         return params
     return {}
 

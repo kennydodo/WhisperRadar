@@ -766,23 +766,19 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
     return len(new)
 
 
-def flow_driver_dir(cfg) -> Path | None:
-    """The Renderly extension-v2 folder (Playwright driver for Google Flow)."""
-    if not cfg.flow_driver_dir:
-        return None
-    p = Path(cfg.flow_driver_dir)
-    return p if p.is_absolute() else cfg.base_dir / p
-
-
-def flow_driver_ready(cfg) -> bool:
-    d = flow_driver_dir(cfg)
-    return bool(d) and (d / "flow.js").exists() \
-        and (d / "node_modules" / "playwright").exists()
+def effective_engine(engine: str | None, mode: str | None) -> str:
+    """The image engine a production really uses. Render mode "flow" means
+    every shot on Google Flow through FlowBatch (the retired Flow Driver's
+    job), whichever engine was picked; the Renderly engine otherwise renders
+    PL/PR through its API and everything else through FlowBatch."""
+    if engine == "flowbatch" or mode == "flow":
+        return "flowbatch"
+    return "renderly"
 
 
 def shotlist_missing_images(pid_dir: Path) -> list[str]:
     """Shotlist image file names that are still absent from images\\ (exact
-    file-name comparison, the same rule missing_flow_images uses)."""
+    file-name comparison)."""
     shotlist_path = pid_dir / "shotlist.json"
     if not shotlist_path.exists():
         raise RuntimeError("Generate the shotlist first")
@@ -793,25 +789,6 @@ def shotlist_missing_images(pid_dir: Path) -> list[str]:
     return [i["file"] for i in data.get("images", [])
             if isinstance(i, dict) and i.get("file") and i.get("prompt")
             and i["file"] not in existing]
-
-
-def missing_flow_images(cfg, pid_dir: Path) -> int:
-    """How many shotlist images are still missing from images\\.
-
-    The Flow Driver reads shotlist.json itself (config `shotlistPath`) and
-    resolves per-image ref names on its own, so there is nothing to prepare
-    here - this used to also write a `flow_batch.json` that nothing consumed
-    (flow.js only ever saw shotlist.json). flow.js has no skip-existing, so the
-    caller needs the count to know how much is left."""
-    todo = shotlist_missing_images(pid_dir)
-    if not todo:
-        raise RuntimeError(
-            "All shotlist images already exist - nothing to render")
-    return len(todo)
-
-
-def flow_service_url(cfg) -> str:
-    return (cfg.flow_driver_url or "http://127.0.0.1:8030").rstrip("/")
 
 
 # ------------------------------------------- FlowBatch (2nd engine) --
@@ -1030,7 +1007,7 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                        log=None, cancel=None, upscale: int | None = None) -> dict:
     """Render the missing reference images with FlowBatch, then place them
     so BOTH engines can use them: as files in the production's refs\\ (the
-    Renderly driver resolves names there) and with the shotlist's registry
+    Renderly API resolves names there) and with the shotlist's registry
     path filled in (so FlowBatch's prepare uploads them by name into the
     Flow project gallery).
 
@@ -1137,8 +1114,7 @@ def _update_ref_paths(pdir: Path, names: list[str]) -> None:
 
 
 def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
-                      upscale=None, log=None, cancel=None,
-                      flow: bool = False) -> dict:
+                      upscale=None, log=None, cancel=None) -> dict:
     """Render the missing reference images through the SAME Renderly image
     engine run_imagegen() uses for the production's real shots - so a
     Renderly channel never has to depend on FlowBatch (or a Flow login) just
@@ -1187,16 +1163,8 @@ def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
             json.dumps(job, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
         _safe_log(log, f"refs: generating {len(refs)} reference image(s) via "
-                       f"{'the Flow Driver' if flow else 'Renderly'}")
-        if flow:
-            # renderly + flow: make the refs through the Flow Driver (Google
-            # Flow), NOT the :8022 API - one engine does everything.
-            # local_upscale=True keeps the Renderly channel out of it (refs are
-            # inputs, not results to import), so no API call at all.
-            run_imagegen_flow(cfg, tmp_dir, pid=pid, upscale=upscale,
-                              local_upscale=True, log=log, cancel=cancel)
-        else:
-            run_imagegen(cfg, tmp_dir, channel=channel, upscale=upscale)
+                       "Renderly")
+        run_imagegen(cfg, tmp_dir, channel=channel, upscale=upscale)
         out_dir = tmp_dir / "images"
         refs_dir = pdir / "refs"
         refs_dir.mkdir(parents=True, exist_ok=True)
@@ -1314,8 +1282,8 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
                 conn.close()
         except Exception:  # noqa: BLE001
             pass
-    # The shotlist's `style` is a Flow "master prompt" for the Renderly
-    # driver; here the per-image prompts already carry the art direction and
+    # The shotlist's `style` used to be a Flow "master prompt"; here the
+    # per-image prompts already carry the art direction and
     # the style alone can exceed Flow's limit, so it is only sent when the
     # whole prompt would still fit.
     style = (data.get("style") or "").strip()
@@ -1498,9 +1466,7 @@ def _safe_log(log, message) -> None:
 
 
 FLOW_PREPARE_REPORT = "flow_prepare.json"
-FLOW_DRIVER_PREPARE_REPORT = "flow_driver_prepare.json"
 FLOW_RECOVER_REPORT = "flowbatch_recover.json"
-FLOW_DRIVER_RECOVER_REPORT = "flow_driver_recover.json"
 
 
 def _read_json_retry(path: Path, attempts: int = 3, delay: float = 1.5):
@@ -1648,38 +1614,6 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
             encoding="utf-8")
 
 
-def _flowdriver_prepare_call(cfg, pid_dir: Path, log, flow_project: str) -> dict:
-    """One Flow Driver /api/prepare call: POST, wait for the run to finish, read
-    the schema-1 report. An explicit empty flow_project means CREATE a new one."""
-    report_path = pid_dir / FLOW_DRIVER_PREPARE_REPORT
-    try:
-        report_path.unlink()
-    except OSError:
-        pass
-    body = {"shotlistPath": str(pid_dir / "shotlist.json"),
-            "reportPath": str(report_path),
-            "flowProject": flow_project or ""}
-    from . import chrome_profile
-    chrome_profile.apply(cfg, "flow_driver", log)   # Efficiency mode off
-    try:
-        _driver_api(cfg, "/api/prepare", method="POST", body=body, timeout=20)
-    except Exception as exc:  # noqa: BLE001 - never block a batch
-        _safe_log(log, f"Flow Driver prepare could not start: {exc}")
-        return {}
-    status: dict = {}
-    deadline = time.monotonic() + 1800
-    while time.monotonic() < deadline:
-        status = flow_service_status(cfg) or {}
-        if not status.get("running"):
-            break
-        time.sleep(2)
-    for line in (status.get("log") or []):
-        if isinstance(line, str) and line.strip().startswith("FLOW_PROJECT_URL="):
-            _safe_log(log, line.strip())
-    report = _read_json_retry(report_path)
-    return report if isinstance(report, dict) else {}
-
-
 def _usable_flow_project(report) -> str:
     """The projectUrl from a prepare report, or "" when it is missing or a dead
     page - Flow redirects a deleted (or other-account) project to
@@ -1704,72 +1638,6 @@ def _strip_job_project_url(job_path: Path) -> None:
             json.dumps(job, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     except OSError:
         pass
-
-
-def run_flowdriver_prepare(cfg, pid_dir: Path, pid: int,
-                           project_url: str | None = None, log=None) -> dict:
-    """Call the Flow Driver's prepare endpoint - the Renderly half of the frozen
-    handshake. It opens or creates the production's Flow project and gets its
-    references into the project gallery WITHOUT generating, then writes the same
-    schema-1 report as FlowBatch.
-
-    When the stored project is gone (Flow answers .../404?reason=project, e.g.
-    it was deleted or the driver now signs in as a different account) the
-    handshake comes back empty - so prepare is called a SECOND time with no
-    project URL, which makes it create a fresh project. Preparation must never
-    block a batch: a failure returns {} and generation proceeds."""
-    log = log or (lambda m: None)
-    url, source = flow_project_url_for(cfg, pid, project_url)
-    if url:
-        _safe_log(log, f"Flow Driver: Flow project from {source}")
-    report = _flowdriver_prepare_call(cfg, pid_dir, log, url)
-    if _usable_flow_project(report):
-        return report
-    if not url:
-        _safe_log(log, "Flow Driver prepare wrote no usable report - "
-                       "continuing with the stored project URL")
-        return report
-    _safe_log(log, "Flow Driver: the stored Flow project is not usable - "
-                   "asking prepare to create a new one")
-    report = _flowdriver_prepare_call(cfg, pid_dir, log, "")
-    if not _usable_flow_project(report):
-        _safe_log(log, "Flow Driver prepare could not create a Flow project - "
-                       "continuing with the stored project URL")
-    return report
-
-
-def _apply_flowdriver_report(cfg, pid: int, report: dict, log=None) -> None:
-    """Persist the Flow project prepare reported, and say which references are
-    NOT in the project gallery (the driver uploads them itself on generate)."""
-    from . import db
-
-    log = log or (lambda m: None)
-    if not report:
-        return
-    url = (report.get("projectUrl") or "").strip() or None
-    project_id = (report.get("projectId") or "").strip() or None
-    if not url:
-        return
-    try:
-        conn = db.connect(cfg.db_path)
-        db.init_db(conn)
-        try:
-            if db.get_production(conn, pid) is not None:
-                db.update_production(conn, pid, flow_project_url=url,
-                                     flow_project_id=project_id)
-        finally:
-            conn.close()
-    except Exception as exc:  # noqa: BLE001 - never block a batch
-        log(f"could not persist the Flow project: {exc}")
-    refs = report.get("refs")
-    if isinstance(refs, list) and refs:
-        missing = [str(r.get("name")) for r in refs if isinstance(r, dict)
-                   and str(r.get("status") or "").lower() == "missing"]
-        if not missing:
-            log(f"Flow Driver: all {len(refs)} reference(s) are in the project")
-        else:
-            log(f"Flow Driver: {len(missing)} reference(s) missing from the "
-                f"project: {', '.join(missing[:8])}")
 
 
 # Google's "We noticed some unusual activity" refusal = the account/session is
@@ -1835,7 +1703,7 @@ def image_batch_limits(cfg, pid: int) -> tuple[int, bool, int, int, int]:
     Flow tolerates roughly 80-100 automated generations on one account before
     it refuses, and both engines drive the SAME account, so a long shotlist is
     chunked across runs and a failing batch is stopped instead of ground
-    through. max_consecutive_failures is the Flow Driver's AND the FlowBatch
+    through. max_consecutive_failures is the FlowBatch
     CLI's back-to-back-failure stop (a broken session fails every further
     card); refusal_wait_seconds is how long auto-run/manual render waits before
     resuming after that refusal, and still_busy_wait_seconds the shorter wait
@@ -2035,9 +1903,8 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
         # the CLI's own flag stops at the first failed item (its granularity);
         # anything rendered is kept and the production stays resumable
         cmd += ["--fail-fast"]
-    # same back-to-back-failure guard as the Flow Driver below (studio.py's
-    # own run_imagegen_flow), so both engines behave the same way under the
-    # one shared setting
+    # back-to-back-failure guard (the one shared images_max_consecutive_failures
+    # setting)
     cmd += ["--max-consecutive-failures", str(max_consecutive_failures)]
     if log and (chunk or stop_on_failure):
         _safe_log(log, "FlowBatch: batch guards - "
@@ -2064,7 +1931,7 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
         if "failed in a row" in text:
             # FlowBatch's consecutive-failure guard stopped the batch: a broken
             # session/UI. Say "refusing this session" so the auto-resume treats
-            # it like the Flow Driver's guard - waits the configured
+            # it like a throttle - waits the configured
             # images_resume_wait_minutes (10 by default) before retrying, rather
             # than the plain, shorter "were not produced" pause.
             raise RuntimeError(
@@ -2123,434 +1990,10 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
             + (" …" if len(missing) > 12 else ""))
     return len(adopted)
 
-def _driver_api(cfg, path: str, method: str = "GET", body=None,
-                timeout: int = 8):
-    """Call the Flow Driver service (extension-v2\\server.js).
-
-    On an error response the body is included: the driver explains rejections
-    in JSON (`{"error": "channel ... does not exist - available: ..."}`), and
-    discarding it turned a precise message into a bare "HTTP Error 400"."""
-    req = urllib.request.Request(
-        flow_service_url(cfg) + path,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={"Content-Type": "application/json"} if body is not None else {},
-        method=method,
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read())
-    except urllib.error.HTTPError as exc:
-        detail = ""
-        try:
-            raw = exc.read().decode("utf-8", "replace").strip()
-            if raw:
-                try:
-                    detail = json.loads(raw).get("error") or raw
-                except ValueError:
-                    detail = raw
-        except Exception:  # noqa: BLE001
-            pass
-        raise RuntimeError(f"HTTP {exc.code} from {path}"
-                           + (f": {detail[:300]}" if detail else "")) from exc
-
-
-def flow_service_status(cfg, timeout: int = 4) -> dict | None:
-    """Service status dict, or None when the service is not reachable."""
-    try:
-        return _driver_api(cfg, "/api/status", timeout=timeout)
-    except Exception:
-        return None
-
-
-def _backend_up(cfg) -> bool:
-    try:
-        with urllib.request.urlopen(cfg.renderly_url + "/api/channels",
-                                    timeout=2):
-            return True
-    except Exception:
-        return False
-
-
-def _spawn_detached(cmd: list, cwd: Path, logfile: str | None = None) -> None:
-    flags = 0
-    if hasattr(subprocess, "DETACHED_PROCESS"):
-        flags |= subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    out = open(cwd / logfile, "ab") if logfile else subprocess.DEVNULL
-    subprocess.Popen(cmd, cwd=str(cwd), stdout=out, stderr=out,
-                     stdin=subprocess.DEVNULL, creationflags=flags,
-                     close_fds=True)
-
-
-def ensure_flow_services(cfg, log=print) -> None:
-    """Make sure the Flow Driver service (8030) is up, and - because imports
-    and upscales need it - the Renderly backend (8022).
-
-    Delegates to the service manager, which starts only what is missing and
-    tracks what it started so the images stage can stop it again."""
-    from . import services
-
-    services.MANAGER.ensure(cfg, ["renderly", "flow-driver"], log_fn=log)
 
 
 class BatchCancelled(RuntimeError):
     """Raised when a caller-requested cancel interrupts a long batch."""
-
-
-def run_imagegen_flow(cfg, pid_dir: Path, refs=None, channel: str = "whisperradar",
-                      project: str = "", upscale: int | None = None,
-                      master: str = "", log=print, cancel=None,
-                      pid: int | None = None, local_upscale: bool = False) -> int:
-    """Render missing shotlist images through Google Flow via the Flow Driver
-    service. Results land in images\\ under the exact shotlist names.
-
-    local_upscale=False (default, used by the manual images-stage UI): results
-    are imported into the given Renderly channel, and upscaled copies produced
-    via Renderly are adopted as the shotlist files - same as always.
-
-    local_upscale=True (used by auto-run): the channel is never touched at
-    all - nothing gets imported into Renderly - and the Flow Driver instead
-    upscales the raw Flow output itself by calling Renderly's own backend
-    upscaler module directly (extension-v2's --local-upscale flag, no
-    Renderly HTTP round-trip and no separate FlowBatch checkout needed).
-
-    The batch is always built from the CURRENT shotlist.json - and if the
-    shotlist is edited while the batch runs, the batch is stopped and
-    re-prepared from the new plan instead of rendering stale prompts.
-    Returns the new image count."""
-    d = flow_driver_dir(cfg)
-    if not d or not (d / "flow.js").exists():
-        raise RuntimeError(
-            "Set studio.flow_driver_dir in config.yaml to the Renderly "
-            "extension-v2 folder")
-    if not (d / "node_modules" / "playwright").exists():
-        raise RuntimeError(
-            f"Playwright not installed - run: cd {d} && npm install")
-    img_dir = pid_dir / "images"
-    img_dir.mkdir(exist_ok=True)
-    before = {p.name for p in img_dir.iterdir() if p.is_file()}
-    ensure_flow_services(cfg, log=log)
-    if flow_service_status(cfg) is None:
-        raise RuntimeError("Flow Driver service is not reachable on "
-                           + flow_service_url(cfg))
-    # Frozen handshake: prepare opens/creates this production's Flow project and
-    # gets its references into the gallery before any card is generated; the
-    # loaded project is then the one every card renders into.
-    flow_project = ""
-    if pid is not None:
-        report = run_flowdriver_prepare(cfg, pid_dir, pid, log=log)
-        _apply_flowdriver_report(cfg, pid, report, log=log)
-        flow_project, flow_source = flow_project_url_for(cfg, pid)
-        if flow_project:
-            _safe_log(log, f"Flow Driver: Flow project from {flow_source}")
-    refs = [str(r).strip() for r in (refs or []) if str(r).strip()]
-    project = str(project or "").strip()
-    config = {
-        "shotlistPath": str(pid_dir / "shotlist.json"),
-        "outPath": str(img_dir),
-        # local_upscale never sends a channel - an empty one plus
-        # localUpscale below tells the driver to skip Renderly entirely
-        # instead of falling back to some other channel.
-        "channel": "" if local_upscale else str(channel or "whisperradar").strip(),
-        "project": "" if local_upscale else project,
-        "flowProject": flow_project or "",
-        "refs": ",".join(refs),
-        "master": (master or "").strip(),
-        "upscale": renderly_upscale(upscale if upscale is not None
-                                    else (cfg.renderly_upscale or 0)),
-        "localUpscale": bool(local_upscale),
-        # pacing: extra seconds between rendered cards (0 = the driver's own)
-        "delaySeconds": image_delay_seconds(cfg, pid),
-    }
-    shotlist_file = pid_dir / "shotlist.json"
-    todo = 0
-    rounds = 0
-    while True:  # batch rounds - re-prepared whenever shotlist.json changes
-        rounds += 1
-        try:
-            todo = missing_flow_images(cfg, pid_dir)
-        except RuntimeError as exc:
-            if "nothing to render" in str(exc):
-                if rounds > 1:
-                    todo = 0  # the edited shotlist is fully rendered already
-                    break
-                # Every image already exists - that is success, not failure.
-                # This is the path taken after filling gaps by hand (uploading
-                # the missing images) or re-running a finished production, and
-                # it used to fail the stage instead of moving on to merge.
-                log("Flow Driver: every shotlist image already exists - "
-                    "nothing to render")
-                return 0
-            raise
-        if rounds > 1:
-            log(f"Flow Driver: batch re-read from the current shotlist - "
-                f"{todo} image(s) left to render")
-        log(f"Flow Driver: rendering {todo} missing image(s) via Google Flow "
-            f"(a Chrome window will open - leave it running)")
-        # The driver owns the batch state: if one is already running (e.g. a
-        # previous poller died but Chrome kept rendering) attach to it instead
-        # of posting config and starting a second one, which it rejects with
-        # "a batch is already running". Do not touch a running batch's config.
-        status = flow_service_status(cfg) or {}
-        if status.get("running"):
-            counts = status.get("counts") or {}
-            log(f"Flow Driver: attaching to the batch already running "
-                f"({counts.get('ok', 0)}/{counts.get('total', todo)} done, "
-                f"{counts.get('failed', 0)} failed) - not starting another")
-        else:
-            from . import chrome_profile
-            chrome_profile.apply(cfg, "flow_driver", log)   # Efficiency mode off
-            _driver_api(cfg, "/api/config", method="POST", body=config,
-                        timeout=15)
-            try:
-                _driver_api(cfg, "/api/start", method="POST", body={},
-                            timeout=15)
-            except Exception as exc:
-                raise RuntimeError(f"Flow Driver rejected the batch: {exc}")
-        seen = 0
-        deadline = time.monotonic() + 14400
-        restarted = False
-        shotlist_mtime = shotlist_file.stat().st_mtime
-        chunk, stop_on_failure, max_consecutive_failures, _refusal_wait, _busy = (
-            image_batch_limits(cfg, pid) if pid else (0, False, 5, 600, 300))
-        # the driver's counts cover the whole batch, so measure THIS run
-        base_ok = int(((flow_service_status(cfg) or {}).get("counts") or {})
-                      .get("ok") or 0)
-        last_ok, last_failed, consecutive = base_ok, 0, 0
-        # only log lines from THIS run count for the throttle check (the
-        # service's log window still holds earlier batches' lines)
-        base_log = len((flow_service_status(cfg) or {}).get("log") or [])
-        while True:
-            if cancel and cancel():
-                log("cancel requested - stopping the Flow Driver batch")
-                flow_stop(cfg)
-                raise BatchCancelled(
-                    "stop requested during the images stage")
-            if time.monotonic() > deadline:
-                # do not abandon the batch: it would keep spending credits on
-                # cards nobody is waiting for anymore
-                flow_stop(cfg)
-                raise RuntimeError("Flow Driver batch timed out after 4h")
-            time.sleep(3)
-            try:
-                mtime_now = shotlist_file.stat().st_mtime
-            except OSError:
-                mtime_now = shotlist_mtime
-            if mtime_now != shotlist_mtime:
-                # the user re-planned mid-batch: drop this batch and read
-                # the current shotlist instead of rendering stale prompts
-                log("shotlist.json changed since the batch started - "
-                    "stopping the batch and re-reading the current plan "
-                    "(delete an image file to force its re-render)")
-                flow_stop(cfg)
-                restarted = True
-                break
-            st = flow_service_status(cfg, timeout=10)
-            if st is None:
-                continue
-            lines = st.get("log") or []
-            if len(lines) < seen:  # service log window wrapped
-                seen = 0
-            if len(lines) < base_log:
-                base_log = 0
-            throttled = None
-            while seen < len(lines):
-                _safe_log(log, lines[seen])
-                if (seen >= base_log and throttled is None
-                        and THROTTLE_PATTERN.search(str(lines[seen]))):
-                    throttled = str(lines[seen])
-                seen += 1
-            if throttled:
-                flow_stop(cfg)
-                raise throttle_error(
-                    "Flow Driver",
-                    image_throttle_wait_seconds(cfg, pid) // 60 if pid else None)
-            # collapse duplicates as they appear (flow.js versions before the
-            # in-place upscale wrote "-upscaled.png" copies alongside)
-            for up in img_dir.glob("*-upscaled.png"):
-                base = up.with_name(up.name.replace("-upscaled.png", ".png"))
-                try:
-                    up.replace(base)
-                except OSError:
-                    pass
-            if not st.get("running"):
-                break
-            counts = st.get("counts") or {}
-            ok_now = int(counts.get("ok") or 0)
-            failed_now = int(counts.get("failed") or 0)
-            if stop_on_failure and failed_now > last_failed:
-                # "Stop the batch at the first failed image" is ticked
-                flow_stop(cfg)
-                raise RuntimeError(
-                    f"Flow Driver: a card failed after {ok_now} rendered - "
-                    f"stopped at the first failure (the 'Stop the batch at "
-                    f"the first failed image' setting). The {ok_now} "
-                    f"image(s) are kept - look at the log, then Resume.")
-            if failed_now > last_failed and ok_now <= last_ok:
-                consecutive += 1
-            elif ok_now > last_ok:
-                consecutive = 0
-            last_ok, last_failed = ok_now, failed_now
-            if consecutive >= max_consecutive_failures:
-                # N cards in a row failed (images_max_consecutive_failures):
-                # Flow is refusing, and every further card spends ~a minute
-                # failing (this is the ~98-image stall seen on productions
-                # 5 and 6)
-                flow_stop(cfg)
-                raise RuntimeError(
-                    f"Flow Driver: {consecutive} cards failed in a row after "
-                    f"{ok_now} rendered - Flow is refusing this session "
-                    f"(usually the account's reCAPTCHA score after ~80-100 "
-                    f"generations). Stopped instead of failing the rest. The "
-                    f"{ok_now} image(s) are kept - wait a while, then Resume.")
-            if chunk and (ok_now - base_ok) >= chunk:
-                # bound this run; the remaining cards wait for the next one
-                flow_stop(cfg)
-                log(f"Flow Driver: {chunk} image(s) rendered in this run "
-                    f"(the Images-per-run limit) - stopping here; "
-                    f"{max(0, todo - (ok_now - base_ok))} left for the next run")
-                break
-        if restarted:
-            continue
-        break
-    upscaled = 0
-    for up in img_dir.glob("*-upscaled.png"):
-        base = up.with_name(up.name.replace("-upscaled.png", ".png"))
-        up.replace(base)  # keep the ImgToVideo naming contract
-        upscaled += 1
-    if upscaled:
-        log(f"Adopted {upscaled} upscaled image(s) as the shotlist files")
-    new = len({p.name for p in img_dir.iterdir() if p.is_file()} - before)
-    if not new:
-        raise RuntimeError("Flow Driver finished but produced no new images "
-                           "- check the log")
-    if new < todo:
-        # Everything rendered is already in images\, so nothing is lost. Stop
-        # here rather than reporting success: the merge would otherwise run on
-        # an incomplete set with no visible reason (this is what a stalled
-        # batch - "Flow still busy" timeouts - looks like).
-        try:
-            shotlist = json.loads((pid_dir / "shotlist.json")
-                                  .read_text(encoding="utf-8"))
-            expected = [str(i.get("file")) for i in (shotlist.get("images") or [])
-                        if i.get("file")]
-        except (OSError, ValueError):
-            expected = []
-        missing = [n for n in expected if not (img_dir / n).exists()] or \
-            [f"{todo - new} unnamed card(s)"]
-        raise RuntimeError(
-            f"{len(missing)} of {len(expected) or todo} image(s) were not "
-            f"produced - the batch was stopped or cards failed (Flow reports "
-            f"'still busy' timeouts when this happens). The {new} that "
-            f"succeeded are kept. Fill the gaps - render them, or upload them "
-            f"on the production page (filenames must match) - then Resume. "
-            f"Missing: " + ", ".join(missing[:12])
-            + (" ..." if len(missing) > 12 else ""))
-    return new
-
-
-def flow_stop(cfg) -> bool:
-    """Stop a running Flow Driver batch. Returns True when one was stopped."""
-    try:
-        result = _driver_api(cfg, "/api/stop", method="POST", body={},
-                             timeout=8)
-        return bool(result.get("stopped"))
-    except Exception:
-        return False
-
-
-def run_flowdriver_recover(cfg, pid_dir: Path, pid: int,
-                           log=None, cancel=None) -> dict:
-    """Adopt images a stopped Flow Driver batch left in the Flow project's
-    gallery, through the driver's /api/recover endpoint.
-
-    Manual only (the IMAGES stage "Recover from Flow gallery" button): the
-    driver opens the project, matches its finished result tiles to the
-    shotlist's still-missing cards by prompt, and downloads ONLY what is
-    missing straight into images\\. It never generates, uploads or imports.
-    Returns {recovered, still_missing} as shotlist file names."""
-    log = log or (lambda m: None)
-    d = flow_driver_dir(cfg)
-    if not d or not (d / "flow.js").exists():
-        raise RuntimeError(
-            "Set studio.flow_driver_dir in config.yaml to the Renderly "
-            "extension-v2 folder")
-    if not (d / "node_modules" / "playwright").exists():
-        raise RuntimeError(
-            f"Playwright not installed - run: cd {d} && npm install")
-    img_dir = pid_dir / "images"
-    img_dir.mkdir(exist_ok=True)
-    names = shotlist_missing_images(pid_dir)
-    if not names:
-        return {"recovered": [], "still_missing": []}
-    status = flow_service_status(cfg)
-    if status is None:
-        raise RuntimeError("Flow Driver service is not reachable on "
-                           + flow_service_url(cfg))
-    if status.get("running"):
-        raise RuntimeError("A Flow batch is already running - stop it "
-                           "before recovering from the gallery")
-    flow_project, source = flow_project_url_for(cfg, pid)
-    if not flow_project:
-        raise RuntimeError(
-            "Recovery needs this production's Flow project URL - none is "
-            "stored. Run the images stage once (prepare records it), or set "
-            "it on the channel.")
-    report_path = pid_dir / FLOW_DRIVER_RECOVER_REPORT
-    try:
-        report_path.unlink()
-    except OSError:
-        pass
-    body = {"shotlistPath": str(pid_dir / "shotlist.json"),
-            "reportPath": str(report_path),
-            "outPath": str(img_dir),
-            "flowProject": flow_project,
-            "only": ",".join(names)}
-    _safe_log(log, f"Flow Driver recover: adopting {len(names)} missing "
-                   f"image(s) from the project gallery ({source}) - nothing "
-                   f"will be generated")
-    from . import chrome_profile
-    chrome_profile.apply(cfg, "flow_driver", log)   # Efficiency mode off
-    try:
-        _driver_api(cfg, "/api/recover", method="POST", body=body,
-                    timeout=20)
-    except Exception as exc:  # noqa: BLE001 - surface the driver's reason
-        raise RuntimeError(f"Flow Driver rejected the recovery: {exc}")
-    seen = 0
-    deadline = time.monotonic() + 3600
-    while time.monotonic() < deadline:
-        if cancel is not None and cancel():
-            flow_stop(cfg)
-            raise BatchCancelled("stop requested during gallery recovery")
-        time.sleep(2)
-        st = flow_service_status(cfg, timeout=10)
-        if st is None:
-            continue
-        lines = st.get("log") or []
-        if len(lines) < seen:  # service log window wrapped
-            seen = 0
-        while seen < len(lines):
-            _safe_log(log, lines[seen])
-            seen += 1
-        if not st.get("running"):
-            break
-    else:
-        flow_stop(cfg)
-        raise RuntimeError("Flow Driver recovery timed out after 1h")
-    exit_code = (flow_service_status(cfg) or {}).get("exitCode")
-    report = _read_json_retry(report_path)
-    # The driver writes under the card stem; compare the same way the merge
-    # gate does (case-folded stem), so a .jpg saved for a .png name counts.
-    existing = {p.stem.lower() for p in img_dir.iterdir() if p.is_file()}
-    still_missing = [n for n in names if Path(n).stem.lower() not in existing]
-    recovered = [n for n in names if n not in still_missing]
-    if recovered:
-        _safe_log(log, f"Flow Driver recover: adopted "
-                       f"{len(recovered)} image(s) from the gallery")
-    if exit_code not in (0, None):
-        raise RuntimeError(
-            f"Flow Driver recovery failed (exit {exit_code}) - see the log. "
-            f"{len(recovered)} image(s) were still adopted.")
-    return {"recovered": recovered, "still_missing": still_missing}
 
 
 def sanitize_shotlist(pid_dir: Path) -> int:

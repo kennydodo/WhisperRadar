@@ -109,30 +109,6 @@ class RunRenderlyRefsTests(unittest.TestCase):
         self.assertNotEqual(captured["pid_dir"], self.pdir)
         self.assertFalse(captured["pid_dir"].exists())
 
-    def test_flow_true_renders_via_flow_driver_not_api(self):
-        """flow=True routes the render through run_imagegen_flow (Google Flow)
-        and never the :8022 run_imagegen API; results still land in refs\\."""
-        refs = {"CH_MAYA": {"path": None, "prompt": "a woman",
-                            "file": None, "provided": False}}
-        flow_calls = []
-
-        def fake_flow(cfg, pid_dir, **kw):
-            flow_calls.append(kw)
-            (pid_dir / "images").mkdir(exist_ok=True)
-            (pid_dir / "images" / "CH_MAYA.png").write_bytes(b"png")
-            return 1
-
-        def fake_api(*a, **k):
-            raise AssertionError("the :8022 API must not be used in flow mode")
-
-        with mock.patch.object(studio, "run_imagegen", fake_api), \
-                mock.patch.object(studio, "run_imagegen_flow", fake_flow):
-            result = studio.run_renderly_refs(self.cfg, self.pdir, 42, refs,
-                                              upscale=0, flow=True)
-        self.assertEqual(result["generated"], ["CH_MAYA"])
-        self.assertTrue(flow_calls[0]["local_upscale"])   # no Renderly import
-        self.assertTrue((self.pdir / "refs" / "CH_MAYA.png").is_file())
-
 
 class RefsEngineDispatchTests(unittest.TestCase):
     """_run_refs() must pick the SAME engine the images stage would use for
@@ -166,7 +142,7 @@ class RefsEngineDispatchTests(unittest.TestCase):
 
     def test_renderly_channel_never_calls_flowbatch(self):
         # pin render_mode to 'api' so this tests the Renderly-API refs path;
-        # 'auto' would resolve to 'flow' whenever the driver is installed
+        # 'auto' would otherwise be resolved by the default render mode
         conn = db.connect(self.cfg.db_path)
         db.update_production(conn, self.pid, render_mode="api")
         conn.commit()
@@ -184,28 +160,26 @@ class RefsEngineDispatchTests(unittest.TestCase):
         args, kwargs = renderly.call_args
         self.assertIn("CH_MAYA", args[3])
         self.assertEqual(kwargs["channel"], 99)
-        self.assertFalse(kwargs.get("flow"))
         resolve.assert_called_once()
 
-    def test_renderly_flow_mode_uses_flow_driver_not_api(self):
-        """renderly + flow: refs go through the Flow Driver (run_renderly_refs
-        with flow=True), never the :8022 API - and the Renderly channel is
-        not even resolved (no API call at all)."""
+    def test_renderly_flow_mode_uses_flowbatch_not_api(self):
+        """renderly + flow: refs go through FlowBatch (run_flowbatch_refs),
+        never the :8022 API - and the Renderly channel is not even resolved
+        (no API call at all)."""
         conn = db.connect(self.cfg.db_path)
         db.update_production(conn, self.pid, render_mode="flow")
         conn.commit()
         conn.close()
         with mock.patch.object(studio, "resolve_renderly_channel") as resolve, \
-                mock.patch.object(studio, "run_renderly_refs",
+                mock.patch.object(studio, "run_renderly_refs") as renderly, \
+                mock.patch.object(studio, "run_flowbatch_refs",
                                   return_value={"generated": ["CH_MAYA"],
-                                               "missing": []}) as renderly, \
-                mock.patch.object(studio, "run_flowbatch_refs") as flowbatch:
+                                               "missing": []}) as flowbatch:
             result = autorun.run_stage(self.cfg, self.pid, "refs")
         self.assertEqual(result, "ok")
-        flowbatch.assert_not_called()
+        renderly.assert_not_called()
         resolve.assert_not_called()          # no Renderly channel/API involved
-        renderly.assert_called_once()
-        self.assertTrue(renderly.call_args.kwargs.get("flow"))
+        flowbatch.assert_called_once()
 
     def test_flowbatch_channel_never_calls_renderly(self):
         conn = db.connect(self.cfg.db_path)

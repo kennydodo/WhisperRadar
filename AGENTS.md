@@ -1445,3 +1445,25 @@ the images-stage form — persisting them per production is optional polish.
   stored file. parse_shotlist_output still tolerates a sheet after the JSON
   (custom briefs). The external planner prompt carries the channel's brief
   inline; in files mode the only attachment is narration.txt.
+
+## Consolidated engines (branch feat/consolidate-engines)
+
+- `engines/flowbatch/` is FlowBatch (Playwright Flow CLI) and
+  `engines/renderly-api/` is the Renderly FastAPI backend (port 8022, API
+  contract unchanged, own `renderly.db` + `storage/`). Both are plain copies;
+  runtime data (`node_modules`, `profile`, `state`, `renderly.db`, `storage`)
+  is git-ignored and must be copied or recreated (`npm install`, `npm run login`).
+- `studio.flowbatch_repo` and `studio.renderly_api_dir` default to those
+  folders. `services._start_renderly` runs `uvicorn main:app` from
+  `engines/renderly-api` with the repo `.venv` (packages are in
+  requirements.txt - rerun setup.cmd after pulling).
+- The Flow Driver (Renderly's extension-v2) is RETIRED: its code, config
+  (`flow_driver_dir`, `flow_driver_url`), service (`flow-driver`), stop route
+  and Settings row are gone. Engines now: `flowbatch` = every shot on FlowBatch;
+  `renderly` = PL/PR through the API (`run_imagegen(... motion_filter=("PL",
+  "PR"))`) then FlowBatch for the rest (it skips files already on disk).
+  Render mode `flow` (stored per channel/production) now means "all shots on
+  FlowBatch": `studio.effective_engine(engine, mode)` maps engine renderly +
+  mode flow to flowbatch; `auto` means api. Older AGENTS sections below that
+  describe the Flow Driver are historical.
+- Still external: ImgToVideo (.NET) only.

@@ -1,0 +1,7 @@
+.venv/
+.env
+renderly.db
+storage/*
+!storage/.gitkeep
+__pycache__/
+*.log

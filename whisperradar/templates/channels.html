@@ -233,7 +233,7 @@
                 <select name="default_render_mode" class="rendermode-select">
                   <option value="">inherit</option>
                   {% for opt in ['flow', 'api'] %}
-                  <option value="{{ opt }}" {{ 'selected' if ch['default_render_mode'] == opt else '' }}>{{ opt }}</option>
+                  <option value="{{ opt }}" {{ 'selected' if ch['default_render_mode'] == opt else '' }}>{{ 'flow (all shots on FlowBatch)' if opt == 'flow' else 'api (PL/PR via API, rest FlowBatch)' }}</option>
                   {% endfor %}
                   {% if ch['default_render_mode'] and ch['default_render_mode'] not in ['flow', 'api'] %}
                   <option value="{{ ch['default_render_mode'] }}" selected>{{ ch['default_render_mode'] }} (saved)</option>
@@ -657,8 +657,8 @@
     row.style.display = 'none';
   }
 
-  // The render-mode choices depend on the image engine: FlowBatch only
-  // drives Google Flow (no direct API), so "api" is only offered for
+  // The render-mode choices depend on the image engine: FlowBatch renders
+  // every shot on Google Flow (no direct API), so "api" is only offered for
   // Renderly. Disabling the option (rather than removing it) makes the
   // browser auto-reselect a valid mode if "api" was already chosen.
   (function () {

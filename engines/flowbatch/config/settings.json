@@ -1,0 +1,53 @@
+{
+  "flowUrl": "https://labs.google/fx/tools/flow",
+  "projectUrl": null,
+
+  "browser": {
+    "channel": "chrome",
+    "headless": false,
+    "slowMo": 0,
+    "viewport": { "width": 1512, "height": 950 },
+    "locale": "en-US",
+    "timezoneId": "Africa/Lagos",
+    "userAgent": null,
+    "extraArgs": []
+  },
+
+  "timeouts": {
+    "navigationMs": 60000,
+    "readyMs": 45000,
+    "selectorMs": 10000,
+    "generationMs": 300000,
+    "downloadMs": 60000,
+    "loginMs": 600000
+  },
+
+  "generation": {
+    "mode": "image",
+    "agent": false,
+    "model": "Nano Banana 2",
+    "aspectRatio": "16:9",
+    "outputs": 1,
+    "refMode": "reuse",
+    "maxPromptChars": 2420,
+    "cooldownSeconds": 180,
+    "maxCooldowns": 0,
+    "maxConsecutiveFailures": 3,
+    "resetBetweenItems": "clear",
+    "reapplySettingsAfterReset": true,
+    "retries": 1,
+    "retryDelayMs": 5000,
+    "delayBetweenItemsMs": 1500,
+    "pauseOnError": false
+  },
+
+  "paths": {
+    "profileDir": "profile",
+    "outputDir": "output",
+    "refsDir": "refs",
+    "stateDir": "state",
+    "debugDir": "debug",
+    "discoverDir": "discover",
+    "downloadsDir": "downloads"
+  }
+}
