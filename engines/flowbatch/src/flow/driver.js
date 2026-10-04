@@ -244,13 +244,22 @@ export class FlowDriver {
     return null;
   }
 
-  async ensureProject(name) {
-    if (await this.isInsideProject()) {
+  async ensureProject(name, { forceNew = false } = {}) {
+    if (forceNew && (await this.isInsideProject())) {
+      // Flow landed on a project instead of the project list. A fresh
+      // navigation is the only way back; if that still lands inside one, the
+      // caller's "create, never reuse" contract cannot be honored and must
+      // fail loudly rather than silently adopt the current project.
+      log.warn('--new-project: Flow is inside a project; reloading the project list.');
+      await this.goto();
+    }
+
+    if (!forceNew && (await this.isInsideProject())) {
       log.debug('Already inside a Flow project.');
       return { created: false };
     }
 
-    if (name) {
+    if (!forceNew && name) {
       const card = await this.findProjectCard(name);
       if (card) {
         log.info(`Opening project "${name}".`);
@@ -262,8 +271,14 @@ export class FlowDriver {
       log.warn(`Project "${name}" was not found in the project list; creating a new project instead.`);
     }
 
+    const button = await this.find('newProjectButton', { required: false });
+    if (!button) {
+      throw new Error(
+        'A new Flow project was requested, but the project list ("Start new session") is not ' +
+          `visible at ${this.page.url()} - Flow may have opened an existing project. Refusing to reuse it.`,
+      );
+    }
     log.info('Creating a new Flow project.');
-    const button = await this.find('newProjectButton');
     await button.locator.click();
     await sleep(2000);
     await this.waitForPromptBox();

@@ -92,7 +92,8 @@ export async function prepareCommand({ flags, context, positionals }) {
 
   const { settings } = context;
   const job = loadJob(jobPath, { settings, repairEncoding: flags['repair-encoding'] === true });
-  if (typeof flags['project-url'] === 'string' && flags['project-url'].trim()) {
+  const forceNew = flags['new-project'] === true;
+  if (!forceNew && typeof flags['project-url'] === 'string' && flags['project-url'].trim()) {
     job.projectUrl = flags['project-url'].trim();
   }
 
@@ -126,17 +127,24 @@ export async function prepareCommand({ flags, context, positionals }) {
     }
 
     let created = false;
-    if (job.projectUrl) {
+    if (job.projectUrl && !forceNew) {
       await driver.openProject(job.projectUrl);
     } else {
-      // No URL for this job: Flow's "most recent project" must never be adopted
-      // silently, so this is said out loud before a project is opened or made.
-      log.warn(
-        `No projectUrl for "${job.name}"; opening "${job.project ?? 'a new project'}" from the project list, ` +
-          'or creating one.',
-      );
-      const opened = await driver.ensureProject(job.project);
+      if (forceNew) {
+        log.info(`--new-project: creating a fresh Flow project for "${job.name}" (never reusing one).`);
+      } else {
+        // No URL for this job: Flow's "most recent project" must never be adopted
+        // silently, so this is said out loud before a project is opened or made.
+        log.warn(
+          `No projectUrl for "${job.name}"; opening "${job.project ?? 'a new project'}" from the project list, ` +
+            'or creating one.',
+        );
+      }
+      const opened = await driver.ensureProject(job.project, { forceNew });
       created = Boolean(opened?.created);
+      if (forceNew && !created) {
+        throw new Error('--new-project was requested but FlowBatch did not create a new project.');
+      }
     }
 
     const url = page.url();

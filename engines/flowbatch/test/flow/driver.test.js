@@ -25,6 +25,7 @@ const SELECTORS = {
   overlayPane: ['overlay'],
   promptReferenceChip: ['chip'],
   promptReferenceRemoveButton: ['chip-remove'],
+  newProjectButton: ['newproject'],
 };
 
 function makeDriver(page) {
@@ -415,3 +416,25 @@ test('scanAssets unions tiles across scrolls until the gallery stops moving', as
   assert.ok(scanned.entries.length >= 2, `expected the union of mounted tiles, got ${scanned.entries.length}`);
 });
 
+
+test('ensureProject without forceNew adopts an open project', async () => {
+  const page = makePage({ url: 'https://flow.google.com/project/existing-id-1234' });
+  const result = await makeDriver(page).ensureProject(null);
+  assert.equal(result.created, false);
+});
+
+test('ensureProject with forceNew creates a fresh project', async () => {
+  const page = makePage({ url: 'https://flow.google.com' });
+  page.set('prompt', [{ text: '' }]);
+  page.set('newproject', [{ text: 'New project' }]);
+  const result = await makeDriver(page).ensureProject(null, { forceNew: true });
+  assert.equal(result.created, true);
+});
+
+test('ensureProject with forceNew refuses to reuse a project it cannot leave', async () => {
+  const page = makePage({ url: 'https://flow.google.com/project/existing-id-1234' });
+  await assert.rejects(
+    () => makeDriver(page).ensureProject(null, { forceNew: true }),
+    /Refusing to reuse it/,
+  );
+});

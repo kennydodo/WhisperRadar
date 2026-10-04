@@ -175,5 +175,85 @@ class FlowBatchPrepareTests(unittest.TestCase):
         self.assertIn("error", report)
 
 
+class RequireNewProjectTests(unittest.TestCase):
+    """No stored project -> the batch must CREATE one; opening a previous
+    project instead is a hard failure, not a silent fallback."""
+
+    def test_a_created_project_passes(self):
+        report = {"projectUrl": PROJECT, "created": True}
+        self.assertEqual(studio._require_flow_project(report, had_stored=False),
+                         PROJECT)
+
+    def test_an_opened_project_is_refused_when_none_was_stored(self):
+        report = {"projectUrl": PROJECT, "created": False}
+        with self.assertRaises(RuntimeError) as ctx:
+            studio._require_flow_project(report, had_stored=False)
+        self.assertIn("NEW Flow project", str(ctx.exception))
+
+    def test_an_opened_project_is_fine_when_one_was_stored(self):
+        report = {"projectUrl": PROJECT, "created": False}
+        self.assertEqual(studio._require_flow_project(report, had_stored=True),
+                         PROJECT)
+
+    def test_no_usable_project_at_all_is_an_error(self):
+        for report in (None, {}, {"error": "prepare failed"},
+                       {"projectUrl": DEAD, "created": True}):
+            with self.assertRaises(RuntimeError):
+                studio._require_flow_project(report, had_stored=False)
+
+
+class PrepareNewProjectFlagTests(unittest.TestCase):
+    """run_flowbatch_prepare(new_project=True) must pass --new-project through
+    to the FlowBatch CLI."""
+
+    def test_new_project_adds_the_flag(self):
+        seen = {}
+
+        class _Proc:
+            returncode = 1
+            stdout = "boom"
+            stderr = ""
+
+        def fake_cmd(args):
+            seen["args"] = list(args)
+            return ["node", "cli.js"]
+
+        with tempfile.TemporaryDirectory() as d:
+            pid_dir = Path(d)
+            cfg = _cfg(Path(d) / "wr.db")
+            cfg.flowbatch_repo = d
+            with mock.patch.object(studio, "_flowbatch_cmd", fake_cmd), \
+                    mock.patch.object(studio.subprocess, "run",
+                                      lambda *a, **k: _Proc()):
+                studio.run_flowbatch_prepare(cfg, pid_dir, pid_dir / "job.json",
+                                             log=lambda m: None, new_project=True)
+        self.assertIn("--new-project", seen["args"])
+
+
+class ImagesStageRequiresNewProject(unittest.TestCase):
+    """The images stage must fail when FlowBatch opened a previous project
+    instead of creating the new one it was told to create."""
+
+    def test_no_stored_project_requires_creation(self):
+        with tempfile.TemporaryDirectory() as d:
+            pid_dir = Path(d)
+            cfg = _cfg(Path(d) / "wr.db")
+            cfg.flowbatch_repo = d
+            job = pid_dir / "flowbatch.json"
+            job.write_text("{}", encoding="utf-8")
+            with mock.patch.object(studio, "flowbatch_ready", lambda c: True), \
+                    mock.patch.object(studio, "flowbatch_dir", lambda c: Path(d)), \
+                    mock.patch.object(studio, "prepare_flowbatch_job",
+                                      lambda *a, **k: (job, ["a.png"])), \
+                    mock.patch.object(studio, "flow_project_url_for",
+                                      lambda *a, **k: (None, "none")), \
+                    mock.patch.object(studio, "run_flowbatch_prepare",
+                                      lambda *a, **k: {"projectUrl": PROJECT,
+                                                       "created": False}):
+                with self.assertRaises(RuntimeError) as ctx:
+                    studio.run_imagegen_flowbatch(cfg, pid_dir, 999)
+            self.assertIn("NEW Flow project", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

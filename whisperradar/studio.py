@@ -1260,24 +1260,21 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
         job["projectUrl"] = url
         log.info("FlowBatch: Flow project from %s", source)
     else:
-        # Never silent: without a URL Flow opens its landing page and uses the
-        # most recent project, which may belong to another video.
-        log.warning("FlowBatch: no Flow project URL for production %s - "
-                    "Flow will fall back to its most recent project, which may "
-                    "be the wrong one. Set one on the channel, or run the "
-                    "prepare step to create a project for this production.",
-                    pid)
+        # No stored project: the images stage creates a NEW one (FlowBatch
+        # --new-project) and fails if it cannot, so Flow's most-recent project
+        # is never adopted silently.
+        log.info("FlowBatch: no stored Flow project for production %s - a new "
+                 "one will be created before rendering", pid)
         from . import db, settings as _settings
 
         try:
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
             try:
-                if db.get_production(conn, pid) is not None:
-                    db.update_production(
-                        conn, pid,
-                        warning="no Flow project URL - Flow may have used the "
-                                "wrong project for this production's images")
+                prod = db.get_production(conn, pid)
+                if prod is not None and (settings.row_get(prod, "flow_project_url")
+                                         or "").strip() == "":
+                    db.update_production(conn, pid, warning=None)
             finally:
                 conn.close()
         except Exception:  # noqa: BLE001
@@ -1486,7 +1483,7 @@ def _read_json_retry(path: Path, attempts: int = 3, delay: float = 1.5):
 
 
 def run_flowbatch_prepare(cfg, pid_dir: Path, job_path: Path,
-                              log=None) -> dict:
+                              log=None, new_project: bool = False) -> dict:
     """Ask FlowBatch to create-or-open this production's Flow project and
     get its references into the project gallery, then read back the report.
 
@@ -1494,14 +1491,22 @@ def run_flowbatch_prepare(cfg, pid_dir: Path, job_path: Path,
     created, and per-ref {name, kind, status, path}. This is the receiving end,
     so FlowBatch only has to write it. It is OPTIONAL: a missing `prepare`
     command, a failure, or an absent report all return {} and generation
-    proceeds with the stored URL - preparation must never block a batch."""
+    proceeds with the stored URL - preparation must never block a batch.
+
+    `new_project=True` passes FlowBatch --new-project, which refuses to open or
+    adopt an existing project: it creates a fresh one or errors. The report's
+    `created` flag is what the images stage checks to honor "never fall back to
+    a previous project"."""
     log = log or (lambda m: None)
     report_path = pid_dir / FLOW_PREPARE_REPORT
     repo = flowbatch_dir(cfg)
     from . import chrome_profile
     chrome_profile.apply(cfg, "flowbatch", log)
-    cmd = _flowbatch_cmd(["prepare", "--job", str(job_path),
-                              "--report", str(report_path), "--no-color"])
+    args = ["prepare", "--job", str(job_path),
+            "--report", str(report_path), "--no-color"]
+    if new_project:
+        args.append("--new-project")
+    cmd = _flowbatch_cmd(args)
     _safe_log(log, "$ " + " ".join(cmd))
     try:
         proc = subprocess.run(cmd, cwd=str(repo), capture_output=True,
@@ -1638,6 +1643,27 @@ def _strip_job_project_url(job_path: Path) -> None:
             json.dumps(job, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     except OSError:
         pass
+
+
+def _require_flow_project(report, had_stored: bool) -> str:
+    """The Flow project a FlowBatch batch may use, or raise.
+
+    With no stored URL the batch MUST create a fresh project: opening Flow's
+    most-recent project instead is the "silently reuse the wrong project" bug,
+    so a report that is not `created` fails here. With a stored URL, opening it
+    is expected; only a missing/dead project is fatal."""
+    url = _usable_flow_project(report)
+    if not url:
+        detail = report.get("error") if isinstance(report, dict) else None
+        raise RuntimeError(
+            "FlowBatch did not open or create a Flow project"
+            + (f": {detail}" if detail else ""))
+    if not had_stored and not (isinstance(report, dict) and report.get("created")):
+        raise RuntimeError(
+            "FlowBatch was asked to create a NEW Flow project but did not "
+            "report one - it opened an existing project instead. Refusing to "
+            "reuse a previous project.")
+    return url
 
 
 # Google's "We noticed some unusual activity" refusal = the account/session is
@@ -1846,41 +1872,19 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
                            "your FlowBatch checkout (and run npm install)")
     repo = flowbatch_dir(cfg)
     job_path, names = prepare_flowbatch_job(cfg, pid_dir, pid, project_url)
-    # create-or-open this production's Flow project and get its references into
-    # the project gallery before generating (optional: {} when FlowBatch
-    # has no prepare command yet, or the report is absent)
-    report = run_flowbatch_prepare(cfg, pid_dir, job_path, log)
-    if not _usable_flow_project(report):
-        # Empty handshake: the job's stored project is missing or dead (Flow
-        # answers .../404?reason=project for a deleted or other-account
-        # project). Ask prepare again with NO project URL so it CREATES one.
-        stored, source = flow_project_url_for(cfg, pid, project_url)
-        if stored:
-            _safe_log(log, f"FlowBatch: the stored Flow project ({source}) "
-                           f"is not usable - asking prepare to create a new one")
-            _strip_job_project_url(job_path)
-            report = run_flowbatch_prepare(cfg, pid_dir, job_path, log)
-    if report.get("error") and not _usable_flow_project(report):
-        # Still nothing: warn and carry on - generation will surface the failure
-        # the same way instead of failing silently mid-batch.
-        stored, source = flow_project_url_for(cfg, pid, project_url)
-        if stored:
-            msg = (f"the stored Flow project {stored} could not be opened and "
-                   f"prepare could not create a new one - generation will fail "
-                   f"on this URL")
-            _safe_log(log, f"FlowBatch: {msg}")
-            from . import db as _db
-
-            try:
-                conn = _db.connect(cfg.db_path)
-                _db.init_db(conn)
-                try:
-                    if _db.get_production(conn, pid) is not None:
-                        _db.update_production(conn, pid, warning=msg)
-                finally:
-                    conn.close()
-            except Exception:  # noqa: BLE001
-                pass
+    # No stored project -> CREATE a fresh one (never adopt Flow's most recent).
+    # A stored project -> open it; if it is dead, strip it and create instead.
+    # Both are verified below: reusing a previous project is a hard failure.
+    stored, source = flow_project_url_for(cfg, pid, project_url)
+    report = run_flowbatch_prepare(cfg, pid_dir, job_path, log,
+                                   new_project=not stored)
+    if stored and not _usable_flow_project(report):
+        _safe_log(log, f"FlowBatch: the stored Flow project ({source}) is not "
+                       f"usable - creating a new one")
+        _strip_job_project_url(job_path)
+        report = run_flowbatch_prepare(cfg, pid_dir, job_path, log,
+                                       new_project=True)
+    _require_flow_project(report, had_stored=bool(stored))
     _apply_prepare_report(cfg, pid_dir, pid, job_path, report, log)
     tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
                                   else upscale)
