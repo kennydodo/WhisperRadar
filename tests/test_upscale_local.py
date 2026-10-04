@@ -365,14 +365,23 @@ class ImagesUpscaleHookTests(unittest.TestCase):
         conn.commit()
         conn.close()
         seen = {}
+        # a wide (PL) shot so the API pass is part of the run (Flow goes first
+        # for the rest, the API last for PL/PR)
+        pdir = studio.prod_dir(self.cfg, self.pid)
+        (pdir / "shotlist.json").write_text(json.dumps({
+            "images": [{"file": "S01_01_SCN_ZI.png", "prompt": "a"},
+                       {"file": "S01_02_SCN_PL.png", "prompt": "b"}]}),
+            encoding="utf-8")
 
         def fake_api(cfg, pdir, channel=None, upscale=None, motion_filter=None):
             seen["api_upscale"] = upscale
-            return 0
+            (pdir / "images" / "S01_02_SCN_PL.png").write_bytes(b"x")
+            return 1
 
         def fake_flow(cfg, pdir, pid, upscale=None, log=None, cancel=None,
-                      project_url=None):
+                      project_url=None, skip_motion=None):
             seen["flow_upscale"] = upscale
+            (pdir / "images" / "S01_01_SCN_ZI.png").write_bytes(b"x")
             return 1
 
         with mock.patch.object(studio, "run_imagegen", side_effect=fake_api), \
