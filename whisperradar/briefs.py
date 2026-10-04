@@ -38,6 +38,18 @@ STATIC_LONG_HOLD_SECONDS = 15.0
 # is a fault: the plan is chopping the narration up instead of grouping ideas.
 MIN_HOLD_MAX_SHORT_SHARE = 0.35
 
+# ---- the motion MIX (all profiles) -------------------------------------------
+# The share limits above are CAPS, and a plan that never uses a capped code
+# (no ST, no PU/PD, nothing but ZI) satisfies every one of them. So the mix is
+# also a target: a code with a stated share is used at least MIX_FLOOR_RATIO of
+# it, and when both zoom codes are allowed ZI takes ZOOM_SPLIT of the ZI+ZO
+# shots (the other zoom takes the rest). Small plans are exempt: a handful of
+# shots cannot show a mix.
+ZOOM_SPLIT = (0.40, 0.60)
+MIX_FLOOR_RATIO = 0.5
+MIX_MIN_SHOTS = 20
+MIX_MIN_ZOOM_SHOTS = 10
+
 # ---- slot texts: the STANDARD preset, extracted verbatim from the brief ----
 # (tests/test_brief_profiles.py proves the default render equals the
 # original brief, so these cannot drift from it unnoticed)
@@ -111,8 +123,58 @@ class MotionProfile:
         values.update(self.slots)
         mn = _num(self.min_hold) if self.min_hold else ""
         mx = _num(self.max_hold) if self.max_hold else ""
-        return {k: v.replace("[[MIN]]", mn).replace("[[MAX]]", mx)
-                for k, v in values.items()}
+        out = {k: v.replace("[[MIN]]", mn).replace("[[MAX]]", mx)
+               for k, v in values.items()}
+        mix = mix_text(self)
+        if mix and "MOTION_SECTION" in out:
+            out["MOTION_SECTION"] = out["MOTION_SECTION"].rstrip() + "\n\n" + mix
+            out["CHECK_MOTION"] = out["CHECK_MOTION"].rstrip() + " " + mix
+        return out
+
+
+def _allows(profile, code: str) -> bool:
+    return profile.allowed is None or code in profile.allowed
+
+
+def mix_targets(profile: "MotionProfile") -> list:
+    """[((codes...), share)]: ST and the grouped codes (PU/PD...) with a stated
+    share cap, which the plan must also actually use (about that share, never
+    below half of it). The per-code overrides (PL/PR kept low because they
+    default too easily, and rendered through the paid API) stay pure caps."""
+    out: list = []
+    if _allows(profile, "ST") and profile.st_max_share:
+        out.append((("ST",), profile.st_max_share))
+    for codes, cap in getattr(profile, "group_caps", ()):
+        usable = tuple(c for c in codes if _allows(profile, c))
+        if usable and cap:
+            out.append((usable, cap))
+    return out
+
+
+def zoom_balanced(profile: "MotionProfile") -> bool:
+    """True when both zoom codes are allowed, so their split is enforced."""
+    return _allows(profile, "ZI") and _allows(profile, "ZO")
+
+
+def mix_text(profile: "MotionProfile") -> str:
+    """The brief's "aim for this mix" paragraph (empty when a profile has
+    nothing to mix, e.g. a static-only channel)."""
+    parts = [f"{'/'.join(codes)} about {share:.0%}"
+             + (" (short holds only)" if codes == ("ST",) else
+                " together" if len(codes) > 1 else "")
+             for codes, share in mix_targets(profile)]
+    if zoom_balanced(profile):
+        lo, hi = ZOOM_SPLIT
+        parts.append(f"ZI and ZO take all the remaining shots, split roughly "
+                     f"evenly - ZI is between {lo:.0%} and {hi:.0%} of the "
+                     f"ZI+ZO shots and ZO the rest")
+    if not parts:
+        return ""
+    return ("Aim for this mix, not merely to stay under the caps: "
+            + "; ".join(parts) + ". A plan with one code on nearly every "
+            "shot, or that never uses a code listed here, fails review - "
+            "choose each shot's motion while designing the image so the mix "
+            "comes out right.")
 
 
 STANDARD = MotionProfile(

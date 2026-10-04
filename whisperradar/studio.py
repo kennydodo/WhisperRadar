@@ -4455,6 +4455,36 @@ def shotlist_pacing(data: dict, cues: list[dict],
             faults.append(f"{'/'.join(codes)} together are {share:.0%} of "
                           f"shots (cap ~{share_cap:.0%}) - vary the motion "
                           f"codes")
+    if len(holds) >= briefs.MIX_MIN_SHOTS:
+        total = len(holds)
+        for codes, target in briefs.mix_targets(prof):
+            share = sum(1 for _h, m, _a, _f, _l in holds if m in codes) / total
+            floor = target * briefs.MIX_FLOOR_RATIO
+            if share < floor - 1e-9:
+                label = "/".join(codes)
+                faults.append(
+                    f"{label} is only {share:.0%} of shots - this channel's "
+                    f"mix is about {target:.0%} (never below ~{floor:.0%}). "
+                    f"Give about {max(1, round(target * total) - round(share * total))}"
+                    f" more shots {label}: change the shot's \"motion\" AND "
+                    f"the ending of its asset file name together"
+                    + (" (only on holds of ~5s or less)" if codes == ("ST",)
+                       else ""))
+        if briefs.zoom_balanced(prof):
+            zi = sum(1 for _h, m, _a, _f, _l in holds if m == "ZI")
+            zo = sum(1 for _h, m, _a, _f, _l in holds if m == "ZO")
+            if zi + zo >= briefs.MIX_MIN_ZOOM_SHOTS:
+                lo, hi = briefs.ZOOM_SPLIT
+                ratio = zi / (zi + zo)
+                if ratio < lo - 1e-9 or ratio > hi + 1e-9:
+                    more, less = ("ZO", "ZI") if ratio > hi else ("ZI", "ZO")
+                    move = round(abs(zi - (zi + zo) / 2))
+                    faults.append(
+                        f"ZI is {ratio:.0%} of the ZI+ZO shots ({zi} ZI, {zo} "
+                        f"ZO) - it must be {lo:.0%}-{hi:.0%}. Change about "
+                        f"{move} {less} shots to {more}: change the shot's "
+                        f"\"motion\" AND the ending of its asset file name "
+                        f"together")
     if prof.min_hold and len(holds) > 1:
         body = holds[:-1]   # the last shot ends where the narration ends
         short = [(h, a) for h, _m, a, _f, _l in body if h < prof.min_hold]
