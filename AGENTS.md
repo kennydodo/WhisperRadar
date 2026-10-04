@@ -1173,6 +1173,31 @@ means "inherit the global".
 Unassigned productions keep the legacy behaviour (Renderly channel
 "whisperradar"), so existing productions are unaffected.
 
+### Cloned voices in the favorites picker — DONE (2026-10-03)
+
+Favorites mode showed ONLY starred voices, so the account's cloned voices
+were unreachable from the Studio audio stage. The clone catalog was verified
+live with a read-only GET first: `GET /v3/voices?provider=clone` lists
+exactly the account's own clones (voice_id `clone_<id>`; this account had
+Stickly/Animal Channel/To Live and More, total 3, no shared catalog).
+
+- `ai33.cloned_voices(cfg, refresh=False)` — `_fetch_voices(cfg, "clone")`
+  + 10 min cache (`_clones_cache`), normalized like the catalog.
+- `ai33.voices()` favorites branch now returns favorites + clones deduped by
+  voice_id; a failed clone fetch is logged and favorites still come back;
+  the shortlist/catalog fallback only fires when BOTH are empty.
+- No new source sentinel; `?source=favorites` and
+  `studio.ai33_voice_source: favorites` both pick this up. `clone_...` ids
+  already round-trip through `generate()` (PROVIDERS includes "clone").
+- studio_detail.html labels: "favorites + cloned voices" (loading/empty/
+  count messages + favLink title).
+- tests/test_favorites_include_clones.py — patched `ai33._request`, no
+  network: merge+dedupe, explicit source, clone-failure keeps favorites,
+  both-empty falls back.
+- NOTE: ~29 webapp route tests error in tearDown (locked temp wr.db,
+  WinError 32) at baseline with a live dashboard on :8540 — pre-existing,
+  not related to this change.
+
 ### OpenSpeaker favorites for the voice picker — DONE (2026-09-22)
 
 The audio-stage picker can now list the voices starred in OpenSpeaker
