@@ -980,7 +980,7 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
     longest = max((len(r["prompt"]) for r in refs.values()), default=0)
     job: dict = {
         "name": f"wr-{pid}-refs",
-        "outputsDir": str(pdir / "flow_refs"),
+        "outputsDir": str(pdir / "refs"),
         "refMode": "reuse",
         "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
                      "outputs": 1, "refMode": "reuse"},
@@ -1022,12 +1022,13 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
             "studio.flowbatch_repo in config.yaml")
     repo = flowbatch_dir(cfg)
     job_path = _write_refs_job(cfg, pdir, pid, refs)
-    tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
-                              else upscale)
+    # Reference images are only ever uploaded as references, so they are never
+    # upscaled (the `upscale` argument is kept for the callers' signature).
+    tier = set_flowbatch_tier(cfg, 0)
     from . import chrome_profile
     chrome_profile.apply(cfg, "flowbatch", log)
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
-                              "--output", str(pdir / "flow_refs"),
+                              "--output", str(pdir / "refs"),
                               "--no-color"])
     url, _ = flow_project_url_for(cfg, pid)
     if url:
@@ -1062,20 +1063,22 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
             f"reference generation failed (exit {proc.returncode}): "
             + " | ".join(tail[-4:])[:300])
 
-    # adopt: flow_refs\<name>.png -> refs\<name>.png, and point the registry at
-    # the local file so prepare uploads it under the ref's own name
-    out_dir = pdir / "flow_refs"
+    # FlowBatch wrote <name>.png straight into refs\ (no staging folder);
+    # point the registry at the local file so prepare uploads it under the
+    # ref's own name
     refs_dir = pdir / "refs"
     refs_dir.mkdir(parents=True, exist_ok=True)
     generated, missing = [], []
     for name in refs:
-        src = next((p for p in (out_dir / f"{name}.png",
-                                out_dir / f"{name}.jpg",
-                                out_dir / f"{name}.jpeg") if p.is_file()), None)
-        if src is None:
-            missing.append(name)
-            continue
-        shutil.copy(src, refs_dir / f"{name}.png")
+        target = refs_dir / f"{name}.png"
+        if not target.is_file():
+            alt = next((p for p in (refs_dir / f"{name}.jpg",
+                                    refs_dir / f"{name}.jpeg") if p.is_file()),
+                       None)
+            if alt is None:
+                missing.append(name)
+                continue
+            alt.replace(target)  # the registry names refs\<name>.png
         generated.append(name)
     if generated:
         (pdir / REFS_GENERATED_MANIFEST).write_text(

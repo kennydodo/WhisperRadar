@@ -200,5 +200,50 @@ class RefsEngineDispatchTests(unittest.TestCase):
         self.assertIn("CH_MAYA", args[3])
 
 
+class FlowBatchRefsFolderTests(unittest.TestCase):
+    """FlowBatch writes generated refs straight into refs\\ - no flow_refs
+    staging folder, no copy, no upscaled twins."""
+
+    def test_refs_job_outputs_into_refs_without_upscale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = Path(tmp)
+            (pdir / "shotlist.json").write_text("{}", encoding="utf-8")
+            cfg = load_config()
+            job_path = studio._write_refs_job(
+                cfg, pdir, 1, {"CH_MAYA": {"prompt": "a woman"}})
+            job = json.loads(job_path.read_text(encoding="utf-8"))
+            self.assertEqual(Path(job["outputsDir"]), pdir / "refs")
+
+    def test_no_flow_refs_folder_in_the_code(self):
+        self.assertNotIn("flow_refs", (ROOT / "whisperradar" / "studio.py")
+                         .read_text(encoding="utf-8"))
+
+    def test_generated_refs_are_adopted_in_place(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = Path(tmp)
+            (pdir / "refs").mkdir()
+            (pdir / "refs" / "CH_MAYA.png").write_bytes(b"x")
+            (pdir / "shotlist.json").write_text(json.dumps(
+                {"refs": {"CH_MAYA": None}, "images": []}), encoding="utf-8")
+
+            class Proc:
+                returncode = 0
+                stdout = iter([])
+                def poll(self): return 0
+                def wait(self, timeout=None): return 0
+
+            cfg = load_config()
+            with mock.patch.object(studio, "flowbatch_ready", return_value=True), \
+                    mock.patch.object(studio, "flowbatch_dir", return_value=pdir), \
+                    mock.patch.object(studio, "set_flowbatch_tier") as tier, \
+                    mock.patch.object(studio.subprocess, "Popen",
+                                      return_value=Proc()):
+                out = studio.run_flowbatch_refs(
+                    cfg, pdir, 1, {"CH_MAYA": {"prompt": "p"}}, upscale=4)
+            tier.assert_called_once_with(cfg, 0)
+            self.assertEqual(out["generated"], ["CH_MAYA"])
+            self.assertFalse((pdir / "flow_refs").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
