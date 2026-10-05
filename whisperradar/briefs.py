@@ -120,6 +120,10 @@ class MotionProfile:
     slots: dict = field(default_factory=dict)
     # shot-type caps + host-in-frame shares (see normalize_types); None = none
     types: dict | None = None
+    # the channel lets the plan use reveal shots (see reveal_block)
+    reveal: bool = False
+    # level 2: reveals are REQUIRED wherever the narration lists 2-4 items
+    reveal_strict: bool = False
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -881,13 +885,19 @@ def _resolve_motion(key, min_hold=None, max_hold=None,
 
 def resolve_profile(key, min_hold=None, max_hold=None,
                     default_max: float | None = None,
-                    custom=None, types=None) -> MotionProfile:
+                    custom=None, types=None, reveal=None) -> MotionProfile:
     """The channel's effective profile: its motion preset, the channel's own
-    hold range (seconds) and its shot-type spec (`types`, see
-    normalize_types / effective_types). Nothing set = today's profile."""
+    hold range (seconds), its shot-type spec (`types`, see
+    normalize_types / effective_types) and whether reveal shots are allowed.
+    Nothing set = today's profile."""
     prof = _resolve_motion(key, min_hold, max_hold, default_max, custom)
     spec = normalize_types(types)
-    return replace(prof, types=spec) if spec else prof
+    if spec:
+        prof = replace(prof, types=spec)
+    if reveal:
+        # 1 / True = allowed, 2 = required wherever the narration lists items
+        prof = replace(prof, reveal=True, reveal_strict=str(reveal) == "2")
+    return prof
 
 
 # ---- presentation (who is on screen, and when) -----------------------------
@@ -971,6 +981,110 @@ def presentation_block(text) -> str:
         "invented on the fly per Section 6.")
 
 
+# ---- reveal shots (items shown one at a time) --------------------------------
+REVEAL_MIN_ITEMS = 2
+REVEAL_MAX_ITEMS = 4
+
+
+REVEAL_REQUIRED_RULE = (
+    "\n\nTHIS CHANNEL REQUIRES REVEAL SHOTS. Reveals are not optional here: "
+    "every passage of the narration that names 2-4 parallel items one after "
+    "another (\"first, second, third\", numbered steps, a list of fees, "
+    "habits, animals, symptoms or numbers) MUST be planned as a reveal shot - "
+    "never as an ordinary shot and never as one multi-panel image. A longer "
+    "list is split across consecutive reveal shots of 2-4 items. Give every "
+    "reveal a fitting sound effect on each item. Before you return the "
+    "shotlist, read the narration once more for such passages and confirm "
+    "each one became a reveal shot; a plan that leaves a listed passage as an "
+    "ordinary shot is wrong.")
+
+
+def reveal_block(strict: bool = False) -> str:
+    """The planning-brief section that teaches reveal shots. Only added for a
+    channel that turned them on (MotionProfile.reveal)."""
+    text = (
+        "## SECTION 7B — REVEAL SHOTS AND SOUND EFFECTS (items shown one at a time)\n\n"
+        "A reveal shot shows 2–4 parallel items as the narrator names them: "
+        "the first item is on screen alone, the second appears when the "
+        "narration reaches it, then the third. It is ONE image holding the "
+        "items in a left-to-right row, each in its own equal-width slice (2 "
+        "items = halves, 3 = thirds, 4 = quarters). The assembler cuts the "
+        "image along those slice lines and reveals the slices in order, so "
+        "the layout has to be exact.\n\n"
+        "Use it only when ONE passage of the narration walks through "
+        f"{REVEAL_MIN_ITEMS}–{REVEAL_MAX_ITEMS} parallel things one after "
+        "another (three causes, two options, four steps) and each deserves "
+        "its own beat on screen. It is a rare tool — at most about 10% of "
+        "the shots; everything else stays a normal shot. When in doubt, do "
+        "not use it.\n\n"
+        "Add `\"reveal\": [c1, c2, c3]` to the shot: the SRT cue at which "
+        "each item is first named — one cue per item, strictly increasing, "
+        "all inside the shot's own `cues`, the first equal to the shot's "
+        "first cue. Item 1 is the leftmost slice, item 2 the next, and so on, "
+        "in narration order.\n\n"
+        "Rules for a reveal shot:\n"
+        "- It never moves: `\"motion\": \"ST\"` and the asset file name ends "
+        "with the ST code. The ST share and ST hold limits above do not "
+        "apply to it; the channel's normal maximum hold does.\n"
+        "- Its image prompt must state the item count, name each item in "
+        "left-to-right order and put every item in its own slice, e.g. "
+        "\"three separate items in a row, left to right: A, B, C, each "
+        "centered in its own equal third of the frame\".\n"
+        "- Keep clear empty space between neighbouring slices. Nothing may "
+        "cross a vertical slice line — no object, shadow, floor line, glow, "
+        "arrow, prop or text — and no item may lean into a neighbour's slice.\n"
+        "- One plain, identical background and the same lighting, scale and "
+        "ground line across all slices, so the slices that are still hidden "
+        "leave no visible gap or mismatch.\n"
+        "- No character, hand or object may appear in more than one slice, "
+        "and an item must not need another item to make sense.\n"
+        "- A reveal image cannot be fixed afterwards: the slices are cut by "
+        "pixels. If the items cannot be laid out cleanly in equal slices, "
+        "plan normal shots instead.\n\n"
+        "Variant A — a 2×2 grid, for exactly 4 items in a square: "
+        "`\"reveal\": {\"cues\": [c1, c2, c3, c4], \"layout\": \"grid\"}`. "
+        "It is still ONE image, now with four equal quadrants revealed in "
+        "reading order: top-left, top-right, bottom-left, bottom-right. The "
+        "rules above apply to the quadrants: the prompt says \"four separate "
+        "items in a 2x2 grid\", names them in that order, centers each in its "
+        "own quadrant, leaves clear empty space around the vertical and "
+        "horizontal centre lines and lets nothing cross either centre line.\n\n"
+        "Variant B — separate images one after another, for when each item "
+        "deserves its own picture (so the same-image limits above do not "
+        "apply): `\"reveal\": {\"cues\": [c1, c2, c3], \"assets\": "
+        "[\"S05_01_INF_ST.png\", \"S05_02_INF_ST.png\", "
+        "\"S05_03_INF_ST.png\"], \"layout\": \"row\"}` (layout \"row\" for "
+        "2–3 images, \"grid\" for exactly 4; \"row\" is the default). Each "
+        "asset is its own normal entry in `images`, with a normal prompt for "
+        "what the narrator says at its cue; the shot's `asset` is the first "
+        "of `assets`, and every name ends with _ST. The earlier images stay "
+        "on screen side by side as the next one appears (build-up). Each "
+        "image is centre-cropped to fill its slot — in a row a tall strip one "
+        "Nth of the frame wide, in a grid a quarter of the frame — so keep "
+        "each image to ONE subject centered with generous empty space on both "
+        "sides. If each picture should instead REPLACE the previous one, do "
+        "not use `reveal`: plan ordinary consecutive shots.\n\n"
+        "Sound effects (optional, any shot): add `\"sfx\": \"pop\"` to play a "
+        "short sound (about a second) when the shot starts. On a reveal shot "
+        "a single name plays at every item; a list gives one name per item, "
+        "e.g. `[\"ding\", \"pop\", \"pop\"]` (the last name repeats when the "
+        "list is short). Built-in sounds: pop, ding, click, tick, whoosh, "
+        "swipe. Use them sparingly — on reveal items or a deliberate emphasis "
+        "— and keep to one or two sounds across the video; never on most "
+        "shots, and never as a substitute for the narration. A normal shot "
+        "takes ONE name, not a list.\n\n"
+        "Final check for every reveal shot, before you output: the `reveal` "
+        "list has one cue per item, increasing, starting at the shot's first "
+        "cue and inside its `cues`; `motion` is ST and the file name ends "
+        "with _ST; the prompt states the item count, names the items left to "
+        "right in narration order, keeps each in its own equal slice and "
+        "forbids anything crossing a slice line; a grid has exactly 4 cues; "
+        "separate images have one `assets` entry per cue, the first equal to "
+        "`asset`, each its own entry in `images`; any `sfx` is a built-in "
+        "name; and reveal shots are no more than about 10% of all shots.\n")
+    return text + (REVEAL_REQUIRED_RULE if strict else "")
+
+
 # ---- rendering ---------------------------------------------------------------
 _MARKER_RE = re.compile(r"\{\{([A-Z_]+)\}\}")
 
@@ -1005,6 +1119,15 @@ def render_brief(template: str, profile: MotionProfile | None = None,
             text = text.replace("{{PRESENTATION}}", "")
     elif block:
         text = text.rstrip() + "\n\n" + block
+    if profile.reveal:
+        # right after the output-document section; a custom template without
+        # that heading gets it at the end
+        marker = "## SECTION 8 "
+        at = text.find(marker)
+        if at >= 0:
+            text = text[:at] + reveal_block(profile.reveal_strict) + "\n" + text[at:]
+        else:
+            text = text.rstrip() + "\n\n" + reveal_block(profile.reveal_strict)
     for name, value in values.items():
         text = text.replace("{{%s}}" % name, value)
     left = sorted(set(_MARKER_RE.findall(text)))

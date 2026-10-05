@@ -29,7 +29,8 @@ _SKIP = {"id", "renderly_channel_id", "renderly_channel_name"}
 _INT = {"active": (0, 1), "default_upscale": (0, 4),
         "candidate_window_days": (0, 3650), "script_max_attempts": (1, 10),
         "shotlist_max_attempts": (1, 8), "per_day": (0, 50),
-        "generate_references": (0, 1), "autorun_enabled": (0, 1)}
+        "generate_references": (0, 1), "autorun_enabled": (0, 1),
+        "brief_reveal": (0, 2)}
 _FLOAT = {"script_min_rating": (1.0, 10.0), "script_max_overlap": (0.0, 1.0),
           "shotlist_min_alignment": (0.0, 1.0), "brief_min_hold": (0.0, 600.0),
           "brief_max_hold": (0.0, 600.0)}

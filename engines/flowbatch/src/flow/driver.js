@@ -24,6 +24,20 @@ function normalizeModelName(value) {
 }
 
 /**
+ * True when a menu label is the wanted model. Exact match, or the same name
+ * plus a version suffix of numbers only ("Nano Banana 2" matches "Nano Banana
+ * 2.1"), so a point release does not break the setting. Other trailing words
+ * ("Lite", "Pro") never match.
+ */
+export function modelMatches(label, wanted) {
+  const a = normalizeModelName(label).split(' ').filter(Boolean);
+  const w = normalizeModelName(wanted).split(' ').filter(Boolean);
+  if (!w.length || a.length < w.length) return false;
+  if (!w.every((token, i) => a[i] === token)) return false;
+  return a.slice(w.length).every((token) => /^\d+$/.test(token));
+}
+
+/**
  * Finished results are served from Flow's asset host; grid placeholders use
  * flow.google.com/asb/…. Only the finished host counts as a result, whatever
  * the tile's buttons happen to say.
@@ -385,11 +399,10 @@ export class FlowDriver {
    */
   async selectModel(name) {
     if (!name) return true;
-    const wanted = normalizeModelName(name);
     const button = await this.find('modelFamilyButton', { timeout: 8000 });
 
-    const current = normalizeModelName(await this.modelButtonLabel(button.locator));
-    if (current === wanted) {
+    const current = await this.modelButtonLabel(button.locator);
+    if (modelMatches(current, name)) {
       log.debug(`Model already set to "${name}".`);
       return true;
     }
@@ -400,31 +413,29 @@ export class FlowDriver {
     const items = this.page.locator("[role='menuitem']");
     const count = await items.count().catch(() => 0);
     let exact = -1;
-    let first = -1;
     const seen = [];
 
     for (let index = 0; index < count; index += 1) {
       const raw = (await items.nth(index).innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
       if (!raw) continue;
       seen.push(raw);
-      if (first < 0) first = index;
-      if (normalizeModelName(raw) === wanted) {
+      if (modelMatches(raw, name)) {
         exact = index;
         break;
       }
     }
 
-    const chosen = exact >= 0 ? exact : first;
-    if (chosen < 0) {
-      await this.page.keyboard.press('Escape').catch(() => {});
-      log.warn(`No model named "${name}" in the model menu (saw: ${seen.join(', ')}). Keeping the current model.`);
-      return false;
-    }
     if (exact < 0) {
-      log.warn(`No exact model named "${name}"; falling back to "${seen[0]}".`);
+      // Never fall back to another entry: the first one may be a more
+      // expensive model (Pro). Stop so the run does not use the wrong one.
+      await this.page.keyboard.press('Escape').catch(() => {});
+      throw new Error(
+        `No model named "${name}" in the Flow model menu (saw: ${seen.join(', ')}). ` +
+          'Not picking another model; fix generation.model in config/settings.json.',
+      );
     }
 
-    await items.nth(chosen).click();
+    await items.nth(exact).click();
     await sleep(600);
     return true;
   }
@@ -566,7 +577,7 @@ export class FlowDriver {
 
     if (model) {
       const current = await this.projectModelLabel();
-      if (normalizeModelName(current) !== normalizeModelName(model)) {
+      if (!modelMatches(current, model)) {
         changed = (await this.setProjectModel(model)) || changed;
       }
     }

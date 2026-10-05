@@ -30,11 +30,11 @@ Two things to know before you run it at volume:
 - A dedicated Chromium profile lives in `profile/`. You sign in to Google **once, by hand**; the
   session is reused on every later run.
 - **Generation is gated by reCAPTCHA Enterprise**, and the score belongs to the signed-in
-  **account and browser session**, not to a single request. A session Flow distrusts is refused with
+  **browser session**, not to a single request. A session Flow distrusts is refused with
   *"We noticed some unusual activity"* in about three seconds — no generation is attempted, so
   waiting cannot help, and each refusal lowers the standing further.
 - **Agent mode OFF is what this project uses** (it keeps the per-item model, aspect-ratio and
-  output-count controls available). It works on a healthy account. On a session that Flow already
+  output-count controls available). It works on a healthy session. On a session that Flow already
   distrusts, Agent OFF is what tips a generation over into a refusal — in that situation Agent ON
   (`--agent on`, or `"agent": true`) is the way to keep generating. Agent ON hides the prompt-box
   settings, so the defaults then come from the project settings panel (gear icon → *Agent settings*).
@@ -72,7 +72,7 @@ Two details that are easy to get wrong:
 - Node.js 20 or newer
 - Google Chrome installed (Google is far more likely to allow sign-in from real Chrome than from
   Playwright's bundled Chromium)
-- A Google account with access to Google Flow
+- A Google sign-in with access to Google Flow
 
 ## Install
 
@@ -484,7 +484,7 @@ Other mitigations, in order of effect:
 4. Use `--limit` to run a few items at a time.
 
 Observed recovery: about **4 hours** after the first episode, and about **2h40m** after a later one.
-It appears to scale with how hard the account was pushed, so tripping it less often means shorter
+It appears to scale with how hard the session was pushed, so tripping it less often means shorter
 waits.
 
 > Before assuming throttling, rule out an over-long prompt — see the next section. Flow returns the
@@ -585,7 +585,7 @@ From Google's own Flow guidance:
 | `N of 85 prompts exceed ... characters` at load | The job-wide `style` is usually most of it. Trim the style, not every prompt. |
 | `Could not locate the Flow UI element "x"` | Re-run `npm run discover` and update that key. |
 | `Generated the asset but could not save it` | Calibrate `assetTile`; check `debug/` for the grid state. |
-| `Flow refused ... unusual activity` within ~3s | Not a rate limit — a reCAPTCHA standing problem on that account/session. Try `--agent on`, or sign in with a different Google account. Waiting and retrying make it worse. |
+| `Flow refused ... unusual activity` within ~3s | Not a rate limit — a reCAPTCHA standing problem on that session. Try `--agent on`, or sign in to a different Google profile. Waiting and retrying make it worse. |
 | Model / ratio / outputs not applied | With Agent ON these come from the project settings panel (gear icon), not the prompt box. |
 | Project fills with duplicate uploads | Expected with `refMode: "upload"`. Delete the extras in Flow. |
 
@@ -599,5 +599,5 @@ From Google's own Flow guidance:
 - Rate limits are waited out automatically, so a long batch can take hours. It is bounded by
   `maxCooldowns`; if that is exhausted the run stops and the rest stay `pending`.
 - The observed tolerance is low — as few as **3 generations** between refusals after heavy use.
-- Automating a Google product may conflict with its terms of service. Use your own account, keep
-  volumes reasonable, and review Flow's terms before running large batches.
+- Automating a Google product may conflict with its terms of service. Use your own Google sign-in,
+  keep volumes reasonable, and review Flow's terms before running large batches.

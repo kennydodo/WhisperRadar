@@ -3725,6 +3725,21 @@ def shotlist_patch_prompt(weak: list[dict], style_guide: str = "",
                    if w.get("missing") else "")
         lines.append(f"- {w['asset']}{missing}"
                      + (f" - {w['reason']}" if w.get("reason") else "")
+                     + (f" | REVEAL SHOT with {len(w['reveal'])} items in "
+                        + ("a 2x2 grid (reading order: top-left, top-right, "
+                           "bottom-left, bottom-right), one equal quadrant "
+                           "each: keep that layout, name every item in "
+                           "narration order, nothing may cross the centre "
+                           "lines" if w.get("reveal_layout") == "grid" else
+                           "a left-to-right row, one equal slice each: keep "
+                           "that layout, name every item in narration order, "
+                           "nothing may cross a slice line")
+                        if w.get("reveal") else "")
+                     + (f" | BUILD-UP IMAGE {w['reveal_item'][0]} of "
+                        f"{w['reveal_item'][1]}: it is centre-cropped into "
+                        f"a slot, so keep ONE subject centered with generous "
+                        f"empty space on both sides"
+                        if w.get("reveal_item") else "")
                      + (f" | cue says: {w['narration']}"
                         if w.get("narration") else ""))
     return (
@@ -4182,6 +4197,147 @@ def shotlist_type_faults(data: dict, profile) -> list[str]:
     return faults
 
 
+def shot_reveal(shot: dict) -> list[int] | None:
+    """The cue numbers of a reveal shot (one per item, in order) as the plan
+    wrote them - "reveal": [41, 42, 43] or {"cues": [...]} - or None when the
+    shot has no usable reveal. Whether they are VALID is shotlist_reveal_faults'
+    job; this only reads them."""
+    raw = shot.get("reveal") if isinstance(shot, dict) else None
+    if isinstance(raw, dict):
+        raw = raw.get("cues")
+    if not isinstance(raw, list) or not raw:
+        return None
+    out: list[int] = []
+    for v in raw:
+        if isinstance(v, bool) or not isinstance(v, int):
+            return None
+        out.append(v)
+    return out
+
+
+REVEAL_LAYOUTS = ("row", "grid")
+BUILTIN_SFX = ("pop", "ding", "click", "tick", "whoosh", "swipe")
+SFX_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\- ]{0,39}$")
+
+
+def shot_reveal_layout(shot: dict) -> str:
+    """"row" (default) or "grid" - what the plan wrote, lower-cased; an unknown
+    value is returned as written so the fault check can name it."""
+    raw = shot.get("reveal") if isinstance(shot, dict) else None
+    if isinstance(raw, dict) and raw.get("layout") not in (None, ""):
+        return str(raw.get("layout")).strip().lower()
+    return "row"
+
+
+def shot_reveal_assets(shot: dict) -> list[str] | None:
+    """The separate images of a build-up reveal ("assets": [...]) or None."""
+    raw = shot.get("reveal") if isinstance(shot, dict) else None
+    if not isinstance(raw, dict) or raw.get("assets") in (None, ""):
+        return None
+    assets = raw.get("assets")
+    if not isinstance(assets, list):
+        return []
+    return [a.strip() if isinstance(a, str) else "" for a in assets]
+
+
+def shot_sfx(shot: dict) -> list[str] | None:
+    """Sound names of a shot ("sfx": "pop" or a list) or None. Non-string
+    entries come back as "" so shotlist_sfx_faults can reject them."""
+    raw = shot.get("sfx") if isinstance(shot, dict) else None
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, str):
+        return [raw.strip()]
+    if isinstance(raw, list):
+        return [v.strip() if isinstance(v, str) else "" for v in raw]
+    return [""]
+
+
+def shotlist_sfx_faults(shots: list[dict]) -> list[str]:
+    """Sound effects: names only (a built-in or a file the creator put in the
+    project's sfx folder); a normal shot takes one name, a reveal shot at most
+    one per item."""
+    faults: list[str] = []
+    for s in shots:
+        if not isinstance(s, dict) or s.get("sfx") in (None, ""):
+            continue
+        asset = str(s.get("asset") or "?")
+        names = shot_sfx(s)
+        if not names or any(not SFX_NAME_RE.match(n) for n in names):
+            faults.append(f"{asset}: \"sfx\" must be a sound name such as "
+                          f"\"pop\" (built-in: {', '.join(BUILTIN_SFX)}) or a "
+                          f"list of names")
+            continue
+        items = shot_reveal(s)
+        if items is None and len(names) > 1:
+            faults.append(f"{asset}: a shot without a reveal takes ONE sfx "
+                          f"name, not a list")
+        elif items is not None and len(names) > len(items):
+            faults.append(f"{asset}: {len(names)} sfx names for "
+                          f"{len(items)} reveal items")
+    return faults
+
+
+def shotlist_reveal_faults(shots: list[dict],
+                           image_names: set | None = None) -> list[str]:
+    """Objective faults on reveal shots: 2-4 items, one cue per item, strictly
+    increasing, inside the shot's own cues, the first on the shot's first cue,
+    and a static (ST) shot. A reveal that breaks one of these cannot be cut
+    correctly, so it fails here instead of surfacing at merge time."""
+    faults: list[str] = []
+    lo_n, hi_n = briefs.REVEAL_MIN_ITEMS, briefs.REVEAL_MAX_ITEMS
+    for s in shots:
+        if not isinstance(s, dict) or s.get("reveal") in (None, ""):
+            continue
+        asset = str(s.get("asset") or "?")
+        cues = shot_reveal(s)
+        rng = cue_range(s.get("cues"))
+        if cues is None or not (lo_n <= len(cues) <= hi_n):
+            faults.append(f"{asset}: \"reveal\" needs {lo_n}-{hi_n} cue "
+                          f"numbers, one per item, e.g. [41, 42, 43]")
+            continue
+        if any(b <= a for a, b in zip(cues, cues[1:])):
+            faults.append(f"{asset}: reveal cues {cues} must increase, one "
+                          f"per item in narration order")
+        elif rng and (cues[0] != rng[0] or cues[-1] > rng[1]):
+            faults.append(f"{asset}: reveal cues {cues} must start at the "
+                          f"shot's first cue ({rng[0]}) and stay inside its "
+                          f"cues {rng[0]}-{rng[1]}")
+        code = Path(asset).stem.split("_")[-1].upper()
+        motion = str(s.get("motion") or "ST").upper()
+        if code != "ST" or motion != "ST":
+            faults.append(f"{asset}: a reveal shot is static - set motion "
+                          f"\"ST\" and end the file name with _ST")
+        layout = shot_reveal_layout(s)
+        if layout not in REVEAL_LAYOUTS:
+            faults.append(f"{asset}: reveal layout \"{layout}\" must be "
+                          f"\"row\" or \"grid\"")
+        elif layout == "grid" and len(cues) != 4:
+            faults.append(f"{asset}: a grid reveal needs exactly 4 items "
+                          f"(2x2), not {len(cues)}")
+        assets = shot_reveal_assets(s)
+        if assets is not None:
+            if (len(assets) != len(cues) or any(not a for a in assets)
+                    or len(set(assets)) != len(assets)):
+                faults.append(f"{asset}: reveal \"assets\" needs {len(cues)} "
+                              f"different image file names, one per cue")
+                continue
+            if assets[0] != asset:
+                faults.append(f"{asset}: the shot's asset must be the first "
+                              f"of its reveal assets ({assets[0]})")
+            bad = [a for a in assets
+                   if Path(a).stem.split("_")[-1].upper() != "ST"]
+            if bad:
+                faults.append(f"{asset}: every reveal image is static - end "
+                              f"{', '.join(bad[:3])} with _ST")
+            if image_names is not None:
+                lost = [a for a in assets if a not in image_names]
+                if lost:
+                    faults.append(f"{asset}: reveal image(s) not in images: "
+                                  f"{', '.join(lost[:4])}")
+    return faults
+
+
 def shotlist_pacing(data: dict, cues: list[dict],
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                     profile: "briefs.MotionProfile | None" = None
@@ -4217,8 +4373,12 @@ def shotlist_pacing(data: dict, cues: list[dict],
         first, last = by_index.get(rng[0]), by_index.get(rng[1])
         if not first or not last:
             continue
+        # a reveal shot is static but long by design: it must not count as ST
+        # (long-static, ST share/hold caps) nor trip an allowed-codes check
+        motion = ("REVEAL" if shot_reveal(s) else
+                  str(s.get("motion") or "").upper())
         holds.append((_srt_seconds(last.get("end")) - _srt_seconds(first.get("start")),
-                      str(s.get("motion") or "").upper(),
+                      motion,
                       str(s.get("asset") or "?"), rng[0], rng[1]))
     if not holds:
         return [], []
@@ -4274,7 +4434,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
             + (f"\n  ...and {omitted} more of the same kind" if omitted else ""))
     if prof.allowed:
         banned = [(a, m) for _h, m, a, _f, _l in holds
-                  if m and m not in prof.allowed]
+                  if m and m != "REVEAL" and m not in prof.allowed]
         if banned:
             only = "/".join(prof.allowed)
             faults.append(
@@ -4302,7 +4462,8 @@ def shotlist_pacing(data: dict, cues: list[dict],
             faults.append(f"ST shots hold longer than {prof.st_max_hold:.0f}s: "
                           + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
     if prof.code_max_share is not None:
-        for code in sorted({m for _h, m, _a, _f, _l in holds if m}):
+        for code in sorted({m for _h, m, _a, _f, _l in holds
+                            if m and m != "REVEAL"}):
             share = sum(1 for _h, m, _a, _f, _l in holds if m == code) / len(holds)
             share_cap = prof.code_share_overrides.get(code, prof.code_max_share)
             if share > share_cap:
@@ -4493,8 +4654,9 @@ def shotlist_structural_faults(data: dict, cue_count: int,
         faults.append("no images in the shotlist")
 
     faults.extend(shotlist_cue_faults(shots, cue_count, limit))
-
     names = {str(i.get("file")) for i in images if i.get("file")}
+    faults.extend(shotlist_reveal_faults(shots, names))
+    faults.extend(shotlist_sfx_faults(shots))
     orphans = sorted({str(s.get("asset")) for s in shots if s.get("asset")}
                      - names)
     if orphans:
@@ -4595,9 +4757,33 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
         # detailed prompt that puts a required element after character 700
         # was being marked "missing" for something that was actually there.
         # chunk_size already bounds how much text one judge call carries.
+        reveal = shot_reveal(s)
+        reveal_line = ""
+        if reveal:
+            grid = shot_reveal_layout(s) == "grid"
+            where = "quadrant" if grid else "slice"
+            parts = "; ".join(
+                f'item {k} ({where} {k} of {len(reveal)}) at cue {c}: '
+                f'"{cues.get(c, "")}"' for k, c in enumerate(reveal, 1))
+            reveal_line = (
+                f'  REVEAL SHOT, {len(reveal)} items shown one at a time, '
+                + ('in a 2x2 grid (top-left, top-right, bottom-left, '
+                   'bottom-right)' if grid else 'left to right')
+                + f': {parts}\n')
+        item = s.get("reveal_item")
+        if item:
+            reveal_line += (
+                f'  BUILD-UP IMAGE {item[0]} of {item[1]} ({item[2]}): shown '
+                f'in its own slot beside the others and centre-cropped to '
+                f'fill it\n')
         items.append(f'- asset: {s.get("asset")}\n'
                      f'  cues {rng[0]}-{rng[1]} narrate: "{narration}"\n'
+                     + reveal_line +
                      f'  image prompt: "{str(s.get("prompt"))}"')
+    reveal_rules = ((REVEAL_JUDGE_RULES if any(
+        shot_reveal(s) for s in chunk) else "")
+        + (REVEAL_BUILDUP_JUDGE_RULES if any(
+            s.get("reveal_item") for s in chunk) else ""))
     return (
         "You are auditing a video shotlist BEFORE its images are rendered. For "
         "each shot you get the narration at its cue range and the image prompt "
@@ -4651,13 +4837,83 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
         + (f"CHANNEL VISUAL STYLE (its text/number policy decides the "
            f"exact-number exclusion above):\n{style_guide.strip()[:2000]}\n\n"
            if (style_guide or "").strip() else "")
-        + "\n".join(items) +
+        + "\n".join(items)
+        + reveal_rules +
         "\n\nReply with ONLY a JSON object:\n"
         '{"shots": [{"asset": "<asset>", "verdict": "ok"|"weak"|"missing", '
         '"missing": ["<element the narration requires that the prompt does not '
         'state>", ...], "reason": "<one short line>"}]}\n'
         "Include every shot, and leave \"missing\" empty for ok shots."
     )
+
+
+REVEAL_JUDGE_RULES = (
+    "\n\nREVEAL SHOTS. A shot marked REVEAL SHOT is ONE image holding N items "
+    "in a left-to-right row, each in its own equal-width slice (halves, thirds "
+    "or quarters). The video cuts the image along the slice lines and shows "
+    "slice 1, then adds slice 2 when the narrator reaches item 2, and so on - "
+    "so a wrong layout cannot be repaired later. Judge a reveal shot STRICTLY: "
+    "the prompt must (1) state the exact item count N; (2) name each item and "
+    "put them in the narrated order, left to right, item k in slice k - the "
+    "item the narration names at the first listed cue is the LEFTMOST; (3) "
+    "place every item inside its own equal slice, centered, with clear empty "
+    "space between neighbouring slices; (4) keep everything (objects, shadows, "
+    "floor lines, glows, arrows, props, text) from crossing a vertical slice "
+    "line; (5) use one plain, identical background, lighting, scale and "
+    "ground line across all slices; (6) share no character, hand or object "
+    "between slices. If any of (1)-(6) is absent or ambiguous the verdict is "
+    "\"weak\" and \"missing\" names exactly which one (e.g. \"item 2 is not "
+    "assigned to the middle third\", \"does not forbid objects crossing the "
+    "slice lines\"). If the items described do not match what the narration "
+    "names at those cues, or the order is wrong, the verdict is \"missing\". "
+    "For a reveal marked as a 2x2 GRID the same applies to four equal "
+    "quadrants in reading order - item 1 top-left, item 2 top-right, item 3 "
+    "bottom-left, item 4 bottom-right - and nothing may cross the vertical or "
+    "the horizontal centre line. "
+    "A reveal prompt is NOT excused by the excluded-elements list above for "
+    "these layout requirements.\n")
+
+
+REVEAL_BUILDUP_JUDGE_RULES = (
+    "\n\nBUILD-UP IMAGES. A shot marked BUILD-UP IMAGE is one of several "
+    "separate pictures that appear one after another and stay on screen side "
+    "by side (a row of tall strips, or a 2x2 grid). It is judged like any "
+    "image against ITS OWN narration, plus one layout requirement: the prompt "
+    "must make the picture ONE clear subject centered in the frame with "
+    "generous empty space on both sides, because only the centre is kept when "
+    "the picture is cropped into its slot. A prompt that spreads several "
+    "subjects across the width, or pushes the subject to an edge, is "
+    "\"weak\" and \"missing\" says \"one centered subject with empty side "
+    "margins\".\n")
+
+
+def judge_shots(data: dict, prompt_by_file: dict) -> list[dict]:
+    """The shots the judge sees. A normal or one-image reveal shot is itself;
+    a build-up reveal (separate images) becomes one pseudo-shot per image, each
+    covering only ITS item's cues, so every image is graded against what the
+    narrator says while it appears and a weak one can be patched by file name
+    like any other prompt."""
+    out: list[dict] = []
+    for s in (data.get("shots") or []):
+        if not isinstance(s, dict) or not s.get("asset"):
+            continue
+        assets = shot_reveal_assets(s)
+        cues_n = shot_reveal(s)
+        rng = cue_range(s.get("cues"))
+        if assets and cues_n and len(assets) == len(cues_n) and rng:
+            layout = shot_reveal_layout(s)
+            for k, a in enumerate(assets):
+                last = cues_n[k + 1] - 1 if k + 1 < len(cues_n) else rng[1]
+                item = {**s, "asset": a, "cues": f"{cues_n[k]}-{last}",
+                        "prompt": prompt_by_file.get(a, ""),
+                        "reveal_item": (k + 1, len(assets),
+                                        "2x2 grid" if layout == "grid"
+                                        else "row")}
+                item.pop("reveal", None)
+                out.append(item)
+            continue
+        out.append({**s, "prompt": prompt_by_file.get(str(s["asset"]), "")})
+    return out
 
 
 def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
@@ -4749,6 +5005,11 @@ def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
                         "reason": str(v.get("reason") or "")[:200],
                         "narration": (cue_text.get(
                             (cue_range(s.get("cues")) or (0, 0))[0], ""))[:200]}
+                if shot_reveal(s):
+                    entry["reveal"] = shot_reveal(s)
+                    entry["reveal_layout"] = shot_reveal_layout(s)
+                if s.get("reveal_item"):
+                    entry["reveal_item"] = s["reveal_item"]
                 weak.append(entry)
                 verdicts[asset] = entry
     return {"matched": matched, "weak": weak, "verdicts": verdicts,
@@ -4784,10 +5045,7 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
     prompt_by_file = {str(i.get("file")): i.get("prompt")
                       for i in (data.get("images") or [])
                       if isinstance(i, dict)}
-    shots = []
-    for s in (data.get("shots") or []):
-        if isinstance(s, dict) and s.get("asset"):
-            shots.append({**s, "prompt": prompt_by_file.get(str(s["asset"]), "")})
+    shots = judge_shots(data, prompt_by_file)
     total = len(shots)
     if not shots:
         return {"faults": faults, "matched": 0, "total": 0, "weak": [],
@@ -4835,10 +5093,7 @@ def review_shotlist_patch(cfg, data: dict, cues: list[dict],
     prompt_by_file = {str(i.get("file")): i.get("prompt")
                       for i in (data.get("images") or [])
                       if isinstance(i, dict)}
-    shots = []
-    for s in (data.get("shots") or []):
-        if isinstance(s, dict) and s.get("asset"):
-            shots.append({**s, "prompt": prompt_by_file.get(str(s["asset"]), "")})
+    shots = judge_shots(data, prompt_by_file)
     total = len(shots)
     if not shots:
         return {"faults": faults, "matched": 0, "total": 0, "weak": [],

@@ -982,7 +982,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
             eff.get("brief_motion"), eff.get("brief_min_hold"),
             eff.get("brief_max_hold"),
             default_max=eff["shotlist_max_hold_seconds"],
-            custom=eff.get("brief_custom"), types=eff.get("brief_types"))
+            custom=eff.get("brief_custom"), types=eff.get("brief_types"),
+            reveal=eff.get("brief_reveal"))
         presentation = eff.get("brief_presentation") or ""
         max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
         brief = studio.load_manifest_brief(cfg, profile, presentation)

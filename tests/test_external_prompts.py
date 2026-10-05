@@ -208,6 +208,31 @@ class ShotlistPromptTests(Base):
                                                 json.dumps(plan))
         self.assertTrue(any("no shot" in f for f in local), local)
 
+    def test_judge_prompt_without_reveal_or_sfx_has_no_reveal_text(self):
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, self._plan())
+        self.assertNotIn("REVEAL", text)
+        self.assertNotIn("sfx", text)
+
+    def test_judge_prompt_gets_reveal_rules_when_the_plan_has_a_reveal_or_sfx(self):
+        plan = json.loads(self._plan())
+        plan["shots"][0]["reveal"] = {"cues": [1, 2], "layout": "row"}
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, json.dumps(plan))
+        self.assertIn("REVEAL SHOTS AND SOUND EFFECTS", text)      # hard rules
+        self.assertIn("REVEAL SHOTS. A shot marked REVEAL SHOT", text)
+        self.assertIn("one centered subject with empty side margins", text)
+        sfx_only = json.loads(self._plan())
+        sfx_only["shots"][1]["sfx"] = "pop"
+        text, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, json.dumps(sfx_only))
+        self.assertIn("REVEAL SHOTS AND SOUND EFFECTS", text)
+
+    def test_local_faults_include_reveal_and_sfx_checks(self):
+        plan = json.loads(self._plan())
+        plan["shots"][0]["reveal"] = {"cues": [1, 2], "layout": "grid"}
+        plan["shots"][1]["sfx"] = ["a", "b"]
+        _text, local = ep.shotlist_judge_prompt(self.cfg, self.pid, json.dumps(plan))
+        self.assertTrue(any("exactly 4" in f for f in local), local)
+        self.assertTrue(any("ONE sfx name" in f for f in local), local)
+
     def test_judge_prompt_rejects_junk(self):
         with self.assertRaises(ep.PromptError):
             ep.shotlist_judge_prompt(self.cfg, self.pid, "not json")

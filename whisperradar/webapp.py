@@ -1253,6 +1253,11 @@ def create_app(cfg) -> Flask:
                     raw["host"][code] = hv
             spec = briefs.normalize_types(raw)
             fields["brief_types"] = json.dumps(spec) if spec else None
+        if "brief_reveal" in form:
+            level = (form.get("brief_reveal") or "").strip().lower()
+            fields["brief_reveal"] = (
+                2 if level == "2" else
+                1 if level in ("1", "on", "true") else None)
         if "brief_presentation" in form:   # multi-line: keep newlines
             fields["brief_presentation"] = (
                 (form.get("brief_presentation") or "").strip() or None)
@@ -2122,7 +2127,8 @@ def create_app(cfg) -> Flask:
                 eff.get("brief_max_hold"),
                 default_max=eff["shotlist_max_hold_seconds"],
                 custom=eff.get("brief_custom"),
-                types=eff.get("brief_types")),
+                types=eff.get("brief_types"),
+                reveal=eff.get("brief_reveal")),
             brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],

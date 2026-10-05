@@ -446,7 +446,8 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
         eff.get("brief_motion"), eff.get("brief_min_hold"),
         eff.get("brief_max_hold"),
         default_max=eff["shotlist_max_hold_seconds"],
-        custom=eff.get("brief_custom"), types=eff.get("brief_types"))
+        custom=eff.get("brief_custom"), types=eff.get("brief_types"),
+        reveal=eff.get("brief_reveal"))
     max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
     total_s = studio._srt_seconds(cues[-1]["end"])
     return {"srt_text": srt_text, "cues": cues, "profile": profile,
@@ -592,6 +593,36 @@ def _alignment_rules(style_guide: str) -> str:
     return (head[:cut] if cut != -1 else head).rstrip()
 
 
+_REVEAL_HARD_RULES = (
+    "REVEAL SHOTS AND SOUND EFFECTS (only for shots that carry \"reveal\" or "
+    "\"sfx\"; a reveal shot is exempt from the static-hold, ST-share and "
+    "motion-code-share limits above but still bound by the maximum hold): "
+    "\"reveal\" is 2-4 cue numbers (a list, or {\"cues\": [...]}), strictly "
+    "increasing, the first equal to the shot's first cue, all inside the "
+    "shot's own cues; the shot is static (motion ST and the file name ends "
+    "_ST); an optional \"layout\" is \"row\" or \"grid\" and a grid has "
+    "exactly 4 items; an optional \"assets\" list has one different image "
+    "file per cue, the first equal to the shot's asset, every one present in "
+    "\"images\" and ending _ST. \"sfx\" is a sound name (letters, digits, "
+    "space, _ . -, at most 40 characters) or a list of names; a shot without "
+    "a reveal takes ONE name; a reveal list has at most one name per item.")
+
+_REVEAL_RAW_JSON_RULES = (
+    "\nIn this JSON a reveal shot is a shot with a \"reveal\" field: its "
+    "items are named at the listed cues (item k at the k-th cue; with "
+    "\"layout\": \"grid\" the four items are the quadrants top-left, "
+    "top-right, bottom-left, bottom-right). If the reveal has \"assets\", "
+    "each item is its own picture and the pictures stay on screen side by side "
+    "(a row of tall strips, or a 2x2 grid), each centre-cropped to its slot: "
+    "judge each listed image's prompt (its entry in \"images\") against the "
+    "narration from ITS cue up to the next reveal cue (the last one up to the "
+    "shot's last cue), NOT the whole shot, and require ONE clear subject "
+    "centered with generous empty space on both sides - a prompt that spreads "
+    "subjects across the width or pushes the subject to an edge is weak "
+    "(\"missing\": \"one centered subject with empty side margins\"). Report "
+    "such a weak image under its own asset name.\n")
+
+
 def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
                           files: list | None = None) -> tuple[str, list[str]]:
     """(prompt, local_faults). `local_faults` are the app's own code checks
@@ -616,6 +647,18 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
                                       plan["profile"])[0])
     rules = _hard_rules(plan, eff, ctx, n)
     audit = _alignment_rules(ctx["visual_style"])
+    # reveal shots / sound effects: the built-in judge adds these rules per
+    # chunk only when a chunk holds such a shot, and it splits a build-up into
+    # one judged image per item. The external judge sees the raw JSON, so it
+    # gets the same rules in plain text whenever the plan (or, for an attached
+    # file, the channel setting) can contain them.
+    shots_in = [x for x in ((data or {}).get("shots") or [])
+                if isinstance(x, dict)]
+    has_reveal = any(studio.shot_reveal(x) for x in shots_in)
+    has_sfx = any(x.get("sfx") not in (None, "") for x in shots_in)
+    if has_reveal or has_sfx or (own_shotlist and plan["profile"].reveal):
+        rules += "\n" + _REVEAL_HARD_RULES
+        audit += (studio.REVEAL_JUDGE_RULES + _REVEAL_RAW_JSON_RULES)
     shot_json = ("" if own_shotlist else
                  json.dumps(data, ensure_ascii=False, indent=1))
     extra = ([{"name": SHOTLIST_FILE, "about": "the shotlist JSON under "

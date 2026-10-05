@@ -17,6 +17,9 @@ config/settings.local.json
 config/selectors.local.json
 config/upscale.local.json
 
+# Local notes (machine specific, never tracked)
+*.local.md
+
 # Upscaler engine scratch state
 tools/realesrgan/device_cache.json
 tools/realesrgan/_probe*.png
