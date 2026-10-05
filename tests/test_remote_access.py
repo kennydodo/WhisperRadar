@@ -145,6 +145,21 @@ class HelperTests(unittest.TestCase):
                                   side_effect=OSError("missing")):
             self.assertEqual(remote.tailscale_addresses(), [])
 
+    def test_without_the_cli_the_adapter_list_is_used(self):
+        ipconfig = mock.Mock(stdout=(
+            "Ethernet adapter Ethernet:\n   IPv4 Address. . . : 192.168.1.20\n"
+            "Unknown adapter Tailscale:\n   IPv4 Address. . . : 100.88.12.34\n"
+            "   Subnet Mask . . . : 255.255.255.255\n"))
+
+        def fake_run(cmd, **kw):
+            if cmd[0] == "ipconfig":
+                return ipconfig
+            raise OSError("no such command")
+
+        with mock.patch.object(remote.shutil, "which", return_value=None), \
+                mock.patch.object(remote.subprocess, "run", side_effect=fake_run):
+            self.assertEqual(remote.tailscale_addresses(), ["100.88.12.34"])
+
 
 if __name__ == "__main__":
     unittest.main()

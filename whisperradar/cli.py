@@ -450,8 +450,11 @@ def _serve_remote(cfg, args):
     hosts = [args.host] if not remote.is_loopback_host(args.host) else \
         remote.tailscale_addresses()
     if not hosts:
-        print("No Tailscale address found. Is Tailscale installed and signed "
-              "in on this PC? (or pass --host <address> to listen elsewhere)")
+        print("No Tailscale address found on this PC. Tailscale must be "
+              "installed and signed in HERE as well as on the phone, with the "
+              "same account (check: run  tailscale ip -4  - it prints "
+              "100.x.y.z). If it works but is not found, give the address: "
+              "start_dashboard_phone.cmd 100.x.y.z")
         return 2
     try:
         from waitress import serve

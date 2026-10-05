@@ -240,4 +240,29 @@ def tailscale_addresses() -> list[str]:
                 found.append(str(ip))
         if found:
             return found
+    return _adapter_addresses()
+
+
+def _adapter_addresses() -> list[str]:
+    """Fallback when the tailscale command is not found: a running Tailscale
+    shows up as a network adapter holding an address in 100.64.0.0/10, which
+    `ipconfig` (Windows) or `ip`/`ifconfig` (Linux, macOS) lists."""
+    import re
+
+    for cmd in (["ipconfig"], ["ip", "-4", "addr"], ["ifconfig"]):
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True,
+                                 timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        found = []
+        for raw in re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", out):
+            try:
+                ip = ipaddress.ip_address(raw)
+            except ValueError:
+                continue
+            if ip in _TAILSCALE_NET and str(ip) not in found:
+                found.append(str(ip))
+        if found:
+            return found
     return []

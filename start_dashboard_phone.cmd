@@ -4,6 +4,7 @@ rem Same as start_dashboard.cmd, but the server also listens on this PC's
 rem Tailscale address so your phone can open it. Needs:
 rem   1. Tailscale installed and signed in on this PC and on the phone
 rem   2. a password, set once:  setx WR_PASSWORD "your-password"
+rem Optional: give the PC's Tailscale address as an argument if it is not found.
 rem No auto-reload in this mode: restart this window after code changes.
 rem Close this window to stop the server.
 rem NOTE: no round brackets inside echo lines - a closing bracket there ends
@@ -23,7 +24,9 @@ netstat -ano | findstr ":%PORT% " | findstr LISTENING >nul
 if %errorlevel%==0 goto :alreadyrunning
 
 echo Starting WhisperRadar with phone access on port %PORT% ...
-"%PY%" -m whisperradar serve --remote --port %PORT%
+set "HOSTARG="
+if not "%~1"=="" set "HOSTARG=--host %~1"
+"%PY%" -m whisperradar serve --remote --port %PORT% %HOSTARG%
 echo.
 echo The server stopped. Read the lines above for the reason.
 pause
