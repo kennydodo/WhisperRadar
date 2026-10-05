@@ -1052,6 +1052,21 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
             patch_mode = bool(prior and not prior["faults"]
                               and prior["ratio"] < min_align
                               and prior.get("weak"))
+            # A plan WITH faults (coverage, a hold over the cap, duplicate
+            # prompts, ...) is no longer thrown away for a full re-plan: the
+            # writer gets the checker's faults and fixes only those, then the
+            # checker looks again - the loop an external LLM chat runs by hand.
+            fix_mode = bool(prior and prior["faults"] and prior.get("data"))
+            fixed = None
+            if fix_mode:
+                fixed = _attempt_shotlist_fix(
+                    cfg, prior, cues, provider, style_guide, bible_text,
+                    max_hold, allow_refs, total_s, attempt)
+                if fixed is None:
+                    fix_mode = False
+                else:
+                    data, patches = fixed
+                    sheet = prior["sheet"]
             if patch_mode:
                 patch_text = studio.llm_generate(
                     cfg, studio.shotlist_patch_prompt(
@@ -1072,7 +1087,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                               f"no usable rewrites - falling back to a full "
                               f"re-plan")
                     patch_mode = False
-            if not patch_mode:
+            if not patch_mode and not fix_mode:
                 prompt = studio.shotlist_prompt(
                     brief, narration, style_guide,
                     extra_direction=db.stage_extra(prod, "shots"),
@@ -1138,7 +1153,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                                   "will flag what's missing")
                         break
                     data = studio.merge_shotlist_continuation(data, addition)
-            if patch_mode:
+            if patch_mode or fix_mode:
                 # Only the patched prompts changed - carry forward every
                 # other shot's verdict from the review that flagged them
                 # instead of re-judging the whole plan again (see
@@ -1272,6 +1287,54 @@ def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
                         detail=detail + " | " + warning)
     finally:
         conn.close()
+
+
+def _attempt_shotlist_fix(cfg, prior: dict, cues: list[dict],
+                          provider: str | None, style_guide: str,
+                          bible_text: str, max_hold: float, allow_refs: bool,
+                          total_s: float, attempt: int):
+    """One fault-targeted fix round. Returns (fixed plan, {changed assets}) or
+    None when the reply was unusable or changed nothing - the caller then
+    falls back to a full re-plan, exactly as before."""
+    cue_text = {c["index"]: c["text"] for c in cues}
+    prompt = studio.shotlist_fix_prompt(
+        prior["data"], list(prior["faults"]), list(prior.get("weak") or []),
+        cue_text, len(cues), max_hold, style_guide=style_guide,
+        bible=bible_text, allow_refs=allow_refs)
+    max_tokens = studio.shotlist_max_tokens(total_s, len(cues), max_hold)
+    try:
+        text = studio.llm_generate(cfg, prompt, provider=provider,
+                                   max_tokens=max_tokens)
+        fix = None
+        for cont in range(studio.SHOTLIST_CONTINUE_ROUNDS + 1):
+            try:
+                fix = studio.parse_shotlist_fix(text)
+                break
+            except RuntimeError as exc:
+                if ("incomplete" in str(exc)
+                        and cont < studio.SHOTLIST_CONTINUE_ROUNDS):
+                    _log_line(f"shotlist attempt {attempt}: fix reply cut off "
+                              f"- continuing ({cont + 1}/"
+                              f"{studio.SHOTLIST_CONTINUE_ROUNDS})")
+                    text += studio.llm_generate(
+                        cfg, studio.continuation_prompt(prompt, text),
+                        provider=provider)
+                    continue
+                _log_line(f"shotlist attempt {attempt}: fix reply not usable "
+                          f"({str(exc)[:120]}) - falling back to a re-plan")
+                return None
+    except Exception as exc:  # noqa: BLE001 - a failed fix must not kill the run
+        _log_line(f"shotlist attempt {attempt}: fix call failed "
+                  f"({str(exc)[:120]}) - falling back to a re-plan")
+        return None
+    data, changed, summary = studio.apply_shotlist_fix(prior["data"], fix)
+    if not changed:
+        _log_line(f"shotlist attempt {attempt}: the fix changed nothing - "
+                  "falling back to a re-plan")
+        return None
+    _log_line(f"shotlist attempt {attempt}: fixed {len(prior['faults'])} "
+              f"fault(s) in place ({summary}), kept the rest of the plan")
+    return data, changed
 
 
 def _shotlist_feedback(review: dict, min_align: float) -> str:

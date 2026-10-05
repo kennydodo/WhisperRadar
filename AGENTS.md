@@ -1545,3 +1545,33 @@ the images-stage form — persisting them per production is optional polish.
 - Phone setup: Tailscale on the PC and the phone (same account), `setx
   WR_PASSWORD "..."`, run `start_dashboard_phone.cmd`, open the printed
   `http://100.x.y.z:8540`. Do not forward the port to the internet.
+
+
+## Shotlist fault-fix loop (branch shotlist-fix-loop, 2026-10-05)
+
+The built-in shots stage now works like an external LLM chat: the checker
+reports exactly what is wrong, the writer fixes ONLY that, the checker looks
+again. Before, a plan with faults was thrown away for a full re-plan (which
+regenerates everything and does not reliably keep what passed); only weak
+prompts were patched.
+
+- `_run_shots` (autorun): a plan WITH faults -> `_attempt_shotlist_fix` (new)
+  sends `studio.shotlist_fix_prompt` (faults + weak prompts + a one-line-per-shot
+  overview + the full entries and narration of just the shots concerned, picked
+  by `shotlist_fix_scope`). The reply is a JSON DELTA, never the whole plan:
+  `{"shots": [...], "images": [...]}`. `parse_shotlist_fix` reads it (a cut-off
+  reply is continued like the planner's), `apply_shotlist_fix` merges it: reply
+  shots REPLACE every existing shot whose cues overlap (split a long shot, fill
+  a gap), reply images replace by file name or are appended, images only the
+  replaced shots used are dropped. Then `review_shotlist_patch` re-judges just
+  the changed assets and recomputes all faults (they are free).
+- Weak-prompt-only plans still use the older prompt patch (`shotlist_patch_prompt`).
+  An unusable or empty fix reply falls back to the old full re-plan with the
+  fault list, so nothing is worse than before. Attempt cap, stall stop and
+  best-ever are unchanged.
+- The external flow (`external_prompts.py` and the studio prompt functions it
+  uses) is untouched on purpose: its prompts are byte-identical to master
+  (checked before/after; only the random VARIATION number in the revise prompt
+  differs run to run, as on master). All new code is additive.
+- Tests: tests/test_shotlist_fix_loop.py; test_shotlist_budget_and_stall switches
+  the fix round off because it exercises the stall counter on the re-plan path.

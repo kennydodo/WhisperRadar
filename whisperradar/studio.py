@@ -3753,6 +3753,194 @@ def apply_shotlist_patch(data: dict, patches: dict[str, str]) -> dict:
     return new_data
 
 
+# ---------------------------------------------- fault-targeted shotlist fix ---
+# The same loop an external LLM chat runs by hand: a checker reports exactly
+# what is wrong, the writer fixes ONLY that, the checker looks again. A full
+# re-plan regenerates everything and does not reliably keep what already
+# passed; a fix call that returns just the entries it changed cannot lose the
+# rest of the plan, and its reply stays small (long plans were the ones that
+# kept getting cut off).
+
+FIX_MAX_RELEVANT_SHOTS = 40
+FIX_CONTEXT_CUES = 2
+
+
+def shotlist_fix_scope(data: dict, faults: list[str], weak: list[dict],
+                       cue_count: int) -> tuple[list[dict], set[int]]:
+    """(shots to show the fixer in full, cue numbers whose narration to show):
+    every shot named in a fault or flagged weak, plus the shots covering any
+    cue number a fault mentions. Capped so the prompt stays bounded."""
+    shots = [x for x in (data.get("shots") or []) if isinstance(x, dict)]
+    text = "\n".join(str(f) for f in faults)
+    named = {str(w.get("asset")) for w in weak if w.get("asset")}
+    named |= {str(x.get("asset")) for x in shots
+              if x.get("asset") and str(x.get("asset")) in text}
+    # cue numbers only where a fault talks about cues ("cue 40", "cues 5-8",
+    # "have no shot: 6, 7", "(5-8 then 7-9)") - not counts like "12 shots"
+    cues_mentioned = {
+        int(n) for seg in re.findall(
+            r"(?:cues?|no shot:|then|\()\s*([\d,\s\-\u2013\u2026]+)", text)
+        for n in re.findall(r"\d+", seg) if 1 <= int(n) <= cue_count}
+    picked: list[dict] = []
+    seen: set[int] = set()
+    for i, x in enumerate(shots):
+        rng = cue_range(x.get("cues"))
+        hit = str(x.get("asset")) in named or (
+            rng and any(rng[0] <= c <= rng[1] for c in cues_mentioned))
+        if hit and i not in seen:
+            picked.append(x)
+            seen.add(i)
+        if len(picked) >= FIX_MAX_RELEVANT_SHOTS:
+            break
+    show: set[int] = set(cues_mentioned)
+    for x in picked:
+        rng = cue_range(x.get("cues"))
+        if rng:
+            lo = max(1, rng[0] - FIX_CONTEXT_CUES)
+            hi = min(cue_count, rng[1] + FIX_CONTEXT_CUES)
+            show.update(range(lo, hi + 1))
+    return picked, show
+
+
+def shotlist_fix_prompt(data: dict, faults: list[str], weak: list[dict],
+                        cue_text: dict[int, str], cue_count: int,
+                        max_hold_seconds: float, style_guide: str = "",
+                        bible: str = "", allow_refs: bool = True) -> str:
+    """The writer's fix request: the checker's faults (and the weak prompts)
+    plus just the part of the plan they concern. The reply is a JSON DELTA -
+    see apply_shotlist_fix - never the whole shotlist."""
+    shots = [x for x in (data.get("shots") or []) if isinstance(x, dict)]
+    images = {str(i.get("file")): i for i in (data.get("images") or [])
+              if isinstance(i, dict) and i.get("file")}
+    picked, show = shotlist_fix_scope(data, faults, weak, cue_count)
+    style = (style_guide or "").strip()
+    style_block = f"\n\nCHANNEL VISUAL STYLE:\n{style}" if style else ""
+    bible_block = (f"\n\nCHARACTER / REFERENCE BIBLE (preserve these exactly "
+                   f"as described):\n{bible.strip()}"
+                   if (bible or "").strip() else "")
+    overview = "\n".join(
+        f"{x.get('cues')} | {x.get('asset')} | {x.get('motion') or '-'}"
+        f" | {x.get('scene') or '-'}" for x in shots)
+    entries = json.dumps(
+        {"shots": picked,
+         "images": [images[str(x.get("asset"))] for x in picked
+                    if str(x.get("asset")) in images]},
+        ensure_ascii=False, indent=1)
+    narration = "\n".join(f"{c}: {cue_text.get(c, '')}" for c in sorted(show)
+                           if c in cue_text)
+    fault_lines = "\n".join(f"- {f}" for f in faults) or "(none)"
+    weak_lines = []
+    for w in weak:
+        missing = ("; missing: " + ", ".join(w["missing"])
+                   if w.get("missing") else "")
+        weak_lines.append(f"- {w.get('asset')}{missing}"
+                          + (f" - {w['reason']}" if w.get("reason") else "")
+                          + (f" | cue says: {w['narration']}"
+                             if w.get("narration") else ""))
+    refs_rule = ("" if allow_refs else
+                 " References are DISABLED for this channel: no \"refs\" "
+                 "registry, no \"refPrompts\", no per-image \"refs\"; every "
+                 "prompt is fully self-contained.")
+    return (
+        "You are fixing an existing shotlist for a narrated video. A checker "
+        "reviewed it and found the problems listed below. Fix ONLY those "
+        "problems. Everything not listed already passed: do not change "
+        "other shots, other prompts, the order or the numbering."
+        + style_block + bible_block +
+        f"\n\nRULES: no shot may hold longer than {max_hold_seconds:g}s "
+        "(a shot's hold is the sum of its cues' durations); every narration "
+        "cue 1-" + str(cue_count) + " is covered by exactly one shot, in "
+        "order, no gaps, no overlaps; every shot's asset has an entry in "
+        "images; image file names keep the existing convention and a new "
+        "name continues the numbering; the motion code in a file name "
+        "matches the shot's motion; every image prompt states who or what "
+        "is in frame, what they are doing, where, the props involved and "
+        "the information the cue conveys." + refs_rule +
+        "\n\nFAULTS TO FIX (must all be gone afterwards):\n" + fault_lines +
+        ("\n\nWEAK PROMPTS TO REWRITE:\n" + "\n".join(weak_lines)
+         if weak_lines else "") +
+        "\n\nWHOLE PLAN, one line per shot (cues | asset | motion | scene):\n"
+        + overview +
+        "\n\nFULL ENTRIES OF THE SHOTS CONCERNED:\n" + entries +
+        "\n\nNARRATION AROUND THEM (cue: text):\n" + narration +
+        "\n\nReply with ONLY a JSON object with the keys \"shots\" and "
+        "\"images\", containing just the entries you changed or added, no "
+        "commentary, no markdown fences:\n"
+        "- \"shots\": each entry REPLACES every existing shot whose cues "
+        "overlap its \"cues\" (so to split a long shot, return the new "
+        "shots covering its whole range; to fill a gap, return a shot for "
+        "the missing cues). Give each the full shot object (cues, asset, "
+        "motion, scene, ...).\n"
+        "- \"images\": the entry (file, prompt, refs if used) for every "
+        "new asset, and for every existing asset whose prompt you rewrite "
+        "(same file name replaces it).\n"
+        "An image that no shot uses any more is dropped automatically. "
+        "Return an empty list for a key you do not need.")
+
+
+def parse_shotlist_fix(text: str) -> dict:
+    """Parse a fix reply. Raises RuntimeError (message contains 'incomplete'
+    for a reply cut off mid-JSON, so the caller can ask it to continue)."""
+    text = (text or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    data, _tail = _extract_json_object(text)
+    shots = data.get("shots") or []
+    images = data.get("images") or []
+    if not isinstance(shots, list) or not isinstance(images, list):
+        raise RuntimeError("fix reply has no shots/images lists")
+    return {"shots": [x for x in shots if isinstance(x, dict)],
+            "images": [x for x in images if isinstance(x, dict)]}
+
+
+def apply_shotlist_fix(data: dict, fix: dict) -> tuple[dict, set[str], str]:
+    """Return (a COPY of the plan with the fix applied, the assets that
+    changed, a one-line summary). Reply shots replace every existing shot
+    they overlap; reply images replace by file name or are appended; an image
+    only the replaced shots used is dropped. A reply with nothing usable
+    returns the plan unchanged and no changed assets."""
+    new = json.loads(json.dumps(data))
+    old_shots = [x for x in (new.get("shots") or []) if isinstance(x, dict)]
+    reply = [x for x in fix.get("shots") or []
+             if x.get("asset") and cue_range(x.get("cues"))]
+    reply_images = [x for x in fix.get("images") or []
+                    if x.get("file") and str(x.get("prompt") or "").strip()]
+    if not reply and not reply_images:
+        return data, set(), "the fix changed nothing"
+    covered: list[tuple[int, int]] = [cue_range(x["cues"]) for x in reply]
+
+    def overlaps(shot: dict) -> bool:
+        rng = cue_range(shot.get("cues"))
+        return bool(rng) and any(rng[0] <= b and a <= rng[1]
+                                 for a, b in covered)
+
+    removed = [x for x in old_shots if overlaps(x)]
+    kept = [x for x in old_shots if not overlaps(x)]
+    shots = kept + reply
+    shots.sort(key=lambda x: (cue_range(x.get("cues")) or (10 ** 9, 0))[0])
+    new["shots"] = shots
+
+    images = [x for x in (new.get("images") or []) if isinstance(x, dict)]
+    by_file = {str(x.get("file")): i for i, x in enumerate(images)}
+    for item in reply_images:
+        f = str(item["file"])
+        if f in by_file:
+            images[by_file[f]] = {**images[by_file[f]], **item}
+        else:
+            images.append(item)
+            by_file[f] = len(images) - 1
+    used = {str(x.get("asset")) for x in shots}
+    gone = {str(x.get("asset")) for x in removed} - used
+    images = [x for x in images if str(x.get("file")) not in gone]
+    new["images"] = images
+    changed = ({str(x["asset"]) for x in reply}
+               | {str(x["file"]) for x in reply_images})
+    summary = (f"replaced {len(removed)} shot(s) with {len(reply)}, "
+               f"wrote {len(reply_images)} image prompt(s)"
+               + (f", dropped {len(gone)} unused image(s)" if gone else ""))
+    return new, changed, summary
+
+
 # ------------------------------------------- shotlist review (shots gate) ---
 # The shotlist declares which SRT cues each shot illustrates (`cues: "3-9"`),
 # so alignment is verifiable BEFORE any image is rendered. Structural faults

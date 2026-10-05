@@ -172,6 +172,9 @@ class ShotlistStallStopTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def _run(self, review_sequence):
+        # these tests are about the stall counter, so the fault-fix round is
+        # switched off (it falls back to a full re-plan, the old behaviour);
+        # tests/test_shotlist_fix_loop.py covers the fix round itself
         with mock.patch.object(autorun, "style_bible",
                                return_value=("style", "channel",
                                             "a bible", "channel")), \
@@ -182,6 +185,8 @@ class ShotlistStallStopTests(unittest.TestCase):
                                return_value="test-judge"), \
              mock.patch.object(studio, "llm_generate",
                                return_value=_valid_shotlist_text()), \
+             mock.patch.object(autorun, "_attempt_shotlist_fix",
+                               return_value=None), \
              mock.patch.object(studio, "review_shotlist",
                                side_effect=review_sequence) as review_mock:
             autorun._run_shots(self.cfg, self.pid, provider="test-provider")
