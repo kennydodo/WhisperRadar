@@ -99,7 +99,7 @@ The pipeline works end to end. **30 of 85 shots are done**, 55 pending, 0 failed
 session fixed the two things that made batches slow and unreliable (see "What changed"), so a
 clean cycle is now ~35-50s instead of ~86s, and a miss no longer costs ~10 minutes.
 
-Batch runs use the `profile-renderly` profile (the account with good standing) — the default, so
+Batch runs use the `profile` profile — the default, so
 no flags needed.
 
 **New (2026-09-23, late):** a single-item run took **7m33s** from `Generating` to `Saved` with no
@@ -115,7 +115,7 @@ The download/refusal misreport from the earlier notes is **fixed and merged** �
 | Branch | `main` at `9b6c266` (prepare + the #4 fix merged); `origin/main` is behind at `26f372c` |
 | Done / pending | 30 done, 55 pending, 0 failed |
 | Prepare command | `node src/cli.js prepare --job <job> --report <path>` — the WhisperRadar contract |
-| Default profile | `profile-renderly` → **koogunyemi@gmail.com** (change it on the web UI Settings page) |
+| Default profile | `profile` (change it on the web UI Settings page) |
 | Upscale tier | **off** locally → masters only, no `_1k` |
 | Outputs | `output/shotlist/<file>.png` master (+ `_1k.png` when the tier is on) |
 
@@ -170,7 +170,7 @@ Project: `https://flow.google.com/project/772a62aa-c204-4473-a27b-5e106a7f0b06`
    stalled CDN request blocks a poll indefinitely — add a timeout and a log line; (b) `generate()`
    is uninstrumented between the `Generating` log and `waitForNewAssets` — time
    `closeAssetLibrary`, `dismissOverlays`, the `requireEnabled` button wait and `markStaleAlerts`;
-   (c) Flow genuinely queued the generation for ~7 minutes (the account had done ~15 test
+   (c) Flow genuinely queued the generation for ~7 minutes (the run had done ~15 test
    generations that day). Add per-poll timing to `waitForNewAssets` and re-run one item.
 2. **Upscaler tuning.** It already ports Renderly's engine (device probe + cache, MAD content
    check, RGB flattening for alpha, GPU → auto → CPU Lanczos). Differences worth testing:
@@ -210,13 +210,13 @@ Project: `https://flow.google.com/project/772a62aa-c204-4473-a27b-5e106a7f0b06`
   page banner is no longer attributed to the item (see "What changed" 5), but if this shape shows
   up again, check Flow's grid for the image before re-running — a re-run leaves a duplicate.
 - **A missed asset normally costs the full `timeouts.generationMs` (300s), then succeeds on
-  retry.** Check `debug/error-*.png` before concluding anything about the account. Note the
+  retry.** Check `debug/error-*.png` before concluding anything about the Flow standing. Note the
   2026-09-23 run where that 300s deadline did **not** fire — Remaining work #1.
 - **`fetchBytes` (src/flow/driver.js) has no request timeout.** A stalled CDN request can block a
   poll silently, which looks exactly like a hang with no retry — Remaining work #1.
-- **Account standing is the gate.** `koogunyemi@gmail.com` generates normally;
-  `japanliveshealthy@gmail.com` is refused every time in ~3s and each attempt lowers the score
-  further — do not retry it. `--agent on` is the escape hatch on a distrusted session.
+- **Standing is the gate.** A healthy session generates normally; a distrusted one is refused every
+  time in ~3s and each attempt lowers the score further — do not retry it.
+  `--agent on` is the escape hatch on a distrusted session.
 - **`maxCooldowns: 0` (and `cooldownSeconds: 0` locally) means a refusal STOPS the batch** rather
   than waiting — intentional, since the block is a reCAPTCHA score on the profile.
 - **Agent mode OFF is the default and preferred** — it keeps per-item model/ratio/output control.
@@ -240,8 +240,9 @@ Project: `https://flow.google.com/project/772a62aa-c204-4473-a27b-5e106a7f0b06`
 - `debug/` holds stale failure captures (screenshots + HTML) that can be cleared.
 - The throwaway test project `358ac03f-de30-4726-9302-c57ce29572ce` holds ~17 refs and ~10 test
   images; delete it in Flow if it is not wanted.
-- `profile-renderly` is a copy of Renderly's profile and is shared with it; a dedicated profile
-  signed in as `koogunyemi@gmail.com` would isolate the two tools' reCAPTCHA signals.
+- The FlowBatch `profile` is now a dedicated Google profile, separate from Renderly's own profile,
+  so the two tools' reCAPTCHA signals are isolated. The previous profile is kept aside as
+  `profile-old-backup`; the local sign-in details live in the git-ignored `PROFILE.local.md`.
 
 ## 2026-09-24 — WhisperRadar refs stage: four issues to fix
 
@@ -346,7 +347,7 @@ failed item currently stops the run, which hid the rest of wr-7 and wr-9.
   `7585c0da-f850-41f1-ad75-b175ab1ff20d` (wr-7), `b7567302-44d7-4597-b8ee-fa040a187627` (wr-8),
   `085a027e-2efc-4d00-9e12-95172714c3cc`, `dcc88db6-5d37-4669-8713-0bb2a7ef7568` (wr-9),
   `4e8cbaa4-f6f7-4df9-9a16-71e40cb52330` (holds the 3 uploaded wr-9 refs).
-- `ed861db8-2c03-4c8b-afd7-78852751017c` was created on `japanliveshealthy@gmail.com` by mistake
+- `ed861db8-2c03-4c8b-afd7-78852751017c` was created on a flagged second profile by mistake
   (the CLI cannot delete projects); remove it in Flow if reachable.
 - A temporary screenshot helper `shot-tmp.mjs` was created in the repo root and deleted; nothing
   left behind.
@@ -366,7 +367,7 @@ Two things still bit, both in `prepare`:
    With the channel's old project (`89e82620`) the run reported
    `Could not locate the Flow UI element "promptBox" … The Flow UI may have
    changed. Run npm run discover`, which reads like a selector regression - the
-   project simply does not open (deleted / another Google account). Flow's 404
+   project simply does not open (deleted / signed in elsewhere). Flow's 404
    page has no composer. Consider detecting that (`…/404?reason=project`, or the
    page title) and either reporting it as "project gone" or falling back to
    `ensureProject` and creating a new one, as WhisperRadar now does on its side.
@@ -386,9 +387,9 @@ Two things still bit, both in `prepare`:
    images use. Trimming the registry to the used names is probably the real fix.
 
 **Update 2026-09-25 — both fixed in `47be8dc`.** Re-tested on pid 14 with a dead
-stored project: prepare now reports it by name (`Flow reports this project as
-unavailable …/404?reason=project. It may have been deleted, or it may belong to a
-different Google account.`) instead of the misleading promptBox/selector error,
+stored project: prepare now reports it as an unavailable project (naming the
+404/`reason=project` signal and the likely causes) instead of the misleading
+promptBox/selector error,
 and a ref-step failure no longer costs the project - the report keeps a usable
 `projectUrl`. A direct `prepare` on the created project then opened it and logged
 `Reference MAYA: reused`, `BG_LIVING_ROOM_01/BG_HOME_OFFICE_01/BG_KITCHEN_01:

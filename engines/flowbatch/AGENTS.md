@@ -72,13 +72,12 @@ These were established by probing the live signed-in UI. Do not "fix" them from 
   `flow-grid-tile-container`, `flow-toggles`, `flow-image-ingredient-chip`).
 - **Generation is gated by reCAPTCHA Enterprise** (requests to
   `www.google.com/recaptcha/enterprise/reload` and `/clr` fire when Generate is clicked). The score
-  belongs to the **signed-in account and browser session**, so a refusal is *"We noticed some unusual
+  belongs to the **signed-in browser session**, so a refusal is *"We noticed some unusual
   activity"* in ~3 seconds with no generation attempted. It is not a rate limit: waiting does not
-  help, and each refusal lowers the standing further. Measured 2026-09-22: `koogunyemi@gmail.com`
-  generated normally while `japanliveshealthy@gmail.com` was refused on every attempt, with the same
-  code, profile copy and settings — so when this appears, suspect the account before the code.
+  help, and each refusal lowers the standing further. When this appears, suspect the signed-in
+  profile's standing before the code.
 - **Agent mode OFF is the default** because it keeps the per-item model / aspect-ratio / output-count
-  controls. It works on an account with good standing. On a session Flow already distrusts, Agent OFF
+  controls. It works on a session with good standing. On a session Flow already distrusts, Agent OFF
   is the difference between generating and being refused — `--agent on` was verified to turn three
   consecutive refusals into four consecutive successes on such a session. Agent ON hides the
   prompt-box settings trigger, so defaults then come from the project settings panel.

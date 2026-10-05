@@ -118,7 +118,7 @@ has finished - the same pass whichever engine produced them.
 
 Requested by Kehinde 2026-10-01: when a batch stops on consecutive failures,
 the images Flow DID generate are often still in the project's gallery - never
-downloaded. Re-running the prompts regenerates them (burning the account);
+downloaded. Re-running the prompts regenerates them (burning Flow quota);
 the manual button pulls the existing results first.
 
 Implemented across all three checkouts:
@@ -421,8 +421,7 @@ Then: **retest the two failed productions and add two new ones.**
 - No channel settings or repo source were modified. Productions 7-9 and their folders are left in
   place; do not touch productions 1-6.
 - Renderly backend (:8022) + Flow Driver (:8030) were started as managed services during testing;
-  FlowBatch uses `profile-renderly` (koogunyemi@gmail.com), **agent mode OFF** (never turn it
-  on), and `japanliveshealthy@gmail.com` must not be used.
+  FlowBatch uses its local `profile`, **agent mode OFF** (never turn it on).
 - Channel engines: 1 = renderly/flow, 2 = flowbatch upscale 0, 3 = flowbatch upscale 2.
 
 ## NEXT SESSION — handoff (written 2026-09-23, end of day)
@@ -607,7 +606,7 @@ genuinely weak — which decides whether to adjust the rubric or the bar.
 FlowBatch hit a refusal loop at item ~82 ("might violate our policies" /
 "you have not been charged"), and Renderly's driver hit "still busy" timeouts
 from ~98. In both cases the first ~80-100 items rendered fine, so this looks
-session/account-level rather than per-prompt. Worth investigating before
+session-level rather than per-prompt. Worth investigating before
 trusting unattended batches of 100+ images.
 
 ### 9. Settings page needs tabs (user request 2026-09-24)
@@ -1176,10 +1175,10 @@ Unassigned productions keep the legacy behaviour (Renderly channel
 
 ### Cloned voices in the favorites picker — DONE (2026-10-03)
 
-Favorites mode showed ONLY starred voices, so the account's cloned voices
+Favorites mode showed ONLY starred voices, so your cloned voices
 were unreachable from the Studio audio stage. The clone catalog was verified
 live with a read-only GET first: `GET /v3/voices?provider=clone` lists
-exactly the account's own clones (voice_id `clone_<id>`; this account had
+exactly your own clones (voice_id `clone_<id>`; this setup had
 Stickly/Animal Channel/To Live and More, total 3, no shared catalog).
 
 - `ai33.cloned_voices(cfg, refresh=False)` — `_fetch_voices(cfg, "clone")`
@@ -1208,7 +1207,7 @@ read-only GET before wiring it:
 - `GET /v3/favorites` -> `{success, favorites: [{created_at, provider,
   voice_id, voice_data}]}`. `provider` there is a generic "v3" — the real
   provider is the `voice_id` prefix. `voice_data` carries name/gender/
-  language/accent/preview_url. 9 favorites on this account.
+  language/accent/preview_url. 9 favorites here.
 - `POST /v3/favorites` `{provider, voice_id, voice_data}`;
   `DELETE /v3/favorites/<id>`; `POST /v3/favorites/bulk` — NOT used yet.
 
@@ -1229,11 +1228,11 @@ page, not a config.yaml rewrite (WhisperRadar never writes config.yaml; a
 dump would strip its comments). Channels/settings live in SQLite.
 
 
-### NEXT SESSION HANDOFF (2026-09-21, ~21:40) — STEP 1 GREEN on the second account
+### NEXT SESSION HANDOFF (2026-09-21, ~21:40) — STEP 1 GREEN on the second profile
 
 flow-simple.js (extension-v2) is the minimal no-reference driver and it
 PASSED step 1: S01_01 prompt (truncated master, no refs) rendered the
-correct scene end-to-end on profile-b (second Google account, free tier,
+correct scene end-to-end on profile-b (a second signed-in profile, free tier,
 Nano Banana 2 Lite) — 1/1, saved to Temp\kilo\noref-test. What made it work:
 1. Prompt length: composed master+prompt of ~2500 chars keeps the submit
    arrow DISABLED. --maxchars (default 2400) trims the MASTER portion at a
@@ -1253,9 +1252,9 @@ Run: node flow-simple.js --file <batch> --out <dir> --profile <dir>
 batch.json: { style, images: [{file, prompt}] } — UTF-8 no BOM (PowerShell
 5.1 Set-Content adds a BOM that breaks JSON.parse; node writes are clean).
 
-The OLD flagged profile (extension-v2\profile, first Google account) is
+The OLD flagged profile (extension-v2\profile) is
 still abuse-blocked ("unusual activity"). profile-b is clean. Do not
-rotate profiles to dodge flags — the second account is the user's choice.
+rotate profiles to dodge flags — the choice of profile is the user's.
 
 NEXT (agreed, one at a time):
 1. STEP 2 — one reference: upload the image to Flow's gallery ONCE, then
@@ -1303,7 +1302,7 @@ Root causes found & FIXED in Renderly\extension-v2\flow.js (all proven live):
    2 auto-retries then a clear failure. NOT YET RELIABLE LIVE (see below).
 
 THE REMAINING WALL - NOT CODE: Google is anti-automation-blocking the
-driver's account/profile. Screenshot proof (extension-v2\trigger-fail.png):
+driver's session/profile. Screenshot proof (extension-v2\trigger-fail.png):
 "Failed - We noticed some unusual activity. Please visit the Help Center...
 You have not been charged." Earlier failures said "might violate our
 policies" - same soft-block, other flavor. Every generation attempt gets
@@ -1542,7 +1541,7 @@ the images-stage form — persisting them per production is optional polish.
   tables/stepper, Copy button above its box, folder-picker buttons hidden (the
   chooser opens on the PC). The POST host check also accepts this PC's
   `<pc>.<tailnet>.ts.net` name.
-- Phone setup: Tailscale on the PC and the phone (same account), `setx
+- Phone setup: Tailscale on the PC and the phone (same tailnet), `setx
   WR_PASSWORD "..."`, run `start_dashboard_phone.cmd`, open the printed
   `http://100.x.y.z:8540`. Do not forward the port to the internet.
 
