@@ -1,37 +1,48 @@
 @echo off
-rem WhisperRadar dashboard launcher WITH PHONE ACCESS (Tailscale).
+rem WhisperRadar dashboard launcher WITH PHONE ACCESS - Tailscale.
 rem Same as start_dashboard.cmd, but the server also listens on this PC's
 rem Tailscale address so your phone can open it. Needs:
 rem   1. Tailscale installed and signed in on this PC and on the phone
-rem   2. a password:  setx WR_PASSWORD "your-password"   (then open a new window)
+rem   2. a password, set once:  setx WR_PASSWORD "your-password"
 rem No auto-reload in this mode: restart this window after code changes.
 rem Close this window to stop the server.
+rem NOTE: no round brackets inside echo lines - a closing bracket there ends
+rem the surrounding if-block early and cmd exits at once with a syntax error.
 
 set "PORT=8540"
-set "URL=http://127.0.0.1:%PORT%"
 cd /d "%~dp0"
 
-rem pull the latest WR_* user environment variables (WR_PASSWORD, API keys)
+rem pull the latest WR_* user environment variables - WR_PASSWORD, API keys
 for /f "tokens=1,2,*" %%a in ('reg query HKCU\Environment 2^>nul ^| findstr /i "WR_"') do set "%%a=%%c"
-
-if not defined WR_PASSWORD (
-    echo.
-    echo  Phone access needs a password. Run this once, then start again:
-    echo      setx WR_PASSWORD "choose-a-password"
-    echo.
-    pause
-    exit /b 1
-)
 
 if exist ".venv\Scripts\python.exe" (set "PY=.venv\Scripts\python.exe") else (set "PY=python")
 
-netstat -ano | findstr ":%PORT% " | findstr LISTENING >nul
-if %errorlevel%==0 (
-    echo A dashboard is already running on port %PORT%. Close it first (or this
-    echo window cannot add phone access), then start this launcher again.
-    pause
-    exit /b 1
-)
+if not defined WR_PASSWORD goto :nopassword
 
+netstat -ano | findstr ":%PORT% " | findstr LISTENING >nul
+if %errorlevel%==0 goto :alreadyrunning
+
+echo Starting WhisperRadar with phone access on port %PORT% ...
 "%PY%" -m whisperradar serve --remote --port %PORT%
+echo.
+echo The server stopped. Read the lines above for the reason.
 pause
+exit /b 0
+
+:nopassword
+echo.
+echo  Phone access needs a password. Run this once in a terminal:
+echo      setx WR_PASSWORD "choose-a-password"
+echo  then open a NEW window and start this file again.
+echo.
+pause
+exit /b 1
+
+:alreadyrunning
+echo.
+echo  A dashboard is already running on port %PORT%.
+echo  Close its window first, then start this file again.
+echo  Phone access needs this launcher to be the one that starts the server.
+echo.
+pause
+exit /b 1
