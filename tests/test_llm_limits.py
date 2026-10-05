@@ -503,6 +503,10 @@ class TemperatureTests(unittest.TestCase):
     same way twice. `temperature` is now a real parameter threaded through
     the whole chain, defaulting to 1.0 everywhere so no existing call site
     changes behavior unless it explicitly passes a lower value."""
+    def setUp(self):
+        studio._NO_CUSTOM_TEMPERATURE.clear()
+        self.addCleanup(studio._NO_CUSTOM_TEMPERATURE.clear)
+
 
     def test_default_temperature_is_1_in_the_curl_payload(self):
         seen = {}
@@ -548,6 +552,30 @@ class TemperatureTests(unittest.TestCase):
                 mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}):
             studio.llm_generate(object(), "prompt", temperature=0.3)
         self.assertEqual(seen["temperature"], 0.3)
+
+    def test_a_model_that_rejects_temperature_is_not_asked_twice(self):
+        prov = dict(PROVIDER, name="luna", base_url="http://luna.test",
+                    model="luna-model")
+        seen = []
+
+        def adapter(p, prompt, timeout=600, max_tokens=None, temperature=1.0):
+            seen.append(temperature)
+            if temperature != 1.0:
+                raise RuntimeError("Unsupported parameter: 'temperature' is "
+                                   "not supported with this model.")
+            return "ok"
+
+        studio._NO_CUSTOM_TEMPERATURE.discard(("http://luna.test", "luna-model"))
+        try:
+            with mock.patch.object(studio, "_resolve_provider",
+                                   lambda cfg, name=None: prov), \
+                    mock.patch.object(studio, "CHAT_APIS", {"openai": adapter}):
+                studio.llm_generate(object(), "p", temperature=0.1)
+                studio.llm_generate(object(), "p", temperature=0.1)
+        finally:
+            studio._NO_CUSTOM_TEMPERATURE.discard(
+                ("http://luna.test", "luna-model"))
+        self.assertEqual(seen, [0.1, 1.0, 1.0])
 
     def test_llm_generate_defaults_temperature_to_1(self):
         seen = {}
@@ -600,6 +628,10 @@ class TemperatureRejectionTests(unittest.TestCase):
     model may simply grade differently, which is the exact inconsistency
     temperature was introduced to remove), and only fall back to another
     provider if that retry also fails outright."""
+    def setUp(self):
+        studio._NO_CUSTOM_TEMPERATURE.clear()
+        self.addCleanup(studio._NO_CUSTOM_TEMPERATURE.clear)
+
 
     def test_rejects_temperature_matches_the_real_error_shape(self):
         body = json.dumps({"error": {

@@ -2818,6 +2818,32 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, msg=f"Version '{name}' deleted")
         return _studio_url(pid, error="Version not found")
 
+    def _drop_rejected_script(pid: int, pdir: Path) -> str:
+        """Clearing the script versions must also clear what a regenerate
+        would otherwise be measured against. The judge's review of the old
+        attempts goes, and so does the current script when it is a REJECTED
+        result (the run kept its best draft with a warning): left in place,
+        the next regenerate rates it as the baseline to beat and asks the
+        writer to differ from it - a script the user just threw away. An
+        accepted or hand-written script is never touched."""
+        (pdir / "versions" / "script" / "review.json").unlink(missing_ok=True)
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            warning = (prod["warning"] or "") if prod else ""
+            script = pdir / "script.md"
+            if not script.exists() or not warning.startswith(
+                    ("script gate failed", "regenerate did not beat")):
+                return ""
+            script.unlink()
+            db.update_production(conn, pid, warning="")
+            db.delete_steps(conn, pid, ["script"])
+            conn.commit()
+        finally:
+            conn.close()
+        return " and the rejected script"
+
     @app.post("/studio/<int:pid>/versions/clear")
     def studio_versions_clear(pid):
         """Delete every saved version of one kind (script, or one stage's
@@ -2832,9 +2858,13 @@ def create_app(cfg) -> Flask:
         names = _version_names(pdir, kind, stage or None)
         for name in names:
             _version_path(pdir, kind, stage, name).unlink(missing_ok=True)
-        if not names:
+        dropped = ""
+        if kind == "script":
+            dropped = _drop_rejected_script(pid, pdir)
+        if not names and not dropped:
             return _studio_url(pid, error="No saved versions to clear")
-        return _studio_url(pid, msg=f"Cleared {len(names)} saved version(s)")
+        return _studio_url(
+            pid, msg=f"Cleared {len(names)} saved version(s){dropped}")
 
     @app.post("/studio/<int:pid>/shotlist/generate")
     def studio_shotlist_generate(pid):

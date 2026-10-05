@@ -2861,6 +2861,12 @@ def openai_chat(p: dict, prompt: str, timeout: int = 600,
 CHAT_APIS = {"openai": openai_chat}
 
 
+# Models that already refused a custom temperature (remembered for the life of
+# the process): they get the default straight away instead of failing the first
+# call of every request. Keyed by endpoint + model, never by provider name.
+_NO_CUSTOM_TEMPERATURE: set[tuple[str, str]] = set()
+
+
 def llm_generate(cfg, prompt: str, timeout: int = 1800,
                  provider: str | None = None,
                  max_tokens: int | None = None,
@@ -2868,6 +2874,9 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
     p = _resolve_provider(cfg, provider)
     api = (p.get("api") or "openai").lower()
     fn = CHAT_APIS.get(api)
+    temp_key = (str(p.get("base_url") or ""), str(p.get("model") or ""))
+    if temp_key in _NO_CUSTOM_TEMPERATURE:
+        temperature = 1.0
     if fn is None:
         raise RuntimeError(
             f"LLM provider '{p['name']}' uses api '{api}', which is not "
@@ -2925,8 +2934,11 @@ def llm_generate(cfg, prompt: str, timeout: int = 1800,
         log.warning("%s - retrying '%s' without %s",
                    exc, p["name"], " or ".join(backed_out))
         try:
-            return fn(p, prompt, timeout=timeout, max_tokens=retry_max_tokens,
-                      temperature=retry_temperature)
+            out = fn(p, prompt, timeout=timeout, max_tokens=retry_max_tokens,
+                     temperature=retry_temperature)
+            if retry_temperature != temperature:
+                _NO_CUSTOM_TEMPERATURE.add(temp_key)
+            return out
         except (LLMStalled, LLMEmpty, RuntimeError) as exc2:
             return _retry_on_different_provider(exc2)
 

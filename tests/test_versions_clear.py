@@ -72,6 +72,34 @@ class ClearVersionsTests(unittest.TestCase):
         self.assertIn(f"/studio/{self.pid}/versions/clear", html)
         self.assertIn("Clear all", html)
 
+    def _set_script(self, warning):
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, warning=warning)
+        db.add_step(conn, self.pid, "script", "auto", detail="d")
+        conn.commit()
+        conn.close()
+        script = self.pdir / "script.md"
+        script.write_text("rejected draft\n", encoding="utf-8")
+        return script
+
+    def test_clearing_also_drops_a_rejected_script_and_its_review(self):
+        script = self._set_script("script gate failed after 5 attempt(s)")
+        review = self._put("script", "review.json")
+        self._put("script", "attempt-1.md")
+        self._clear(kind="script")
+        self.assertFalse(script.exists())
+        self.assertFalse(review.exists())
+        conn = db.connect(self.cfg.db_path)
+        self.assertNotIn("script", db.latest_steps(conn, self.pid))
+        self.assertFalse(db.get_production(conn, self.pid)["warning"])
+        conn.close()
+
+    def test_clearing_keeps_an_accepted_script(self):
+        script = self._set_script("")
+        self._put("script", "attempt-1.md")
+        self._clear(kind="script")
+        self.assertTrue(script.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
