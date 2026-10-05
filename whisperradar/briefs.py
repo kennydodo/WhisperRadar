@@ -1024,7 +1024,14 @@ def reveal_block() -> str:
         "and an item must not need another item to make sense.\n"
         "- A reveal image cannot be fixed afterwards: the slices are cut by "
         "pixels. If the items cannot be laid out cleanly in equal slices, "
-        "plan normal shots instead.\n")
+        "plan normal shots instead.\n\n"
+        "Final check for every reveal shot, before you output: the `reveal` "
+        "list has one cue per item, increasing, starting at the shot's first "
+        "cue and inside its `cues`; `motion` is ST and the file name ends "
+        "with _ST; the prompt states the item count, names the items left to "
+        "right in narration order, keeps each in its own equal slice and "
+        "forbids anything crossing a slice line; and reveal shots are no more "
+        "than about 10% of all shots.\n")
 
 
 # ---- rendering ---------------------------------------------------------------
