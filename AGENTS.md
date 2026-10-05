@@ -1545,3 +1545,34 @@ the images-stage form — persisting them per production is optional polish.
 - Phone setup: Tailscale on the PC and the phone (same account), `setx
   WR_PASSWORD "..."`, run `start_dashboard_phone.cmd`, open the printed
   `http://100.x.y.z:8540`. Do not forward the port to the internet.
+
+## Reveal shots (branch reveal-effect, 2026-10-05)
+
+One image with 2-4 items in a left-to-right row; the merged video shows slice 1,
+then adds slice 2 when the narrator reaches item 2, and so on (a mask-style
+reveal, built from plain stills so Premiere, CapCut and the ffmpeg preview all
+handle it). Static (ST) only.
+
+- Shotlist: a shot may carry `"reveal": [41, 42, 43]` - the cue at which each
+  item appears (also `{"cues": [...]}`). `studio.shot_reveal(shot)` reads it,
+  `studio.shotlist_reveal_faults(shots)` checks it (2-4 items, increasing, first
+  cue = the shot's first cue, inside its cues, ST motion and `_ST` file name) and
+  is part of `shotlist_structural_faults`.
+- Per channel opt-in: `own_channels.brief_reveal` (NULL = off, 1 = allowed), a
+  select in the channel's Planning brief; `MotionProfile.reveal` is set by
+  `briefs.resolve_profile(..., reveal=eff["brief_reveal"])` and
+  `briefs.render_brief` then adds SECTION 7B (`briefs.reveal_block()`) before
+  SECTION 8. The field is exported/imported with the channel settings.
+- Pacing: a reveal shot counts as the pseudo-motion `REVEAL` in
+  `shotlist_pacing` - not as ST (no long-static fault, no ST share/hold cap),
+  not against the motion-code share caps, and not rejected on a static-only
+  channel. It still obeys the maximum hold.
+- Judge: `alignment_prompt` adds per-item lines and `REVEAL_JUDGE_RULES` (item
+  count, narrated order left to right, one equal slice per item, nothing
+  crossing a slice line, one background) for chunks that contain a reveal shot;
+  weak entries carry `reveal` so `shotlist_patch_prompt` keeps the layout.
+- Merge side (ImgToVideo repo, branch reveal-effect): the planner expands the
+  shot into consecutive stills (slices 1..k, rest black, short fade) and
+  `RevealImageWriter` cuts them with ffmpeg into `out\reveal\`. The merge needs
+  that ImgToVideo branch (or master once merged) checked out.
+- Tests: tests/test_reveal_shots.py.

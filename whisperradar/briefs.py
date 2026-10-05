@@ -120,6 +120,8 @@ class MotionProfile:
     slots: dict = field(default_factory=dict)
     # shot-type caps + host-in-frame shares (see normalize_types); None = none
     types: dict | None = None
+    # the channel lets the plan use reveal shots (see reveal_block)
+    reveal: bool = False
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -881,13 +883,18 @@ def _resolve_motion(key, min_hold=None, max_hold=None,
 
 def resolve_profile(key, min_hold=None, max_hold=None,
                     default_max: float | None = None,
-                    custom=None, types=None) -> MotionProfile:
+                    custom=None, types=None, reveal=None) -> MotionProfile:
     """The channel's effective profile: its motion preset, the channel's own
-    hold range (seconds) and its shot-type spec (`types`, see
-    normalize_types / effective_types). Nothing set = today's profile."""
+    hold range (seconds), its shot-type spec (`types`, see
+    normalize_types / effective_types) and whether reveal shots are allowed.
+    Nothing set = today's profile."""
     prof = _resolve_motion(key, min_hold, max_hold, default_max, custom)
     spec = normalize_types(types)
-    return replace(prof, types=spec) if spec else prof
+    if spec:
+        prof = replace(prof, types=spec)
+    if reveal:
+        prof = replace(prof, reveal=True)
+    return prof
 
 
 # ---- presentation (who is on screen, and when) -----------------------------
@@ -971,6 +978,55 @@ def presentation_block(text) -> str:
         "invented on the fly per Section 6.")
 
 
+# ---- reveal shots (items shown one at a time) --------------------------------
+REVEAL_MIN_ITEMS = 2
+REVEAL_MAX_ITEMS = 4
+
+
+def reveal_block() -> str:
+    """The planning-brief section that teaches reveal shots. Only added for a
+    channel that turned them on (MotionProfile.reveal)."""
+    return (
+        "## SECTION 7B — REVEAL SHOTS (items shown one at a time)\n\n"
+        "A reveal shot shows 2–4 parallel items as the narrator names them: "
+        "the first item is on screen alone, the second appears when the "
+        "narration reaches it, then the third. It is ONE image holding the "
+        "items in a left-to-right row, each in its own equal-width slice (2 "
+        "items = halves, 3 = thirds, 4 = quarters). The assembler cuts the "
+        "image along those slice lines and reveals the slices in order, so "
+        "the layout has to be exact.\n\n"
+        "Use it only when ONE passage of the narration walks through "
+        f"{REVEAL_MIN_ITEMS}–{REVEAL_MAX_ITEMS} parallel things one after "
+        "another (three causes, two options, four steps) and each deserves "
+        "its own beat on screen. It is a rare tool — at most about 10% of "
+        "the shots; everything else stays a normal shot. When in doubt, do "
+        "not use it.\n\n"
+        "Add `\"reveal\": [c1, c2, c3]` to the shot: the SRT cue at which "
+        "each item is first named — one cue per item, strictly increasing, "
+        "all inside the shot's own `cues`, the first equal to the shot's "
+        "first cue. Item 1 is the leftmost slice, item 2 the next, and so on, "
+        "in narration order.\n\n"
+        "Rules for a reveal shot:\n"
+        "- It never moves: `\"motion\": \"ST\"` and the asset file name ends "
+        "with the ST code. The ST share and ST hold limits above do not "
+        "apply to it; the channel's normal maximum hold does.\n"
+        "- Its image prompt must state the item count, name each item in "
+        "left-to-right order and put every item in its own slice, e.g. "
+        "\"three separate items in a row, left to right: A, B, C, each "
+        "centered in its own equal third of the frame\".\n"
+        "- Keep clear empty space between neighbouring slices. Nothing may "
+        "cross a vertical slice line — no object, shadow, floor line, glow, "
+        "arrow, prop or text — and no item may lean into a neighbour's slice.\n"
+        "- One plain, identical background and the same lighting, scale and "
+        "ground line across all slices, so the slices that are still hidden "
+        "leave no visible gap or mismatch.\n"
+        "- No character, hand or object may appear in more than one slice, "
+        "and an item must not need another item to make sense.\n"
+        "- A reveal image cannot be fixed afterwards: the slices are cut by "
+        "pixels. If the items cannot be laid out cleanly in equal slices, "
+        "plan normal shots instead.\n")
+
+
 # ---- rendering ---------------------------------------------------------------
 _MARKER_RE = re.compile(r"\{\{([A-Z_]+)\}\}")
 
@@ -1005,6 +1061,15 @@ def render_brief(template: str, profile: MotionProfile | None = None,
             text = text.replace("{{PRESENTATION}}", "")
     elif block:
         text = text.rstrip() + "\n\n" + block
+    if profile.reveal:
+        # right after the output-document section; a custom template without
+        # that heading gets it at the end
+        marker = "## SECTION 8 "
+        at = text.find(marker)
+        if at >= 0:
+            text = text[:at] + reveal_block() + "\n" + text[at:]
+        else:
+            text = text.rstrip() + "\n\n" + reveal_block()
     for name, value in values.items():
         text = text.replace("{{%s}}" % name, value)
     left = sorted(set(_MARKER_RE.findall(text)))

@@ -712,6 +712,9 @@ def for_production(conn, prod) -> dict:
         "brief_types": briefs.effective_types(
             None, row_get(own, "brief_types")),
         "brief_presentation": row_get(own, "brief_presentation") or "",
+        # reveal shots (items shown one at a time) in the planning brief:
+        # per channel only, off unless the channel turns them on
+        "brief_reveal": bool(row_get(own, "brief_reveal") or 0),
         # hold range (s) over the preset; None = the preset's / the global max
         "brief_min_hold": row_get(own, "brief_min_hold"),
         "brief_max_hold": row_get(own, "brief_max_hold"),
