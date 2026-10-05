@@ -1575,4 +1575,28 @@ handle it). Static (ST) only.
   shot into consecutive stills (slices 1..k, rest black, short fade) and
   `RevealImageWriter` cuts them with ffmpeg into `out\reveal\`. The merge needs
   that ImgToVideo branch (or master once merged) checked out.
+- Variants (2026-10-05, same branch):
+  - Grid: `"reveal": {"cues": [4 cues], "layout": "grid"}` - one image, four
+    quadrants revealed TL, TR, BL, BR (exactly 4 items).
+  - Separate images, build-up: `"reveal": {"cues": [...], "assets": [files],
+    "layout": "row"|"grid"}` - one image per item, each its own `images` entry,
+    all `_ST`, the first = the shot's `asset`; earlier images stay on screen
+    (the merge composites them cover-cropped into slots). "Replace" mode needs no
+    field: ordinary consecutive shots.
+  - `studio.shot_reveal_layout/shot_reveal_assets` read them;
+    `shotlist_reveal_faults(shots, image_names)` checks layout, grid=4, one
+    asset per cue, first asset = shot asset, `_ST`, present in images.
+  - Judge: `judge_shots(data, prompt_by_file)` turns a build-up shot into one
+    pseudo-shot per image (its own cues, `reveal_item`), so each image is graded
+    against its own narration and patched by file name;
+    `REVEAL_BUILDUP_JUDGE_RULES` asks for ONE centred subject with empty side
+    margins (only the centre survives the crop). Grid wording is in
+    `REVEAL_JUDGE_RULES`.
+- Sound effects: any shot may carry `"sfx": "pop"` (plays at the shot start) or,
+  on a reveal shot, a name for every item or a list (one per item, last repeats).
+  `studio.shot_sfx` / `shotlist_sfx_faults` (name charset only, normal shot = ONE
+  name, reveal list <= items). Built-ins: `studio.BUILTIN_SFX` = pop, ding, click,
+  tick, whoosh, swipe (ImgToVideo generates them with ffmpeg; a file in the
+  project's `sfx\` folder with the same stem wins). The text lives in the same
+  SECTION 7B, so it is gated by the same channel setting.
 - Tests: tests/test_reveal_shots.py.

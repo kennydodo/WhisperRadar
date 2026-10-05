@@ -379,9 +379,9 @@
               </label>
               <label>reveal shots
                 <select name="brief_reveal" style="width:290px"
-                        title="A reveal shot is one image with 2-4 items in a row; the video shows them one at a time as the narrator names each (a mask-style reveal). Static only.">
+                        title="A reveal shot is one image with 2-4 items in a row; the video shows them one at a time as the narrator names each (a mask-style reveal), as a row, a 2x2 grid or separate images, optionally with a sound per item. Static only.">
                   <option value="">off</option>
-                  <option value="1" {{ 'selected' if ch['brief_reveal'] == 1 else '' }}>allowed - items appear one at a time</option>
+                  <option value="1" {{ 'selected' if ch['brief_reveal'] == 1 else '' }}>allowed - items appear one at a time (+ sound effects)</option>
                 </select>
               </label>
             </div>
