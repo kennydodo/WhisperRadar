@@ -34,8 +34,8 @@ from flask import (
 )
 
 from . import external_prompts
-from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, scheduler,
-               services, settings, studio)
+from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, remote,
+               scheduler, services, settings, studio)
 from .cli import _slugify, format_duration
 from .watch import CHANNEL_ID_RE, resolve_channel
 
@@ -354,6 +354,7 @@ def format_views(value) -> str:
 
 def create_app(cfg) -> Flask:
     app = Flask(__name__)
+    remote.install(app, cfg)    # password gate for anything not local (phone access)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live
     app.jinja_env.filters["dur"] = format_duration
@@ -398,7 +399,12 @@ def create_app(cfg) -> Flask:
                 ipaddress.ip_address(host)
                 return True
             except ValueError:
-                return host == socket.gethostname().lower()
+                # this PC's own name, or its Tailscale MagicDNS name
+                # (<pc>.<tailnet>.ts.net) - still behind the password gate
+                mine = socket.gethostname().lower()
+                return (host == mine
+                        or (host.endswith(".ts.net")
+                            and host.split(".")[0] == mine))
 
         if not host_matches_connection():
             return "Blocked: host header mismatch", 403

@@ -437,7 +437,44 @@ def cmd_produce(cfg, args):
     return 0 if result["result"] == "ok" else 1
 
 
+def _serve_remote(cfg, args):
+    """Phone access: waitress (no debugger, no reloader) listening on this PC
+    AND its Tailscale address, behind the WR_PASSWORD gate."""
+    from . import remote
+
+    if not remote.password():
+        print("Phone access needs a password. Set WR_PASSWORD first, e.g. in a "
+              "terminal:  setx WR_PASSWORD \"your-password\"  (then open a new "
+              "window), and start again.")
+        return 2
+    hosts = [args.host] if not remote.is_loopback_host(args.host) else \
+        remote.tailscale_addresses()
+    if not hosts:
+        print("No Tailscale address found. Is Tailscale installed and signed "
+              "in on this PC? (or pass --host <address> to listen elsewhere)")
+        return 2
+    try:
+        from waitress import serve
+    except ImportError:
+        print("Phone access needs waitress:  pip install waitress")
+        return 2
+    from .webapp import create_app
+
+    app = create_app(cfg)
+    listen = " ".join([f"127.0.0.1:{args.port}"]
+                      + [f"{h}:{args.port}" for h in hosts])
+    print(f"WhisperRadar dashboard: http://127.0.0.1:{args.port}")
+    for h in hosts:
+        print(f"On your phone (Tailscale on):  http://{h}:{args.port}")
+    print("Remote requests need the WR_PASSWORD password; code changes need a "
+          "restart in this mode.")
+    serve(app, listen=listen, threads=8)
+    return 0
+
+
 def cmd_serve(cfg, args):
+    if getattr(args, "remote", False):
+        return _serve_remote(cfg, args)
     print(f"WhisperRadar dashboard: http://{args.host}:{args.port}")
 
     if args.no_reload:
@@ -494,7 +531,11 @@ def cmd_serve(cfg, args):
 
         app = Flask(__name__)
 
-    app.run(host=args.host, port=args.port, debug=True, use_reloader=True,
+    # the in-browser debugger runs arbitrary code: only on a loopback address
+    from . import remote
+
+    app.run(host=args.host, port=args.port,
+            debug=remote.is_loopback_host(args.host), use_reloader=True,
             threaded=True)
 
 
@@ -653,6 +694,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("serve", help="start the local web dashboard", parents=[common])
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8540)
+    p.add_argument("--remote", action="store_true",
+                   help="phone access: also listen on this PC's Tailscale "
+                        "address (needs WR_PASSWORD; waitress, no debugger, "
+                        "no auto-reload)")
     p.add_argument("--no-reload", action="store_true",
                    help="use waitress instead of the auto-reloading dev "
                         "server (no auto-restart on code changes, but no "

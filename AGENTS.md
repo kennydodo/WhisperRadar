@@ -1521,3 +1521,27 @@ the images-stage form — persisting them per production is optional polish.
   `shotlist_pacing`) and written into the planner/judge prompts. The brief's
   visual->motion table follows the caps (`briefs.adapt_motion_table`): rows of a
   banned type are dropped and PU/PD, PV, PL/PR get a plain-scene row instead.
+
+
+## Phone access (branch mobile-access)
+
+- `whisperradar/remote.py` - the password gate. A request straight from this PC
+  (loopback, no proxy headers) works as always; anything else needs the
+  `WR_PASSWORD` environment variable (login page + signed session cookie,
+  `data/.web_secret` holds the signing key, 5 wrong tries lock a client for a
+  minute). No password set => remote requests get 403, so binding to a network
+  address by mistake exposes nothing. Forwarding headers (`X-Forwarded-For`,
+  `Tailscale-User-Login`, ...) on a loopback request count as remote, so
+  `tailscale serve` / a reverse proxy cannot skip the password.
+- `python wr.py serve --remote` (or `start_dashboard_phone.cmd`): waitress on
+  127.0.0.1 AND this PC's Tailscale IPv4 (`remote.tailscale_addresses()`, from
+  the tailscale CLI), no debugger, no auto-reload. A non-loopback `--host` in the
+  normal reloading mode now runs with the debugger OFF (it executes code).
+- `static/mobile.css` is linked last by every page and acts only under 760px:
+  stacked fields, 16px inputs (no iOS zoom), 42px touch targets, scrolling
+  tables/stepper, Copy button above its box, folder-picker buttons hidden (the
+  chooser opens on the PC). The POST host check also accepts this PC's
+  `<pc>.<tailnet>.ts.net` name.
+- Phone setup: Tailscale on the PC and the phone (same account), `setx
+  WR_PASSWORD "..."`, run `start_dashboard_phone.cmd`, open the printed
+  `http://100.x.y.z:8540`. Do not forward the port to the internet.

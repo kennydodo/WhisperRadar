@@ -1,0 +1,60 @@
+/* Phone layout. Loaded last by every page; only acts on narrow screens, so the
+ * desktop look is untouched. The pages carry their own inline CSS, so the
+ * rules here are specific and use !important where an inline style (forms'
+ * flex-basis, fixed widths) would otherwise win. */
+@media (max-width: 760px) {
+  html { -webkit-text-size-adjust: 100%; }
+  body { font-size: 15px; }
+
+  /* navigation: one swipeable row instead of wrapping off screen */
+  .topnav { overflow-x: auto; white-space: nowrap; gap: 14px !important;
+            padding: 10px 12px 0 !important; -webkit-overflow-scrolling: touch; }
+  .topnav a, .topnav .brand { flex: 0 0 auto; }
+
+  .wrap { padding: 12px 12px 48px !important; }
+  h1 { font-size: 18px !important; overflow-wrap: anywhere; }
+  .panel { padding: 12px !important; }
+
+  /* anything laid out in a row stacks, and fields use the full width */
+  .inline, .actions, .row { flex-wrap: wrap; }
+  .inline > *, .actions > form, .row > * { max-width: 100%; }
+  .inline > label, form.inline > input[type=text], form.inline > select {
+    flex: 1 1 100% !important; width: 100% !important; }
+  label[style*="flex"] { flex: 1 1 100% !important; }
+  input[type=text], input[type=number], input[type=password], input[type=file],
+  input:not([type]), select, textarea {
+    width: 100% !important; max-width: 100%; font-size: 16px !important; /* no iOS zoom */ }
+  input[type=checkbox], input[type=radio] { width: auto !important; }
+  textarea { min-height: 140px; }
+
+  /* touch targets */
+  button, .btn { min-height: 42px; padding: 9px 14px !important; font-size: 14px !important; }
+  button.ghost { min-height: 38px; }
+  .actions form { flex: 1 1 100%; }
+  .actions form button, .actions > button, .actions > .btn { width: 100%; }
+
+  /* tables scroll sideways inside their panel instead of stretching the page */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch;
+          max-width: 100%; }
+  th, td { white-space: normal; }
+
+  /* studio: the stage stepper stays one scrollable strip */
+  .stepper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .step { min-width: 76px !important; }
+  .thumbgrid { grid-template-columns: repeat(2, 1fr) !important; }
+  pre, .artifact { max-width: 100%; overflow-x: auto; }
+  /* the Copy button sits above the box instead of covering its first line */
+  .copywrap .copybtn { position: static !important; display: block;
+                       margin: 0 0 4px auto; min-height: 32px; padding: 5px 12px !important; }
+  form.row, form.inline { margin-top: 6px; }
+  form.row > button, form.row > .btn { width: 100%; }
+
+  /* modals fit the screen */
+  #autorunmodal > div, #resetmodal > div { width: 96% !important; max-width: 96% !important; }
+
+  /* the folder chooser opens on the PC, not on the phone */
+  button[onclick^="pickFolder"] { display: none !important; }
+
+  /* long single-line values (paths, URLs, ids) wrap instead of overflowing */
+  .mono, code, .muted { overflow-wrap: anywhere; }
+}
