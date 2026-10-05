@@ -4,3 +4,5 @@ __pycache__/
 data/
 exports/
 *.log
+engines/renderly-api/tools/realesrgan/_probe.png
+engines/renderly-api/tools/realesrgan/device_cache.json
