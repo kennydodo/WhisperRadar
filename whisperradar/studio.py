@@ -1763,6 +1763,10 @@ def _require_flow_project(report, had_stored: bool) -> str:
 # attempt lowers the standing, so the batch stops at the FIRST one and the
 # auto-resume waits images_throttle_wait_minutes (default 60) before resuming.
 THROTTLE_PATTERN = re.compile(r"unusual activity", re.I)
+# FlowBatch's consecutive-failure guard fired (a broken session/UI). Part of the
+# error text, and what the images stage looks for to try a gallery recovery
+# before it pauses: Flow usually generated some of those cards anyway.
+FLOW_CARDS_FAILED_MARKER = "stopped after too many cards failed in a row"
 THROTTLE_MARKER = "Flow is throttling this account"
 
 
@@ -1889,8 +1893,9 @@ def run_flowbatch_recover(cfg, pid_dir: Path, pid: int,
                           project_url: str | None = None) -> dict:
     """Adopt images a stopped FlowBatch left in the Flow project's gallery.
 
-    Manual only (the IMAGES stage "Recover from Flow gallery" button): Flow
-    already generated them, so re-running the prompts would pay twice for the
+    Triggered by the IMAGES stage "Recover from Flow gallery" button, and
+    automatically when a batch stops on "too many cards failed in a row"
+    (before the pause): Flow already generated them, so re-running the prompts would pay twice for the
     same stills. Builds the same missing-only job `generate` uses, asks the
     FlowBatch CLI to match gallery result tiles to those items and download
     what is missing into flow_images\\, then adopts it (which also sweeps up
@@ -2033,7 +2038,7 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
             # images_resume_wait_minutes (10 by default) before retrying, rather
             # than the plain, shorter "were not produced" pause.
             raise RuntimeError(
-                f"FlowBatch stopped after too many cards failed in a row - "
+                f"FlowBatch {FLOW_CARDS_FAILED_MARKER} - "
                 f"Flow is refusing this session. Whatever rendered is kept "
                 f"(state\\wr-{pid}.json); it resumes after the configured wait.")
         if "rate limit" in text or "refused the generation" in text:

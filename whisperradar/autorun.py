@@ -1574,6 +1574,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     try:
         services.MANAGER.ensure(cfg, services.services_for(engine, mode),
                                 log_fn=log)
+        count = 0
+        recovered_total = 0
         for round_no in range(1, IMAGE_RESUME_ROUNDS + 1):
             try:
                 if engine == "flowbatch":
@@ -1648,6 +1650,19 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                         source = "FlowBatch"
                 break
             except RuntimeError as exc:
+                # FlowBatch stopped on consecutive failed cards: Flow often
+                # generated some (or all) of them before the UI broke. Adopt
+                # those from the gallery BEFORE pausing, so they are not paid
+                # for twice - and if nothing is left, skip the pause entirely.
+                if studio.FLOW_CARDS_FAILED_MARKER in str(exc):
+                    got = _recover_after_stop(cfg, pid, pdir, flow_upscale,
+                                              log, cancel)
+                    recovered_total += got
+                    if got and not studio.missing_shot_files(pdir):
+                        log("[auto-run] images: the gallery recovery brought "
+                            "in every missing image - nothing left to render")
+                        source = "FlowBatch (gallery recovery)"
+                        break
                 # Flow gave up on some cards ("still busy"). Pause, then resume:
                 # the driver skips what is already on disk, so the next round
                 # only attempts the gaps.
@@ -1668,6 +1683,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         # stop what we started, if the user opted in; never a service that was
         # already running
         services.MANAGER.release(cfg, managed, log_fn=log)
+    count += recovered_total
     upscale_note = ""
     if upscale_after_download:
         try:
@@ -1681,6 +1697,9 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         except Exception as exc:  # noqa: BLE001 - never lose the downloads
             log(f"[auto-run] images: local upscale failed - {exc}")
             upscale_note = f"; local upscale FAILED ({exc})"
+    if recovered_total:
+        upscale_note += (f"; {recovered_total} of them recovered from the "
+                         f"Flow gallery after a stopped batch")
     conn = _connect(cfg)
     try:
         db.add_step(conn, pid, "images", "auto",
@@ -1691,13 +1710,36 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         conn.close()
 
 
+def _recover_after_stop(cfg, pid: int, pdir, flow_upscale, log, cancel) -> int:
+    """After FlowBatch's consecutive-failure stop: adopt whatever Flow already
+    generated into the project's gallery (the same recover the IMAGES stage
+    button runs; it never generates). Returns how many images were adopted.
+    Best effort - a failed recovery is logged and the normal pause and resume
+    follows; only a user stop propagates."""
+    try:
+        log("[auto-run] images: FlowBatch stopped - checking the Flow "
+            "gallery for images that were generated but not downloaded")
+        result = studio.run_flowbatch_recover(
+            cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel)
+    except studio.BatchCancelled:
+        raise
+    except Exception as exc:  # noqa: BLE001 - recovery is a bonus, not a gate
+        log(f"[auto-run] images: gallery recovery did not run - {exc}")
+        return 0
+    got = len(result.get("recovered") or [])
+    log(f"[auto-run] images: recovered {got} image(s) from the gallery, "
+        f"{len(result.get('still_missing') or [])} still missing")
+    return got
+
+
 def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     """Manual "Recover from Flow gallery": adopt the images a stopped batch
     already generated into the Flow project's gallery instead of paying to
     regenerate them.
 
-    Never automatic and never part of the pipeline (_RUNNERS) - only the
-    IMAGES stage button triggers it, and it NEVER generates anything.
+    Never part of the pipeline (_RUNNERS): the IMAGES stage button triggers it,
+    and the images stage itself calls the same recovery (_recover_after_stop)
+    when FlowBatch stops on too many failed cards. It NEVER generates anything.
     Dispatch by the SAME engine/mode the images stage would use
     (_stage_params' resolution): flowbatch (and renderly+flow) drives the
     FlowBatch CLI's recover command; renderly+api is refused (the Renderly API stores its results itself,
