@@ -831,9 +831,9 @@
 
       <div class="thumbgrid" style="margin:10px 0">
         {% for name in images %}
-        <div class="thumb" title="{{ name }}">
+        <div class="thumb" title="{{ name.rsplit('.', 1)[0] }}">
           <img src="/studio/file/{{ prod['id'] }}/images/{{ name }}" alt="{{ name }}">
-          <span class="cap" title="Click to copy the name" onclick="wrCopyName(this)">{{ name }}</span>
+          <span class="cap" title="Click to copy the name" onclick="wrCopyName(this)">{{ name.rsplit('.', 1)[0] }}</span>
           <form method="post" action="/studio/{{ prod['id'] }}/images/delete">
             <input type="hidden" name="name" value="{{ name }}">
             <button type="submit" class="ghost">x</button>

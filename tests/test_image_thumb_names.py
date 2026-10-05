@@ -31,7 +31,7 @@ class ImageThumbNameTests(unittest.TestCase):
                 (img / name).write_bytes(b"x")
             html = create_app(cfg).test_client().get(
                 f"/studio/{pid}?stage=images").get_data(as_text=True)
-            for name in ("S01_01_SCN_ZI.png", "S01_02_CU_ZO.png"):
+            for name in ("S01_01_SCN_ZI", "S01_02_CU_ZO"):  # no extension
                 self.assertIn(f'class="thumb" title="{name}"', html)
                 self.assertIn(f'onclick="wrCopyName(this)">{name}</span>', html)
 
