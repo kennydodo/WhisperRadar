@@ -212,7 +212,10 @@
     'merge': 'just re-does the final preview/NLE export',
   } %}
   {% set RESETTABLE = stages[:stages.index('review')] if 'review' in stages else stages %}
-  {% set reached_idx = stages.index(prod['stage']) if prod['stage'] in stages else 0 %}
+  {# a finished production sits on 'review', which is not resettable: its last
+     resettable stage is the one to preselect (without one, no radio was checked
+     and the page script below threw on load, so Start over did nothing) #}
+  {% set reached_idx = [(stages.index(prod['stage']) if prod['stage'] in stages else 0), (RESETTABLE | length) - 1] | min %}
   <div class="inline" style="justify-content:space-between; margin-top:14px">
     <span class="muted" style="font-size:12px">
       {% if job.running and job.kind == 'auto-run' %}Auto-run in progress - it always stops before review{% else %}Auto-run executes every remaining stage in order - it always stops before review{% endif %}
@@ -274,7 +277,12 @@
       const label = document.getElementById('resetaudiolabel');
       const STAGE_ORDER = {{ RESETTABLE | tojson }};
       function sync() {
-        const from = [...radios].find((r) => r.checked).value;
+        let picked = [...radios].find((r) => r.checked);
+        if (!picked && radios.length) {   // never leave the modal without a choice
+          picked = radios[radios.length - 1];
+          picked.checked = true;
+        }
+        const from = picked ? picked.value : '';
         const audioRelevant = STAGE_ORDER.indexOf(from) < STAGE_ORDER.indexOf('audio');
         label.style.display = audioRelevant ? '' : 'none';
         if (!audioRelevant) box.checked = false;
@@ -285,6 +293,7 @@
     const STAGE_LABEL = {{ STAGE_DISPLAY | tojson }};
     async function submitReset() {
       const radio = [...document.getElementsByName('resetfrom')].find((r) => r.checked);
+      if (!radio) return;
       const from = radio.value;
       const label = (radio.closest('label').textContent || '').replace(/\s+/g, ' ').trim();
       document.getElementById('resetfrom').value = from;

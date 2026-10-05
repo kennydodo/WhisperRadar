@@ -166,5 +166,22 @@ class StartOverTests(unittest.TestCase):
         self._post("images")
         self.assertTrue((sd / "best_ever.json").exists())
 
+    def test_modal_preselects_one_stage_at_every_production_stage(self):
+        """The reset dialog script reads the checked radio; at "review" none
+        was checked, which crashed the script and broke the button."""
+        import re
+        for stage in db.STAGES:
+            conn = db.connect(self.cfg.db_path)
+            db.update_production(conn, self.pid, stage=stage)
+            conn.commit()
+            conn.close()
+            html = self.client.get(f"/studio/{self.pid}").get_data(as_text=True)
+            radios = re.findall(
+                r'<input type="radio" name="resetfrom"[^>]*>', html)
+            self.assertTrue(radios, stage)
+            self.assertEqual(
+                sum(1 for r in radios if "checked" in r), 1, stage)
+
+
 if __name__ == "__main__":
     unittest.main()
