@@ -83,7 +83,7 @@
   .thumb .cap { position: absolute; left: 0; right: 0; bottom: 0; display: none;
     padding: 2px 6px; font-size: 11px; background: rgba(0,0,0,.75); color: #fff;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    pointer-events: none; }
+    cursor: copy; user-select: all; }
   .thumb:hover .cap { display: block; }
   .thumb form { position: absolute; top: 4px; right: 4px; }
   .thumb button { padding: 1px 8px; font-size: 11px; }
@@ -807,11 +807,33 @@
 
     {% elif stage == "images" %}
       {% if images %}
+      <script>
+      // click a thumbnail's file name to copy it (the clipboard API needs https or
+      // localhost - on the phone/Tailscale address it falls back to select + copy)
+      function wrCopyName(el) {
+        const text = el.textContent.trim();
+        const select = () => {
+          const r = document.createRange(); r.selectNodeContents(el);
+          const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        };
+        const done = () => {
+          const old = el.textContent; el.textContent = 'copied';
+          setTimeout(() => { el.textContent = old; }, 700);
+        };
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(text).then(done, () => { select(); });
+        } else {
+          select();
+          try { if (document.execCommand('copy')) done(); } catch (e) { /* selected: Ctrl+C */ }
+        }
+      }
+      </script>
+
       <div class="thumbgrid" style="margin:10px 0">
         {% for name in images %}
         <div class="thumb" title="{{ name }}">
           <img src="/studio/file/{{ prod['id'] }}/images/{{ name }}" alt="{{ name }}">
-          <span class="cap">{{ name }}</span>
+          <span class="cap" title="Click to copy the name" onclick="wrCopyName(this)">{{ name }}</span>
           <form method="post" action="/studio/{{ prod['id'] }}/images/delete">
             <input type="hidden" name="name" value="{{ name }}">
             <button type="submit" class="ghost">x</button>

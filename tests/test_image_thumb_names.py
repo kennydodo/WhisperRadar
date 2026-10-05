@@ -33,7 +33,7 @@ class ImageThumbNameTests(unittest.TestCase):
                 f"/studio/{pid}?stage=images").get_data(as_text=True)
             for name in ("S01_01_SCN_ZI.png", "S01_02_CU_ZO.png"):
                 self.assertIn(f'class="thumb" title="{name}"', html)
-                self.assertIn(f'<span class="cap">{name}</span>', html)
+                self.assertIn(f'onclick="wrCopyName(this)">{name}</span>', html)
 
 
 if __name__ == "__main__":
