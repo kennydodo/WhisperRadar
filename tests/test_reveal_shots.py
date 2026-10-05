@@ -315,6 +315,29 @@ class ChannelSettingTests(unittest.TestCase):
         row = db.get_own_channel(self.conn, self.oc)
         self.assertIsNone(row["brief_reveal"])
 
+    def test_the_required_level_saves_and_reaches_the_effective_settings(self):
+        from whisperradar import settings
+        client = create_app(self.cfg).test_client()
+        client.post("/my-channels/brief",
+                    data={"id": self.oc, "brief_reveal": "2"})
+        row = db.get_own_channel(self.conn, self.oc)
+        self.assertEqual(row["brief_reveal"], 2)
+        pid = db.create_production(self.conn, "P", "general", None, None)
+        db.update_production(self.conn, pid, own_channel_id=self.oc)
+        self.conn.commit()
+        eff = settings.for_production(self.conn,
+                                      db.get_production(self.conn, pid))
+        self.assertEqual(eff["brief_reveal"], 2)
+
+    def test_only_the_required_level_adds_the_mandatory_rule(self):
+        template = briefs.read_template()
+        for level, strict in ((0, False), (1, False), (2, True)):
+            prof = briefs.resolve_profile(None, reveal=level)
+            text = briefs.render_brief(template, prof, "")
+            self.assertEqual("SECTION 7B" in text, level > 0, level)
+            self.assertEqual("THIS CHANNEL REQUIRES REVEAL SHOTS" in text,
+                             strict, level)
+
     def test_the_setting_is_exported_and_imported(self):
         db.update_own_channel(self.conn, self.oc, brief_reveal=1)
         doc = json.loads(json.dumps(channel_io.export_channels(self.conn)))

@@ -122,6 +122,8 @@ class MotionProfile:
     types: dict | None = None
     # the channel lets the plan use reveal shots (see reveal_block)
     reveal: bool = False
+    # level 2: reveals are REQUIRED wherever the narration lists 2-4 items
+    reveal_strict: bool = False
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -893,7 +895,8 @@ def resolve_profile(key, min_hold=None, max_hold=None,
     if spec:
         prof = replace(prof, types=spec)
     if reveal:
-        prof = replace(prof, reveal=True)
+        # 1 / True = allowed, 2 = required wherever the narration lists items
+        prof = replace(prof, reveal=True, reveal_strict=str(reveal) == "2")
     return prof
 
 
@@ -983,10 +986,23 @@ REVEAL_MIN_ITEMS = 2
 REVEAL_MAX_ITEMS = 4
 
 
-def reveal_block() -> str:
+REVEAL_REQUIRED_RULE = (
+    "\n\nTHIS CHANNEL REQUIRES REVEAL SHOTS. Reveals are not optional here: "
+    "every passage of the narration that names 2-4 parallel items one after "
+    "another (\"first, second, third\", numbered steps, a list of fees, "
+    "habits, animals, symptoms or numbers) MUST be planned as a reveal shot - "
+    "never as an ordinary shot and never as one multi-panel image. A longer "
+    "list is split across consecutive reveal shots of 2-4 items. Give every "
+    "reveal a fitting sound effect on each item. Before you return the "
+    "shotlist, read the narration once more for such passages and confirm "
+    "each one became a reveal shot; a plan that leaves a listed passage as an "
+    "ordinary shot is wrong.")
+
+
+def reveal_block(strict: bool = False) -> str:
     """The planning-brief section that teaches reveal shots. Only added for a
     channel that turned them on (MotionProfile.reveal)."""
-    return (
+    text = (
         "## SECTION 7B — REVEAL SHOTS AND SOUND EFFECTS (items shown one at a time)\n\n"
         "A reveal shot shows 2–4 parallel items as the narrator names them: "
         "the first item is on screen alone, the second appears when the "
@@ -1066,6 +1082,7 @@ def reveal_block() -> str:
         "separate images have one `assets` entry per cue, the first equal to "
         "`asset`, each its own entry in `images`; any `sfx` is a built-in "
         "name; and reveal shots are no more than about 10% of all shots.\n")
+    return text + (REVEAL_REQUIRED_RULE if strict else "")
 
 
 # ---- rendering ---------------------------------------------------------------
@@ -1108,9 +1125,9 @@ def render_brief(template: str, profile: MotionProfile | None = None,
         marker = "## SECTION 8 "
         at = text.find(marker)
         if at >= 0:
-            text = text[:at] + reveal_block() + "\n" + text[at:]
+            text = text[:at] + reveal_block(profile.reveal_strict) + "\n" + text[at:]
         else:
-            text = text.rstrip() + "\n\n" + reveal_block()
+            text = text.rstrip() + "\n\n" + reveal_block(profile.reveal_strict)
     for name, value in values.items():
         text = text.replace("{{%s}}" % name, value)
     left = sorted(set(_MARKER_RE.findall(text)))

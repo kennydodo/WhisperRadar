@@ -1254,9 +1254,10 @@ def create_app(cfg) -> Flask:
             spec = briefs.normalize_types(raw)
             fields["brief_types"] = json.dumps(spec) if spec else None
         if "brief_reveal" in form:
+            level = (form.get("brief_reveal") or "").strip().lower()
             fields["brief_reveal"] = (
-                1 if (form.get("brief_reveal") or "").strip().lower()
-                in ("1", "on", "true") else None)
+                2 if level == "2" else
+                1 if level in ("1", "on", "true") else None)
         if "brief_presentation" in form:   # multi-line: keep newlines
             fields["brief_presentation"] = (
                 (form.get("brief_presentation") or "").strip() or None)
