@@ -6,7 +6,7 @@
     "channel": "chrome",
     "headless": false,
     "slowMo": 0,
-    "viewport": { "width": 1512, "height": 950 },
+    "viewport": { "width": 1156, "height": 864 },
     "locale": "en-US",
     "timezoneId": "Africa/Lagos",
     "userAgent": null,
