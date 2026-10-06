@@ -59,7 +59,7 @@ def _wait_dead(pid: int, timeout: float = 10.0) -> bool:
 
 class KillImageBatchTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.dir_a = Path(self.tmp.name) / "a"
         self.dir_b = Path(self.tmp.name) / "b"
@@ -191,7 +191,7 @@ class ResumeLoopTests(unittest.TestCase):
     """A kill must end the images stage, not pause for an hour and retry."""
 
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         self.cfg = load_config(ROOT / "config.yaml")
         self.cfg.db_path = Path(self.tmp.name) / "wr.db"
@@ -267,7 +267,7 @@ class ResumeLoopTests(unittest.TestCase):
 
 class KillRouteTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.tmp.cleanup)
         cfg = load_config(ROOT / "config.yaml")
         cfg.db_path = Path(self.tmp.name) / "wr.db"

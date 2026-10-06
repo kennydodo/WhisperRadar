@@ -58,12 +58,13 @@ class RecoverAfterStopTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _run(self, generate, recover):
+    def _run(self, generate, recover, pause_effect=None):
         with mock.patch.object(studio, "run_imagegen_flowbatch",
                                side_effect=generate) as gen, \
                 mock.patch.object(studio, "run_flowbatch_recover",
                                   side_effect=recover) as rec, \
-                mock.patch.object(autorun, "_pause") as pause, \
+                mock.patch.object(autorun, "_pause",
+                                  side_effect=pause_effect) as pause, \
                 mock.patch.object(services.MANAGER, "ensure"), \
                 mock.patch.object(services.MANAGER, "release"):
             autorun._run_images(self.cfg, self.pid, log=self.logs.append)
@@ -137,6 +138,131 @@ class RecoverAfterStopTests(unittest.TestCase):
         pause.assert_called_once()
         self.assertTrue(any("gallery recovery did not run" in m
                             for m in self.logs))
+
+    # ---- account throttle: the long pause gets a recovery AFTER the wait ----
+
+    def _throttle(self):
+        return studio.throttle_error("test", 60)
+
+    def test_throttle_recovers_after_the_pause_and_skips_the_rerender(self):
+        """Flow finishes cards while the account is out: adopt them first."""
+        order = []
+
+        def generate(*a, **k):
+            order.append("generate")
+            raise self._throttle()       # would fail again if it ever re-ran
+
+        def recover(cfg, pdir, pid, **k):
+            order.append("recover")
+            self._write("S01_01.png", "S02_01.png")
+            return {"recovered": ["S01_01.png", "S02_01.png"],
+                    "still_missing": []}
+
+        gen, rec, pause = self._run(
+            generate, recover,
+            pause_effect=lambda *a, **k: order.append("pause"))
+        # no gallery read before the throttle pause, one right after it
+        self.assertEqual(order, ["generate", "pause", "recover"])
+        self.assertEqual(gen.call_count, 1)        # nothing was re-rendered
+        self.assertTrue(any("after the pause" in m for m in self.logs))
+        detail = self._step()["detail"]
+        self.assertIn("2 image(s)", detail)
+        self.assertIn("recovered from the Flow gallery", detail)
+
+    def test_partial_recovery_after_the_throttle_renders_only_the_gaps(self):
+        calls = {"gen": 0}
+
+        def generate(*a, **k):
+            calls["gen"] += 1
+            if calls["gen"] == 1:
+                raise self._throttle()
+            self.assertTrue((self.pdir / "images" / "S01_01.png").exists())
+            self._write("S02_01.png")
+            return 1
+
+        def recover(cfg, pdir, pid, **k):
+            self._write("S01_01.png")
+            return {"recovered": ["S01_01.png"], "still_missing": ["S02_01.png"]}
+
+        gen, rec, pause = self._run(generate, recover)
+        self.assertEqual((gen.call_count, rec.call_count), (2, 1))
+        self.assertIn("1 of them recovered from the Flow gallery",
+                      self._step()["detail"])
+
+    def test_nothing_new_after_the_throttle_just_resumes(self):
+        calls = {"gen": 0}
+
+        def generate(*a, **k):
+            calls["gen"] += 1
+            if calls["gen"] == 1:
+                raise self._throttle()
+            self._write("S01_01.png", "S02_01.png")
+            return 2
+
+        gen, rec, pause = self._run(
+            generate, lambda *a, **k: {"recovered": [], "still_missing":
+                                       ["S01_01.png", "S02_01.png"]})
+        self.assertEqual((gen.call_count, rec.call_count), (2, 1))
+        pause.assert_called_once()
+
+    def test_a_failing_recovery_after_the_throttle_never_blocks_the_resume(self):
+        calls = {"gen": 0}
+
+        def generate(*a, **k):
+            calls["gen"] += 1
+            if calls["gen"] == 1:
+                raise self._throttle()
+            self._write("S01_01.png", "S02_01.png")
+            return 2
+
+        def recover(*a, **k):
+            raise RuntimeError("FlowBatch recover failed (exit 1)")
+
+        gen, rec, pause = self._run(generate, recover)
+        self.assertEqual(gen.call_count, 2)
+        self.assertTrue(any("gallery recovery did not run" in m
+                            for m in self.logs))
+
+    def test_a_stop_during_the_throttle_pause_never_recovers_or_renders(self):
+        def cancelled_pause(*a, **k):
+            raise studio.BatchCancelled("stop requested while waiting")
+
+        with mock.patch.object(studio, "run_imagegen_flowbatch",
+                               side_effect=lambda *a, **k: (_ for _ in ()).throw(
+                                   self._throttle())) as gen, \
+                mock.patch.object(studio, "run_flowbatch_recover") as rec, \
+                mock.patch.object(autorun, "_pause",
+                                  side_effect=cancelled_pause), \
+                mock.patch.object(services.MANAGER, "ensure"), \
+                mock.patch.object(services.MANAGER, "release"):
+            with self.assertRaises(studio.BatchCancelled):
+                autorun._run_images(self.cfg, self.pid, log=self.logs.append)
+        self.assertEqual((gen.call_count, rec.call_count), (1, 0))
+
+    def test_short_pauses_do_not_get_the_after_the_wait_recovery(self):
+        """'Cards failed' (10 min) already recovers once BEFORE its pause; no
+        second one after it. 'Still busy' never recovers."""
+        for exc_factory, expected in ((_stop_error, 1),
+                                      (lambda: RuntimeError(
+                                          "2 of 3 image(s) were not produced"), 0)):
+            self.logs.clear()
+            for f in (self.pdir / "images").glob("*"):
+                f.unlink()
+            calls = {"gen": 0}
+
+            def generate(*a, **k):
+                calls["gen"] += 1
+                if calls["gen"] == 1:
+                    raise exc_factory()
+                self._write("S01_01.png", "S02_01.png")
+                return 2
+
+            gen, rec, pause = self._run(
+                generate, lambda *a, **k: {"recovered": [], "still_missing":
+                                           ["S01_01.png", "S02_01.png"]})
+            self.assertEqual(rec.call_count, expected)
+            self.assertEqual(gen.call_count, 2)
+            self.assertFalse(any("after the pause" in m for m in self.logs))
 
     def test_other_errors_do_not_trigger_a_recovery(self):
         calls = {"n": 0}
