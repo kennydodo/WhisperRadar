@@ -123,6 +123,15 @@ SPEC: list[dict] = [
                 "touched.",
     },
     {
+        "key": "show_apply_all", "type": "bool", "default": False,
+        "label": "Show \"apply to all channels\" buttons",
+        "help": "Adds an \"apply to all channels\" button next to every "
+                "production-default setting (here and on My Channels). It "
+                "overwrites the per-channel values of every channel at once, "
+                "so it stays hidden - and refused by the server - until you "
+                "tick this.",
+    },
+    {
         "key": "notify_desktop", "type": "bool", "default": False,
         "label": "Desktop notification",
         "help": "Show a Windows balloon tip when an unattended run pauses or "
@@ -535,7 +544,8 @@ GROUPS: list[tuple[str, list[str]]] = [
         "notify_desktop", "notify_webhook_url", "notify_webhook_kind",
         "notify_on_success",
     ]),
-    ("Service handling", ["services_autostart", "services_managed"]),
+    ("Service handling", ["services_autostart", "services_managed",
+                         "show_apply_all"]),
 ]
 
 

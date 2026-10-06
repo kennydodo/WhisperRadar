@@ -301,6 +301,10 @@ class PageTests(_Base):
 
 
 class ApplyAllStillWorks(_Base):
+    def setUp(self):
+        super().setUp()
+        db.set_setting(self.conn, "show_apply_all", "1")
+
     def test_applying_one_applies_its_partner(self):
         self.assertEqual(settings.with_partners(["render_resolution"]),
                          ["render_resolution", "default_upscale"])

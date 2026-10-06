@@ -33,6 +33,7 @@ class _Base(unittest.TestCase):
         self.a = db.create_own_channel(self.conn, "Alpha")
         self.b = db.create_own_channel(self.conn, "Bravo")
         self.c = db.create_own_channel(self.conn, "Charlie")
+        db.set_setting(self.conn, "show_apply_all", "1")   # opt-in, see SwitchTests
         self.client = create_app(self.cfg).test_client()
 
     def tearDown(self):
@@ -313,6 +314,108 @@ class PageTests(_Base):
         self.assertIn("render_resolution", shipped)
         for field in ("default_voice", "bible_dir", "refs_dir", "name"):
             self.assertNotIn(f'"{field}"', shipped)
+
+
+class SwitchTests(_Base):
+    """The buttons exist only for a user who ticked Settings > Service handling."""
+
+    def off(self):
+        db.set_setting(self.conn, "show_apply_all", "0")
+
+    def test_off_by_default(self):
+        self.assertFalse(settings.SPEC_BY_KEY["show_apply_all"]["default"])
+        fresh = tempfile.TemporaryDirectory()
+        try:
+            conn = db.connect(Path(fresh.name) / "x.db")
+            db.init_db(conn)
+            self.assertFalse(settings.load(conn)["show_apply_all"])
+            conn.close()
+        finally:
+            fresh.cleanup()
+
+    def test_the_checkbox_lives_in_service_handling(self):
+        groups = dict(settings.GROUPS)
+        self.assertIn("show_apply_all", groups["Service handling"])
+        html = self.client.get("/settings").get_data(as_text=True)
+        self.assertIn('name="show_apply_all"', html)
+
+    def test_the_checkbox_saves_on_and_off(self):
+        self.off()
+        # a ticked box posts hidden "0" then "on"; an unticked one only "0"
+        self.client.post("/settings/save",
+                         data={"show_apply_all": ["0", "on"]})
+        self.assertTrue(settings.load(self.conn)["show_apply_all"])
+        self.client.post("/settings/save", data={"show_apply_all": ["0"]})
+        self.assertFalse(settings.load(self.conn)["show_apply_all"])
+
+    def test_the_checkbox_is_rendered_checked_only_when_on(self):
+        html = self.client.get("/settings").get_data(as_text=True)
+        seg = html.split('id="f-show_apply_all"')[1][:80]
+        self.assertIn("checked", seg)
+        self.off()
+        html = self.client.get("/settings").get_data(as_text=True)
+        seg = html.split('id="f-show_apply_all"')[1][:80]
+        self.assertNotIn("checked", seg)
+
+    def test_untouched_other_saves_do_not_flip_it(self):
+        self.client.post("/settings/save", data={"per_day": "2"})
+        self.assertTrue(settings.load(self.conn)["show_apply_all"])
+
+    def test_buttons_hidden_on_the_settings_page_when_off(self):
+        self.off()
+        html = self.client.get("/settings").get_data(as_text=True)
+        self.assertNotIn("wrApplyAll(this,", html)
+        self.assertNotIn("data-apply-all", html)
+
+    def test_buttons_shown_on_the_settings_page_when_on(self):
+        html = self.client.get("/settings").get_data(as_text=True)
+        self.assertIn("wrApplyAll(this, 'render_resolution'", html)
+
+    def test_channel_page_ships_no_fields_when_off(self):
+        self.off()
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        shipped = html.split("function wrApplyAll")[1].split("var fields = ")[1].split(";")[0]
+        self.assertEqual(shipped.strip(), "[]")
+
+    def test_channel_page_ships_the_fields_when_on(self):
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        shipped = html.split("function wrApplyAll")[1].split("var fields = ")[1].split(";")[0]
+        self.assertIn("render_resolution", shipped)
+
+    def test_inherit_labels_still_show_when_off(self):
+        self.off()
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn("var globals_ = ", html)
+
+    def test_the_server_refuses_settings_apply_when_off(self):
+        self.off()
+        self.set_(self.a, render_resolution="4k", default_upscale=4)
+        resp = self.client.post("/settings/save", data={
+            "render_resolution": "2k", "apply_all": "render_resolution"})
+        self.assertEqual(self.row(self.a)["render_resolution"], "4k")
+        self.assertIn("switched off",
+                      __import__("urllib.parse").parse.unquote_plus(
+                          resp.headers["Location"]))
+        # the plain save still happened
+        self.assertEqual(settings.load(self.conn)["render_resolution"], "2k")
+
+    def test_the_server_refuses_channel_copy_when_off(self):
+        self.off()
+        self.set_(self.b, per_day=4)
+        resp = self.client.post("/my-channels/edit", data={
+            "id": str(self.a), "name": "Alpha", "per_day": "2",
+            "apply_all": "per_day"})
+        self.assertEqual(self.row(self.b)["per_day"], 4)
+        self.assertEqual(self.row(self.a)["per_day"], 2)    # own save kept
+        self.assertIn("switched+off", resp.headers["Location"].replace("%20", "+"))
+
+    def test_ticking_the_box_in_the_same_save_does_not_apply_anything(self):
+        self.off()
+        self.set_(self.a, per_day=3)
+        self.client.post("/settings/save", data={
+            "show_apply_all": ["0", "on"], "per_day": "1"})
+        self.assertEqual(self.row(self.a)["per_day"], 3)    # no apply_all sent
+        self.assertTrue(settings.load(self.conn)["show_apply_all"])
 
 
 class InheritLabelTests(_Base):
