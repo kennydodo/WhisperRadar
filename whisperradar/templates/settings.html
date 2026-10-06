@@ -202,7 +202,7 @@
             {% endif %}
           {% endif %}
           <div class="help">{{ entry.help }}</div>
-          {% if entry.key in apply_all_keys %}
+          {% if values.show_apply_all and entry.key in apply_all_keys %}
           {% set n = override_counts.get(entry.key, 0) %}
           <button type="button" data-apply-all="{{ entry.key }}"
                   class="apply-all" style="margin-top:4px; font-size:12px"

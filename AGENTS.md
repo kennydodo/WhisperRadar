@@ -5,6 +5,21 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## DONE (2026-10-06) - gallery recovery after the account-throttle pause
+
+When Flow throttles the ACCOUNT ("We noticed some unusual activity") the images
+stage waits `images_throttle_wait_minutes` (default 60). Flow keeps finishing
+cards while the account is out, so `_run_images` now runs the gallery recovery
+(`_recover_after_stop(..., when="after the pause")`) right AFTER that wait and
+BEFORE the next round: finished cards are adopted instead of re-rendered and
+paid for twice; if that brings in everything the round is skipped. The gallery
+is deliberately NOT read before a throttle pause (poking a throttled account
+lowers its standing). The short pauses (the ~10 min "still busy" / refusal /
+"too many cards failed" waits) get no extra recovery: the "cards failed" stop
+keeps its single recovery BEFORE the pause, "still busy" has none. Best effort
+(a failing recovery is logged, the resume goes on); a Stop during the pause
+cancels without recovering. Tests: tests/test_recover_after_stop.py.
+
 ## DONE (2026-10-06) - Render resolution and Upscale tier are one setting
 
 1080p<->1, 2k<->2, 4k<->4, flow-native<->0 (`settings.RESOLUTION_UPSCALE`).
@@ -37,6 +52,9 @@ voice, bible/refs, style, planning brief are never eligible):
   from the whitelist) -> saves this channel, then copies its saved value to
   every other channel (`db.copy_channel_value_to_all`; a NULL/inherit value
   copies as inherit).
+- OPT-IN: the buttons are hidden (and the server refuses `apply_all`) until
+  Settings > Service handling > "Show apply to all channels buttons"
+  (`show_apply_all`, default off) is ticked.
 - Both ride on the existing save routes via a repeated `apply_all` form value;
   the buttons are `type=button` + `wrApplyAll()` (never submit buttons, so Enter
   cannot trigger them). Productions are never touched. Tests:

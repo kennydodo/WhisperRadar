@@ -979,7 +979,12 @@ def create_app(cfg) -> Flask:
             _, warnings = settings.save(conn, form)
             # "apply to all channels": make every channel inherit the value
             applied = []
-            for key in settings.with_partners(request.form.getlist("apply_all")):
+            wanted = request.form.getlist("apply_all")
+            if wanted and not settings.load(conn)["show_apply_all"]:
+                warnings.append("apply to all channels is switched off "
+                                "(Settings > Service handling)")
+                wanted = []
+            for key in settings.with_partners(wanted):
                 if key not in db.APPLY_ALL_FIELDS:
                     warnings.append(f"{key}: cannot be applied to all channels")
                     continue
@@ -1145,7 +1150,9 @@ def create_app(cfg) -> Flask:
                 " WHERE genre IS NOT NULL AND genre <> '' AND active = 1"
                 " ORDER BY genre COLLATE NOCASE")]
             source_genres = {g.lower() for g in genres}
-            global_render_resolution = settings.load(conn)["render_resolution"]
+            _loaded = settings.load(conn)
+            global_render_resolution = _loaded["render_resolution"]
+            global_apply_all = bool(_loaded["show_apply_all"])
             # paused watched channels are pruned from the tick list too;
             # already-stored picks of them survive via hidden inputs
             watched_channels = db.list_channels(conn, active_only=True)
@@ -1164,7 +1171,8 @@ def create_app(cfg) -> Flask:
             render_resolutions=studio.RENDER_RESOLUTIONS,
             render_resolution_labels=studio.RENDER_RESOLUTION_LABELS,
             global_render_resolution=global_render_resolution,
-            apply_all_fields=sorted(db.APPLY_ALL_FIELDS),
+            apply_all_fields=(sorted(db.APPLY_ALL_FIELDS)
+                              if global_apply_all else []),
             global_values=_global_display_values(),
             upscale_labels=settings.UPSCALE_LABELS,
             native_tiers=settings.FLOW_NATIVE_TIERS,
@@ -1514,7 +1522,12 @@ def create_app(cfg) -> Flask:
             db.update_own_channel(conn, oc_id, **fields)
             # "apply to all channels": copy this channel's saved value
             applied, rejected = [], []
-            for key in settings.with_partners(request.form.getlist("apply_all")):
+            wanted = request.form.getlist("apply_all")
+            if wanted and not settings.load(conn)["show_apply_all"]:
+                rejected.append("(apply to all channels is switched off in "
+                                "Settings > Service handling)")
+                wanted = []
+            for key in settings.with_partners(wanted):
                 if key not in db.APPLY_ALL_FIELDS:
                     rejected.append(key)
                     continue

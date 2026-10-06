@@ -1686,6 +1686,24 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                     f"resuming the missing card(s) - round {round_no} of "
                     f"{IMAGE_RESUME_ROUNDS - 1}")
                 _pause(pause, cancel)
+                # Account throttle (the long, hour-scale wait): Flow keeps
+                # finishing cards while the account is out, so adopt them from
+                # the gallery BEFORE the next round re-renders (and pays for)
+                # them. The short 'still busy' / refusal pauses (minutes) do
+                # not get this - the first recovery before them is enough. The
+                # gallery is not read BEFORE a throttle pause: poking a
+                # throttled account only lowers its standing.
+                if studio.THROTTLE_MARKER in str(exc):
+                    got = _recover_after_stop(cfg, pid, pdir, flow_upscale,
+                                              log, cancel,
+                                              when="after the pause")
+                    recovered_total += got
+                    if got and not studio.missing_shot_files(pdir):
+                        log("[auto-run] images: the gallery recovery after "
+                            "the pause brought in every missing image - "
+                            "nothing left to render")
+                        source = "FlowBatch (gallery recovery)"
+                        break
     finally:
         # stop what we started, if the user opted in; never a service that was
         # already running
@@ -1719,15 +1737,19 @@ def _run_images(cfg, pid: int, mode: str | None = None,
         conn.close()
 
 
-def _recover_after_stop(cfg, pid: int, pdir, flow_upscale, log, cancel) -> int:
+def _recover_after_stop(cfg, pid: int, pdir, flow_upscale, log, cancel,
+                        when: str = "") -> int:
     """After FlowBatch's consecutive-failure stop: adopt whatever Flow already
     generated into the project's gallery (the same recover the IMAGES stage
     button runs; it never generates). Returns how many images were adopted.
     Best effort - a failed recovery is logged and the normal pause and resume
-    follows; only a user stop propagates."""
+    follows; only a user stop propagates. Also runs after the long account
+    throttle pause (`when`), because Flow finishes cards while we wait."""
     try:
-        log("[auto-run] images: FlowBatch stopped - checking the Flow "
-            "gallery for images that were generated but not downloaded")
+        log("[auto-run] images: " + (f"{when} - " if when else
+                                     "FlowBatch stopped - ")
+            + "checking the Flow gallery for images that were generated "
+            "but not downloaded")
         result = studio.run_flowbatch_recover(
             cfg, pdir, pid, upscale=flow_upscale, log=log, cancel=cancel)
     except studio.BatchCancelled:
