@@ -82,6 +82,18 @@ class PruneChannelTests(unittest.TestCase):
         db.add_channel(self.conn, "Paused Chan", "UCpaused", genre="tech")
         self.assertEqual(db.get_channel(self.conn, "UCpaused")["active"], 1)
 
+    def test_pause_and_activate_buttons(self):
+        self.client.post("/channels/state",
+                         data={"channel_id": "UCactive", "state": "active",
+                               "active": "0"})
+        self.assertEqual(db.get_channel(self.conn, "UCactive")["active"], 0)
+        paused = self.client.get("/watched?state=paused").get_data(as_text=True)
+        self.assertIn("Active Chan", paused)
+        self.client.post("/channels/state",
+                         data={"channel_id": "UCactive", "state": "paused",
+                               "active": "1"})
+        self.assertEqual(db.get_channel(self.conn, "UCactive")["active"], 1)
+
     def test_auto_run_candidates_skip_paused_channels(self):
         from whisperradar import producer
         self.conn.execute("UPDATE videos SET status = 'transcribed'")

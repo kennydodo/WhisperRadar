@@ -746,6 +746,25 @@ def create_app(cfg) -> Flask:
             error=request.args.get("error"),
         )
 
+    @app.post("/channels/state")
+    def channels_state():
+        """One-click pause/activate from the watched list (the edit row's
+        dropdown does the same via /channels/edit)."""
+        channel_id = request.form.get("channel_id") or ""
+        active = 1 if request.form.get("active") == "1" else 0
+        state = "paused" if request.form.get("state") == "paused" else "active"
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_channel(conn, channel_id):
+                return redirect("/watched?error=Unknown+channel")
+            db.update_channel(conn, channel_id, active=active)
+        finally:
+            conn.close()
+        view = "?state=paused" if state == "paused" else ""
+        msg = quote("Channel activated" if active else "Channel paused")
+        return redirect(f"/watched{view}&msg={msg}" if view else f"/watched?msg={msg}")
+
     @app.post("/channels/edit")
     def channels_edit():
         channel_id = request.form.get("channel_id") or ""

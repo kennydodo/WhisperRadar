@@ -114,6 +114,14 @@
         <td>{% if ch["active"] %}<span class="badge transcribed">active</span>
             {% else %}<span class="badge skipped">paused</span>{% endif %}</td>
         <td style="text-align:right; white-space:nowrap">
+          <form class="row" method="post" action="/channels/state" style="display:inline">
+            <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
+            <input type="hidden" name="state" value="{{ state }}">
+            <input type="hidden" name="active" value="{{ 0 if ch['active'] else 1 }}">
+            <button type="submit" class="ghost"
+                    title="{{ 'Pause: hides this channel and its videos from the dashboard, feed syncs and Auto Run' if ch['active'] else 'Resume watching: the channel and its videos return everywhere' }}">
+              {{ 'pause' if ch['active'] else 'activate' }}</button>
+          </form>
           <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
           <form class="row" method="post" action="/channels/backfill" style="display:inline"
                 title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
