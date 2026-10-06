@@ -4,6 +4,8 @@ Every stage can be completed by an automated tool (if its hook is configured)
 or by hand (paste text / upload files) - the human stays in charge.
 """
 
+import contextvars
+import functools
 import json
 import logging
 import os
@@ -11,6 +13,7 @@ import queue
 import random
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -295,8 +298,7 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
 
     Text: the channel's `bible` and `style` are written straight into
     bible.md / style.md. Folders: `bible_dir` (holding bible.md) and
-    `refs_dir` (copied into refs\\), else the global per-genre `seed_dirs`
-    entry for the production's genre. This is what keeps an unattended run
+    `refs_dir` (copied into refs\\). This is what keeps an unattended run
     from pausing at the shots stage, whose planning brief refuses to plan
     without a bible.
 
@@ -310,12 +312,6 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
         return {"bible": False, "style": False, "refs": 0, "source": ""}
     pdir = prod_dir(cfg, prod["id"])
     eff = settings.for_production(conn, prod)
-    genre = (prod["genre"] if "genre" in prod.keys() else None) or "general"
-    seed_map = settings.load(conn).get("seed_dirs") or {}
-    seed = seed_map.get(genre)
-    if seed is None:  # genres are free text: fall back to a case-insensitive hit
-        seed = next((v for k, v in seed_map.items()
-                     if k.lower() == genre.lower()), None)
 
     bible_dir: Path | None = None
     refs_dir: Path | None = None
@@ -325,11 +321,6 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
             bible_dir = Path(eff["bible_dir"]).expanduser()
         if eff["refs_dir"]:
             refs_dir = Path(eff["refs_dir"]).expanduser()
-    elif seed:
-        # a per-genre seed folder holds bible.md and a refs\ subfolder; leave
-        # refs_dir unset so the normalization below picks up seed\refs
-        bible_dir = Path(seed).expanduser()
-        source = f"seed_dirs[{genre}]"
     else:
         return {"bible": False, "style": False, "refs": 0, "source": ""}
 
@@ -703,6 +694,127 @@ class RenderlyQuotaExhausted(RuntimeError):
         self.generated = generated
 
 
+# ------------------------------------------------------ kill switch --
+# ONE mechanism for every image engine: a process-tree kill of whatever WE
+# spawned for this production (FlowBatch's node CLI - its tree owns Chrome -
+# and the ImageGen `dotnet run` for the Renderly API). Nothing engine-specific
+# lives in the kill path; engines differ only in what they register. A kill
+# is final: it does NOT retry (autorun sets the job's cancel flag first, so
+# the resume loop exits instead of pausing and trying again).
+
+_BATCH_SCOPE: contextvars.ContextVar = contextvars.ContextVar(
+    "wr_batch_scope", default=None)
+_BATCH_PROCS: dict = {}          # scope key -> {pid: (Popen, label)}
+_BATCH_KILLED: set = set()       # pids a user kill ended (read by the runners)
+_BATCH_LOCK = threading.Lock()
+
+
+def _scope_key(pid_dir) -> str:
+    return os.path.normcase(str(Path(pid_dir).resolve()))
+
+
+class batch_scope:
+    """Context manager: processes spawned inside it belong to this
+    production's folder, so `kill_image_batch(pdir)` can find them."""
+
+    def __init__(self, pid_dir):
+        self._key = _scope_key(pid_dir)
+        self._token = None
+
+    def __enter__(self):
+        self._token = _BATCH_SCOPE.set(self._key)
+        return self
+
+    def __exit__(self, *exc):
+        _BATCH_SCOPE.reset(self._token)
+        return False
+
+
+def batch_scoped(fn):
+    """Decorator for the stage runners (cfg, pid, ...): everything they spawn
+    belongs to production `pid`."""
+    @functools.wraps(fn)
+    def wrapper(cfg, pid, *args, **kwargs):
+        with batch_scope(prod_dir(cfg, pid)):
+            return fn(cfg, pid, *args, **kwargs)
+    return wrapper
+
+
+def _popen_tracked(cmd, label: str, **kwargs) -> subprocess.Popen:
+    """subprocess.Popen that is registered for the kill switch. On POSIX the
+    child gets its own session so the whole group can be signalled."""
+    if os.name != "nt":
+        kwargs.setdefault("start_new_session", True)
+    proc = subprocess.Popen(cmd, **kwargs)
+    key = _BATCH_SCOPE.get()
+    with _BATCH_LOCK:
+        _BATCH_PROCS.setdefault(key, {})[proc.pid] = (proc, label)
+    return proc
+
+
+def _release_tracked(proc: subprocess.Popen) -> bool:
+    """Forget a finished process; True when a user kill ended it."""
+    with _BATCH_LOCK:
+        for procs in _BATCH_PROCS.values():
+            procs.pop(proc.pid, None)
+        killed = proc.pid in _BATCH_KILLED
+        _BATCH_KILLED.discard(proc.pid)
+    return killed
+
+
+def _kill_process_tree(proc: subprocess.Popen) -> bool:
+    """The single tree kill: `taskkill /T /F` on Windows, SIGTERM to the
+    process group on POSIX. False when it had already exited."""
+    if proc.poll() is not None:
+        return False
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                       capture_output=True)
+    else:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError, OSError):
+            proc.terminate()
+    return True
+
+
+def kill_image_batch(pid_dir) -> dict:
+    """Tree-kill every image process this production has running. Returns
+    {"killed": [labels], "nothing_running": bool} so the caller can say
+    honestly what happened. Never retries anything."""
+    key = _scope_key(pid_dir)
+    with _BATCH_LOCK:
+        live = list(_BATCH_PROCS.get(key, {}).values())
+    killed = []
+    for proc, label in live:
+        with _BATCH_LOCK:
+            _BATCH_KILLED.add(proc.pid)
+        if _kill_process_tree(proc):
+            killed.append(label)
+        else:
+            with _BATCH_LOCK:
+                _BATCH_KILLED.discard(proc.pid)
+    return {"killed": killed, "nothing_running": not killed}
+
+
+def _run_tracked(cmd, label: str, timeout: float | None = None, **kwargs):
+    """subprocess.run(capture_output, text) equivalent that the kill switch
+    can reach. Raises BatchCancelled when a user kill ended it."""
+    proc = _popen_tracked(cmd, label, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, **kwargs)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(proc)
+        proc.communicate()
+        raise
+    finally:
+        killed = _release_tracked(proc)
+    if killed:
+        raise BatchCancelled(f"{label} was killed by the user")
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
                   motion_filter=None) -> int:
     """Render the production's shotlist images through ImgToVideo.ImageGen
@@ -753,7 +865,7 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
         cmd += ["--upscale", str(scale)]
     if motion_filter:
         cmd += ["--motion-filter", ",".join(motion_filter)]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+    result = _run_tracked(cmd, "Renderly API (ImageGen)", timeout=7200)
     img_dir = pid_dir / "images"
     new = [p.name for p in img_dir.iterdir() if p.name not in before] \
         if img_dir.exists() else []
@@ -768,8 +880,7 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
 
 def effective_engine(engine: str | None, mode: str | None) -> str:
     """The image engine a production really uses. Render mode "flow" means
-    every shot on Google Flow through FlowBatch (the retired Flow Driver's
-    job), whichever engine was picked; the Renderly engine otherwise renders
+    every shot on Google Flow through FlowBatch, whichever engine was picked; the Renderly engine otherwise renders
     PL/PR through its API and everything else through FlowBatch."""
     if engine == "flowbatch" or mode == "flow":
         return "flowbatch"
@@ -1036,31 +1147,10 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
     _safe_log(log, f"refs: generating {len(refs)} reference image(s) "
                    f"(upscale tier {tier})")
     _safe_log(log, "$ " + " ".join(cmd))
-    proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True,
-                            encoding="utf-8", errors="replace")
-    tail: list[str] = []
-    try:
-        for line in proc.stdout:
-            line = line.rstrip()
-            if not line:
-                continue
-            tail.append(line)
-            del tail[:-40]
-            _safe_log(log, line)
-            if cancel is not None and cancel():
-                raise RuntimeError("stopped by user")
-    finally:
-        if proc.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                               capture_output=True)
-            else:
-                proc.kill()
-        proc.wait(timeout=30)
-    if proc.returncode != 0:
+    code, tail = _flowbatch_stream(cmd, repo, log, cancel)
+    if code != 0:
         raise RuntimeError(
-            f"reference generation failed (exit {proc.returncode}): "
+            f"reference generation failed (exit {code}): "
             + " | ".join(tail[-4:])[:300])
 
     # FlowBatch wrote <name>.png straight into refs\ (no staging folder);
@@ -1601,9 +1691,11 @@ def run_flowbatch_prepare(cfg, pid_dir: Path, job_path: Path,
     cmd = _flowbatch_cmd(args)
     _safe_log(log, "$ " + " ".join(cmd))
     try:
-        proc = subprocess.run(cmd, cwd=str(repo), capture_output=True,
-                              text=True, encoding="utf-8", errors="replace",
-                              timeout=3600)
+        proc = _run_tracked(cmd, "FlowBatch (prepare)", timeout=3600,
+                            cwd=str(repo), encoding="utf-8",
+                            errors="replace")
+    except BatchCancelled:
+        raise
     except (OSError, subprocess.SubprocessError) as exc:
         _safe_log(log, f"FlowBatch prepare could not run: {exc}")
         return {}
@@ -1855,11 +1947,14 @@ def _flowbatch_stream(cmd: list[str], repo, log, cancel,
     """Run a FlowBatch CLI call, streaming its stdout into the job log.
     Returns (exit code, the last output lines); `cancel` kills the process
     tree - FlowBatch spawns its own Chrome, so a plain proc.kill() would
-    orphan the browser. `on_line`, when given, sees every line (the tail only
-    keeps the last 40, which is not enough to count a long upscale pass)."""
-    proc = subprocess.Popen(cmd, cwd=str(repo), stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True,
-                            encoding="utf-8", errors="replace")
+    orphan the browser. The process is registered for the kill switch
+    (`kill_image_batch`): a user kill raises BatchCancelled here, so no
+    caller mistakes it for a failed batch and resumes. `on_line`, when given,
+    sees every line (the tail only keeps the last 40, which is not enough to
+    count a long upscale pass)."""
+    proc = _popen_tracked(cmd, "FlowBatch", cwd=str(repo),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, encoding="utf-8", errors="replace")
     tail: list[str] = []
     try:
         for line in proc.stdout:
@@ -1875,15 +1970,14 @@ def _flowbatch_stream(cmd: list[str], repo, log, cancel,
                 except Exception:  # noqa: BLE001 - never break the run
                     log.debug("on_line callback failed", exc_info=True)
             if cancel is not None and cancel():
-                raise RuntimeError("stopped by user")
+                raise BatchCancelled("stopped by user")
     finally:
         if proc.poll() is None:
-            if os.name == "nt":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
-                               capture_output=True)
-            else:
-                proc.kill()
+            _kill_process_tree(proc)
         proc.wait(timeout=30)
+        killed = _release_tracked(proc)
+    if killed:
+        raise BatchCancelled("FlowBatch was killed by the user")
     return proc.returncode or 0, tail
 
 
@@ -2250,6 +2344,47 @@ def apply_render_resolution(cfg, pid: int) -> None:
              size[0], size[1])
 
 
+def _png_size(path: Path):
+    """(width, height) from a PNG header, or None for anything else."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(24)
+    except OSError:
+        return None
+    if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+
+
+def image_size_warning(cfg, pid: int, sample: int = 8) -> str:
+    """'' when the production's images are at least as wide as the render
+    output (or there is nothing to compare); otherwise a sentence saying that
+    ImgToVideo will have to scale them UP. Reads PNG headers only."""
+    pdir = prod_dir(cfg, pid)
+    try:
+        data = json.loads((pdir / "imgtovideo.json").read_text(encoding="utf-8"))
+        out_w = int((data.get("output") or {}).get("width") or 0)
+    except (OSError, ValueError, TypeError):
+        return ""
+    img_dir = pdir / "images"
+    if not out_w or not img_dir.is_dir():
+        return ""
+    sizes = []
+    for p in sorted(img_dir.glob("*.png"))[:sample]:
+        size = _png_size(p)
+        if size:
+            sizes.append(size)
+    if not sizes:
+        return ""
+    # the long side: a 1:1 or 9:16 still is legitimately narrower than 16:9
+    narrowest = min(max(w, h) for w, h in sizes)
+    if narrowest >= out_w:
+        return ""
+    return (f"images are only {narrowest}px on their long side but the render output is "
+            f"{out_w}px wide - ImgToVideo will scale them up (check Render "
+            f"resolution / Upscale tier)")
+
+
 def prepare_project_folder(cfg, pid: int) -> Path:
     """Make the production folder a valid ImgToVideo project folder."""
     pdir = prod_dir(cfg, pid)
@@ -2260,6 +2395,9 @@ def prepare_project_folder(cfg, pid: int) -> Path:
             "naming": {"image_extensions": [".png", ".jpg", ".jpeg", ".webp"]},
         }, indent=2), encoding="utf-8")
     apply_render_resolution(cfg, pid)
+    warning = image_size_warning(cfg, pid)
+    if warning:
+        log.warning("production %s: %s", pid, warning)
     return pdir
 
 

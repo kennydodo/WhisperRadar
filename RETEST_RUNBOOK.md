@@ -21,12 +21,12 @@ pid 11 is pinned to **deepseek** for a fast, reliable script+judge run.
 ## Before starting
 
 - Dashboard: `python wr.py serve` (http://127.0.0.1:8540).
-- Renderly backend :8022 and Flow Driver :8030 — the images stage starts them.
+- Renderly backend :8022 — the images stage starts it when the Renderly API pass needs it. FlowBatch needs no service.
 - FlowBatch uses its local `profile`. **Agent mode stays OFF.**
 - Test suite (must be green before you start):
   - `python wr.py test` (or `test.bat`) -> 22 WhisperRadar unit tests.
   - `python wr.py test --renderly D:\Repos\Renderly` -> also runs the Renderly
-    driver + backend suite (49 tests).
+    backend suite.
 
 ## Runner
 

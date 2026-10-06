@@ -908,18 +908,38 @@ def create_app(cfg) -> Flask:
     # Global Auto Run criteria. Own channels live on /my-channels; monitored
     # source channels stay on / (Dashboard).
 
-    @app.get("/settings")
-    def settings_page():
+    def _global_display_values() -> dict:
+        """Global value of every apply-to-all field, as the strings the channel
+        form's <option value>s use, so an "inherit" choice can say what it
+        inherits."""
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
             values = settings.load(conn)
         finally:
             conn.close()
+        out = {}
+        for key in db.APPLY_ALL_FIELDS:
+            v = values.get(key)
+            out[key] = ("" if v is None else "1" if v is True
+                        else "0" if v is False else str(v))
+        return out
+
+    @app.get("/settings")
+    def settings_page():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            values = settings.load(conn)
+            override_counts = {k: len(db.channels_overriding(conn, k))
+                               for k in db.APPLY_ALL_FIELDS}
+        finally:
+            conn.close()
         return render_template(
             "settings.html", values=values, spec=settings.SPEC,
             groups=settings.grouped_spec(),
-            seed_dirs_text=settings.format_seed_dirs(values.get("seed_dirs")),
+            apply_all_keys=db.APPLY_ALL_FIELDS,
+            override_counts=override_counts,
             providers=[p["name"] for p in studio.providers(cfg)],
             providers_nested=studio.providers_nested(cfg),
             scheduler=sched.status(),
@@ -957,9 +977,29 @@ def create_app(cfg) -> Flask:
             # arrives as "0"; the LAST value of a key is the real one
             form = {k: request.form.getlist(k)[-1] for k in request.form}
             _, warnings = settings.save(conn, form)
+            # "apply to all channels": make every channel inherit the value
+            applied = []
+            for key in settings.with_partners(request.form.getlist("apply_all")):
+                if key not in db.APPLY_ALL_FIELDS:
+                    warnings.append(f"{key}: cannot be applied to all channels")
+                    continue
+                names = db.reset_channel_overrides(conn, key)
+                label = settings.SPEC_BY_KEY[key]["label"]
+                shown = settings.load(conn)[key]
+                if names:
+                    applied.append(
+                        f"{label}: all channels now follow the global value"
+                        f" ({shown}) - {len(names)} reset: "
+                        + ", ".join(names))
+                else:
+                    applied.append(
+                        f"{label}: no channel had its own value - every "
+                        f"channel already follows the global value ({shown})")
         finally:
             conn.close()
         msg = "Settings saved"
+        if applied:
+            msg += " - " + "; ".join(applied)
         if warnings:
             msg += " - " + "; ".join(warnings)
         return redirect("/settings?msg=" + quote(msg))
@@ -1124,6 +1164,9 @@ def create_app(cfg) -> Flask:
             render_resolutions=studio.RENDER_RESOLUTIONS,
             render_resolution_labels=studio.RENDER_RESOLUTION_LABELS,
             global_render_resolution=global_render_resolution,
+            apply_all_fields=sorted(db.APPLY_ALL_FIELDS),
+            global_values=_global_display_values(),
+            upscale_labels=settings.UPSCALE_LABELS,
             native_tiers=settings.FLOW_NATIVE_TIERS,
             native_tier_labels=settings.FLOW_NATIVE_TIER_LABELS,
             brief_presets=briefs.MOTION_PRESETS,
@@ -1439,6 +1482,19 @@ def create_app(cfg) -> Flask:
                                              if raw else None)
             except ValueError:
                 fields["default_upscale"] = None
+        # Render resolution + upscale tier are one decision; the resolution wins
+        pair_warning = ""
+        if "render_resolution" in fields or "default_upscale" in fields:
+            res, up, pair_warning = settings.reconcile_resolution_upscale(
+                fields.get("render_resolution"), fields.get("default_upscale"),
+                "render_resolution" in fields, "default_upscale" in fields)
+            if "render_resolution" in fields:
+                fields["default_upscale"] = up
+            elif res:
+                fields["render_resolution"] = res
+                fields["default_upscale"] = up
+            elif "default_upscale" in fields:
+                fields["default_upscale"] = up
         if "per_day" in request.form:
             raw = (request.form.get("per_day") or "").strip()
             try:
@@ -1456,9 +1512,30 @@ def create_app(cfg) -> Flask:
             if not db.get_own_channel(conn, oc_id):
                 return redirect("/my-channels?error=Unknown+channel")
             db.update_own_channel(conn, oc_id, **fields)
+            # "apply to all channels": copy this channel's saved value
+            applied, rejected = [], []
+            for key in settings.with_partners(request.form.getlist("apply_all")):
+                if key not in db.APPLY_ALL_FIELDS:
+                    rejected.append(key)
+                    continue
+                names = db.copy_channel_value_to_all(conn, oc_id, key)
+                what = key.replace("_", " ")
+                if names:
+                    applied.append(f"{what} copied to {len(names)} other "
+                                   f"channel(s): " + ", ".join(names))
+                else:
+                    applied.append(f"{what}: every other channel already "
+                                   f"had this value")
         finally:
             conn.close()
-        return redirect("/my-channels?msg=" + quote("Channel updated"))
+        msg = "Channel updated"
+        if pair_warning:
+            msg += " - " + pair_warning
+        if applied:
+            msg += " - " + "; ".join(applied)
+        if rejected:
+            msg += " - not applicable to all channels: " + ", ".join(rejected)
+        return redirect("/my-channels?msg=" + quote(msg))
 
     @app.post("/my-channels/sync")
     def my_channels_sync():
@@ -2176,7 +2253,7 @@ def create_app(cfg) -> Flask:
             voice_from=("this production" if prod["voice"]
                         else f"channel: {eff['own_channel_name']}"
                         if eff["own_channel_name"] and eff["voice"]
-                        else "Settings" if eff["voice"] else ""), ai33_ready=bool(ai33.api_key(cfg)),
+                        else ""), ai33_ready=bool(ai33.api_key(cfg)),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
             flow_upscale_default=autorun._upscale_for(eff),
@@ -3091,6 +3168,8 @@ def create_app(cfg) -> Flask:
             renderly_channel = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
 
+        _job = sjob._real()   # this channel's slot, read from the worker thread
+
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(cfg, pid, "images", {
                 "mode": mode, "engine": engine,
@@ -3098,6 +3177,7 @@ def create_app(cfg) -> Flask:
                 "flow_project_url": flow_project_url,
                 "renderly_channel": renderly_channel,
                 "log": sjob.log.append,
+                "cancel": (lambda _j=_job: _j.cancel),
             }))
 
         label = ("FlowBatch" if engine == "flowbatch"
@@ -3110,17 +3190,28 @@ def create_app(cfg) -> Flask:
 
     @app.post("/studio/<int:pid>/images/stop")
     def studio_images_stop(pid):
-        """Stop the running image job from the images stage: the render
-        (Renderly API + FlowBatch or FlowBatch alone), a gallery recovery, a
-        local upscale, or the auto-run that is currently on this stage. The
-        card being generated finishes first, then the run stops; images that
-        are already rendered are kept and a re-run only fills the gaps."""
+        """KILL the running image job from the images stage (render, gallery
+        recovery, local upscale, or the auto-run that is on this stage).
+        Destructive and final, one mechanism for every engine: the job's
+        cancel flag is set FIRST (so the resume loop exits instead of
+        pausing and trying again), then the process tree WhisperRadar spawned
+        for this production is killed (FlowBatch + its Chrome, or the Renderly
+        API ImageGen run). Nothing is retried and nothing is re-rendered;
+        images already rendered are kept and a later Render images only
+        fills the gaps. The reply says what was actually killed."""
         if not sjob.running or not str(sjob.kind or "").startswith(
                 _IMAGE_JOB_KINDS):
             return _studio_url(pid, error="No image job is running")
         sjob.cancel = True
-        return _studio_url(pid, msg="Stopping after the current image "
-                                    "finishes - rendered images are kept")
+        report = studio.kill_image_batch(studio.prod_dir(cfg, pid))
+        if report["nothing_running"]:
+            return _studio_url(
+                pid, msg="Cancelled - no image process was running (the run "
+                         "was between steps or waiting), so nothing needed "
+                         "killing. It will not retry.")
+        return _studio_url(
+            pid, msg="Killed: " + ", ".join(report["killed"])
+                     + ". Nothing will retry; rendered images are kept.")
 
     @app.post("/studio/<int:pid>/images/recover")
     def studio_images_recover(pid):

@@ -881,9 +881,9 @@
         </form>
         {% if job.running and (job.kind.startswith('image') or job.kind.startswith('gallery') or job.kind.startswith('local upscale') or job.kind == 'auto-run') %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/stop"
-              onsubmit="return wrConfirmSubmit(this, 'Stop image generation? The image being generated finishes first, then the run stops. Images already rendered are kept; Render images later only fills the gaps.')">
+              onsubmit="return wrConfirmSubmit(this, 'Kill image generation? This ends the running process now (FlowBatch and its Chrome, or the Renderly API run) and does NOT retry. The image being generated is lost. Images already rendered are kept; Render images later only fills the gaps.')">
           <button type="submit" class="secondary" style="background:var(--red); color:#fff"
-                  title="Stop after the current image finishes (rendered images are kept)">&#9632; Stop image generation</button>
+                  title="Kill the running image process now - no retry (rendered images are kept)">&#9632; Kill image generation</button>
         </form>
         {% endif %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/images/recover"

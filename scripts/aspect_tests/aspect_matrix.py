@@ -1,6 +1,6 @@
 """Single source of truth for the aspect-ratio tests.
 
-The 2026-09 aspect work has the same motion-code -> ratio decision in three
+The 2026-09 aspect work has the same motion-code -> ratio decision in two
 places; this module restates them so the seed/verify scripts and the direct
 Renderly test all assert against one table:
 
@@ -11,21 +11,19 @@ Renderly test all assert against one table:
                 (21:9); see RENDERLY_API_MOTIONS + renderly_engine_aspect().
   engine split  the renderly engine splits one batch across its two halves:
                 PL/PR -> the paid API (21:9); everything else (ST/ZI/ZO,
-                PU/PD, PV) -> the Flow Driver (16:9, or 1:1 for PU/PD). A
-                quota wall on the PL/PR slice falls those through to Flow too.
+                PU/PD, PV) -> FlowBatch (16:9, or 1:1 for PU/PD). A quota
+                wall on the PL/PR slice falls those through to FlowBatch too.
   FlowBatch     whisperradar/studio.py FLOWBATCH_ASPECT_BY_MOTION: PU/PD = 1:1,
                 PV = 16:9, every other motion the job default 16:9.
-  Flow Driver   Renderly extension-v2/flow.js MOTION_ASPECT, clamped to
-                FLOW_SUPPORTED_ASPECTS (Flow has no 21:9, so PL/PR/PV -> 16:9).
 
 Import this from anything under scripts\\aspect_tests. No dependencies.
 """
 
 MOTIONS = ["ST", "ZI", "ZO", "PL", "PR", "PU", "PD", "PV"]
 
-# --- the three tables -------------------------------------------------------
+# --- the tables -------------------------------------------------------
 # The paid API is only ever asked for the wide pans; every other motion code is
-# served by the free Flow Driver on the same renderly engine.
+# served by FlowBatch on the same renderly engine.
 RENDERLY_API_MOTIONS = ("PL", "PR")
 
 RENDERLY_API_ASPECT = {
@@ -36,12 +34,6 @@ RENDERLY_API_ASPECT = {
 }
 
 FLOWBATCH_ASPECT_BY_MOTION = {"PU": "1:1", "PD": "1:1", "PV": "16:9"}
-
-FLOW_DRIVER_MOTION_ASPECT = {
-    "PL": "21:9", "PR": "21:9", "PV": "21:9",
-    "PU": "1:1", "PD": "1:1",
-}
-FLOW_SUPPORTED_ASPECTS = frozenset({"16:9", "4:3", "1:1", "3:4", "9:16"})
 
 DEFAULT_ASPECT = "16:9"
 
@@ -71,18 +63,13 @@ def flowbatch_aspect(motion: str) -> str:
     return FLOWBATCH_ASPECT_BY_MOTION.get(motion, DEFAULT_ASPECT)
 
 
-def flow_driver_aspect(motion: str) -> str:
-    ideal = FLOW_DRIVER_MOTION_ASPECT.get(motion, DEFAULT_ASPECT)
-    return ideal if ideal in FLOW_SUPPORTED_ASPECTS else DEFAULT_ASPECT
-
-
 def renderly_engine_aspect(motion: str) -> str:
     """Expected shape for a shot on engine=renderly/mode=api, where one batch is
     split across the engine's two halves: PL/PR via the paid API, the rest via
-    the Flow Driver."""
+    FlowBatch."""
     if motion in RENDERLY_API_MOTIONS:
         return renderly_api_aspect(motion)
-    return flow_driver_aspect(motion)
+    return flowbatch_aspect(motion)
 
 
 def ratio_value(aspect: str) -> float:

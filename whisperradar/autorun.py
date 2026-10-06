@@ -1374,14 +1374,14 @@ def _shotlist_feedback(review: dict, min_align: float) -> str:
     return "\n".join(parts)
 
 
+@studio.batch_scoped
 def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     """Generate the reference images the shotlist needs but has no file for.
 
     Optional per channel. A ref you SUPPLY is used as-is; a ref with no usable
     file is generated from its own prompt and placed in the production's refs\\
     folder, with the shotlist registry path filled in - so the images stage can
-    upload it to the Flow project under the ref's own name (FlowBatch) or
-    resolve it as a local file (the Renderly driver).
+    upload it to the Flow project under the ref's own name (FlowBatch).
 
     Engine-aware: a "flowbatch" channel generates refs via FlowBatch; every
     other channel (Renderly, including Flow-mode) generates them via the SAME
@@ -1525,6 +1525,7 @@ def _pause(seconds: int, cancel=None) -> None:
         left -= step
 
 
+@studio.batch_scoped
 def _run_images(cfg, pid: int, mode: str | None = None,
                 engine: str | None = None,
                 flow_upscale: int | None = None,
@@ -1546,6 +1547,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     engine = studio.effective_engine(engine, mode)
     if log is None:
         log = lambda m: None
+    if eff.get("upscale_warning"):
+        log(f"[warning] {eff['upscale_warning']}")
     # Flow native: both engines download the stills at Flow's own size and,
     # when a level is picked next to Render resolution, ONE local Real-ESRGAN
     # pass upscales them once the batch has finished (below) - so the download
@@ -1650,6 +1653,9 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                     else:
                         source = "FlowBatch"
                 break
+            except studio.BatchCancelled:
+                # a user stop or kill: never pause-and-resume, never retry
+                raise
             except RuntimeError as exc:
                 # FlowBatch stopped on consecutive failed cards: Flow often
                 # generated some (or all) of them before the UI broke. Adopt
@@ -1665,7 +1671,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                         source = "FlowBatch (gallery recovery)"
                         break
                 # Flow gave up on some cards ("still busy"). Pause, then resume:
-                # the driver skips what is already on disk, so the next round
+                # the runner skips what is already on disk, so the next round
                 # only attempts the gaps.
                 if not _should_resume_images(exc, round_no,
                                              refusal_wait_seconds,
@@ -1695,6 +1701,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                             f"{up.get('skipped', 0)} already at tier"
                             + (f", {up['lanczos']} via CPU Lanczos fallback"
                                if up.get("lanczos") else ""))
+        except studio.BatchCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 - never lose the downloads
             log(f"[auto-run] images: local upscale failed - {exc}")
             upscale_note = f"; local upscale FAILED ({exc})"
@@ -1733,6 +1741,7 @@ def _recover_after_stop(cfg, pid: int, pdir, flow_upscale, log, cancel) -> int:
     return got
 
 
+@studio.batch_scoped
 def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     """Manual "Recover from Flow gallery": adopt the images a stopped batch
     already generated into the Flow project's gallery instead of paying to
@@ -1792,6 +1801,8 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
                             f"{up.get('skipped', 0)} already at tier"
                             + (f", {up['lanczos']} via CPU Lanczos fallback"
                                if up.get("lanczos") else ""))
+        except studio.BatchCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 - the adoption still stands
             log(f"[auto-run] images: local upscale failed - {exc}")
             upscale_note = f"; local upscale FAILED ({exc})"
@@ -1815,6 +1826,7 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     return result
 
 
+@studio.batch_scoped
 def upscale_images(cfg, pid: int, log=None, cancel=None) -> dict:
     """Manual IMAGES-stage action: upscale the stills already in images\\
     in place with the LOCAL Real-ESRGAN engine - the same pass a Flow native

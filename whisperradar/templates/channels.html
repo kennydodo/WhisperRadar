@@ -272,8 +272,9 @@
               <label>upscale
                 <select name="default_upscale">
                   <option value="">inherit</option>
-                  {% for opt in [0, 1, 2, 3, 4] %}
-                  <option value="{{ opt }}" {{ 'selected' if ch['default_upscale'] == opt else '' }}>{{ opt }}</option>
+                  {% set cur_up = 2 if ch['default_upscale'] == 3 else ch['default_upscale'] %}
+                  {% for opt, lbl in upscale_labels.items() %}
+                  <option value="{{ opt }}" {{ 'selected' if cur_up == opt else '' }}>{{ lbl }}</option>
                   {% endfor %}
                 </select>
               </label>
@@ -823,6 +824,81 @@
           + ') - the saved voice ids are kept.';
         status.style.color = 'var(--amber)';
       });
+  })();
+</script>
+<script>
+  // "apply to all channels": a submit button next to every production-default
+  // field. It saves this channel first, then copies the saved value to the
+  // other channels (server side whitelist: db.APPLY_ALL_FIELDS).
+  (function () {
+    function wrApplyAll(btn, key, msg) {
+    // type=button on purpose: a submit button inside the form would become
+    // the Enter-key default and could trigger "apply to all" by accident.
+    if (!confirm(msg)) return false;
+    var f = btn.form, i = document.createElement('input');
+    i.type = 'hidden'; i.name = 'apply_all'; i.value = key;
+    f.appendChild(i);
+    if (f.requestSubmit) f.requestSubmit(); else f.submit();
+    return false;
+  }
+    var fields = {{ apply_all_fields | tojson }};
+    var globals_ = {{ global_values | tojson }};
+    // make "inherit" say what it inherits
+    document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
+      fields.forEach(function (name) {
+        var ctl = form.querySelector('[name="' + name + '"]');
+        var g = globals_[name];
+        if (!ctl || g === undefined || g === '') return;
+        if (ctl.tagName === 'SELECT') {
+          var blank = null, shown = g;
+          Array.prototype.forEach.call(ctl.options, function (o) {
+            if (o.value === '') blank = o;
+            else if (o.value === g) shown = o.textContent.trim();
+          });
+          if (blank) blank.textContent = 'inherit (global: ' + shown + ')';
+        } else if (ctl.placeholder !== undefined) {
+          ctl.placeholder = 'inherit (' + g + ')';
+        }
+      });
+    });
+    document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
+      fields.forEach(function (name) {
+        var ctl = form.querySelector('[name="' + name + '"]');
+        if (!ctl || !ctl.parentElement) return;
+        var b = document.createElement('button');
+        b.type = 'button'; b.setAttribute('data-apply-all', name);
+        b.className = 'apply-all';
+        b.textContent = 'apply to all channels';
+        b.style.cssText = 'margin-left:6px;font-size:11px';
+        b.title = 'Save, then copy this value to every other channel';
+        b.addEventListener('click', function () {
+          wrApplyAll(b, name, 'Save, then copy this value to ALL other '
+            + 'channels?\nTheir current value for this field is overwritten. '
+            + 'Productions that saved their own value keep it.');
+        });
+        ctl.insertAdjacentElement('afterend', b);
+      });
+    });
+  })();
+</script>
+<script>
+  // Render resolution and Upscale tier are one decision: changing either moves
+  // the other; "inherit" on one makes the other inherit too.
+  (function () {
+    var R2U = {'1080p': '1', '2k': '2', '4k': '4', 'flow-native': '0', '': ''};
+    var U2R = {'1': '1080p', '2': '2k', '4': '4k', '0': 'flow-native', '': ''};
+    document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
+      var res = form.querySelector('select[name="render_resolution"]');
+      var up = form.querySelector('select[name="default_upscale"]');
+      if (!res || !up) return;
+      res.addEventListener('change', function () {
+        if (R2U[res.value] !== undefined) up.value = R2U[res.value];
+      });
+      up.addEventListener('change', function () {
+        if (U2R[up.value] !== undefined) res.value = U2R[up.value];
+        res.dispatchEvent(new Event('change'));
+      });
+    });
   })();
 </script>
 <script>

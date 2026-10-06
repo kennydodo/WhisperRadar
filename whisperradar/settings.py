@@ -6,13 +6,68 @@ validates and coerces the posted form. Per-channel overrides live on
 own_channels and are NULL when the channel inherits these globals.
 """
 
-import json
 import re
 
 from . import briefs
 
 # Flow native renders download at Flow's own size (1376x768); one local
 # Real-ESRGAN pass then upscales to one of FlowBatch's tiers.
+# Render resolution and the image upscale tier are ONE decision: the images must
+# be generated at the size the video is rendered at. The resolution wins.
+RESOLUTION_UPSCALE = {"1080p": 1, "2k": 2, "4k": 4, "flow-native": 0}
+UPSCALE_RESOLUTION = {v: k for k, v in RESOLUTION_UPSCALE.items()}
+UPSCALE_LABELS = {0: "0 - native 1376x768 (Flow native)",
+                  1: "1 - HD 1920x1080",
+                  2: "2 - 2K 2560x1440",
+                  4: "4 - 4K 3840x2160"}
+
+
+# applying one of these to all channels applies its partner too
+PAIRED_FIELDS = {"render_resolution": "default_upscale",
+                 "default_upscale": "render_resolution"}
+
+
+def with_partners(keys):
+    """keys + their paired fields, order kept, no duplicates."""
+    out = []
+    for key in keys:
+        for k in (key, PAIRED_FIELDS.get(key)):
+            if k and k not in out:
+                out.append(k)
+    return out
+
+
+def normalize_upscale(tier):
+    """Tier 3 was a duplicate of 2 (both 2K) and is gone from the UI; old
+    stored 3s read as 2."""
+    return 2 if tier == 3 else tier
+
+
+def upscale_for_resolution(resolution):
+    """The upscale tier that belongs to a render resolution (None if unknown)."""
+    return RESOLUTION_UPSCALE.get(str(resolution or "").strip().lower())
+
+
+def reconcile_resolution_upscale(resolution, upscale, res_posted, up_posted):
+    """Keep the pair coherent on save. None = "inherit". Returns
+    (resolution, upscale, warning). A resolution that is set decides the
+    upscale; an upscale posted alone decides the resolution."""
+    warning = ""
+    if upscale is not None:
+        upscale = normalize_upscale(upscale)
+    if res_posted and resolution:
+        derived = upscale_for_resolution(resolution)
+        if derived is not None:
+            if up_posted and upscale is not None and upscale != derived:
+                warning = (f"Upscale tier {upscale} did not match Render "
+                           f"resolution {resolution} - set to {derived} "
+                           f"(the resolution wins)")
+            upscale = derived
+    elif up_posted and not res_posted and upscale is not None:
+        resolution = UPSCALE_RESOLUTION.get(upscale, resolution)
+    return resolution, upscale, warning
+
+
 FLOW_NATIVE_TIERS = ("off", "1k", "2k", "4k")
 FLOW_NATIVE_TIER_LABELS = {
     "off": "No upscale (keep 1376x768)",
@@ -22,7 +77,7 @@ FLOW_NATIVE_TIER_LABELS = {
 }
 
 # Each entry: key, label, type, default, plus type-specific extras.
-# type is one of: bool | int | str | choice | time | map
+# type is one of: bool | int | str | choice | time
 SPEC: list[dict] = [
     {
         "key": "llm_default", "type": "provider", "default": "",
@@ -286,18 +341,13 @@ SPEC: list[dict] = [
     },
     {
         "key": "default_upscale", "type": "int", "default": 2, "min": 0, "max": 4,
+        "int_options": UPSCALE_LABELS,
         "label": "Upscale tier",
-        "help": "Delivered image size. 0 = off (native 1K, 1376x768 - below "
-                "ImgToVideo's 2304x1296 canvas spec), 1 = HD 1920x1080 (also "
-                "below spec), 2 = 2K 2560x1440 (recommended - meets the spec "
-                "and matches ImgToVideo's default output), 3 = 2K, "
-                "4 = 4K 3840x2160 (over-spec, slower).",
-    },
-    {
-        "key": "default_voice", "type": "str", "default": "",
-        "label": "Narration voice",
-        "help": "OpenSpeaker voice id used for TTS unless a channel or "
-                "production overrides it. Empty = the built-in default.",
+        "help": "Delivered image size. It is tied to Render resolution (Video "
+                "render tab): 1080p = 1, 2K = 2 (recommended - meets "
+                "ImgToVideo's 2304x1296 canvas spec), 4K = 4 (over-spec, "
+                "slower), Flow native = 0. Changing one changes the other; "
+                "if they ever disagree the resolution wins.",
     },
     {
         "key": "images_chunk_size", "type": "int", "default": 60,
@@ -449,12 +499,6 @@ SPEC: list[dict] = [
         "label": "Run window end",
         "help": "End of the daily auto-run window.",
     },
-    {
-        "key": "seed_dirs", "type": "map", "default": {},
-        "label": "Per-genre bible/refs folders",
-        "help": "One per line: genre = folder. A new production copies that "
-                "folder's bible.md and refs\\ into its working directory.",
-    },
 ]
 
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
@@ -479,7 +523,6 @@ GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Production & images", [
         "default_engine", "default_render_mode", "default_upscale",
-        "default_voice", "seed_dirs",
         "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",
         "images_still_busy_wait_minutes", "images_throttle_wait_minutes",
@@ -538,6 +581,8 @@ def _coerce(entry: dict, raw):
             value = max(entry["min"], value)
         if "max" in entry:
             value = min(entry["max"], value)
+        if entry["key"] == "default_upscale":
+            value = normalize_upscale(value)
         return value
     if kind == "float":
         if text == "":
@@ -555,41 +600,7 @@ def _coerce(entry: dict, raw):
         return text if text in entry["choices"] else entry["default"]
     if kind == "time":
         return text if _TIME_RE.match(text) else entry["default"]
-    if kind == "map":
-        return parse_seed_dirs(text)
     return text
-
-
-def parse_seed_dirs(text) -> dict:
-    """'genre = folder' lines -> {genre: folder}. A stored JSON object is
-    also accepted (settings are persisted as JSON)."""
-    if isinstance(text, dict):
-        return {str(k): str(v) for k, v in text.items()}
-    text = (text or "").strip()
-    if not text:
-        return {}
-    if text.startswith("{"):
-        try:
-            data = json.loads(text)
-        except ValueError:
-            return {}
-        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-    out: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        genre, sep, folder = line.partition("=")
-        genre, folder = genre.strip(), folder.strip()
-        if sep and genre and folder:
-            out[genre] = folder
-    return out
-
-
-def format_seed_dirs(mapping) -> str:
-    if isinstance(mapping, str):
-        mapping = parse_seed_dirs(mapping)
-    return "\n".join(f"{k} = {v}" for k, v in sorted((mapping or {}).items()))
 
 
 def load(conn) -> dict:
@@ -629,14 +640,27 @@ def for_production(conn, prod) -> dict:
         if prod is not None else None
     own_upscale = row_get(own, "default_upscale", glob["default_upscale"])
     own_per_day = row_get(own, "per_day")
+    resolution = row_get(own, "render_resolution", glob["render_resolution"])
+    configured = normalize_upscale(int(own_upscale))
+    derived = upscale_for_resolution(resolution)
+    # the resolution wins; warn only when someone explicitly set a tier that
+    # disagrees (a channel that sets just the resolution is not a conflict)
+    explicit = (row_get(own, "default_upscale") is not None
+                or row_get(own, "render_resolution") is None)
+    upscale_warning = ""
+    if derived is not None and explicit and configured != derived:
+        upscale_warning = (f"upscale tier {configured} does not match render "
+                           f"resolution {resolution} - using {derived} "
+                           f"(the resolution wins)")
     return {
         "voice": (row_get(prod, "voice") or row_get(own, "default_voice")
-                  or glob["default_voice"] or None),
+                  or None),
         "engine": row_get(own, "default_engine", glob["default_engine"]),
         "render_mode": (row_get(prod, "render_mode")
                         or row_get(own, "default_render_mode")
                         or glob["default_render_mode"]),
-        "upscale": int(own_upscale),
+        "upscale": derived if derived is not None else configured,
+        "upscale_warning": upscale_warning,
         # Flow native: the level one local Real-ESRGAN pass upscales the
         # downloaded stills to (per channel; only used when the resolved
         # render resolution is "flow-native")
@@ -690,8 +714,7 @@ def for_production(conn, prod) -> dict:
         "flow_project_url": row_get(own, "flow_project_url"),
         # global-only: which NLE the merge stage exports to (premiere|capcut)
         "render_target": row_get(own, "render_target", glob["render_target"]),
-        "render_resolution": row_get(own, "render_resolution",
-                                     glob["render_resolution"]),
+        "render_resolution": resolution,
         # image-batch guards (global only - operational, not per production)
         "images_chunk_size": int(glob["images_chunk_size"]),
         "images_stop_on_failure": bool(glob["images_stop_on_failure"]),
@@ -754,11 +777,20 @@ def save(conn, form: dict) -> tuple[dict, list[str]]:
             except ValueError:
                 warnings.append(f"{entry['label']}: not a number - kept "
                                 f"{entry['default']}")
+    # keep Render resolution and Upscale tier a coherent pair
+    if "render_resolution" in values or "default_upscale" in values:
+        res, up, warn = reconcile_resolution_upscale(
+            values.get("render_resolution"), values.get("default_upscale"),
+            "render_resolution" in values, "default_upscale" in values)
+        if "render_resolution" in values:
+            values["default_upscale"] = up
+        elif res:
+            values["render_resolution"] = res
+        if warn:
+            warnings.append(warn)
     for key, value in values.items():
         entry = SPEC_BY_KEY[key]
-        stored = (json.dumps(value, ensure_ascii=False)
-                  if entry["type"] == "map" else
-                  ("1" if value else "0") if entry["type"] == "bool" else
-                  str(value))
+        stored = (("1" if value else "0") if entry["type"] == "bool"
+                  else str(value))
         db.set_setting(conn, key, stored)
     return values, warnings

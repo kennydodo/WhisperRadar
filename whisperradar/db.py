@@ -948,6 +948,67 @@ def update_own_channel(conn, oc_id: int, **fields) -> None:
     conn.commit()
 
 
+# Channel fields that are production DEFAULTS (a global setting of the same
+# name exists; NULL on the channel = inherit it). Only these can be applied to
+# every channel at once - identity and art direction (name, handle, voice,
+# bible, bible_dir, refs_dir, style, flow_project_url, planning brief ...) are
+# channel-specific and never are.
+APPLY_ALL_FIELDS = frozenset({
+    "autorun_enabled", "candidate_window_days", "default_engine",
+    "default_render_mode", "default_upscale", "flow_native_upscale",
+    "generate_references", "per_day", "producer_llm_provider",
+    "render_resolution", "render_target", "run_window_end",
+    "run_window_start", "script_judge_provider", "script_max_attempts",
+    "script_max_overlap", "script_min_rating", "shotlist_judge_provider",
+    "shotlist_max_attempts", "shotlist_min_alignment", "topic_pick",
+})
+
+
+def _is_set(value) -> bool:
+    return value is not None and value != ""
+
+
+def channels_overriding(conn, field: str) -> list:
+    """Own channels that set their own value for `field` (not inheriting)."""
+    if field not in APPLY_ALL_FIELDS:
+        raise ValueError(f"Not an apply-to-all field: {field}")
+    return [r for r in list_own_channels(conn) if _is_set(r[field])]
+
+
+def reset_channel_overrides(conn, field: str) -> list[str]:
+    """Make EVERY channel inherit the global value of `field` (set it NULL).
+    Returns the names of the channels that actually changed. Productions are
+    never touched - a value saved on a production still wins."""
+    changed = [r["name"] for r in channels_overriding(conn, field)]
+    conn.execute(f"UPDATE own_channels SET {field} = NULL"
+                 f" WHERE {field} IS NOT NULL")
+    conn.commit()
+    return changed
+
+
+def copy_channel_value_to_all(conn, source_id: int, field: str) -> list[str]:
+    """Copy one channel's saved value of `field` to every OTHER channel (a
+    NULL source value makes the others inherit). Returns the names of the
+    channels whose value changed."""
+    if field not in APPLY_ALL_FIELDS:
+        raise ValueError(f"Not an apply-to-all field: {field}")
+    source = get_own_channel(conn, source_id)
+    if source is None:
+        raise ValueError("Unknown channel")
+    value = source[field]
+    changed = []
+    for row in list_own_channels(conn):
+        if row["id"] == source["id"]:
+            continue
+        old = row[field]
+        if (old if _is_set(old) else None) != (value if _is_set(value) else None):
+            changed.append(row["name"])
+    conn.execute(f"UPDATE own_channels SET {field} = ? WHERE id != ?",
+                 (value if _is_set(value) else None, source["id"]))
+    conn.commit()
+    return changed
+
+
 def remove_own_channel(conn, oc_id: int) -> bool:
     """Delete an own channel from WhisperRadar only - the Renderly mirror is
     deliberately left alone (deleting there cascades assets/generations)."""
