@@ -3056,6 +3056,8 @@ def create_app(cfg) -> Flask:
             renderly_channel = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
 
+        _job = sjob._real()   # this channel's slot, read from the worker thread
+
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(cfg, pid, "images", {
                 "mode": mode, "engine": engine,
@@ -3063,6 +3065,7 @@ def create_app(cfg) -> Flask:
                 "flow_project_url": flow_project_url,
                 "renderly_channel": renderly_channel,
                 "log": sjob.log.append,
+                "cancel": (lambda _j=_job: _j.cancel),
             }))
 
         label = ("FlowBatch" if engine == "flowbatch"
@@ -3075,17 +3078,28 @@ def create_app(cfg) -> Flask:
 
     @app.post("/studio/<int:pid>/images/stop")
     def studio_images_stop(pid):
-        """Stop the running image job from the images stage: the render
-        (Renderly API + FlowBatch or FlowBatch alone), a gallery recovery, a
-        local upscale, or the auto-run that is currently on this stage. The
-        card being generated finishes first, then the run stops; images that
-        are already rendered are kept and a re-run only fills the gaps."""
+        """KILL the running image job from the images stage (render, gallery
+        recovery, local upscale, or the auto-run that is on this stage).
+        Destructive and final, one mechanism for every engine: the job's
+        cancel flag is set FIRST (so the resume loop exits instead of
+        pausing and trying again), then the process tree WhisperRadar spawned
+        for this production is killed (FlowBatch + its Chrome, or the Renderly
+        API ImageGen run). Nothing is retried and nothing is re-rendered;
+        images already rendered are kept and a later Render images only
+        fills the gaps. The reply says what was actually killed."""
         if not sjob.running or not str(sjob.kind or "").startswith(
                 _IMAGE_JOB_KINDS):
             return _studio_url(pid, error="No image job is running")
         sjob.cancel = True
-        return _studio_url(pid, msg="Stopping after the current image "
-                                    "finishes - rendered images are kept")
+        report = studio.kill_image_batch(studio.prod_dir(cfg, pid))
+        if report["nothing_running"]:
+            return _studio_url(
+                pid, msg="Cancelled - no image process was running (the run "
+                         "was between steps or waiting), so nothing needed "
+                         "killing. It will not retry.")
+        return _studio_url(
+            pid, msg="Killed: " + ", ".join(report["killed"])
+                     + ". Nothing will retry; rendered images are kept.")
 
     @app.post("/studio/<int:pid>/images/recover")
     def studio_images_recover(pid):

@@ -227,6 +227,7 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
                 {"refs": {"CH_MAYA": None}, "images": []}), encoding="utf-8")
 
             class Proc:
+                pid = 424242
                 returncode = 0
                 stdout = iter([])
                 def poll(self): return 0

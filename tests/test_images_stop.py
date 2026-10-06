@@ -1,4 +1,4 @@
-"""Stage 7 (images) has a Stop button for a running image job.
+"""Stage 7 (images) has a Kill button for a running image job.
 
 Run: python -m unittest tests.test_images_stop
 """
@@ -61,14 +61,14 @@ class ImagesStopTests(unittest.TestCase):
         return seen, release
 
     def test_no_button_and_a_clear_error_when_nothing_runs(self):
-        self.assertNotIn("Stop image generation", self._page())
+        self.assertNotIn("Kill image generation", self._page())
         r = self.client.post(f"/studio/{self.pid}/images/stop")
         self.assertEqual(r.status_code, 302)
         self.assertIn("error=", r.headers["Location"])
 
     def test_button_shows_for_a_render_and_stop_sets_the_cancel_flag(self):
         seen, release = self._run_job("image rendering (Renderly API + FlowBatch)")
-        self.assertIn("Stop image generation", self._page())
+        self.assertIn("Kill image generation", self._page())
         r = self.client.post(f"/studio/{self.pid}/images/stop")
         self.assertIn("msg=", r.headers["Location"])
         for _ in range(100):
@@ -79,7 +79,7 @@ class ImagesStopTests(unittest.TestCase):
 
     def test_other_jobs_are_not_stoppable_from_here(self):
         self._run_job("shotlist planning")
-        self.assertNotIn("Stop image generation", self._page())
+        self.assertNotIn("Kill image generation", self._page())
         r = self.client.post(f"/studio/{self.pid}/images/stop")
         self.assertIn("error=", r.headers["Location"])
         self.assertFalse(self.slot.cancel)

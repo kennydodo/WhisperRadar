@@ -142,7 +142,10 @@ class RenderlyExportBatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             cfg, pid_dir, calls, fake_run = self._fixture(
                 d, 0, produced=("A01_ST.png", "A02_PL.png"))
-            with mock.patch.object(studio.subprocess, "run", fake_run):
+            with mock.patch.object(studio.subprocess, "run", fake_run), \
+                 mock.patch.object(studio, "_run_tracked",
+                                   lambda cmd, label, timeout=None, **kw:
+                                   fake_run(cmd, **kw)):
                 count = studio.run_imagegen(cfg, pid_dir, channel=123, upscale=0)
 
             self.assertEqual(count, 2)
@@ -157,7 +160,10 @@ class RenderlyExportBatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             cfg, pid_dir, _, fake_run = self._fixture(
                 d, 3, produced=("A01_ST.png", "A02_PL.png"))
-            with mock.patch.object(studio.subprocess, "run", fake_run):
+            with mock.patch.object(studio.subprocess, "run", fake_run), \
+                 mock.patch.object(studio, "_run_tracked",
+                                   lambda cmd, label, timeout=None, **kw:
+                                   fake_run(cmd, **kw)):
                 with self.assertRaises(studio.RenderlyQuotaExhausted) as ctx:
                     studio.run_imagegen(cfg, pid_dir, channel=123, upscale=0)
             self.assertEqual(ctx.exception.generated, 2)
@@ -165,7 +171,10 @@ class RenderlyExportBatchTests(unittest.TestCase):
     def test_other_nonzero_exits_are_plain_runtime_errors(self):
         with tempfile.TemporaryDirectory() as d:
             cfg, pid_dir, _, fake_run = self._fixture(d, 1)
-            with mock.patch.object(studio.subprocess, "run", fake_run):
+            with mock.patch.object(studio.subprocess, "run", fake_run), \
+                 mock.patch.object(studio, "_run_tracked",
+                                   lambda cmd, label, timeout=None, **kw:
+                                   fake_run(cmd, **kw)):
                 with self.assertRaises(RuntimeError) as ctx:
                     studio.run_imagegen(cfg, pid_dir, channel=123, upscale=0)
             self.assertNotIsInstance(ctx.exception, studio.RenderlyQuotaExhausted)

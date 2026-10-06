@@ -1374,6 +1374,7 @@ def _shotlist_feedback(review: dict, min_align: float) -> str:
     return "\n".join(parts)
 
 
+@studio.batch_scoped
 def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     """Generate the reference images the shotlist needs but has no file for.
 
@@ -1525,6 +1526,7 @@ def _pause(seconds: int, cancel=None) -> None:
         left -= step
 
 
+@studio.batch_scoped
 def _run_images(cfg, pid: int, mode: str | None = None,
                 engine: str | None = None,
                 flow_upscale: int | None = None,
@@ -1650,6 +1652,9 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                     else:
                         source = "FlowBatch"
                 break
+            except studio.BatchCancelled:
+                # a user stop or kill: never pause-and-resume, never retry
+                raise
             except RuntimeError as exc:
                 # FlowBatch stopped on consecutive failed cards: Flow often
                 # generated some (or all) of them before the UI broke. Adopt
@@ -1695,6 +1700,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                             f"{up.get('skipped', 0)} already at tier"
                             + (f", {up['lanczos']} via CPU Lanczos fallback"
                                if up.get("lanczos") else ""))
+        except studio.BatchCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 - never lose the downloads
             log(f"[auto-run] images: local upscale failed - {exc}")
             upscale_note = f"; local upscale FAILED ({exc})"
@@ -1733,6 +1740,7 @@ def _recover_after_stop(cfg, pid: int, pdir, flow_upscale, log, cancel) -> int:
     return got
 
 
+@studio.batch_scoped
 def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     """Manual "Recover from Flow gallery": adopt the images a stopped batch
     already generated into the Flow project's gallery instead of paying to
@@ -1792,6 +1800,8 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
                             f"{up.get('skipped', 0)} already at tier"
                             + (f", {up['lanczos']} via CPU Lanczos fallback"
                                if up.get("lanczos") else ""))
+        except studio.BatchCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 - the adoption still stands
             log(f"[auto-run] images: local upscale failed - {exc}")
             upscale_note = f"; local upscale FAILED ({exc})"
@@ -1815,6 +1825,7 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     return result
 
 
+@studio.batch_scoped
 def upscale_images(cfg, pid: int, log=None, cancel=None) -> dict:
     """Manual IMAGES-stage action: upscale the stills already in images\\
     in place with the LOCAL Real-ESRGAN engine - the same pass a Flow native
