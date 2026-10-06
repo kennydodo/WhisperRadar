@@ -3129,9 +3129,18 @@ def create_app(cfg) -> Flask:
                else webstages.shotlist_job)
 
         job = sjob._real()
+        level = (request.form.get("zai_thinking") or "Low").strip()
+        options = {
+            "zai": {"thinking": level if level in ("Low", "High", "Max")
+                    else "Low"},
+            "deepseek": {
+                "deepthink": (request.form.get("deepseek_deepthink")
+                              or "on") != "off",
+                "search": (request.form.get("deepseek_search")
+                           or "off") == "on"}}
 
         def worker():
-            run(cfg, pid, writer, judge, log, lambda: job.cancel)
+            run(cfg, pid, writer, judge, log, lambda: job.cancel, options)
 
         label = ("script" if stage == "script" else "shotlist")
         sjob.start(worker, f"{label} in web chat ({writer} writes, "

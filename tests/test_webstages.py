@@ -67,7 +67,8 @@ class ScriptLoopTests(Base):
         self.assertTrue(out.startswith("b0"))
         sites = [(c["site"], c["new_chat"]) for c in t.calls]
         self.assertEqual(sites, [("zai", True), ("deepseek", True),
-                                 ("zai", False), ("deepseek", True)])
+                                 ("zai", False), ("deepseek", False)])
+        self.assertIn("SAME", t.calls[3]["prompt"])
         fb = t.calls[2]["prompt"]
         self.assertIn("tighten the hook", fb)
         self.assertIn("w1", fb)
@@ -158,6 +159,11 @@ class ShotlistLoopTests(Base):
         self.run_loop(t)
         self.assertIn("shots 2-3 overlap", t.calls[2]["prompt"])
         self.assertFalse(t.calls[2]["new_chat"])
+        # the judge stays in its first chat and only gets the revised plan
+        self.assertTrue(t.calls[1]["new_chat"])
+        self.assertFalse(t.calls[3]["new_chat"])
+        self.assertEqual(t.calls[3]["site"], "deepseek")
+        self.assertIn("SAME rules", t.calls[3]["prompt"])
         saved = json.loads((self.pdir / "shotlist.json").read_text("utf-8"))
         self.assertEqual(saved["style"], "fixed")
 
@@ -226,6 +232,63 @@ class NoLimitTests(Base):
         r = c.post(f"/studio/{self.pid}/webchat-stop")
         self.assertIn("No", r.headers["Location"])
 
+
+class OptionsTests(unittest.TestCase):
+    def test_defaults_and_overrides_per_site(self):
+        seen = []
+
+        class Chat:
+            def ask(self, key, prompt, files, new_chat=True, options=None,
+                    ready=None, log=None):
+                seen.append((key, options))
+                return "ok"
+
+        t = ws.WebTransport(Chat(), lambda m: None,
+                            {"zai": {"thinking": "High"},
+                             "deepseek": {"search": True}})
+        t.ask("zai", "p")
+        t.ask("deepseek", "p")
+        self.assertEqual(seen[0], ("zai", {"thinking": "High"}))
+        self.assertEqual(seen[1], ("deepseek",
+                                   {"deepthink": True, "search": True}))
+        d = ws.WebTransport(Chat(), lambda m: None)
+        d.ask("deepseek", "p")
+        self.assertEqual(seen[2][1], {"deepthink": True, "search": False})
+
+
+class RouteOptionTests(Base):
+    def test_the_form_choices_reach_the_job(self):
+        c = create_app(self.cfg).test_client()
+        with mock.patch.object(ws, "shotlist_job") as job:
+            c.post(f"/studio/{self.pid}/webchat/shots",
+                   data={"writer": "zai", "judge": "deepseek",
+                         "zai_thinking": "Max", "deepseek_deepthink": "off",
+                         "deepseek_search": "on"})
+            import time
+            for _ in range(50):
+                if job.called:
+                    break
+                time.sleep(0.1)
+            opts = job.call_args.args[-1]
+        self.assertEqual(opts, {"zai": {"thinking": "Max"},
+                                "deepseek": {"deepthink": False,
+                                             "search": True}})
+
+    def test_bad_values_fall_back_to_the_defaults(self):
+        c = create_app(self.cfg).test_client()
+        with mock.patch.object(ws, "script_job") as job:
+            c.post(f"/studio/{self.pid}/webchat/script",
+                   data={"zai_thinking": "Turbo"})
+            import time
+            for _ in range(50):
+                if job.called:
+                    break
+                time.sleep(0.1)
+            opts = job.call_args.args[-1]
+        self.assertEqual(opts["zai"], {"thinking": "Low"})
+        self.assertEqual(opts["deepseek"], {"deepthink": True,
+                                            "search": False})
+
 class SendTests(unittest.TestCase):
     def test_big_prompts_switch_to_attached_files(self):
         t = Fake(zai=["ok"])
@@ -275,3 +338,13 @@ class RouteTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JudgeSameChatTests(unittest.TestCase):
+    def test_followup_texts(self):
+        files = []
+        t = ws._plan_followup('{"shots": []}', files)
+        self.assertIn("shotlist.json", t)
+        self.assertEqual(files[0]["name"], "shotlist.json")
+        self.assertIn('{"shots": []}', ws._plan_followup('{"shots": []}', None))
+        self.assertIn("SAME", ws._script_followup("hello"))

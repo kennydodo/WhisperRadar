@@ -45,21 +45,32 @@ class StageFailed(RuntimeError):
 
 # ---- transport ----------------------------------------------------------------
 
+# what each site's mode switches default to when the run does not say
+DEFAULT_OPTIONS = {"zai": {"thinking": "Low"},
+                   "deepseek": {"deepthink": True, "search": False}}
+
+
 class WebTransport:
-    def __init__(self, chat: "webchat.WebChat", log: Callable[[str], None]):
+    def __init__(self, chat: "webchat.WebChat", log: Callable[[str], None],
+                 options: dict | None = None):
         self.chat, self.log = chat, log
+        self.options = {k: dict(v) for k, v in DEFAULT_OPTIONS.items()}
+        for site, opts in (options or {}).items():
+            self.options.setdefault(site, {}).update(opts or {})
 
     def ask(self, site: str, prompt: str, files=(), new_chat: bool = True,
             ready=None):
         return self.chat.ask(site, prompt, list(files), new_chat=new_chat,
-                             ready=ready, log=self.log)
+                             options=self.options.get(site), ready=ready,
+                             log=self.log)
 
 
 @contextlib.contextmanager
-def web_transport(cfg, log: Callable[[str], None] = print):
+def web_transport(cfg, log: Callable[[str], None] = print,
+                  options: dict | None = None):
     root = Path(cfg.db_path).parent / "webchat"
     with webchat.WebChat(root) as chat:
-        yield WebTransport(chat, log)
+        yield WebTransport(chat, log, options)
 
 
 def _send(transport, site: str, build: Callable, log,
@@ -264,6 +275,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                   ready=long_enough)
     attempts = []
     rnd = 0
+    judge_open = False          # the judge keeps ONE chat, like the writer
     while True:
         rnd += 1
         script = _clean_script(reply)
@@ -277,11 +289,18 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         log(f"round {rnd}: draft of {words} words (target {target}), "
             f"overlap {overlap:.1%} - asking {judge} to judge it")
         for attempt in (1, 2):      # a judge reply with no score is asked again
-            raw = _send(transport, judge,
-                        lambda f: ep.script_judge_prompt(
-                            cfg, pid, script, title, None, None, None, f),
-                        log, ready=_is_json_verdict)
+            if judge_open:
+                raw = _send(transport, judge,
+                            lambda f: _script_followup(script), log,
+                            new_chat=False, ready=_is_json_verdict)
+            else:
+                raw = _send(transport, judge,
+                            lambda f: ep.script_judge_prompt(
+                                cfg, pid, script, title, None, None, None, f),
+                            log, ready=_is_json_verdict)
             verdict = studio._parse_json_object(raw)
+            if verdict:
+                judge_open = True
             try:
                 score = round(float(verdict.get("score")), 1)
             except (TypeError, ValueError):
@@ -360,6 +379,35 @@ def _narration_for(data: dict, cues: list[dict], asset: str) -> str:
     return ""
 
 
+def _plan_followup(text: str, files) -> str:
+    """Short re-review request for a judge chat that has already seen the
+    narration, the rules and its own earlier verdict."""
+    head = (
+        "The writer corrected the shotlist after your review. Review it "
+        "again under the SAME rules and reply in exactly the SAME JSON format "
+        "as before. First check that every point you raised earlier is now "
+        "fixed, then check that nothing else regressed. Do not invent new "
+        "faults for things that are correct. The narration is unchanged "
+        "(use narration.txt from earlier in this chat).\n\n")
+    if files is None:
+        return head + "The revised shotlist:\n\n" + text
+    files.append({"name": "shotlist.json", "text": text.strip() + "\n",
+                  "about": "the revised shotlist"})
+    return head + ("The revised shotlist is attached as shotlist.json - "
+                   "REQUIRED: if it is not attached or you cannot read it in "
+                   "full, reply with ONLY `Missing: shotlist.json` and stop.")
+
+
+def _script_followup(script: str) -> str:
+    return (
+        "The writer revised the script after your review. Judge it again "
+        "under the SAME rules and reply in exactly the SAME JSON format as "
+        "before. First check whether each point you raised earlier is now "
+        "addressed, then check that nothing got worse. Source material and "
+        "rules are unchanged (use the ones from earlier in this chat).\n\n"
+        "The revised script:\n\n" + script)
+
+
 def _plan_feedback(faults: list[str], weak: list[dict], fixes: list[str]) -> str:
     lines = ["The reviewer found problems with your shotlist."]
     if faults:
@@ -404,6 +452,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
         f"{len(data.get('images') or [])} images)")
 
     last_problem = ""
+    judge_open = False          # the judge keeps ONE chat, like the writer
     best = None                     # (badness, data, problem): the plan to keep
     rnd = 0
     while True:
@@ -411,19 +460,26 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
         text = json.dumps(data, ensure_ascii=False, indent=1)
         local: list[str] = []
 
-        def build(f):
-            prompt, loc = ep.shotlist_judge_prompt(cfg, pid, text, f)
+        def build(f, follow=judge_open):
+            # always run the full builder: it also yields the local checks
+            prompt, loc = ep.shotlist_judge_prompt(
+                cfg, pid, text, [] if follow else f)
             local[:] = list(loc or [])
-            return prompt
+            return _plan_followup(text, f) if follow else prompt
 
-        log(f"round {rnd}: asking {judge} to review the whole plan")
-        raw = _send(transport, judge, build, log, ready=_is_json_verdict)
+        log(f"round {rnd}: asking {judge} to review the whole plan"
+            + (" (same chat)" if judge_open else ""))
+        raw = _send(transport, judge, build, log, new_chat=not judge_open,
+                    ready=_is_json_verdict)
         dump(f"judge_reply_round{rnd}", raw)
         verdict = studio._parse_json_object(raw)
         if not verdict:
             log(f"{judge} gave no usable verdict - asking once more")
-            raw = _send(transport, judge, build, log, ready=_is_json_verdict)
+            raw = _send(transport, judge, build, log, new_chat=not judge_open,
+                        ready=_is_json_verdict)
             verdict = studio._parse_json_object(raw)
+        if verdict:
+            judge_open = True
         if not verdict:
             last_problem = f"{judge} never returned a usable verdict"
             break
@@ -494,14 +550,16 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
 # ---- entry points the web app calls --------------------------------------------------
 
 def script_job(cfg, pid: int, writer: str, judge: str, log,
-               should_stop: Callable[[], bool] = lambda: False) -> None:
-    with web_transport(cfg, log) as t:
+               should_stop: Callable[[], bool] = lambda: False,
+               options: dict | None = None) -> None:
+    with web_transport(cfg, log, options) as t:
         run_script(cfg, pid, t, writer, judge, log=log,
                    should_stop=should_stop)
 
 
 def shotlist_job(cfg, pid: int, writer: str, judge: str, log,
-                 should_stop: Callable[[], bool] = lambda: False) -> None:
-    with web_transport(cfg, log) as t:
+                 should_stop: Callable[[], bool] = lambda: False,
+                 options: dict | None = None) -> None:
+    with web_transport(cfg, log, options) as t:
         run_shotlist(cfg, pid, t, writer, judge, log=log,
                      should_stop=should_stop)

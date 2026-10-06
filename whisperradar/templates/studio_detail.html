@@ -477,6 +477,9 @@
         <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
         <label>Writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
         <label>Judge <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
+        <label>z.ai Deep Think <select name="zai_thinking" title="z.ai's Deep Think level for this run. Low is fastest; Max can think for many minutes (and once spent a whole turn thinking)"><option value="Low">Low</option><option value="High">High</option><option value="Max">Max</option></select></label>
+        <label>DeepSeek DeepThink <select name="deepseek_deepthink" title="DeepSeek's DeepThink switch for this run"><option value="on">On</option><option value="off">Off</option></select></label>
+        <label>DeepSeek Search <select name="deepseek_search" title="DeepSeek's web Search switch for this run"><option value="off">Off</option><option value="on">On</option></select></label>
         <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
                 title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run script in web chat</button>
       </form>
@@ -704,6 +707,9 @@
         <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
         <label>Writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
         <label>Judge <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
+        <label>z.ai Deep Think <select name="zai_thinking" title="z.ai's Deep Think level for this run. Low is fastest; Max can think for many minutes (and once spent a whole turn thinking)"><option value="Low">Low</option><option value="High">High</option><option value="Max">Max</option></select></label>
+        <label>DeepSeek DeepThink <select name="deepseek_deepthink" title="DeepSeek's DeepThink switch for this run"><option value="on">On</option><option value="off">Off</option></select></label>
+        <label>DeepSeek Search <select name="deepseek_search" title="DeepSeek's web Search switch for this run"><option value="off">Off</option><option value="on">On</option></select></label>
         <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
                 title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run shotlist in web chat</button>
       </form>

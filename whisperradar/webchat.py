@@ -92,6 +92,28 @@ def _zai_prepare(page, thinking: str = "Low") -> None:
     page.wait_for_timeout(300)
 
 
+_DS_TOGGLE_JS = """(args) => {
+  const els=[...document.querySelectorAll('.ds-toggle-button')];
+  const t=els.find(e=>(e.innerText||'').trim().toLowerCase()
+                       .startsWith(args.label.toLowerCase()));
+  if(!t) return 'missing';
+  const on=t.getAttribute('aria-pressed')==='true';
+  if(on===args.want) return 'ok';
+  t.click(); return 'clicked'; }"""
+
+
+def _deepseek_prepare(page, deepthink: bool = True, search: bool = False):
+    """DeepSeek remembers its two switches between chats; set both to what
+    the run asked for (DeepThink on, Search off by default)."""
+    for label, want in (("DeepThink", bool(deepthink)),
+                        ("Search", bool(search))):
+        res = page.evaluate(_DS_TOGGLE_JS, {"label": label, "want": want})
+        if res == "clicked":
+            page.wait_for_timeout(400)
+            page.evaluate(_DS_TOGGLE_JS, {"label": label, "want": want})
+    page.wait_for_timeout(200)
+
+
 ZAI = Site(
     key="zai", name="z.ai", url="https://chat.z.ai/",
     box="textarea", reply=".chat-assistant",
@@ -114,7 +136,8 @@ DEEPSEEK = Site(
         if(!b) return false; b.click(); return true; }""",
     generating_js="""() => !!document.querySelector(
           '[class*=stop-generat],[aria-label*=Stop],[title*=Stop]')""",
-    sent_js="""() => /\\/chat\\/s\\//.test(location.pathname)""")
+    sent_js="""() => /\\/chat\\/s\\//.test(location.pathname)""",
+    prepare=_deepseek_prepare)
 
 SITES = {s.key: s for s in (ZAI, DEEPSEEK)}
 
@@ -225,7 +248,7 @@ _CONTINUE_JS = """(labels) => {
 def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         timeout: float = 1800, settle: float = 6.0, poll: float = 2.0,
         continue_max: int = 8, start_wait: float = 90.0,
-        new_chat: bool = True,
+        new_chat: bool = True, options: Optional[dict] = None,
         ready: Optional[Callable[[str], bool]] = None, ready_wait: float = 300.0,
         clock: Callable[[], float] = time.monotonic,
         log: Callable[[str], None] = lambda m: None) -> str:
@@ -241,7 +264,7 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
     if site.stream:
         page.evaluate(_CAPTURE_JS)         # no-op when already hooked
     if new_chat and site.prepare:
-        site.prepare(page)
+        site.prepare(page, **(options or {}))
 
     if files:
         page.set_input_files(site.files, [str(f) for f in files])
@@ -431,6 +454,7 @@ class WebChat:
         self._pw = None
         self._ctx: dict = {}
         self._hooked: set = set()
+        self._urls: dict = {}       # site -> URL of its current chat
 
     def __enter__(self):
         try:
@@ -493,9 +517,28 @@ class WebChat:
         return ctx.pages[0] if ctx.pages else ctx.new_page()
 
     def ask(self, key: str, prompt: str, files: Sequence[str] = (),
-            new_chat: bool = True, **kw) -> str:
-        return ask(self._page(key), SITES[key], prompt, files,
-                   new_chat=new_chat, **kw)
+            new_chat: bool = True, options: Optional[dict] = None,
+            **kw) -> str:
+        page, site = self._page(key), SITES[key]
+        saved = self._urls.get(key)
+        if new_chat:
+            self._urls.pop(key, None)
+        elif saved:
+            # keep using the chat we started: if the tab wandered off (or
+            # was reloaded onto a blank page), go back to it first
+            try:
+                if page.url.split("#")[0] != saved:
+                    page.goto(saved)
+            except Exception:  # noqa: BLE001
+                pass
+        reply = ask(page, site, prompt, files, new_chat=new_chat,
+                    options=options, **kw)
+        try:
+            if page.evaluate(site.sent_js):
+                self._urls[key] = page.url.split("#")[0]
+        except Exception:  # noqa: BLE001
+            pass
+        return reply
 
     def sign_in(self, key: str, wait: float = 600.0) -> bool:
         """Open the site and wait for YOU to sign in (never typed for you)."""

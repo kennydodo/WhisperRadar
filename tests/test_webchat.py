@@ -233,6 +233,53 @@ class SendOnceTests(unittest.TestCase):
         self.assertEqual(out, "done")
         self.assertEqual(page.clicks, 1)
 
+
+class TogglePage:
+    """DeepSeek's two switches, as aria-pressed state."""
+
+    def __init__(self, deepthink=False, search=True):
+        self.state = {"DeepThink": deepthink, "Search": search}
+        self.clicks = []
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def evaluate(self, js, arg=None):
+        assert js is wc._DS_TOGGLE_JS
+        label, want = arg["label"], arg["want"]
+        if self.state[label] == want:
+            return "ok"
+        self.state[label] = want
+        self.clicks.append(label)
+        return "clicked"
+
+
+class ModeTests(unittest.TestCase):
+    def test_deepseek_defaults_are_deepthink_on_search_off(self):
+        page = TogglePage(deepthink=False, search=True)
+        wc.DEEPSEEK.prepare(page)
+        self.assertEqual(page.state, {"DeepThink": True, "Search": False})
+        self.assertEqual(sorted(page.clicks), ["DeepThink", "Search"])
+
+    def test_deepseek_switches_already_right_are_left_alone(self):
+        page = TogglePage(deepthink=True, search=False)
+        wc.DEEPSEEK.prepare(page)
+        self.assertEqual(page.clicks, [])
+
+    def test_deepseek_options_can_turn_search_on_and_deepthink_off(self):
+        page = TogglePage(deepthink=True, search=False)
+        wc.DEEPSEEK.prepare(page, deepthink=False, search=True)
+        self.assertEqual(page.state, {"DeepThink": False, "Search": True})
+
+    def test_ask_hands_the_options_to_the_sites_prepare(self):
+        seen = {}
+        site = wc.Site(key="x", name="X", url="https://x/", box="textarea",
+                       reply=".r", send_js="() => true",
+                       generating_js="() => false",
+                       prepare=lambda page, **kw: seen.update(kw))
+        run(site, [("ok", False)] * 8, options={"thinking": "High"})
+        self.assertEqual(seen, {"thinking": "High"})
+
 class PasteToleranceTests(unittest.TestCase):
     def test_a_few_dropped_characters_are_tolerated(self):
         prompt = "x" * 58373

@@ -169,6 +169,13 @@ The API loop (`autorun`) is untouched.
   A prompt over `INLINE_MAX_CHARS` (60000) switches to attached files. A run
   that never passes saves its best draft but does NOT advance the production.
   The transport is swappable (tests use a fake).
+- Update: the JUDGE keeps ONE chat per run (round 1 = full prompt in a new
+  chat; later rounds = short re-review with only the revised plan/script; a
+  fresh judge chat each round made results regress). `WebChat` remembers each
+  site's chat URL and returns to it for follow-ups. Modes: DeepSeek DeepThink
+  on / Search off by default (`_deepseek_prepare`); the Studio form lets you
+  pick z.ai Deep Think (Low/High/Max) and DeepSeek DeepThink/Search per run
+  (`options` passed to `site.prepare`). No round limit; Stop button only.
 - Studio: "Run script / shotlist in web chat" buttons (writer + judge pickers)
   -> `POST /studio/<pid>/webchat/<script|shots>` (a normal background job).
 - Reply-completion fixes after the first real run: z.ai shows only "Thinking..."
