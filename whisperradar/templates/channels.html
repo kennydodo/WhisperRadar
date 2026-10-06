@@ -224,6 +224,12 @@
                 {% else %}
                 <span class="muted" style="font-size:12px">No watched channels yet - add some on <a href="/watched">Watched Channels</a>.</span>
                 {% endfor %}
+                {% set picked = watched_by_oc.get(ch['id'], []) %}
+                {% set visible_ids = watched_channels | map(attribute='channel_id') | list %}
+                {% for wid in picked if wid not in visible_ids %}
+                {# picked while active, now paused: kept out of sight, kept in the selection #}
+                <input type="hidden" name="watched" value="{{ wid }}">
+                {% endfor %}
               </div>
             </div>
             </details>

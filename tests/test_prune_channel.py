@@ -94,6 +94,33 @@ class PruneChannelTests(unittest.TestCase):
                                "active": "1"})
         self.assertEqual(db.get_channel(self.conn, "UCactive")["active"], 1)
 
+    def test_my_channels_tick_list_hides_paused(self):
+        db.create_own_channel(self.conn, "My Channel")
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn("Active Chan", html)
+        self.assertNotIn("Paused Chan", html)
+
+    def test_paused_pick_stays_selected_and_saved(self):
+        import json
+        oc_id = db.create_own_channel(self.conn, "My Channel")
+        db.update_own_channel(self.conn, oc_id,
+                              watched_channels=json.dumps(["UCactive", "UCpaused"]))
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertNotIn("Paused Chan", html)  # no visible label
+        self.assertIn('<input type="hidden" name="watched" value="UCpaused">',
+                      html)  # but the pick survives
+        # a browser submitting that form keeps the paused pick
+        self.client.post("/my-channels/edit", data={
+            "id": str(oc_id), "watched_present": "1",
+            "watched": ["UCactive", "UCpaused"]})
+        conn = db.connect(self.cfg.db_path)
+        try:
+            row = db.get_own_channel(conn, oc_id)
+            self.assertEqual(json.loads(row["watched_channels"]),
+                             ["UCactive", "UCpaused"])
+        finally:
+            conn.close()
+
     def test_auto_run_candidates_skip_paused_channels(self):
         from whisperradar import producer
         self.conn.execute("UPDATE videos SET status = 'transcribed'")

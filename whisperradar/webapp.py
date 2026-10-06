@@ -1106,7 +1106,9 @@ def create_app(cfg) -> Flask:
                 " ORDER BY genre COLLATE NOCASE")]
             source_genres = {g.lower() for g in genres}
             global_render_resolution = settings.load(conn)["render_resolution"]
-            watched_channels = db.list_channels(conn)
+            # paused watched channels are pruned from the tick list too;
+            # already-stored picks of them survive via hidden inputs
+            watched_channels = db.list_channels(conn, active_only=True)
             watched_by_oc = {c["id"]: db.own_channel_watched(c)
                              for c in own_channels}
         finally:
