@@ -472,6 +472,20 @@
           <button type="submit" class="secondary">Upload script file</button>
         </form>
       </div>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/script" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
+            onsubmit="return wrConfirmSubmit(this, 'Run the script in web chats? A browser window opens and the chats are driven for you.')">
+        <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
+        <label>Writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
+        <label>Judge <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
+        <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
+                title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run script in web chat</button>
+      </form>
+      {% if job.running and 'web chat' in (job.kind or '') %}
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:6px">
+        <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">■ Stop web-chat run</button>
+        <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
+      </form>
+      {% endif %}
       {% if style %}
       <div class="muted" style="font-size:12px; margin-top:8px">Writing style guide is applied to this generation - <a href="/studio/{{ prod['id'] }}?stage=style">view / edit it</a>.</div>
       {% else %}
@@ -685,6 +699,20 @@
         <span class="muted">No LLM providers configured (Settings > LLM providers) - write the shotlist by hand below.</span>
         {% endif %}
       </div>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/shots" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
+            onsubmit="return wrConfirmSubmit(this, 'Run the shotlist in web chats? A browser window opens and the chats are driven for you.')">
+        <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
+        <label>Writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
+        <label>Judge <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
+        <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
+                title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run shotlist in web chat</button>
+      </form>
+      {% if job.running and 'web chat' in (job.kind or '') %}
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:6px">
+        <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">■ Stop web-chat run</button>
+        <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
+      </form>
+      {% endif %}
       <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
         <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
         <div id="shotcount" class="muted" style="font-size:12px; margin-top:3px"></div>

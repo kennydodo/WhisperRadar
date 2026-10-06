@@ -146,6 +146,65 @@ the check/revise): `external_prompts.script_local_checks`,
 feedback box on the Studio page, and the local-checks note under the script
 judge prompt. The shot judge still shows the app's structural checks.
 
+## DONE (2026-10-06) — web-chat stages (z.ai writes, DeepSeek judges; no API)
+
+Runs the script and shotlist stages by driving chat websites in a real browser,
+using the EXTERNAL-LLM prompts (`external_prompts`), not the built-in API ones.
+The API loop (`autorun`) is untouched.
+- `whisperradar/webchat.py`: the browser driver (Playwright, headed, one
+  persistent profile per site under `<db dir>/webchat/<site>`). `Site` entries
+  for z.ai and DeepSeek (selectors from live inspection). Uses installed Chrome,
+  then Edge, then Playwright's Chromium, with automation flags removed (Google
+  refuses sign-in in a browser that announces itself as automated).
+  z.ai's Deep Think level is set to Low on each new chat (Max can eat the turn).
+  `ask(..., new_chat=False)` answers inside the open chat (feedback to the
+  writer). DeepSeek "Continue" is clicked when present (never observed yet).
+  CLI: `python -m whisperradar.webchat login <zai|deepseek>` (window stays open
+  until you press Enter) and `ask <site> "prompt"`.
+- `whisperradar/webstages.py`: the loops. Script: writer -> judge (new chat) ->
+  `autorun._script_gate` -> feedback to the same writer chat, max 3 rounds.
+  Shotlist: planner (+ "continue" while the JSON is cut off) -> judge reviews
+  the whole plan -> weak prompts go back as `studio.shotlist_patch_prompt`
+  (with current prompts, keys checked), hard faults as a full corrected plan.
+  A prompt over `INLINE_MAX_CHARS` (60000) switches to attached files. A run
+  that never passes saves its best draft but does NOT advance the production.
+  The transport is swappable (tests use a fake).
+- Studio: "Run script / shotlist in web chat" buttons (writer + judge pickers)
+  -> `POST /studio/<pid>/webchat/<script|shots>` (a normal background job).
+- Reply-completion fixes after the first real run: z.ai shows only "Thinking..."
+  while it thinks (no "Stop" text; its round stop button `button > span.size-3`
+  is the signal), and the reply element starts with "Thought Process" - both
+  handled by `clean_reply`/`generating_js`; `ask(ready=...)` keeps waiting until
+  the reply is complete (script long enough / judge JSON parses); a send that did
+  not register is repeated, and a start timeout reports what the page shows.
+- z.ai's page keeps only the last ~56 lines of a long code block in the DOM, so a
+  140 KB shotlist could never be read from it (first real shotlist run read 19,605
+  characters and then sent a pointless "continue"). `Site.stream` makes the driver
+  hook `fetch`, capture z.ai's `/chat/completions` event stream and return the
+  joined `delta_content` of the `phase: answer` events (thinking left out); the DOM
+  text is only the fallback. DeepSeek still reads the DOM (its replies are short).
+  Every raw reply is also kept in `<production folder>/webchat_debug/`.
+- NO round limit for the web-chat loops (decided by the owner: the external
+  writer + judge run until the judge passes the work). `rounds=None` is the
+  default; stop it with the "■ Stop web-chat run" button
+  (`POST /studio/<pid>/webchat-stop`, sets the job's cancel flag, honoured after
+  the current round). A corrected shotlist can come back WORSE (12 faults/2 weak
+  -> 20 faults/11 weak was seen), so the loop remembers the best plan seen
+  (3 x faults + weak prompts) and a stop/failure saves THAT one, never advancing.
+  Raw replies per round: webchat_debug/plan_round<N>_*.txt, judge_reply_round<N>.txt.
+- DeepSeek send safety: a send is repeated only when there is no sign it went
+  out (box still full, address unchanged for a new chat, nothing generating, no
+  new message) after 30 s - DeepSeek's send button becomes a STOP button, so a
+  second click on a slow-to-accept big prompt cancelled the answer (5 min hang).
+- Tests: tests/test_webchat.py, tests/test_webstages.py.
+- NOT yet verified on the real sites: long (12k+) prompts through the driver,
+  file attachments, DeepSeek Continue, z.ai guest-mode limits, whether z.ai's
+  reply element includes its "thinking" text, judge strictness (DeepSeek was
+  lenient on invented facts in a manual test).
+- Possible later: Google sign-in via attaching to a normally started Chrome
+  (remote debugging) as a `webchat_mode: attach` option; Claude / ChatGPT
+  `Site` entries (their consumer terms restrict scripted use - read first).
+
 ## DONE (2026-10-01) — local upscale AFTER download, for both engines
 
 Requested by Kehinde: stop upscaling inside the download loop. Download the

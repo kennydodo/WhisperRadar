@@ -16,3 +16,6 @@ python-dotenv>=1.0
 python-multipart>=0.0.9
 google-genai>=1.0
 Pillow>=10
+
+# Web-chat stages (z.ai / DeepSeek in a browser you sign in to once) - webchat.py
+playwright>=1.45

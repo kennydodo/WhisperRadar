@@ -3103,6 +3103,52 @@ def create_app(cfg) -> Flask:
             out["local_note"] = local_note[0]
         return jsonify(out)
 
+    @app.post("/studio/<int:pid>/webchat/<stage>")
+    def studio_webchat_run(pid, stage):
+        """Run the script or shotlist stage in web chats (webstages.py): a
+        writer chat and a judge chat, the judge's feedback going back to the
+        writer. Uses the external-LLM prompts; the API loop is not involved."""
+        if stage not in ("script", "shots"):
+            return _studio_url(pid, error="Unknown web-chat stage")
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        from . import webchat, webstages
+        writer = (request.form.get("writer") or "zai").strip()
+        judge = (request.form.get("judge") or "deepseek").strip()
+        if writer not in webchat.SITES or judge not in webchat.SITES:
+            return _studio_url(pid, error="Unknown chat site")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/studio?error=Unknown+production")
+        finally:
+            conn.close()
+        log = sjob.log.append
+        run = (webstages.script_job if stage == "script"
+               else webstages.shotlist_job)
+
+        job = sjob._real()
+
+        def worker():
+            run(cfg, pid, writer, judge, log, lambda: job.cancel)
+
+        label = ("script" if stage == "script" else "shotlist")
+        sjob.start(worker, f"{label} in web chat ({writer} writes, "
+                           f"{judge} judges)")
+        return _studio_url(pid, msg=f"Web-chat {label} run started - a "
+                                    f"browser window will open")
+
+    @app.post("/studio/<int:pid>/webchat-stop")
+    def studio_webchat_stop(pid):
+        """Stop a web-chat run after its current round (the loop has no round
+        limit: it runs until the judge passes the work, or you stop it)."""
+        if not sjob.running or "web chat" not in str(sjob.kind or ""):
+            return _studio_url(pid, error="No web-chat run is going")
+        sjob.cancel = True
+        return _studio_url(pid, msg="Stopping after the current round - the "
+                                    "best result so far will be saved")
+
     @app.post("/studio/<int:pid>/shotlist/save")
     def studio_shotlist_save(pid):
         pdir = studio.prod_dir(cfg, pid)
