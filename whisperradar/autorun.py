@@ -1547,6 +1547,8 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     engine = studio.effective_engine(engine, mode)
     if log is None:
         log = lambda m: None
+    if eff.get("upscale_warning"):
+        log(f"[warning] {eff['upscale_warning']}")
     # Flow native: both engines download the stills at Flow's own size and,
     # when a level is picked next to Render resolution, ONE local Real-ESRGAN
     # pass upscales them once the batch has finished (below) - so the download

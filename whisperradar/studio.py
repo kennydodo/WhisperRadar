@@ -2344,6 +2344,47 @@ def apply_render_resolution(cfg, pid: int) -> None:
              size[0], size[1])
 
 
+def _png_size(path: Path):
+    """(width, height) from a PNG header, or None for anything else."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(24)
+    except OSError:
+        return None
+    if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+
+
+def image_size_warning(cfg, pid: int, sample: int = 8) -> str:
+    """'' when the production's images are at least as wide as the render
+    output (or there is nothing to compare); otherwise a sentence saying that
+    ImgToVideo will have to scale them UP. Reads PNG headers only."""
+    pdir = prod_dir(cfg, pid)
+    try:
+        data = json.loads((pdir / "imgtovideo.json").read_text(encoding="utf-8"))
+        out_w = int((data.get("output") or {}).get("width") or 0)
+    except (OSError, ValueError, TypeError):
+        return ""
+    img_dir = pdir / "images"
+    if not out_w or not img_dir.is_dir():
+        return ""
+    sizes = []
+    for p in sorted(img_dir.glob("*.png"))[:sample]:
+        size = _png_size(p)
+        if size:
+            sizes.append(size)
+    if not sizes:
+        return ""
+    # the long side: a 1:1 or 9:16 still is legitimately narrower than 16:9
+    narrowest = min(max(w, h) for w, h in sizes)
+    if narrowest >= out_w:
+        return ""
+    return (f"images are only {narrowest}px on their long side but the render output is "
+            f"{out_w}px wide - ImgToVideo will scale them up (check Render "
+            f"resolution / Upscale tier)")
+
+
 def prepare_project_folder(cfg, pid: int) -> Path:
     """Make the production folder a valid ImgToVideo project folder."""
     pdir = prod_dir(cfg, pid)
@@ -2354,6 +2395,9 @@ def prepare_project_folder(cfg, pid: int) -> Path:
             "naming": {"image_extensions": [".png", ".jpg", ".jpeg", ".webp"]},
         }, indent=2), encoding="utf-8")
     apply_render_resolution(cfg, pid)
+    warning = image_size_warning(cfg, pid)
+    if warning:
+        log.warning("production %s: %s", pid, warning)
     return pdir
 
 

@@ -266,8 +266,9 @@
               <label>upscale
                 <select name="default_upscale">
                   <option value="">inherit</option>
-                  {% for opt in [0, 1, 2, 3, 4] %}
-                  <option value="{{ opt }}" {{ 'selected' if ch['default_upscale'] == opt else '' }}>{{ opt }}</option>
+                  {% set cur_up = 2 if ch['default_upscale'] == 3 else ch['default_upscale'] %}
+                  {% for opt, lbl in upscale_labels.items() %}
+                  <option value="{{ opt }}" {{ 'selected' if cur_up == opt else '' }}>{{ lbl }}</option>
                   {% endfor %}
                 </select>
               </label>
@@ -870,6 +871,26 @@
             + 'Productions that saved their own value keep it.');
         });
         ctl.insertAdjacentElement('afterend', b);
+      });
+    });
+  })();
+</script>
+<script>
+  // Render resolution and Upscale tier are one decision: changing either moves
+  // the other; "inherit" on one makes the other inherit too.
+  (function () {
+    var R2U = {'1080p': '1', '2k': '2', '4k': '4', 'flow-native': '0', '': ''};
+    var U2R = {'1': '1080p', '2': '2k', '4': '4k', '0': 'flow-native', '': ''};
+    document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
+      var res = form.querySelector('select[name="render_resolution"]');
+      var up = form.querySelector('select[name="default_upscale"]');
+      if (!res || !up) return;
+      res.addEventListener('change', function () {
+        if (R2U[res.value] !== undefined) up.value = R2U[res.value];
+      });
+      up.addEventListener('change', function () {
+        if (U2R[up.value] !== undefined) res.value = U2R[up.value];
+        res.dispatchEvent(new Event('change'));
       });
     });
   })();

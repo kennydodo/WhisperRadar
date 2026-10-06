@@ -948,7 +948,7 @@ def create_app(cfg) -> Flask:
             _, warnings = settings.save(conn, form)
             # "apply to all channels": make every channel inherit the value
             applied = []
-            for key in dict.fromkeys(request.form.getlist("apply_all")):
+            for key in settings.with_partners(request.form.getlist("apply_all")):
                 if key not in db.APPLY_ALL_FIELDS:
                     warnings.append(f"{key}: cannot be applied to all channels")
                     continue
@@ -1131,6 +1131,7 @@ def create_app(cfg) -> Flask:
             global_render_resolution=global_render_resolution,
             apply_all_fields=sorted(db.APPLY_ALL_FIELDS),
             global_values=_global_display_values(),
+            upscale_labels=settings.UPSCALE_LABELS,
             native_tiers=settings.FLOW_NATIVE_TIERS,
             native_tier_labels=settings.FLOW_NATIVE_TIER_LABELS,
             brief_presets=briefs.MOTION_PRESETS,
@@ -1446,6 +1447,19 @@ def create_app(cfg) -> Flask:
                                              if raw else None)
             except ValueError:
                 fields["default_upscale"] = None
+        # Render resolution + upscale tier are one decision; the resolution wins
+        pair_warning = ""
+        if "render_resolution" in fields or "default_upscale" in fields:
+            res, up, pair_warning = settings.reconcile_resolution_upscale(
+                fields.get("render_resolution"), fields.get("default_upscale"),
+                "render_resolution" in fields, "default_upscale" in fields)
+            if "render_resolution" in fields:
+                fields["default_upscale"] = up
+            elif res:
+                fields["render_resolution"] = res
+                fields["default_upscale"] = up
+            elif "default_upscale" in fields:
+                fields["default_upscale"] = up
         if "per_day" in request.form:
             raw = (request.form.get("per_day") or "").strip()
             try:
@@ -1465,7 +1479,7 @@ def create_app(cfg) -> Flask:
             db.update_own_channel(conn, oc_id, **fields)
             # "apply to all channels": copy this channel's saved value
             applied, rejected = [], []
-            for key in dict.fromkeys(request.form.getlist("apply_all")):
+            for key in settings.with_partners(request.form.getlist("apply_all")):
                 if key not in db.APPLY_ALL_FIELDS:
                     rejected.append(key)
                     continue
@@ -1480,6 +1494,8 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         msg = "Channel updated"
+        if pair_warning:
+            msg += " - " + pair_warning
         if applied:
             msg += " - " + "; ".join(applied)
         if rejected:

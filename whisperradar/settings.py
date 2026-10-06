@@ -12,6 +12,62 @@ from . import briefs
 
 # Flow native renders download at Flow's own size (1376x768); one local
 # Real-ESRGAN pass then upscales to one of FlowBatch's tiers.
+# Render resolution and the image upscale tier are ONE decision: the images must
+# be generated at the size the video is rendered at. The resolution wins.
+RESOLUTION_UPSCALE = {"1080p": 1, "2k": 2, "4k": 4, "flow-native": 0}
+UPSCALE_RESOLUTION = {v: k for k, v in RESOLUTION_UPSCALE.items()}
+UPSCALE_LABELS = {0: "0 - native 1376x768 (Flow native)",
+                  1: "1 - HD 1920x1080",
+                  2: "2 - 2K 2560x1440",
+                  4: "4 - 4K 3840x2160"}
+
+
+# applying one of these to all channels applies its partner too
+PAIRED_FIELDS = {"render_resolution": "default_upscale",
+                 "default_upscale": "render_resolution"}
+
+
+def with_partners(keys):
+    """keys + their paired fields, order kept, no duplicates."""
+    out = []
+    for key in keys:
+        for k in (key, PAIRED_FIELDS.get(key)):
+            if k and k not in out:
+                out.append(k)
+    return out
+
+
+def normalize_upscale(tier):
+    """Tier 3 was a duplicate of 2 (both 2K) and is gone from the UI; old
+    stored 3s read as 2."""
+    return 2 if tier == 3 else tier
+
+
+def upscale_for_resolution(resolution):
+    """The upscale tier that belongs to a render resolution (None if unknown)."""
+    return RESOLUTION_UPSCALE.get(str(resolution or "").strip().lower())
+
+
+def reconcile_resolution_upscale(resolution, upscale, res_posted, up_posted):
+    """Keep the pair coherent on save. None = "inherit". Returns
+    (resolution, upscale, warning). A resolution that is set decides the
+    upscale; an upscale posted alone decides the resolution."""
+    warning = ""
+    if upscale is not None:
+        upscale = normalize_upscale(upscale)
+    if res_posted and resolution:
+        derived = upscale_for_resolution(resolution)
+        if derived is not None:
+            if up_posted and upscale is not None and upscale != derived:
+                warning = (f"Upscale tier {upscale} did not match Render "
+                           f"resolution {resolution} - set to {derived} "
+                           f"(the resolution wins)")
+            upscale = derived
+    elif up_posted and not res_posted and upscale is not None:
+        resolution = UPSCALE_RESOLUTION.get(upscale, resolution)
+    return resolution, upscale, warning
+
+
 FLOW_NATIVE_TIERS = ("off", "1k", "2k", "4k")
 FLOW_NATIVE_TIER_LABELS = {
     "off": "No upscale (keep 1376x768)",
@@ -285,12 +341,13 @@ SPEC: list[dict] = [
     },
     {
         "key": "default_upscale", "type": "int", "default": 2, "min": 0, "max": 4,
+        "int_options": UPSCALE_LABELS,
         "label": "Upscale tier",
-        "help": "Delivered image size. 0 = off (native 1K, 1376x768 - below "
-                "ImgToVideo's 2304x1296 canvas spec), 1 = HD 1920x1080 (also "
-                "below spec), 2 = 2K 2560x1440 (recommended - meets the spec "
-                "and matches ImgToVideo's default output), 3 = 2K, "
-                "4 = 4K 3840x2160 (over-spec, slower).",
+        "help": "Delivered image size. It is tied to Render resolution (Video "
+                "render tab): 1080p = 1, 2K = 2 (recommended - meets "
+                "ImgToVideo's 2304x1296 canvas spec), 4K = 4 (over-spec, "
+                "slower), Flow native = 0. Changing one changes the other; "
+                "if they ever disagree the resolution wins.",
     },
     {
         "key": "images_chunk_size", "type": "int", "default": 60,
@@ -524,6 +581,8 @@ def _coerce(entry: dict, raw):
             value = max(entry["min"], value)
         if "max" in entry:
             value = min(entry["max"], value)
+        if entry["key"] == "default_upscale":
+            value = normalize_upscale(value)
         return value
     if kind == "float":
         if text == "":
@@ -581,6 +640,18 @@ def for_production(conn, prod) -> dict:
         if prod is not None else None
     own_upscale = row_get(own, "default_upscale", glob["default_upscale"])
     own_per_day = row_get(own, "per_day")
+    resolution = row_get(own, "render_resolution", glob["render_resolution"])
+    configured = normalize_upscale(int(own_upscale))
+    derived = upscale_for_resolution(resolution)
+    # the resolution wins; warn only when someone explicitly set a tier that
+    # disagrees (a channel that sets just the resolution is not a conflict)
+    explicit = (row_get(own, "default_upscale") is not None
+                or row_get(own, "render_resolution") is None)
+    upscale_warning = ""
+    if derived is not None and explicit and configured != derived:
+        upscale_warning = (f"upscale tier {configured} does not match render "
+                           f"resolution {resolution} - using {derived} "
+                           f"(the resolution wins)")
     return {
         "voice": (row_get(prod, "voice") or row_get(own, "default_voice")
                   or None),
@@ -588,7 +659,8 @@ def for_production(conn, prod) -> dict:
         "render_mode": (row_get(prod, "render_mode")
                         or row_get(own, "default_render_mode")
                         or glob["default_render_mode"]),
-        "upscale": int(own_upscale),
+        "upscale": derived if derived is not None else configured,
+        "upscale_warning": upscale_warning,
         # Flow native: the level one local Real-ESRGAN pass upscales the
         # downloaded stills to (per channel; only used when the resolved
         # render resolution is "flow-native")
@@ -642,8 +714,7 @@ def for_production(conn, prod) -> dict:
         "flow_project_url": row_get(own, "flow_project_url"),
         # global-only: which NLE the merge stage exports to (premiere|capcut)
         "render_target": row_get(own, "render_target", glob["render_target"]),
-        "render_resolution": row_get(own, "render_resolution",
-                                     glob["render_resolution"]),
+        "render_resolution": resolution,
         # image-batch guards (global only - operational, not per production)
         "images_chunk_size": int(glob["images_chunk_size"]),
         "images_stop_on_failure": bool(glob["images_stop_on_failure"]),
@@ -706,6 +777,17 @@ def save(conn, form: dict) -> tuple[dict, list[str]]:
             except ValueError:
                 warnings.append(f"{entry['label']}: not a number - kept "
                                 f"{entry['default']}")
+    # keep Render resolution and Upscale tier a coherent pair
+    if "render_resolution" in values or "default_upscale" in values:
+        res, up, warn = reconcile_resolution_upscale(
+            values.get("render_resolution"), values.get("default_upscale"),
+            "render_resolution" in values, "default_upscale" in values)
+        if "render_resolution" in values:
+            values["default_upscale"] = up
+        elif res:
+            values["render_resolution"] = res
+        if warn:
+            warnings.append(warn)
     for key, value in values.items():
         entry = SPEC_BY_KEY[key]
         stored = (("1" if value else "0") if entry["type"] == "bool"

@@ -170,6 +170,12 @@
                 <option value="{{ opt }}" {{ 'selected' if values[entry.key] == opt else '' }}>{{ entry.choice_labels[opt] if entry.choice_labels is defined and opt in entry.choice_labels else opt }}</option>
                 {% endfor %}
               </select>
+            {% elif entry.type == 'int' and entry.int_options is defined %}
+              <select name="{{ entry.key }}" id="f-{{ entry.key }}">
+                {% for opt, lbl in entry.int_options.items() %}
+                <option value="{{ opt }}" {{ 'selected' if values[entry.key] == opt else '' }}>{{ lbl }}</option>
+                {% endfor %}
+              </select>
             {% elif entry.type == 'int' %}
               <input type="number" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      value="{{ values[entry.key] }}"
@@ -297,6 +303,24 @@
   </div>
   {% endfor %}
   </form>
+
+  <script>
+  // Render resolution and Upscale tier are one decision: changing either moves
+  // the other (the resolution wins server side if they ever disagree).
+  (function () {
+    var R2U = {'1080p': '1', '2k': '2', '4k': '4', 'flow-native': '0'};
+    var U2R = {'1': '1080p', '2': '2k', '4': '4k', '0': 'flow-native'};
+    var res = document.getElementById('f-render_resolution');
+    var up = document.getElementById('f-default_upscale');
+    if (!res || !up) return;
+    res.addEventListener('change', function () {
+      if (R2U[res.value] !== undefined) up.value = R2U[res.value];
+    });
+    up.addEventListener('change', function () {
+      if (U2R[up.value] !== undefined) res.value = U2R[up.value];
+    });
+  })();
+  </script>
 
   <div class="tabpanel" data-tab="LLM">
   <h2>LLM providers</h2>

@@ -5,6 +5,25 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## DONE (2026-10-06) - Render resolution and Upscale tier are one setting
+
+1080p<->1, 2k<->2, 4k<->4, flow-native<->0 (`settings.RESOLUTION_UPSCALE`).
+Tier 3 (a duplicate of 2) is gone from the dropdowns; stored 3s read as 2.
+- UI: changing either dropdown moves the other (Settings page and channel form;
+  "inherit" on one makes the other inherit).
+- Save (`settings.save`, `/my-channels/edit`): `reconcile_resolution_upscale` -
+  a set resolution decides the tier (warning in the banner when the posted tier
+  disagreed), a tier posted alone decides the resolution.
+- Runtime: `for_production` derives `upscale` from the effective resolution, so
+  old mismatched data heals itself; `eff["upscale_warning"]` is logged by the
+  images stage when someone explicitly set a disagreeing tier.
+- ImgToVideo: `prepare_project_folder` (every render path) writes
+  output.width/height from the resolution; `studio.image_size_warning` logs when
+  the images' long side is smaller than the output width (they would be scaled
+  up). ImgToVideo itself has no upscale option - the tier only sizes the images.
+- "Apply to all channels" on one of the pair applies its partner too
+  (`settings.with_partners`). Tests: `tests/test_resolution_upscale_pair.py`.
+
 ## DONE (2026-10-06) - "apply to all channels"
 
 Two actions, limited to `db.APPLY_ALL_FIELDS` (the channel fields that are
