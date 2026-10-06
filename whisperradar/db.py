@@ -313,30 +313,41 @@ def _migrate_own_channels(conn: sqlite3.Connection) -> None:
 def add_channel(
     conn, name: str, channel_id: str, kind: str = "primary", genre: str = "general"
 ) -> None:
+    # Re-adding a paused channel reactivates it: adding is an explicit
+    # "watch this again", so the channel must not silently stay pruned.
     conn.execute(
         "INSERT INTO channels (name, channel_id, kind, genre) VALUES (?, ?, ?, ?)"
         " ON CONFLICT(channel_id) DO UPDATE SET"
-        " name = excluded.name, kind = excluded.kind, genre = excluded.genre",
+        " name = excluded.name, kind = excluded.kind, genre = excluded.genre,"
+        " active = 1",
         (name, channel_id, kind, genre),
     )
     conn.commit()
 
 
 def sync_channels(conn, channels: list[dict]) -> int:
-    """Upsert channels declared in config.yaml. Keeps existing videos intact."""
+    """Upsert channels declared in config.yaml. Keeps existing videos intact.
+
+    `active` is only written when the config entry states it explicitly:
+    a channel paused in the UI must survive the sync that runs on every page
+    load, or pruning would be impossible for config-declared channels."""
     changed = 0
     for ch in channels:
         if not ch.get("id"):
             continue
-        cur = conn.execute(
+        explicit_active = "active" in ch
+        updates = ["name = excluded.name", "kind = excluded.kind",
+                   "genre = excluded.genre"]
+        if explicit_active:
+            updates.append("active = excluded.active")
+        sql = (
             "INSERT INTO channels (name, channel_id, kind, genre, active)"
             " VALUES (?, ?, ?, ?, ?)"
-            " ON CONFLICT(channel_id) DO UPDATE SET"
-            " name = excluded.name, kind = excluded.kind, genre = excluded.genre,"
-            " active = excluded.active",
-            (ch["name"], ch["id"], ch.get("kind", "primary"),
-             ch.get("genre") or "general", 1 if ch.get("active", True) else 0),
+            " ON CONFLICT(channel_id) DO UPDATE SET " + ", ".join(updates)
         )
+        cur = conn.execute(sql, (ch["name"], ch["id"], ch.get("kind", "primary"),
+                                 ch.get("genre") or "general",
+                                 1 if ch.get("active", True) else 0))
         changed += cur.rowcount
     conn.commit()
     return changed
@@ -481,8 +492,10 @@ def get_video(conn, video_id: str):
 
 def _video_filters(status: str | None, genre: str | None, backlog: bool,
                    channel: str | None, q: str | None = None,
-                   produced: int | None = None):
+                   produced: int | None = None, active_only: bool = False):
     clauses, params = [], []
+    if active_only:
+        clauses.append("c.active = 1")
     if backlog:
         clauses.append("v.auto = 0")
         clauses.append("v.status = 'new'")
@@ -515,11 +528,12 @@ def _video_order(sort: str | None) -> str:
 
 def count_videos(conn, status: str | None = None, genre: str | None = None,
                  backlog: bool = False, channel: str | None = None,
-                 q: str | None = None, produced: int | None = None) -> int:
+                 q: str | None = None, produced: int | None = None,
+                 active_only: bool = False) -> int:
     sql = ("SELECT COUNT(*) FROM videos v"
            " JOIN channels c ON c.channel_id = v.channel_id")
     clauses, params = _video_filters(status, genre, backlog, channel, q,
-                                     produced)
+                                     produced, active_only=active_only)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     return conn.execute(sql, params).fetchone()[0]
@@ -529,11 +543,11 @@ def get_videos(conn, status: str | None = None, genre: str | None = None,
                backlog: bool = False, channel: str | None = None,
                limit: int | None = None, offset: int = 0,
                sort: str | None = None, q: str | None = None,
-               produced: int | None = None):
+               produced: int | None = None, active_only: bool = False):
     sql = ("SELECT v.*, c.name AS channel_name, c.genre AS channel_genre FROM videos v"
            " JOIN channels c ON c.channel_id = v.channel_id")
     clauses, params = _video_filters(status, genre, backlog, channel, q,
-                                     produced)
+                                     produced, active_only=active_only)
     if clauses:
         sql += " WHERE " + " AND ".join(clauses)
     sql += _video_order(sort)
@@ -605,7 +619,7 @@ def get_videos_page(conn, status: str | None = None, genre: str | None = None,
                     backlog: bool = False, channel: str | None = None,
                     q: str | None = None, sort: str | None = None,
                     limit: int = 50, offset: int = 0,
-                    produced: int | None = None):
+                    produced: int | None = None, active_only: bool = False):
     """One page of videos plus the total number of matching rows.
 
     Deliberately two queries: a `COUNT(*) OVER ()` would force SQLite to
@@ -614,9 +628,10 @@ def get_videos_page(conn, status: str | None = None, genre: str | None = None,
     """
     rows = get_videos(conn, status=status, genre=genre, backlog=backlog,
                       channel=channel, q=q, sort=sort, limit=limit,
-                      offset=offset, produced=produced)
+                      offset=offset, produced=produced, active_only=active_only)
     total = count_videos(conn, status=status, genre=genre, backlog=backlog,
-                         channel=channel, q=q, produced=produced)
+                         channel=channel, q=q, produced=produced,
+                         active_only=active_only)
     return rows, total
 
 
