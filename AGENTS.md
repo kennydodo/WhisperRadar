@@ -5,11 +5,29 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## DONE (2026-10-06) - "apply to all channels"
+
+Two actions, limited to `db.APPLY_ALL_FIELDS` (the channel fields that are
+production defaults and have a global setting of the same name; identity,
+voice, bible/refs, style, planning brief are never eligible):
+- **Settings page**: button under each eligible setting -> saves the global
+  value, then sets that field NULL on every channel (`db.reset_channel_overrides`)
+  so all channels, including future ones, inherit it. The confirm shows how
+  many channels currently override it.
+- **My Channels form**: button next to each eligible field (injected by script
+  from the whitelist) -> saves this channel, then copies its saved value to
+  every other channel (`db.copy_channel_value_to_all`; a NULL/inherit value
+  copies as inherit).
+- Both ride on the existing save routes via a repeated `apply_all` form value;
+  the buttons are `type=button` + `wrApplyAll()` (never submit buttons, so Enter
+  cannot trigger them). Productions are never touched. Tests:
+  `tests/test_apply_to_all_channels.py`.
+
 ## DONE (2026-10-06) - KILL switch, ONE mechanism for every engine (no retry)
 
-Branch `feat/kill-switch`. Agreed with Kehinde 2026-10-01. The Flow Driver was
-retired since that note was written, so there are only two things to kill, and
-the same call kills both.
+Branch `feat/kill-switch`. Agreed with Kehinde 2026-10-01. There are only two
+things to kill (FlowBatch and the Renderly API ImageGen), and the same call
+kills both.
 - Registry in `studio.py`: everything WR spawns for an image batch goes through
   `_popen_tracked` / `_run_tracked` and is registered under the production's
   folder (`batch_scope(pdir)`; the stage runners `_run_images`, `_run_refs`,
@@ -85,11 +103,10 @@ has finished - the same pass whichever engine produced them.
   overrides the global one. The old global `upscale_after_download` switch was
   removed. Other render resolutions still upscale inline as before.
 - When the level is not "off", `autorun._run_images` drives the engine with
-  upscaling OFF (FlowBatch: `set_flowbatch_tier(..., 0)`; Flow Driver:
-  `flow_upscale=0` + `local_upscale=True`) so the native masters land, then
+  upscaling OFF (`set_flowbatch_tier(..., 0)`) so the native masters land, then
   calls `studio.upscale_images_locally(..., tier=<level>)` once.
-- `studio.upscale_images_locally` uses ONLY FlowBatch's local upscaler for
-  BOTH engines - `node src/cli.js upscale <images dir> --tier <t> --in-place`
+- `studio.upscale_images_locally` uses FlowBatch's local upscaler for
+  every engine - `node src/cli.js upscale <images dir> --tier <t> --in-place`
   (Real-ESRGAN ncnn-Vulkan, Lanczos CPU fallback, warned in the log). There
   is NO Renderly-backend upscaling; without `studio.flowbatch_repo` it
   raises a clear error. `--in-place` skips files already at the tier, so a
@@ -112,7 +129,7 @@ the images Flow DID generate are often still in the project's gallery - never
 downloaded. Re-running the prompts regenerates them (burning Flow quota);
 the manual button pulls the existing results first.
 
-Implemented across all three checkouts:
+Implemented across the checkouts:
 - Button under the IMAGES stage (`studio_detail.html`, next to "Render
   images") -> POST `/studio/<pid>/images/recover` (webapp.py, manual-only -
   it never enters the pipeline plan) -> `autorun.recover_images(cfg, pid)` ->
@@ -122,13 +139,9 @@ Implemented across all three checkouts:
     --report <flowbatch_recover.json> --project-url <url>`; adoption still
     goes through `_adopt_flowbatch_outputs` (which also sweeps flow_images
     files a crashed run had downloaded but never adopted).
-  - `renderly + flow` -> `studio.run_flowdriver_recover` -> the Flow Driver's
-    new `POST /api/recover` (extension-v2): body {shotlistPath, reportPath,
-    outPath, flowProject, only}, poll /api/status, results land directly in
-    images\; report at flow_driver_recover.json.
   - `renderly + api`  -> refused with "no gallery to recover from" (the API
     stores its results itself).
-- Both runners adopt ONLY files missing locally, match gallery tiles to
+- The runner adopts ONLY files missing locally, match gallery tiles to
   shotlist items by prompt, report {recovered, still_missing}, record one
   "images" step (method "manual"; status done ONLY when nothing is still
   missing, so a partial recovery never flips the stage complete), and NEVER
@@ -145,29 +158,9 @@ Implemented across all three checkouts:
   3-attempt path, upscales per config, writes the item under its exact job
   `file` name, and marks its RunState item done. `recover --dry-run` plans
   without a browser.
-- Renderly driver (flow.js --recover / server.js /api/recover): the same
-  three-pass matcher over collectTiles' new `title` field (the tile
-  container's aria-label, the prompt-derived name), `H.readTilePrompt` +
-  `clearComposerAfterRead`, saves under the exact shotlist card name, and
-  writes an atomic schema-1 report. The import/upscale pipeline is not
-  touched - recovered files are Flow masters.
-
-LIVE-CALIBRATED 2026-10-01 (production 20, FlowBatch engine): the first live
-run correctly did nothing - a RELOADED Flow project serves every gallery tile
-through the signed same-origin proxy `https://flow.google.com/asb/...=s1600-rw`
-(not the `flow-content.google/image/...` CDN URL a just-rendered tile has) and
-names tiles with Flow captions ("Woman auctioning vintage camera"), not the
-prompt. FlowBatch's `listGeneratedResults` now accepts both URL shapes for
-recovery (generation's new-result detection still requires the CDN URL), and a
-live probe confirmed the redo control restores the composer to exactly
-`item.prompt` (loadJob folds `job.style` in) - so prompt-read matching is
-correct for reloaded galleries and captions are never relied on. The gallery
-scroll sweep is still the slow part (~2-3 min on a large project) and is
-verified only by the probe's shallow scan; check a full run's tile count
-before trusting an "order" pairing.
 
 Tests: WR tests/test_recover.py; FlowBatch test/commands/recover.test.js +
-driver tests; Renderly tests/js/recover.test.js.
+driver tests.
 
 ## DONE (2026-10-01) — per-channel planning brief: motion profile + presentation
 
@@ -411,7 +404,7 @@ Then: **retest the two failed productions and add two new ones.**
 ### Notes
 - No channel settings or repo source were modified. Productions 7-9 and their folders are left in
   place; do not touch productions 1-6.
-- Renderly backend (:8022) + Flow Driver (:8030) were started as managed services during testing;
+- The Renderly backend (:8022) was started as a managed service during testing;
   FlowBatch uses its local `profile`, **agent mode OFF** (never turn it on).
 - Channel engines: 1 = renderly/flow, 2 = flowbatch upscale 0, 3 = flowbatch upscale 2.
 
@@ -487,12 +480,11 @@ render-final <folder>              -> out\final\final.mp4 (+ captions.srt)   [le
   more - and prod1 (the "smooth" reference) was all-STATIC clips, so it never
   exercised motion. The real remaining lever is a sub-pixel motion filter, not
   resolution.
-- RESOLUTION ALIGNMENT (2026-09-24): all three generators now deliver
+- RESOLUTION ALIGNMENT (2026-09-24): the generators now deliver
   **2560x1440 16:9**, which meets ImgToVideo's 2304x1296 canvas spec ("larger
   same-aspect is fine") and matches its default output. Renderly `4e9f02c`:
   generation stays native Gemini 1K (cost unchanged), the local Real-ESRGAN
   step targets the 2K preset, `DEFAULT_RESOLUTION` 2K, legacy scale 0 rejected;
-  the Flow Driver's `driver-config.json` upscale 1 -> "2K" (gitignored, local).
   FlowBatch: tiers were already 1k/2k/4k (`d1c1922`); the local override
   flipped off -> 2k (gitignored). WhisperRadar: tier 0 omits `--upscale`
   (ImageGen rejects 0 and the whole run failed), tier 3 -> 2k ("3k" was dropped
@@ -545,9 +537,6 @@ reference into the Flow project gallery once, so the image batch never uploads
 - CONSEQUENCE: existing shotlists use names like `hero_kimono_woman` /
   `traditional_japanese_home`, which the new gate REJECTS. They must be renamed
   before a re-run.
-- Renderly side: its driver resolves refs to LOCAL FILES and uploads them (no
-  attach-by-name), so it only gets correctness from this stage, not the
-  no-upload benefit. Attaching by name there is a Renderly change.
 
 UPDATE 2026-09-24 — the ON-THE-FLY mode is implemented end to end. The brief
 (manifest-authoring-brief.md) now teaches three refs modes: SUPPLIED (used
@@ -567,8 +556,8 @@ provided, only the invented one lands in refs_to_generate.
 
 `prepare_flow_batch()` wrote `data\studio\<n>\flow_batch.json` with ref names
 resolved through the registry, but nothing consumed it: `run_imagegen_flow`
-never used the returned path and the driver config points `shotlistPath` at
-`shotlist.json`, so flow.js resolves refs itself. Its only other reference was
+never used the returned path (the engine reads `shotlist.json` and resolves
+refs itself). Its only other reference was
 `RESET_FILES` in webapp.py. The function is now `missing_flow_images()`, which
 returns just the count of images still missing, and the stray file in
 `data\studio\6\` was deleted.
@@ -595,8 +584,8 @@ genuinely weak — which decides whether to adjust the rubric or the bar.
 ### 7. Flow reliability after ~98 images (both engines)
 
 FlowBatch hit a refusal loop at item ~82 ("might violate our policies" /
-"you have not been charged"), and Renderly's driver hit "still busy" timeouts
-from ~98. In both cases the first ~80-100 items rendered fine, so this looks
+"you have not been charged"), and the retired Renderly driver hit "still busy"
+timeouts from ~98. In both cases the first ~80-100 items rendered fine, so this looks
 session-level rather than per-prompt. Worth investigating before
 trusting unattended batches of 100+ images.
 
@@ -630,7 +619,7 @@ orchestration:
    production source (source_video_id NOT IN productions).
 2. CREATE: LLM-crafted title (fallback video title), genre = channel's genre
    (reuse POST /studio/new logic + db.create_production).
-3. SEED: per-genre default bible.md + refs/ copied into the production
+3. SEED: the channel's bible/refs (text or bible_dir/refs_dir) copied into the production
    (without a bible auto-run PAUSES at shots - blocker for unattended runs).
 4. DEFAULTS: narration voice + render_mode per production (see settings below).
 5. QUEUE: sequential auto-runs (job system is single-flight), daily cap
@@ -645,13 +634,13 @@ USER REQUIREMENTS (their words, expanded):
 - A SETTINGS PAGE in the dashboard that persists all of this into the DB
   (new settings storage: channel columns like default_voice, and/or a
   key-value settings table; producer config: per_day cap, default render
-  mode, per-genre bible/refs folders).
+  mode; bible/refs folders are per channel).
 - "We still need to iron out so many things later" - treat details as open;
   confirm with the user before building (schema, UI layout, topic-pick
   logic: newest vs LLM-chosen best topic).
 
-Image-stage reality check when building: Flow driver was abuse-blocked by
-Google (see handoff above); unattended runs should default to Renderly API
+Image-stage reality check when building: Flow once abuse-blocked an automated
+profile; unattended runs should default to Renderly API
 (headless, credit cost) until Flow is stable, or make render_mode a
 per-channel setting on the settings page.
 
@@ -677,8 +666,7 @@ only store soft references, never its tables):
 
 Code:
 - `whisperradar/settings.py` - SPEC drives the page, load() returns typed
-  values, save() coerces/validates (int clamps, HH:MM check, seed_dirs parsed
-  from "genre = folder" lines). Absent keys are left untouched.
+  values, save() coerces/validates (int clamps, HH:MM check). Absent keys are left untouched.
 - `db.py` - own-channel CRUD + settings get/set/all.
 - `studio.py` - `renderly_channels()`, `resolve_renderly_channel()`,
   `renderly_channel_status()`, `sync_renderly_channel()`. `ensure_renderly_channel`
@@ -701,14 +689,7 @@ MIRROR RULES (agreed with the user - do not break these):
    an own channel never moves/renames the Renderly channel.
 
 STILL OPEN (next steps, in order):
-1. **Prompt-length bug on the Renderly Flow path (NOT fixed yet).** The driver
-   prepends the shotlist `style` to every prompt (`extension-v2/flow.js:155-159`
-   + `:222-224` reads `style` as the master), and the real style is 4000 chars,
-   so every card is sent ~4400 chars - over Flow's ~2450 ceiling, which Flow
-   refuses with the SAME message as rate limiting. FlowBatch dodges this
-   because we omit the style there; the Renderly path still does not. This is
-   very likely the cause of the recent Flow batch failures.
-2. Notifications when an unattended run pauses/fails (a 3am pause goes
+1. Notifications when an unattended run pauses/fails (a 3am pause goes
    unnoticed otherwise).
 
 ### FlowBatch pacing and the assetTile trap (2026-09-23)
@@ -767,17 +748,10 @@ sides and both handover notes.
 
 A shotlist can declare a refs registry (`{"hero_kimono_woman":
 "refs/hero_kimono_woman.png"}`) and per-image `refs: ["hero_kimono_woman"]`.
-On the RENDERLY engine the Flow Driver resolves those by BARE NAME against its
-own folder - `D:\Repos\Renderly\extension-v2\<name>.png` - not against the
-production's `refs\`. When they are absent it logs
-`⚠ reference not found, skipping: <path>` per card and generates the image
-without any reference, so consistency rests on the text bible alone.
-
-So for Renderly-engine runs: put the reference images in `extension-v2\` under
-the exact names the shotlist uses, or give the channel a `refs_dir` and copy
-them there (seeding fills the production's `refs\`, which the driver does not
-read). Text-only consistency is fine for test runs; add real refs before
-publishing.
+Those names resolve against the production's own `refs\` folder, which seeding
+fills from the channel's `refs_dir` (or `bible_dir\refs`). Make sure every name
+the shotlist uses exists there; text-only consistency is fine for test runs,
+but add real refs before publishing.
 
 ### Restart the dashboard after Python changes (2026-09-23)
 
@@ -809,8 +783,6 @@ both sides. Two guards, both added after both of the user's channels sat on
   My Channels shows "no monitored channel has this genre" when a channel's
   genre matches nothing - that warning is the difference between "Auto Run
   does nothing" and knowing why.
-- `studio.seed_production` also falls back to a case-insensitive `seed_dirs`
-  lookup for the same reason.
 
 ### Fewer ports: the dashboard is the control surface (2026-09-23)
 
@@ -823,22 +795,21 @@ needed, and when:
 | WhisperRadar dashboard | 8540 | always |
 | Renderly backend | 8022 | Renderly engine only (Gemini, imports, upscale) |
 | Renderly frontend (Vite) | 5173 | NEVER - WhisperRadar uses the backend API |
-| Flow Driver (extension-v2) | 8030 | Renderly engine + flow mode only |
 | FlowBatch | none | FlowBatch engine only (CLI spawns its own Chrome) |
 | FlowBatch UI | 8787 | NEVER - optional frontend |
 
 So the FlowBatch engine needs no extra service at all. Renderly's
-start.bat is the main source of sprawl (it opens backend + frontend + driver
+start.bat is the main source of sprawl (it opens backend + frontend
 consoles); WhisperRadar starts the backend directly with uvicorn instead.
 
-- **Settings > Tools** lists Renderly backend / Flow Driver / FlowBatch
+- **Settings > Tools** lists Renderly backend / FlowBatch
   with status and Start/Stop buttons (`POST /services/<name>/start|stop`), so
   no .bat needs to stay open. Status uses `services.MANAGER.status_cached`
   (stale-while-revalidate, never blocks a page render).
 - **Stop only ever touches a service WhisperRadar started.** Stopping an
   untracked one returns "left alone". A force stop exists in the API
   (`force=1`, matches the listening port) but is deliberately NOT in the UI.
-- `services_autostart` (Settings, default off) brings the backend + driver up
+- `services_autostart` (Settings, default off) brings the backend up
   with the dashboard, in a background thread so boot stays instant.
 - Keep the thread-spawn pattern defensive: set the `loading` flag, spawn, and
   reset the flag if the spawn raises - a stuck flag silently disables the
@@ -858,8 +829,12 @@ project URL, plus the Renderly channel mirror.
 
 Global only (Settings): the Auto Run master switch (`autorun_enabled`), the
 global per-day cap, scheduler on/off + interval, notifications, "stop services
-after images", and the per-genre seed_dirs fallback. These are process-level,
-not per-channel.
+after images". These are process-level, not per-channel.
+
+REMOVED (2026-10-06): the global "Narration voice" (`default_voice`) and the
+global per-genre "bible/refs folders" (`seed_dirs`) settings. Voice and art
+direction are per channel (My Channels: voice, bible, bible_dir, refs_dir) or
+per production. Stored values of the old keys are ignored.
 
 The producer evaluates the run window, candidate window, topic pick and LLM
 PER CHANNEL (`settings.for_production`), so one channel can run at 02:00-03:00
@@ -880,17 +855,15 @@ Two bugs found 2026-09-22 and fixed - both places had ignored the channel:
 
 `whisperradar/services.py` (`MANAGER`) owns the external services the images
 stage needs. `services_for(engine, mode)` says what a run requires:
-renderly+flow -> backend + Flow Driver; renderly+api -> backend;
-flowbatch -> nothing (a CLI that starts/stops its own browser).
+renderly -> backend (for the PL/PR API pass); flowbatch -> nothing (a CLI that starts/stops its own browser).
 
 Conservative rules - keep them:
 - A service that already answers is YOURS: never tracked, never stopped, so a
-  Renderly/Flow Driver you started by hand is safe.
+  Renderly backend you started by hand is safe.
 - Only processes this module spawned are stopped, and only when
   `services_managed` is on (Settings, default OFF).
 - The Renderly backend is shared and is deliberately never killed (`release`
-  logs "leaving the Renderly backend running"); only the Flow Driver is stopped
-  with `taskkill /T /F`.
+  logs "leaving the Renderly backend running").
 - Starting Renderly prefers a direct
   `backend\.venv\Scripts\python.exe -m uvicorn main:app --port <port>`
   (trackable, no stray consoles) and falls back to start.bat, which is marked
@@ -954,8 +927,8 @@ manual one cannot overlap and progress shows in the UI.
 
 `default_engine` (global in Settings, per channel on My Channels, overridable
 on the images stage) now actually switches the images stage:
-- `renderly` - the existing path (Flow Driver or Renderly API + Renderly
-  upscale), unchanged.
+- `renderly` - FlowBatch for most shots plus the Renderly API for PL/PR (see
+  "Consolidated engines" below).
 - `flowbatch` - the standalone Playwright Flow CLI, consumed IN PLACE
   from `studio.flowbatch_repo` (never vendored: its Google session lives
   in a gitignored `profile\`, and a fresh profile means a new Google login,
@@ -1108,8 +1081,8 @@ LLM) and
 
 - `studio.seed_production(cfg, conn, prod)` copies `bible.md` and `refs\`
   into a production folder. Source order: the production's own channel
-  (bible_dir / refs_dir), then the global per-genre `seed_dirs[genre]`
-  (a single folder holding bible.md + a refs\ subfolder). Idempotent - it
+  (bible text / bible_dir / refs_dir; a bible_dir holding a refs\ subfolder is
+  used for the refs too). There is no global fallback. Idempotent - it
   never overwrites existing files. Returns {bible, refs, source}; source ''
   means nothing was configured, so no writes happen.
 - Called on `/studio/new` (when an own channel is picked) and at the start of
@@ -1131,7 +1104,7 @@ a subprocess) and FlowBatch (CLI, Google session in a gitignored profile)
 are all used from their own checkouts via config paths. A submodule copy would
 strand Renderly's database/storage/profile and add a second login for
 FlowBatch. Paths live in config.yaml: `imgtovideo_repo`, `renderly_url`,
-`flow_driver_dir`, `flowbatch_repo`.
+`flowbatch_repo`.
 
 ### Per-channel defaults wired into the pipeline — DONE (2026-09-22)
 
@@ -1145,13 +1118,13 @@ means "inherit the global".
   defaults, which made "inherit" impossible). `db._migrate_own_channels`
   rebuilds the old table in place, preserving rows.
 - `autorun._effective(cfg, pid)` wraps it; `_default_render_mode` resolves to
-  flow/api ('auto' = Flow when the driver is installed, else API).
+  flow/api ('auto' = API; 'flow' = every shot on FlowBatch).
 - images stage: flow mode passes the own channel's mirror NAME, api mode
   resolves its Renderly channel ID (`studio.resolve_renderly_channel(...,
   create=True)`) and passes it + the effective upscale to
   `studio.run_imagegen(cfg, pdir, channel=, upscale=)`.
-- audio stage: TTS voice = production.voice -> channel.default_voice ->
-  global.default_voice.
+- audio stage: TTS voice = production.voice -> channel.default_voice
+  (no global voice since 2026-10-06; empty = the TTS built-in default).
 - `/my-channels` edit row now exposes voice, engine, render mode, upscale,
   auto-run on/off, per-day cap, topic pick, bible folder, refs folder; empty =
   inherit. A compact summary line shows the resolved choices.
@@ -1219,160 +1192,7 @@ page, not a config.yaml rewrite (WhisperRadar never writes config.yaml; a
 dump would strip its comments). Channels/settings live in SQLite.
 
 
-### NEXT SESSION HANDOFF (2026-09-21, ~21:40) — STEP 1 GREEN on the second profile
-
-flow-simple.js (extension-v2) is the minimal no-reference driver and it
-PASSED step 1: S01_01 prompt (truncated master, no refs) rendered the
-correct scene end-to-end on profile-b (a second signed-in profile, free tier,
-Nano Banana 2 Lite) — 1/1, saved to Temp\kilo\noref-test. What made it work:
-1. Prompt length: composed master+prompt of ~2500 chars keeps the submit
-   arrow DISABLED. --maxchars (default 2400) trims the MASTER portion at a
-   word boundary; card prompt always intact.
-2. Submit arrow identity: aria-label "Start generation" in some views, a
-   bare "arrow_forward" icon button in others — findArrow matches both.
-3. View targeting: only the FEED ("What do you want to create?") hosts the
-   create composer. Batch DETAIL views host "What do you want to change?"
-   (edits an existing image!) — ensureComposeSurface navigates Back from
-   detail views, never types into a change composer.
-4. Harvest: FIRST grid tile (newest) + sha1 content-hash. Old tiles
-   re-signing URLs / loading full-res variants keep their positions, so
-   position 0 + new bytes = the result. Verify visually before trusting.
-
-Run: node flow-simple.js --file <batch> --out <dir> --profile <dir>
-     [--limit N] [--maxchars 2400] [--timeout ms]
-batch.json: { style, images: [{file, prompt}] } — UTF-8 no BOM (PowerShell
-5.1 Set-Content adds a BOM that breaks JSON.parse; node writes are clean).
-
-The OLD flagged profile (extension-v2\profile) is
-still abuse-blocked ("unusual activity"). profile-b is clean. Do not
-rotate profiles to dodge flags — the choice of profile is the user's.
-
-NEXT (agreed, one at a time):
-1. STEP 2 — one reference: upload the image to Flow's gallery ONCE, then
-   attach via the composer's "+" menu → gallery selection (NEVER disk
-   drops into the composer). Assert: exactly ONE ingredient chip before
-   triggering (chip count must equal the refs array length — user caught
-   Flow stacking extra chips). Verify the render is on-model.
-2. STEP 3 — two to three refs, same assertion, then re-add echo/label
-   protections from flow.js only as needed.
-3. Then point WhisperRadar's images stage at the proven script and restart
-   the production-4 auto-run (85 cards, images dir empty).
-4. Backlog (automated producer) stays parked until the Flow path is stable.
-   (OpenSpeaker favorites shipped 2026-09-22 - see above.)
-
-### HANDOFF (2026-09-21, ~13:00) — superseded, kept for the fix history
-
-Root causes found & FIXED in Renderly\extension-v2\flow.js (all proven live):
-1. Trigger never clicked: synthetic Enter + `clicked: true` without a click.
-   Now: trusted typing (click composer coords + Ctrl+A + type via Playwright),
-   then trusted click on the composer arrow (aria-label exactly "Start
-   generation", 90s enabled-wait), then trusted Enter fallback; every trigger
-   is VERIFIED (busy or fresh result) and failures dump a button inventory +
-   screenshot (trigger-fail.png / timeout-<card>.png in extension-v2).
-2. Harvester discarded real results: finished images render as
-   flow.google.com/asb/... URLs now; isFinalResultUrl accepts both hosts.
-3. URL identity is unreliable: Flow re-signs tile URLs (whole-grid re-sign =
-   24 "fresh" URLs) and old tiles load full-res variants progressively.
-   Freshness is now CONTENT-based: every candidate is fetched, sha1-hashed
-   (sessionHashes), skipped if seen; PLUS ownership check - a candidate is
-   only adopted when its tile's prompt-derived aria-label contains the
-   prompt's first 30 chars (H.tileLabelForSrc). Misattributions (house/
-   living-room plates saved as card images) came from exactly this.
-4. Echo-cure killed cards: refill+retrigger on echo aborted running
-   generations and their results got swept as seen and lost. Echoes are now
-   ignored; one late re-trigger at 60s only when submit is idle-enabled.
-5. generationBusy false-busy: disabled submit == idle-empty composer too;
-   now requires composer text.
-6. Stale ingredient chips survive cards/runs and hijack generations
-   (rendered BG_LIVING_ROOM instead of the prompt - user had noticed "more
-   refs in the composer than the array"): H.clearComposerChips runs before
-   every fill and runVersion HARD-FAILS if chips remain (chip count > the
-   card's refs array must be impossible). --refs-mode none added for
-   stepwise testing (run flow.js directly, no channel => no import).
-7. Policy/abuse rejections detected via H.policyRejected (the Failed panel);
-   2 auto-retries then a clear failure. NOT YET RELIABLE LIVE (see below).
-
-THE REMAINING WALL - NOT CODE: Google is anti-automation-blocking the
-driver's session/profile. Screenshot proof (extension-v2\trigger-fail.png):
-"Failed - We noticed some unusual activity. Please visit the Help Center...
-You have not been charged." Earlier failures said "might violate our
-policies" - same soft-block, other flavor. Every generation attempt gets
-rejected pre-charge; the submit arrow stays disabled; composer input is
-dropped. All of today's 0/85 runs were this, not the (now fixed) code bugs.
-Verified working end-to-end when a generation DOES pass: prompt -> trigger
--> content-hash harvest -> save (NOREF_S01_01.png in
-C:\Users\Kehinde\AppData\Local\Temp\kilo\noref-test).
-
-USER'S KEY EXPERIMENT (2026-09-21 ~11:00): the FULL master prompt (style.md
-- esp. "Recurring character identity must be preserved exactly from the
-supplied reference: mixed-race half-Asian woman..." + the long "no
-photorealism/no Pixar..." list) trips the violation filter MANUALLY TOO.
-The TRUNCATED master (cut at "Recurring character identity must be
-preserved") passes manually - user rendered the correct S01_01 scene
-(woman at grandma's cabinet, tea set, collector plates, bubble wrap) 4+
-times. shotlist.json style field TRUNCATED accordingly
-(shotlist.json.bak-full-master holds the original).
-
-Automation profile status: flagged. The driver's composer refuses to ARM
-(disabled=true) for ANY input method - trusted typing, execCommand
-insertText, clipboard paste - even when the text verifiably lands in the
-focused bottom-area editable (screenshots prove the visible pill empty /
-arrow disabled). Manual use in the user's own browser passes normally.
-Do NOT rotate profiles to dodge the flag - let it rest (24-48h) and retry,
-or resolve via the Help Center link in the failure panel.
-
-NEXT STEPS (user agreed, one at a time):
-1. Wait out the abuse block (hours/day), then test step 1 = prompt only
-   (no refs): node flow.js --file <one-card-batch> --out <tmp> --refs-mode
-   none. Manual test in the same automated Chrome first to see if manual
-   passes while automation doesn't. If manual also blocked: Help Center
-   appeal. Test batch: Temp\kilo\noref-test\batch.json (S01_01 prompt).
-2. Step 2 = exactly ONE ref; step 3 = 2-3 refs. Chip count must equal the
-   refs array length - assert before trigger (already hard-fails on extras).
-3. Only then restart the WhisperRadar auto-run for production 4 (85 cards,
-   work_dir E:\YOUTUBE\PERSONAL FINANCE\These 10 Things At Home Worth
-   Serious Money; images dir currently EMPTY). Old handoff notes below.
-
-### PREVIOUS HANDOFF (2026-09-21 ~09:00) - superseded by the above
-
-State: production 4 ("These 10 Things", work_dir E:\YOUTUBE\PERSONAL FINANCE\These 10 Things...)
-is re-rendering all 85 images from the current shotlist.json. A batch with the latest
-flow.js was restarted ~08:40 local and left running. VERIFY FIRST: /studio/job on :8540,
-then VIEW the newest images in images\ next to their shotlist prompts (I read the .png
-files directly - the mismatch was visual, not metadata).
-
-The bug that was killing renders: gallery asset previews (uploaded ref plates -
-BG_CLOSET/ KITCHEN/ LAUNDRY etc., 5504x3072) mount in the ingredient picker as fresh
-flow-content.google URLs, indistinguishable from generation results by host alone.
-flow.js adopted them as card results → plates/ref-sheets saved under card names
-(S01_02 was literally Maya.png upscaled). Fixes now in extension-v2/flow.js:
-1. Refs pre-uploaded ONCE per batch before any card (ensureRefsInGallery, chunked
-   drops of 3 - 11 full-res files in one drop crashed the tab).
-2. sessionSeen set: a flow-content URL is acceptable as a result exactly once per
-   session; baseline-swept after load, after preupload, and on every panel open
-   (harvestAssetPanel - panel tiles are gallery assets, never results).
-3. Ingredient-echo guard in runVersion: if the candidate image's dimensions match ANY
-   batch ref file (imageDimensions helper), it is an echo - mark seen, refill prompt,
-   re-trigger (an echo can fake "auto-generation already started" and skip the real
-   trigger), full timeout window restarts. Max 2 echo cycles per card.
-4. waitForIdle sweeps straggler results of failed cards into sessionSeen.
-NOT YET VALIDATED LIVE: fix 3's refill+re-trigger path (the batch was restarted right
-after implementing it). If echoes still win: check the driver log (8030/api/status),
-and consider comparing pixel data, not just dimensions.
-
-Also this session: images stage re-reads shotlist.json mid-batch (round loop in
-run_imagegen_flow - a shotlist edit stops the batch and restarts from the new plan);
-start-over endpoint (style/script/images scopes; audio only with the checkbox);
-merge guard pauses auto-run on ANY unrendered shotlist image (sanitize would drop
-them forever); fast-stop cancels the Flow batch mid-images-stage; Flow Driver as
-default image source; harness at C:\Users\Kehinde\AppData\Local\Temp\kilo\
-wr_autorun_test\run_tests.py (64/64 + T7 mid-stage cancel + T8 merge guard + T9
-shotlist hot-reload, with a mock driver on :8050 and real-DB-untouched assertion).
-REMOVED as landmines: extension-v2\shotlist.json + prompts.json (generate.bat
-fallbacks pointed at other productions' plans) - generate.bat also hardcodes 2 old
-character refs on every card, don't use it for these renders. NOTE: driver-page runs
-render ALL images (no skip-existing) - always render through WhisperRadar.
-
+### Auto-run pipeline design
 
 Goal: one button on the Studio production page that automatically executes all remaining
 pipeline stages in order, so the user can do manual steps (e.g. upload audio) mid-pipeline,
@@ -1398,7 +1218,7 @@ are unrendered instead of letting sanitize_shotlist shrink the plan.
 - Button **"▶ Run till finish"** lives at the TOP of the production page (header row, next to
   the stage stepper — it is a page-level action, not a stage action). User suggested top; confirmed good.
 - Clicking it shows a confirm modal listing exactly what will run from the current stage:
-  stage list, which hooks will be used (TTS / Renderly API / Flow Driver incl. channel,
+  stage list, which hooks will be used (TTS / Renderly API / FlowBatch incl. channel,
   project, refs, upscale from the saved flow settings), a credits warning for the images
   stage (N images × Renderly/Flow cost), and that merge can take a long time.
 - Pipeline always **stops before review** — publishing stays a human decision. After merge,
@@ -1415,12 +1235,11 @@ are unrendered instead of letting sanitize_shotlist shrink the plan.
   without a character/reference bible, so shots PAUSES (auto-run) / errors
   (manual route) when pdir/bible.md is missing. The brief now outputs
   shotlist.json FIRST and the batch sheet second - parse_shotlist_output is
-  already order-agnostic. Per-image "refs" entries are resolved by flow.js
+  already order-agnostic. Per-image "refs" entries are resolved by the engine
   itself against the production's refs\ folder (the old flow_batch.json that
   pre-resolved them was unused and has been removed).
 - images: render missing shotlist images via the saved render_mode, defaulting to
-  the Flow Driver (falls back to Renderly API only when the Flow Driver is not
-  installed) + saved flow_channel/flow_project/upscale — reuse the images-stage form fields.
+  FlowBatch + saved flow_channel/flow_project/upscale — reuse the images-stage form fields.
 - merge: ImgToVideo hook render (long; needs audio, srt, images).
 - review: STOP — human approves.
 
@@ -1473,9 +1292,7 @@ the images-stage form — persisting them per production is optional polish.
   folders. `services._start_renderly` runs `uvicorn main:app` from
   `engines/renderly-api` with the repo `.venv` (packages are in
   requirements.txt - rerun setup.cmd after pulling).
-- The Flow Driver (Renderly's extension-v2) is RETIRED: its code, config
-  (`flow_driver_dir`, `flow_driver_url`), service (`flow-driver`), stop route
-  and Settings row are gone. Engines now: `flowbatch` = every shot on FlowBatch;
+- Engines are: `flowbatch` = every shot on FlowBatch;
   `renderly` = FlowBatch FIRST for every shot except PL/PR
   (`run_imagegen_flowbatch(... skip_motion=("PL", "PR"))`), then the API for
   PL/PR (`run_imagegen(... motion_filter=("PL", "PR"))`), then - only if the API
@@ -1486,12 +1303,11 @@ the images-stage form — persisting them per production is optional polish.
   The job-wide art style is judged against the WHOLE shotlist's longest prompt
   (never just the remainder), falls back to style.md, and a style that cannot
   fit Flow's 2420-char ceiling puts a visible warning on the production.
-  Stage 7 has a "Stop image generation" button (`/studio/<pid>/images/stop`,
-  sets the job's cancel flag; the card being generated finishes first).
+  Stage 7 has a "Kill image generation" button (`/studio/<pid>/images/stop`;
+  see the KILL switch section at the top).
   Render mode `flow` (stored per channel/production) now means "all shots on
   FlowBatch": `studio.effective_engine(engine, mode)` maps engine renderly +
-  mode flow to flowbatch; `auto` means api. Older AGENTS sections below that
-  describe the Flow Driver are historical.
+  mode flow to flowbatch; `auto` means api.
 - Still external: ImgToVideo (.NET) only.
 
 ## Shot-type caps and host-in-frame (briefs.normalize_types)

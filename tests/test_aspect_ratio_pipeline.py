@@ -14,7 +14,6 @@ Covers the 2026-09 aspect work in WhisperRadar without any network or spend:
 The expected values below mirror the source tables exactly:
   ImgToVideo.Cli/Program.cs      `canvas` / `aspect`
   whisperradar/studio.py         FLOWBATCH_ASPECT_BY_MOTION
-  Renderly extension-v2/flow.js  MOTION_ASPECT + FLOW_SUPPORTED_ASPECTS
 
 Run: python -m unittest discover -s tests
 """

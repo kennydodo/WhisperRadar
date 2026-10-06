@@ -13,20 +13,19 @@ Core paths (motion code = last `_` token of `<name>_<MOTION>.png`):
 
 | Test | Path | Ratios exercised |
 | --- | --- | --- |
-| 1 | WhisperRadar -> Renderly (engine `renderly`, mode `api`) | PL/PR -> paid API **21:9**; ST/ZI/ZO -> Flow Driver **16:9**; PU/PD -> Flow Driver **1:1**; PV -> Flow Driver **16:9** |
+| 1 | WhisperRadar -> Renderly (engine `renderly`, mode `api`) | PL/PR -> paid API **21:9**; ST/ZI/ZO -> FlowBatch **16:9**; PU/PD -> FlowBatch **1:1**; PV -> FlowBatch **16:9** |
 | 2 | WhisperRadar -> FlowBatch (engine `flowbatch`) | **1:1** (PU/PD), **16:9** (ST/ZI/ZO/PL/PR/PV) |
 
 9:16 / 4:3 / 3:4 are intentionally out of scope: the shotlist never selects
 them and they are never sent to the API. Only PL/PR ever use the paid API.
 
 On the renderly engine one batch is split across the engine's two halves -
-PL/PR to the paid API, everything else to the free Flow Driver. If the API
-hits a quota/billing wall (ImageGen exit 3) the remaining PL/PR fall through
-to the Flow Driver as 16:9.
+PL/PR to the paid API, everything else to FlowBatch. If the API hits a
+quota/billing wall (ImageGen exit 3) the remaining PL/PR fall through to
+FlowBatch as 16:9.
 
 `aspect_matrix.py` is the single source of truth for the expected values:
-`RENDERLY_API_ASPECT`, `FLOWBATCH_ASPECT_BY_MOTION`, `FLOW_DRIVER_MOTION_ASPECT`
-and `FLOW_SUPPORTED_ASPECTS`.
+`RENDERLY_API_ASPECT` and `FLOWBATCH_ASPECT_BY_MOTION`.
 
 ## Step 0 - fast, free, no code was run to make these
 
@@ -64,8 +63,8 @@ python scripts\aspect_tests\verify_rendered_aspects.py <renderly_pid>
 ```
 
 Expect: **PL/PR -> 21:9** (the paid API, the only API traffic); ST/ZI/ZO ->
-16:9, PU/PD -> 1:1 and PV -> 16:9, all through the Flow Driver. If the PL/PR
-API call hits a quota wall, those fall through to the Flow Driver as 16:9 and
+16:9, PU/PD -> 1:1 and PV -> 16:9, all through FlowBatch. If the PL/PR
+API call hits a quota wall, those fall through to FlowBatch as 16:9 and
 the step detail reads "quota-limited".
 
 ## Step 3 - test 2: WhisperRadar -> FlowBatch
@@ -81,9 +80,9 @@ PL/PR/PV all render 16:9). Requires a signed-in Google session in FlowBatch's
 
 ## Notes and known risk
 
-- `extension-v2/flow.js setProjectAspectRatio()` was **not** verified against a
-  live Flow session (its own comment says so). Test 1's Flow-Driver shots and
-  test 2's PU/PD result are the first real checks of that selector path.
+- FlowBatch's per-item aspect selection has not been checked against every
+  live Flow UI state; test 1's non-API shots and test 2's PU/PD result are the
+  first real checks of that path.
 - The API/Flow split and the quota fallback both key off the "quota"/"billing"
   wording in Renderly's error text; a wording change in `gemini_client.py`
   would defeat the fallback. Test 1's log and step detail are where to confirm.

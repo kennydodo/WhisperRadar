@@ -1381,8 +1381,7 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     Optional per channel. A ref you SUPPLY is used as-is; a ref with no usable
     file is generated from its own prompt and placed in the production's refs\\
     folder, with the shotlist registry path filled in - so the images stage can
-    upload it to the Flow project under the ref's own name (FlowBatch) or
-    resolve it as a local file (the Renderly driver).
+    upload it to the Flow project under the ref's own name (FlowBatch).
 
     Engine-aware: a "flowbatch" channel generates refs via FlowBatch; every
     other channel (Renderly, including Flow-mode) generates them via the SAME
@@ -1670,7 +1669,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
                         source = "FlowBatch (gallery recovery)"
                         break
                 # Flow gave up on some cards ("still busy"). Pause, then resume:
-                # the driver skips what is already on disk, so the next round
+                # the runner skips what is already on disk, so the next round
                 # only attempts the gaps.
                 if not _should_resume_images(exc, round_no,
                                              refusal_wait_seconds,

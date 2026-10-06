@@ -6,7 +6,6 @@ validates and coerces the posted form. Per-channel overrides live on
 own_channels and are NULL when the channel inherits these globals.
 """
 
-import json
 import re
 
 from . import briefs
@@ -22,7 +21,7 @@ FLOW_NATIVE_TIER_LABELS = {
 }
 
 # Each entry: key, label, type, default, plus type-specific extras.
-# type is one of: bool | int | str | choice | time | map
+# type is one of: bool | int | str | choice | time
 SPEC: list[dict] = [
     {
         "key": "llm_default", "type": "provider", "default": "",
@@ -294,12 +293,6 @@ SPEC: list[dict] = [
                 "4 = 4K 3840x2160 (over-spec, slower).",
     },
     {
-        "key": "default_voice", "type": "str", "default": "",
-        "label": "Narration voice",
-        "help": "OpenSpeaker voice id used for TTS unless a channel or "
-                "production overrides it. Empty = the built-in default.",
-    },
-    {
         "key": "images_chunk_size", "type": "int", "default": 60,
         "min": 0, "max": 500,
         "label": "Images per run",
@@ -449,12 +442,6 @@ SPEC: list[dict] = [
         "label": "Run window end",
         "help": "End of the daily auto-run window.",
     },
-    {
-        "key": "seed_dirs", "type": "map", "default": {},
-        "label": "Per-genre bible/refs folders",
-        "help": "One per line: genre = folder. A new production copies that "
-                "folder's bible.md and refs\\ into its working directory.",
-    },
 ]
 
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
@@ -479,7 +466,6 @@ GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Production & images", [
         "default_engine", "default_render_mode", "default_upscale",
-        "default_voice", "seed_dirs",
         "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",
         "images_still_busy_wait_minutes", "images_throttle_wait_minutes",
@@ -555,41 +541,7 @@ def _coerce(entry: dict, raw):
         return text if text in entry["choices"] else entry["default"]
     if kind == "time":
         return text if _TIME_RE.match(text) else entry["default"]
-    if kind == "map":
-        return parse_seed_dirs(text)
     return text
-
-
-def parse_seed_dirs(text) -> dict:
-    """'genre = folder' lines -> {genre: folder}. A stored JSON object is
-    also accepted (settings are persisted as JSON)."""
-    if isinstance(text, dict):
-        return {str(k): str(v) for k, v in text.items()}
-    text = (text or "").strip()
-    if not text:
-        return {}
-    if text.startswith("{"):
-        try:
-            data = json.loads(text)
-        except ValueError:
-            return {}
-        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-    out: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        genre, sep, folder = line.partition("=")
-        genre, folder = genre.strip(), folder.strip()
-        if sep and genre and folder:
-            out[genre] = folder
-    return out
-
-
-def format_seed_dirs(mapping) -> str:
-    if isinstance(mapping, str):
-        mapping = parse_seed_dirs(mapping)
-    return "\n".join(f"{k} = {v}" for k, v in sorted((mapping or {}).items()))
 
 
 def load(conn) -> dict:
@@ -631,7 +583,7 @@ def for_production(conn, prod) -> dict:
     own_per_day = row_get(own, "per_day")
     return {
         "voice": (row_get(prod, "voice") or row_get(own, "default_voice")
-                  or glob["default_voice"] or None),
+                  or None),
         "engine": row_get(own, "default_engine", glob["default_engine"]),
         "render_mode": (row_get(prod, "render_mode")
                         or row_get(own, "default_render_mode")
@@ -756,9 +708,7 @@ def save(conn, form: dict) -> tuple[dict, list[str]]:
                                 f"{entry['default']}")
     for key, value in values.items():
         entry = SPEC_BY_KEY[key]
-        stored = (json.dumps(value, ensure_ascii=False)
-                  if entry["type"] == "map" else
-                  ("1" if value else "0") if entry["type"] == "bool" else
-                  str(value))
+        stored = (("1" if value else "0") if entry["type"] == "bool"
+                  else str(value))
         db.set_setting(conn, key, stored)
     return values, warnings

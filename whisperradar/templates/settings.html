@@ -140,8 +140,20 @@
   </div>
   </div>
 
+  <script>
+  function wrApplyAll(btn, key, msg) {
+    // type=button on purpose: a submit button inside the form would become
+    // the Enter-key default and could trigger "apply to all" by accident.
+    if (!confirm(msg)) return false;
+    var f = btn.form, i = document.createElement('input');
+    i.type = 'hidden'; i.name = 'apply_all'; i.value = key;
+    f.appendChild(i);
+    if (f.requestSubmit) f.requestSubmit(); else f.submit();
+    return false;
+  }
+  </script>
   <form method="post" action="/settings/save" id="settings-form">
-  {% macro field(entry, values, providers, seed_dirs_text) %}
+  {% macro field(entry, values, providers) %}
         <div class="fieldwrap" id="wrap-{{ entry.key }}">
           {% if entry.type == 'bool' %}
             <div class="checkrow">
@@ -171,9 +183,6 @@
             {% elif entry.type == 'time' %}
               <input type="time" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      value="{{ values[entry.key] }}">
-            {% elif entry.type == 'map' %}
-              <textarea name="{{ entry.key }}" id="f-{{ entry.key }}"
-                        placeholder="personal-finance = E:\YOUTUBE\PERSONAL FINANCE\seed">{{ seed_dirs_text }}</textarea>
             {% elif entry.type == 'provider' %}
               <select name="{{ entry.key }}" id="f-{{ entry.key }}">
                 <option value="">(default)</option>
@@ -187,6 +196,14 @@
             {% endif %}
           {% endif %}
           <div class="help">{{ entry.help }}</div>
+          {% if entry.key in apply_all_keys %}
+          {% set n = override_counts.get(entry.key, 0) %}
+          <button type="button" data-apply-all="{{ entry.key }}"
+                  class="apply-all" style="margin-top:4px; font-size:12px"
+                  title="Save, then make every channel inherit this global value"
+                  onclick="return wrApplyAll(this, '{{ entry.key }}', 'Save and apply to all channels?\n\n{{ n }} channel(s) currently override this; they will be reset to follow the global value. Productions that already saved their own value keep it.');">
+            apply to all channels{% if n %} ({{ n }} override){% endif %}</button>
+          {% endif %}
         </div>
   {% endmacro %}
   {% for group_name, group_spec in groups %}
@@ -255,18 +272,18 @@
     {% if group_name == "LLM" %}
     <div class="grid2">
       {% for entry in group_spec if entry.key not in ("ai33_api_key", "ai33_base_url") %}
-      {{ field(entry, values, providers, seed_dirs_text) }}
+      {{ field(entry, values, providers) }}
       {% endfor %}
     </div>
     <div class="grid2" style="margin-top:14px">
       {% for entry in group_spec if entry.key in ("ai33_api_key", "ai33_base_url") %}
-      {{ field(entry, values, providers, seed_dirs_text) }}
+      {{ field(entry, values, providers) }}
       {% endfor %}
     </div>
     {% else %}
     <div class="grid2">
       {% for entry in group_spec %}
-      {{ field(entry, values, providers, seed_dirs_text) }}
+      {{ field(entry, values, providers) }}
       {% endfor %}
     </div>
     {% endif %}

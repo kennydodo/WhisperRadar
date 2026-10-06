@@ -5,7 +5,7 @@ For every shotlist image it reports:
   requested   the aspect the path actually asked for
               renderly/api  -> out\\image-batch.json "aspect"
               flowbatch     -> flowbatch.json "aspectRatio" (or the default)
-              renderly/flow -> (the Flow Driver config; shape is the evidence)
+              renderly/flow -> flowbatch.json (render mode flow = all FlowBatch)
   actual      the pixel shape of images\\<file>, read from the PNG header
 
 and fails when a rendered image's shape is more than RATIO_TOLERANCE away from
@@ -27,7 +27,7 @@ from whisperradar.config import load_config  # noqa: E402
 from whisperradar import db, settings as settings_mod, studio  # noqa: E402
 
 from aspect_matrix import (  # noqa: E402
-    DEFAULT_ASPECT, RATIO_TOLERANCE, RENDERLY_API_MOTIONS, flow_driver_aspect,
+    DEFAULT_ASPECT, RATIO_TOLERANCE, RENDERLY_API_MOTIONS,
     flowbatch_aspect, motion_of, ratios_match, renderly_api_aspect,
     renderly_engine_aspect,
 )
@@ -55,16 +55,15 @@ def _path_kind(eff) -> str:
     if engine == "flowbatch":
         return "flowbatch"
     mode = (eff.get("render_mode") or "api").lower()
-    return "flowdriver" if mode == "flow" else "renderly"
+    # render mode "flow" = every shot on FlowBatch (studio.effective_engine)
+    return "flowbatch" if mode == "flow" else "renderly"
 
 
 def _expected(kind: str, motion: str) -> str:
     if kind == "flowbatch":
         return flowbatch_aspect(motion)
-    if kind == "flowdriver":
-        return flow_driver_aspect(motion)
     # engine=renderly/mode=api: only PL/PR go to the paid API; the rest of the
-    # shotlist is rendered by the Flow Driver half of the same batch.
+    # shotlist is rendered by the FlowBatch half of the same batch.
     return renderly_engine_aspect(motion)
 
 
@@ -75,8 +74,8 @@ def _requested_from_batch(pdir: Path, kind: str) -> dict:
         if p.exists():
             data = json.loads(p.read_text(encoding="utf-8"))
             # export-batch writes an aspect for every missing file, but only the
-            # PL/PR slice actually reaches the API; the Flow Driver's own ratio
-            # for the rest is not recorded here.
+            # PL/PR slice actually reaches the API; FlowBatch's own ratio
+            # for the rest is read from flowbatch.json when present.
             return {i["file"]: i.get("aspect") for i in data.get("images", [])
                     if motion_of(i["file"]) in RENDERLY_API_MOTIONS}
         return {}

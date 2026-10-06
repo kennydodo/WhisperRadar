@@ -38,7 +38,7 @@ STYLE = ("TEST project for the 2026-09 aspect-ratio work - flat lighting, "
 
 # The compact studio test: 10 prompts, exactly one each of PL/PR/PV so the
 # wide/pan paths are exercised. On engine=renderly the API handles PL/PR (21:9)
-# while everything else - PV included, now 16:9 - goes through the Flow Driver;
+# while everything else - PV included, now 16:9 - goes through FlowBatch;
 # FlowBatch renders all 10 through Flow (PL/PR/PV as 16:9).
 STUDIO_TEST_MOTIONS = ["ST", "ZI", "ZO", "PU", "PD", "ST", "ZI", "PL", "PR", "PV"]
 

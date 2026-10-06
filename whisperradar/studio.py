@@ -298,8 +298,7 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
 
     Text: the channel's `bible` and `style` are written straight into
     bible.md / style.md. Folders: `bible_dir` (holding bible.md) and
-    `refs_dir` (copied into refs\\), else the global per-genre `seed_dirs`
-    entry for the production's genre. This is what keeps an unattended run
+    `refs_dir` (copied into refs\\). This is what keeps an unattended run
     from pausing at the shots stage, whose planning brief refuses to plan
     without a bible.
 
@@ -313,12 +312,6 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
         return {"bible": False, "style": False, "refs": 0, "source": ""}
     pdir = prod_dir(cfg, prod["id"])
     eff = settings.for_production(conn, prod)
-    genre = (prod["genre"] if "genre" in prod.keys() else None) or "general"
-    seed_map = settings.load(conn).get("seed_dirs") or {}
-    seed = seed_map.get(genre)
-    if seed is None:  # genres are free text: fall back to a case-insensitive hit
-        seed = next((v for k, v in seed_map.items()
-                     if k.lower() == genre.lower()), None)
 
     bible_dir: Path | None = None
     refs_dir: Path | None = None
@@ -328,11 +321,6 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
             bible_dir = Path(eff["bible_dir"]).expanduser()
         if eff["refs_dir"]:
             refs_dir = Path(eff["refs_dir"]).expanduser()
-    elif seed:
-        # a per-genre seed folder holds bible.md and a refs\ subfolder; leave
-        # refs_dir unset so the normalization below picks up seed\refs
-        bible_dir = Path(seed).expanduser()
-        source = f"seed_dirs[{genre}]"
     else:
         return {"bible": False, "style": False, "refs": 0, "source": ""}
 
@@ -892,8 +880,7 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
 
 def effective_engine(engine: str | None, mode: str | None) -> str:
     """The image engine a production really uses. Render mode "flow" means
-    every shot on Google Flow through FlowBatch (the retired Flow Driver's
-    job), whichever engine was picked; the Renderly engine otherwise renders
+    every shot on Google Flow through FlowBatch, whichever engine was picked; the Renderly engine otherwise renders
     PL/PR through its API and everything else through FlowBatch."""
     if engine == "flowbatch" or mode == "flow":
         return "flowbatch"
