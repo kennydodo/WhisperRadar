@@ -1629,3 +1629,21 @@ handle it). Static (ST) only.
   project's `sfx\` folder with the same stem wins). The text lives in the same
   SECTION 7B, so it is gated by the same channel setting.
 - Tests: tests/test_reveal_shots.py.
+
+## QUEUE for the next session (2026-10-06)
+
+- **Flow "throttling" is usually not throttling (observed 2026-10-05).** When FlowBatch
+  reports "stopped after too many cards failed in a row", Flow often HAS generated the
+  images but FlowBatch could not retrieve them. Flow shows an error at first, then the
+  images appear in the gallery once FlowBatch disconnects. Recovering them with the
+  recover command and then continuing generation worked immediately, with no 60-minute
+  wait. Already done: one gallery recovery before the first pause (`_recover_after_stop`).
+  To do: use the same recover-then-continue step on the later pauses/rounds too, so the
+  long wait is only a last resort (when recovery finds nothing and generation still fails).
+- Flow window size: FlowBatch opens at 1512x950 (`config/settings.json`, `browser.viewport`);
+  user to pick a size.
+- Reveal "required" level: check that a re-plan now yields `reveal` fields; if models still
+  skip lists, add a post-plan check.
+- Replace the built-in `pop` sound (ImgToVideo, see its docs/next-session.md).
+- Slide-in reveal (queued in ImgToVideo docs), after the Premiere Position fix is confirmed.
+- Presentation override of Section 5/8 (ask first: touches the external prompt).
