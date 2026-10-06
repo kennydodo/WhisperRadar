@@ -46,7 +46,7 @@ class StageFailed(RuntimeError):
 # ---- transport ----------------------------------------------------------------
 
 # what each site's mode switches default to when the run does not say
-DEFAULT_OPTIONS = {"zai": {"thinking": "Low"},
+DEFAULT_OPTIONS = {"zai": {"thinking": "Low", "model": "flash"},
                    "deepseek": {"deepthink": True, "search": False}}
 
 

@@ -248,7 +248,8 @@ class OptionsTests(unittest.TestCase):
                              "deepseek": {"search": True}})
         t.ask("zai", "p")
         t.ask("deepseek", "p")
-        self.assertEqual(seen[0], ("zai", {"thinking": "High"}))
+        self.assertEqual(seen[0], ("zai", {"thinking": "High",
+                                           "model": "flash"}))
         self.assertEqual(seen[1], ("deepseek",
                                    {"deepthink": True, "search": True}))
         d = ws.WebTransport(Chat(), lambda m: None)
@@ -262,7 +263,8 @@ class RouteOptionTests(Base):
         with mock.patch.object(ws, "shotlist_job") as job:
             c.post(f"/studio/{self.pid}/webchat/shots",
                    data={"writer": "zai", "judge": "deepseek",
-                         "zai_thinking": "Max", "deepseek_deepthink": "off",
+                         "zai_thinking": "Max", "zai_model": "5.3",
+                         "deepseek_deepthink": "off",
                          "deepseek_search": "on"})
             import time
             for _ in range(50):
@@ -270,7 +272,7 @@ class RouteOptionTests(Base):
                     break
                 time.sleep(0.1)
             opts = job.call_args.args[-1]
-        self.assertEqual(opts, {"zai": {"thinking": "Max"},
+        self.assertEqual(opts, {"zai": {"thinking": "Max", "model": "5.3"},
                                 "deepseek": {"deepthink": False,
                                              "search": True}})
 
@@ -285,7 +287,7 @@ class RouteOptionTests(Base):
                     break
                 time.sleep(0.1)
             opts = job.call_args.args[-1]
-        self.assertEqual(opts["zai"], {"thinking": "Low"})
+        self.assertEqual(opts["zai"], {"thinking": "Low", "model": "flash"})
         self.assertEqual(opts["deepseek"], {"deepthink": True,
                                             "search": False})
 

@@ -405,3 +405,35 @@ class SitesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ZaiModelTests(unittest.TestCase):
+    def _page(self, current):
+        calls = []
+
+        class P:
+            def evaluate(self, js, arg=None):
+                calls.append(arg)
+                if isinstance(arg, dict) and "label" in arg:
+                    return "ok" if arg["label"] == current else "opened"
+                return None
+
+            def wait_for_timeout(self, ms):
+                pass
+        return P(), calls
+
+    def test_already_on_the_wanted_model_is_left_alone(self):
+        p, calls = self._page("GLM-5.3-Flash")
+        wc._zai_pick_model(p, "flash")
+        self.assertEqual(len(calls), 1)
+
+    def test_another_model_is_picked_from_the_menu(self):
+        p, calls = self._page("GLM-5.3-Flash")
+        wc._zai_pick_model(p, "5.3")
+        self.assertEqual(calls[1], "glm-5.3")
+
+    def test_a_redirect_to_sign_in_is_a_clear_error(self):
+        p, calls = self._page("GLM-5.3-Flash")
+        p.url = "https://chat.z.ai/auth?redirect=/"
+        with self.assertRaises(wc.NeedsSignIn):
+            wc._zai_pick_model(p, "5.3")

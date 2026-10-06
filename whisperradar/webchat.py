@@ -68,9 +68,47 @@ class Site:
     prepare: Optional[Callable] = None
 
 
-def _zai_prepare(page, thinking: str = "Low") -> None:
-    """z.ai defaults its Deep Think level to Max on every page load, and Max
-    can spend the whole turn thinking and answer nothing. Set it to Low."""
+# model name in the picker -> (data-value of its menu item, label shown)
+ZAI_MODELS = {"flash": ("x-preview-l", "GLM-5.3-Flash"),
+              "5.3": ("glm-5.3", "GLM-5.3"),
+              "5.2": ("glm-5.2", "GLM-5.2")}
+
+
+def _zai_pick_model(page, model: str) -> None:
+    value, label = ZAI_MODELS.get(model, ZAI_MODELS["flash"])
+    res = page.evaluate("""(a) => {
+        const b=document.querySelector('button[aria-label="Select a model"]');
+        if(!b) return 'missing';
+        if((b.innerText||'').trim()===a.label) return 'ok';
+        b.click(); return 'opened'; }""", {"label": label})
+    if res != "opened":
+        return                          # already the right model / no picker
+    page.wait_for_timeout(600)
+    try:
+        page.evaluate("""(v) => { const i=document.querySelector(
+            'button[aria-label="model-item"][data-value="'+v+'"]');
+            if(i) i.click(); }""", value)
+    except Exception:  # noqa: BLE001 - the page navigated: see below
+        pass
+    page.wait_for_timeout(1500)
+    url = str(getattr(page, "url", "") or "")
+    if any(p in url for p in SITES["zai"].login_url_part):
+        raise NeedsSignIn(
+            f"z.ai only offers {label} to a signed-in account (it sent the "
+            f"browser to its sign-in page). Sign in once with: python -m "
+            f"whisperradar.webchat login zai - or pick GLM-5.3-Flash.")
+
+
+def _zai_prepare(page, thinking: str = "Low", model: str = "flash") -> None:
+    """Pick the model, then z.ai's Deep Think level (it defaults to Max on
+    every page load, and Max can spend the whole turn thinking and answer
+    nothing, so the default here is Low)."""
+    try:
+        _zai_pick_model(page, model)
+    except NeedsSignIn:
+        raise
+    except Exception:  # noqa: BLE001 - the picker moved: keep the default
+        pass
     opened = page.evaluate("""() => {
         const spans=[...document.querySelectorAll('span')].filter(
           e=>/^(Low|High|Max)$/.test((e.innerText||'').trim())

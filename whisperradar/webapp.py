@@ -3130,9 +3130,12 @@ def create_app(cfg) -> Flask:
 
         job = sjob._real()
         level = (request.form.get("zai_thinking") or "Low").strip()
+        model = (request.form.get("zai_model") or "flash").strip()
         options = {
             "zai": {"thinking": level if level in ("Low", "High", "Max")
-                    else "Low"},
+                    else "Low",
+                    "model": model if model in ("flash", "5.3", "5.2")
+                    else "flash"},
             "deepseek": {
                 "deepthink": (request.form.get("deepseek_deepthink")
                               or "on") != "off",
