@@ -539,55 +539,31 @@ class FilesRouteTests(Base):
         self.assertEqual({f["name"] for f in j["files"]}, {"narration.txt"})
 
 
-class LocalChecksAndReviseTests(Base):
-    def test_local_checks_flag_lifted_short_and_cut_off(self):
-        chk = ep.script_local_checks(self.cfg, self.pid, SOURCE[:200],
-                                     target_words=1000)
-        text = " | ".join(chk["faults"])
-        self.assertIn("overlap", text)
-        self.assertIn("under the 800-word minimum", text)
-        self.assertIn("cut off", text)
-        self.assertTrue(chk["runs"])
+class RemovedScriptRetryTests(Base):
+    """The judge's own feedback drives the retry, so the app no longer builds
+    a local-checks note or a separate revise prompt for the script."""
 
-    def test_local_checks_clean_script_has_no_faults(self):
-        script = " ".join(f"unique{i} word{i} thing{i}." for i in range(300))
-        chk = ep.script_local_checks(self.cfg, self.pid, script,
-                                     target_words=900)
-        self.assertEqual(chk["faults"], [], chk)
+    def test_functions_are_gone(self):
+        self.assertFalse(hasattr(ep, "script_local_checks"))
+        self.assertFalse(hasattr(ep, "script_revise_prompt"))
 
-    def test_revise_prompt_carries_overlap_runs_feedback_and_angle(self):
-        lifted = SOURCE[:300]
-        text = ep.script_revise_prompt(
-            self.cfg, self.pid, lifted, "- hook is weak\n2. ending drags",
-            target_words=1000)
-        self.assertIn("shared", text)                 # measured overlap
-        self.assertIn("lifted almost verbatim", text)
-        self.assertIn("hook is weak", text)
-        self.assertIn("ending drags", text)
-        self.assertIn("far too short", text)
-        self.assertIn("VARIATION", text)
-        self.assertIn("QUALITY BAR", text)
-
-    def test_revise_in_files_mode_attaches_files(self):
-        files = []
-        text = ep.script_revise_prompt(self.cfg, self.pid, "A script.",
-                                       files=files)
-        self.assertEqual({f["name"] for f in files},
-                         {"writing_style.md", "research_notes.md"})
-        self.assertIn("Missing:", text)
-
-    def test_routes_return_local_checks_and_revise(self):
+    def test_script_judge_route_has_no_local_checks(self):
         client = create_app(self.cfg).test_client()
         r = client.post(f"/studio/{self.pid}/external-prompt",
                         data={"kind": "script_judge", "script": SOURCE[:200]})
-        j = r.get_json()
-        self.assertTrue(j["local_faults"])
-        self.assertIn("overlap", j["local_note"])
-        r = client.post(f"/studio/{self.pid}/external-prompt",
-                        data={"kind": "script_revise", "script": "Short.",
-                              "feedback": "- fix the hook"})
         self.assertEqual(r.status_code, 200)
-        self.assertIn("fix the hook", r.get_json()["prompt"])
+        j = r.get_json()
+        self.assertIn("SCRIPT:", j["prompt"])
+        self.assertNotIn("local_faults", j)
+
+    def test_revise_kind_is_unknown(self):
+        client = create_app(self.cfg).test_client()
+        r = client.post(f"/studio/{self.pid}/external-prompt",
+                        data={"kind": "script_revise", "script": "Short."})
+        self.assertEqual(r.status_code, 400)
+
+    def test_empty_script_judge_still_asks_for_script_txt(self):
+        client = create_app(self.cfg).test_client()
         r = client.post(f"/studio/{self.pid}/external-prompt",
                         data={"kind": "script_judge", "script": " "})
         self.assertEqual(r.status_code, 200)
@@ -597,8 +573,7 @@ class LocalChecksAndReviseTests(Base):
 
 class StructureTests(Base):
     def test_writer_is_told_to_choose_its_own_sensible_structure(self):
-        for text in (ep.script_writer_prompt(self.cfg, self.pid),
-                     ep.script_revise_prompt(self.cfg, self.pid, "A script.")):
+        for text in (ep.script_writer_prompt(self.cfg, self.pid),):
             flat = " ".join(text.split())
             self.assertIn("Choose your OWN story structure", flat)
             self.assertIn("must still make sense", flat)

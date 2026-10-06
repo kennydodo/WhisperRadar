@@ -407,7 +407,7 @@
       <details class="extbox" style="margin-top:10px">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the script</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
-          Builds copy-paste prompts from this channel's settings. Run the writer prompt in your own LLM, paste the result into the script box above and save; use the judge prompt to have another LLM score it. With a script in the box above, the judge prompt includes it (and the app shows its own checks). With the box empty, the prompt asks the LLM for a script.txt you attach yourself.
+          Builds copy-paste prompts from this channel's settings. Run the writer prompt in your own LLM, paste the result into the script box above and save; use the judge prompt to have another LLM score it. With a script in the box above, the judge prompt includes it. With the box empty, the prompt asks the LLM for a script.txt you attach yourself.
         </div>
         <div class="inline" style="gap:8px; align-items:flex-end; flex-wrap:wrap">
           <label>Title <input type="text" data-f="title" value="{{ prod['title'] }}" style="width:380px"></label>
@@ -419,11 +419,9 @@
         {% if not has_research_notes %}<div class="muted" style="font-size:12px; margin-top:8px">No research notes yet - the writer prompt will have no facts. Use "Notes prompt" to get them from the reference script, then paste them below and save.</div>
         {% else %}<div class="muted" style="font-size:12px; margin-top:8px">Research notes are on file and used automatically. Paste notes below only to use different ones (they override the file in the prompts you build here); "Save as research notes" makes them the production's notes for good.</div>{% endif %}
         <textarea data-f="notes" style="min-height:70px; margin-top:6px" placeholder="Optional - paste research notes (facts only) here"></textarea>
-        <textarea data-f="feedback" style="min-height:60px; margin-top:6px" placeholder="For the Revise prompt - paste the judge's feedback / fixes here (optional)"></textarea>
         <div class="actions" style="margin-top:8px">
           <button type="button" class="secondary" onclick="wrExt(this,'script_writer')">Writer prompt</button>
           <button type="button" class="secondary" onclick="wrExt(this,'script_judge')">Judge prompt</button>
-          <button type="button" class="secondary" onclick="wrExt(this,'script_revise')" title="A retry prompt for the writer: new angle, measured overlap, lifted passages and the judge's fixes">Revise prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'style')" title="Asks an LLM to extract the reference script's writing style">Writing style prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'notes')" title="Asks an LLM to turn the reference script into neutral fact notes">Notes prompt</button>
           <button type="button" class="ghost" onclick="wrExt(this,'save_notes')" title="Save the pasted notes as this production's research notes (kept; never rebuilt from the source)">Save as research notes</button>
@@ -1274,7 +1272,7 @@
     var fd = new FormData();
     fd.append('kind', kind);
     box.querySelectorAll('[data-f]').forEach(function (el) { fd.append(el.dataset.f, el.value); });
-    if (kind === 'script_judge' || kind === 'script_revise') {
+    if (kind === 'script_judge') {
       var sc = document.querySelector('textarea[name=script]');
       fd.append('script', sc ? sc.value : '');
     }

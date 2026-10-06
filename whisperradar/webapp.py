@@ -3060,7 +3060,7 @@ def create_app(cfg) -> Flask:
             if kind == "notes":
                 return external_prompts.notes_extraction_prompt(
                     cfg, pid, title), None
-            if kind in ("script_writer", "script_judge", "script_revise"):
+            if kind in ("script_writer", "script_judge"):
                 style = request.form.get("style")
                 notes = request.form.get("notes")
                 style = style if (style or "").strip() else None
@@ -3073,22 +3073,9 @@ def create_app(cfg) -> Flask:
                     return external_prompts.script_writer_prompt(
                         cfg, pid, title, words, style, notes, files), None
                 script = request.form.get("script") or ""
-                if kind == "script_revise":
-                    chk = external_prompts.script_local_checks(
-                        cfg, pid, script, words)
-                    local_note[0] = chk["note"]
-                    return external_prompts.script_revise_prompt(
-                        cfg, pid, script, request.form.get("feedback") or "",
-                        title, style, notes, words, files), chk["faults"]
                 text = external_prompts.script_judge_prompt(
                     cfg, pid, script, title, style, notes, words, files)
-                if not script.strip():
-                    local_note[0] = ""
-                    return text, None
-                chk = external_prompts.script_local_checks(
-                    cfg, pid, script, words)
-                local_note[0] = chk["note"]
-                return text, chk["faults"]
+                return text, None
 
             if kind == "shot_planner":
                 return external_prompts.shotlist_planner_prompt(

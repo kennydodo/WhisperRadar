@@ -3879,7 +3879,16 @@ def shotlist_patch_prompt(weak: list[dict], style_guide: str = "",
                         f"empty space on both sides"
                         if w.get("reveal_item") else "")
                      + (f" | cue says: {w['narration']}"
-                        if w.get("narration") else ""))
+                        if w.get("narration") else "")
+                     + (f"\n  CURRENT PROMPT: {w['prompt']}"
+                        if w.get("prompt") else ""))
+    has_current = any(w.get("prompt") for w in weak)
+    keep_rule = (
+        " Where a CURRENT PROMPT is shown, START FROM IT: keep its subjects "
+        "(the same animals, people and objects), its composition and its "
+        "lighting block, and change only what the problem named for that "
+        "asset requires. Never swap a subject for a different one."
+        if has_current else "")
     return (
         "You are revising a small number of image prompts from an existing, "
         "otherwise-approved shotlist for a narrated video. Do NOT change "
@@ -3888,7 +3897,7 @@ def shotlist_patch_prompt(weak: list[dict], style_guide: str = "",
         "TEXT for the exact assets listed below, so each one states every "
         "element its narration cue requires: who is in frame, what they are "
         "doing, where they are, the objects or props involved, and the "
-        "specific information the cue conveys."
+        "specific information the cue conveys." + keep_rule
         + style_block + bible_block +
         "\n\nAssets to rewrite:\n" + "\n".join(lines) +
         "\n\nReply with ONLY a JSON object of the form "
@@ -3907,6 +3916,36 @@ def parse_shotlist_patch(text: str) -> dict[str, str]:
         return {}
     return {str(k): str(v) for k, v in patches.items()
             if isinstance(v, str) and v.strip()}
+
+
+def with_current_prompts(weak: list[dict], data: dict) -> list[dict]:
+    """Copies of the weak entries carrying each asset's CURRENT prompt text,
+    so the patch writer starts from it instead of inventing the scene from
+    the narration alone (a writer that never sees the old prompt swapped a
+    cheetah for a dog and for birds of prey when asked to remove a name)."""
+    by = {i.get("file"): i.get("prompt") for i in (data.get("images") or [])
+          if isinstance(i, dict) and i.get("file")}
+    out = []
+    for w in weak:
+        w2 = dict(w)
+        cur = by.get(w.get("asset"))
+        if cur and not w2.get("prompt"):
+            w2["prompt"] = str(cur)
+        out.append(w2)
+    return out
+
+
+def check_shotlist_patch(patches: dict[str, str],
+                         asked: list[str]) -> tuple[dict[str, str], list[str], list[str]]:
+    """(usable patches, unknown keys, missing assets). A patch keyed by an
+    asset that was not asked for (a model mislabelling an entry) is dropped
+    rather than silently ignored later, and an asked-for asset with no patch
+    is reported so the caller can ask for just that one again."""
+    wanted = [str(a) for a in asked]
+    good = {k: v for k, v in patches.items() if k in wanted}
+    unknown = [k for k in patches if k not in wanted]
+    missing = [a for a in wanted if a not in good]
+    return good, unknown, missing
 
 
 def apply_shotlist_patch(data: dict, patches: dict[str, str]) -> dict:

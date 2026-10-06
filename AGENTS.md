@@ -128,6 +128,24 @@ prompt functions and the channel's settings:
 - Style and bible go only where needed: writing style -> script prompts;
   visual style + bible -> shotlist prompts.
 
+## DONE (2026-10-06) — shotlist patch helpers for a web-chat writer; script local checks / revise prompt removed
+
+Found while testing z.ai as the shotlist writer on production 8: a patch prompt
+that shows only the failure reason + narration lets the writer swap the subject
+(cheetah -> dog / birds), and a reply can key a patch to an asset that was not
+asked for. Added, NOT wired into the built-in API loop (`autorun` is unchanged):
+- `studio.with_current_prompts(weak, data)`; `shotlist_patch_prompt` shows a
+  CURRENT PROMPT per asset and a keep-the-subject rule when one is supplied
+  (identical output when none is).
+- `studio.check_shotlist_patch(patches, asked)` -> (usable, unknown, missing).
+Tests: tests/test_shotlist_patch_guard.py.
+
+Removed from the external-LLM prompts (the external judge's own feedback does
+the check/revise): `external_prompts.script_local_checks`,
+`script_revise_prompt`, the `script_revise` route kind, the Revise button and
+feedback box on the Studio page, and the local-checks note under the script
+judge prompt. The shot judge still shows the app's structural checks.
+
 ## DONE (2026-10-01) — local upscale AFTER download, for both engines
 
 Requested by Kehinde: stop upscaling inside the download loop. Download the
