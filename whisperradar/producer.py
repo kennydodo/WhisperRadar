@@ -67,6 +67,7 @@ def candidates(conn, own_channel, window_days: int = 90,
         "SELECT v.*, c.name AS channel_name, c.genre AS channel_genre"
         " FROM videos v JOIN channels c ON c.channel_id = v.channel_id"
         " WHERE v.status = 'transcribed' AND LOWER(c.genre) = LOWER(?)"
+        "   AND c.active = 1"
         "   AND v.video_id NOT IN (SELECT source_video_id FROM productions"
         "                          WHERE source_video_id IS NOT NULL)"
     )

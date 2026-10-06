@@ -642,7 +642,9 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         db.sync_channels(conn, cfg.channels)
-        channels = db.list_channels(conn)
+        # paused channels are pruned from the dashboard: their videos stay in
+        # the DB but neither the list nor the dropdown/genre chips show them
+        channels = db.list_channels(conn, active_only=True)
         status = request.args.get("status") or None
         backlog = status == "backlog"
         if backlog:
@@ -667,7 +669,8 @@ def create_app(cfg) -> Flask:
             return db.get_videos_page(
                 conn, status=status, genre=genre, backlog=backlog,
                 channel=channel, q=q, sort=sort,
-                limit=per_page, offset=(page_no - 1) * per_page)
+                limit=per_page, offset=(page_no - 1) * per_page,
+                active_only=True)
 
         videos, total = fetch(page)
         pages = max(1, (total + per_page - 1) // per_page)
@@ -721,18 +724,46 @@ def create_app(cfg) -> Flask:
     def watched_channels():
         """The competitor/source channels WhisperRadar monitors for new
         uploads - split out of the dashboard (2026-09-27) so a long watch
-        list doesn't push the videos list below the fold."""
+        list doesn't push the videos list below the fold.
+
+        ?state=paused shows the pruned (paused) channels instead of the
+        active ones; both views keep the same edit/remove actions."""
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         db.sync_channels(conn, cfg.channels)
-        channels = db.list_channels(conn)
+        all_channels = db.list_channels(conn)
         conn.close()
+        state = "paused" if request.args.get("state") == "paused" else "active"
+        channels = [c for c in all_channels
+                    if (c["active"] if state == "active" else not c["active"])]
         return render_template(
             "watched.html",
             channels=channels,
+            active_count=sum(1 for c in all_channels if c["active"]),
+            paused_count=sum(1 for c in all_channels if not c["active"]),
+            state=state,
             msg=request.args.get("msg"),
             error=request.args.get("error"),
         )
+
+    @app.post("/channels/state")
+    def channels_state():
+        """One-click pause/activate from the watched list (the edit row's
+        dropdown does the same via /channels/edit)."""
+        channel_id = request.form.get("channel_id") or ""
+        active = 1 if request.form.get("active") == "1" else 0
+        state = "paused" if request.form.get("state") == "paused" else "active"
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_channel(conn, channel_id):
+                return redirect("/watched?error=Unknown+channel")
+            db.update_channel(conn, channel_id, active=active)
+        finally:
+            conn.close()
+        view = "?state=paused" if state == "paused" else ""
+        msg = quote("Channel activated" if active else "Channel paused")
+        return redirect(f"/watched{view}&msg={msg}" if view else f"/watched?msg={msg}")
 
     @app.post("/channels/edit")
     def channels_edit():
@@ -813,7 +844,7 @@ def create_app(cfg) -> Flask:
                     row = db.get_channel(conn, key)
                     rows = [row] if row else []
                 else:
-                    rows = db.list_channels(conn)
+                    rows = db.list_channels(conn, active_only=True)
                 if not rows:
                     log.warning("backfill: no matching channel")
                     return
@@ -845,7 +876,7 @@ def create_app(cfg) -> Flask:
                     row = db.get_channel(conn, key)
                     rows = [row] if row else []
                 else:
-                    rows = db.list_channels(conn)
+                    rows = db.list_channels(conn, active_only=True)
                 if not rows:
                     log.warning("views: no matching channel")
                     return
@@ -1066,10 +1097,12 @@ def create_app(cfg) -> Flask:
                 cfg, ch, channels, chan_error, known)
                 for ch in own_channels}
             # genres that actually exist on monitored channels, so a channel
-            # can be pointed at real sources instead of guessing the spelling
+            # can be pointed at real sources instead of guessing the spelling.
+            # Paused channels do not count: Auto Run skips them, so a genre
+            # only they carry would silently yield no candidates.
             genres = [r["genre"] for r in conn.execute(
                 "SELECT DISTINCT genre FROM channels"
-                " WHERE genre IS NOT NULL AND genre <> ''"
+                " WHERE genre IS NOT NULL AND genre <> '' AND active = 1"
                 " ORDER BY genre COLLATE NOCASE")]
             source_genres = {g.lower() for g in genres}
             global_render_resolution = settings.load(conn)["render_resolution"]

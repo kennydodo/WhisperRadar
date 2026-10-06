@@ -91,6 +91,12 @@
   </div>
 
   <div class="search">
+    <span class="count" style="margin-left:0">
+      <a href="/watched" class="{{ 'active' if state == 'active' else '' }}"
+         style="{{ 'color:var(--text);font-weight:600' if state == 'active' else '' }}">Active ({{ active_count }})</a>
+      &nbsp;|&nbsp;
+      <a href="/watched?state=paused" style="{{ 'color:var(--text);font-weight:600' if state == 'paused' else '' }}">Paused ({{ paused_count }})</a>
+    </span>
     <input type="search" id="channel-search" placeholder="filter by name or genre..."
            autocomplete="off" oninput="filterChannels(this.value)">
     <span class="count" id="channel-count"></span>
@@ -108,6 +114,14 @@
         <td>{% if ch["active"] %}<span class="badge transcribed">active</span>
             {% else %}<span class="badge skipped">paused</span>{% endif %}</td>
         <td style="text-align:right; white-space:nowrap">
+          <form class="row" method="post" action="/channels/state" style="display:inline">
+            <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
+            <input type="hidden" name="state" value="{{ state }}">
+            <input type="hidden" name="active" value="{{ 0 if ch['active'] else 1 }}">
+            <button type="submit" class="ghost"
+                    title="{{ 'Pause: hides this channel and its videos from the dashboard, feed syncs and Auto Run' if ch['active'] else 'Resume watching: the channel and its videos return everywhere' }}">
+              {{ 'pause' if ch['active'] else 'activate' }}</button>
+          </form>
           <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
           <form class="row" method="post" action="/channels/backfill" style="display:inline"
                 title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
@@ -151,7 +165,14 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">No channels yet &mdash; add one above or edit config.yaml</td></tr>
+      <tr><td colspan="6" class="muted">
+        {% if state == 'paused' %}
+        No paused channels &mdash; pause one from its edit row to prune it from
+        the dashboard and feed syncs (its videos stay in the DB, hidden).
+        {% else %}
+        No channels yet &mdash; add one above or edit config.yaml
+        {% endif %}
+      </td></tr>
       {% endfor %}
     </table>
   </div>

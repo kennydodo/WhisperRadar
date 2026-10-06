@@ -290,7 +290,7 @@ def cmd_backfill(cfg, args):
     conn = _open(cfg)
     try:
         if args.channel == "all":
-            rows = db.list_channels(conn)
+            rows = db.list_channels(conn, active_only=True)
         else:
             row = db.get_channel(conn, args.channel)
             rows = [row] if row else []
@@ -316,7 +316,7 @@ def cmd_views(cfg, args):
     conn = _open(cfg)
     try:
         if args.channel == "all":
-            rows = db.list_channels(conn)
+            rows = db.list_channels(conn, active_only=True)
         else:
             row = db.get_channel(conn, args.channel)
             rows = [row] if row else []
