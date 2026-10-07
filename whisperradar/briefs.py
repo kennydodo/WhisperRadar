@@ -124,6 +124,8 @@ class MotionProfile:
     reveal: bool = False
     # level 2: reveals are REQUIRED wherever the narration lists 2-4 items
     reveal_strict: bool = False
+    # the sound the plan uses for reveal items ("" = the built-in "pop")
+    sfx: str = ""
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -885,7 +887,8 @@ def _resolve_motion(key, min_hold=None, max_hold=None,
 
 def resolve_profile(key, min_hold=None, max_hold=None,
                     default_max: float | None = None,
-                    custom=None, types=None, reveal=None) -> MotionProfile:
+                    custom=None, types=None, reveal=None,
+                    sfx=None) -> MotionProfile:
     """The channel's effective profile: its motion preset, the channel's own
     hold range (seconds), its shot-type spec (`types`, see
     normalize_types / effective_types) and whether reveal shots are allowed.
@@ -897,6 +900,8 @@ def resolve_profile(key, min_hold=None, max_hold=None,
     if reveal:
         # 1 / True = allowed, 2 = required wherever the narration lists items
         prof = replace(prof, reveal=True, reveal_strict=str(reveal) == "2")
+    if sfx and str(sfx).strip() and str(sfx).strip() != "pop":
+        prof = replace(prof, sfx=str(sfx).strip())
     return prof
 
 
@@ -999,9 +1004,10 @@ REVEAL_REQUIRED_RULE = (
     "ordinary shot is wrong.")
 
 
-def reveal_block(strict: bool = False) -> str:
+def reveal_block(strict: bool = False, sfx: str = "") -> str:
     """The planning-brief section that teaches reveal shots. Only added for a
     channel that turned them on (MotionProfile.reveal)."""
+    snd = (sfx or "").strip() or "pop"
     text = (
         "## SECTION 7B — REVEAL SHOTS AND SOUND EFFECTS (items shown one at a time)\n\n"
         "A reveal shot shows 2–4 parallel items as the narrator names them: "
@@ -1064,12 +1070,14 @@ def reveal_block(strict: bool = False) -> str:
         "each image to ONE subject centered with generous empty space on both "
         "sides. If each picture should instead REPLACE the previous one, do "
         "not use `reveal`: plan ordinary consecutive shots.\n\n"
-        "Sound effects (optional, any shot): add `\"sfx\": \"pop\"` to play a "
+        "Sound effects (optional, any shot): add `\"sfx\": \"" + snd + "\"` to play a "
         "short sound (about a second) when the shot starts. On a reveal shot "
         "a single name plays at every item; a list gives one name per item, "
-        "e.g. `[\"ding\", \"pop\", \"pop\"]` (the last name repeats when the "
+        "e.g. `[\"ding\", \"" + snd + "\", \"" + snd + "\"]` (the last name repeats when the "
         "list is short). Built-in sounds: pop, ding, click, tick, whoosh, "
-        "swipe. Use them sparingly — on reveal items or a deliberate emphasis "
+        "swipe" + (f", and this channel's own sound `{snd}`: use `{snd}` as "
+                   f"the default sound rather than `pop`" if snd != "pop" else "")
+        + ". Use them sparingly — on reveal items or a deliberate emphasis "
         "— and keep to one or two sounds across the video; never on most "
         "shots, and never as a substitute for the narration. A normal shot "
         "takes ONE name, not a list.\n\n"
@@ -1083,6 +1091,17 @@ def reveal_block(strict: bool = False) -> str:
         "`asset`, each its own entry in `images`; any `sfx` is a built-in "
         "name; and reveal shots are no more than about 10% of all shots.\n")
     return text + (REVEAL_REQUIRED_RULE if strict else "")
+
+
+def sfx_block(sfx: str) -> str:
+    """For a channel that has its own sound but no reveal shots: the plan may
+    still name it on a shot (\"sfx\") and must use it instead of pop."""
+    return (
+        "## SOUND EFFECT\n\n"
+        f"This channel's sound effect is `{sfx}`. Whenever a shot should "
+        f"play a short sound when it starts, give it `\"sfx\": \"{sfx}\"` "
+        "(a name, never a file path) - not `pop`. Use it sparingly, on a "
+        "deliberate emphasis only, never on most shots.\n")
 
 
 # ---- rendering ---------------------------------------------------------------
@@ -1119,15 +1138,17 @@ def render_brief(template: str, profile: MotionProfile | None = None,
             text = text.replace("{{PRESENTATION}}", "")
     elif block:
         text = text.rstrip() + "\n\n" + block
+    if profile.sfx and not profile.reveal:
+        text = text.rstrip() + "\n\n" + sfx_block(profile.sfx)
     if profile.reveal:
         # right after the output-document section; a custom template without
         # that heading gets it at the end
         marker = "## SECTION 8 "
         at = text.find(marker)
         if at >= 0:
-            text = text[:at] + reveal_block(profile.reveal_strict) + "\n" + text[at:]
+            text = text[:at] + reveal_block(profile.reveal_strict, profile.sfx) + "\n" + text[at:]
         else:
-            text = text.rstrip() + "\n\n" + reveal_block(profile.reveal_strict)
+            text = text.rstrip() + "\n\n" + reveal_block(profile.reveal_strict, profile.sfx)
     for name, value in values.items():
         text = text.replace("{{%s}}" % name, value)
     left = sorted(set(_MARKER_RE.findall(text)))

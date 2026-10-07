@@ -178,7 +178,7 @@ The API loop (`autorun`) is untouched.
   (`options` passed to `site.prepare`). No round limit; Stop button only.
 - Same chats across stages (2026-10-07): each run saves the chat URLs to `<production>/webchat_chats.json`; the shotlist run (checkbox "Same chats as the script", default on) continues in them (`adopt_chats`, `WebChat.adopt/urls`), so the writer and judge already know the script, as when done by hand. The judge still gets the FULL judge prompt in that chat on its first round; a chat that cannot be reopened (`ChatLost`) falls back to a new one. The script stage always starts fresh. Context-size risk: a very long chat may get slow; untick it.
 - Robustness (2026-10-07): hard-fault feedback to the writer now carries the judge's JSON VERBATIM (as pasted by hand) plus the code-check faults, and says "change ONLY the entries named; copy everything else exactly"; every corrected plan logs "changed N of M image prompts" (flags a >25% rewrite) - on the lost-chat recovery paths too (`_corrected_plan`). Every judged SCRIPT round is kept as versions/script/attempt-N.md + review.json (score - 0.0 kept, not nulled; criteria, feedback, too_long, gate reasons), same files as the API loop. DeepSeek uses the same attach login as z.ai: `python -m whisperradar.webchat login deepseek` (port 9223).
-- Model at capacity (2026-10-07): a short banner outside the reply matching `BUSY_RE` ("at capacity", "busy", "try again later", "concurrent conversation limit", "peak hours", "coordination of resources", ...) raises `ModelBusy`; `retry_when_busy` (used by `WebChat.ask`) waits 30s, 60s ... 5 min and asks AGAIN on the SAME model (z.ai's offer to switch to Flash is never taken), until it answers or the user stops the run (`WebTransport.set_stop`). A new chat is opened on each retry of a first message; a follow-up is re-sent in the same chat. The peak-hours pop-up is caught separately by `_peak_dialog` (Cancel/Close only, never Switch). Banners are de-duplicated by marking the DOM node (`data-wr-busy`) on first sighting and only ever counting UNMARKED nodes, so a banner already on the page is not mistaken for the answer to a new message, and one that is removed and re-shown with the same text still counts (it is a new node).
+- Model at capacity (2026-10-07): a short banner outside the reply matching `BUSY_RE` ("at capacity", "busy", "try again later", "concurrent conversation limit", "peak hours", "coordination of resources", ...) raises `ModelBusy`; `retry_when_busy` (used by `WebChat.ask`) waits 30s, 60s ... 5 min and asks AGAIN on the SAME model (z.ai's offer to switch to Flash is never taken), until it answers or the user stops the run (`WebTransport.set_stop`). A new chat is opened on each retry of a first message; a follow-up is re-sent in the same chat. The peak-hours pop-up is caught separately by `_peak_dialog` (Cancel/Close only, never Switch). Banners are de-duplicated by marking the DOM node (`data-wr-busy`) on first sighting and only ever counting UNMARKED nodes, so a banner already on the page is not mistaken for the answer to a new message, and one that is removed and re-shown with the same text still counts (it is a new node). A NEW banner also cuts a reply that died part-way: after 60s of a stalled (unchanged, not-generating) partial reply, a fresh banner raises `ModelBusy` instead of waiting out the stall limit.
 - Studio: "Run script / shotlist in web chat" buttons (writer + judge pickers)
   -> `POST /studio/<pid>/webchat/<script|shots>` (a normal background job).
 - Reply-completion fixes after the first real run: z.ai shows only "Thinking..."
@@ -1620,3 +1620,21 @@ with Cancel/Close ONLY (never Switch), raises ModelBusy -> retry_when_busy waits
 Bug found with it: while the send was blocked the page still showed the PREVIOUS reply, `ask` took that text as the
 new answer (23,739 chars of the old plan), sent 'continue', and the faults were never delivered. `started` now needs
 a new reply (count up, generating, or text different from the text before the send).
+
+### #1 NEXT SESSION - decisions so far (user, 2026-10-07)
+- Start with step 1 (outlier score + Outliers tab + "Make this"). Niche scope: watched channels AND discovery of new channels.
+- Data layer: YouTube Data API (user will add a free key) for discovery/bulk stats, but KEEP the yt-dlp scraping as fallback and enrichment
+  (history, transcripts, comments, when quota runs out). Default quota 10,000 units/day (search.list = 100 units).
+- PACKAGING (title / description / hashtags / 3-5 thumbnails, optimised for success): user's idea = title before production,
+  description + thumbnails on the Finish page before "mark published". Proposed refinement: (1) "Packaging plan" at the start = title +
+  thumbnail concept chosen as ONE promise (from the Research outlier) and handed to the script stage so the hook delivers it;
+  (2) "Publish kit" on the Finish page = 3 title options, description (2-line hook, auto chapters from SRT/cues, keywords),
+  3-5 hashtags, tags, 3-5 thumbnails (art via Flow/Renderly in the channel style + Pillow text overlay, mobile-size preview),
+  pinned comment, an optimisation checklist/score, then "mark published" (URL) which starts view snapshots at 24h/7d/28d to learn
+  which packaging patterns work. Written/judged through the web-chat loop (writer + judge rubric).
+- Thumbnail options (user): each channel/production can choose per thumbnail: character + host together, character alone, or host alone,
+  always with short catchy text. Offer all three layouts as options among the 3-5 variants.
+- YouTube API key: stored LOCALLY ONLY, per machine (the user's brother has his own key). Never commit it: read it from an env var
+  (e.g. WR_YOUTUBE_API_KEY) or a gitignored local file under `data/` / `config.local.yaml`, the same way `ai33_api_key` uses
+  WR_AI33_API_KEY; `data/` and local config stay out of git. The user will add the key on this machine himself; never ask him to paste
+  it in chat and never log or echo it. No key = scraping only (the feature still works, with fewer discovery options).

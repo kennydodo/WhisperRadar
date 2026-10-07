@@ -392,6 +392,14 @@
                   <option value="2" {{ 'selected' if ch['brief_reveal'] == 2 else '' }}>required - every list of 2-4 items in the narration becomes a reveal</option>
                 </select>
               </label>
+              <label>sound effect
+                <input name="brief_sfx" list="sfx-names-{{ ch['id'] }}" style="width:200px"
+                       value="{{ ch['brief_sfx'] or '' }}" placeholder="pop (default)"
+                       title="The sound the plan uses for reveal items. Leave empty for the built-in pop (ImgToVideo plays its default pop variant). A name from ImgToVideo (pop_marimba, ding, whoosh ...) or a file you put in the project's sfx folder.">
+                <datalist id="sfx-names-{{ ch['id'] }}">
+                  {% for n in ['pop','pop_bubble','pop_boop','pop_drop','pop_blip','pop_tap','pop_snap','pop_cork','pop_thump','pop_pluck','pop_marimba','pop_ping','pop_sparkle','pop_classic','ding','click','tick','whoosh','swipe'] %}<option value="{{ n }}">{% endfor %}
+                </datalist>
+              </label>
             </div>
             {% set cs = (ch['brief_custom'] | fromjson) if ch['brief_custom'] else {} %}
             <div class="custom-motion" style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px; {{ '' if ch['brief_motion'] == 'custom' else 'display:none' }}">

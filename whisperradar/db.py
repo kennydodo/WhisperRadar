@@ -216,6 +216,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          # 1 = the planning brief may use reveal shots (items
                          # shown one at a time); NULL = off
                          ("brief_reveal", "INTEGER"),
+                         # the channel's sound effect name for reveal shots
+                         # (NULL = "pop")
+                         ("brief_sfx", "TEXT"),
                          # hold range (seconds) laid over the motion preset
                          ("brief_min_hold", "REAL"),
                          ("brief_max_hold", "REAL"),
@@ -885,7 +888,7 @@ _OWN_CHANNEL_FIELDS = {
     "shotlist_min_alignment", "shotlist_max_attempts",
     "shotlist_judge_provider", "render_target", "render_resolution",
     "generate_references", "flow_native_upscale", "brief_motion", "brief_presentation",
-    "brief_reveal", "brief_min_hold", "brief_max_hold", "brief_custom", "brief_types",
+    "brief_reveal", "brief_sfx", "brief_min_hold", "brief_max_hold", "brief_custom", "brief_types",
     "watched_channels",
     "renderly_channel_id", "renderly_channel_name",
 }

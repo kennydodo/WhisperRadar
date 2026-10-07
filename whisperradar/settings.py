@@ -748,6 +748,8 @@ def for_production(conn, prod) -> dict:
         # reveal shots (items shown one at a time) in the planning brief:
         # per channel only, off unless the channel turns them on
         "brief_reveal": min(2, int(row_get(own, "brief_reveal") or 0)),
+        # the channel's sound effect for reveal shots (default "pop")
+        "brief_sfx": row_get(own, "brief_sfx") or "",
         # hold range (s) over the preset; None = the preset's / the global max
         "brief_min_hold": row_get(own, "brief_min_hold"),
         "brief_max_hold": row_get(own, "brief_max_hold"),
