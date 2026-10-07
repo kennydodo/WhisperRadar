@@ -15,6 +15,14 @@ CREATE TABLE IF NOT EXISTS channels (
     added_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
 );
 
+-- view counts over time: momentum = views gained per day recently
+CREATE TABLE IF NOT EXISTS view_snapshots (
+    video_id TEXT NOT NULL,
+    taken_at TEXT NOT NULL,          -- UTC ISO-8601
+    views INTEGER NOT NULL,
+    PRIMARY KEY (video_id, taken_at)
+);
+
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY,
     channel_id TEXT NOT NULL REFERENCES channels(channel_id) ON DELETE CASCADE,
@@ -445,7 +453,58 @@ def upsert_videos(conn, channel_id: str, videos: list[dict],
         rows,
     )
     conn.commit()
-    return conn.total_changes - before
+    created = conn.total_changes - before
+    record_snapshots(conn, [(r[1], r[5]) for r in rows])
+    return created
+
+
+SNAPSHOT_GAP_HOURS = 6
+
+
+def record_snapshots(conn, pairs, now=None,
+                     min_gap_hours: float = SNAPSHOT_GAP_HOURS) -> int:
+    """Remember (video_id, views) pairs with the time, at most one snapshot
+    per video per `min_gap_hours`, so a refresh loop cannot flood the table.
+    Returns how many were stored."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    stamp = now.astimezone(_dt.timezone.utc).isoformat(timespec="seconds")
+    cutoff = (now - _dt.timedelta(hours=min_gap_hours)).astimezone(
+        _dt.timezone.utc).isoformat(timespec="seconds")
+    stored = 0
+    for video_id, views in pairs:
+        if not video_id or views is None:
+            continue
+        last = conn.execute(
+            "SELECT MAX(taken_at) FROM view_snapshots WHERE video_id = ?",
+            (video_id,)).fetchone()[0]
+        if last and last > cutoff:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO view_snapshots (video_id, taken_at, views)"
+            " VALUES (?, ?, ?)", (video_id, stamp, int(views)))
+        stored += 1
+    conn.commit()
+    return stored
+
+
+def list_snapshots(conn, since_days: int = 60, now=None) -> dict:
+    """{video_id: [(datetime, views), ...]} oldest first, for the last
+    `since_days` days."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    since = (now - _dt.timedelta(days=since_days)).astimezone(
+        _dt.timezone.utc).isoformat(timespec="seconds")
+    out: dict = {}
+    for row in conn.execute(
+            "SELECT video_id, taken_at, views FROM view_snapshots"
+            " WHERE taken_at >= ? ORDER BY taken_at", (since,)):
+        try:
+            when = _dt.datetime.fromisoformat(row[1])
+        except ValueError:
+            continue
+        out.setdefault(row[0], []).append((when, row[2]))
+    return out
 
 
 def set_view_counts(conn, videos: list[dict]) -> int:
@@ -465,7 +524,9 @@ def set_view_counts(conn, videos: list[dict]) -> int:
     conn.executemany(
         "UPDATE videos SET view_count = ? WHERE video_id = ?", rows)
     conn.commit()
-    return conn.total_changes - before
+    changed = conn.total_changes - before
+    record_snapshots(conn, [(r[1], r[0]) for r in rows])
+    return changed
 
 
 def set_video(conn, video_id: str, **fields) -> None:

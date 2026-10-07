@@ -36,6 +36,7 @@ from flask import (
 from . import external_prompts
 from . import packaging
 from . import thumbnails
+from . import topics as topics_mod
 from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, remote,
                scheduler, services, settings, studio)
 from .cli import _slugify, format_duration
@@ -729,7 +730,7 @@ def create_app(cfg) -> Flask:
         channels - refresh them from the Watched Channels page."""
         from . import outliers
         args = request.args
-        tab = "outliers"
+        tab = "topics" if args.get("tab") == "topics" else "outliers"
 
         def _num(name, default, cast=float):
             try:
@@ -764,8 +765,10 @@ def create_app(cfg) -> Flask:
             " c.channel_id = v.channel_id WHERE c.active = 1 AND"
             " v.view_count IS NOT NULL AND v.published_at IS NULL"
             ).fetchone()[0]
+        snaps = db.list_snapshots(conn)
         conn.close()
-        items = outliers.build(rows)
+        items = outliers.build(rows, snapshots=snaps)
+        with_momentum = sum(1 for i in items if i["momentum"] is not None)
         shown, matched = outliers.filter_sort(
             items, min_multiplier=min_mult, max_age_days=max_age,
             channel_id=channel_id, genre=genre, hide_shorts=hide_shorts,
@@ -776,11 +779,37 @@ def create_app(cfg) -> Flask:
             scored=len(items), with_views=len(rows), total_videos=total_videos,
             undated=undated, channels=channels, genres=genres, own=own,
             selected_own=_selected_channel(), fmt_views=outliers.fmt_views,
-            fmt_age=outliers.fmt_age,
+            fmt_age=outliers.fmt_age, with_momentum=with_momentum,
+            topics=topics_mod.load_topics(cfg), job=sjob._real(),
             f={"mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
                "channel": channel_id, "genre": genre, "q": q,
                "shorts": "hide" if hide_shorts else "show"},
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/research/topics/generate")
+    def research_topics_generate():
+        from . import webchat
+        if sjob.running:
+            return redirect("/research?tab=topics&error=A+job+is+already+running")
+        writer = (request.form.get("writer") or "zai").strip()
+        if writer not in webchat.SITES:
+            return redirect("/research?tab=topics&error=Unknown+chat+site")
+        genre = (request.form.get("genre") or "").strip()
+        try:
+            mult = max(2.0, float(request.form.get("mult") or 3))
+        except ValueError:
+            mult = 3.0
+        options = _chat_options(request.form)
+        log = sjob.log.append
+        job = sjob._real()
+
+        def worker():
+            topics_mod.topics_job(cfg, writer, genre, mult, log,
+                                  lambda: job.cancel, options)
+
+        sjob.start(worker, f"topics in web chat ({writer})")
+        return redirect("/research?tab=topics&msg=Grouping+started+-+a+"
+                        "browser+window+will+open")
 
     @app.get("/watched")
     def watched_channels():

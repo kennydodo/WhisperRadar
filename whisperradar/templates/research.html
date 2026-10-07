@@ -88,13 +88,67 @@
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
   <div class="tabs">
-    <a href="/research" class="active">Outliers</a>
-    <span class="soon" title="coming next">Topics</span>
+    <a href="/research" class="{{ 'active' if tab == 'outliers' else '' }}">Outliers</a>
+    <a href="/research?tab=topics" class="{{ 'active' if tab == 'topics' else '' }}">Topics</a>
     <span class="soon" title="coming next">Keywords</span>
     <span class="soon" title="coming next">Channels</span>
     <span class="soon" title="coming next">Analyze</span>
   </div>
 
+  {% if own %}
+  <div class="panel" style="padding:10px 16px">
+    <label class="muted" style="font-size:13px">Make in channel:
+      <select id="make-channel">
+        {% for o in own %}<option value="{{ o['id'] }}" {{ 'selected' if selected_own == o['id'] else '' }}>{{ o['name'] }}</option>{% endfor %}
+      </select></label>
+    <span class="muted" style="font-size:12px">&nbsp; &ldquo;Make this&rdquo; starts a production here with that video as the source.</span>
+  </div>
+  {% endif %}
+  {% if tab == 'topics' %}
+  <div class="panel">
+    {% if job.running %}
+      <div id="running" class="banner ok" style="margin:0">Running: {{ job.kind }}</div>
+      <pre class="log" id="log" style="background:#0c0e12;border:1px solid var(--border);border-radius:7px;padding:8px 10px;max-height:180px;overflow:auto;font-size:12px;white-space:pre-wrap"></pre>
+    {% else %}
+    <form class="filters" method="post" action="/research/topics/generate">
+      <label>writer<select name="writer"><option value="zai">z.ai (GLM)</option><option value="deepseek">DeepSeek</option></select></label>
+      <label>model<select name="zai_model"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
+      <label>Deep Think<select name="zai_thinking"><option>Low</option><option>High</option><option>Max</option></select></label>
+      <label>min multiplier<select name="mult">{% for m in ['3','5','10'] %}<option>{{ m }}</option>{% endfor %}</select></label>
+      {% if genres %}<label>genre<select name="genre"><option value="">all</option>{% for g in genres %}<option>{{ g }}</option>{% endfor %}</select></label>{% endif %}
+      <button type="submit">{{ 'Group again' if topics.topics else 'Group the outliers into topics' }}</button>
+    </form>
+    <div class="note">A chat groups the top outliers by subject; the numbers are worked out here. A topic that won on several channels is a safer bet than one viral video.{% if topics.made_at %} &middot; made {{ topics.made_at.replace('T', ' ') }}{% endif %}</div>
+    {% endif %}
+  </div>
+  {% for tp in topics.topics %}
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+      <div><div class="title" style="font-size:16px">{{ tp.name }}</div>
+        <div class="muted">{{ tp.angle }}</div>
+        <div style="margin-top:6px"><span class="mult m{{ '10' if tp.best >= 10 else ('5' if tp.best >= 5 else '3') }}">best {{ tp.best }}x</span>
+          <span class="badge">median {{ tp.median }}x</span>
+          <span class="badge {{ 'transcribed' if tp.channels >= 3 else '' }}">{{ tp.channels }} channel{{ '' if tp.channels == 1 else 's' }}</span>
+          <span class="badge">{{ tp.videos|length }} video{{ '' if tp.videos|length == 1 else 's' }} &middot; {{ fmt_views(tp.views) }} views</span></div></div>
+      <form method="post" action="/studio/new" style="margin:0">
+        <input type="hidden" name="title" value="{{ tp.videos[0].title }}">
+        <input type="hidden" name="source_video_id" value="{{ tp.videos[0].video_id }}">
+        <input type="hidden" name="genre" value="{{ tp.videos[0].genre or '' }}">
+        <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">
+        <button type="submit" title="Start a production from the best video of this topic">Make this</button>
+      </form>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:10px">
+      {% for v in tp.videos[:6] %}<a href="https://youtu.be/{{ v.video_id }}" target="_blank" rel="noopener" style="color:inherit">
+        <img class="th" style="width:100%;height:auto;aspect-ratio:16/9" loading="lazy" src="https://i.ytimg.com/vi/{{ v.video_id }}/mqdefault.jpg" alt="">
+        <div style="font-size:12px;margin-top:3px">{{ v.title }}</div>
+        <div class="muted" style="font-size:11px">{{ v.channel_name }} &middot; {{ v.multiplier }}x</div></a>{% endfor %}
+    </div>
+  </div>
+  {% else %}
+  {% if not job.running %}<div class="panel muted">No topics yet.</div>{% endif %}
+  {% endfor %}
+  {% else %}
   <div class="panel">
     <form class="filters" method="get" action="/research">
       <label>min multiplier
@@ -120,7 +174,7 @@
       {% endif %}
       <label>sort
         <select name="sort">
-          {% for k, lbl in [('multiplier','multiplier'),('views','views'),('vpd','views / day'),('recent','newest')] %}<option value="{{ k }}" {{ 'selected' if f.sort == k else '' }}>{{ lbl }}</option>{% endfor %}
+          {% for k, lbl in [('multiplier','multiplier'),('views','views'),('vpd','views / day'),('momentum','momentum (now / day)'),('recent','newest')] %}<option value="{{ k }}" {{ 'selected' if f.sort == k else '' }}>{{ lbl }}</option>{% endfor %}
         </select></label>
       <label>shorts
         <select name="shorts">
@@ -135,19 +189,11 @@
       {{ matched }} match{{ '' if matched == 1 else 'es' }}{% if matched > rows|length %} (showing the top {{ rows|length }}){% endif %}
       &middot; {{ scored }} of {{ total_videos }} videos could be scored
       {% if with_views < total_videos %}&middot; {{ total_videos - with_views }} have no view count yet &mdash; <a href="/watched">refresh view counts on Watched Channels</a>{% endif %}
+      {% if with_momentum < scored %}&middot; {{ scored - with_momentum }} have no "now / day" yet: it appears after a second view-count refresh at least 12 hours after the first{% endif %}
       {% if undated %}&middot; {{ undated }} have no publish date yet, so the age filter skips them (the YouTube API will fill these in){% endif %}
     </div>
   </div>
 
-  {% if own %}
-  <div class="panel" style="padding:10px 16px">
-    <label class="muted" style="font-size:13px">Make in channel:
-      <select id="make-channel">
-        {% for o in own %}<option value="{{ o['id'] }}" {{ 'selected' if selected_own == o['id'] else '' }}>{{ o['name'] }}</option>{% endfor %}
-      </select></label>
-    <span class="muted" style="font-size:12px">&nbsp; &ldquo;Make this&rdquo; starts a production here with that video as the source.</span>
-  </div>
-  {% endif %}
 
   {% if rows %}
   <div class="panel" style="padding:0">
@@ -155,7 +201,7 @@
     <thead><tr>
       <th></th><th>video</th><th class="num">multiplier</th>
       <th class="num">views</th><th class="num hide-sm">typical</th>
-      <th class="num hide-sm">age</th><th class="hide-sm">transcript</th><th></th>
+      <th class="num hide-sm" title="views gained per day since the last refresh">now / day</th><th class="num hide-sm">age</th><th class="hide-sm">transcript</th><th></th>
     </tr></thead>
     <tbody>
     {% for r in rows %}
@@ -167,6 +213,7 @@
               title="views / {{ fmt_views(r.baseline) }} ({{ r.baseline_how }})">{{ '%.1f' % r.multiplier }}x</span></td>
         <td class="num">{{ fmt_views(r.views) }}</td>
         <td class="num hide-sm muted">{{ fmt_views(r.baseline) }}</td>
+        <td class="num hide-sm">{% if r.momentum is not none %}{{ fmt_views(r.momentum) }}{% if r.trend == 'rising' %} <span class="mult m10" title="gaining faster than its lifetime average">&#9650;</span>{% elif r.trend == 'cooling' %} <span class="badge" title="slower than its lifetime average">&#9660;</span>{% endif %}{% else %}<span class="muted">-</span>{% endif %}</td>
         <td class="num hide-sm muted">{{ fmt_age(r.age_days) }}</td>
         <td class="hide-sm"><span class="badge {{ r.status }}">{{ r.status }}</span></td>
         <td class="num">
@@ -188,8 +235,22 @@
       Refresh the view counts on <a href="/watched">Watched Channels</a>.{% else %}Lower the multiplier or widen the age.{% endif %}
   </div>
   {% endif %}
+  {% endif %}
 </div>
 <script>
+  (function () {
+    var box = document.getElementById('running');
+    if (!box) return;
+    var log = document.getElementById('log');
+    function tick() {
+      fetch('/studio/job').then(function (r) { return r.json(); }).then(function (j) {
+        if (log) log.textContent = (j.log || []).slice(-12).join('\n');
+        if (!j.running) { location.href = location.pathname + '?tab=topics'; return; }
+        setTimeout(tick, 3000);
+      }).catch(function () { setTimeout(tick, 5000); });
+    }
+    tick();
+  })();
   (function () {
     var sel = document.getElementById('make-channel');
     if (!sel) return;

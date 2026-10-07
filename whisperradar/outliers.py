@@ -19,7 +19,10 @@ WINDOW = 30                # previous uploads that define a channel's norm
 MIN_BASELINE = 5           # fewer comparison videos than this = no verdict
 SHORT_SECONDS = 61         # <= this is a Short (when the duration is known)
 
-SORTS = ("multiplier", "views", "vpd", "recent")
+SORTS = ("multiplier", "views", "vpd", "recent", "momentum")
+MOMENTUM_MIN_HOURS = 12        # snapshots closer than this say nothing
+MOMENTUM_WINDOW_DAYS = 7
+RISING, COOLING = 1.5, 0.5     # momentum vs the video's own lifetime pace
 
 
 def parse_date(value) -> _dt.datetime | None:
@@ -58,8 +61,36 @@ def baseline_for(video: dict, siblings: list[dict], window: int = WINDOW,
     return None, ""
 
 
+def momentum(snaps, window_days: float = MOMENTUM_WINDOW_DAYS,
+             min_hours: float = MOMENTUM_MIN_HOURS) -> float | None:
+    """Views gained per day between the latest snapshot and the oldest one
+    inside the window that is at least `min_hours` before it. None when the
+    snapshots cannot say (fewer than two, or too close together)."""
+    snaps = sorted(snaps or [])
+    if len(snaps) < 2:
+        return None
+    last_t, last_v = snaps[-1]
+    for t, v in snaps:
+        hours = (last_t - t).total_seconds() / 3600.0
+        if hours < min_hours:
+            break
+        if hours <= window_days * 24:
+            return max(0.0, (last_v - v) / (hours / 24.0))
+    return None
+
+
+def trend(now_per_day, lifetime_per_day) -> str:
+    """"rising", "cooling" or "" - recent pace vs the pace over its life."""
+    if now_per_day is None or not lifetime_per_day:
+        return ""
+    ratio = now_per_day / lifetime_per_day
+    return "rising" if ratio >= RISING else (
+        "cooling" if ratio <= COOLING else "")
+
+
 def build(rows: Iterable, now: _dt.datetime | None = None, window: int = WINDOW,
-          min_baseline: int = MIN_BASELINE) -> list[dict]:
+          min_baseline: int = MIN_BASELINE, snapshots: dict | None = None
+          ) -> list[dict]:
     """Every video that has a view count and enough channel context, with its
     baseline, multiplier and views per day. `rows` need: video_id, channel_id,
     channel_name, genre, title, url, published_at, view_count, duration,
@@ -92,6 +123,8 @@ def build(rows: Iterable, now: _dt.datetime | None = None, window: int = WINDOW,
         age = ((now - it["when"]).total_seconds() / 86400.0
                if it["when"] else None)
         dur = it["duration"]
+        vpd = (it["views"] / max(age, 1.0)) if age is not None else None
+        now_pd = momentum((snapshots or {}).get(it["video_id"]))
         out.append({
             **{k: it[k] for k in ("video_id", "channel_id", "channel_name",
                                   "genre", "title", "url", "published_at",
@@ -99,7 +132,8 @@ def build(rows: Iterable, now: _dt.datetime | None = None, window: int = WINDOW,
             "baseline": base, "baseline_how": how,
             "multiplier": it["views"] / base,
             "age_days": age,
-            "vpd": (it["views"] / max(age, 1.0)) if age is not None else None,
+            "vpd": vpd,
+            "momentum": now_pd, "trend": trend(now_pd, vpd),
             "is_short": bool(dur is not None and dur <= SHORT_SECONDS),
             "thumb": f"https://i.ytimg.com/vi/{it['video_id']}/mqdefault.jpg",
         })
@@ -134,6 +168,8 @@ def filter_sort(items: list[dict], *, min_multiplier: float = 3.0,
         keep.sort(key=lambda i: i["views"], reverse=True)
     elif sort == "vpd":
         keep.sort(key=lambda i: (i["vpd"] is None, -(i["vpd"] or 0)))
+    elif sort == "momentum":
+        keep.sort(key=lambda i: (i["momentum"] is None, -(i["momentum"] or 0)))
     elif sort == "recent":
         keep.sort(key=lambda i: (i["age_days"] is None, i["age_days"] or 0))
     else:
