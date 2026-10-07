@@ -102,6 +102,7 @@
   <span class="brand">WhisperRadar</span>
   <a href="/">Dashboard</a>
   <a href="/watched">Watched Channels</a>
+  <a href="/research">Research</a>
   <a href="/studio" class="active">Studio</a>
   <a href="/finished">Finished</a>
   <a href="/my-channels">My Channels</a>
@@ -120,6 +121,7 @@
   <h1>{{ prod["title"] }}
     {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
   </h1>
+  <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a></div>
   <div class="sub">
     <span class="badge genre">{{ prod["genre"] }}</span>
     {% if own_channel_name %}

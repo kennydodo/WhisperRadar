@@ -63,6 +63,7 @@
   <span class="brand">WhisperRadar</span>
   <a href="/">Dashboard</a>
   <a href="/watched">Watched Channels</a>
+  <a href="/research">Research</a>
   <a href="/studio">Studio</a>
   <a href="/finished" class="active">Finished</a>
   <a href="/my-channels">My Channels</a>
@@ -95,6 +96,7 @@
           <th><a href="?{{ qs(sort='date', dir=('asc' if sort != 'date' or dir == 'desc' else 'desc')) }}"
                  class="{{ 'active' if sort == 'date' }}">Date</a></th>
           <th>Status</th>
+          <th>Kit</th>
           <th></th>
         </tr>
       </thead>
@@ -112,10 +114,19 @@
             <span class="badge ready">ready to publish</span>
             {% endif %}
           </td>
+          <td>
+            {% if item.kit and item.kit.status == 'ready' %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge published" title="Publish kit is ready">kit ready{% if item.kit.score %} {{ item.kit.score }}{% endif %}</a>
+            {% elif item.kit %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge genre" title="A draft kit - open it to finish it">kit draft</a>
+            {% else %}<a href="/studio/{{ item.row['id'] }}/kit" class="muted">no kit</a>{% endif %}
+            <br>{% if item.thumbs and item.thumbs.chosen %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge published" title="A thumbnail is chosen">thumbnail chosen</a>
+            {% elif item.thumbs %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge genre" title="Concepts exist - pick one">{{ item.thumbs.count }} thumbnails</a>
+            {% else %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="muted">no thumbnail</a>{% endif %}
+          </td>
           <td class="actions">
             <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>
             {% if item.row["status"] == "ready" %}
-            <form method="post" action="/studio/{{ item.row['id'] }}/publish" style="display:inline">
+            <form method="post" action="/studio/{{ item.row['id'] }}/publish" style="display:inline"
+                  {% if not (item.kit and item.kit.status == 'ready') %}onsubmit="return wrConfirmSubmit(this, 'There is no finished publish kit (title, description, hashtags) yet. Mark it published anyway?')"{% endif %}>
               <button type="submit" title="Mark this production as published">Mark published</button>
             </form>
             {% else %}

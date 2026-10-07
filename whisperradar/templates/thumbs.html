@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Thumbnails</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
+    --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f; --amber: #e0a93f;
+    --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+  input[type=text], textarea, select { width: 100%; background: #0c0e12;
+        color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+        padding: 7px 10px; font: inherit; }
+  textarea { min-height: 120px; resize: vertical; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .row > * { flex: 1 1 140px; }
+  .row label { margin-top: 0; }
+  button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
+          padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; border: 1px solid var(--border);
+                 color: var(--muted); font-weight: 500; padding: 4px 10px; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .muted { color: var(--muted); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.ok { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.warn { background: rgba(224,169,63,.15); color: var(--amber); }
+  .checks { list-style: none; padding: 0; margin: 6px 0 0; columns: 2 320px; }
+  .checks li { padding: 2px 0; font-size: 13px; break-inside: avoid; }
+  .checks .y { color: var(--green); } .checks .n { color: var(--red); }
+  .checks .t { color: var(--amber); }
+  .titles { margin: 6px 0 0; padding: 0; list-style: none; }
+  .titles li { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .titles li:last-child { border-bottom: none; }
+  .titles button { padding: 2px 8px; margin-right: 8px; }
+  .chap { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center;
+          margin-bottom: 5px; }
+  .chap span { color: var(--muted); font-family: Consolas, monospace; font-size: 13px; }
+  pre.log { background: #0c0e12; border: 1px solid var(--border); border-radius: 7px;
+            padding: 8px 10px; max-height: 180px; overflow: auto; font-size: 12px;
+            white-space: pre-wrap; margin: 8px 0 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .card.chosen { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); }
+  .card img.big { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 7px; background: #0c0e12; display: block; }
+  .ph { width: 100%; aspect-ratio: 16/9; border-radius: 7px; background: #0c0e12; display: flex;
+        align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+  .card .row { margin-top: 8px; }
+  .card input[type=color] { width: 100%; height: 32px; padding: 2px; background: #0c0e12; border: 1px solid var(--border); border-radius: 7px; }
+  .card textarea { min-height: 70px; }
+  .sheet { max-width: 100%; border-radius: 8px; display: block; }
+  .chip { display: inline-block; padding: 1px 9px; border-radius: 20px; font-size: 12px; background: rgba(79,140,255,.15); color: var(--accent); }
+</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
+</head>
+<body>
+<style>
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1000px; margin:0 auto;
+            padding:14px 16px 0; flex-wrap:wrap; }
+  .topnav .brand { font-weight:700; color:var(--text); font-size:15px; }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+</style>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/watched">Watched Channels</a>
+  <a href="/research">Research</a>
+  <a href="/studio">Studio</a>
+  <a href="/finished" class="active">Finished</a>
+  <a href="/my-channels">My Channels</a>
+  <a href="/settings">Settings</a>
+</nav>
+<div class="wrap">
+  <p class="muted" style="margin:0 0 6px"><a href="/finished">&larr; Finished</a> &middot; <a href="/studio/{{ prod['id'] }}/kit">publish kit</a> &middot; <a href="/studio/{{ prod['id'] }}">open the production</a></p>
+  <h1>Thumbnails &mdash; {{ prod['title'] }}</h1>
+  <p class="sub">3&ndash;5 concepts: the character and the host together, the character alone, or the host alone &mdash; each with a few catchy words. A chat designs them, your image engine paints the picture, and the words are added sharp on top.</p>
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <h2>Inspiration</h2>
+    <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/inspiration" style="margin:0">
+      <button type="submit" class="ghost">{{ 'Pull again' if inspiration else 'Pull the source and top outlier thumbnails' }}</button>
+      <span class="muted" style="font-size:12px">&nbsp; the thumbnail of the video this is based on, plus the niche's best outliers</span>
+    </form>
+    {% if inspiration %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:10px">
+      {% for i in inspiration %}<a href="https://youtu.be/{{ i.id }}" target="_blank" rel="noopener"><img class="big" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px" loading="lazy" src="{{ i.url }}" alt=""></a>{% endfor %}
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:6px">Look at what they have in common: the faces, the colours, how few words. Use it to edit the concepts below. The pictures are for you, they are not sent to the chats.</div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>Design concepts</h2>
+    {% if job.running %}
+      <div id="running" class="banner ok" style="margin:0">Running: {{ job.kind }}</div>
+      <pre class="log" id="log"></pre>
+      <form method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:8px">
+        <button type="submit" class="ghost">Stop after this round</button></form>
+    {% elif not has_script %}
+      <div class="muted">This production has no script yet.</div>
+    {% else %}
+    <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/concepts">
+      <div class="row">
+        <label>Writer<select name="writer"><option value="zai">z.ai (GLM)</option><option value="deepseek">DeepSeek</option></select></label>
+        <label>Model<select name="zai_model"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
+        <label>Deep Think<select name="zai_thinking"><option>Low</option><option>High</option><option>Max</option></select></label>
+        <label>Judge<select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai (GLM)</option></select></label>
+        <label>DeepThink<select name="deepseek_deepthink"><option value="on">on</option><option value="off">off</option></select></label>
+        <button type="submit">{{ 'Redesign concepts' if data.concepts else 'Design concepts' }}</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Runs until the judge passes the set (8+) or you stop it. New chats; the script, shotlist and kit chats are left alone. A redo keeps the pictures of concepts whose picture prompt did not change.</div>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if data.concepts %}
+  <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/save">
+  <div class="panel">
+    <h2>Pictures
+      {% if data.score %}<span class="badge ok" title="the judge's score">judge {{ data.score }}</span>{% endif %}
+      <span class="badge {{ 'ok' if data.status == 'ready' else 'warn' }}">{{ data.status }}</span></h2>
+    {% if not job.running %}
+      <button type="submit" formaction="/studio/{{ prod['id'] }}/thumbnails/art">Make all pictures</button>
+      <span class="muted" style="font-size:12px">&nbsp; uses this channel's image engine (FlowBatch or Renderly); ~{{ data.concepts|length }} generation(s)</span>
+    {% endif %}
+  </div>
+
+  <div class="grid">
+  {% for c in data.concepts %}
+    <div class="card {{ 'chosen' if data.chosen == c.id else '' }}">
+      {% if c.final_url %}<img class="big" src="{{ c.final_url }}" alt="">
+      {% elif c.art_url %}<img class="big" src="{{ c.art_url }}" alt="">
+      {% else %}<div class="ph">no picture yet</div>{% endif %}
+      <div style="margin-top:8px"><span class="chip">{{ layouts[c.layout] }}</span>
+        {% if data.chosen == c.id %}<span class="badge ok">chosen</span>{% endif %}
+        {% if c.idea %}<span class="muted" style="font-size:12px"> &middot; {{ c.idea }}</span>{% endif %}</div>
+      <label>Words (max 4)</label>
+      <input type="text" name="text_{{ c.id }}" value="{{ c.text }}" maxlength="40">
+      <div class="row">
+        <label>Place<select name="pos_{{ c.id }}">{% for p in positions %}<option {{ 'selected' if c.text_pos == p else '' }}>{{ p }}</option>{% endfor %}</select></label>
+        <label>Text colour<input type="color" name="color_{{ c.id }}" value="{{ c.text_color }}"></label>
+        <label>Accent<input type="color" name="accent_{{ c.id }}" value="{{ c.accent }}"></label>
+      </div>
+      <label>Picture prompt</label>
+      <textarea name="prompt_{{ c.id }}">{{ c.art_prompt }}</textarea>
+      <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
+        {% if not job.running %}<button type="submit" class="ghost" name="ids" value="{{ c.id }}" formaction="/studio/{{ prod['id'] }}/thumbnails/art">{{ 'Redo picture' if c.art_file else 'Make picture' }}</button>{% endif %}
+        {% if c.final %}<button type="submit" name="id" value="{{ c.id }}" formaction="/studio/{{ prod['id'] }}/thumbnails/choose">{{ 'Unchoose' if data.chosen == c.id else 'Choose this one' }}</button>
+        <a class="btn" style="background:transparent;border:1px solid var(--border);color:var(--muted)" href="{{ c.final_url }}" download="thumbnail-{{ c.id }}.jpg">download</a>{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+  </div>
+  <div style="margin:14px 0"><button type="submit">Save changes and re-compose</button>
+    <span class="muted" style="font-size:12px">&nbsp; re-draws the words on every picture</span></div>
+  </form>
+
+  {% if sheet_url %}
+  <div class="panel">
+    <h2>As a phone feed shows them</h2>
+    <img class="sheet" src="{{ sheet_url }}" alt="thumbnails at phone size, on dark and light backgrounds">
+    <div class="muted" style="font-size:12px;margin-top:6px">About 170 px wide, dark and light mode. If the words or the faces are hard to read here, they are too small.</div>
+  </div>
+  {% endif %}
+
+  {% if not job.running %}
+  <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/picture" enctype="multipart/form-data" class="panel">
+    <h2>Use your own picture</h2>
+    <div class="row">
+      <label>For concept<select name="id">{% for c in data.concepts %}<option value="{{ c.id }}">{{ loop.index }}. {{ c.text }}</option>{% endfor %}</select></label>
+      <label>Upload (PNG/JPG)<input type="file" name="file" accept=".png,.jpg,.jpeg"></label>
+      {% if images %}<label>or one of this video's images<select name="image"><option value="">-</option>{% for im in images %}<option>{{ im }}</option>{% endfor %}</select></label>{% endif %}
+      <button type="submit">Use it</button>
+    </div>
+  </form>
+  {% endif %}
+  {% endif %}
+</div>
+<script>
+  (function () {
+    var box = document.getElementById('running');
+    if (!box) return;
+    var log = document.getElementById('log');
+    function tick() {
+      fetch('/studio/job').then(function (r) { return r.json(); }).then(function (j) {
+        if (log) log.textContent = (j.log || []).slice(-12).join('\n');
+        if (!j.running) { location.href = location.pathname; return; }
+        setTimeout(tick, 3000);
+      }).catch(function () { setTimeout(tick, 5000); });
+    }
+    tick();
+  })();
+</script>
+</body>
+</html>

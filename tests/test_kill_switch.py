@@ -24,6 +24,8 @@ from urllib.parse import unquote
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -60,7 +62,7 @@ def _wait_dead(pid: int, timeout: float = 10.0) -> bool:
 class KillImageBatchTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(wr_tmp.cleanup, self.tmp)
         self.dir_a = Path(self.tmp.name) / "a"
         self.dir_b = Path(self.tmp.name) / "b"
         self.dir_a.mkdir()
@@ -192,7 +194,7 @@ class ResumeLoopTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(wr_tmp.cleanup, self.tmp)
         self.cfg = load_config(ROOT / "config.yaml")
         self.cfg.db_path = Path(self.tmp.name) / "wr.db"
         self.cfg.studio_dir = Path(self.tmp.name) / "studio"
@@ -268,7 +270,7 @@ class ResumeLoopTests(unittest.TestCase):
 class KillRouteTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(wr_tmp.cleanup, self.tmp)
         cfg = load_config(ROOT / "config.yaml")
         cfg.db_path = Path(self.tmp.name) / "wr.db"
         cfg.studio_dir = Path(self.tmp.name) / "studio"

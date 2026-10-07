@@ -28,6 +28,7 @@ import json
 import re
 
 from . import autorun, briefs, db, studio
+from . import plan as packplan
 
 
 class PromptError(RuntimeError):
@@ -239,7 +240,8 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         _FACTS_TOKEN if (files is not None and facts) else facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
-        extra_direction=db.stage_extra(prod, "script"))
+        extra_direction=packplan.with_plan(cfg, prod,
+                                         db.stage_extra(prod, "script")))
     lo, hi = _length_window(int(target_words))
     bar = (f"\n\nQUALITY BAR - a script is only accepted when ALL of these "
            f"hold:\n"
@@ -302,7 +304,8 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
         _title(ctx, title), prod["genre"], script,
         _FACTS_TOKEN if (files is not None and facts) else facts,
         _STYLE_TOKEN if (files is not None and style) else style, overlap,
-        extra_direction=db.stage_extra(prod, "script"))
+        extra_direction=packplan.with_plan(cfg, prod,
+                                         db.stage_extra(prod, "script")))
     if files is not None:
         by = {f["name"]: f for f in out_files}
         fname = (NOTES_FILE if NOTES_FILE in by else SOURCE_FACTS_FILE)

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Packaging plan</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
+    --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f; --amber: #e0a93f;
+    --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  h2 { font-size: 15px; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+  input[type=text], textarea, select { width: 100%; background: #0c0e12;
+        color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+        padding: 7px 10px; font: inherit; }
+  textarea { min-height: 120px; resize: vertical; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .row > * { flex: 1 1 140px; }
+  .row label { margin-top: 0; }
+  button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
+          padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; border: 1px solid var(--border);
+                 color: var(--muted); font-weight: 500; padding: 4px 10px; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .muted { color: var(--muted); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.ok { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.warn { background: rgba(224,169,63,.15); color: var(--amber); }
+  .checks { list-style: none; padding: 0; margin: 6px 0 0; columns: 2 320px; }
+  .checks li { padding: 2px 0; font-size: 13px; break-inside: avoid; }
+  .checks .y { color: var(--green); } .checks .n { color: var(--red); }
+  .checks .t { color: var(--amber); }
+  .titles { margin: 6px 0 0; padding: 0; list-style: none; }
+  .titles li { padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .titles li:last-child { border-bottom: none; }
+  .titles button { padding: 2px 8px; margin-right: 8px; }
+  .chap { display: grid; grid-template-columns: 64px 1fr; gap: 8px; align-items: center;
+          margin-bottom: 5px; }
+  .chap span { color: var(--muted); font-family: Consolas, monospace; font-size: 13px; }
+  pre.log { background: #0c0e12; border: 1px solid var(--border); border-radius: 7px;
+            padding: 8px 10px; max-height: 180px; overflow: auto; font-size: 12px;
+            white-space: pre-wrap; margin: 8px 0 0; }
+</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
+</head>
+<body>
+<style>
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1000px; margin:0 auto;
+            padding:14px 16px 0; flex-wrap:wrap; }
+  .topnav .brand { font-weight:700; color:var(--text); font-size:15px; }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+</style>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/watched">Watched Channels</a>
+  <a href="/research">Research</a>
+  <a href="/studio" class="active">Studio</a>
+  <a href="/finished">Finished</a>
+  <a href="/my-channels">My Channels</a>
+  <a href="/settings">Settings</a>
+</nav>
+<div class="wrap">
+  <p class="muted" style="margin:0 0 6px"><a href="/studio/{{ prod['id'] }}">&larr; back to the production</a></p>
+  <h1>Packaging plan &mdash; {{ prod['title'] }}</h1>
+  <p class="sub">decide the title, the promise, the opening hook and the thumbnail idea <b>before</b> the script is written. The script is then written to this plan, and the publish kit and thumbnails start from it.</p>
+  {% if prod['source_video_id'] %}<div class="panel" style="display:flex;gap:12px;align-items:center"><img src="https://i.ytimg.com/vi/{{ prod['source_video_id'] }}/mqdefault.jpg" alt="" style="width:160px;border-radius:6px"><div><div class="muted" style="font-size:12px">based on</div><a href="https://youtu.be/{{ prod['source_video_id'] }}" target="_blank" rel="noopener">its thumbnail &amp; video</a></div></div>{% endif %}
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  <div class="panel">
+    <h2>Generate</h2>
+    {% if job.running %}
+      <div id="running" class="banner ok" style="margin:0">Running: {{ job.kind }}</div>
+      <pre class="log" id="log"></pre>
+      <form method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:8px">
+        <button type="submit" class="ghost">Stop after this round</button></form>
+        {% else %}
+    <form method="post" action="/studio/{{ prod['id'] }}/plan/generate">
+      <div class="row">
+        <label>Writer<select name="writer"><option value="zai">z.ai (GLM)</option><option value="deepseek">DeepSeek</option></select></label>
+        <label>Model<select name="zai_model"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
+        <label>Deep Think<select name="zai_thinking"><option>Low</option><option>High</option><option>Max</option></select></label>
+        <label>Judge<select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai (GLM)</option></select></label>
+        <label>DeepThink<select name="deepseek_deepthink"><option value="on">on</option><option value="off">off</option></select></label>
+        <button type="submit">{{ 'Redo the plan' if plan.title else 'Plan the packaging' }}</button>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:6px">Runs until the judge passes it (score 8+ and no rule faults) or you stop it. New chats; nothing in the script stage is touched.</div>
+    </form>
+    {% endif %}
+  </div>
+
+
+  {% if plan.title %}
+  <div class="panel">
+    <h2>Check
+      {% if plan.score %}<span class="badge ok" title="the judge's score">judge {{ plan.score }}</span>{% endif %}
+      <span class="badge {{ 'ok' if plan.status == 'ready' else 'warn' }}">{{ plan.status }}</span>
+      {% if plan.applied %}<span class="badge ok">applied</span>{% endif %}</h2>
+    {% if faults %}<ul class="checks">{% for f in faults %}<li class="n">&#10008; {{ f }}</li>{% endfor %}</ul>
+    {% else %}<div style="color:var(--green)">&#10004; every rule check passes</div>{% endif %}
+  </div>
+
+  {% if plan.titles %}
+  <div class="panel">
+    <h2>Title options</h2>
+    <ul class="titles">
+      {% for t in plan.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/studio/{{ prod['id'] }}/plan/save" class="panel">
+    <h2>The plan</h2>
+    <label>Title ({{ plan.title|length }} characters)</label>
+    <input type="text" id="f-title" name="title" value="{{ plan.title }}">
+    <label>Main keyword</label>
+    <input type="text" name="keyword" value="{{ plan.keyword }}">
+    <label>Promise &mdash; what the viewer will know or feel afterwards (the script is written to this)</label>
+    <textarea name="promise" style="min-height:70px">{{ plan.promise }}</textarea>
+    <label>Opening hook &mdash; how the first 15 seconds start</label>
+    <textarea name="hook" style="min-height:70px">{{ plan.hook }}</textarea>
+    <div class="row">
+      <label>Thumbnail layout<select name="layout">{% for k, v in layouts.items() %}<option value="{{ k }}" {{ 'selected' if plan.thumbnail.layout == k else '' }}>{{ v }}</option>{% endfor %}</select></label>
+      <label>Thumbnail words (max 4)<input type="text" name="thumb_text" value="{{ plan.thumbnail.text }}"></label>
+    </div>
+    <label>Thumbnail idea</label>
+    <input type="text" name="thumb_idea" value="{{ plan.thumbnail.idea }}">
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+      <button type="submit">Save</button>
+      <button type="submit" name="apply" value="1" title="Save, and make this the production's title">Save &amp; use this title</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:8px">Once saved, the script stage (built-in, web chat and copy-paste) adds the promise, hook and thumbnail words to its direction, and the judge checks the script keeps the promise.</div>
+  </form>
+  {% endif %}
+</div>
+<script>
+  function wrCopy(id) {
+    var el = document.getElementById(id); el.focus(); el.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    if (navigator.clipboard) navigator.clipboard.writeText(el.value).catch(function () {});
+  }
+  (function () {
+    var box = document.getElementById('running');
+    if (!box) return;
+    var log = document.getElementById('log');
+    function tick() {
+      fetch('/studio/job').then(function (r) { return r.json(); }).then(function (j) {
+        if (log) log.textContent = (j.log || []).slice(-12).join('\n');
+        if (!j.running) { location.href = location.pathname; return; }
+        setTimeout(tick, 3000);
+      }).catch(function () { setTimeout(tick, 5000); });
+    }
+    tick();
+  })();
+</script>
+</body>
+</html>

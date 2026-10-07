@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Research</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
+    --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f; --amber: #e0a93f;
+    --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .sub { color: var(--muted); margin: 0 0 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs span, .tabs a { padding: 6px 14px; border-radius: 7px;
+         border: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+  .tabs a.active { color: var(--text); background: var(--panel); font-weight: 600; }
+  .tabs span.soon { opacity: .45; cursor: default; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px;
+       text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  img.th { width: 120px; height: 68px; object-fit: cover; border-radius: 6px;
+           background: #0c0e12; display: block; }
+  .mult { display: inline-block; padding: 1px 9px; border-radius: 20px;
+          font-weight: 700; font-size: 13px; }
+  .mult.m3 { background: rgba(79,140,255,.15); color: var(--accent); }
+  .mult.m5 { background: rgba(224,169,63,.15); color: var(--amber); }
+  .mult.m10 { background: rgba(63,185,111,.18); color: var(--green); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 20px;
+           font-size: 11px; font-weight: 600; background: rgba(86,93,107,.25);
+           color: var(--muted); }
+  .badge.transcribed { background: rgba(63,185,111,.15); color: var(--green); }
+  button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
+          padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+  input, select { background: #0c0e12; color: var(--text); border: 1px solid var(--border);
+                  border-radius: 7px; padding: 6px 9px; font-size: 13px; }
+  form.filters { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  form.filters label { display: flex; flex-direction: column; gap: 3px;
+                       font-size: 12px; color: var(--muted); }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .muted { color: var(--muted); }
+  .title { font-weight: 600; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  @media (max-width: 760px) { img.th { width: 84px; height: 48px; }
+    .hide-sm { display: none; } }
+</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
+</head>
+<body>
+<style>
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px; margin:0 auto;
+            padding:14px 16px 0; flex-wrap:wrap; }
+  .topnav .brand { font-weight:700; color:var(--text); font-size:15px; }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+</style>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/watched">Watched Channels</a>
+  <a href="/research" class="active">Research</a>
+  <a href="/studio">Studio</a>
+  <a href="/finished">Finished</a>
+  <a href="/my-channels">My Channels</a>
+  <a href="/settings">Settings</a>
+</nav>
+<div class="wrap">
+  <h1>Research &mdash; what to make</h1>
+  <p class="sub">videos that beat their own channel's norm: views &divide; the channel's median.
+    A 10x video got ten times what that channel usually gets.</p>
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  <div class="tabs">
+    <a href="/research" class="active">Outliers</a>
+    <span class="soon" title="coming next">Topics</span>
+    <span class="soon" title="coming next">Keywords</span>
+    <span class="soon" title="coming next">Channels</span>
+    <span class="soon" title="coming next">Analyze</span>
+  </div>
+
+  <div class="panel">
+    <form class="filters" method="get" action="/research">
+      <label>min multiplier
+        <select name="mult">
+          {% for m in ['2','3','5','10','20'] %}<option value="{{ m }}" {{ 'selected' if f.mult == m else '' }}>{{ m }}x</option>{% endfor %}
+        </select></label>
+      <label>age
+        <select name="age">
+          <option value="" {{ 'selected' if not f.age else '' }}>any</option>
+          {% for d, lbl in [('30','30 days'),('90','90 days'),('365','1 year')] %}<option value="{{ d }}" {{ 'selected' if f.age == d else '' }}>{{ lbl }}</option>{% endfor %}
+        </select></label>
+      <label>channel
+        <select name="channel">
+          <option value="">all watched</option>
+          {% for c in channels %}<option value="{{ c['channel_id'] }}" {{ 'selected' if f.channel == c['channel_id'] else '' }}>{{ c['name'] }}</option>{% endfor %}
+        </select></label>
+      {% if genres %}
+      <label>genre
+        <select name="genre">
+          <option value="">all</option>
+          {% for g in genres %}<option value="{{ g }}" {{ 'selected' if f.genre == g else '' }}>{{ g }}</option>{% endfor %}
+        </select></label>
+      {% endif %}
+      <label>sort
+        <select name="sort">
+          {% for k, lbl in [('multiplier','multiplier'),('views','views'),('vpd','views / day'),('recent','newest')] %}<option value="{{ k }}" {{ 'selected' if f.sort == k else '' }}>{{ lbl }}</option>{% endfor %}
+        </select></label>
+      <label>shorts
+        <select name="shorts">
+          <option value="hide" {{ 'selected' if f.shorts == 'hide' else '' }}>hide</option>
+          <option value="show" {{ 'selected' if f.shorts == 'show' else '' }}>show</option>
+        </select></label>
+      <label>title contains
+        <input type="search" name="q" value="{{ f.q }}" placeholder="word"></label>
+      <button type="submit">Filter</button>
+    </form>
+    <div class="note">
+      {{ matched }} match{{ '' if matched == 1 else 'es' }}{% if matched > rows|length %} (showing the top {{ rows|length }}){% endif %}
+      &middot; {{ scored }} of {{ total_videos }} videos could be scored
+      {% if with_views < total_videos %}&middot; {{ total_videos - with_views }} have no view count yet &mdash; <a href="/watched">refresh view counts on Watched Channels</a>{% endif %}
+      {% if undated %}&middot; {{ undated }} have no publish date yet, so the age filter skips them (the YouTube API will fill these in){% endif %}
+    </div>
+  </div>
+
+  {% if own %}
+  <div class="panel" style="padding:10px 16px">
+    <label class="muted" style="font-size:13px">Make in channel:
+      <select id="make-channel">
+        {% for o in own %}<option value="{{ o['id'] }}" {{ 'selected' if selected_own == o['id'] else '' }}>{{ o['name'] }}</option>{% endfor %}
+      </select></label>
+    <span class="muted" style="font-size:12px">&nbsp; &ldquo;Make this&rdquo; starts a production here with that video as the source.</span>
+  </div>
+  {% endif %}
+
+  {% if rows %}
+  <div class="panel" style="padding:0">
+  <table>
+    <thead><tr>
+      <th></th><th>video</th><th class="num">multiplier</th>
+      <th class="num">views</th><th class="num hide-sm">typical</th>
+      <th class="num hide-sm">age</th><th class="hide-sm">transcript</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td><a href="{{ r.url }}" target="_blank" rel="noopener"><img class="th" loading="lazy" src="{{ r.thumb }}" alt=""></a></td>
+        <td><div class="title"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a></div>
+            <div class="muted" style="font-size:12px">{{ r.channel_name }}{% if r.duration %} &middot; {{ (r.duration // 60)|int }}:{{ '%02d' % (r.duration % 60)|int }}{% endif %}</div></td>
+        <td class="num"><span class="mult {{ 'm10' if r.multiplier >= 10 else ('m5' if r.multiplier >= 5 else 'm3') }}"
+              title="views / {{ fmt_views(r.baseline) }} ({{ r.baseline_how }})">{{ '%.1f' % r.multiplier }}x</span></td>
+        <td class="num">{{ fmt_views(r.views) }}</td>
+        <td class="num hide-sm muted">{{ fmt_views(r.baseline) }}</td>
+        <td class="num hide-sm muted">{{ fmt_age(r.age_days) }}</td>
+        <td class="hide-sm"><span class="badge {{ r.status }}">{{ r.status }}</span></td>
+        <td class="num">
+          <form method="post" action="/studio/new" style="margin:0">
+            <input type="hidden" name="title" value="{{ r.title }}">
+            <input type="hidden" name="source_video_id" value="{{ r.video_id }}">
+            <input type="hidden" name="genre" value="{{ r.genre or '' }}">
+            <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">
+            <button type="submit" title="Start a production from this video">Make this</button>
+          </form></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="panel muted">No outliers match these filters.
+    {% if scored == 0 %}Nothing could be scored yet: a channel needs at least 5 videos with a view count.
+      Refresh the view counts on <a href="/watched">Watched Channels</a>.{% else %}Lower the multiplier or widen the age.{% endif %}
+  </div>
+  {% endif %}
+</div>
+<script>
+  (function () {
+    var sel = document.getElementById('make-channel');
+    if (!sel) return;
+    function apply() {
+      document.querySelectorAll('input.own-id').forEach(function (i) { i.value = sel.value; });
+    }
+    sel.addEventListener('change', apply); apply();
+  })();
+</script>
+</body>
+</html>

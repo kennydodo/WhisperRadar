@@ -10,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -18,7 +20,7 @@ from whisperradar.webapp import create_app  # noqa: E402
 class StyleCounterTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(wr_tmp.cleanup, self.tmp)
         cfg = load_config(ROOT / "config.yaml")
         cfg.db_path = Path(self.tmp.name) / "wr.db"
         cfg.studio_dir = Path(self.tmp.name) / "studio"

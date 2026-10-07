@@ -332,7 +332,7 @@ class SwitchTests(_Base):
             self.assertFalse(settings.load(conn)["show_apply_all"])
             conn.close()
         finally:
-            fresh.cleanup()
+            wr_tmp.cleanup(fresh)
 
     def test_the_checkbox_lives_in_service_handling(self):
         groups = dict(settings.GROUPS)

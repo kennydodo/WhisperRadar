@@ -14,6 +14,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -188,7 +190,7 @@ class LoopTests(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(wr_tmp.cleanup, self.tmp)
         self.cfg = load_config(ROOT / "config.yaml")
         self.cfg.db_path = Path(self.tmp.name) / "wr.db"
         self.cfg.studio_dir = Path(self.tmp.name) / "studio"

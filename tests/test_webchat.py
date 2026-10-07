@@ -494,6 +494,24 @@ class BusyTests(unittest.TestCase):
             wc.ask(page, wc.ZAI, "hello", clock=clk)
         self.assertIn("at capacity", str(cm.exception))
 
+    def test_a_banner_on_a_stalled_partial_reply_raises_model_busy(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("half an answer", False)] * 80)
+        page.busy = {"n": 1, "text": "The model is at capacity"}
+        with self.assertRaises(wc.ModelBusy) as cm:
+            wc.ask(page, wc.ZAI, "hello", clock=clk,
+                   ready=lambda t: False)
+        self.assertIn("at capacity", str(cm.exception))
+        self.assertIn("stopped after 3 word", str(cm.exception))
+
+    def test_a_finished_reply_is_not_interrupted_by_a_banner(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("half", False), ("half answer", False)]
+                        + [("half answer done", False)] * 8)
+        page.busy = {"n": 1, "text": "The model is at capacity"}
+        out = wc.ask(page, wc.ZAI, "hello", clock=clk)
+        self.assertEqual(out, "half answer done")
+
     def test_no_banner_is_not_busy(self):
         out, _ = run(wc.ZAI, [("Hello world", False)] * 8)
         self.assertEqual(out, "Hello world")

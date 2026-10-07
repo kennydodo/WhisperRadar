@@ -95,7 +95,7 @@ class StartOverTests(unittest.TestCase):
                 resp = create_app(cfg).test_client().post(
                     f"/studio/{pid}/start-over", data={"from": stage})
                 self.assertIn("msg=", resp.headers["Location"], stage)
-                tmp.cleanup()
+                wr_tmp.cleanup(tmp)
 
     def test_reset_from_refs_keeps_audio_srt_shots(self):
         self._post("refs")

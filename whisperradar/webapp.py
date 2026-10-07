@@ -34,6 +34,8 @@ from flask import (
 )
 
 from . import external_prompts
+from . import packaging
+from . import thumbnails
 from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, remote,
                scheduler, services, settings, studio)
 from .cli import _slugify, format_duration
@@ -719,6 +721,66 @@ def create_app(cfg) -> Flask:
             resp.set_cookie(PER_PAGE_COOKIE, str(per_page),
                             max_age=60 * 60 * 24 * 365, samesite="Lax")
         return resp
+
+    @app.get("/research")
+    def research():
+        """What to make: videos that beat their own channel's norm (see
+        outliers.py). Built from the stored view counts of the watched
+        channels - refresh them from the Watched Channels page."""
+        from . import outliers
+        args = request.args
+        tab = "outliers"
+
+        def _num(name, default, cast=float):
+            try:
+                return cast(args.get(name, default))
+            except (TypeError, ValueError):
+                return default
+
+        min_mult = max(1.0, _num("mult", 3.0))
+        age_raw = (args.get("age") or "").strip()
+        max_age = float(age_raw) if age_raw.isdigit() else None
+        sort = args.get("sort") if args.get("sort") in outliers.SORTS \
+            else "multiplier"
+        channel_id = (args.get("channel") or "").strip()
+        genre = (args.get("genre") or "").strip()
+        hide_shorts = args.get("shorts") != "show"
+        q = (args.get("q") or "").strip()
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        rows = conn.execute(
+            "SELECT v.video_id, v.channel_id, c.name AS channel_name,"
+            " c.genre AS genre, v.title, v.url, v.published_at,"
+            " v.view_count, v.duration, v.status FROM videos v"
+            " JOIN channels c ON c.channel_id = v.channel_id"
+            " WHERE c.active = 1 AND v.view_count IS NOT NULL").fetchall()
+        channels = [c for c in db.list_channels(conn) if c["active"]]
+        own = [o for o in db.list_own_channels(conn) if o["active"]]
+        total_videos = conn.execute(
+            "SELECT COUNT(*) FROM videos v JOIN channels c ON"
+            " c.channel_id = v.channel_id WHERE c.active = 1").fetchone()[0]
+        undated = conn.execute(
+            "SELECT COUNT(*) FROM videos v JOIN channels c ON"
+            " c.channel_id = v.channel_id WHERE c.active = 1 AND"
+            " v.view_count IS NOT NULL AND v.published_at IS NULL"
+            ).fetchone()[0]
+        conn.close()
+        items = outliers.build(rows)
+        shown, matched = outliers.filter_sort(
+            items, min_multiplier=min_mult, max_age_days=max_age,
+            channel_id=channel_id, genre=genre, hide_shorts=hide_shorts,
+            q=q, sort=sort)
+        genres = sorted({c["genre"] for c in channels if c["genre"]})
+        return render_template(
+            "research.html", tab=tab, rows=shown, matched=matched,
+            scored=len(items), with_views=len(rows), total_videos=total_videos,
+            undated=undated, channels=channels, genres=genres, own=own,
+            selected_own=_selected_channel(), fmt_views=outliers.fmt_views,
+            fmt_age=outliers.fmt_age,
+            f={"mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
+               "channel": channel_id, "genre": genre, "q": q,
+               "shorts": "hide" if hide_shorts else "show"},
+            msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.get("/watched")
     def watched_channels():
@@ -1917,9 +1979,15 @@ def create_app(cfg) -> Flask:
                 ready_count += 1
             else:
                 published_count += 1
+            kit = packaging.load_kit(studio.prod_dir(cfg, p["id"]))
+            tdata = thumbnails.load_thumbs(studio.prod_dir(cfg, p["id"]))
             all_items.append({
+                "thumbs": ({"count": len(tdata["concepts"]),
+                            "chosen": bool(tdata.get("chosen"))}
+                           if tdata["concepts"] else None),
                 "row": p,
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
+                "kit": kit if kit.get("title") else None,
             })
         conn.close()
 
@@ -3664,6 +3732,333 @@ def create_app(cfg) -> Flask:
         sjob.cancel = True
         return _studio_url(pid,
                            msg="Stopping after the current stage finishes")
+
+    # ---- publish kit (packaging.py): title, description, chapters ----------
+
+    def _chat_options(form):
+        """The z.ai / DeepSeek settings a web-chat form posts."""
+        level = (form.get("zai_thinking") or "Low").strip()
+        model = (form.get("zai_model") or "flash").strip()
+        return {
+            "zai": {"thinking": level if level in ("Low", "High", "Max")
+                    else "Low",
+                    "model": model if model in ("flash", "5.3", "5.2")
+                    else "flash"},
+            "deepseek": {
+                "deepthink": (form.get("deepseek_deepthink")
+                              or "on") != "off",
+                "search": (form.get("deepseek_search")
+                           or "off") == "on"}}
+
+    def _kit_page_data(pid):
+        from . import packaging
+        pdir = studio.prod_dir(cfg, pid)
+        kit = packaging.load_kit(pdir)
+        _cues, chapters = packaging.load_chapters(pdir)
+        items = packaging.checks(kit, chapters)
+        return pdir, kit, chapters, items
+
+    @app.get("/studio/<int:pid>/kit")
+    def studio_kit(pid):
+        from . import packaging
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        if not prod:
+            return redirect("/finished?error=Unknown+production")
+        pdir, kit, chapters, items = _kit_page_data(pid)
+        names = list(kit.get("chapter_titles") or [])
+        names += [""] * (len(chapters) - len(names))
+        return render_template(
+            "kit.html", prod=prod, kit=kit, chapters=chapters,
+            chapter_names=names[:len(chapters)] if chapters else [],
+            checks=items, score=packaging.kit_score(items),
+            has_script=(pdir / "script.md").exists(),
+            description_full=packaging.assemble_description(kit, chapters),
+            fmt_ts=packaging.fmt_ts, job=sjob._real(),
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/kit/generate")
+    def studio_kit_generate(pid):
+        from . import packaging, webchat
+        if sjob.running:
+            return redirect(f"/studio/{pid}/kit?error=A+job+is+already+running")
+        writer = (request.form.get("writer") or "zai").strip()
+        judge = (request.form.get("judge") or "deepseek").strip()
+        if writer not in webchat.SITES or judge not in webchat.SITES:
+            return redirect(f"/studio/{pid}/kit?error=Unknown+chat+site")
+        if not (studio.prod_dir(cfg, pid) / "script.md").exists():
+            return redirect(f"/studio/{pid}/kit?error=This+production+has+no+script+yet")
+        options = _chat_options(request.form)
+        log = sjob.log.append
+        job = sjob._real()
+
+        def worker():
+            packaging.kit_job(cfg, pid, writer, judge, log,
+                              lambda: job.cancel, options)
+
+        sjob.start(worker, f"publish kit in web chat ({writer} writes, "
+                           f"{judge} judges)")
+        return redirect(f"/studio/{pid}/kit?msg=Publish+kit+run+started+-+a+"
+                        f"browser+window+will+open")
+
+    @app.post("/studio/<int:pid>/kit/save")
+    def studio_kit_save(pid):
+        """Keep the user's edits: title, description body, chapter titles,
+        hashtags, tags, pinned comment."""
+        from . import packaging
+        pdir, kit, chapters, _items = _kit_page_data(pid)
+        form = request.form
+        kit["title"] = (form.get("title") or "").strip()
+        kit["keyword"] = (form.get("keyword") or "").strip()
+        kit["description"] = (form.get("description") or "").strip()
+        kit["pinned_comment"] = (form.get("pinned_comment") or "").strip()
+        kit["chapter_titles"] = [
+            (form.get(f"chapter_{i}") or "").strip()
+            for i in range(len(chapters))]
+        parsed = packaging.parse_kit({
+            "hashtags": form.get("hashtags") or "",
+            "tags": form.get("tags") or ""})
+        kit["hashtags"] = parsed["hashtags"]
+        kit["tags"] = parsed["tags"]
+        faults = packaging.local_faults(kit, chapters)
+        kit["status"] = "ready" if (kit["title"] and not faults) else "draft"
+        packaging.save_kit(pdir, kit)
+        note = ("Saved - the kit is ready" if kit["status"] == "ready"
+                else "Saved - still to fix: " + "; ".join(faults[:3]))
+        return redirect(f"/studio/{pid}/kit?msg=" + quote(note))
+
+    # ---- thumbnails (thumbnails.py) -------------------------------------------
+
+    def _thumbs_back(pid, **kw):
+        key, val = next(iter(kw.items()))
+        return redirect(f"/studio/{pid}/thumbnails?{key}=" + quote(val))
+
+    @app.get("/studio/<int:pid>/thumbnails")
+    def studio_thumbnails(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        if not prod:
+            return redirect("/finished?error=Unknown+production")
+        pdir = studio.prod_dir(cfg, pid)
+        data = thumbnails.load_thumbs(pdir)
+        stamp = int(time.time())
+        for c in data["concepts"]:      # bust the browser cache after a redo
+            c["art_url"] = (f"/studio/file/{pid}/{c['art_file']}?t={stamp}"
+                            if c.get("art_file") else "")
+            c["final_url"] = (f"/studio/file/{pid}/{c['final']}?t={stamp}"
+                              if c.get("final") else "")
+        sheet = thumbnails.thumbs_dir(pdir) / "sheet.jpg"
+        return render_template(
+            "thumbs.html", prod=prod, data=data, layouts=thumbnails.LAYOUTS,
+            positions=thumbnails.POSITIONS, job=sjob._real(),
+            has_script=(pdir / "script.md").exists(),
+            sheet_url=(f"/studio/file/{pid}/thumbnails/sheet.jpg?t={stamp}"
+                       if sheet.is_file() else ""),
+            images=thumbnails.production_images(pdir),
+            inspiration=[
+                {"id": f[:-4], "url": f"/studio/file/{pid}/thumbnails/"
+                 f"inspiration/{f}"}
+                for f in thumbnails.inspiration_files(pdir)],
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/thumbnails/inspiration")
+    def studio_thumbnails_inspiration(pid):
+        """Pull the thumbnails of the source video and the niche's best
+        outliers, to look at while choosing the concept."""
+        got = thumbnails.fetch_inspiration(cfg, pid)
+        if not got:
+            return _thumbs_back(pid, error="No thumbnails could be fetched "
+                                           "- is there a source video?")
+        return _thumbs_back(pid, msg=f"{len(got)} thumbnail(s) pulled")
+
+    @app.post("/studio/<int:pid>/thumbnails/concepts")
+    def studio_thumbnails_concepts(pid):
+        from . import webchat
+        if sjob.running:
+            return _thumbs_back(pid, error="A job is already running")
+        writer = (request.form.get("writer") or "zai").strip()
+        judge = (request.form.get("judge") or "deepseek").strip()
+        if writer not in webchat.SITES or judge not in webchat.SITES:
+            return _thumbs_back(pid, error="Unknown chat site")
+        if not (studio.prod_dir(cfg, pid) / "script.md").exists():
+            return _thumbs_back(pid, error="This production has no script yet")
+        options = _chat_options(request.form)
+        log = sjob.log.append
+        job = sjob._real()
+
+        def worker():
+            thumbnails.concepts_job(cfg, pid, writer, judge, log,
+                                    lambda: job.cancel, options)
+
+        sjob.start(worker, f"thumbnail concepts in web chat ({writer} "
+                           f"writes, {judge} judges)")
+        return _thumbs_back(pid, msg="Concept run started - a browser "
+                                     "window will open")
+
+    @app.post("/studio/<int:pid>/thumbnails/art")
+    def studio_thumbnails_art(pid):
+        if sjob.running:
+            return _thumbs_back(pid, error="A job is already running")
+        data = thumbnails.load_thumbs(studio.prod_dir(cfg, pid))
+        if not data["concepts"]:
+            return _thumbs_back(pid, error="Design the concepts first")
+        ids = request.form.getlist("ids") or None
+        log = sjob.log.append
+        job = sjob._real()
+
+        def worker():
+            thumbnails.generate_art(cfg, pid, ids, log, lambda: job.cancel)
+
+        sjob.start(worker, "thumbnail pictures")
+        return _thumbs_back(pid, msg="Making the pictures with your image "
+                                     "engine")
+
+    @app.post("/studio/<int:pid>/thumbnails/save")
+    def studio_thumbnails_save(pid):
+        """Edits to the words, their place and colours, and the art prompt;
+        re-composes every thumbnail."""
+        pdir = studio.prod_dir(cfg, pid)
+        data = thumbnails.load_thumbs(pdir)
+        form = request.form
+        for c in data["concepts"]:
+            i = c["id"]
+            if f"text_{i}" in form:
+                c["text"] = thumbnails.clean_text(form.get(f"text_{i}"))
+            pos = (form.get(f"pos_{i}") or "").strip()
+            if pos in thumbnails.POSITIONS:
+                c["text_pos"] = pos
+            c["text_color"] = thumbnails._color(form.get(f"color_{i}"),
+                                                c["text_color"])
+            c["accent"] = thumbnails._color(form.get(f"accent_{i}"),
+                                            c["accent"])
+            prompt = (form.get(f"prompt_{i}") or "").strip()
+            if prompt:
+                c["art_prompt"] = prompt
+        thumbnails.save_thumbs(pdir, data)
+        thumbnails.compose_all(pdir)
+        return _thumbs_back(pid, msg="Saved and re-composed")
+
+    @app.post("/studio/<int:pid>/thumbnails/choose")
+    def studio_thumbnails_choose(pid):
+        pdir = studio.prod_dir(cfg, pid)
+        data = thumbnails.load_thumbs(pdir)
+        cid = (request.form.get("id") or "").strip()
+        if cid not in [c["id"] for c in data["concepts"]]:
+            return _thumbs_back(pid, error="Unknown thumbnail")
+        data["chosen"] = None if data.get("chosen") == cid else cid
+        thumbnails.save_thumbs(pdir, data)
+        return _thumbs_back(pid, msg="Chosen - this is the one to upload"
+                            if data["chosen"] else "Choice cleared")
+
+    @app.post("/studio/<int:pid>/thumbnails/picture")
+    def studio_thumbnails_picture(pid):
+        """Use your own picture (upload) or one of the production's images
+        as the art for a concept."""
+        pdir = studio.prod_dir(cfg, pid)
+        cid = (request.form.get("id") or "").strip()
+        up = request.files.get("file")
+        src = None
+        tmp = None
+        if up and up.filename:
+            ext = Path(up.filename).suffix.lower()
+            if ext not in (".png", ".jpg", ".jpeg"):
+                return _thumbs_back(pid, error="Use a PNG or JPG")
+            tmp = thumbnails.thumbs_dir(pdir) / ("upload" + ext)
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            up.save(tmp)
+            src = tmp
+        else:
+            name = Path(request.form.get("image") or "").name
+            if name and name in thumbnails.production_images(pdir):
+                src = pdir / "images" / name
+        ok = bool(src) and thumbnails.set_art(pdir, cid, src)
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
+        return (_thumbs_back(pid, msg="Picture set") if ok
+                else _thumbs_back(pid, error="Could not use that picture"))
+
+    # ---- packaging plan (plan.py): title + promise + hook before the script --
+
+    def _plan_back(pid, **kw):
+        key, val = next(iter(kw.items()))
+        return redirect(f"/studio/{pid}/plan?{key}=" + quote(val))
+
+    @app.get("/studio/<int:pid>/plan")
+    def studio_plan(pid):
+        from . import plan as packplan
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        if not prod:
+            return redirect("/studio?error=Unknown+production")
+        plan = packplan.load_plan(studio.prod_dir(cfg, pid))
+        return render_template(
+            "plan.html", prod=prod, plan=plan, job=sjob._real(),
+            faults=packplan.local_faults(plan) if plan["title"] else [],
+            layouts=thumbnails.LAYOUTS,
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/plan/generate")
+    def studio_plan_generate(pid):
+        from . import plan as packplan, webchat
+        if sjob.running:
+            return _plan_back(pid, error="A job is already running")
+        writer = (request.form.get("writer") or "zai").strip()
+        judge = (request.form.get("judge") or "deepseek").strip()
+        if writer not in webchat.SITES or judge not in webchat.SITES:
+            return _plan_back(pid, error="Unknown chat site")
+        options = _chat_options(request.form)
+        log = sjob.log.append
+        job = sjob._real()
+
+        def worker():
+            packplan.plan_job(cfg, pid, writer, judge, log,
+                              lambda: job.cancel, options)
+
+        sjob.start(worker, f"packaging plan in web chat ({writer} writes, "
+                           f"{judge} judges)")
+        return _plan_back(pid, msg="Plan run started - a browser window "
+                                   "will open")
+
+    @app.post("/studio/<int:pid>/plan/save")
+    def studio_plan_save(pid):
+        """Keep the user's edits; "apply" also makes the title the
+        production's title."""
+        from . import plan as packplan
+        pdir = studio.prod_dir(cfg, pid)
+        plan = packplan.load_plan(pdir)
+        form = request.form
+        plan["title"] = (form.get("title") or "").strip()
+        plan["keyword"] = (form.get("keyword") or "").strip()
+        plan["promise"] = (form.get("promise") or "").strip()
+        plan["hook"] = (form.get("hook") or "").strip()
+        layout = (form.get("layout") or "").strip()
+        plan["thumbnail"] = {
+            "layout": layout if layout in packplan.LAYOUTS
+            else plan["thumbnail"]["layout"],
+            "text": thumbnails.clean_text(form.get("thumb_text")),
+            "idea": (form.get("thumb_idea") or "").strip()}
+        faults = packplan.local_faults(plan)
+        plan["status"] = "ready" if not faults else "draft"
+        packplan.save_plan(pdir, plan)
+        if form.get("apply") and plan["title"]:
+            packplan.apply_plan(cfg, pid)
+            return _plan_back(pid, msg="Saved - the title is now this "
+                                       "production's title, and the script "
+                                       "will be written to this plan")
+        return _plan_back(pid, msg="Saved" + (
+            "" if not faults else " - still to fix: " + "; ".join(faults[:3])))
 
     @app.get("/studio/job")
     def studio_job():

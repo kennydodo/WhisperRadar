@@ -110,7 +110,7 @@ class PickerTests(Base):
         page = create_app(cfg).test_client().get("/studio").data
         self.assertTrue(b"Solo" in page)
         self.assertFalse(b"Choose a channel" in page)
-        tmp.cleanup()
+        wr_tmp.cleanup(tmp)
 
     def test_finished_page_is_scoped_to_the_selected_channel(self):
         db.update_production(self.conn, self.pa1, status="ready")

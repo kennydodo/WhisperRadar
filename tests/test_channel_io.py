@@ -13,6 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import channel_io, db  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -21,7 +23,7 @@ from whisperradar.webapp import create_app  # noqa: E402
 class ChannelIoTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(wr_tmp.cleanup, self.tmp)
         self.cfg = load_config(None)
         self.cfg.db_path = Path(self.tmp.name) / "wr.db"
         self.conn = db.connect(self.cfg.db_path)
@@ -115,7 +117,7 @@ class ChannelIoTests(unittest.TestCase):
 class RouteTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(wr_tmp.cleanup, self.tmp)
         cfg = load_config(None)
         cfg.db_path = Path(self.tmp.name) / "wr.db"
         conn = db.connect(cfg.db_path)

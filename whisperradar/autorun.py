@@ -25,6 +25,7 @@ from collections import Counter
 from pathlib import Path
 
 from . import ai33, briefs, db, services, settings, studio, transcribe
+from . import plan as packplan
 from .cli import format_duration
 
 
@@ -619,7 +620,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         existing_rating = studio.rate_script(
             cfg, prod["title"], prod["genre"], existing_text, facts,
             style_guide, judge, temperature=eff["script_judge_temperature"],
-            extra_direction=db.stage_extra(prod, "script"))
+            extra_direction=packplan.with_plan(cfg, prod,
+                                         db.stage_extra(prod, "script")))
         existing_passed, _why, _tl, _ts = _script_gate(
             existing_words, target_words, existing_overlap,
             existing_rating["score"], min_rating, max_overlap, hard_overlap,
@@ -656,7 +658,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
-            extra_direction=db.stage_extra(prod, "script"))
+            extra_direction=packplan.with_plan(cfg, prod,
+                                         db.stage_extra(prod, "script")))
         text = studio.llm_generate(
             cfg, prompt, provider=provider,
             max_tokens=studio.script_max_tokens(target_words))
@@ -693,7 +696,8 @@ def _run_script(cfg, pid: int, provider: str | None = None) -> None:
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
                                     facts, style_guide, judge,
                                     temperature=eff["script_judge_temperature"],
-                                    extra_direction=db.stage_extra(prod, "script"))
+                                    extra_direction=packplan.with_plan(cfg, prod,
+                                         db.stage_extra(prod, "script")))
         score = rating["score"]
         passed, why, too_long, too_short = _script_gate(
             words, target_words, overlap, score, min_rating, max_overlap,
