@@ -24,7 +24,20 @@ CHAPTER_MIN = 3
 CHAPTER_GAP = 10.0         # seconds between two chapters (YouTube's minimum)
 CHAPTER_MIN_LEN = 25.0     # our own floor so chapters are worth clicking
 CHAPTER_TITLE_MAX = 60
-MIN_SCORE = 8.0
+MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
+
+
+def pass_mark(cfg) -> float:
+    """The configured packaging pass mark (Settings > Packaging)."""
+    try:
+        from . import db, settings
+        conn = db.connect(cfg.db_path)
+        try:
+            return float(settings.load(conn)["plan_min_rating"])
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - never fail a stage over the bar
+        return MIN_SCORE
 
 
 # ---- chapters ------------------------------------------------------------
@@ -439,7 +452,8 @@ Reply with ONE JSON object and nothing else:
 }}"""
 
 
-def judge_prompt(ctx: dict, kit: dict, faults: list[str]) -> str:
+def judge_prompt(ctx: dict, kit: dict, faults: list[str],
+                 min_score: float = MIN_SCORE) -> str:
     return f"""You are a strict YouTube growth reviewer. Judge this publish kit for a finished video.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
@@ -461,7 +475,7 @@ Score from 1 to 10 how well this kit will get the video clicked AND found, and b
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem 1", "..."], "fixes": ["specific rewrite suggestion 1", "..."]}}
-"pass" is true only when the score is {MIN_SCORE:g} or higher and there is nothing left to fix."""
+"pass" is true only when the score is {min_score:g} or higher and there is nothing left to fix."""
 
 
 def judge_followup(kit: dict, faults: list[str]) -> str:
@@ -492,7 +506,7 @@ def writer_feedback(verdict: dict, faults: list[str]) -> str:
 def run_kit(cfg, pid: int, transport, writer: str = "zai",
             judge: str = "deepseek", log: Callable[[str], None] = print,
             should_stop: Callable[[], bool] = lambda: False,
-            min_score: float = MIN_SCORE) -> dict:
+             min_score: float = MIN_SCORE) -> dict:
     from . import studio, webstages as ws
     ctx = context(cfg, pid)
     if not ctx["script"]:
@@ -527,7 +541,8 @@ def run_kit(cfg, pid: int, transport, writer: str = "zai",
                                new_chat=False, ready=ws._is_json_verdict)
             else:
                 raw = ws._send(transport, judge,
-                               lambda f: judge_prompt(ctx, kit, faults), log,
+                               lambda f: judge_prompt(ctx, kit, faults,
+                                                      min_score), log,
                                ready=ws._is_json_verdict)
             verdict = studio._parse_json_object(raw)
             if verdict:
@@ -574,4 +589,5 @@ def kit_job(cfg, pid: int, writer: str, judge: str, log,
         t.set_stop(should_stop)
         # a NEW chat for each LLM: the kit is its own task, and the chats the
         # script and shotlist used must stay as they are (not saved here)
-        run_kit(cfg, pid, t, writer, judge, log=log, should_stop=should_stop)
+        run_kit(cfg, pid, t, writer, judge, log=log, should_stop=should_stop,
+                min_score=pass_mark(cfg))

@@ -17,7 +17,21 @@ PLAN_FILE = "packaging_plan.json"
 TITLE_MAX = 100
 TITLE_GOOD = 60
 MIN_TITLES = 5
-MIN_SCORE = 8.0
+MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
+
+
+def pass_mark(cfg) -> float:
+    """The configured packaging pass mark (Settings > Packaging). Falls back
+    to MIN_SCORE if it cannot be read."""
+    try:
+        from . import db, settings
+        conn = db.connect(cfg.db_path)
+        try:
+            return float(settings.load(conn)["plan_min_rating"])
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - never fail a stage over the bar
+        return MIN_SCORE
 THUMB_WORDS = 4
 LAYOUTS = ("character_host", "character", "host")
 
@@ -240,7 +254,8 @@ def _plan_json(plan: dict) -> str:
                       ensure_ascii=False, indent=1)
 
 
-def judge_prompt(ctx: dict, plan: dict, faults: list[str]) -> str:
+def judge_prompt(ctx: dict, plan: dict, faults: list[str],
+                 min_score: float = MIN_SCORE) -> str:
     from .packaging import _refs_text
     return f"""You are a strict YouTube growth reviewer. Judge this packaging plan BEFORE the video is written.
 
@@ -261,7 +276,7 @@ Score 1-10 how likely this packaging is to get the video clicked and found AND b
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
-"pass" is true only when the score is {MIN_SCORE:g} or higher and nothing is left to fix."""
+"pass" is true only when the score is {min_score:g} or higher and nothing is left to fix."""
 
 
 def judge_followup(plan: dict, faults: list[str]) -> str:
@@ -318,7 +333,8 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
                                new_chat=False, ready=ws._is_json_verdict)
             else:
                 raw = ws._send(transport, judge,
-                               lambda f: judge_prompt(ctx, plan, faults), log,
+                               lambda f: judge_prompt(ctx, plan, faults,
+                                                      min_score), log,
                                ready=ws._is_json_verdict)
             verdict = studio._parse_json_object(raw)
             if verdict:
@@ -360,10 +376,12 @@ def plan_job(cfg, pid: int, writer: str, judge: str, log,
              should_stop: Callable[[], bool] = lambda: False,
              options: dict | None = None) -> None:
     from . import webstages as ws
+    mark = pass_mark(cfg)
     with ws.web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
-        run_plan(cfg, pid, t, writer, judge, log=log, should_stop=should_stop)
+        run_plan(cfg, pid, t, writer, judge, log=log, should_stop=should_stop,
+                 min_score=mark)
 
 
 def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
@@ -395,7 +413,8 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
         if judge:
             try:
                 vraw = studio.llm_generate(
-                    cfg, judge_prompt(ctx, plan, faults), provider=judge,
+                    cfg, judge_prompt(ctx, plan, faults, min_score),
+                    provider=judge,
                     temperature=0.2)
                 verdict = studio._parse_json_object(vraw)
                 score = round(float(verdict.get("score")), 1)

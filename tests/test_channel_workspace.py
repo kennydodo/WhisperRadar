@@ -125,12 +125,13 @@ class PickerTests(Base):
 
 
 class LockedProductionTests(Base):
-    def test_opening_a_production_selects_and_locks_its_channel(self):
+    def test_opening_a_production_selects_its_channel(self):
         r = self.client.get(f"/studio/{self.pb}")
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(b"Leave the production" in r.data)
-        self.assertFalse(b"change channel" in r.data)
-        # the studio list now opens inside that production's channel
+        # opening a production still scopes the studio to its channel, but the
+        # channel can now be reassigned from the production page (feat/plan-
+        # gate-and-channel): the change control is offered, not hidden.
+        self.assertIn(b"change channel", r.data)
         page = self.client.get("/studio").data
         self.assertTrue(b"Bravo one" in page)
         self.assertFalse(b"Alpha one" in page)
