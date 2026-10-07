@@ -90,9 +90,9 @@
   <div class="tabs">
     <a href="/research" class="{{ 'active' if tab == 'outliers' else '' }}">Outliers</a>
     <a href="/research?tab=topics" class="{{ 'active' if tab == 'topics' else '' }}">Topics</a>
-    <span class="soon" title="coming next">Keywords</span>
-    <span class="soon" title="coming next">Channels</span>
-    <span class="soon" title="coming next">Analyze</span>
+    <a href="/research?tab=keywords" class="{{ 'active' if tab == 'keywords' else '' }}">Keywords</a>
+    <a href="/research?tab=channels" class="{{ 'active' if tab == 'channels' else '' }}">Channels</a>
+    <a href="/research?tab=analyze" class="{{ 'active' if tab == 'analyze' else '' }}">Analyze</a>
   </div>
 
   {% if own %}
@@ -104,7 +104,82 @@
     <span class="muted" style="font-size:12px">&nbsp; &ldquo;Make this&rdquo; starts a production here with that video as the source.</span>
   </div>
   {% endif %}
-  {% if tab == 'topics' %}
+  {% if tab == 'keywords' %}
+  <div class="panel"><div class="note" style="margin:0">Words and word pairs that appear in outlier titles (3x or more) far more often than in all titles. <b>lift</b> 2.0 means twice as common. Click a word to see its videos.</div></div>
+  {% if kw %}<div class="panel" style="padding:0"><table>
+    <thead><tr><th>word / phrase</th><th class="num">lift</th><th class="num">in outliers</th><th class="num hide-sm">in all</th><th class="hide-sm">example</th></tr></thead><tbody>
+    {% for k in kw %}<tr><td class="title"><a href="/research?q={{ k.term|urlencode }}&mult=3">{{ k.term }}</a></td>
+      <td class="num">{{ '%.1f' % k.lift }}x</td><td class="num">{{ k.outliers }}</td><td class="num hide-sm muted">{{ k.all }}</td>
+      <td class="hide-sm muted" style="font-size:12px">{{ k.example }}</td></tr>{% endfor %}
+    </tbody></table></div>
+  {% else %}<div class="panel muted">Not enough outliers yet to find patterns (needs at least 3 outliers and terms that repeat 5+ times).</div>{% endif %}
+  {% elif tab == 'analyze' %}
+  <div class="panel">
+    <form class="filters" method="get" action="/research"><input type="hidden" name="tab" value="analyze">
+      <label>video link or id<input type="text" name="v" value="{{ request.args.get('v', '') }}" size="40" placeholder="https://youtu.be/..."></label>
+      <button type="submit">Why did it win?</button></form>
+    <div class="note">Works for videos of the channels you watch that have enough views counted. You can also press "analyze" next to any outlier.</div>
+  </div>
+  {% if analysis and analysis.asked %}
+    {% if analysis.found %}
+    <div class="panel"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+      <img src="https://i.ytimg.com/vi/{{ analysis.item.video_id }}/mqdefault.jpg" alt="" style="width:240px;border-radius:7px">
+      <div style="flex:1;min-width:240px"><div class="title" style="font-size:16px"><a href="{{ analysis.item.url }}" target="_blank" rel="noopener">{{ analysis.item.title }}</a></div>
+        <div class="muted">{{ analysis.item.channel_name }}</div>
+        <ul style="margin:10px 0 0;padding-left:18px">{% for n in analysis.notes %}<li style="margin-bottom:4px">{{ n }}</li>{% endfor %}</ul>
+        <form method="post" action="/studio/new" style="margin-top:12px">
+          <input type="hidden" name="title" value="{{ analysis.item.title }}"><input type="hidden" name="source_video_id" value="{{ analysis.item.video_id }}"><input type="hidden" name="genre" value="{{ analysis.item.genre or '' }}">
+          <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}"><button type="submit">Make this</button></form>
+      </div></div></div>
+    {% else %}<div class="panel muted">That video is not among the scored videos (it must belong to a watched channel and have a view count, and its channel needs 5+ other videos).</div>{% endif %}
+  {% endif %}
+  {% elif tab == 'channels' %}
+  {% if ranked %}<div class="panel" style="padding:0"><table>
+    <thead><tr><th>watched channel</th><th class="num">outliers (5x+)</th><th class="num hide-sm">of videos</th><th class="num">best</th><th class="num hide-sm">recent median</th><th class="num hide-sm">rising now</th></tr></thead><tbody>
+    {% for c in ranked[:25] %}<tr><td class="title"><a href="/research?channel={{ c.channel_id }}">{{ c.name }}</a> <span class="badge">{{ c.genre }}</span></td>
+      <td class="num">{{ c.outliers }}</td><td class="num hide-sm muted">{{ c.scored }}</td><td class="num">{{ '%.1f' % c.best }}x</td>
+      <td class="num hide-sm">{{ ('%.1fx' % c.recent_median) if c.recent_median is not none else '-' }}</td><td class="num hide-sm">{{ c.rising or '-' }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <div class="note" style="margin-bottom:14px">Ranked by how often a channel's videos beat its own norm: the channels worth learning from. "recent median" is its newest 10 videos (needs publish dates).</div>
+  {% endif %}
+  <div class="panel">
+    <div class="title">YouTube API</div>
+    {% if api.source %}
+      <div class="note" style="margin-top:2px">A key is set ({{ 'environment variable' if api.source == 'env' else 'saved in data/ on this computer' }}). Quota today: {{ api.used }} of {{ api.limit }} units; the app stops 500 units below the limit.</div>
+      {% if api.source == 'file' %}<form method="post" action="/research/youtube-key" style="margin-top:8px"><button class="ghost" name="remove" value="1" style="background:transparent;border:1px solid var(--border);color:var(--muted)">Remove the key</button></form>{% endif %}
+    {% else %}
+      <div class="note" style="margin-top:2px">No key yet. The key stays on this computer only (never committed, never sent anywhere but YouTube). Everything else keeps working without it; the key adds publish dates and new-channel discovery.</div>
+      <form method="post" action="/research/youtube-key" class="filters" style="margin-top:8px" autocomplete="off">
+        <label>API key<input type="password" name="key" size="44" autocomplete="off"></label>
+        <button type="submit">Save on this computer</button>
+      </form>
+    {% endif %}
+  </div>
+  {% if api.source %}
+  <div class="panel">
+    <form class="filters" method="post" action="/research/discover">
+      <label>topic<input type="text" name="q" value="{{ discovered.query }}" placeholder="e.g. animal survival facts" size="30"></label>
+      <label>max subscribers<select name="max_subs"><option value="">any</option><option value="10000">10K</option><option value="100000">100K</option><option value="1000000">1M</option></select></label>
+      <button type="submit">Find new channels</button>
+    </form>
+    <div class="note">Searches YouTube's most-viewed videos for the topic and lists their channels that you are not watching yet, small channels with big views first. Costs 101 API units a search.</div>
+  </div>
+  {% if discovered.channels %}
+  <div class="panel" style="padding:0"><table>
+    <thead><tr><th>channel</th><th class="num">subscribers</th><th class="num">videos</th><th class="num hide-sm">total views</th><th>seen</th><th></th></tr></thead><tbody>
+    {% for c in discovered.channels %}<tr>
+      <td><div class="title"><a href="https://www.youtube.com/channel/{{ c.channel_id }}" target="_blank" rel="noopener">{{ c.name }}</a></div><div class="muted" style="font-size:12px">{{ c.about }}</div></td>
+      <td class="num">{{ fmt_views(c.subscribers) if c.subscribers is not none else 'hidden' }}</td>
+      <td class="num">{{ c.videos }}</td><td class="num hide-sm">{{ fmt_views(c.views) }}</td>
+      <td style="font-size:12px">{% for s in c.sample[:2] %}{{ s.title }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+      <td class="num"><form method="post" action="/channels/add" style="margin:0">
+        <input type="hidden" name="url" value="{{ c.channel_id }}"><input type="hidden" name="name" value="{{ c.name }}">
+        <input type="hidden" name="genre" value="{{ genres[0] if genres else 'general' }}">
+        <button type="submit" title="Start watching this channel">Watch</button></form></td></tr>{% endfor %}
+    </tbody></table></div>
+  {% endif %}
+  {% endif %}
+  {% elif tab == 'topics' %}
   <div class="panel">
     {% if job.running %}
       <div id="running" class="banner ok" style="margin:0">Running: {{ job.kind }}</div>
@@ -163,7 +238,7 @@
       <label>channel
         <select name="channel">
           <option value="">all watched</option>
-          {% for c in channels %}<option value="{{ c['channel_id'] }}" {{ 'selected' if f.channel == c['channel_id'] else '' }}>{{ c['name'] }}</option>{% endfor %}
+          {% for c in channels %}<option value="{{ c['channel_id'] }}" {{ 'selected' if f.channel == c['channel_id'] else '' }}>{{ c['name'] }}{{ '' if c['active'] else ' (paused)' }}</option>{% endfor %}
         </select></label>
       {% if genres %}
       <label>genre
@@ -174,7 +249,7 @@
       {% endif %}
       <label>sort
         <select name="sort">
-          {% for k, lbl in [('multiplier','multiplier'),('views','views'),('vpd','views / day'),('momentum','momentum (now / day)'),('recent','newest')] %}<option value="{{ k }}" {{ 'selected' if f.sort == k else '' }}>{{ lbl }}</option>{% endfor %}
+          {% for k, lbl in [('multiplier','multiplier'),('views','views'),('vpd','views / day'),('momentum','momentum (now / day)'),('recent','newest'),('title','title A-Z'),('channel','channel A-Z')] %}<option value="{{ k }}" {{ 'selected' if f.sort == k else '' }}>{{ lbl }}</option>{% endfor %}
         </select></label>
       <label>shorts
         <select name="shorts">
@@ -183,14 +258,16 @@
         </select></label>
       <label>title contains
         <input type="search" name="q" value="{{ f.q }}" placeholder="word"></label>
+      <label>per page
+        <select name="per">{% for n in [25, 50, 100, 200] %}<option value="{{ n }}" {{ 'selected' if f.per == n else '' }}>{{ n }}</option>{% endfor %}</select></label>
       <button type="submit">Filter</button>
     </form>
     <div class="note">
-      {{ matched }} match{{ '' if matched == 1 else 'es' }}{% if matched > rows|length %} (showing the top {{ rows|length }}){% endif %}
+      {{ matched }} match{{ '' if matched == 1 else 'es' }}{% if pages > 1 %} (page {{ page }} of {{ pages }}){% endif %}
       &middot; {{ scored }} of {{ total_videos }} videos could be scored
       {% if with_views < total_videos %}&middot; {{ total_videos - with_views }} have no view count yet &mdash; <a href="/watched">refresh view counts on Watched Channels</a>{% endif %}
       {% if with_momentum < scored %}&middot; {{ scored - with_momentum }} have no "now / day" yet: it appears after a second view-count refresh at least 12 hours after the first{% endif %}
-      {% if undated %}&middot; {{ undated }} have no publish date yet, so the age filter skips them (the YouTube API will fill these in){% endif %}
+      {% if undated %}&middot; {{ undated }} have no publish date yet, so the age filter skips them {% if api.source %}&mdash; <form method="post" action="/research/fill-dates" style="display:inline"><button class="ghost" style="padding:1px 8px;background:transparent;border:1px solid var(--border);color:var(--accent)">fill them from the YouTube API</button></form>{% else %}(add a YouTube API key on the Channels tab to fill these in){% endif %}{% endif %}
     </div>
   </div>
 
@@ -199,9 +276,11 @@
   <div class="panel" style="padding:0">
   <table>
     <thead><tr>
-      <th></th><th>video</th><th class="num">multiplier</th>
-      <th class="num">views</th><th class="num hide-sm">typical</th>
-      <th class="num hide-sm" title="views gained per day since the last refresh">now / day</th><th class="num hide-sm">age</th><th class="hide-sm">transcript</th><th></th>
+      <th></th>
+      <th><a href="{{ sort_link('title') }}">video{{ arrow('title') }}</a> &middot; <a href="{{ sort_link('channel') }}" style="text-transform:none">channel{{ arrow('channel') }}</a></th>
+      <th class="num"><a href="{{ sort_link('multiplier') }}">multiplier{{ arrow('multiplier') }}</a></th>
+      <th class="num"><a href="{{ sort_link('views') }}">views{{ arrow('views') }}</a></th><th class="num hide-sm">typical</th>
+      <th class="num hide-sm" title="views gained per day since the last refresh"><a href="{{ sort_link('momentum') }}">now / day{{ arrow('momentum') }}</a></th><th class="num hide-sm"><a href="{{ sort_link('recent') }}">age{{ arrow('recent') }}</a></th><th class="hide-sm">transcript</th><th></th>
     </tr></thead>
     <tbody>
     {% for r in rows %}
@@ -223,12 +302,22 @@
             <input type="hidden" name="genre" value="{{ r.genre or '' }}">
             <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">
             <button type="submit" title="Start a production from this video">Make this</button>
-          </form></td>
+          </form>
+          <a href="/research?tab=analyze&v={{ r.video_id }}" style="font-size:12px">analyze</a></td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
+  {% if pages > 1 %}
+  <div style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;margin:6px 0 18px">
+    {% if page > 1 %}<a class="btn" style="background:transparent;border:1px solid var(--border);color:var(--muted)" href="/research?{{ rqs(page=page-1) }}">&larr; prev</a>{% endif %}
+    {% for n in range(1, pages + 1) if n == 1 or n == pages or (n - page)|abs <= 2 %}
+      <a class="btn" style="{{ '' if n == page else 'background:transparent;border:1px solid var(--border);color:var(--muted)' }}" href="/research?{{ rqs(page=n) }}">{{ n }}</a>
+    {% endfor %}
+    {% if page < pages %}<a class="btn" style="background:transparent;border:1px solid var(--border);color:var(--muted)" href="/research?{{ rqs(page=page+1) }}">next &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
   {% else %}
   <div class="panel muted">No outliers match these filters.
     {% if scored == 0 %}Nothing could be scored yet: a channel needs at least 5 videos with a view count.

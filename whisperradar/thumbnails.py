@@ -180,9 +180,11 @@ _RULES = f"""Thumbnail rules:
 
 def _plan_text(ctx: dict) -> str:
     t = (ctx.get("plan") or {}).get("thumbnail") or {}
+    learned = (ctx.get("learned") or "")
+    learned += "\n" if learned else ""
     if not t.get("text") and not t.get("idea"):
-        return ""
-    return ("THUMBNAIL IDEA FROM THE PACKAGING PLAN (one of your concepts "
+        return learned
+    return learned + ("THUMBNAIL IDEA FROM THE PACKAGING PLAN (one of your concepts "
             f"should build on it): layout {t.get('layout')}, words "
             f"\"{t.get('text')}\", {t.get('idea')}\n\n")
 

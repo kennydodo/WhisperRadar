@@ -19,7 +19,8 @@ WINDOW = 30                # previous uploads that define a channel's norm
 MIN_BASELINE = 5           # fewer comparison videos than this = no verdict
 SHORT_SECONDS = 61         # <= this is a Short (when the duration is known)
 
-SORTS = ("multiplier", "views", "vpd", "recent", "momentum")
+SORTS = ("multiplier", "views", "vpd", "recent", "momentum", "title",
+         "channel")
 MOMENTUM_MIN_HOURS = 12        # snapshots closer than this say nothing
 MOMENTUM_WINDOW_DAYS = 7
 RISING, COOLING = 1.5, 0.5     # momentum vs the video's own lifetime pace
@@ -144,7 +145,8 @@ def filter_sort(items: list[dict], *, min_multiplier: float = 3.0,
                 max_age_days: float | None = None, channel_id: str = "",
                 genre: str = "", hide_shorts: bool = True, q: str = "",
                 min_views: int = 0, sort: str = "multiplier",
-                limit: int = 200) -> tuple[list[dict], int]:
+                limit: int = 200, offset: int = 0,
+                reverse: bool = False) -> tuple[list[dict], int]:
     """(the rows to show, how many matched before the limit). A window on the
     age drops videos with no publish date - they cannot be placed."""
     q = (q or "").strip().lower()
@@ -172,9 +174,25 @@ def filter_sort(items: list[dict], *, min_multiplier: float = 3.0,
         keep.sort(key=lambda i: (i["momentum"] is None, -(i["momentum"] or 0)))
     elif sort == "recent":
         keep.sort(key=lambda i: (i["age_days"] is None, i["age_days"] or 0))
+    elif sort == "title":
+        keep.sort(key=lambda i: (i["title"] or "").lower())
+    elif sort == "channel":
+        keep.sort(key=lambda i: ((i["channel_name"] or "").lower(),
+                                 -i["multiplier"]))
     else:
         keep.sort(key=lambda i: i["multiplier"], reverse=True)
-    return keep[:limit], len(keep)
+    if reverse:
+        # rows without a value (no date, no momentum) stay at the end
+        blank = {"vpd": "vpd", "momentum": "momentum",
+                 "recent": "age_days"}.get(sort)
+        if blank:
+            have = [i for i in keep if i[blank] is not None]
+            rest = [i for i in keep if i[blank] is None]
+            keep = have[::-1] + rest
+        else:
+            keep.reverse()
+    offset = max(0, int(offset))
+    return keep[offset:offset + limit], len(keep)
 
 
 def fmt_views(n) -> str:

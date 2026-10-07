@@ -35,8 +35,9 @@ from flask import (
 
 from . import external_prompts
 from . import packaging
-from . import thumbnails
+from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
+from . import youtube_api
 from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, remote,
                scheduler, services, settings, studio)
 from .cli import _slugify, format_duration
@@ -730,7 +731,8 @@ def create_app(cfg) -> Flask:
         channels - refresh them from the Watched Channels page."""
         from . import outliers
         args = request.args
-        tab = "topics" if args.get("tab") == "topics" else "outliers"
+        tab = (args.get("tab") if args.get("tab") in (
+            "topics", "channels", "keywords", "analyze") else "outliers")
 
         def _num(name, default, cast=float):
             try:
@@ -747,15 +749,24 @@ def create_app(cfg) -> Flask:
         genre = (args.get("genre") or "").strip()
         hide_shorts = args.get("shorts") != "show"
         q = (args.get("q") or "").strip()
+        per = _num("per", 50, int)
+        per = per if per in (25, 50, 100, 200) else 50
+        page = max(1, _num("page", 1, int))
+        reverse = args.get("dir") == "flip"
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
+        # every channel's videos are loaded; a paused channel only shows when
+        # you pick it in the channel filter
         rows = conn.execute(
             "SELECT v.video_id, v.channel_id, c.name AS channel_name,"
             " c.genre AS genre, v.title, v.url, v.published_at,"
             " v.view_count, v.duration, v.status FROM videos v"
             " JOIN channels c ON c.channel_id = v.channel_id"
-            " WHERE c.active = 1 AND v.view_count IS NOT NULL").fetchall()
-        channels = [c for c in db.list_channels(conn) if c["active"]]
+            " WHERE (c.active = 1 OR c.channel_id = ?)"
+            " AND v.view_count IS NOT NULL", (channel_id,)).fetchall()
+        channels = sorted(db.list_channels(conn),
+                          key=lambda c: (not c["active"],
+                                         (c["name"] or "").lower()))
         own = [o for o in db.list_own_channels(conn) if o["active"]]
         total_videos = conn.execute(
             "SELECT COUNT(*) FROM videos v JOIN channels c ON"
@@ -772,19 +783,144 @@ def create_app(cfg) -> Flask:
         shown, matched = outliers.filter_sort(
             items, min_multiplier=min_mult, max_age_days=max_age,
             channel_id=channel_id, genre=genre, hide_shorts=hide_shorts,
-            q=q, sort=sort)
+            q=q, sort=sort, limit=per, offset=(page - 1) * per,
+            reverse=reverse)
+        pages = max(1, -(-matched // per))
+        if page > pages:
+            page = pages
+            shown, matched = outliers.filter_sort(
+                items, min_multiplier=min_mult, max_age_days=max_age,
+                channel_id=channel_id, genre=genre, hide_shorts=hide_shorts,
+                q=q, sort=sort, limit=per, offset=(page - 1) * per,
+                reverse=reverse)
         genres = sorted({c["genre"] for c in channels if c["genre"]})
+
+        def rqs(**over):
+            vals = {"mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
+                    "channel": channel_id, "genre": genre, "q": q,
+                    "shorts": "hide" if hide_shorts else "show",
+                    "per": per, "page": page,
+                    "dir": "flip" if reverse else ""}
+            vals.update(over)
+            return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
+                            if v not in ("", None))
+
+        def arrow(key):
+            from markupsafe import Markup
+            if sort != key:
+                return ""
+            return Markup(" &#9650;" if reverse else " &#9660;")
+
+        def sort_link(key):
+            """Header click: same column flips the direction, a new column
+            starts in its natural direction."""
+            flip = "" if (sort != key or reverse) else "flip"
+            return "/research?" + rqs(sort=key, dir=flip, page=1)
         return render_template(
             "research.html", tab=tab, rows=shown, matched=matched,
             scored=len(items), with_views=len(rows), total_videos=total_videos,
             undated=undated, channels=channels, genres=genres, own=own,
+            page=page, pages=pages, per=per, rqs=rqs, sort_link=sort_link,
+            arrow=arrow,
+            reverse=reverse,
             selected_own=_selected_channel(), fmt_views=outliers.fmt_views,
             fmt_age=outliers.fmt_age, with_momentum=with_momentum,
+            kw=(insights.keywords(items) if tab == "keywords" else []),
+            ranked=(insights.rank_channels(items) if tab == "channels"
+                    else []),
+            analysis=(_analysis(items, args.get("v")) if tab == "analyze"
+                      else None),
             topics=topics_mod.load_topics(cfg), job=sjob._real(),
+            api={"source": youtube_api.key_source(cfg),
+                 "used": youtube_api.quota_used(cfg),
+                 "left": youtube_api.quota_left(cfg),
+                 "limit": youtube_api.DAILY_LIMIT},
+            discovered=_load_discovered(),
             f={"mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
+               "per": per,
                "channel": channel_id, "genre": genre, "q": q,
                "shorts": "hide" if hide_shorts else "show"},
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    def _analysis(items, raw):
+        raw = (raw or "").strip()
+        if not raw:
+            return {"asked": False}
+        vid = results_mod.parse_video_id(raw) or raw
+        item = next((i for i in items if i["video_id"] == vid), None)
+        if not item:
+            return {"asked": True, "found": False, "id": vid}
+        return {"asked": True, "found": True, "item": item,
+                "notes": insights.explain(item, items,
+                                          insights.keywords(items))}
+
+    def _discover_path():
+        return Path(cfg.db_path).parent / "research_discover.json"
+
+    def _load_discovered():
+        try:
+            return json.loads(_discover_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"query": "", "channels": []}
+
+    def _research_back(tab, **kw):
+        key, val = next(iter(kw.items()))
+        return redirect(f"/research?tab={tab}&{key}=" + quote(val))
+
+    @app.post("/research/youtube-key")
+    def research_youtube_key():
+        """Store (or remove) the YouTube API key on THIS computer only."""
+        if request.form.get("remove"):
+            youtube_api.clear_key(cfg)
+            return _research_back("channels", msg="API key removed from "
+                                                  "this computer")
+        try:
+            youtube_api.save_key(cfg, request.form.get("key") or "")
+        except youtube_api.ApiError as exc:
+            return _research_back("channels", error=str(exc))
+        return _research_back("channels", msg="API key saved on this "
+                                              "computer only")
+
+    @app.post("/research/fill-dates")
+    def research_fill_dates():
+        """Fill publish dates / durations of stored videos from the API."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            res = youtube_api.fill_missing(cfg, conn)
+        except youtube_api.ApiError as exc:
+            return _research_back("outliers", error=str(exc))
+        finally:
+            conn.close()
+        return _research_back("outliers", msg=(
+            f"{res['dated']} of {res['looked_up']} videos dated "
+            f"({res['units']} API units used)"))
+
+    @app.post("/research/discover")
+    def research_discover():
+        """Find channels not watched yet for a topic (100 API units)."""
+        query = (request.form.get("q") or "").strip()
+        if not query:
+            return _research_back("channels", error="Enter a topic to search")
+        try:
+            max_subs = int(request.form.get("max_subs") or 0) or None
+        except ValueError:
+            max_subs = None
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            watched = {c["channel_id"] for c in db.list_channels(conn)}
+            found = youtube_api.discover_channels(
+                youtube_api.Client(cfg), query, watched, max_subs=max_subs)
+        except youtube_api.ApiError as exc:
+            return _research_back("channels", error=str(exc))
+        finally:
+            conn.close()
+        _discover_path().write_text(json.dumps(
+            {"query": query, "channels": found}, ensure_ascii=False),
+            encoding="utf-8")
+        return _research_back("channels", msg=f"{len(found)} new channel(s) "
+                                              "found")
 
     @app.post("/research/topics/generate")
     def research_topics_generate():
@@ -2010,7 +2146,10 @@ def create_app(cfg) -> Flask:
                 published_count += 1
             kit = packaging.load_kit(studio.prod_dir(cfg, p["id"]))
             tdata = thumbnails.load_thumbs(studio.prod_dir(cfg, p["id"]))
+            rep = (results_mod.report(conn, p["id"])
+                   if p["status"] == "published" else [])
             all_items.append({
+                "results": rep,
                 "thumbs": ({"count": len(tdata["concepts"]),
                             "chosen": bool(tdata.get("chosen"))}
                            if tdata["concepts"] else None),
@@ -2018,6 +2157,7 @@ def create_app(cfg) -> Flask:
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
             })
+        due_results = len(results_mod.due(conn))
         conn.close()
 
         if status_filter == "all":
@@ -2041,7 +2181,7 @@ def create_app(cfg) -> Flask:
         return render_template(
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
             status_filter=status_filter, ready_count=ready_count,
-            published_count=published_count,
+            published_count=published_count, due_results=due_results,
             scope_name=(None if scope is None
                         else own_by_id.get(scope) or "No channel"),
             msg=request.args.get("msg"), error=request.args.get("error"))
@@ -2059,9 +2199,65 @@ def create_app(cfg) -> Flask:
                                 + quote("Only a ready production can be published"))
             db.mark_production_published(conn, pid, published=True)
             db.add_step(conn, pid, "review", "manual", detail="published")
+            link = (request.form.get("youtube_url") or "").strip()
+            note = "Marked published"
+            if link:
+                if results_mod.set_link(cfg, conn, pid, link):
+                    note += " - results will be tracked at 24 hours, 7 days and 28 days"
+                else:
+                    note += " - but that link has no YouTube video id, so results are not tracked"
         finally:
             conn.close()
-        return redirect("/finished?msg=" + quote("Marked published"))
+        return redirect("/finished?msg=" + quote(note))
+
+    @app.post("/studio/<int:pid>/youtube-link")
+    def studio_youtube_link(pid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/finished?error=" + quote("Unknown production"))
+            vid = results_mod.set_link(cfg, conn, pid,
+                                       request.form.get("youtube_url") or "")
+        finally:
+            conn.close()
+        if not vid:
+            return redirect("/finished?error=" + quote(
+                "That is not a YouTube link or video id"))
+        return redirect("/finished?msg=" + quote(
+            "Link saved - results will be tracked"))
+
+    results_state = {"running": False, "last": 0.0}
+
+    @app.post("/finished/results/update")
+    def finished_results_update():
+        """Read the views that are due (24h/7d/28d) in the background.
+        Throttled to once per 30 minutes so opening the page is harmless."""
+        wants_json = request.headers.get("X-Requested-With") == "fetch"
+        if results_state["running"] or (
+                time.time() - results_state["last"] < 1800
+                and wants_json):
+            return {"started": False}, 200
+        results_state.update(running=True, last=time.time())
+
+        def work():
+            try:
+                c = db.connect(cfg.db_path)
+                db.init_db(c)
+                try:
+                    results_mod.update(cfg, c)
+                finally:
+                    c.close()
+            except Exception:  # noqa: BLE001
+                logging.getLogger(__name__).exception("results update failed")
+            finally:
+                results_state["running"] = False
+
+        threading.Thread(target=work, daemon=True).start()
+        if wants_json:
+            return {"started": True}, 200
+        return redirect("/finished?msg=" + quote(
+            "Reading results in the background - refresh in a minute"))
 
     @app.post("/studio/<int:pid>/unpublish")
     def studio_unpublish(pid):

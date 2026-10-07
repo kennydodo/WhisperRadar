@@ -83,6 +83,8 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
+  {% if due_results %}<div class="banner ok" id="due-banner">{{ due_results }} result{{ '' if due_results == 1 else 's' }} due (views at 24 hours / 7 days / 28 days). <form method="post" action="/finished/results/update" style="display:inline"><button type="submit" class="ghost">Read them now</button></form></div>{% endif %}
+
   <div class="panel">
     {% if items %}
     <table>
@@ -110,6 +112,8 @@
           <td>
             {% if item.row["status"] == "published" %}
             <span class="badge published" title="Published {{ item.row['published_at'] }}">published</span>
+            {% for r in item.results %}{% if loop.last %}<div class="muted" style="font-size:12px;margin-top:3px" title="views {{ r.horizon }} after publishing{{ ' (read late)' if r.late else '' }}">{{ r.horizon }}: {{ r.views|int }} views{% if r.multiplier %} &middot; <b style="color:{{ 'var(--green)' if r.multiplier >= 1.5 else ('var(--red)' if r.multiplier < 0.7 else 'inherit') }}">{{ '%.1f' % r.multiplier }}x your norm</b>{% endif %}</div>{% endif %}{% endfor %}
+            {% if not item.row['youtube_video_id'] %}<form method="post" action="/studio/{{ item.row['id'] }}/youtube-link" style="margin-top:4px"><input type="text" name="youtube_url" placeholder="YouTube link" style="width:130px;font-size:12px;padding:2px 6px"> <button type="submit" class="ghost" style="padding:2px 8px">track</button></form>{% endif %}
             {% else %}
             <span class="badge ready">ready to publish</span>
             {% endif %}
@@ -127,6 +131,7 @@
             {% if item.row["status"] == "ready" %}
             <form method="post" action="/studio/{{ item.row['id'] }}/publish" style="display:inline"
                   {% if not (item.kit and item.kit.status == 'ready') %}onsubmit="return wrConfirmSubmit(this, 'There is no finished publish kit (title, description, hashtags) yet. Mark it published anyway?')"{% endif %}>
+              <input type="text" name="youtube_url" placeholder="YouTube link (optional)" style="width:150px;font-size:12px;padding:3px 6px">
               <button type="submit" title="Mark this production as published">Mark published</button>
             </form>
             {% else %}
@@ -154,5 +159,8 @@
   </div>
 </div>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
+{% if due_results %}<script>
+  try { fetch('/finished/results/update', {method: 'POST', headers: {'X-Requested-With': 'fetch'}}); } catch (e) {}
+</script>{% endif %}
 </body>
 </html>

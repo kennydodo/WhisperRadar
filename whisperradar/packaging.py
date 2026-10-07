@@ -347,8 +347,17 @@ def context(cfg, pid: int) -> dict:
             return ""
 
     cues, chapters = load_chapters(pdir)
-    from . import plan as packplan
-    return {"plan": packplan.load_plan(pdir), "pid": pid, "pdir": pdir, "title": prod["title"],
+    from . import learning, plan as packplan
+    learned = ""
+    try:
+        c2 = db.connect(cfg.db_path)
+        try:
+            learned = learning.context_text(cfg, c2, prod["own_channel_id"])
+        finally:
+            c2.close()
+    except Exception:  # noqa: BLE001 - learning is a hint, never a blocker
+        learned = ""
+    return {"plan": packplan.load_plan(pdir), "learned": learned, "pid": pid, "pdir": pdir, "title": prod["title"],
             "genre": genre, "channel": own["name"] if own else "",
             "channel_about": (own["description"] if own else "") or "",
             "script": read("script.md").strip(), "cues": cues,
@@ -383,9 +392,10 @@ def _refs_text(ctx: dict) -> str:
 def _plan_text(ctx: dict) -> str:
     """The packaging plan made before the script, as a starting point."""
     plan = ctx.get("plan") or {}
+    learned = ctx.get("learned") or ""
     if not plan.get("title"):
-        return ""
-    return ("PACKAGING PLAN made before the video was written (a starting "
+        return learned + ("\n" if learned else "")
+    return learned + ("\n" if learned else "") + ("PACKAGING PLAN made before the video was written (a starting "
             "point - improve it where the finished video allows, keep what "
             f"works):\n- title: {plan['title']}\n- promise: "
             f"{plan.get('promise', '')}\n")

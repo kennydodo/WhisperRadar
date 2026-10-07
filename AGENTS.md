@@ -1638,3 +1638,20 @@ a new reply (count up, generating, or text different from the text before the se
   (e.g. WR_YOUTUBE_API_KEY) or a gitignored local file under `data/` / `config.local.yaml`, the same way `ai33_api_key` uses
   WR_AI33_API_KEY; `data/` and local config stay out of git. The user will add the key on this machine himself; never ask him to paste
   it in chat and never log or echo it. No key = scraping only (the feature still works, with fewer discovery options).
+
+## YouTube API layer (step 6) - added 2026-10-07
+- `whisperradar/youtube_api.py`: key from env `WR_YOUTUBE_API_KEY` or `data/youtube_api_key.txt` (data/ is gitignored). The key is local only: never log, echo, commit or paste it. Saved from Research > Channels.
+- Quota guard stops 500 units below the free 10,000/day (Pacific-time day); `search.list` = 100, the rest 1.
+- Adds to yt-dlp, never replaces it: fills publish dates/durations (`fill_missing`, Research button) and finds new channels (`discover_channels`, Research > Channels).
+- Steps done: 1 Research/Outliers, 2 publish kit, 3 thumbnails (+ inspiration pull), 4 packaging plan, 5 snapshots/momentum/Topics, 6 API layer. Left: step 7 (mark published with URL, 24h/7d/28d results, learning loop, Keywords/Analyze tabs, Channels ranking).
+
+## Results and learning (step 7) - added 2026-10-07
+- Mark published takes an optional YouTube link (`results.set_link`: stores `productions.youtube_video_id` and `<pdir>/published.json`, the title/keyword/thumbnail layout+words that shipped). A link can be added later from Finished.
+- `results.update` reads views for the newest passed horizon (24h/7d/28d) once each, via the API if a key is set else yt-dlp; a late read is flagged. Finished shows "28d: N views - 3.2x your norm" (norm = median of the channel's other published videos at that horizon, needs 3).
+- `learning.context_text` (needs 3+ results; says SMALL SAMPLE under 8) is injected into the plan, kit and thumbnail writer prompts. Horizons are never mixed.
+- Research tabs: Outliers, Topics (chat), Keywords (lift of terms in outlier titles), Channels (ranking + discovery), Analyze (facts on why a video beat its norm). Keywords/Analyze/ranking are code-only, no LLM.
+- Untested live: reading real views (API/yt-dlp), the web-chat topic grouping, FlowBatch/Renderly thumbnail art.
+
+## Title policy (decided 2026-10-07)
+- A source video's title is proven SEO: the packaging plan keeps its keyword and promise, and may keep the title itself. It offers the source title as one option plus close variations/new angles; the judge scores them equally. There is deliberately NO code rule forcing the title to differ.
+- What must never be copied is the script: the script stage's overlap check (5-word runs vs the source) and fact judge guard that. The plan's promise/hook go into the script prompt so title and script match.

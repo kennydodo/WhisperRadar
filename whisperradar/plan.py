@@ -189,7 +189,7 @@ def context(cfg, pid: int) -> dict:
 
 
 _RULES = f"""Rules for the plan:
-- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji. It must not be a copy of the source video's title.
+- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji. The source video's title is PROVEN: keep its main keyword and its promise. Keep the source title itself as one option if you cannot beat it; the others are close variations (clearer, shorter, a stronger hook) or new angles on the same promise. Never promise anything the source's facts cannot support.
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
 - The hook is how the first 15 seconds start (a question, a surprising fact, a scene) - one or two sentences.
 - The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone)."""
@@ -223,11 +223,12 @@ TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns, do not 
 THIS CHANNEL'S EARLIER TITLES (stay consistent, do not repeat):
 {past}
 
+{ctx.get('learned') or ''}
 {_RULES}
 
 Reply with ONE JSON object and nothing else:
 {{"keyword": "the main search phrase (2-4 words)",
- "titles": [{{"text": "...", "why": "pattern used"}}, ... {MIN_TITLES + 3} options with different angles],
+ "titles": [{{"text": "...", "why": "pattern used"}}, ... {MIN_TITLES + 3} options: the source title if it is still good, close variations, and new angles],
  "title": "the best one, copied exactly from the options",
  "promise": "...", "hook": "...",
  "thumbnail": {{"layout": "character_host|character|host", "text": "2-4 words", "idea": "one line"}}}}"""

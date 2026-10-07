@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS view_snapshots (
     PRIMARY KEY (video_id, taken_at)
 );
 
+-- how each published video of ours did: views at 24h / 7d / 28d
+CREATE TABLE IF NOT EXISTS prod_results (
+    production_id INTEGER NOT NULL,
+    horizon TEXT NOT NULL,            -- '24h' | '7d' | '28d'
+    taken_at TEXT NOT NULL,           -- UTC ISO-8601
+    hours_after REAL,                 -- hours since publishing when read
+    views INTEGER NOT NULL,
+    PRIMARY KEY (production_id, horizon)
+);
+
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY,
     channel_id TEXT NOT NULL REFERENCES channels(channel_id) ON DELETE CASCADE,
@@ -256,6 +266,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # to YouTube) - distinct from status="ready", which only means it
     # passed review and is waiting to be published
     _add_column_if_missing(conn, "productions", "published_at", "TEXT")
+    _add_column_if_missing(conn, "productions", "youtube_video_id", "TEXT")
     # FlowImagesGen was renamed to FlowBatch (2026-09-25); carry the stored
     # engine choice over so channels keep their engine
     conn.execute("UPDATE own_channels SET default_engine = 'flowbatch'"
@@ -743,7 +754,7 @@ def start_run(conn) -> int:
 STAGES = ["style", "script", "audio", "srt", "shots", "refs", "images",
           "merge", "review"]
 
-_PROD_FIELDS = {"title", "genre", "stage", "status", "notes",
+_PROD_FIELDS = {"youtube_video_id", "title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
                 "stage_extras", "stage_providers", "render_mode", "voice",
                 "own_channel_id", "warning", "flow_project_url",
