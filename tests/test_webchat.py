@@ -468,3 +468,11 @@ class AttachTests(unittest.TestCase):
         self.assertIn("--remote-debugging-port=9222", args)
         self.assertTrue(any(a.startswith("--user-data-dir=") and "zai" in a
                             for a in args))
+
+
+class AdoptTests(unittest.TestCase):
+    def test_adopt_and_urls_roundtrip(self):
+        chat = wc.WebChat("/tmp/none")
+        chat.adopt("zai", "https://chat.z.ai/c/abc")
+        chat.adopt("deepseek", "")          # nothing to adopt
+        self.assertEqual(chat.urls(), {"zai": "https://chat.z.ai/c/abc"})

@@ -662,6 +662,15 @@ class WebChat:
                     return pg
         return ctx.pages[0] if ctx.pages else ctx.new_page()
 
+    def adopt(self, key: str, url: str) -> None:
+        """Continue an earlier chat: the next `new_chat=False` ask opens `url`."""
+        if url:
+            self._urls[key] = url
+
+    def urls(self) -> dict:
+        """The URL of each site's current chat (to keep for a later stage)."""
+        return dict(self._urls)
+
     def ask(self, key: str, prompt: str, files: Sequence[str] = (),
             new_chat: bool = True, options: Optional[dict] = None,
             **kw) -> str:

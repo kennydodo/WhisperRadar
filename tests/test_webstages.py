@@ -20,6 +20,14 @@ class Fake:
     def __init__(self, **replies):
         self.replies = {k: list(v) for k, v in replies.items()}
         self.calls = []
+        self.adopted = {}
+
+    def adopt(self, site, url):
+        self.adopted[site] = url
+
+    def urls(self):
+        return {"zai": "https://chat.z.ai/c/aaaa1111", "deepseek":
+                "https://chat.deepseek.com/a/chat/s/bbbb2222"}
 
     def ask(self, site, prompt, files=(), new_chat=True, ready=None):
         self.calls.append({"site": site, "prompt": prompt,
@@ -413,3 +421,56 @@ class ChatLostTests(Base):
         self.assertEqual(len(fresh), 2)            # first plan + recovery
         self.assertIn("shots 2-3 overlap", fresh[1]["prompt"])
         self.assertIn("YOUR PREVIOUS SHOTLIST", fresh[1]["prompt"])
+
+
+class SameChatsTests(Base):
+    def _run(self, t, same=True):
+        with mock.patch.object(ep, "shotlist_planner_prompt",
+                               return_value="PLAN PROMPT"), \
+             mock.patch.object(ep, "shotlist_judge_prompt",
+                               return_value=("JUDGE PROMPT", [])):
+            return ws.run_shotlist(self.cfg, self.pid, t, "zai", "deepseek",
+                                   log=lambda m: None, same_chats=same)
+
+    def test_chats_are_saved_and_continued_by_the_next_stage(self):
+        ws.save_chats(self.cfg, self.pid, Fake())
+        self.assertEqual(ws.load_chats(self.cfg, self.pid)["zai"],
+                         "https://chat.z.ai/c/aaaa1111")
+        ok = {"faults": [], "shots": [], "detailed_ratio": 1, "pass": True}
+        t = Fake(zai=["```json\n" + plan_json() + "\n```"],
+                 deepseek=[json.dumps(ok)])
+        self._run(t)
+        self.assertEqual(t.adopted["zai"], "https://chat.z.ai/c/aaaa1111")
+        self.assertEqual([(c["site"], c["new_chat"]) for c in t.calls],
+                         [("zai", False), ("deepseek", False)])
+        self.assertIn("PLAN PROMPT", t.calls[0]["prompt"])
+        self.assertIn("JUDGE PROMPT", t.calls[1]["prompt"])   # full rules
+
+    def test_without_the_option_everything_starts_fresh(self):
+        ws.save_chats(self.cfg, self.pid, Fake())
+        ok = {"faults": [], "shots": [], "detailed_ratio": 1, "pass": True}
+        t = Fake(zai=["```json\n" + plan_json() + "\n```"],
+                 deepseek=[json.dumps(ok)])
+        self._run(t, same=False)
+        self.assertEqual(t.adopted, {})
+        self.assertTrue(all(c["new_chat"] for c in t.calls))
+
+    def test_a_chat_that_cannot_be_reopened_falls_back_to_a_new_one(self):
+        from whisperradar import webchat as wcm
+        ws.save_chats(self.cfg, self.pid, Fake())
+
+        class T(Fake):
+            def ask(self, site, prompt, files=(), new_chat=True, ready=None):
+                if not new_chat:
+                    self.calls.append({"site": site, "prompt": prompt,
+                                       "files": [], "new_chat": new_chat})
+                    raise wcm.ChatLost("gone")
+                return super().ask(site, prompt, files, new_chat, ready)
+
+        ok = {"faults": [], "shots": [], "detailed_ratio": 1, "pass": True}
+        t = T(zai=["```json\n" + plan_json() + "\n```"],
+              deepseek=[json.dumps(ok)])
+        self._run(t)
+        fresh = [(c["site"], c["new_chat"]) for c in t.calls]
+        self.assertEqual(fresh, [("zai", False), ("zai", True),
+                                 ("deepseek", False), ("deepseek", True)])

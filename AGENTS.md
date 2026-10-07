@@ -176,6 +176,7 @@ The API loop (`autorun`) is untouched.
   on / Search off by default (`_deepseek_prepare`); the Studio form lets you
   pick z.ai Deep Think (Low/High/Max) and DeepSeek DeepThink/Search per run
   (`options` passed to `site.prepare`). No round limit; Stop button only.
+- Same chats across stages (2026-10-07): each run saves the chat URLs to `<production>/webchat_chats.json`; the shotlist run (checkbox "Same chats as the script", default on) continues in them (`adopt_chats`, `WebChat.adopt/urls`), so the writer and judge already know the script, as when done by hand. The judge still gets the FULL judge prompt in that chat on its first round; a chat that cannot be reopened (`ChatLost`) falls back to a new one. The script stage always starts fresh. Context-size risk: a very long chat may get slow; untick it.
 - Studio: "Run script / shotlist in web chat" buttons (writer + judge pickers)
   -> `POST /studio/<pid>/webchat/<script|shots>` (a normal background job).
 - Reply-completion fixes after the first real run: z.ai shows only "Thinking..."

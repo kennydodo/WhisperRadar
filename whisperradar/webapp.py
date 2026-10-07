@@ -3144,6 +3144,7 @@ def create_app(cfg) -> Flask:
 
         resume = (stage != "script"
                   and request.form.get("resume_plan") == "on")
+        same_chats = request.form.get("same_chats") == "on"
 
         def worker():
             if stage == "script":
@@ -3151,7 +3152,7 @@ def create_app(cfg) -> Flask:
                     options)
             else:
                 run(cfg, pid, writer, judge, log, lambda: job.cancel,
-                    options, resume)
+                    options, resume, same_chats)
 
         label = ("script" if stage == "script" else "shotlist")
         sjob.start(worker, f"{label} in web chat ({writer} writes, "

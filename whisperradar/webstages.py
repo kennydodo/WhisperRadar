@@ -64,6 +64,12 @@ class WebTransport:
                              options=self.options.get(site), ready=ready,
                              log=self.log)
 
+    def adopt(self, site: str, url: str) -> None:
+        self.chat.adopt(site, url)
+
+    def urls(self) -> dict:
+        return self.chat.urls()
+
 
 @contextlib.contextmanager
 def web_transport(cfg, log: Callable[[str], None] = print,
@@ -71,6 +77,74 @@ def web_transport(cfg, log: Callable[[str], None] = print,
     root = Path(cfg.db_path).parent / "webchat"
     with webchat.WebChat(root) as chat:
         yield WebTransport(chat, log, options)
+
+
+_CHATS_FILE = "webchat_chats.json"
+
+
+def _chats_path(cfg, pid: int) -> Path:
+    return studio.prod_dir(cfg, pid) / _CHATS_FILE
+
+
+def load_chats(cfg, pid: int) -> dict:
+    """The chat URLs the last run of this production kept (site -> url)."""
+    try:
+        data = json.loads(_chats_path(cfg, pid).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return ({k: v for k, v in data.items() if isinstance(v, str) and v}
+            if isinstance(data, dict) else {})
+
+
+def save_chats(cfg, pid: int, transport) -> None:
+    """Remember where each chat is, so the NEXT stage can continue in it (the
+    LLMs then know the script when they plan the shotlist, as when you do it
+    by hand in one chat)."""
+    urls = getattr(transport, "urls", None)
+    if not callable(urls):
+        return
+    try:
+        found = {k: v for k, v in urls().items() if v}
+        if not found:
+            return
+        merged = load_chats(cfg, pid)
+        merged.update(found)
+        _chats_path(cfg, pid).write_text(
+            json.dumps(merged, indent=1), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def adopt_chats(cfg, pid: int, transport, sites, log) -> set:
+    """Point the transport at the saved chats of `sites`; returns the sites
+    that have one to continue."""
+    adopt = getattr(transport, "adopt", None)
+    saved = load_chats(cfg, pid)
+    out = set()
+    if not callable(adopt):
+        return out
+    for site in sites:
+        if saved.get(site):
+            adopt(site, saved[site])
+            out.add(site)
+    if out:
+        log("continuing in the chats of the previous stage: "
+            + ", ".join(sorted(out)))
+    return out
+
+
+def _send_in(transport, site: str, build, log, continuing: bool, ready=None):
+    """_send in the saved chat when `continuing`; a chat that cannot be
+    reopened falls back to a new one. Returns (reply, still_continuing)."""
+    if continuing:
+        try:
+            return _send(transport, site, build, log, new_chat=False,
+                         ready=ready), True
+        except webchat.ChatLost:
+            log(f"{site}: the previous chat cannot be reopened - starting a "
+                f"new one")
+    return _send(transport, site, build, log, new_chat=True,
+                 ready=ready), False
 
 
 def _send(transport, site: str, build: Callable, log,
@@ -500,7 +574,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                  judge: str = "deepseek", rounds: int | None = MAX_ROUNDS,
                  log: Callable[[str], None] = print,
                  should_stop: Callable[[], bool] = lambda: False,
-                 resume: bool = False) -> dict:
+                 resume: bool = False, same_chats: bool = False) -> dict:
     ctx = ep._context(cfg, pid)
     plan = ep._plan_inputs(cfg, pid, ctx)
     cues = plan["cues"]
@@ -508,6 +582,8 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     def dump(name: str, text: str) -> None:
         _dump(cfg, pid, name, text)
 
+    kept = (adopt_chats(cfg, pid, transport, {writer, judge}, log)
+            if same_chats else set())
     data = _saved_plan(cfg, pid) if resume else None
     if data is not None:
         log(f"reusing the plan from the saved {writer} replies "
@@ -515,15 +591,17 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     else:
         if resume:
             log("no readable saved plan - asking the writer as usual")
-        reply = _send(transport, writer,
-                      lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
-                      ready=_has_json)
+        reply, w_cont = _send_in(
+            transport, writer,
+            lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
+            writer in kept, ready=_has_json)
         data = _collect_plan(transport, writer, reply, log, dump)
     log(f"{writer}: plan received ({len(data.get('shots') or [])} shots, "
         f"{len(data.get('images') or [])} images)")
 
     last_problem = ""
     judge_open = False          # the judge keeps ONE chat, like the writer
+    judge_cont = judge in kept  # ...and may start in the previous stage's
     best = None                     # (badness, data, problem): the plan to keep
     rnd = 0
     while True:
@@ -540,14 +618,27 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
 
         log(f"round {rnd}: asking {judge} to review the whole plan"
             + (" (same chat)" if judge_open else ""))
-        raw = _send(transport, judge, build, log, new_chat=not judge_open,
-                    ready=_is_json_verdict)
+        def send_judge():
+            nonlocal judge_cont
+            fresh = not (judge_open or judge_cont)
+            try:
+                return _send(transport, judge, build, log, new_chat=fresh,
+                             ready=_is_json_verdict)
+            except webchat.ChatLost:
+                if judge_open or not judge_cont:
+                    raise
+                log(f"{judge}: the previous chat cannot be reopened - "
+                    f"starting a new one")
+                judge_cont = False
+                return _send(transport, judge, build, log, new_chat=True,
+                             ready=_is_json_verdict)
+
+        raw = send_judge()
         dump(f"judge_reply_round{rnd}", raw)
         verdict = studio._parse_json_object(raw)
         if not verdict:
             log(f"{judge} gave no usable verdict - asking once more")
-            raw = _send(transport, judge, build, log, new_chat=not judge_open,
-                        ready=_is_json_verdict)
+            raw = send_judge()
             verdict = studio._parse_json_object(raw)
         if verdict:
             judge_open = True
@@ -645,14 +736,22 @@ def script_job(cfg, pid: int, writer: str, judge: str, log,
                options: dict | None = None) -> None:
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
-        run_script(cfg, pid, t, writer, judge, log=log,
-                   should_stop=should_stop)
+        try:
+            run_script(cfg, pid, t, writer, judge, log=log,
+                       should_stop=should_stop)
+        finally:
+            save_chats(cfg, pid, t)
 
 
 def shotlist_job(cfg, pid: int, writer: str, judge: str, log,
                  should_stop: Callable[[], bool] = lambda: False,
-                 options: dict | None = None, resume: bool = False) -> None:
+                 options: dict | None = None, resume: bool = False,
+                 same_chats: bool = True) -> None:
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
-        run_shotlist(cfg, pid, t, writer, judge, log=log,
-                     should_stop=should_stop, resume=resume)
+        try:
+            run_shotlist(cfg, pid, t, writer, judge, log=log,
+                         should_stop=should_stop, resume=resume,
+                         same_chats=same_chats)
+        finally:
+            save_chats(cfg, pid, t)
