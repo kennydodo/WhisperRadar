@@ -366,6 +366,72 @@ def plan_job(cfg, pid: int, writer: str, judge: str, log,
         run_plan(cfg, pid, t, writer, judge, log=log, should_stop=should_stop)
 
 
+def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
+                 log: Callable[[str], None] = print,
+                 should_stop: Callable[[], bool] = lambda: False,
+                 max_rounds: int = 3, min_score: float = MIN_SCORE) -> dict:
+    """The same plan loop as run_plan, but through the configured API LLM
+    providers (what auto-run uses - no browser). Stateless calls, so each
+    revision is sent with the previous attempt and the verdict. With no judge
+    available a plan with no rule faults is accepted (score stays empty)."""
+    from . import studio
+    ctx = context(cfg, pid)
+    log(f"packaging plan for \"{ctx['title'][:70]}\" "
+        f"({len(ctx['refs'])} reference title(s))")
+    base = writer_prompt(ctx)
+    best, prompt, rnd = None, base, 0
+    while rnd < max_rounds:
+        rnd += 1
+        raw = studio.llm_generate(cfg, prompt, provider=writer,
+                                  temperature=0.8)
+        plan = parse_plan(studio._parse_json_object(raw))
+        if not plan["title"]:
+            log(f"round {rnd}: no usable plan in the reply")
+            prompt = base + ("\n\nYour last reply had no usable JSON plan. "
+                             "Reply with ONE JSON object only.")
+            continue
+        faults = local_faults(plan)
+        verdict, score = {}, None
+        if judge:
+            try:
+                vraw = studio.llm_generate(
+                    cfg, judge_prompt(ctx, plan, faults), provider=judge,
+                    temperature=0.2)
+                verdict = studio._parse_json_object(vraw)
+                score = round(float(verdict.get("score")), 1)
+            except (TypeError, ValueError):
+                score = None
+            except Exception as exc:  # noqa: BLE001 - a judge outage is not fatal
+                log(f"judge unavailable ({type(exc).__name__}) - using the "
+                    "rule checks only")
+                judge = None
+        passed = (not faults and (
+            (score is not None and score >= min_score
+             and verdict.get("pass") is not False)
+            or (judge is None)))
+        plan["score"] = score
+        plan["status"] = "ready" if passed else "draft"
+        log(f"round {rnd}: \"{plan['title'][:70]}\" - {len(faults)} rule "
+            f"fault(s), score {score if score is not None else 'n/a'} - "
+            + ("accepted" if passed else "not accepted"))
+        rank = (not faults, score or 0.0)
+        if best is None or rank > best[0]:
+            best = (rank, plan)
+        if passed or should_stop():
+            break
+        prompt = (base + "\n\nYOUR PREVIOUS ATTEMPT:\n" + _plan_json(plan)
+                  + "\n\n" + writer_feedback(
+                      verdict or {"faults": faults or ["no verdict"]},
+                      faults))
+    if best is None:
+        raise RuntimeError("the LLM returned no usable packaging plan")
+    plan = best[1]
+    save_plan(ctx["pdir"], plan)
+    log("packaging plan saved" + ("" if plan["status"] == "ready"
+                                  else " as a draft"))
+    return plan
+
+
 def apply_plan(cfg, pid: int, title: str | None = None) -> dict:
     """Make the plan the production's: its (or the given) title becomes the
     production title, and the publish kit starts from it."""
@@ -379,6 +445,8 @@ def apply_plan(cfg, pid: int, title: str | None = None) -> dict:
     conn = db.connect(cfg.db_path)
     db.init_db(conn)
     try:
+        if not plan.get("source_title"):
+            plan["source_title"] = db.get_production(conn, pid)["title"]
         db.update_production(conn, pid, title=plan["title"][:TITLE_MAX])
     finally:
         conn.close()

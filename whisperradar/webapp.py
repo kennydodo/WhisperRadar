@@ -795,8 +795,14 @@ def create_app(cfg) -> Flask:
                 reverse=reverse)
         genres = sorted({c["genre"] for c in channels if c["genre"]})
 
+        own_ids = {o["id"] for o in own}
+        picked_own = _num("own", -1, int)
+        selected_own = (picked_own if picked_own in own_ids
+                        else _selected_channel())
+
         def rqs(**over):
-            vals = {"mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
+            vals = {"own": picked_own if picked_own in own_ids else "",
+                    "mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
                     "channel": channel_id, "genre": genre, "q": q,
                     "shorts": "hide" if hide_shorts else "show",
                     "per": per, "page": page,
@@ -823,7 +829,7 @@ def create_app(cfg) -> Flask:
             page=page, pages=pages, per=per, rqs=rqs, sort_link=sort_link,
             arrow=arrow,
             reverse=reverse,
-            selected_own=_selected_channel(), fmt_views=outliers.fmt_views,
+            selected_own=selected_own, fmt_views=outliers.fmt_views,
             fmt_age=outliers.fmt_age, with_momentum=with_momentum,
             kw=(insights.keywords(items) if tab == "keywords" else []),
             ranked=(insights.rank_channels(items) if tab == "channels"

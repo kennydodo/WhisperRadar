@@ -1655,3 +1655,7 @@ a new reply (count up, generating, or text different from the text before the se
 ## Title policy (decided 2026-10-07)
 - A source video's title is proven SEO: the packaging plan keeps its keyword and promise, and may keep the title itself. It offers the source title as one option plus close variations/new angles; the judge scores them equally. There is deliberately NO code rule forcing the title to differ.
 - What must never be copied is the script: the script stage's overlap check (5-word runs vs the source) and fact judge guard that. The plan's promise/hook go into the script prompt so title and script match.
+
+## Auto Run plans the packaging first (2026-10-07)
+- `autorun._auto_plan` runs just before the script stage (setting `autorun_plan`, default on): `plan.run_plan_api` (API providers, up to 3 writer/judge rounds, previous attempt + verdict sent back), then `plan.apply_plan` makes the title the production's (`source_title` kept in packaging_plan.json). A ready plan is kept as is. Never fatal: any failure logs "packaging plan skipped" and the run continues with the original title. A draft plan is not applied.
+- Manual flow is unchanged (web-chat plan page).

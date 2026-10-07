@@ -88,11 +88,11 @@
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
   <div class="tabs">
-    <a href="/research" class="{{ 'active' if tab == 'outliers' else '' }}">Outliers</a>
-    <a href="/research?tab=topics" class="{{ 'active' if tab == 'topics' else '' }}">Topics</a>
-    <a href="/research?tab=keywords" class="{{ 'active' if tab == 'keywords' else '' }}">Keywords</a>
-    <a href="/research?tab=channels" class="{{ 'active' if tab == 'channels' else '' }}">Channels</a>
-    <a href="/research?tab=analyze" class="{{ 'active' if tab == 'analyze' else '' }}">Analyze</a>
+    <a href="/research{% if selected_own %}?own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'outliers' else '' }}">Outliers</a>
+    <a href="/research?tab=topics{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'topics' else '' }}">Topics</a>
+    <a href="/research?tab=keywords{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'keywords' else '' }}">Keywords</a>
+    <a href="/research?tab=channels{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'channels' else '' }}">Channels</a>
+    <a href="/research?tab=analyze{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'analyze' else '' }}">Analyze</a>
   </div>
 
   {% if own %}
@@ -115,7 +115,8 @@
   {% else %}<div class="panel muted">Not enough outliers yet to find patterns (needs at least 3 outliers and terms that repeat 5+ times).</div>{% endif %}
   {% elif tab == 'analyze' %}
   <div class="panel">
-    <form class="filters" method="get" action="/research"><input type="hidden" name="tab" value="analyze">
+    <form class="filters" method="get" action="/research">
+      {% if selected_own %}<input type="hidden" name="own" value="{{ selected_own }}">{% endif %}<input type="hidden" name="tab" value="analyze">
       <label>video link or id<input type="text" name="v" value="{{ request.args.get('v', '') }}" size="40" placeholder="https://youtu.be/..."></label>
       <button type="submit">Why did it win?</button></form>
     <div class="note">Works for videos of the channels you watch that have enough views counted. You can also press "analyze" next to any outlier.</div>
@@ -226,6 +227,7 @@
   {% else %}
   <div class="panel">
     <form class="filters" method="get" action="/research">
+      {% if selected_own %}<input type="hidden" name="own" value="{{ selected_own }}">{% endif %}
       <label>min multiplier
         <select name="mult">
           {% for m in ['2','3','5','10','20'] %}<option value="{{ m }}" {{ 'selected' if f.mult == m else '' }}>{{ m }}x</option>{% endfor %}
@@ -327,6 +329,18 @@
   {% endif %}
 </div>
 <script>
+  // the outlier filters apply as soon as a dropdown changes (the word box
+  // still needs Enter or the Filter button)
+  (function () {
+    var form = document.querySelector('form.filters[action="/research"][method="get"] select[name="mult"]');
+    if (!form) return;
+    form = form.form;
+    form.querySelectorAll('select').forEach(function (s) {
+      s.addEventListener('change', function () { form.submit(); });
+    });
+  })();
+</script>
+<script>
   (function () {
     var box = document.getElementById('running');
     if (!box) return;
@@ -346,7 +360,13 @@
     function apply() {
       document.querySelectorAll('input.own-id').forEach(function (i) { i.value = sel.value; });
     }
-    sel.addEventListener('change', apply); apply();
+    sel.addEventListener('change', function () {
+      apply();
+      var u = new URL(location.href);
+      u.searchParams.set('own', sel.value);
+      location.href = u.toString();
+    });
+    apply();
   })();
 </script>
 </body>

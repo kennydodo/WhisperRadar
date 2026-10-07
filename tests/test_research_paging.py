@@ -114,5 +114,20 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("hit UC1", picked)
 
 
+class MakeInChannelTests(PageTests):
+    def test_the_make_in_channel_pick_survives_filter_paging_and_tabs(self):
+        a = db.create_own_channel(self.conn, "Alpha")
+        b = db.create_own_channel(self.conn, "Beta")
+        html = self.get(f"own={b}&per=25")
+        self.assertIn(f'<option value="{b}" selected>', html)
+        self.assertIn(f'name="own" value="{b}"', html)        # filter form
+        self.assertIn(f"own={b}", html.split("page 1 of")[1])  # page links
+        self.assertIn(f"tab=topics&own={b}", html)
+        self.assertIn(f'name="own_channel_id" class="own-id" value="{b}"', html)
+        self.assertIn("form.submit()", html)                 # auto-apply
+        junk = self.get("own=9999")
+        self.assertNotIn('name="own" value="9999"', junk)
+
+
 if __name__ == "__main__":
     unittest.main()

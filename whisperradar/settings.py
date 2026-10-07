@@ -167,6 +167,16 @@ SPEC: list[dict] = [
                 "anything you are building by hand is left alone.",
     },
     {
+        "key": "autorun_plan", "type": "bool", "default": True,
+        "label": "Plan the packaging before the script (Auto Run)",
+        "help": "Auto Run first writes a packaging plan - SEO title, promise, "
+                "opening hook, thumbnail idea - with your API LLMs, judges "
+                "it, makes the best title the production's title, and the "
+                "script is then written to that promise. A plan that "
+                "already exists is kept. If planning fails the run carries "
+                "on with the original title.",
+    },
+    {
         "key": "resume_cooldown_minutes", "type": "int", "default": 60,
         "min": 5, "max": 1440,
         "label": "Resume cooldown (minutes)",
@@ -520,6 +530,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
+        "autorun_plan",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script & shotlist", [

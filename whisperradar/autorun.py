@@ -2187,6 +2187,52 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
     return {}
 
 
+def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None) -> None:
+    """Auto-run's packaging plan, before the script: SEO title, promise,
+    hook and thumbnail idea with the API providers. Skipped when switched
+    off or a ready plan exists; NEVER fatal - the run goes on with the
+    original title."""
+    conn = _connect(cfg)
+    try:
+        if not settings.load(conn).get("autorun_plan", True):
+            return
+        prod = db.get_production(conn, pid)
+    finally:
+        conn.close()
+    try:
+        pdir = studio.prod_dir(cfg, pid)
+        have = packplan.load_plan(pdir)
+        if have.get("title") and have.get("status") == "ready":
+            log("[auto-run] packaging plan: a ready plan exists - keeping it")
+            if not have.get("applied"):
+                packplan.apply_plan(cfg, pid)
+            return
+        writer = _stage_provider(cfg, pid, "script", override=provider)
+        eff = _effective(cfg, pid)
+        judge = studio.judge_provider(cfg, writer, eff["script_judge_provider"])
+        old_title = prod["title"] if prod else ""
+        plan = packplan.run_plan_api(cfg, pid, writer, judge,
+                                     log=lambda m: log(f"[auto-run] {m}"),
+                                     should_stop=cancel or (lambda: False))
+        if plan.get("status") == "ready":
+            packplan.apply_plan(cfg, pid)
+            log(f"[auto-run] packaging plan applied - title: "
+                f"\"{plan['title']}\" (was \"{old_title}\")")
+        else:
+            log("[auto-run] packaging plan did not pass - keeping the "
+                "original title; the draft is on the Packaging plan page")
+        conn = _connect(cfg)
+        try:
+            db.add_step(conn, pid, "script", "auto",
+                        detail=f"packaging plan: {plan['status']}"
+                               f", score {plan.get('score')}")
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - planning must never stop a run
+        log(f"[auto-run] packaging plan skipped: {type(exc).__name__}: "
+            f"{str(exc)[:200]}")
+
+
 def run_pipeline(cfg, pid: int, job=None, log=None,
                  stop_before: str | None = None,
                  provider: str | None = None) -> str:
@@ -2242,6 +2288,8 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
                 f"skipping")
             _advance(cfg, pid, stage)
             continue
+        if stage == "script":
+            _auto_plan(cfg, pid, provider, log, cancel_check)
         log(f"[auto-run] stage {i}/{total}: {stage} - started ({detail})")
         if job is not None:
             job.stage = stage
