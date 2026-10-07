@@ -18,6 +18,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, briefs, db, settings, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -111,7 +113,7 @@ class LoaderTests(unittest.TestCase):
         self.cfg.studio_manifest_brief = None
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_the_built_in_template_is_used_by_default(self):
         text = studio.load_manifest_brief(self.cfg)
@@ -457,7 +459,7 @@ class PlannerIntegrationTests(unittest.TestCase):
         self.pdir = pdir
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_the_planner_prompt_uses_the_channels_profile(self):
         seen = []

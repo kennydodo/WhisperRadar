@@ -20,6 +20,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, services, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -44,7 +46,7 @@ class FlowbatchRecoverTests(unittest.TestCase):
         self.repo.mkdir()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _run(self, stream_result, files_to_write=()):
         cmds = {}
@@ -136,7 +138,7 @@ class RecoverDispatchTests(unittest.TestCase):
                                             encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _set(self, **kw):
         conn = db.connect(self.cfg.db_path)
@@ -204,7 +206,7 @@ class MissingImagesHelperTests(unittest.TestCase):
                                                  encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_exact_name_missing_list(self):
         self.assertEqual(studio.shotlist_missing_images(self.pdir),

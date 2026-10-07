@@ -435,7 +435,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         err = None if score is not None else (
             "no usable score in the judge's reply: "
             + " ".join(str(raw or "").split())[:120])
-        passed, reasons, _long, too_short = autorun._script_gate(
+        passed, reasons, too_long, too_short = autorun._script_gate(
             words, target, overlap, score, min_rating, max_overlap,
             hard_overlap, err)
         cut = studio.script_looks_truncated(script)
@@ -446,7 +446,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             f"(min {min_rating:g}) - " + ("PASSED" if passed else
                                           "not accepted: " + "; ".join(reasons)))
         attempts.append({"script": script, "score": score or 0.0,
-                         "too_short": too_short, "cut": cut,
+                         "judge_score": score,
+                         "too_short": too_short, "cut": cut, "too_long": too_long,
                          "reasons": reasons, "words": words,
                          "overlap": overlap, "passed": passed,
                          "criteria": verdict.get("criteria") or {},
@@ -533,10 +534,11 @@ def _keep_attempts(cfg, pid: int, attempts: list[dict]) -> None:
             (d / f"attempt-{n}.md").write_text(a["script"] + "\n",
                                                encoding="utf-8")
         (d / "review.json").write_text(json.dumps([
-            {"attempt": n, "score": a["score"] or None,
+            {"attempt": n, "score": a.get("judge_score"),
              "overlap": round(a.get("overlap", 0.0), 4),
              "passed": bool(a.get("passed")), "words": a["words"],
-             "too_long": False, "is_baseline": False,
+             "too_long": bool(a.get("too_long")), "is_baseline": False,
+             "reasons": a.get("reasons") or [],
              "criteria": a.get("criteria") or {},
              "feedback": a.get("feedback") or [],
              "weak_spans": a.get("weak_spans") or [],
@@ -605,6 +607,18 @@ def _changed_prompts(old: dict, new: dict) -> tuple[int, int]:
     imgs = [i for i in (new.get("images") or []) if isinstance(i, dict)]
     changed = sum(1 for i in imgs if before.get(i.get("file")) != i.get("prompt"))
     return changed, len(imgs)
+
+
+def _corrected_plan(transport, writer: str, prev: dict, reply: str,
+                    log, dump, rnd: int) -> dict:
+    """A corrected plan from `reply`, logged with how much the writer moved
+    (on every path, including after a lost-chat recovery)."""
+    data = _collect_plan(transport, writer, reply, log, dump,
+                         tag=f"plan_round{rnd + 1}")
+    changed, total = _changed_prompts(prev, data)
+    log(f"{writer} changed {changed} of {total} image prompts"
+        + (" - a large rewrite" if total and changed > 0.25 * total else ""))
+    return data
 
 
 def _recovery_prompt(cfg, pid: int, plan_text: str, feedback: str):
@@ -755,8 +769,8 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                 reply = _send(transport, writer, _recovery_prompt(
                     cfg, pid, text, _plan_feedback(hard, weak, fixes, verdict, local)), log,
                     ready=_has_json)
-                data = _collect_plan(transport, writer, reply, log, dump,
-                                     tag=f"plan_round{rnd + 1}")
+                data = _corrected_plan(transport, writer, data, reply,
+                                       log, dump, rnd)
                 continue
             good, unknown, missing = studio.check_shotlist_patch(
                 studio.parse_shotlist_patch(got), asked)
@@ -766,6 +780,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             data = studio.apply_shotlist_patch(data, good)
         else:
             log(f"sending the faults back to {writer} for a corrected plan")
+            prev = data
             try:
                 reply = transport.ask(
                     writer, _plan_feedback(hard, weak, fixes, verdict, local),
@@ -776,13 +791,8 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                 reply = _send(transport, writer, _recovery_prompt(
                     cfg, pid, text, _plan_feedback(hard, weak, fixes, verdict, local)), log,
                     ready=_has_json)
-            prev = data
-            data = _collect_plan(transport, writer, reply, log, dump,
-                                 tag=f"plan_round{rnd + 1}")
-            changed, total = _changed_prompts(prev, data)
-            log(f"{writer} changed {changed} of {total} image prompts"
-                + (" - a large rewrite" if total and changed > 0.25 * total
-                   else ""))
+            data = _corrected_plan(transport, writer, prev, reply, log, dump,
+                                   rnd)
     if best is not None:
         _bad, data, last_problem = best
     save_shotlist(cfg, pid, data,

@@ -22,6 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import studio  # noqa: E402
 
 PROVIDER = {"name": "glm-flash", "api": "openai", "base_url": "http://llm.test",
@@ -742,7 +744,7 @@ class PinnedFallbackProviderTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _set_fallback(self, conn, value):
         from whisperradar import db

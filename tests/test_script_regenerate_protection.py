@@ -22,6 +22,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -61,7 +63,7 @@ class ScriptRegenerateProtectionTests(unittest.TestCase):
                                              encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _rate(self, existing_score, new_score):
         def fake_rate(cfg, title, genre, script, source, style_guide,

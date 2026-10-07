@@ -15,6 +15,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -38,7 +40,7 @@ class StyleWithoutSourceTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_prompt_uses_title_channel_and_notes(self):
         p = studio.style_prompt_from_scratch(

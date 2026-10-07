@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -36,7 +38,7 @@ class StyleBibleOverrideTests(unittest.TestCase):
         self.pdir.mkdir(parents=True, exist_ok=True)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _resolve(self):
         conn = db.connect(self.cfg.db_path)
@@ -94,7 +96,7 @@ class StyleSaveSetsOverrideTests(unittest.TestCase):
         self.client = create_app(self.cfg).test_client()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_style_save_writes_writing_guide_only(self):
         # stage 1's manual save is the WRITING guide: it must land in

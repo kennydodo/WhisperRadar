@@ -1,11 +1,12 @@
 """Images stage: hovering a thumbnail shows the image's file name."""
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+from tests import wr_tmp  # noqa: E402
 
 from whisperradar import db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
@@ -14,7 +15,7 @@ from whisperradar.webapp import create_app  # noqa: E402
 
 class ImageThumbNameTests(unittest.TestCase):
     def test_every_thumbnail_carries_its_file_name(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with wr_tmp.tempdir() as tmp:
             cfg = load_config(ROOT / "config.yaml")
             cfg.db_path = Path(tmp) / "wr.db"
             cfg.studio_dir = Path(tmp) / "studio"

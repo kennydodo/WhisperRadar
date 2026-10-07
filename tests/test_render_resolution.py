@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import db, settings, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -31,7 +33,7 @@ class RenderResolutionTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_flow_native_is_selectable(self):
         self.assertEqual(studio.RENDER_RESOLUTIONS["flow-native"], (1376, 768))

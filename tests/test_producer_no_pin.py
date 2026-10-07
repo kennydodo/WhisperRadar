@@ -18,6 +18,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import db, producer, settings, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -52,7 +54,7 @@ class ProducerDoesNotPinProviderTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_created_production_has_no_llm_provider_pin(self):
         with mock.patch.object(studio, "seed_production",

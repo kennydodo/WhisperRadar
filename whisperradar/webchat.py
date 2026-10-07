@@ -212,15 +212,17 @@ _BOT_JS = """() => { const t=(document.body.innerText||'').toLowerCase();
          || !!document.querySelector('iframe[src*=captcha],iframe[src*=turnstile],#cf-challenge-running'); }"""
 
 # Words of a "model is busy" banner. Matched only in short elements OUTSIDE the
-# reply and the (long) prompt, and counted, so an old banner left in the chat
-# is not mistaken for the answer to a new message.
+# reply and the (long) prompt. Every banner element seen is MARKED in the DOM
+# and only UNMARKED elements are reported: an old banner left in the chat is
+# never mistaken for the answer to a new message, and a NEW banner re-rendered
+# with the same wording still counts (it is a different element).
 BUSY_RE = (r"at capacity|over capacity|currently busy|server (is )?busy|"
            r"too many (requests|users)|try again (later|in a)|"
            r"concurrent conversation limit|overloaded|rate limit|peak hours|"
            r"coordination of resources")
 
 _BUSY_JS = """(args) => {
-  const re=new RegExp(args.re,'i');
+  const re=new RegExp(args.re,'i'), MARK='data-wr-busy';
   const replies=[...document.querySelectorAll(args.reply)];
   let n=0, text='';
   for (const e of document.querySelectorAll('div,p,span,li,[role=alert]')) {
@@ -229,6 +231,8 @@ _BUSY_JS = """(args) => {
     if (!t || t.length>220 || !re.test(t)) continue;
     if (replies.some(r=>r.contains(e))) continue;
     const r=e.getBoundingClientRect(); if(!r.width||!r.height) continue;
+    if (e.hasAttribute(MARK)) continue;
+    e.setAttribute(MARK, '1');
     n++; text=t; }
   return {n:n, text:text}; }"""
 
@@ -414,7 +418,7 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         c, old_text = st0["count"], ""
         before = max(0, c - 1)             # the last reply is the one we want
         msgs_before = 0
-        busy_before = _busy(page, site)["n"]
+        _busy(page, site)          # mark any banner already on the page
         start_wait = min(start_wait, 30.0)
     elif new_chat:
         page.goto(site.url)
@@ -449,7 +453,7 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         if site.stream:
             page.evaluate(_CAP_RESET_JS)
         msgs_before = page.evaluate(_MSG_COUNT_JS) or 0
-        busy_before = _busy(page, site)["n"]
+        _busy(page, site)                  # mark banners already on the page
         # A send is only repeated when there is NO sign it went out: the box still
         # holds the text, the address did not change, nothing is generating, no
         # new message appeared. A big prompt with attachments can take well over
@@ -503,8 +507,16 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
                 raise ModelBusy(f"{site.name} says: \"{pk['text'][:140]}\" "
                                 f"(pop-up closed)")
             busy = _busy(page, site)
-            if busy["n"] > busy_before:
+            if busy["n"]:
                 raise ModelBusy(f"{site.name} says: \"{busy['text'][:140]}\"")
+        elif not gen and clean_reply(text) and clock() - stable_since > 60:
+            # the reply died part-way and a NEW capacity banner appeared while
+            # it sat stalled: ask again instead of waiting out the stall limit
+            busy = _busy(page, site)
+            if busy["n"]:
+                raise ModelBusy(f"{site.name} says: \"{busy['text'][:140]}\" "
+                                f"- the reply stopped after "
+                                f"{len(clean_reply(text).split())} word(s)")
         if not started:
             # the LAST reply on the page is still the PREVIOUS answer until
             # the new one starts: its text must not count as the answer

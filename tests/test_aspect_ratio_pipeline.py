@@ -19,13 +19,14 @@ Run: python -m unittest discover -s tests
 """
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+from tests import wr_tmp  # noqa: E402
 
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar import autorun, db, services, studio  # noqa: E402
@@ -76,7 +77,7 @@ class FlowbatchAspectTests(unittest.TestCase):
         self.assertEqual(studio.FLOWBATCH_ASPECT_BY_MOTION, FLOWBATCH_ASPECT)
 
     def test_pu_pd_get_1_1_and_others_have_no_override(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pid_dir = Path(d)
             data = _shotlist(MOTIONS)
             (pid_dir / "shotlist.json").write_text(
@@ -138,7 +139,7 @@ class RenderlyExportBatchTests(unittest.TestCase):
         return cfg, pid_dir, calls, fake_run
 
     def test_export_batch_runs_before_imagegen(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             cfg, pid_dir, calls, fake_run = self._fixture(
                 d, 0, produced=("A01_ST.png", "A02_PL.png"))
             with mock.patch.object(studio.subprocess, "run", fake_run), \
@@ -156,7 +157,7 @@ class RenderlyExportBatchTests(unittest.TestCase):
             self.assertIn("--channel", calls[1])
 
     def test_exit_3_raises_quota_exhausted_with_the_partial_count(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             cfg, pid_dir, _, fake_run = self._fixture(
                 d, 3, produced=("A01_ST.png", "A02_PL.png"))
             with mock.patch.object(studio.subprocess, "run", fake_run), \
@@ -168,7 +169,7 @@ class RenderlyExportBatchTests(unittest.TestCase):
             self.assertEqual(ctx.exception.generated, 2)
 
     def test_other_nonzero_exits_are_plain_runtime_errors(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             cfg, pid_dir, _, fake_run = self._fixture(d, 1)
             with mock.patch.object(studio.subprocess, "run", fake_run), \
                  mock.patch.object(studio, "_run_tracked",
@@ -196,7 +197,7 @@ class RenderlySplitTests(unittest.TestCase):
         "what is still missing" decisions behave as in production. Returns
         (step detail, call order)."""
         calls = []
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             cfg = _cfg(Path(d) / "wr.db")
             pid_dir = Path(d) / "studio"
             (pid_dir / "images").mkdir(parents=True)
@@ -357,7 +358,7 @@ class EngineResolutionTests(unittest.TestCase):
                          ["renderly"])
 
     def test_auto_render_mode_means_the_api(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             cfg = _cfg(Path(d) / "wr.db")
             conn = db.connect(cfg.db_path)
             db.init_db(conn)

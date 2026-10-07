@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import db, settings, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -31,7 +33,7 @@ class GlobalDefaultsRemovedTests(unittest.TestCase):
 
     def tearDown(self):
         self.conn.close()
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_not_in_spec_or_groups(self):
         for key in ("default_voice", "seed_dirs"):

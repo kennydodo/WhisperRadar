@@ -25,6 +25,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, services, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -46,7 +48,7 @@ class LocalUpscaleRunnerTests(unittest.TestCase):
         self.repo.mkdir()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_flowbatch_in_place_pass_counts_the_log_lines(self):
         def fake_stream(cmd, repo, log, cancel, on_line=None):
@@ -193,7 +195,7 @@ class ImagesUpscaleHookTests(unittest.TestCase):
         (pdir / "images").mkdir(exist_ok=True)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _set(self, key, value):
         conn = db.connect(self.cfg.db_path)

@@ -19,6 +19,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -57,7 +59,7 @@ class ScriptBestOfAttemptsTests(unittest.TestCase):
         (self.pdir / "source_transcript.txt").write_text("", encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _rate(self, cfg, title, genre, script, source, style_guide,
              provider, temperature=1.0, extra_direction=""):

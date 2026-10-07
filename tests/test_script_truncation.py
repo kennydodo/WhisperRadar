@@ -20,6 +20,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import studio  # noqa: E402
 
 
@@ -118,7 +120,7 @@ class ScriptContinuationJoinIntegrationTests(unittest.TestCase):
         (self.pdir / "source_transcript.txt").write_text("", encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_a_mid_word_continuation_reassembles_the_split_word(self):
         cut_off = "They paired up out of necessity r"

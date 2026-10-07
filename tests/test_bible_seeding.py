@@ -16,6 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -37,7 +39,7 @@ class BibleSeedingTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_stage_action_seeds_the_channel_bible(self):
         entry = autorun.stage_action(self.cfg, self.pid, "shots")

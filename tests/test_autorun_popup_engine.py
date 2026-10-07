@@ -7,12 +7,13 @@ the plan had images to render and never opened - Run till finish did nothing.
 Run: python -m unittest discover -s tests
 """
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+from tests import wr_tmp  # noqa: E402
 
 from whisperradar import db  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
@@ -21,7 +22,7 @@ from whisperradar.webapp import create_app  # noqa: E402
 
 class AutorunPopupEngineTests(unittest.TestCase):
     def test_popup_does_not_depend_on_the_images_stage_function(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with wr_tmp.tempdir() as tmp:
             cfg = load_config(ROOT / "config.yaml")
             cfg.db_path = Path(tmp) / "wr.db"
             cfg.studio_dir = Path(tmp) / "studio"

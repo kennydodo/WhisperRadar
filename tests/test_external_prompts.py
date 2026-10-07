@@ -11,6 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
 from whisperradar import db, external_prompts as ep, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -59,7 +60,7 @@ class Base(unittest.TestCase):
         (self.pdir / "subtitles.srt").write_text(SRT, "utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
 
 class ScriptPromptTests(Base):

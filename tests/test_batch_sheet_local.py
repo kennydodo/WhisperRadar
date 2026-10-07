@@ -14,6 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import briefs, db, external_prompts as ep, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -103,7 +105,7 @@ class PlannerPromptAndRouteTests(unittest.TestCase):
         self.client = create_app(self.cfg).test_client()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_the_external_planner_prompt_asks_for_json_only(self):
         for files in (None, []):

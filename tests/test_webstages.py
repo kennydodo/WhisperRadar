@@ -506,6 +506,22 @@ class RobustnessTests(Base):
         rev = json.loads((d / "review.json").read_text("utf-8"))
         self.assertEqual([r["score"] for r in rev], [4.0, 9.0])
         self.assertIn("tighten the hook", rev[0]["feedback"])
+        self.assertTrue(rev[0]["reasons"])
+        self.assertFalse(rev[0]["passed"])
+
+    def test_review_json_keeps_zero_score_too_long_and_reasons(self):
+        t = Fake(zai=[words(200, "a"), words(100, "b")],
+                 deepseek=[verdict(0, ["too long"]), verdict(9)])
+        with mock.patch.object(ep, "_target_words", return_value=100):
+            ws.run_script(self.cfg, self.pid, t, "zai", "deepseek",
+                          rounds=2, log=lambda m: None)
+        rev = json.loads((self.pdir / "versions" / "script"
+                          / "review.json").read_text("utf-8"))
+        self.assertEqual(rev[0]["score"], 0.0)      # not null
+        self.assertIs(rev[0]["too_long"], True)     # 200 > 115% of 100
+        self.assertIs(rev[1]["too_long"], False)
+        self.assertTrue(any("rating" in r for r in rev[0]["reasons"]))
+        self.assertTrue(rev[1]["passed"])
 
 
 class AutoRefreshTests(unittest.TestCase):

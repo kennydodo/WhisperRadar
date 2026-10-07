@@ -17,6 +17,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, services, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -56,7 +58,7 @@ class RecoverAfterStopTests(unittest.TestCase):
         self.logs = []
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _run(self, generate, recover, pause_effect=None):
         with mock.patch.object(studio, "run_imagegen_flowbatch",

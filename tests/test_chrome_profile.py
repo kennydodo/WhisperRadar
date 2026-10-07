@@ -14,6 +14,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import chrome_profile, db, settings, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -26,7 +28,7 @@ class TurnOffTests(unittest.TestCase):
         self.state = self.profile / "Local State"
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _load(self):
         return json.loads(self.state.read_text(encoding="utf-8"))
@@ -100,7 +102,7 @@ class ProfileResolutionTests(unittest.TestCase):
         self.base = Path(self.tmp.name)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_flowbatch_reads_settings_and_the_local_override(self):
         cfgdir = self.base / "config"
@@ -139,7 +141,7 @@ class ApplyTests(unittest.TestCase):
     def tearDown(self):
         self.dirs.stop()
         self.env.stop()
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _set(self, value):
         conn = db.connect(self.cfg.db_path)
@@ -212,7 +214,7 @@ class LaunchHookTests(unittest.TestCase):
 
     def tearDown(self):
         self.patch.stop()
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_flowbatch_prepare(self):
         with mock.patch.object(studio, "flowbatch_dir",

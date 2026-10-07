@@ -10,6 +10,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -29,7 +31,7 @@ class WritingStyleTests(unittest.TestCase):
         self.pdir.mkdir(parents=True, exist_ok=True)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_art_style_does_not_count_as_writing_style(self):
         (self.pdir / "style.md").write_text("Art style: watercolor\n",

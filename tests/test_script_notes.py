@@ -7,7 +7,6 @@ transcript prose as "facts". The writer now composes from cached, neutral notes.
 Run: python -m unittest discover -s tests
 """
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,12 +14,14 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, studio  # noqa: E402
 
 
 class ResearchNotesTests(unittest.TestCase):
     def test_notes_are_generated_once_and_cached(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pdir = Path(d)
             calls = []
 
@@ -39,7 +40,7 @@ class ResearchNotesTests(unittest.TestCase):
             self.assertTrue((pdir / autorun.RESEARCH_NOTES_FILE).exists())
 
     def test_a_failed_notes_call_falls_back_to_the_transcript(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             def boom(*a, **k):
                 raise RuntimeError("provider down")
 
@@ -84,7 +85,7 @@ class ChunkedNotesTests(unittest.TestCase):
             prompts.append(prompt)
             return f"- fact from call {len(prompts)}"
 
-        with tempfile.TemporaryDirectory() as d, \
+        with wr_tmp.tempdir() as d, \
                 mock.patch.object(studio, "llm_generate", fake_llm):
             notes = autorun._research_notes(object(), Path(d), "T", "g",
                                             text, None)
@@ -100,7 +101,7 @@ class ChunkedNotesTests(unittest.TestCase):
         def fake_llm(cfg, prompt, provider=None, max_tokens=None):
             return next(replies, "- more")
 
-        with tempfile.TemporaryDirectory() as d, \
+        with wr_tmp.tempdir() as d, \
                 mock.patch.object(studio, "llm_generate", fake_llm):
             out = autorun._research_notes(object(), Path(d), "T", "g",
                                           text, None)
@@ -109,7 +110,7 @@ class ChunkedNotesTests(unittest.TestCase):
 
     def test_old_cut_off_notes_are_rebuilt_once(self):
         text = self._transcript()          # thousands of words
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pdir = Path(d)
             (pdir / autorun.RESEARCH_NOTES_FILE).write_text(
                 "- a handful of old notes cut off mid-wo\n", encoding="utf-8")
@@ -128,7 +129,7 @@ class ChunkedNotesTests(unittest.TestCase):
                              "once rebuilt (meta written) the cache is trusted")
 
     def test_notes_for_a_changed_source_are_rebuilt(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pdir = Path(d)
             calls = []
 

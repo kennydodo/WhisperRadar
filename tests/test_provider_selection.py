@@ -18,6 +18,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar import autorun, db, studio  # noqa: E402
 
@@ -45,7 +47,7 @@ class ProvidersFlattenTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_one_key_many_models(self):
         provs = studio.providers(self.cfg)
@@ -89,7 +91,7 @@ class ProviderSelectionTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_the_channel_preference_is_used(self):
         self.assertEqual(autorun._default_provider(self.cfg, self.pid), "deepseek")

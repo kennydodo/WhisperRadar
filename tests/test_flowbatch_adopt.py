@@ -12,6 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import studio  # noqa: E402
 
 
@@ -24,7 +26,7 @@ class AdoptFlowbatchOutputsTests(unittest.TestCase):
         (self.pdir / "flow_images" / "S01_01_2k.png").write_bytes(b"UPSCALED")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_adopts_upscale_and_keeps_only_the_master(self):
         adopted = studio._adopt_flowbatch_outputs(

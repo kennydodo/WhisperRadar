@@ -13,6 +13,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, producer  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
@@ -37,7 +39,7 @@ class Base(unittest.TestCase):
 
     def tearDown(self):
         self.conn.close()
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _prod(self, title, channel):
         pid = db.create_production(self.conn, title, "general", None, None)

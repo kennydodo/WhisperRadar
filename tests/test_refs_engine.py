@@ -18,6 +18,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -43,7 +45,7 @@ class RunRenderlyRefsTests(unittest.TestCase):
         }), encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_renders_through_run_imagegen_and_places_results(self):
         """A ref is rendered via the SAME Renderly call run_imagegen() makes
@@ -138,7 +140,7 @@ class RefsEngineDispatchTests(unittest.TestCase):
         }), encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_renderly_channel_never_calls_flowbatch(self):
         # pin render_mode to 'api' so this tests the Renderly-API refs path;
@@ -205,7 +207,7 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
     staging folder, no copy, no upscaled twins."""
 
     def test_refs_job_outputs_into_refs_without_upscale(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with wr_tmp.tempdir() as tmp:
             pdir = Path(tmp)
             (pdir / "shotlist.json").write_text("{}", encoding="utf-8")
             cfg = load_config()
@@ -219,7 +221,7 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
                          .read_text(encoding="utf-8"))
 
     def test_generated_refs_are_adopted_in_place(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with wr_tmp.tempdir() as tmp:
             pdir = Path(tmp)
             (pdir / "refs").mkdir()
             (pdir / "refs" / "CH_MAYA.png").write_bytes(b"x")

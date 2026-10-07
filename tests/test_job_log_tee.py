@@ -9,19 +9,20 @@ so the reason can always be read back.
 Run: python -m unittest discover -s tests
 """
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar.webapp import _TeeLog  # noqa: E402
 
 
 class TeeLogTests(unittest.TestCase):
     def test_lines_land_on_disk_and_in_memory(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with wr_tmp.tempdir() as tmp:
             p = Path(tmp) / "logs" / "studio.log"
             log = _TeeLog(p)
             log.append("image batch: 7 of 64 produced")
@@ -34,7 +35,7 @@ class TeeLogTests(unittest.TestCase):
             self.assertRegex(text, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ")
 
     def test_the_parent_logs_folder_is_created(self):
-        with tempfile.TemporaryDirectory() as tmp:
+        with wr_tmp.tempdir() as tmp:
             p = Path(tmp) / "does" / "not" / "exist" / "studio.log"
             _TeeLog(p).append("survives the restart")
             self.assertTrue(p.exists())

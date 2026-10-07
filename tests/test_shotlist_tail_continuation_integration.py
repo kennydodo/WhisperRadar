@@ -15,6 +15,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -67,7 +69,7 @@ class ShotlistTailContinuationIntegrationTests(unittest.TestCase):
         (pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_a_clean_early_stop_is_completed_by_a_tail_continuation(self):
         calls = {"planner": 0, "tail": 0, "judge": 0}

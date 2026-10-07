@@ -16,6 +16,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar.config import load_config  # noqa: E402
 from whisperradar import db, studio  # noqa: E402
 
@@ -52,7 +54,7 @@ class StripJobTests(unittest.TestCase):
     """Clearing a job's stored project is what makes prepare CREATE a new one."""
 
     def test_strips_only_the_project_url(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             job = Path(d) / "job.json"
             job.write_text(json.dumps({"name": "wr-9", "projectUrl": "http://x",
                                        "images": [{"file": "a.png"}],
@@ -84,7 +86,7 @@ class ProjectPrecedenceTests(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _set(self, sql, *args):
         conn = db.connect(self.cfg.db_path)
@@ -142,7 +144,7 @@ class FlowBatchPrepareTests(unittest.TestCase):
             stdout = "boom while uploading references"
             stderr = ""
 
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pid_dir = Path(d)
             (pid_dir / studio.FLOW_PREPARE_REPORT).write_text(
                 json.dumps({"projectUrl": PROJECT, "refs": []}), encoding="utf-8")
@@ -162,7 +164,7 @@ class FlowBatchPrepareTests(unittest.TestCase):
             stdout = "prompt box not found"
             stderr = ""
 
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pid_dir = Path(d)
             cfg = _cfg(Path(d) / "wr.db")
             cfg.flowbatch_repo = d
@@ -218,7 +220,7 @@ class PrepareNewProjectFlagTests(unittest.TestCase):
             seen["args"] = list(args)
             return ["node", "cli.js"]
 
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pid_dir = Path(d)
             cfg = _cfg(Path(d) / "wr.db")
             cfg.flowbatch_repo = d
@@ -235,7 +237,7 @@ class ImagesStageRequiresNewProject(unittest.TestCase):
     instead of creating the new one it was told to create."""
 
     def test_no_stored_project_requires_creation(self):
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             pid_dir = Path(d)
             cfg = _cfg(Path(d) / "wr.db")
             cfg.flowbatch_repo = d
@@ -265,7 +267,7 @@ class NoStoredProjectWarningTests(unittest.TestCase):
         from pathlib import Path
         from whisperradar import db, studio
         from whisperradar.config import load_config
-        with tempfile.TemporaryDirectory() as d:
+        with wr_tmp.tempdir() as d:
             cfg = load_config(Path(__file__).resolve().parents[1]
                               / "config.yaml")
             cfg.db_path = Path(d) / "wr.db"

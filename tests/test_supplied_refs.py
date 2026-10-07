@@ -15,6 +15,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import studio  # noqa: E402
 
 
@@ -24,7 +26,7 @@ class SuppliedRefsTests(unittest.TestCase):
         self.pdir = Path(self.tmp.name)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_lists_uploaded_files_only(self):
         (self.pdir / "refs").mkdir()
@@ -65,7 +67,7 @@ class ReferencesOffTests(unittest.TestCase):
         self.pdir = Path(self.tmp.name)
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def test_prompt_forbids_refs_when_disabled(self):
         prompt = studio.shotlist_prompt("BRIEF", "1: hello",

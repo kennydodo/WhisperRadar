@@ -21,6 +21,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from tests import wr_tmp  # noqa: E402
+
 from whisperradar import autorun, db, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
@@ -61,7 +63,7 @@ class ShotlistJudgeFailureTests(unittest.TestCase):
         (pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
 
     def tearDown(self):
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def _fake_llm(self, judge_error=UNSUPPORTED_TEMPERATURE):
         def fake(cfg, prompt, provider=None, max_tokens=None, temperature=1.0):
