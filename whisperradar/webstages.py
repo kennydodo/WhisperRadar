@@ -64,6 +64,10 @@ class WebTransport:
                              options=self.options.get(site), ready=ready,
                              log=self.log)
 
+    def set_stop(self, should_stop) -> None:
+        """Let a wait for model capacity end when the user stops the run."""
+        self.chat.should_stop = should_stop
+
     def adopt(self, site: str, url: str) -> None:
         self.chat.adopt(site, url)
 
@@ -443,7 +447,13 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                                           "not accepted: " + "; ".join(reasons)))
         attempts.append({"script": script, "score": score or 0.0,
                          "too_short": too_short, "cut": cut,
-                         "reasons": reasons, "words": words})
+                         "reasons": reasons, "words": words,
+                         "overlap": overlap, "passed": passed,
+                         "criteria": verdict.get("criteria") or {},
+                         "feedback": judged["feedback"],
+                         "weak_spans": judged["weak_spans"],
+                         "error": err})
+        _keep_attempts(cfg, pid, attempts)
         if passed:
             save_script(cfg, pid, script, f"web chat {writer}/{judge}: round "
                         f"{rnd}, score {score}, {words} words, overlap "
@@ -512,6 +522,31 @@ def _plan_followup(text: str, files) -> str:
                    "full, reply with ONLY `Missing: shotlist.json` and stop.")
 
 
+def _keep_attempts(cfg, pid: int, attempts: list[dict]) -> None:
+    """Every judged round as versions/script/attempt-N.md + review.json (the
+    same files the API loop writes), so the Studio's saved versions list and
+    the reason a draft was rejected survive the run."""
+    try:
+        d = studio.prod_dir(cfg, pid) / "versions" / "script"
+        d.mkdir(parents=True, exist_ok=True)
+        for n, a in enumerate(attempts, 1):
+            (d / f"attempt-{n}.md").write_text(a["script"] + "\n",
+                                               encoding="utf-8")
+        (d / "review.json").write_text(json.dumps([
+            {"attempt": n, "score": a["score"] or None,
+             "overlap": round(a.get("overlap", 0.0), 4),
+             "passed": bool(a.get("passed")), "words": a["words"],
+             "too_long": False, "is_baseline": False,
+             "criteria": a.get("criteria") or {},
+             "feedback": a.get("feedback") or [],
+             "weak_spans": a.get("weak_spans") or [],
+             "judge_error": a.get("error")}
+            for n, a in enumerate(attempts, 1)], indent=2,
+            ensure_ascii=False) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _script_followup(script: str) -> str:
     return (
         "The writer revised the script after your review. Judge it again "
@@ -522,29 +557,54 @@ def _script_followup(script: str) -> str:
         "The revised script:\n\n" + script)
 
 
-def _plan_feedback(faults: list[str], weak: list[dict], fixes: list[str]) -> str:
+def _plan_feedback(faults: list[str], weak: list[dict], fixes: list[str],
+                   verdict: dict | None = None,
+                   local: list[str] | None = None) -> str:
+    """What goes back to the writer. With the judge's `verdict` the writer
+    gets it VERBATIM (the JSON, as you would paste it by hand); without one
+    (recovery, tests) the points are listed from `faults` / `weak` / `fixes`."""
     lines = ["The reviewer found problems with your shotlist."]
-    if faults:
-        lines.append("Hard-rule violations (each one must be fixed):")
-        lines += [f"- {f}" for f in faults]
-    if weak:
-        lines.append("Image prompts that do not state what their narration "
-                     "needs:")
-        for w in weak:
-            lines.append(f"- {w['asset']}"
-                         + (f": missing {', '.join(w['missing'])}"
-                            if w["missing"] else "")
-                         + (f" ({w['reason']})" if w["reason"] else ""))
-    if fixes:
-        lines.append("Most useful changes, in order:")
-        lines += [f"- {x}" for x in fixes[:8]]
+    if verdict:
+        if local:
+            lines.append("Rule checks run by code on your plan (fix these "
+                         "too):")
+            lines += [f"- {f}" for f in local]
+        lines.append("The reviewer's verdict, verbatim (JSON):")
+        lines.append(json.dumps(verdict, ensure_ascii=False, indent=1)[:40000])
+    else:
+        if faults:
+            lines.append("Hard-rule violations (each one must be fixed):")
+            lines += [f"- {f}" for f in faults]
+        if weak:
+            lines.append("Image prompts that do not state what their "
+                         "narration needs:")
+            for w in weak:
+                lines.append(f"- {w['asset']}"
+                             + (f": missing {', '.join(w['missing'])}"
+                                if w["missing"] else "")
+                             + (f" ({w['reason']})" if w["reason"] else ""))
+        if fixes:
+            lines.append("Most useful changes, in order:")
+            lines += [f"- {x}" for x in fixes[:8]]
     lines.append(
         "Reply with the COMPLETE corrected shotlist JSON under the same "
         "output rules as before (one ```json block; if you run out of room, "
         "stop after the last complete entry and I will say \"continue\"). "
-        "Keep every shot and prompt that was not criticised exactly as it "
-        "was.")
+        "Change ONLY the shots and image prompts the points above name. "
+        "Every other shot and prompt must be copied exactly, character for "
+        "character: do not reword, renumber or reflow anything that was not "
+        "criticised. If a fix renames an image file, change it in BOTH "
+        "shots and images.")
     return "\n".join(lines)
+
+
+def _changed_prompts(old: dict, new: dict) -> tuple[int, int]:
+    """(images whose prompt changed or are new, images in the new plan)."""
+    before = {i.get("file"): i.get("prompt")
+              for i in (old.get("images") or []) if isinstance(i, dict)}
+    imgs = [i for i in (new.get("images") or []) if isinstance(i, dict)]
+    changed = sum(1 for i in imgs if before.get(i.get("file")) != i.get("prompt"))
+    return changed, len(imgs)
 
 
 def _recovery_prompt(cfg, pid: int, plan_text: str, feedback: str):
@@ -693,7 +753,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                 log(f"the {writer} chat is gone - starting a new one with "
                     f"the plan and the points to fix")
                 reply = _send(transport, writer, _recovery_prompt(
-                    cfg, pid, text, _plan_feedback(hard, weak, fixes)), log,
+                    cfg, pid, text, _plan_feedback(hard, weak, fixes, verdict, local)), log,
                     ready=_has_json)
                 data = _collect_plan(transport, writer, reply, log, dump,
                                      tag=f"plan_round{rnd + 1}")
@@ -707,17 +767,22 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
         else:
             log(f"sending the faults back to {writer} for a corrected plan")
             try:
-                reply = transport.ask(writer,
-                                      _plan_feedback(hard, weak, fixes),
-                                      (), new_chat=False, ready=_has_json)
+                reply = transport.ask(
+                    writer, _plan_feedback(hard, weak, fixes, verdict, local),
+                    (), new_chat=False, ready=_has_json)
             except webchat.ChatLost:
                 log(f"the {writer} chat is gone - starting a new one with "
                     f"the plan and the points to fix")
                 reply = _send(transport, writer, _recovery_prompt(
-                    cfg, pid, text, _plan_feedback(hard, weak, fixes)), log,
+                    cfg, pid, text, _plan_feedback(hard, weak, fixes, verdict, local)), log,
                     ready=_has_json)
+            prev = data
             data = _collect_plan(transport, writer, reply, log, dump,
                                  tag=f"plan_round{rnd + 1}")
+            changed, total = _changed_prompts(prev, data)
+            log(f"{writer} changed {changed} of {total} image prompts"
+                + (" - a large rewrite" if total and changed > 0.25 * total
+                   else ""))
     if best is not None:
         _bad, data, last_problem = best
     save_shotlist(cfg, pid, data,
@@ -736,6 +801,7 @@ def script_job(cfg, pid: int, writer: str, judge: str, log,
                options: dict | None = None) -> None:
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
+        t.set_stop(should_stop)
         try:
             run_script(cfg, pid, t, writer, judge, log=log,
                        should_stop=should_stop)
@@ -749,6 +815,7 @@ def shotlist_job(cfg, pid: int, writer: str, judge: str, log,
                  same_chats: bool = True) -> None:
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
+        t.set_stop(should_stop)
         try:
             run_shotlist(cfg, pid, t, writer, judge, log=log,
                          should_stop=should_stop, resume=resume,

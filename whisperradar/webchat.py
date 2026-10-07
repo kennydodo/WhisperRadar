@@ -41,6 +41,11 @@ class ChatLost(WebChatError):
     was closed or restarted): sending it would land in an empty page."""
 
 
+class ModelBusy(WebChatError):
+    """The site said the model is at capacity / busy (an error banner, not an
+    answer). Not a failure: ask again later, on the SAME model."""
+
+
 class BotCheck(WebChatError):
     """The site is asking for a captcha / human check. Never solved here."""
 
@@ -206,6 +211,49 @@ _BOT_JS = """() => { const t=(document.body.innerText||'').toLowerCase();
   return /verify (that )?you are (a )?human|are you a robot|complete the captcha|security check|checking your browser/.test(t)
          || !!document.querySelector('iframe[src*=captcha],iframe[src*=turnstile],#cf-challenge-running'); }"""
 
+# Words of a "model is busy" banner. Matched only in short elements OUTSIDE the
+# reply and the (long) prompt, and counted, so an old banner left in the chat
+# is not mistaken for the answer to a new message.
+BUSY_RE = (r"at capacity|over capacity|currently busy|server (is )?busy|"
+           r"too many (requests|users)|try again (later|in a)|"
+           r"concurrent conversation limit|overloaded|rate limit|peak hours|"
+           r"coordination of resources")
+
+_BUSY_JS = """(args) => {
+  const re=new RegExp(args.re,'i');
+  const replies=[...document.querySelectorAll(args.reply)];
+  let n=0, text='';
+  for (const e of document.querySelectorAll('div,p,span,li,[role=alert]')) {
+    if (e.children.length>2) continue;
+    const t=(e.innerText||'').trim();
+    if (!t || t.length>220 || !re.test(t)) continue;
+    if (replies.some(r=>r.contains(e))) continue;
+    const r=e.getBoundingClientRect(); if(!r.width||!r.height) continue;
+    n++; text=t; }
+  return {n:n, text:text}; }"""
+
+# z.ai's "Currently in peak hours - switch to GLM-5.3-Flash" pop-up. It is
+# dismissed with Cancel / Close ONLY: the "Switch" button changes the model.
+_PEAK_JS = """(args) => {
+  const re=new RegExp(args.re,'i');
+  for (const d of document.querySelectorAll(
+        '[role=dialog],[role=alertdialog],.modal,[class*=dialog],[class*=modal]')) {
+    const r=d.getBoundingClientRect(); if(!r.width||!r.height) continue;
+    const t=(d.innerText||'').trim();
+    if (!t || t.length>600 || !re.test(t)) continue;
+    let clicked='';
+    if (args.dismiss) {
+      for (const b of d.querySelectorAll('button,[role=button]')) {
+        const bt=(b.innerText||b.getAttribute('aria-label')||'').trim().toLowerCase();
+        if (/switch/.test(bt)) continue;
+        if (/^(cancel|close|not now|dismiss|no thanks|x|×)$/.test(bt)) {
+          b.click(); clicked=bt; break; }
+      }
+    }
+    return {text:t.slice(0,200), clicked:clicked};
+  }
+  return null; }"""
+
 _PASTE_JS = """(args) => {
   const ta=document.querySelector(args.box); if(!ta) return -1;
   const set=Object.getOwnPropertyDescriptor(
@@ -302,87 +350,165 @@ _CONTINUE_JS = """(labels) => {
   return ''; }"""
 
 
+def _busy(page, site: Site) -> dict:
+    out = page.evaluate(_BUSY_JS, {"re": BUSY_RE, "reply": site.reply})
+    return out if isinstance(out, dict) else {"n": 0, "text": ""}
+
+
+def _peak_dialog(page, dismiss: bool = True):
+    try:
+        out = page.evaluate(_PEAK_JS, {"re": BUSY_RE, "dismiss": dismiss})
+    except Exception:  # noqa: BLE001
+        return None
+    return out if isinstance(out, dict) else None
+
+
+def retry_when_busy(call, log, sleep=time.sleep, should_stop=None,
+                    first_wait: float = 30.0, max_wait: float = 300.0):
+    """Run `call()`; when the model is at capacity wait (30s, 60s ... 5 min)
+    and ask again on the same model, until it answers or you stop the run."""
+    attempt = 0
+    while True:
+        try:
+            return call()
+        except ModelBusy as exc:
+            attempt += 1
+            wait = min(first_wait * 2 ** (attempt - 1), max_wait)
+            log(f"{exc} - the model is busy; waiting {int(wait)}s, then "
+                f"asking again (attempt {attempt}). The model is NOT changed.")
+            waited = 0.0
+            while waited < wait:
+                if should_stop is not None and should_stop():
+                    raise WebChatError("stopped by you while waiting for "
+                                       "the model to have capacity")
+                sleep(1.0)
+                waited += 1.0
+
+
 # ---- one conversation -----------------------------------------------------------
 
 def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
-        timeout: float = 1800, settle: float = 6.0, poll: float = 2.0,
+        timeout: float = 900, settle: float = 6.0, poll: float = 2.0,
         continue_max: int = 8, start_wait: float = 90.0,
         new_chat: bool = True, options: Optional[dict] = None,
         ready: Optional[Callable[[str], bool]] = None, ready_wait: float = 300.0,
         clock: Callable[[], float] = time.monotonic,
-        log: Callable[[str], None] = lambda m: None) -> str:
-    """Send `prompt` (+ `files`, local paths) and return the finished reply.
+        log: Callable[[str], None] = lambda m: None,
+        max_total: float = 4 * 3600, resume: bool = False,
+        stop: Optional[Callable[[], bool]] = None) -> str:
+    """`timeout` is a STALL limit: seconds with no new text and no sign of
+    thinking/writing. A reply that keeps going is waited for (up to
+    `max_total`). `resume=True` sends nothing: it collects the answer of the
+    chat that is already open (after a reload or a stall).
+    Send `prompt` (+ `files`, local paths) and return the finished reply.
     A NEW chat by default; `new_chat=False` answers inside the chat that is
     already open (feedback to the writer). Raises NeedsSignIn, BotCheck or
     WebChatTimeout."""
-    if not (prompt or "").strip():
+    if not resume and not (prompt or "").strip():
         raise WebChatError("Nothing to send")
-    if new_chat:
+    if resume:
+        _wait_for_box(page, site, clock)
+        if site.stream:
+            page.evaluate(_CAPTURE_JS)
+        st0 = page.evaluate(_STATE_JS, {"reply": site.reply})
+        c, old_text = st0["count"], ""
+        before = max(0, c - 1)             # the last reply is the one we want
+        msgs_before = 0
+        busy_before = _busy(page, site)["n"]
+        start_wait = min(start_wait, 30.0)
+    elif new_chat:
         page.goto(site.url)
     _wait_for_box(page, site, clock)
     if site.stream:
         page.evaluate(_CAPTURE_JS)         # no-op when already hooked
-    if new_chat and site.prepare:
-        status = site.prepare(page, **(options or {}))
-        if isinstance(status, str) and status:
-            log(status)
+    if not resume:
+        if new_chat and site.prepare:
+            status = site.prepare(page, **(options or {}))
+            if isinstance(status, str) and status:
+                log(status)
 
-    if files:
-        page.set_input_files(site.files, [str(f) for f in files])
-        _wait_for_uploads(page, files, clock, log)
+        if files:
+            seen = _name_counts(page, files)
+            page.set_input_files(site.files, [str(f) for f in files])
+            _wait_for_uploads(page, files, clock, log, seen=seen)
 
-    n = page.evaluate(_PASTE_JS, {"box": site.box, "text": prompt})
-    # a textarea turns \r\n into \n, so compare with the normalised text and
-    # allow a sliver of difference (control characters the box drops)
-    want = len(prompt.replace("\r\n", "\n").replace("\r", "\n"))
-    if n < want * 0.995:
-        raise WebChatError(
-            f"{site.name}: the prompt box kept {n} of {want} "
-            f"characters - the site's page probably changed")
-    if n != want:
-        log(f"{site.name}: the box dropped {want - n} of {want} characters "
-            f"(line endings / control characters)")
-    page.wait_for_timeout(500)
-    before = page.evaluate(_STATE_JS, {"reply": site.reply})["count"]
-    if site.stream:
-        page.evaluate(_CAP_RESET_JS)
-    msgs_before = page.evaluate(_MSG_COUNT_JS) or 0
-    # A send is only repeated when there is NO sign it went out: the box still
-    # holds the text, the address did not change, nothing is generating, no
-    # new message appeared. A big prompt with attachments can take well over
-    # ten seconds to be accepted, and a second click on a send button that has
-    # turned into a stop button would cancel the answer.
-    for attempt in (1, 2, 3):
-        if not page.evaluate(site.send_js):
-            raise WebChatError(f"{site.name}: could not find the send button")
-        took = False
-        for _ in range(30):
-            page.wait_for_timeout(1000)
-            if (page.evaluate(_TA_LEN_JS, site.box) == 0
-                    or page.evaluate(site.generating_js)
-                    or (new_chat and page.evaluate(site.sent_js))
-                    or (page.evaluate(_MSG_COUNT_JS) or 0) > msgs_before
-                    or page.evaluate(_STATE_JS,
-                                     {"reply": site.reply})["count"] > before):
-                took = True
+        n = page.evaluate(_PASTE_JS, {"box": site.box, "text": prompt})
+        # a textarea turns \r\n into \n, so compare with the normalised text and
+        # allow a sliver of difference (control characters the box drops)
+        want = len(prompt.replace("\r\n", "\n").replace("\r", "\n"))
+        if n < want * 0.995:
+            raise WebChatError(
+                f"{site.name}: the prompt box kept {n} of {want} "
+                f"characters - the site's page probably changed")
+        if n != want:
+            log(f"{site.name}: the box dropped {want - n} of {want} characters "
+                f"(line endings / control characters)")
+        page.wait_for_timeout(500)
+        st0 = page.evaluate(_STATE_JS, {"reply": site.reply})
+        before, old_text = st0["count"], (st0["text"] or "")
+        if site.stream:
+            page.evaluate(_CAP_RESET_JS)
+        msgs_before = page.evaluate(_MSG_COUNT_JS) or 0
+        busy_before = _busy(page, site)["n"]
+        # A send is only repeated when there is NO sign it went out: the box still
+        # holds the text, the address did not change, nothing is generating, no
+        # new message appeared. A big prompt with attachments can take well over
+        # ten seconds to be accepted, and a second click on a send button that has
+        # turned into a stop button would cancel the answer.
+        peak = None
+        for attempt in (1, 2, 3):
+            if not page.evaluate(site.send_js):
+                raise WebChatError(f"{site.name}: could not find the send button")
+            took = False
+            for _ in range(30):
+                page.wait_for_timeout(1000)
+                pk = _peak_dialog(page)
+                if pk:
+                    peak = pk
+                    log(f"{site.name}: pop-up \"{pk['text'][:90]}\" - closed "
+                        f"it ({pk['clicked'] or 'could not'}); the model is "
+                        f"NOT changed")
+                    break
+                if (page.evaluate(_TA_LEN_JS, site.box) == 0
+                        or page.evaluate(site.generating_js)
+                        or (new_chat and page.evaluate(site.sent_js))
+                        or (page.evaluate(_MSG_COUNT_JS) or 0) > msgs_before
+                        or page.evaluate(_STATE_JS,
+                                         {"reply": site.reply})["count"] > before):
+                    took = True
+                    break
+            if took:
                 break
-        if took:
-            break
-        log(f"{site.name}: the send did not register (try {attempt}/3)")
+            if peak:
+                raise ModelBusy(f"{site.name} says: \"{peak['text'][:140]}\"")
+            log(f"{site.name}: the send did not register (try {attempt}/3)")
 
     t0 = clock()
     last_text, stable_since, continues = "", clock(), 0
     started = False
+    active = clock()                       # last sign of life
     while True:
         page.wait_for_timeout(int(poll * 1000))
+        if stop is not None and stop():
+            raise WebChatError(f"{site.name}: stopped by you while waiting")
         if page.evaluate(_BOT_JS):
             raise BotCheck(f"{site.name} is asking for a human check - open "
                            f"the browser window and complete it yourself")
         st = page.evaluate(_STATE_JS, {"reply": site.reply})
         text = st["text"] or ""
         gen = bool(page.evaluate(site.generating_js))
+        if not gen and not clean_reply(text):
+            pk = _peak_dialog(page)
+            if pk:
+                raise ModelBusy(f"{site.name} says: \"{pk['text'][:140]}\" "
+                                f"(pop-up closed)")
+            busy = _busy(page, site)
+            if busy["n"] > busy_before:
+                raise ModelBusy(f"{site.name} says: \"{busy['text'][:140]}\"")
         if not started:
-            if st["count"] > before or gen or text:
+            # the LAST reply on the page is still the PREVIOUS answer until
+            # the new one starts: its text must not count as the answer
+            if st["count"] > before or gen or (text and text != old_text):
                 started = True
             elif clock() - t0 > start_wait:
                 tail = " ".join(str(page.evaluate(_PAGE_TAIL_JS)
@@ -392,6 +518,9 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
                     f"with: \"{tail}\"", "")
         if text != last_text:
             last_text, stable_since = text, clock()
+            active = clock()
+        if gen:
+            active = clock()               # still thinking / writing
         done_waiting = (started and not gen
                         and clock() - stable_since >= settle)
         if done_waiting and not clean_reply(last_text):
@@ -414,9 +543,13 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
             if clean_reply(last_text):
                 return clean_reply(last_text)
             raise WebChatError(f"{site.name} returned an empty reply")
-        if clock() - t0 > timeout:
+        if started and clock() - active > timeout:
             raise WebChatTimeout(
-                f"{site.name} did not finish within {int(timeout)}s",
+                f"{site.name} made no progress for {int(timeout)}s",
+                clean_reply(last_text))
+        if clock() - t0 > max_total:
+            raise WebChatTimeout(
+                f"{site.name} did not finish within {int(max_total)}s",
                 clean_reply(last_text))
 
 
@@ -440,12 +573,24 @@ def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
         page.wait_for_timeout(1000)
 
 
-def _wait_for_uploads(page, files, clock, log, limit: float = 120.0) -> None:
+def _name_counts(page, files) -> dict:
+    body = page.evaluate("()=>document.body.innerText") or ""
+    return {Path(str(f)).name: body.count(Path(str(f)).name) for f in files}
+
+
+def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
+                      seen: Optional[dict] = None, settle: float = 3.0) -> None:
+    """Wait until every NEW attachment shows in the chat. In a chat that
+    already mentions narration.txt / shotlist.json the bare name is on the
+    page from the start, so a file only counts once its name appears MORE
+    often than before the upload (else the send goes out without it)."""
     names = [Path(str(f)).name for f in files]
+    seen = seen or {}
     t0 = clock()
     while True:
         body = page.evaluate("()=>document.body.innerText") or ""
-        if all(n in body for n in names):
+        if all(body.count(n) > seen.get(n, 0) for n in names):
+            page.wait_for_timeout(int(settle * 1000))   # let the upload finish
             return
         if clock() - t0 > limit:
             raise WebChatError("the attached file(s) never showed up in the "
@@ -587,6 +732,7 @@ class WebChat:
         self._ctx: dict = {}
         self._hooked: set = set()
         self._attached: set = set()     # sites driven in the user's Chrome
+        self.should_stop = None         # () -> bool, checked while waiting
         self._urls: dict = {}       # site -> URL of its current chat
 
     def __enter__(self):
@@ -695,14 +841,47 @@ class WebChat:
                 raise ChatLost(
                     f"{site.name}: the chat this answer belongs to is not "
                     f"open in the browser any more")
-        reply = ask(page, site, prompt, files, new_chat=new_chat,
-                    options=options, **kw)
+        log = kw.get("log") or (lambda m: None)
+        kw.setdefault("stop", self.should_stop)
+        try:
+            reply = retry_when_busy(
+                lambda: ask(page, site, prompt, files, new_chat=new_chat,
+                            options=options, **kw),
+                log, should_stop=self.should_stop)
+        except WebChatTimeout as exc:
+            reply = self._recover_timeout(page, site, exc, kw, log)
         try:
             if page.evaluate(site.sent_js):
                 self._urls[key] = page.url.split("#")[0]
         except Exception:  # noqa: BLE001
             pass
         return reply
+
+    def _recover_timeout(self, page, site, exc, kw, log, rounds: int = 3):
+        """A stall is not the end: reload the same chat and collect what the
+        site has by now (the answer may be finished, or still coming)."""
+        last = exc
+        for i in range(1, rounds + 1):
+            log(f"{site.name}: {last} - reloading the chat and checking "
+                f"again ({i}/{rounds})")
+            try:
+                page.reload()
+                page.wait_for_timeout(4000)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                return retry_when_busy(
+                    lambda: ask(page, site, "", (), new_chat=False,
+                                resume=True, **{k: v for k, v in kw.items()
+                                                if k in ("timeout", "settle",
+                                                         "poll", "log",
+                                                         "stop", "ready",
+                                                         "max_total",
+                                                         "continue_max")}),
+                    log, should_stop=self.should_stop)
+            except WebChatTimeout as again:
+                last = again
+        raise exc
 
     def sign_in(self, key: str, wait: float = 600.0) -> bool:
         """Open the site and wait for YOU to sign in (never typed for you)."""

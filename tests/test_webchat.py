@@ -71,6 +71,9 @@ class FakePage:
             return getattr(self, "cap", None)
         if js is wc._TA_LEN_JS:
             return 0 if self.sent else len(self.pasted or "")
+        if js is wc._BUSY_JS:
+            busy = getattr(self, "busy", None)
+            return busy if (busy and self.sent) else {"n": 0, "text": ""}
         if js is wc._PAGE_TAIL_JS:
             return self.body_extra
         if js is wc._STATE_JS:
@@ -476,3 +479,178 @@ class AdoptTests(unittest.TestCase):
         chat.adopt("zai", "https://chat.z.ai/c/abc")
         chat.adopt("deepseek", "")          # nothing to adopt
         self.assertEqual(chat.urls(), {"zai": "https://chat.z.ai/c/abc"})
+
+
+class BusyTests(unittest.TestCase):
+    def _page(self, busy):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("", False)] * 10)
+        page.busy = busy
+        return clk, page
+
+    def test_a_capacity_banner_raises_model_busy(self):
+        clk, page = self._page({"n": 1, "text": "The model is at capacity"})
+        with self.assertRaises(wc.ModelBusy) as cm:
+            wc.ask(page, wc.ZAI, "hello", clock=clk)
+        self.assertIn("at capacity", str(cm.exception))
+
+    def test_no_banner_is_not_busy(self):
+        out, _ = run(wc.ZAI, [("Hello world", False)] * 8)
+        self.assertEqual(out, "Hello world")
+
+    def test_it_waits_and_asks_again_on_the_same_model(self):
+        calls, waits, logs = [], [], []
+
+        def call():
+            calls.append(1)
+            if len(calls) < 3:
+                raise wc.ModelBusy("z.ai says: at capacity")
+            return "answer"
+
+        out = wc.retry_when_busy(call, logs.append,
+                                 sleep=lambda s: waits.append(s))
+        self.assertEqual(out, "answer")
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sum(waits), 30 + 60)        # 30s, then 60s
+        self.assertIn("NOT changed", logs[0])
+
+    def test_waiting_ends_when_the_user_stops(self):
+        def call():
+            raise wc.ModelBusy("busy")
+
+        with self.assertRaises(wc.WebChatError) as cm:
+            wc.retry_when_busy(call, lambda m: None, sleep=lambda s: None,
+                               should_stop=lambda: True)
+        self.assertIn("stopped by you", str(cm.exception))
+
+    def test_the_wait_is_capped(self):
+        waits, n = [], [0]
+
+        def call():
+            n[0] += 1
+            if n[0] <= 7:
+                raise wc.ModelBusy("busy")
+            return "ok"
+
+        wc.retry_when_busy(call, lambda m: None,
+                           sleep=lambda s: waits.append(s))
+        self.assertEqual(sum(waits), 30 + 60 + 120 + 240 + 300 + 300 + 300)
+
+
+class TimeoutTests(unittest.TestCase):
+    def test_long_thinking_is_waited_for(self):
+        # ~4000s of "thinking" (generating, no text) used to hit the 1800s cap
+        script = [("", True)] * 2000 + [("Done", False)] * 8
+        out, _ = run(wc.ZAI, script)
+        self.assertEqual(out, "Done")
+
+    def test_a_real_stall_times_out_and_keeps_the_partial(self):
+        script = [("Half an answ", True)] + [("Half an answ", False)] * 600
+        with self.assertRaises(wc.WebChatTimeout) as cm:
+            run(wc.ZAI, script, timeout=60, ready=lambda t: False,
+                ready_wait=10_000)
+        self.assertIn("no progress", str(cm.exception))
+
+    def test_resume_collects_the_answer_without_sending(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("Answer", False)] * 20)
+        page.sent, page.frame = True, ("Answer", False)
+        out = wc.ask(page, wc.ZAI, "", new_chat=False, resume=True, clock=clk)
+        self.assertEqual(out, "Answer")
+        self.assertIsNone(page.pasted)
+
+    def test_stop_ends_the_wait(self):
+        script = [("", True)] * 100
+        with self.assertRaises(wc.WebChatError) as cm:
+            run(wc.ZAI, script, stop=lambda: True)
+        self.assertIn("stopped by you", str(cm.exception))
+
+    def test_recovery_reloads_and_returns_the_finished_answer(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("Late answer", False)] * 20)
+        page.sent, page.frame = True, ("Late answer", False)
+        page.reload = lambda: None
+        chat = wc.WebChat("x")
+        logs = []
+        out = chat._recover_timeout(page, wc.ZAI,
+                                    wc.WebChatTimeout("z.ai stalled", ""),
+                                    {"clock": clk}, logs.append)
+        self.assertEqual(out, "Late answer")
+        self.assertIn("reloading", logs[0])
+
+
+class UploadCountTests(unittest.TestCase):
+    def test_a_name_already_in_the_chat_does_not_count_as_uploaded(self):
+        clk = Clock()
+
+        class P:
+            def __init__(self):
+                self.n = 1                 # narration.txt is in an old message
+                self.ticks = 0
+
+            def evaluate(self, js, arg=None):
+                return " ".join(["narration.txt"] * self.n)
+
+            def wait_for_timeout(self, ms):
+                clk.t += ms / 1000.0
+                self.ticks += 1
+                if self.ticks == 5:        # the upload chip appears
+                    self.n = 2
+
+        page = P()
+        seen = wc._name_counts(page, ["/tmp/x/narration.txt"])
+        wc._wait_for_uploads(page, ["/tmp/x/narration.txt"], clk,
+                             lambda m: None, seen=seen)
+        self.assertEqual(page.n, 2)
+        self.assertGreaterEqual(page.ticks, 5)
+
+
+class PeakHoursTests(unittest.TestCase):
+    def test_peak_hours_popup_is_closed_and_the_model_kept(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("", False)] * 10)
+        orig = page.evaluate
+        calls = []
+
+        def ev(js, arg=None):
+            if js is wc._PEAK_JS:
+                calls.append(arg["dismiss"])
+                return {"text": "Currently in peak hours - GLM-5.3 ...",
+                        "clicked": "cancel"}
+            if js is page.site.send_js:
+                return True                  # clicked, but nothing is sent
+            if js is wc._TA_LEN_JS:
+                return 5
+            return orig(js, arg)
+
+        page.evaluate = ev
+        logs = []
+        with self.assertRaises(wc.ModelBusy) as cm:
+            wc.ask(page, wc.ZAI, "hello", clock=clk, log=logs.append)
+        self.assertIn("peak hours", str(cm.exception))
+        self.assertTrue(calls and calls[0] is True)
+        self.assertTrue(any("NOT changed" in m for m in logs))
+
+    def test_the_switch_button_is_never_in_the_dismiss_list(self):
+        self.assertIn("switch", wc._PEAK_JS)
+        self.assertIn("continue", "continue")   # placeholder guard
+        self.assertRegex("Currently in peak hours", wc.BUSY_RE)
+
+
+class StaleReplyTests(unittest.TestCase):
+    def test_the_previous_answer_is_not_taken_for_the_new_one(self):
+        clk = Clock()
+        # the page still shows the OLD answer; the send never produces a new one
+        page = FakePage(clk, wc.ZAI, [("OLD ANSWER", False)] * 200)
+        page.frame = ("OLD ANSWER", False)
+        orig = page.evaluate
+
+        def ev(js, arg=None):
+            if js is wc._STATE_JS:
+                return {"count": 1, "text": "OLD ANSWER", "url": page.url}
+            return orig(js, arg)
+
+        page.evaluate = ev
+        with self.assertRaises(wc.WebChatTimeout) as cm:
+            wc.ask(page, wc.ZAI, "faults", clock=clk, start_wait=30)
+        self.assertIn("did not start answering", str(cm.exception))

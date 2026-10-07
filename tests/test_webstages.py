@@ -474,3 +474,45 @@ class SameChatsTests(Base):
         fresh = [(c["site"], c["new_chat"]) for c in t.calls]
         self.assertEqual(fresh, [("zai", False), ("zai", True),
                                  ("deepseek", False), ("deepseek", True)])
+
+
+class RobustnessTests(Base):
+    def test_feedback_carries_the_judges_json_verbatim(self):
+        verdict = {"faults": ["shots 2-3 overlap"], "pass": False,
+                   "shots": [{"asset": "a_ST.png", "verdict": "weak"}]}
+        text = ws._plan_feedback(["shots 2-3 overlap"], [], [], verdict,
+                                 ["cue 9 uncovered"])
+        self.assertIn('"shots 2-3 overlap"', text)
+        self.assertIn("cue 9 uncovered", text)
+        self.assertIn("verbatim", text)
+        self.assertIn("Change ONLY", text)
+
+    def test_changed_prompts_counts_edits_and_new_files(self):
+        old = {"images": [{"file": "a", "prompt": "1"}, {"file": "b", "prompt": "2"}]}
+        new = {"images": [{"file": "a", "prompt": "1"},
+                          {"file": "b", "prompt": "two"},
+                          {"file": "c", "prompt": "3"}]}
+        self.assertEqual(ws._changed_prompts(old, new), (2, 3))
+
+    def test_every_script_round_is_kept_as_a_version_with_its_review(self):
+        t = Fake(zai=[words(100, "a"), words(100, "b")],
+                 deepseek=[verdict(4, ["tighten the hook"]), verdict(9)])
+        with mock.patch.object(ep, "_target_words", return_value=100):
+            ws.run_script(self.cfg, self.pid, t, "zai", "deepseek",
+                          rounds=3, log=lambda m: None)
+        d = self.pdir / "versions" / "script"
+        self.assertTrue((d / "attempt-1.md").read_text("utf-8").startswith("a0"))
+        self.assertTrue((d / "attempt-2.md").read_text("utf-8").startswith("b0"))
+        rev = json.loads((d / "review.json").read_text("utf-8"))
+        self.assertEqual([r["score"] for r in rev], [4.0, 9.0])
+        self.assertIn("tighten the hook", rev[0]["feedback"])
+
+
+class AutoRefreshTests(unittest.TestCase):
+    def test_the_poll_marks_a_job_that_started_after_the_page_loaded(self):
+        html = (ROOT / "whisperradar" / "templates"
+                / "studio_detail.html").read_text("utf-8")
+        run_block = html[html.index("if (s.running) {"):]
+        self.assertIn("wasRunning = true;", run_block[:200])
+        # only the user's own typing counts as an unsaved edit
+        self.assertIn("e.isTrusted", html)

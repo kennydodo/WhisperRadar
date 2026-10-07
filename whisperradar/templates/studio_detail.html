@@ -1196,10 +1196,16 @@
       sel.setAttribute('data-current', label);
     }
   });
+  // only boxes the USER typed or pasted into count as unsaved edits (values
+  // filled in by the page's own scripts are not real input events)
+  const userEdited = new Set();
+  document.addEventListener('input', function (e) {
+    if (e.isTrusted && e.target) userEdited.add(e.target);
+  }, true);
   function reloadWhenSafe() {
-    const dirty = [...document.querySelectorAll('textarea, input')]
-      .some((el) => el.type !== 'checkbox' && el.type !== 'radio' &&
-                     el.value !== el.defaultValue);
+    const dirty = [...userEdited].some((el) => document.contains(el) &&
+      el.type !== 'checkbox' && el.type !== 'radio' &&
+      el.value !== el.defaultValue);
     if (!dirty) { location.reload(); return; }
     wrConfirm('A background job finished - reload the page? Unsaved edits will be lost.')
       .then(function (ok) { if (ok) location.reload(); });
@@ -1216,6 +1222,7 @@
         if (!s.running) wasRunning = true;
       }
       if (s.running) {
+        wasRunning = true;     // a job that began after this page loaded
         if (bar) {
           bar.style.display = '';
           const ours = !s.pid || s.pid === {{ prod['id'] }};

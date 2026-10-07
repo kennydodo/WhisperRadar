@@ -177,6 +177,8 @@ The API loop (`autorun`) is untouched.
   pick z.ai Deep Think (Low/High/Max) and DeepSeek DeepThink/Search per run
   (`options` passed to `site.prepare`). No round limit; Stop button only.
 - Same chats across stages (2026-10-07): each run saves the chat URLs to `<production>/webchat_chats.json`; the shotlist run (checkbox "Same chats as the script", default on) continues in them (`adopt_chats`, `WebChat.adopt/urls`), so the writer and judge already know the script, as when done by hand. The judge still gets the FULL judge prompt in that chat on its first round; a chat that cannot be reopened (`ChatLost`) falls back to a new one. The script stage always starts fresh. Context-size risk: a very long chat may get slow; untick it.
+- Robustness (2026-10-07): hard-fault feedback to the writer now carries the judge's JSON VERBATIM (as pasted by hand) plus the code-check faults, and says "change ONLY the entries named; copy everything else exactly"; each corrected plan logs "changed N of M image prompts" (flags a >25% rewrite). Every judged SCRIPT round is kept as versions/script/attempt-N.md + review.json (score, criteria, feedback), same files as the API loop. DeepSeek uses the same attach login as z.ai: `python -m whisperradar.webchat login deepseek` (port 9223).
+- Model at capacity (2026-10-07): a short banner outside the reply matching `BUSY_RE` ("at capacity", "busy", "try again later", "concurrent conversation limit", ...) raises `ModelBusy`; `retry_when_busy` (used by `WebChat.ask`) waits 30s, 60s ... 5 min and asks AGAIN on the SAME model (z.ai's offer to switch to Flash is never taken), until it answers or the user stops the run (`WebTransport.set_stop`). A new chat is opened on each retry of a first message; a follow-up is re-sent in the same chat. The banner words are a guess: check them against a real one.
 - Studio: "Run script / shotlist in web chat" buttons (writer + judge pickers)
   -> `POST /studio/<pid>/webchat/<script|shots>` (a normal background job).
 - Reply-completion fixes after the first real run: z.ai shows only "Thinking..."
@@ -1591,3 +1593,30 @@ handle it). Static (ST) only.
 - Replace the built-in `pop` sound (ImgToVideo, see its docs/next-session.md).
 - Slide-in reveal (queued in ImgToVideo docs), after the Premiere Position fix is confirmed.
 - Presentation override of Section 5/8 (ask first: touches the external prompt).
+
+## #1 NEXT SESSION - "what to make" research (spec from the user, 2026-10-07, modelled on OutlierKit)
+Build these into WhisperRadar (own implementation, YouTube Data API v3 free quota + daily snapshots):
+1. **Outlier research** - videos beating their channel's average (multiplier = views / channel median),
+   for one channel or across a niche; sort by multiplier, views, recency. (OutlierKit: 2 credits)
+2. **Keyword research** - low-competition, high-demand topics with search volume and ranking difficulty.
+3. **Script & hook analysis** - score any video on hook strength, curiosity loops, pacing, emotional
+   triggers, payoff; say why it worked and how to make ours stronger (can run through the web chats).
+4. **Channel analysis** - audience, preferred formats, ideal length, tone, patterns of best videos.
+5. Supporting tools: transcript of any video, comments of any video, channels similar to a seed,
+   search channels by name/topic, latest uploads, full stats of one video, live refresh of outliers.
+6. "Make this" button: send a chosen outlier/topic straight into a new production.
+Note: OutlierKit offers MCP/API on Pro & Max (https://outlierkit.com/mcp) - an option to try Claude on it
+before/while building our own. Trial the paid tools first to learn which signals matter.
+
+## Timeouts and uploads in web-chat (DONE 2026-10-07)
+`ask(timeout=900)` is a STALL limit (no new text and not thinking/writing); `max_total` 4h ceiling; `resume=True`
+collects the answer of the open chat without sending; `WebChat._recover_timeout` reloads the chat and re-collects
+up to 3 times before failing; `stop` callback ends any wait. Upload wait counts name occurrences BEFORE vs AFTER
+(a chat that already mentions narration.txt used to pass at once -> DeepSeek answered "Missing: narration.txt").
+
+## Peak-hours pop-up and stale-reply bug (DONE 2026-10-07)
+z.ai shows a "Currently in peak hours - switch to GLM-5.3-Flash" pop-up (Cancel / Switch). `_peak_dialog` closes it
+with Cancel/Close ONLY (never Switch), raises ModelBusy -> retry_when_busy waits and re-sends on the same model.
+Bug found with it: while the send was blocked the page still showed the PREVIOUS reply, `ask` took that text as the
+new answer (23,739 chars of the old plan), sent 'continue', and the faults were never delivered. `started` now needs
+a new reply (count up, generating, or text different from the text before the send).
