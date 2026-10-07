@@ -17,8 +17,12 @@ Run `python -m whisperradar.webchat login zai` once per site to sign in, and
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import subprocess
 import time
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Sequence
@@ -30,6 +34,11 @@ class WebChatError(RuntimeError):
 
 class NeedsSignIn(WebChatError):
     """The site shows a login page: run `webchat login <site>` once."""
+
+
+class ChatLost(WebChatError):
+    """A follow-up was asked in a chat that is not open any more (the window
+    was closed or restarted): sending it would land in an empty page."""
 
 
 class BotCheck(WebChatError):
@@ -128,6 +137,18 @@ def _zai_prepare(page, thinking: str = "Low", model: str = "flash") -> None:
     except Exception:  # noqa: BLE001 - the fake page / old layouts have none
         pass
     page.wait_for_timeout(300)
+    try:
+        now = page.evaluate("""() => {
+          const m=document.querySelector('button[aria-label="Select a model"]');
+          const d=[...document.querySelectorAll('span')].find(e=>
+            /^(Low|High|Max)$/.test((e.innerText||'').trim())
+            && e.previousElementSibling
+            && /Deep Think/.test(e.previousElementSibling.innerText||''));
+          return (m?m.innerText.trim():'?')+' / Deep Think '
+                 +(d?d.innerText.trim():'?'); }""")
+        return f"z.ai is using {now} (asked: {model}, {thinking})"
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 _DS_TOGGLE_JS = """(args) => {
@@ -302,7 +323,9 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
     if site.stream:
         page.evaluate(_CAPTURE_JS)         # no-op when already hooked
     if new_chat and site.prepare:
-        site.prepare(page, **(options or {}))
+        status = site.prepare(page, **(options or {}))
+        if isinstance(status, str) and status:
+            log(status)
 
     if files:
         page.set_input_files(site.files, [str(f) for f in files])
@@ -477,6 +500,77 @@ def _balanced_end(s: str, start: int, opener: str, closer: str):
 
 # ---- the real browser ---------------------------------------------------------------
 
+# ---- your own Chrome, attached over the debugging port ------------------------------
+#
+# `login <site>` starts a NORMAL Chrome (no automation flags, so Google/GitHub
+# sign-in works) with a debugging port and the site's profile, and leaves it
+# open. A run then attaches to it. If no such Chrome is listening, WebChat
+# launches its own as before.
+
+CDP_PORTS = {"zai": 9222, "deepseek": 9223}
+
+
+def cdp_endpoint(key: str) -> str:
+    return f"http://127.0.0.1:{CDP_PORTS.get(key, 9300)}"
+
+
+def cdp_alive(key: str, timeout: float = 1.5) -> bool:
+    try:
+        with urllib.request.urlopen(cdp_endpoint(key) + "/json/version",
+                                    timeout=timeout) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def find_chrome() -> str | None:
+    cands = []
+    for var in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        base = os.environ.get(var)
+        if base:
+            cands += [os.path.join(base, "Google", "Chrome", "Application",
+                                   "chrome.exe"),
+                      os.path.join(base, "Microsoft", "Edge", "Application",
+                                   "msedge.exe")]
+    cands += ["/usr/bin/google-chrome", "/usr/bin/chromium",
+              "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    for name in ("chrome", "google-chrome", "msedge", "chromium"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def start_chrome(key: str, profile_root, wait: float = 20.0) -> bool:
+    """Start Chrome for `key` with a debugging port (left running); True once
+    it answers. Reuses one that is already listening."""
+    if cdp_alive(key):
+        return True
+    exe = find_chrome()
+    if not exe:
+        raise WebChatError("Chrome or Edge was not found on this computer")
+    profile = Path(profile_root) / key
+    profile.mkdir(parents=True, exist_ok=True)
+    args = [exe, f"--remote-debugging-port={CDP_PORTS.get(key, 9300)}",
+            "--remote-allow-origins=*", f"--user-data-dir={profile}",
+            "--no-first-run", "--no-default-browser-check", SITES[key].url]
+    flags = 0
+    if os.name == "nt":
+        flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+    subprocess.Popen(args, creationflags=flags, close_fds=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < wait:
+        if cdp_alive(key):
+            return True
+        time.sleep(0.5)
+    return False
+
+
 class WebChat:
     """A persistent browser profile per site, so you sign in once.
 
@@ -492,6 +586,7 @@ class WebChat:
         self._pw = None
         self._ctx: dict = {}
         self._hooked: set = set()
+        self._attached: set = set()     # sites driven in the user's Chrome
         self._urls: dict = {}       # site -> URL of its current chat
 
     def __enter__(self):
@@ -505,12 +600,15 @@ class WebChat:
         return self
 
     def __exit__(self, *exc):
-        for ctx in self._ctx.values():
+        for key, ctx in self._ctx.items():
+            if key in self._attached:
+                continue                # your own Chrome stays open
             try:
                 ctx.close()
             except Exception:  # noqa: BLE001
                 pass
         self._ctx.clear()
+        self._attached.clear()
         if self._pw:
             self._pw.stop()
             self._pw = None
@@ -519,6 +617,11 @@ class WebChat:
         if key not in SITES:
             raise WebChatError(f"Unknown chat site '{key}' "
                                f"(known: {', '.join(SITES)})")
+        if key not in self._ctx and cdp_alive(key):
+            browser = self._pw.chromium.connect_over_cdp(cdp_endpoint(key))
+            self._ctx[key] = (browser.contexts[0] if browser.contexts
+                              else browser.new_context())
+            self._attached.add(key)
         if key not in self._ctx:
             profile = self.profile_root / key
             profile.mkdir(parents=True, exist_ok=True)
@@ -552,6 +655,11 @@ class WebChat:
                     "(" + _CAPTURE_JS + ")()")
             except Exception:  # noqa: BLE001
                 pass
+        if key in self._attached:
+            host = SITES[key].url.split("//")[-1].split("/")[0]
+            for pg in ctx.pages:
+                if host in str(pg.url):
+                    return pg
         return ctx.pages[0] if ctx.pages else ctx.new_page()
 
     def ask(self, key: str, prompt: str, files: Sequence[str] = (),
@@ -569,6 +677,15 @@ class WebChat:
                     page.goto(saved)
             except Exception:  # noqa: BLE001
                 pass
+        if not new_chat:
+            try:
+                in_chat = bool(page.evaluate(site.sent_js))
+            except Exception:  # noqa: BLE001
+                in_chat = False
+            if not in_chat:
+                raise ChatLost(
+                    f"{site.name}: the chat this answer belongs to is not "
+                    f"open in the browser any more")
         reply = ask(page, site, prompt, files, new_chat=new_chat,
                     options=options, **kw)
         try:
@@ -603,14 +720,18 @@ def _main(argv: list[str]) -> int:
         return 2
     cfg = config.load_config()
     root = Path(cfg.db_path).parent / "webchat"
+    if argv[0] == "login":
+        if argv[1] not in SITES:
+            print("unknown site: " + argv[1])
+            return 2
+        ok = start_chrome(argv[1], root)
+        print("Chrome is open for " + argv[1] + (
+            ". Sign in there (email, GitHub or Google all work), make sure "
+            "the chat box shows, and LEAVE THAT WINDOW OPEN. A run attaches "
+            "to it; you do not need to press anything here."
+            if ok else ", but it did not answer on its debugging port."))
+        return 0 if ok else 1
     with WebChat(root) as chat:
-        if argv[0] == "login":
-            page = chat._page(argv[1])
-            page.goto(SITES[argv[1]].url)
-            input("Sign in in the browser window (email/password is fine), "
-                  "make sure the chat box shows, then press Enter here... ")
-            print("saved")
-            return 0
         print(chat.ask(argv[1], " ".join(argv[2:]), log=print))
     return 0
 

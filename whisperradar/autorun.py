@@ -288,16 +288,19 @@ def _shotlist_image_count(pdir: Path) -> int:
 
 
 def _merge_pause_reason(cfg, pid: int) -> str | None:
-    """Why auto-run must not merge yet, or None. An unattended merge must
-    never silently sanitize unrendered shots away (that permanently drops
-    them from the plan) - a human decides instead."""
+    """Why the merge/render must not start yet, or None. Checked BEFORE any
+    rendering, on every route (manual button and auto-run): a render with
+    gaps wastes the machine's time, and the merge would silently sanitize the
+    unrendered shots out of the plan for good."""
     pdir = studio.prod_dir(cfg, pid)
     total = _shotlist_image_count(pdir)
-    missing = len(_missing_images(pdir))
+    missing = _missing_images(pdir)
     if total and missing:
-        return (f"only {total - missing} of {total} shotlist images rendered "
-                f"- resume the images stage first (or mark it done by hand "
-                f"to merge with what exists)")
+        shown = ", ".join(missing[:8]) + (
+            f" (+{len(missing) - 8} more)" if len(missing) > 8 else "")
+        return (f"only {total - len(missing)} of {total} shotlist images "
+                f"exist; missing: {shown}. Render them in the images stage "
+                f"first - nothing was rendered")
     return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -1890,7 +1893,8 @@ def upscale_images(cfg, pid: int, log=None, cancel=None) -> dict:
     return result
 
 
-def _run_merge(cfg, pid: int, mode: str | None = None) -> None:
+def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
+               cancel=None) -> None:
     """mode: 'hook' = studio.merge_command only (merge route),
     'cli' = ImgToVideo.Cli preview build + NLE export (video/render route),
     None = whatever is configured (auto-run)."""
@@ -1900,13 +1904,25 @@ def _run_merge(cfg, pid: int, mode: str | None = None) -> None:
     images = studio.find_images(pdir)
     if not audio or not srt or not images:
         raise RuntimeError("Need audio, subtitles and images first")
-    if mode is None:
-        # unattended merge must never silently render a sanitized video
-        # (the batch may have been stopped mid-way) - pause instead, on ANY
-        # missing image: a sanitized gap can never be filled afterwards
+    # a check BEFORE the render, on every route (manual button and auto-run):
+    # count the shotlist's images against the files on disk. Missing ones are
+    # rendered first (the images stage fills only the gaps); the merge then
+    # runs only when everything exists. A sanitized gap could never be
+    # filled afterwards, and a render with gaps wastes the machine's time.
+    if log is None:
+        log = lambda m: None
+    reason = _merge_pause_reason(cfg, pid)
+    if reason:
+        log(f"[merge] images missing before the render - rendering them "
+            f"first: {reason}")
+        _run_images(cfg, pid, **_stage_params(cfg, pid, "images", log,
+                                              cancel=cancel))
         reason = _merge_pause_reason(cfg, pid)
         if reason:
-            raise _Paused(reason)
+            if mode is None:
+                raise _Paused(reason)   # unattended: pause for a human
+            raise RuntimeError("still missing after rendering - nothing was "
+                               "merged: " + reason)
     if mode == "hook":
         if not cfg.studio_merge_command:
             raise RuntimeError("No merge_command in config.yaml")
@@ -2162,6 +2178,8 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
         return params
+    if stage == "merge":
+        return {"log": log, "cancel": cancel}
     return {}
 
 

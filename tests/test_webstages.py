@@ -271,7 +271,7 @@ class RouteOptionTests(Base):
                 if job.called:
                     break
                 time.sleep(0.1)
-            opts = job.call_args.args[-1]
+            opts = job.call_args.args[6]
         self.assertEqual(opts, {"zai": {"thinking": "Max", "model": "5.3"},
                                 "deepseek": {"deepthink": False,
                                              "search": True}})
@@ -286,7 +286,7 @@ class RouteOptionTests(Base):
                 if job.called:
                     break
                 time.sleep(0.1)
-            opts = job.call_args.args[-1]
+            opts = job.call_args.args[6]
         self.assertEqual(opts["zai"], {"thinking": "Low", "model": "flash"})
         self.assertEqual(opts["deepseek"], {"deepthink": True,
                                             "search": False})
@@ -350,3 +350,66 @@ class JudgeSameChatTests(unittest.TestCase):
         self.assertEqual(files[0]["name"], "shotlist.json")
         self.assertIn('{"shots": []}', ws._plan_followup('{"shots": []}', None))
         self.assertIn("SAME", ws._script_followup("hello"))
+
+
+class JoinAndResumeTests(Base):
+    PLAN = {"style": "s", "shots": [
+        {"asset": "a_ST.png", "cues": "1-2"}, {"asset": "b_ST.png", "cues": "3-4"}],
+        "images": [{"file": "a_ST.png", "prompt": "one"},
+                   {"file": "b_ST.png", "prompt": "two two two"}]}
+
+    def test_a_restarted_half_entry_is_dropped_when_joining(self):
+        full = json.dumps(self.PLAN, indent=1)
+        cut = full.index('"two two')
+        first = full[:cut + 8]                       # b_ST cut mid-prompt
+        # the continue reply restarts the b_ST entry and finishes the plan
+        tail = '    { "file": "b_ST.png", "prompt": "two two two" }\n  ]\n}'
+        joined = ws._join_chunks(first, tail)
+        data = ws._plan_from_text(joined)
+        self.assertEqual(len(data["images"]), 2)
+        self.assertEqual(data["images"][1]["prompt"], "two two two")
+
+    def test_a_plain_continuation_is_just_appended(self):
+        self.assertEqual(ws._join_chunks('{"a": [1,', '2]}'),
+                         '{"a": [1,\n2]}')
+
+    def test_resume_reads_the_saved_replies_and_skips_the_writer(self):
+        full = "```json\n" + plan_json() + "\n```"
+        d = self.pdir / "webchat_debug"
+        d.mkdir(exist_ok=True)
+        (d / "plan_reply_1.txt").write_text(full, encoding="utf-8")
+        ok = {"faults": [], "shots": [], "detailed_ratio": 1, "pass": True}
+        t = Fake(zai=[], deepseek=[json.dumps(ok)])
+        with mock.patch.object(ep, "shotlist_judge_prompt",
+                               return_value=("JUDGE PROMPT", [])):
+            ws.run_shotlist(self.cfg, self.pid, t, "zai", "deepseek",
+                            log=lambda m: None, resume=True)
+        self.assertEqual([c["site"] for c in t.calls], ["deepseek"])
+
+
+class ChatLostTests(Base):
+    def test_a_lost_writer_chat_is_restarted_with_the_plan_and_the_faults(self):
+        from whisperradar import webchat as wcm
+
+        class T(Fake):
+            def ask(self, site, prompt, files=(), new_chat=True, ready=None):
+                if site == "zai" and not new_chat:
+                    self.calls.append({"site": site, "prompt": prompt,
+                                       "files": [], "new_chat": new_chat})
+                    raise wcm.ChatLost("gone")
+                return super().ask(site, prompt, files, new_chat, ready)
+
+        bad = {"faults": ["shots 2-3 overlap"], "shots": [], "pass": False}
+        ok = {"faults": [], "shots": [], "detailed_ratio": 1, "pass": True}
+        t = T(zai=[plan_json(), plan_json(style="fixed")],
+              deepseek=[json.dumps(bad), json.dumps(ok)])
+        with mock.patch.object(ep, "shotlist_planner_prompt",
+                               return_value="PLAN PROMPT"), \
+             mock.patch.object(ep, "shotlist_judge_prompt",
+                               return_value=("JUDGE PROMPT", [])):
+            ws.run_shotlist(self.cfg, self.pid, t, "zai", "deepseek",
+                            rounds=3, log=lambda m: None)
+        fresh = [c for c in t.calls if c["site"] == "zai" and c["new_chat"]]
+        self.assertEqual(len(fresh), 2)            # first plan + recovery
+        self.assertIn("shots 2-3 overlap", fresh[1]["prompt"])
+        self.assertIn("YOUR PREVIOUS SHOTLIST", fresh[1]["prompt"])

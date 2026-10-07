@@ -437,3 +437,34 @@ class ZaiModelTests(unittest.TestCase):
         p.url = "https://chat.z.ai/auth?redirect=/"
         with self.assertRaises(wc.NeedsSignIn):
             wc._zai_pick_model(p, "5.3")
+
+
+class AttachTests(unittest.TestCase):
+    def test_ports_and_endpoint(self):
+        self.assertEqual(wc.cdp_endpoint("zai"), "http://127.0.0.1:9222")
+        self.assertEqual(wc.cdp_endpoint("deepseek"), "http://127.0.0.1:9223")
+
+    def test_nothing_listening_is_not_alive(self):
+        from unittest import mock
+        with mock.patch.object(wc.urllib.request, "urlopen",
+                               side_effect=OSError("refused")):
+            self.assertFalse(wc.cdp_alive("zai"))
+
+    def test_a_running_chrome_is_reused_not_started_twice(self):
+        from unittest import mock
+        with mock.patch.object(wc, "cdp_alive", return_value=True), \
+                mock.patch.object(wc.subprocess, "Popen") as popen:
+            self.assertTrue(wc.start_chrome("zai", "/tmp/x"))
+            popen.assert_not_called()
+
+    def test_chrome_is_started_with_the_port_and_profile(self):
+        from unittest import mock
+        alive = iter([False, True])
+        with mock.patch.object(wc, "cdp_alive", side_effect=lambda k: next(alive)), \
+                mock.patch.object(wc, "find_chrome", return_value="chrome"), \
+                mock.patch.object(wc.subprocess, "Popen") as popen:
+            self.assertTrue(wc.start_chrome("zai", "/tmp/x", wait=5))
+        args = popen.call_args.args[0]
+        self.assertIn("--remote-debugging-port=9222", args)
+        self.assertTrue(any(a.startswith("--user-data-dir=") and "zai" in a
+                            for a in args))

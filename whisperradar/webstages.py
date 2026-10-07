@@ -131,6 +131,26 @@ def _json_chunk(reply: str, first: bool) -> str:
     return text
 
 
+_FILE_KEY = re.compile(r'"file"\s*:\s*"([^"]+)"')
+
+
+def _join_chunks(body: str, chunk: str) -> str:
+    """Append a 'continue' reply to the JSON read so far. A chat often
+    restarts the entry it was cut in the middle of (the second reply begins
+    with `{ "file": "S12_04..."` although the first one already held a
+    half-written copy of it). Drop that half entry, then append."""
+    body, chunk = body.rstrip(), chunk.lstrip()
+    m = _FILE_KEY.search(chunk[:400])
+    if m:
+        pat = re.compile(r'"file"\s*:\s*"' + re.escape(m.group(1)) + '"')
+        hits = list(pat.finditer(body))
+        if hits:
+            cut = body.rfind("{", 0, hits[-1].start() + 1)
+            if cut != -1:
+                return body[:cut].rstrip() + "\n" + chunk
+    return body + "\n" + chunk
+
+
 def _plan_from_text(body: str) -> dict | None:
     """The shotlist object in `body`: the normal parser first, then the
     biggest balanced {...} that holds both a shots[] and an images[] list
@@ -168,6 +188,26 @@ def _dump(cfg, pid: int, name: str, text: str) -> None:
         pass
 
 
+def _saved_plan(cfg, pid: int, tag: str = "plan_reply") -> dict | None:
+    """The plan in the raw replies a previous run kept (plan_reply_1.txt,
+    plan_reply_2.txt, ...), joined the way the loop joins them."""
+    d = studio.prod_dir(cfg, pid) / "webchat_debug"
+    body = ""
+    for i in range(1, MAX_CONTINUES + 2):
+        f = d / f"{tag}_{i}.txt"
+        if not f.exists():
+            break
+        try:
+            chunk = _json_chunk(f.read_text(encoding="utf-8"), i == 1)
+        except OSError:
+            break
+        body = chunk if i == 1 else _join_chunks(body, chunk)
+        data = _plan_from_text(body)
+        if data is not None:
+            return data
+    return None
+
+
 def _collect_plan(transport, site: str, reply: str, log,
                   dump: Callable[[str, str], None] = lambda n, t: None,
                   tag: str = "plan_reply") -> dict:
@@ -187,7 +227,7 @@ def _collect_plan(transport, site: str, reply: str, log,
         reply = transport.ask(site, "continue", (), new_chat=False,
                               ready=_has_json)
         dump(f"{tag}_{i + 2}", reply)
-        body = body.rstrip() + "\n" + _json_chunk(reply, False)
+        body = _join_chunks(body, _json_chunk(reply, False))
     raise StageFailed(
         f"{site} never gave a readable shotlist ({len(body):,} characters "
         f"read). The raw replies are in the production's webchat_debug "
@@ -433,10 +473,34 @@ def _plan_feedback(faults: list[str], weak: list[dict], fixes: list[str]) -> str
     return "\n".join(lines)
 
 
+def _recovery_prompt(cfg, pid: int, plan_text: str, feedback: str):
+    """A fresh writer chat that continues the work: the original planner
+    prompt, the plan so far, and the reviewer's points."""
+    def build(files):
+        base = ep.shotlist_planner_prompt(cfg, pid, files)
+        head = (
+            "\n\n---\nCONTEXT: this is a continuation. You already wrote a "
+            "shotlist for the task above (included below), and a reviewer "
+            "found problems with it. Do NOT start from scratch: fix the "
+            "problems and keep everything that was not criticised exactly as "
+            "it was.\n\n")
+        if files is None:
+            body = "YOUR PREVIOUS SHOTLIST:\n" + plan_text + "\n\n"
+        else:
+            files.append({"name": "previous_shotlist.json",
+                          "text": plan_text.strip() + "\n",
+                          "about": "your previous shotlist"})
+            body = ("YOUR PREVIOUS SHOTLIST is attached as "
+                    "previous_shotlist.json.\n\n")
+        return base + head + body + feedback
+    return build
+
+
 def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                  judge: str = "deepseek", rounds: int | None = MAX_ROUNDS,
                  log: Callable[[str], None] = print,
-                 should_stop: Callable[[], bool] = lambda: False) -> dict:
+                 should_stop: Callable[[], bool] = lambda: False,
+                 resume: bool = False) -> dict:
     ctx = ep._context(cfg, pid)
     plan = ep._plan_inputs(cfg, pid, ctx)
     cues = plan["cues"]
@@ -444,10 +508,17 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     def dump(name: str, text: str) -> None:
         _dump(cfg, pid, name, text)
 
-    reply = _send(transport, writer,
-                  lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
-                  ready=_has_json)
-    data = _collect_plan(transport, writer, reply, log, dump)
+    data = _saved_plan(cfg, pid) if resume else None
+    if data is not None:
+        log(f"reusing the plan from the saved {writer} replies "
+            f"(the writer is not asked again)")
+    else:
+        if resume:
+            log("no readable saved plan - asking the writer as usual")
+        reply = _send(transport, writer,
+                      lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
+                      ready=_has_json)
+        data = _collect_plan(transport, writer, reply, log, dump)
     log(f"{writer}: plan received ({len(data.get('shots') or [])} shots, "
         f"{len(data.get('images') or [])} images)")
 
@@ -521,9 +592,21 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             prompt = studio.shotlist_patch_prompt(
                 items, ctx["visual_style"], ctx["bible"])
             log(f"sending {len(asked)} weak prompt(s) back to {writer}")
-            got = transport.ask(writer, prompt, (), new_chat=False,
-                                ready=lambda t: bool(
-                                    studio.parse_shotlist_patch(t)))
+            try:
+                got = transport.ask(writer, prompt, (), new_chat=False,
+                                    ready=lambda t: bool(
+                                        studio.parse_shotlist_patch(t)))
+            except webchat.ChatLost:
+                got = None
+            if got is None:
+                log(f"the {writer} chat is gone - starting a new one with "
+                    f"the plan and the points to fix")
+                reply = _send(transport, writer, _recovery_prompt(
+                    cfg, pid, text, _plan_feedback(hard, weak, fixes)), log,
+                    ready=_has_json)
+                data = _collect_plan(transport, writer, reply, log, dump,
+                                     tag=f"plan_round{rnd + 1}")
+                continue
             good, unknown, missing = studio.check_shotlist_patch(
                 studio.parse_shotlist_patch(got), asked)
             if unknown or missing:
@@ -532,8 +615,16 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             data = studio.apply_shotlist_patch(data, good)
         else:
             log(f"sending the faults back to {writer} for a corrected plan")
-            reply = transport.ask(writer, _plan_feedback(hard, weak, fixes),
-                                  (), new_chat=False, ready=_has_json)
+            try:
+                reply = transport.ask(writer,
+                                      _plan_feedback(hard, weak, fixes),
+                                      (), new_chat=False, ready=_has_json)
+            except webchat.ChatLost:
+                log(f"the {writer} chat is gone - starting a new one with "
+                    f"the plan and the points to fix")
+                reply = _send(transport, writer, _recovery_prompt(
+                    cfg, pid, text, _plan_feedback(hard, weak, fixes)), log,
+                    ready=_has_json)
             data = _collect_plan(transport, writer, reply, log, dump,
                                  tag=f"plan_round{rnd + 1}")
     if best is not None:
@@ -553,13 +644,15 @@ def script_job(cfg, pid: int, writer: str, judge: str, log,
                should_stop: Callable[[], bool] = lambda: False,
                options: dict | None = None) -> None:
     with web_transport(cfg, log, options) as t:
+        log(f"settings: {t.options}")
         run_script(cfg, pid, t, writer, judge, log=log,
                    should_stop=should_stop)
 
 
 def shotlist_job(cfg, pid: int, writer: str, judge: str, log,
                  should_stop: Callable[[], bool] = lambda: False,
-                 options: dict | None = None) -> None:
+                 options: dict | None = None, resume: bool = False) -> None:
     with web_transport(cfg, log, options) as t:
+        log(f"settings: {t.options}")
         run_shotlist(cfg, pid, t, writer, judge, log=log,
-                     should_stop=should_stop)
+                     should_stop=should_stop, resume=resume)

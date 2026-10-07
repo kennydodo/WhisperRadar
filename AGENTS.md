@@ -1560,6 +1560,21 @@ handle it). Static (ST) only.
 
 ## QUEUE for the next session (2026-10-06)
 
+- **#1 NEXT SESSION - "what to make" intelligence (asked 2026-10-07; this is why WhisperRadar was started).**
+  Today: per-video `view_count`, sort by views, primary/similar channels, `productions.source_video_id`.
+  Missing: anything that says which videos are worth copying. Build in this order:
+  1. Outlier score = a video's views / the median views of videos of a similar age on the SAME channel
+     (not raw views, which only reflect channel size and age). Dashboard "outliers" sort + badge.
+     Needs per-channel baselines (median views, ideally subscriber count) in `db.py`.
+  2. Daily view snapshots (a `video_views(video_id, taken_at, views)` table) so growth speed
+     (views in the first N days) can be measured, not just a single number.
+  3. Topic clustering of the top outliers (an LLM via the web-chat setup): which topics/angles/title
+     shapes repeat across channels; flag the same idea winning on several channels.
+  4. "Make this" button on an outlier: starts a production with `source_video_id` set and a
+     pre-filled brief (topic, why it won, what to do differently).
+  Caveat: outlier tools only find what already worked for someone else; saturated patterns are possible.
+- **Stage 8 (rendering): check the image count BEFORE rendering (asked 2026-10-07).** Before the render starts, compare the number of images that exist on disk with the number the shotlist requires (`images` in shotlist.json, and the assets the shots reference). If they do not match (missing or extra images), stop with a clear list of what is missing instead of rendering - a render with gaps wastes time and resources. DONE 2026-10-07: `autorun._merge_pause_reason` now names the missing files and runs on EVERY route (`_run_merge` raises before any render; the `/video/render` button refuses with the message; auto-run still pauses). Extra images on disk do not block. Tests: tests/test_merge_image_check.py.
+  Update (same day): the check is a PRE-RENDER step inside `autorun._run_merge`, so it covers the manual Render button AND auto-run: if images are missing it runs the images stage first (`_stage_params(..., 'images')` = the saved engine/mode, FlowBatch/Renderly fill only the gaps), re-counts, and merges only when everything exists; if some are still missing it stops (manual: error, auto-run: pause) without rendering. The manual job is labelled 'image rendering (missing images), then ...' so the images Stop button kills it.
 - **Flow "throttling" is usually not throttling (observed 2026-10-05).** When FlowBatch
   reports "stopped after too many cards failed in a row", Flow often HAS generated the
   images but FlowBatch could not retrieve them. Flow shows an error at first, then the

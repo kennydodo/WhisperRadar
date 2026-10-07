@@ -3142,8 +3142,16 @@ def create_app(cfg) -> Flask:
                 "search": (request.form.get("deepseek_search")
                            or "off") == "on"}}
 
+        resume = (stage != "script"
+                  and request.form.get("resume_plan") == "on")
+
         def worker():
-            run(cfg, pid, writer, judge, log, lambda: job.cancel, options)
+            if stage == "script":
+                run(cfg, pid, writer, judge, log, lambda: job.cancel,
+                    options)
+            else:
+                run(cfg, pid, writer, judge, log, lambda: job.cancel,
+                    options, resume)
 
         label = ("script" if stage == "script" else "shotlist")
         sjob.start(worker, f"{label} in web chat ({writer} writes, "
@@ -3189,6 +3197,39 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return _studio_url(pid, msg="Shotlist saved")
+    def _images_params(pid, form):
+        """mode/engine/upscale/channel for the images stage, from a form (the
+        Render images button) or the production's settings (form = {})."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+        finally:
+            conn.close()
+        mode = form.get("render_mode") or eff["render_mode"]
+        if mode not in ("api", "flow"):
+            mode = "api"
+        engine = (form.get("engine") or eff["engine"] or "renderly")
+        if engine not in ("renderly", "flowbatch"):
+            engine = "renderly"
+        engine = studio.effective_engine(engine, mode)
+        # Flow native productions default to 0: the stills download at native
+        # size and the Flow-native level runs as one local pass afterwards
+        try:
+            flow_upscale = max(0, min(4, int(form.get("flow_upscale")
+                                             or autorun._upscale_for(eff))))
+        except ValueError:
+            flow_upscale = autorun._upscale_for(eff)
+        flow_project_url = (form.get("flow_project_url") or "").strip()
+        renderly_channel = None
+        if engine == "renderly":
+            renderly_channel = studio.resolve_renderly_channel(
+                cfg, eff["own_channel"], create=True)
+        return {"mode": mode, "engine": engine,
+                "flow_upscale": flow_upscale,
+                "flow_project_url": flow_project_url,
+                "renderly_channel": renderly_channel}, engine
+
     @app.post("/studio/<int:pid>/images/render")
     def studio_images_render(pid):
         if sjob.running:
@@ -3200,40 +3241,13 @@ def create_app(cfg) -> Flask:
         gap = autorun.coverage_gap(pdir)
         if gap:
             return _studio_url(pid, error="Not rendering: " + gap)
-        conn = db.connect(cfg.db_path)
-        db.init_db(conn)
-        try:
-            eff = settings.for_production(conn, db.get_production(conn, pid))
-        finally:
-            conn.close()
-        mode = request.form.get("render_mode") or eff["render_mode"]
-        if mode not in ("api", "flow"):
-            mode = "api"
-        engine = (request.form.get("engine") or eff["engine"] or "renderly")
-        if engine not in ("renderly", "flowbatch"):
-            engine = "renderly"
-        engine = studio.effective_engine(engine, mode)
-        # Flow native productions default to 0: the stills download at native
-        # size and the Flow-native level runs as one local pass afterwards
-        try:
-            flow_upscale = max(0, min(4, int(request.form.get("flow_upscale")
-                                             or autorun._upscale_for(eff))))
-        except ValueError:
-            flow_upscale = autorun._upscale_for(eff)
-        flow_project_url = (request.form.get("flow_project_url") or "").strip()
-        renderly_channel = None
-        if engine == "renderly":
-            renderly_channel = studio.resolve_renderly_channel(
-                cfg, eff["own_channel"], create=True)
+        base_params, engine = _images_params(pid, request.form)
 
         _job = sjob._real()   # this channel's slot, read from the worker thread
 
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(cfg, pid, "images", {
-                "mode": mode, "engine": engine,
-                "flow_upscale": flow_upscale,
-                "flow_project_url": flow_project_url,
-                "renderly_channel": renderly_channel,
+                **base_params,
                 "log": sjob.log.append,
                 "cancel": (lambda _j=_job: _j.cancel),
             }))
@@ -3370,10 +3384,15 @@ def create_app(cfg) -> Flask:
                 or not studio.find_images(pid_dir=pdir):
             return _studio_url(
                 pid, error="Need audio, subtitles and images first")
+        gap = autorun._merge_pause_reason(cfg, pid)
+        _job = sjob._real()
 
         def worker():
+            # the merge itself renders any missing images first
             autorun.raise_result(autorun.run_stage_and_advance(
-                cfg, pid, "merge", {"mode": "cli"}))
+                cfg, pid, "merge", {
+                    "mode": "cli", "log": sjob.log.append,
+                    "cancel": (lambda _j=_job: _j.cancel)}))
 
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
@@ -3384,6 +3403,12 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         label = studio.RENDER_TARGET_LABELS[target]
+        if gap:
+            sjob.start(worker, f"image rendering (missing images), then "
+                               f"preview + {label} export")
+            return _studio_url(
+                pid, msg="Images are missing - rendering them first, then "
+                         f"the preview + {label} export")
         sjob.start(worker, f"preview + {label} export (ImgToVideo)")
         return _studio_url(pid, msg=f"Preview build + {label} export started")
 

@@ -720,6 +720,7 @@
           <label>DeepThink <select name="deepseek_deepthink" title="DeepSeek's DeepThink switch for this run"><option value="on">On</option><option value="off">Off</option></select></label>
           <label>Search <select name="deepseek_search" title="DeepSeek's web Search switch for this run"><option value="off">Off</option><option value="on">On</option></select></label>
         </div>
+        <label title="Skip the writer's first answer: read the plan from the replies a previous run saved (webchat_debug), go straight to the judge, and keep using the writer chat that is still open."><input type="checkbox" name="resume_plan"> Reuse the saved plan</label>
         <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
                 title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run shotlist in web chat</button>
       </form>
