@@ -142,6 +142,21 @@
   </div>
 
   <script>
+  async function wrPickFolder(inputId) {
+    const input = document.getElementById(inputId);
+    try {
+      const body = new FormData();
+      body.append('initial', input && input.value ? input.value : '');
+      const resp = await fetch('/studio/pick-folder', { method: 'POST', body });
+      const data = await resp.json();
+      if (data.path) { if (input) input.value = data.path; }
+      else if (data.error) { alert(data.error); }
+    } catch (e) {
+      alert('Folder picker failed (restart the dashboard if it is running older code): ' + e);
+    }
+  }
+  </script>
+  <script>
   function wrApplyAll(btn, key, msg) {
     // type=button on purpose: a submit button inside the form would become
     // the Enter-key default and could trigger "apply to all" by accident.
@@ -197,6 +212,13 @@
                 <option value="{{ p }}" {{ 'selected' if values[entry.key] == p else '' }}>{{ p }}</option>
                 {% endfor %}
               </select>
+            {% elif entry.key == 'productions_root' %}
+              <div class="inline" style="gap:6px">
+                <input type="text" name="{{ entry.key }}" id="f-{{ entry.key }}"
+                       value="{{ values[entry.key] }}" placeholder="D:\Productions">
+                <button type="button" class="ghost" onclick="wrPickFolder('f-{{ entry.key }}')"
+                        title="Choose a folder on this PC">Browse...</button>
+              </div>
             {% else %}
               <input type="text" name="{{ entry.key }}" id="f-{{ entry.key }}"
                      value="{{ values[entry.key] }}">

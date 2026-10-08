@@ -81,3 +81,15 @@ class ProductionFolderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SettingsBrowseTests(unittest.TestCase):
+    def test_settings_page_has_browse_button_for_the_location(self):
+        with tempfile.TemporaryDirectory() as d:
+            cfg = load_config(ROOT / "config.yaml")
+            cfg.db_path = Path(d) / "wr.db"
+            cfg.studio_dir = Path(d) / "studio"
+            html = create_app(cfg).test_client().get("/settings").get_data(
+                as_text=True)
+            self.assertIn("f-productions_root", html)
+            self.assertIn("wrPickFolder('f-productions_root')", html)
