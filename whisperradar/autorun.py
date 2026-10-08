@@ -527,7 +527,17 @@ def _script_criteria_line(score: float | None, min_rating: float,
            f"{length_mark} length {words}/{target_words} words ({pct})")
 
 
-def _run_script(cfg, pid: int, provider: str | None = None) -> None:
+def _run_script(cfg, pid: int, provider: str | None = None,
+                log=None, cancel=None, transport: str | None = None) -> None:
+    if transport == "webchat":
+        # drive the script stage through the chat sites (browser), like the
+        # manual button; it raises StageFailed if nothing passes, so the run
+        # stops for the user to continue rather than advancing on a bad draft
+        from . import webstages
+        webstages.script_job(cfg, pid, "zai", "deepseek",
+                             log or (lambda m: None),
+                             should_stop=_bounded_stop(cancel))
+        return
     t0 = time.monotonic()
     conn = _connect(cfg)
     try:
@@ -944,7 +954,14 @@ def _motion_breakdown_line(shots: list) -> str:
     return "motion: " + ", ".join(parts) if parts else ""
 
 
-def _run_shots(cfg, pid: int, provider: str | None = None) -> None:
+def _run_shots(cfg, pid: int, provider: str | None = None,
+               log=None, cancel=None, transport: str | None = None) -> None:
+    if transport == "webchat":
+        from . import webstages
+        webstages.shotlist_job(cfg, pid, "zai", "deepseek",
+                               log or (lambda m: None),
+                               should_stop=_bounded_stop(cancel))
+        return
     t0 = time.monotonic()
     conn = _connect(cfg)
     try:
@@ -2163,12 +2180,21 @@ def build_plan(cfg, pid: int) -> list[dict]:
 # --------------------------------------------------------- the runner ---
 
 def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
-                  provider: str | None = None) -> dict:
+                  provider: str | None = None,
+                  transport: str | None = None) -> dict:
     """Auto-run parameters per stage: the run's chosen LLM provider (the
     override a run was started with, else that stage's saved pick, else the
-    Default LLM) for LLM stages, the saved render mode for images."""
+    Default LLM) for LLM stages, the saved render mode for images. `transport`
+    (webchat|api) selects how the creative stages write; None = the API path."""
     if stage in ("style", "script", "shots"):
-        return {"provider": _stage_provider(cfg, pid, stage, override=provider)}
+        params = {"provider": _stage_provider(cfg, pid, stage,
+                                              override=provider)}
+        if stage in ("script", "shots"):
+            # the web-chat transport needs the run's log + cancel
+            params["log"] = log
+            params["cancel"] = cancel
+            params["transport"] = transport
+        return params
     if stage == "images":
         eff = _effective(cfg, pid)
         mode = _default_render_mode(cfg, _get_prod(cfg, pid))
@@ -2187,7 +2213,34 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
     return {}
 
 
-def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None) -> None:
+def _auto_transport(cfg) -> str:
+    """'webchat' (drive the chat sites through a browser) or 'api' (the
+    configured API providers) for Auto Run's creative stages."""
+    conn = _connect(cfg)
+    try:
+        return settings.load(conn).get("autorun_transport", "webchat")
+    finally:
+        conn.close()
+
+
+# A web-chat stage loops until its judge passes or should_stop fires; the
+# manual path relies on a human to stop it, so for unattended runs bound it
+# by wall-clock. On a trip, script/shotlist save the best draft and raise
+# (the run stops for the user to continue); plan/thumbnails just save a draft.
+_WEBCHAT_STAGE_MINUTES = 45
+
+
+def _bounded_stop(cancel, minutes: int = _WEBCHAT_STAGE_MINUTES):
+    start = time.monotonic()
+    limit = minutes * 60
+
+    def stop() -> bool:
+        return bool(cancel and cancel()) or (time.monotonic() - start) > limit
+    return stop
+
+
+def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None,
+               transport: str | None = None) -> None:
     """Auto-run's packaging plan, before the script: SEO title, promise,
     hook and thumbnail idea with the API providers. Skipped when switched
     off or a ready plan exists; NEVER fatal - the run goes on with the
@@ -2207,14 +2260,23 @@ def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None) -> None:
             if not have.get("applied"):
                 packplan.apply_plan(cfg, pid)
             return
-        writer = _stage_provider(cfg, pid, "script", override=provider)
-        eff = _effective(cfg, pid)
-        judge = studio.judge_provider(cfg, writer, eff["script_judge_provider"])
         old_title = prod["title"] if prod else ""
-        plan = packplan.run_plan_api(cfg, pid, writer, judge,
-                                     log=lambda m: log(f"[auto-run] {m}"),
-                                     should_stop=cancel or (lambda: False),
-                                     min_score=eff.get("plan_min_rating"))
+        if transport == "webchat":
+            # drive the plan through the chat sites (browser), like the manual
+            # plan button; it saves the best set (ready or draft) itself
+            packplan.plan_job(cfg, pid, "zai", "deepseek",
+                              lambda m: log(f"[auto-run] {m}"),
+                              should_stop=_bounded_stop(cancel))
+            plan = packplan.load_plan(pdir)
+        else:
+            writer = _stage_provider(cfg, pid, "script", override=provider)
+            eff = _effective(cfg, pid)
+            judge = studio.judge_provider(cfg, writer,
+                                          eff["script_judge_provider"])
+            plan = packplan.run_plan_api(cfg, pid, writer, judge,
+                                         log=lambda m: log(f"[auto-run] {m}"),
+                                         should_stop=cancel or (lambda: False),
+                                         min_score=eff.get("plan_min_rating"))
         if plan.get("status") == "ready":
             packplan.apply_plan(cfg, pid)
             log(f"[auto-run] packaging plan applied - title: "
@@ -2235,7 +2297,7 @@ def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None) -> None:
 
 
 def _auto_thumbnails(cfg, pid: int, provider: str | None, log,
-                     cancel=None) -> None:
+                     cancel=None, transport: str | None = None) -> None:
     """Auto-run's thumbnail concepts, after the pipeline: design thumbnail
     concepts and their image prompts with the API providers (no browser), so a
     finished production is never left without a thumbnail. Skipped when
@@ -2256,14 +2318,21 @@ def _auto_thumbnails(cfg, pid: int, provider: str | None, log,
         if not (pdir / "script.md").exists():
             log("[auto-run] thumbnails: no script yet - skipping")
             return
-        writer = _stage_provider(cfg, pid, "script", override=provider)
-        eff = _effective(cfg, pid)
-        judge = studio.judge_provider(cfg, writer, eff["script_judge_provider"])
-        data = thumbnails.run_concepts_api(
-            cfg, pid, writer, judge,
-            log=lambda m: log(f"[auto-run] {m}"),
-            should_stop=cancel or (lambda: False),
-            min_score=eff.get("plan_min_rating"))
+        if transport == "webchat":
+            thumbnails.concepts_job(cfg, pid, "zai", "deepseek",
+                                    lambda m: log(f"[auto-run] {m}"),
+                                    should_stop=_bounded_stop(cancel))
+            data = thumbnails.load_thumbs(pdir)
+        else:
+            writer = _stage_provider(cfg, pid, "script", override=provider)
+            eff = _effective(cfg, pid)
+            judge = studio.judge_provider(cfg, writer,
+                                          eff["script_judge_provider"])
+            data = thumbnails.run_concepts_api(
+                cfg, pid, writer, judge,
+                log=lambda m: log(f"[auto-run] {m}"),
+                should_stop=cancel or (lambda: False),
+                min_score=eff.get("plan_min_rating"))
         conn = _connect(cfg)
         try:
             db.add_step(conn, pid, "merge", "auto",
@@ -2300,6 +2369,7 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
     total = len(RUN_STAGES)
     ran = 0
     cancel_check = lambda: job is not None and bool(job.cancel)
+    transport = _auto_transport(cfg)   # webchat (default) or api
     for i, stage in enumerate(RUN_STAGES, 1):
         if stop_before and stage == stop_before:
             # a deliberate halt (e.g. "plan the script and shotlist, but do
@@ -2333,14 +2403,16 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
             _advance(cfg, pid, stage)
             continue
         if stage == "script":
-            _auto_plan(cfg, pid, provider, log, cancel_check)
+            _auto_plan(cfg, pid, provider, log, cancel_check,
+                       transport=transport)
         log(f"[auto-run] stage {i}/{total}: {stage} - started ({detail})")
         if job is not None:
             job.stage = stage
         result = run_stage(cfg, pid, stage,
                            params=_stage_params(cfg, pid, stage, log,
                                                 cancel=cancel_check,
-                                                provider=provider))
+                                                provider=provider,
+                                                transport=transport))
         if result == "stopped":
             log(f"[auto-run] stopped by user during stage {i}/{total}: "
                 f"{stage} - rendered images are kept, re-run to fill the gaps")
@@ -2386,7 +2458,8 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
         log(f"[auto-run] stage {i}/{total}: {stage} - done")
     # the pipeline is done (not stopped/paused/failed - those returned early);
     # give the finished production its thumbnail concepts before review
-    _auto_thumbnails(cfg, pid, provider, log, cancel_check)
+    _auto_thumbnails(cfg, pid, provider, log, cancel_check,
+                     transport=transport)
     summary = (f"Auto-run complete: {ran} stage(s) executed, "
                f"{total - ran} skipped - ready for review")
     log(f"[auto-run] pipeline finished - {summary}")

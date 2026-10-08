@@ -187,6 +187,19 @@ SPEC: list[dict] = [
                 "page instead.",
     },
     {
+        "key": "autorun_transport", "type": "choice", "default": "webchat",
+        "choices": ["webchat", "api"],
+        "label": "Auto Run LLM transport (script, shotlist, plan, thumbnails)",
+        "help": "How Auto Run writes the creative stages. webchat = drive the "
+                "chat sites (z.ai writes, deepseek judges) through a browser, "
+                "like the manual Studio buttons - the run must have those "
+                "chats available, and a stage that can't pass stops the run so "
+                "you can continue by hand. api = the configured API providers "
+                "(no browser; what Auto Run used originally). Style always "
+                "uses the API. A stage that already has output is kept either "
+                "way.",
+    },
+    {
         "key": "resume_cooldown_minutes", "type": "int", "default": 60,
         "min": 5, "max": 1440,
         "label": "Resume cooldown (minutes)",
@@ -549,7 +562,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
-        "autorun_plan", "autorun_thumbnails",
+        "autorun_plan", "autorun_thumbnails", "autorun_transport",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script & shotlist", [

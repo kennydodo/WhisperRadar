@@ -144,13 +144,14 @@ class ProviderSelectionTests(unittest.TestCase):
         conn.close()
         self.assertEqual(
             autorun._stage_params(self.cfg, self.pid, "shots", lambda m: None,
-                                  provider="openrouter-claude"),
-            {"provider": "openrouter-claude"})
+                                  provider="openrouter-claude")["provider"],
+            "openrouter-claude")
 
     def test_no_run_override_falls_back_to_the_saved_choice(self):
         self.assertEqual(
-            autorun._stage_params(self.cfg, self.pid, "shots", lambda m: None),
-            {"provider": "deepseek"})
+            autorun._stage_params(self.cfg, self.pid, "shots",
+                                  lambda m: None)["provider"],
+            "deepseek")
 
 
 if __name__ == "__main__":
