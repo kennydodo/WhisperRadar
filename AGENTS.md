@@ -1616,3 +1616,10 @@ a new reply (count up, generating, or text different from the text before the se
 - WhisperRadar today calls it as an external CLI from the merge stage (`studio.prepare_project_folder` writes `imgtovideo.json`; `merge_command`).
 - Decide first: (a) port only what the merge stage needs (timing + motion + ffmpeg filtergraph + sound effects) to a Python module `whisperradar/video_render.py`, keeping the CLI as fallback behind a setting; or (b) keep the C# engine and just bundle/auto-build the CLI. Port the 242 tests' key cases (frame-exact timing coverage, motion rects, crossfades, SFX placement) as Python tests before switching the default.
 - Premiere/CapCut exports and the WPF editor are likely out of scope for the first cut.
+
+## Web chat LLMs you add yourself (Settings > Web chat LLMs)
+- z.ai and DeepSeek are built in (`webchat.ZAI/DEEPSEEK`, their own `prepare` code). Others are defined in Settings > Web chat LLMs and saved as JSON in the `webchat_sites` setting (not API LLMs).
+- A definition: name, url, CSS selectors (box, reply, send, generating), `login_part`, `sent_part`, `stream`, `models[]`, `level_label` + `levels[]`, `toggles[]` (DeepThink / Web search...). `webchat.sanitize_sites` cleans and assigns key + debugging port (9230+); `set_custom_sites` / `load_custom_sites(conn)` register them into `webchat.SITES` / `CDP_PORTS` (loaded in `create_app` and the webchat CLI). `_generic_prepare` picks model/level and sets switches by menu text; a step that fails is logged, not fatal.
+- Forms: `_webchat_extra.html` (included at the bottom of studio_detail, kit, plan, research, thumbs) adds the sites to every Writer/Judge dropdown and their controls as `wc_<key>_model|level|<toggle id>`; `_chat_options(form)` turns them into `options[key] = {model, level, toggles}`.
+- "Test" on a site (Settings) opens it, applies the options and asks for "OK"; the job log shows which step failed. First sign-in per site: `python -m whisperradar.webchat login <key>`.
+- Tests: tests/test_webchat_custom_sites.py. Selectors are per site and unverified for any site except z.ai / DeepSeek.

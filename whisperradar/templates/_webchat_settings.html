@@ -1,0 +1,79 @@
+<div class="tabpanel" data-tab="Web chat LLMs">
+  <h2>Web chat LLMs</h2>
+  <p class="help">
+    Chat websites WhisperRadar drives in a browser window (no API key) - for the
+    script, shotlist, packaging plan, thumbnails and topics. <b>z.ai</b> and
+    <b>DeepSeek</b> are built in; add others here. Each one appears in every
+    Writer / Judge dropdown, with the model, level and switches (DeepThink,
+    Web search...) you define for it.<br>
+    Selectors are CSS selectors from the site's page (right-click &gt; Inspect).
+    <b>Model / level</b>: "picker button" is the selector of the button that opens
+    the menu (leave empty if the entries are already visible) and "menu text" is
+    what the entry says. <b>Switch</b>: "text on the page" is what the toggle says.
+    First time per site: <span class="mono">python -m whisperradar.webchat login &lt;key&gt;</span>.
+    Use <b>Test</b> after saving - the log of the test shows which step failed.
+  </p>
+  <form method="post" action="/settings/webchat-sites" id="wc-form">
+    <input type="hidden" name="webchat_json" id="wc-json">
+    <div id="wc-editor"></div>
+    <div class="panel">
+      <button type="button" onclick="wcAdd()">+ Add web chat LLM</button>
+      <button type="button" onclick="wcSave()">Save</button>
+    </div>
+  </form>
+  <script>
+  var WCS = {{ webchat_sites|tojson }};
+  function wcEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+  function wcIn(i, f, ph, w, v) {
+    return '<input placeholder="' + ph + '" data-i="' + i + '" data-f="' + f + '" value="' + wcEsc(v) + '" style="' + (w ? 'width:' + w : 'flex:1') + '">';
+  }
+  function wcRows(i, group, rows, cols) {
+    return (rows || []).map(function (r, j) {
+      return '<div style="display:flex;gap:6px;margin-top:4px">' + cols.map(function (c) {
+        return '<input placeholder="' + c[1] + '" data-i="' + i + '" data-g="' + group + '" data-j="' + j + '" data-f="' + c[0] + '" value="' + wcEsc(r[c[0]]) + '" style="flex:1">';
+      }).join('') + '<button type="button" onclick="wcDel(' + i + ',\'' + group + '\',' + j + ')">x</button></div>';
+    }).join('');
+  }
+  function wcRender() {
+    var host = document.getElementById('wc-editor'); var h = '';
+    WCS.forEach(function (s, i) {
+      h += '<div class="panel" style="margin-bottom:10px">'
+        + '<div style="display:flex;gap:8px;align-items:center">' + wcIn(i, 'name', 'Name (e.g. ChatGPT)', '170px', s.name)
+        + wcIn(i, 'url', 'Chat URL (https://chatgpt.com/)', '', s.url)
+        + '<span class="muted" style="font-size:12px">key: ' + wcEsc(s.key || '(set on save)') + '</span>'
+        + '<button type="button" onclick="wcRemove(' + i + ')">remove</button></div>'
+        + '<div style="display:flex;gap:8px;margin-top:6px">' + wcIn(i, 'box', 'Prompt box selector (textarea)', '', s.box)
+        + wcIn(i, 'send', 'Send button selector', '', s.send) + '</div>'
+        + '<div style="display:flex;gap:8px;margin-top:6px">' + wcIn(i, 'reply', 'Assistant message selector', '', s.reply)
+        + wcIn(i, 'generating', 'Selector present only while it writes (stop button)', '', s.generating) + '</div>'
+        + '<div style="display:flex;gap:8px;margin-top:6px">' + wcIn(i, 'login_part', 'Sign-in URL words (login,auth)', '', s.login_part)
+        + wcIn(i, 'sent_part', 'URL word of a started chat (/c/)', '', s.sent_part)
+        + wcIn(i, 'stream', 'Streaming URL part (optional)', '', s.stream) + '</div>'
+        + '<div class="muted" style="margin-top:8px">Models</div>' + wcRows(i, 'models', s.models, [['label', 'label shown'], ['open', 'picker button selector'], ['item', 'menu text']])
+        + '<button type="button" onclick="wcAddRow(' + i + ',\'models\')" style="margin-top:4px">+ model</button>'
+        + '<div class="muted" style="margin-top:8px">Levels (low / high / ...) &nbsp; name: ' + wcIn(i, 'level_label', 'e.g. Thinking', '140px', s.level_label) + '</div>'
+        + wcRows(i, 'levels', s.levels, [['label', 'label shown'], ['open', 'picker button selector'], ['item', 'menu text']])
+        + '<button type="button" onclick="wcAddRow(' + i + ',\'levels\')" style="margin-top:4px">+ level</button>'
+        + '<div class="muted" style="margin-top:8px">Switches (DeepThink, Web search...)</div>' + wcRows(i, 'toggles', s.toggles, [['label', 'label shown'], ['text', 'text on the page']])
+        + '<button type="button" onclick="wcAddRow(' + i + ',\'toggles\')" style="margin-top:4px">+ switch</button>'
+        + '<div style="margin-top:8px"><button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key || '') + '/test" ' + (s.key ? '' : 'disabled title="Save first"') + ' onclick="return wcTestOk()">Test</button></div></div>';
+    });
+    host.innerHTML = h;
+  }
+  function wcRead() {
+    document.querySelectorAll('#wc-editor [data-f]').forEach(function (el) {
+      var i = +el.dataset.i, s = WCS[i]; if (!s) return;
+      if (el.dataset.g) { var g = (s[el.dataset.g] = s[el.dataset.g] || []); var j = +el.dataset.j; g[j] = g[j] || {}; g[j][el.dataset.f] = el.value.trim(); }
+      else { s[el.dataset.f] = el.value.trim(); }
+    });
+  }
+  function wcAdd() { wcRead(); WCS.push({ name: '', url: '', box: 'textarea', models: [], levels: [], toggles: [] }); wcRender(); }
+  function wcAddRow(i, g) { wcRead(); (WCS[i][g] = WCS[i][g] || []).push({}); wcRender(); }
+  function wcDel(i, g, j) { wcRead(); WCS[i][g].splice(j, 1); wcRender(); }
+  function wcRemove(i) { wcRead(); WCS.splice(i, 1); wcSave(); }
+  function wcTestOk() { return true; }
+  function wcSave() { wcRead(); document.getElementById('wc-json').value = JSON.stringify(WCS); document.getElementById('wc-form').submit(); }
+  document.getElementById('wc-form').addEventListener('submit', function () { wcRead(); document.getElementById('wc-json').value = JSON.stringify(WCS); });
+  wcRender();
+  </script>
+</div>

@@ -87,6 +87,7 @@
     {% for group_name, _spec in groups %}
     <button type="button" class="tab" data-tab="{{ group_name }}">{{ group_name }}</button>
     {% endfor %}
+    <button type="button" class="tab" data-tab="Web chat LLMs">Web chat LLMs</button>
   </div>
 
   <div class="tabpanel" data-tab="Tools">
@@ -456,6 +457,8 @@
   renderProviders();
   </script>
 </div>
+
+{% include "_webchat_settings.html" %}
 
 <script>
   (function () {

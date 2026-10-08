@@ -1,0 +1,51 @@
+{# Adds the chat sites you defined (Settings > Web chat LLMs) to every Writer /
+   Judge dropdown on the page, with their own model / level / switch controls.
+   z.ai and DeepSeek keep their built-in controls. #}
+<script>
+(function () {
+  var SITES = {{ webchat_custom_sites()|tojson }};
+  if (!SITES.length) return;
+  function sel(name, items, title) {
+    var s = document.createElement('select'); s.name = name; s.title = title || '';
+    items.forEach(function (it) { s.add(new Option(it[1], it[0])); });
+    return s;
+  }
+  function field(text, el) {
+    var l = document.createElement('label'); l.appendChild(document.createTextNode(text + ' '));
+    l.appendChild(el); return l;
+  }
+  document.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (s) {
+    SITES.forEach(function (site) {
+      if (![].some.call(s.options, function (o) { return o.value === site.key; })) {
+        s.add(new Option(site.name, site.key));
+      }
+    });
+  });
+  var done = new Set();
+  document.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (s) {
+    var form = s.closest('form');
+    if (!form || done.has(form)) return;
+    done.add(form);
+    var row = document.createElement('div');
+    row.style.cssText = 'flex-basis:100%;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+    SITES.forEach(function (site) {
+      var tag = document.createElement('span'); tag.className = 'muted';
+      tag.style.fontSize = '12px'; tag.textContent = site.name + ':'; row.appendChild(tag);
+      if ((site.models || []).length) {
+        row.appendChild(field('Model', sel('wc_' + site.key + '_model',
+          site.models.map(function (m) { return [m.id, m.label]; }), site.name + ' model for this run')));
+      }
+      if ((site.levels || []).length) {
+        row.appendChild(field(site.level_label || 'Level', sel('wc_' + site.key + '_level',
+          site.levels.map(function (m) { return [m.id, m.label]; }), site.name + ' level for this run')));
+      }
+      (site.toggles || []).forEach(function (t) {
+        row.appendChild(field(t.label, sel('wc_' + site.key + '_' + t.id,
+          [['off', 'Off'], ['on', 'On']], site.name + ' ' + t.label)));
+      });
+    });
+    var btn = form.querySelector('button[type=submit]');
+    if (btn) form.insertBefore(row, btn); else form.appendChild(row);
+  });
+})();
+</script>

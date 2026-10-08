@@ -38,6 +38,7 @@ from . import packaging
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
 from . import youtube_api
+from . import webchat, webstages
 from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, remote,
                scheduler, services, settings, studio)
 from .cli import _slugify, format_duration
@@ -362,6 +363,16 @@ def create_app(cfg) -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live
     app.jinja_env.filters["dur"] = format_duration
+    try:                        # chat sites added in Settings > Web chat LLMs
+        _wc_conn = db.connect(cfg.db_path)
+        db.init_db(_wc_conn)
+        try:
+            webchat.load_custom_sites(_wc_conn)
+        finally:
+            _wc_conn.close()
+    except Exception:  # noqa: BLE001 - the built-in sites still work
+        pass
+    app.jinja_env.globals["webchat_custom_sites"] = webchat.custom_sites_ui
     app.jinja_env.globals["flow_prompt_limit"] = studio.FLOWBATCH_MAX_PROMPT_CHARS
     app.jinja_env.filters["views"] = format_views
     app.jinja_env.filters["fromjson"] = (
@@ -1180,6 +1191,65 @@ def create_app(cfg) -> Flask:
                         else "0" if v is False else str(v))
         return out
 
+    def _webchat_sites_saved():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            raw = json.loads(db.get_setting(conn, "webchat_sites") or "[]")
+        except ValueError:
+            raw = []
+        finally:
+            conn.close()
+        return webchat.sanitize_sites(raw)[0]
+
+    @app.post("/settings/webchat-sites")
+    def settings_webchat_sites_save():
+        """Save the chat sites you added (not the API LLMs)."""
+        raw = (request.form.get("webchat_json") or "").strip()
+        try:
+            data = json.loads(raw) if raw else []
+        except ValueError:
+            return redirect("/settings?tab=Web+chat+LLMs&error=" + quote(
+                "Web chat LLMs must be valid JSON"))
+        clean, problems = webchat.sanitize_sites(data)
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.set_setting(conn, "webchat_sites", json.dumps(clean))
+            webchat.load_custom_sites(conn)
+        finally:
+            conn.close()
+        msg = f"Saved {len(clean)} web chat LLM(s)"
+        if problems:
+            return redirect("/settings?tab=Web+chat+LLMs&error=" + quote(
+                msg + " - skipped: " + "; ".join(problems)[:300]))
+        return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(msg))
+
+    @app.post("/settings/webchat-sites/<key>/test")
+    def settings_webchat_site_test(key):
+        """Open the site, apply its model / level / switches and ask it for
+        one word; the job log says which step worked."""
+        if key not in webchat.SITES:
+            return redirect("/settings?tab=Web+chat+LLMs&error=Unknown+site")
+        if sjob.running:
+            return redirect("/settings?tab=Web+chat+LLMs&error=" + quote(
+                "A job is already running"))
+        options = _chat_options(request.form)
+        _job = sjob._real()
+
+        def worker():
+            with webstages.web_transport(cfg, sjob.log.append,
+                                         options) as transport:
+                transport.set_stop(lambda: _job.cancel)
+                reply = transport.ask(key, "Reply with the single word OK.")
+                sjob.log.append(f"{webchat.SITES[key].name} answered: "
+                                f"{' '.join(str(reply).split())[:200]}")
+
+        sjob.start(worker, f"web chat test ({webchat.SITES[key].name})")
+        return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(
+            "Test started - a browser window opens (sign in first with: "
+            f"python -m whisperradar.webchat login {key})"))
+
     @app.get("/settings")
     def settings_page():
         conn = db.connect(cfg.db_path)
@@ -1197,6 +1267,7 @@ def create_app(cfg) -> Flask:
             override_counts=override_counts,
             providers=[p["name"] for p in studio.providers(cfg)],
             providers_nested=studio.providers_nested(cfg),
+            webchat_sites=_webchat_sites_saved(),
             scheduler=sched.status(),
             services=services.MANAGER.status_cached(cfg),
             flowbatch_ready=studio.flowbatch_ready(cfg),
@@ -3472,18 +3543,7 @@ def create_app(cfg) -> Flask:
                else webstages.shotlist_job)
 
         job = sjob._real()
-        level = (request.form.get("zai_thinking") or "Low").strip()
-        model = (request.form.get("zai_model") or "flash").strip()
-        options = {
-            "zai": {"thinking": level if level in ("Low", "High", "Max")
-                    else "Low",
-                    "model": model if model in ("flash", "5.3", "5.2")
-                    else "flash"},
-            "deepseek": {
-                "deepthink": (request.form.get("deepseek_deepthink")
-                              or "on") != "off",
-                "search": (request.form.get("deepseek_search")
-                           or "off") == "on"}}
+        options = _chat_options(request.form)
 
         resume = (stage != "script"
                   and request.form.get("resume_plan") == "on")
@@ -4031,7 +4091,18 @@ def create_app(cfg) -> Flask:
         """The z.ai / DeepSeek settings a web-chat form posts."""
         level = (form.get("zai_thinking") or "Low").strip()
         model = (form.get("zai_model") or "flash").strip()
+        custom = {}
+        for site in webchat.custom_sites_ui():
+            key = site["key"]
+            opts = {"model": (form.get(f"wc_{key}_model") or "").strip()
+                    or None,
+                    "level": (form.get(f"wc_{key}_level") or "").strip()
+                    or None,
+                    "toggles": {t["id"]: form.get(f"wc_{key}_{t['id']}")
+                                == "on" for t in site.get("toggles") or []}}
+            custom[key] = opts
         return {
+            **custom,
             "zai": {"thinking": level if level in ("Low", "High", "Max")
                     else "Low",
                     "model": model if model in ("flash", "5.3", "5.2")

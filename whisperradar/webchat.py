@@ -204,6 +204,249 @@ DEEPSEEK = Site(
     prepare=_deepseek_prepare)
 
 SITES = {s.key: s for s in (ZAI, DEEPSEEK)}
+BUILTIN_KEYS = tuple(SITES)
+
+
+# ---- chat sites you add yourself (Settings > Web chat LLMs) -------------------
+#
+# A definition is a plain dict saved in the `webchat_sites` setting:
+#   key, name, url                  which site
+#   box, reply, send, generating    CSS selectors: prompt box, an assistant
+#                                   message, the send button, anything that
+#                                   exists only while the model is writing
+#   login_part, sent_part, stream   sign-in URL words, URL word once a chat
+#                                   exists (e.g. "/c/"), streaming URL part
+#   models:  [{id, label, open, item}]  open = CSS of the picker button (may be
+#                                   empty), item = text of the menu entry
+#   level_label, levels: [{id, label, open, item}]  low / high / ...
+#   toggles: [{id, label, text}]    switches such as DeepThink or Web search;
+#                                   text = what the switch says on the page
+#   port                            debugging port for its own Chrome
+
+_SLUG = re.compile(r"[^a-z0-9]+")
+CUSTOM_PORT_START = 9230
+
+_CLICK_TEXT_JS = """(a) => {
+  if (a.open) { const o = document.querySelector(a.open);
+    if (!o) return 'missing-picker'; o.click(); }
+  return 'opened'; }"""
+
+_PICK_ITEM_JS = """(text) => {
+  const want = text.trim().toLowerCase();
+  const els = [...document.querySelectorAll(
+      'div,button,li,span,a,[role=menuitem],[role=option]')]
+    .filter(e => e.children.length === 0 || e.getAttribute('role'))
+    .filter(e => (e.innerText || '').trim().toLowerCase() === want);
+  if (!els.length) return 'missing';
+  els[els.length - 1].click(); return 'clicked'; }"""
+
+_TOGGLE_JS = """(a) => {
+  const want = a.text.trim().toLowerCase();
+  const els = [...document.querySelectorAll(
+      'button,[role=switch],[role=button],[role=checkbox],label,'
+      + '[class*=toggle]')]
+    .filter(e => (e.innerText || '').trim().toLowerCase().startsWith(want));
+  if (!els.length) return 'missing';
+  const e = els[0];
+  let on = null;
+  for (const k of ['aria-pressed', 'aria-checked', 'aria-selected', 'data-state']) {
+    const v = e.getAttribute(k);
+    if (v !== null) { on = (v === 'true' || v === 'on' || v === 'checked'
+                            || v === 'active'); break; }
+  }
+  if (on === null) on = /\\b(active|selected|checked|enabled)\\b/.test(e.className || '');
+  if (on === a.want) return 'ok';
+  e.click(); return 'clicked'; }"""
+
+
+def _by_id(items, wanted):
+    for it in items or []:
+        if it.get("id") == wanted:
+            return it
+    return (items or [None])[0]
+
+
+def _generic_prepare(spec: dict):
+    """Build the prepare(page, **options) for a site you defined: pick the
+    model, the level, then set each switch. A step that cannot be done on the
+    page is reported in the log and skipped - the run still asks."""
+    def prepare(page, model=None, level=None, toggles=None, **_ignored):
+        notes = []
+
+        def pick(group, wanted, what):
+            item = _by_id(spec.get(group), wanted)
+            if not item or not item.get("item"):
+                return
+            try:
+                if item.get("open"):
+                    res = page.evaluate(_CLICK_TEXT_JS, {"open": item["open"]})
+                    if res != "opened":
+                        notes.append(f"{what}: picker not found")
+                        return
+                    page.wait_for_timeout(600)
+                res = page.evaluate(_PICK_ITEM_JS, item["item"])
+                page.wait_for_timeout(500)
+                notes.append(f"{what} {item.get('label') or item['item']}"
+                             + ("" if res == "clicked"
+                                else " (menu entry not found)"))
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"{what}: {exc}"[:80])
+
+        pick("models", model, "model")
+        pick("levels", level, spec.get("level_label") or "level")
+        for tg in spec.get("toggles") or []:
+            want = bool((toggles or {}).get(tg["id"], False))
+            try:
+                res = page.evaluate(_TOGGLE_JS, {"text": tg.get("text")
+                                                 or tg.get("label"),
+                                                 "want": want})
+                if res == "clicked":
+                    page.wait_for_timeout(300)
+                notes.append(f"{tg.get('label')} {'on' if want else 'off'}"
+                             + (" (switch not found)" if res == "missing"
+                                else ""))
+            except Exception as exc:  # noqa: BLE001
+                notes.append(f"{tg.get('label')}: {exc}"[:80])
+        page.wait_for_timeout(200)
+        return f"{spec['name']}: " + ", ".join(notes) if notes else ""
+    return prepare
+
+
+def site_from_def(d: dict) -> Site:
+    sel_stop = d.get("generating") or ""
+    sent = d.get("sent_part") or ""
+    login = tuple(x.strip() for x in str(d.get("login_part") or "").split(",")
+                  if x.strip()) or ("sign_in", "login", "auth")
+    send = d["send"]
+    return Site(
+        key=d["key"], name=d["name"], url=d["url"], box=d["box"],
+        reply=d["reply"],
+        send_js="() => { const b=document.querySelector(%s);"
+                " if(!b) return false; b.click(); return true; }"
+                % json.dumps(send),
+        generating_js=("() => !!document.querySelector(%s)" % json.dumps(sel_stop)
+                       if sel_stop else
+                       "() => !!document.querySelector("
+                       "'[class*=stop-generat],[aria-label*=Stop],"
+                       "[title*=Stop]')"),
+        login_url_part=login, stream=d.get("stream") or "",
+        sent_js=("() => location.pathname.includes(%s)" % json.dumps(sent)
+                 if sent else "() => false"),
+        prepare=_generic_prepare(d))
+
+
+def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
+    """Clean what the settings editor posts. Returns (definitions, problems);
+    entries that cannot work are dropped with a problem message."""
+    out, problems, used = [], [], set(BUILTIN_KEYS)
+    ports = set(CDP_PORTS.values())
+    for d in raw if isinstance(raw, list) else []:
+        if not isinstance(d, dict):
+            continue
+        name = str(d.get("name") or "").strip()
+        if not name:
+            continue
+        key = _SLUG.sub("-", str(d.get("key") or name).lower()).strip("-")
+        if not key or key in used:
+            problems.append(f"{name}: the key '{key}' is already taken")
+            continue
+        clean = {"key": key, "name": name,
+                 "url": str(d.get("url") or "").strip(),
+                 "box": str(d.get("box") or "").strip() or "textarea",
+                 "reply": str(d.get("reply") or "").strip(),
+                 "send": str(d.get("send") or "").strip(),
+                 "generating": str(d.get("generating") or "").strip(),
+                 "login_part": str(d.get("login_part") or "").strip(),
+                 "sent_part": str(d.get("sent_part") or "").strip(),
+                 "stream": str(d.get("stream") or "").strip(),
+                 "level_label": str(d.get("level_label") or "").strip()
+                 or "Level"}
+        missing = [f for f in ("url", "reply", "send") if not clean[f]]
+        if missing or not clean["url"].startswith(("http://", "https://")):
+            problems.append(f"{name}: needs " + (
+                ", ".join(missing) if missing else "an http(s) URL"))
+            continue
+
+        def group(items, ident):
+            res, seen = [], set()
+            for it in items if isinstance(items, list) else []:
+                if not isinstance(it, dict):
+                    continue
+                label = str(it.get("label") or it.get("item")
+                            or it.get("text") or "").strip()
+                if not label:
+                    continue
+                iid = _SLUG.sub("-", str(it.get("id") or label).lower()
+                                ).strip("-") or ident
+                if iid in seen:
+                    continue
+                seen.add(iid)
+                row = {"id": iid, "label": label}
+                for f in ("open", "item", "text"):
+                    if str(it.get(f) or "").strip():
+                        row[f] = str(it[f]).strip()
+                res.append(row)
+            return res
+
+        clean["models"] = group(d.get("models"), "model")
+        clean["levels"] = group(d.get("levels"), "level")
+        clean["toggles"] = group(d.get("toggles"), "toggle")
+        try:
+            port = int(d.get("port") or 0)
+        except (TypeError, ValueError):
+            port = 0
+        if port < 1024 or port in ports:
+            port = CUSTOM_PORT_START
+            while port in ports:
+                port += 1
+        ports.add(port)
+        clean["port"] = port
+        used.add(key)
+        out.append(clean)
+    return out, problems
+
+
+def set_custom_sites(defs) -> list[str]:
+    """Make exactly these user-defined sites available (replacing the
+    previous ones). Built-in z.ai / DeepSeek are never touched."""
+    for key in [k for k in SITES if k not in BUILTIN_KEYS]:
+        SITES.pop(key, None)
+        CDP_PORTS.pop(key, None)
+    cleaned, _problems = sanitize_sites(defs)
+    for d in cleaned:
+        SITES[d["key"]] = site_from_def(d)
+        CDP_PORTS[d["key"]] = d["port"]
+    return [d["key"] for d in cleaned]
+
+
+def custom_sites_ui() -> list[dict]:
+    """What the run forms need to draw the controls of each custom site."""
+    out = []
+    for key, site in SITES.items():
+        if key in BUILTIN_KEYS:
+            continue
+        out.append(_UI.get(key) or {"key": key, "name": site.name})
+    return out
+
+
+_UI: dict = {}
+
+
+def load_custom_sites(conn) -> list[str]:
+    """Read the saved definitions from the settings table and activate them."""
+    from . import db
+    try:
+        raw = json.loads(db.get_setting(conn, "webchat_sites") or "[]")
+    except ValueError:
+        raw = []
+    defs, _ = sanitize_sites(raw)
+    keys = set_custom_sites(defs)
+    _UI.clear()
+    for d in defs:
+        _UI[d["key"]] = {k: d[k] for k in
+                         ("key", "name", "models", "levels", "level_label",
+                          "toggles")}
+    return keys
 
 CONTINUE_LABELS = ("continue generating", "continue", "weiter")
 
@@ -914,12 +1157,22 @@ class WebChat:
 def _main(argv: list[str]) -> int:
     from . import config
     if len(argv) < 2 or argv[0] not in ("login", "ask"):
-        print("usage: python -m whisperradar.webchat login <zai|deepseek>\n"
-              "       python -m whisperradar.webchat ask <zai|deepseek> "
+        print("usage: python -m whisperradar.webchat login <site>\n"
+              "       python -m whisperradar.webchat ask <site> "
               "\"prompt\"")
         return 2
     cfg = config.load_config()
     root = Path(cfg.db_path).parent / "webchat"
+    try:                              # sites added in Settings > Web chat LLMs
+        from . import db
+        _conn = db.connect(cfg.db_path)
+        try:
+            db.init_db(_conn)
+            load_custom_sites(_conn)
+        finally:
+            _conn.close()
+    except Exception:  # noqa: BLE001 - the built-in sites still work
+        pass
     if argv[0] == "login":
         if argv[1] not in SITES:
             print("unknown site: " + argv[1])
