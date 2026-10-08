@@ -435,6 +435,8 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
             continue
         name = str(d.get("name") or "").strip()
         if not name:
+            if str(d.get("url") or "").strip():
+                problems.append("an entry has an address but no name")
             continue
         key = _SLUG.sub("-", str(d.get("key") or name).lower()).strip("-")
         if not key or key in used:
@@ -1045,7 +1047,11 @@ def start_chrome(key: str, profile_root, wait: float = 20.0) -> bool:
     profile.mkdir(parents=True, exist_ok=True)
     args = [exe, f"--remote-debugging-port={CDP_PORTS.get(key, 9300)}",
             "--remote-allow-origins=*", f"--user-data-dir={profile}",
-            "--no-first-run", "--no-default-browser-check", SITES[key].url]
+            "--no-first-run", "--no-default-browser-check",
+            # a fresh, quiet window: no synced extensions (a wallet extension
+            # opened its own blank tab in front of the chat), no sync prompt
+            "--disable-extensions", "--disable-sync",
+            "--disable-features=ChromeWhatsNewUI", SITES[key].url]
     flags = 0
     if os.name == "nt":
         flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
