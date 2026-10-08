@@ -359,6 +359,20 @@ class JudgeSameChatTests(unittest.TestCase):
         self.assertIn('{"shots": []}', ws._plan_followup('{"shots": []}', None))
         self.assertIn("SAME", ws._script_followup("hello"))
 
+    def test_followup_states_measured_length(self):
+        t = ws._script_followup("x", 1500, 1000, 0.02, False)
+        self.assertIn("1500 words", t)
+        self.assertIn("OUTSIDE", t)
+        self.assertIn("INSIDE", ws._script_followup("x", 1000, 1000, 0.0,
+                                                    False))
+
+    def test_word_count_matches_manual_prompts_and_feedback_is_exact(self):
+        self.assertEqual(ws._wc("It's a well-known fact."), 6)
+        over = ws._length_delta(1500, 1000)
+        self.assertIn("over", over)
+        self.assertIn("Cut at least 500", over)
+        self.assertIn("Add about", ws._length_delta(500, 1000))
+
 
 class JoinAndResumeTests(Base):
     PLAN = {"style": "s", "shots": [

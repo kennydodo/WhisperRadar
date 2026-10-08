@@ -1659,3 +1659,12 @@ a new reply (count up, generating, or text different from the text before the se
 ## Auto Run plans the packaging first (2026-10-07)
 - `autorun._auto_plan` runs just before the script stage (setting `autorun_plan`, default on): `plan.run_plan_api` (API providers, up to 3 writer/judge rounds, previous attempt + verdict sent back), then `plan.apply_plan` makes the title the production's (`source_title` kept in packaging_plan.json). A ready plan is kept as is. Never fatal: any failure logs "packaging plan skipped" and the run continues with the original title. A draft plan is not applied.
 - Manual flow is unchanged (web-chat plan page).
+
+## Web-chat script length
+- The web-chat script loop (`webstages.run_script`) counts words with `webstages._wc` (`\w+`, the same as the manual external prompts), not `str.split`.
+- A draft outside the window (`ep._length_window`, 80%-115% of target) is rejected - too long as well as too short - and the writer is told the exact number of words to cut or add.
+- The judge's follow-up message states the software-measured length, window and overlap, and that outside-window fails the bar.
+- Best-of-attempts prefers in-window drafts before score.
+
+## Manual mode stops after reference images (TODO)
+- In manual mode, finishing the `refs` stage must NOT start the `images` stage; the person starts it. Auto Run (`run_pipeline`) keeps going from `refs` to `images`. Currently manual mode continues - to be fixed.

@@ -349,6 +349,24 @@ def save_shotlist(cfg, pid: int, data: dict, detail: str,
 
 # ---- script -----------------------------------------------------------------------
 
+def _wc(text: str) -> int:
+    """Word count exactly as the manual external prompts measure it."""
+    return len(re.findall(r"\w+", text or ""))
+
+
+def _length_delta(words: int, target: int) -> str:
+    lo, hi = ep._length_window(target)
+    if words > hi:
+        return (f"Your draft was {words} words - {words - hi} over the "
+                f"maximum of {hi}. Cut at least {words - target} words "
+                f"(drop repetition and side points, keep the facts).")
+    if words < lo:
+        return (f"Your draft was {words} words - {lo - words} under the "
+                f"minimum of {lo}. Add about {target - words} words using "
+                f"facts you have not used yet.")
+    return f"Your draft was {words} words, inside {lo}-{hi}."
+
+
 def _script_feedback(words: int, target: int, reasons: list[str],
                      judged: dict, truncated: bool) -> str:
     lo, hi = ep._length_window(target)
@@ -365,8 +383,9 @@ def _script_feedback(words: int, target: int, reasons: list[str],
         lines += [f"- {w}" for w in judged["weak_spans"]]
     lines.append(
         f"Rewrite the COMPLETE script, fixing every point above and keeping "
-        f"what the editor did not criticise. Your draft was {words} words; "
-        f"it must be {lo}-{hi} words (target {target}). Use only the facts "
+        f"what the editor did not criticise. {_length_delta(words, target)} "
+        f"It must be {lo}-{hi} words (target {target}); count before you "
+        f"reply. Use only the facts "
         f"you were given. Same reply format as before: the finished script "
         f"as plain text only, no notes before or after it.")
     return "\n".join(lines)
@@ -385,7 +404,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     hard_overlap = float(eff["script_hard_overlap"])
 
     def long_enough(text: str) -> bool:        # not just "Thinking..." / a stub
-        return len(text.split()) >= 0.5 * target
+        return _wc(text) >= 0.5 * target
 
     reply = _send(transport, writer,
                   lambda f: ep.script_writer_prompt(cfg, pid, title, None,
@@ -397,7 +416,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     while True:
         rnd += 1
         script = _clean_script(reply)
-        words = len(script.split())
+        words = _wc(script)
         if words < 20:
             raise StageFailed(
                 f"{writer} did not return a usable script (got {words} "
@@ -409,7 +428,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         for attempt in (1, 2):      # a judge reply with no score is asked again
             if judge_open:
                 raw = _send(transport, judge,
-                            lambda f: _script_followup(script), log,
+                            lambda f: _script_followup(script, words, target, overlap,
+                                                       studio.script_looks_truncated(script)), log,
                             new_chat=False, ready=_is_json_verdict)
             else:
                 raw = _send(transport, judge,
@@ -442,6 +462,11 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         if cut:
             passed = False
             reasons.append("the script looks cut off")
+        if too_long:
+            passed = False
+            reasons.append(f"{words} words is over the "
+                           f"{ep._length_window(target)[1]}-word maximum "
+                           f"(target {target})")
         log(f"round {rnd}: score {score if score is not None else 'n/a'} "
             f"(min {min_rating:g}) - " + ("PASSED" if passed else
                                           "not accepted: " + "; ".join(reasons)))
@@ -469,7 +494,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         reply = transport.ask(
             writer, _script_feedback(words, target, reasons, judged, cut), (),
             new_chat=False, ready=long_enough)
-    best = max(attempts, key=lambda a: (not a["too_short"], not a["cut"],
+    best = max(attempts, key=lambda a: (not a["too_short"],
+                                        not a["too_long"], not a["cut"],
                                         a["score"]))
     save_script(cfg, pid, best["script"],
                 f"web chat {writer}/{judge}: NOT accepted after {rounds} "
@@ -549,8 +575,24 @@ def _keep_attempts(cfg, pid: int, attempts: list[dict]) -> None:
         pass
 
 
-def _script_followup(script: str) -> str:
-    return (
+def _script_followup(script: str, words: int | None = None,
+                     target: int | None = None, overlap: float | None = None,
+                     cut: bool = False) -> str:
+    measured = ""
+    if words is not None and target:
+        lo, hi = ep._length_window(target)
+        measured = (f"Measured by software, do not re-estimate: length "
+                    f"{words} words (the bar is {lo}-{hi}, target {target}"
+                    f") - "
+                    f"{'INSIDE' if lo <= words <= hi else 'OUTSIDE'} the "
+                    f"window"
+                    + (f"; overlap {overlap:.1%}" if overlap is not None
+                       else "")
+                    + f"; ending {'LOOKS CUT OFF' if cut else 'is complete'}"
+                    f". A script outside the length window fails the bar "
+                    f"however well it reads - list it among the failed "
+                    f"items.\n\n")
+    return measured + (
         "The writer revised the script after your review. Judge it again "
         "under the SAME rules and reply in exactly the SAME JSON format as "
         "before. First check whether each point you raised earlier is now "
