@@ -4526,4 +4526,7 @@ def create_app(cfg) -> Flask:
     # warm the Renderly readiness probe so the first page load is fast too
     threading.Thread(target=lambda: studio.renderly_ready(cfg.renderly_url),
                      daemon=True).start()
+    from . import look_routes
+    look_routes.register(app, cfg, sjob)
+
     return app

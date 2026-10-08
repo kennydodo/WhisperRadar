@@ -124,6 +124,9 @@
               {{ 'pause' if ch['active'] else 'activate' }}</button>
           </form>
           <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
+          <a class="ghost" href="/watched/{{ ch['channel_id'] }}/look"
+             style="padding:4px 10px;border:1px solid var(--border);border-radius:6px"
+             title="Take a few real video frames from this channel and have a web chat write its visual style guide and character/environment bible (kept with this channel only)">style &amp; bible</a>
           <form class="row" method="post" action="/channels/backfill" style="display:inline"
                 title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
             <input type="hidden" name="key" value="{{ ch["channel_id"] }}">

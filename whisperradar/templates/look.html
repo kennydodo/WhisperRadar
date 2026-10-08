@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Style &amp; bible</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+          --muted:#8b93a3; --accent:#4f8cff; --green:#3fb96f; --red:#e05c5c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width:1000px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 2px; } h2 { font-size:16px; margin:0 0 8px; }
+  .sub, .muted { color:var(--muted); }
+  .panel { background:var(--panel); border:1px solid var(--border);
+           border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  a { color:var(--accent); text-decoration:none; }
+  select, input { background:#0f1115; color:var(--text); border:1px solid var(--border);
+                  border-radius:6px; padding:6px 8px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px;
+           padding:7px 14px; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  pre { white-space:pre-wrap; background:#0f1115; border:1px solid var(--border);
+        border-radius:8px; padding:12px; margin:8px 0 0; }
+  .frames { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; }
+  .frames img { width:100%; border-radius:6px; border:1px solid var(--border); }
+  .msg { color:var(--green); } .err { color:var(--red); }
+  form.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p><a href="/watched">&larr; Watched channels</a></p>
+  <h1>Style &amp; bible &middot; {{ ch["name"] }}</h1>
+  <p class="sub">A reference for the look this channel uses. It stays with this
+    watched channel only &mdash; nothing is copied into your own channels; copy
+    from here when you want to try it.</p>
+  {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+  <div class="panel">
+    {% if sites %}
+    <form class="row" method="post" action="/watched/{{ ch['channel_id'] }}/look/run">
+      <label>Web chat (must read images)
+        <select name="site">{% for s in sites %}<option value="{{ s.key }}">{{ s.name }}</option>{% endfor %}</select></label>
+      <label>Frames
+        <input type="number" name="frames" value="{{ default_frames }}"
+               min="{{ min_frames }}" max="{{ max_frames }}" style="width:70px"></label>
+      <button type="submit">{{ 'Get style & bible again' if look else 'Get style & bible' }}</button>
+    </form>
+    <p class="muted" style="margin:8px 0 0">Takes frames from this channel's most
+      viewed videos (downloaded at low resolution, then deleted), with a few
+      titles and transcript excerpts. Follow the job log on the Studio page.</p>
+    {% else %}
+    <p class="err">No web chat that can read images yet. Add one in
+      <a href="/settings?tab=Web+chat+LLMs">Settings &gt; Web chat LLMs</a>
+      (for example ChatGPT or Qwen).</p>
+    {% endif %}
+  </div>
+
+  {% if look %}
+  <p class="muted">Made {{ look.at }} with {{ look.site }} from {{ look.frames }} frames.</p>
+  <div class="panel">
+    <h2>Style guide <button class="ghost" type="button" onclick="cp('style')">copy</button></h2>
+    <pre id="style">{{ look.style }}</pre>
+  </div>
+  <div class="panel">
+    <h2>Bible <button class="ghost" type="button" onclick="cp('bible')">copy</button></h2>
+    <pre id="bible">{{ look.bible or "(the chat gave no separate bible - see the style guide)" }}</pre>
+  </div>
+  <div class="panel">
+    <h2>Frames used</h2>
+    <div class="frames">
+      {% for f in look.files %}<a href="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" target="_blank"><img src="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" alt=""></a>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+<script>
+function cp(id){ navigator.clipboard.writeText(document.getElementById(id).textContent); }
+</script>
+</body>
+</html>
