@@ -312,27 +312,57 @@ def _generic_prepare(spec: dict):
     return prepare
 
 
+# Best-guess defaults for a site you only gave a name and URL. They work on
+# the common chat layouts; a site that needs different ones can be given them
+# in its definition (box / send / reply / generating / sent_part).
+DEFAULT_REPLY = ('[data-message-author-role="assistant"], '
+                 '[class*="assistant" i], [class*="markdown" i]')
+DEFAULT_GENERATING = ('[aria-label*="Stop" i], [title*="Stop" i], '
+                      '[data-testid*="stop" i], [class*="stop-generat" i]')
+
+_GENERIC_SEND_JS = """() => {
+  const ta = document.querySelector(%s);
+  let scope = document;
+  if (ta) scope = ta.closest('form') || (ta.parentElement && ta.parentElement
+      .parentElement && ta.parentElement.parentElement.parentElement) || document;
+  const cands = [...scope.querySelectorAll('button,[role=button]')].filter(
+      b => !b.disabled && b.getAttribute('aria-disabled') !== 'true');
+  const word = /send|submit|ask|generate/i;
+  let b = cands.find(x => word.test([x.getAttribute('aria-label'),
+      x.getAttribute('title'), x.getAttribute('data-testid'), x.id,
+      x.innerText].join(' ')));
+  if (!b) b = cands[cands.length - 1];
+  if (!b) return false;
+  b.click(); return true; }"""
+
+
 def site_from_def(d: dict) -> Site:
-    sel_stop = d.get("generating") or ""
+    box = d.get("box") or "textarea"
+    sel_stop = d.get("generating") or DEFAULT_GENERATING
     sent = d.get("sent_part") or ""
     login = tuple(x.strip() for x in str(d.get("login_part") or "").split(",")
-                  if x.strip()) or ("sign_in", "login", "auth")
-    send = d["send"]
+                  if x.strip()) or ("sign_in", "login", "auth", "signin")
+    if d.get("send"):
+        send_js = ("() => { const b=document.querySelector(%s);"
+                   " if(!b) return false; b.click(); return true; }"
+                   % json.dumps(d["send"]))
+    else:
+        send_js = _GENERIC_SEND_JS % json.dumps(box)
+    if sent:
+        sent_js = "() => location.pathname.includes(%s)" % json.dumps(sent)
+    else:
+        # a started chat has its own address; the start page does not
+        from urllib.parse import urlparse
+        base = urlparse(d["url"]).path or "/"
+        sent_js = ("() => location.pathname.length > 1 && "
+                   "location.pathname !== %s" % json.dumps(base))
     return Site(
-        key=d["key"], name=d["name"], url=d["url"], box=d["box"],
-        reply=d["reply"],
-        send_js="() => { const b=document.querySelector(%s);"
-                " if(!b) return false; b.click(); return true; }"
-                % json.dumps(send),
-        generating_js=("() => !!document.querySelector(%s)" % json.dumps(sel_stop)
-                       if sel_stop else
-                       "() => !!document.querySelector("
-                       "'[class*=stop-generat],[aria-label*=Stop],"
-                       "[title*=Stop]')"),
+        key=d["key"], name=d["name"], url=d["url"], box=box,
+        reply=d.get("reply") or DEFAULT_REPLY, send_js=send_js,
+        generating_js="() => !!document.querySelector(%s)"
+                      % json.dumps(sel_stop),
         login_url_part=login, stream=d.get("stream") or "",
-        sent_js=("() => location.pathname.includes(%s)" % json.dumps(sent)
-                 if sent else "() => false"),
-        prepare=_generic_prepare(d))
+        sent_js=sent_js, prepare=_generic_prepare(d))
 
 
 def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
@@ -352,7 +382,7 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
             continue
         clean = {"key": key, "name": name,
                  "url": str(d.get("url") or "").strip(),
-                 "box": str(d.get("box") or "").strip() or "textarea",
+                 "box": str(d.get("box") or "").strip(),
                  "reply": str(d.get("reply") or "").strip(),
                  "send": str(d.get("send") or "").strip(),
                  "generating": str(d.get("generating") or "").strip(),
@@ -361,10 +391,9 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
                  "stream": str(d.get("stream") or "").strip(),
                  "level_label": str(d.get("level_label") or "").strip()
                  or "Level"}
-        missing = [f for f in ("url", "reply", "send") if not clean[f]]
-        if missing or not clean["url"].startswith(("http://", "https://")):
-            problems.append(f"{name}: needs " + (
-                ", ".join(missing) if missing else "an http(s) URL"))
+        if not clean["url"].startswith(("http://", "https://")):
+            problems.append(f"{name}: needs a web address starting with "
+                            f"https://")
             continue
 
         def group(items, ident):

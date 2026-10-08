@@ -54,9 +54,20 @@ class DefinitionTests(Base):
         self.assertEqual(d["toggles"][1]["id"], "web-search")
         self.assertGreaterEqual(d["port"], 9230)
 
-    def test_incomplete_or_builtin_names_are_rejected(self):
+    def test_name_and_address_are_enough(self):
         defs, problems = webchat.sanitize_sites(
-            [{"name": "x", "url": "https://a/"},          # no reply/send
+            [{"name": "Plain", "url": "https://plain.example/chat"}])
+        self.assertEqual(problems, [])
+        webchat.set_custom_sites(defs)
+        site = webchat.SITES["plain"]
+        self.assertEqual(site.box, "textarea")
+        self.assertIn("assistant", site.reply)
+        self.assertIn("Stop", site.generating_js)
+        self.assertIn("/chat", site.sent_js)       # start page = not started
+
+    def test_bad_or_builtin_entries_are_rejected(self):
+        defs, problems = webchat.sanitize_sites(
+            [{"name": "x", "url": "chat.example"},        # no https://
              dict(SITE, name="zai"),                      # builtin key
              dict(SITE, name="Two"), dict(SITE, name="Two")])
         self.assertEqual([d["key"] for d in defs], ["two"])
@@ -113,6 +124,23 @@ class AppTests(Base):
         return self.client.post("/settings/webchat-sites",
                                 data={"webchat_json": json.dumps(sites)})
 
+    def test_saving_a_new_site_opens_its_sign_in_browser(self):
+        from unittest import mock
+        import time
+        with mock.patch.object(webchat, "start_chrome") as chrome:
+            r = self.save([{"name": "Fresh", "url": "https://fresh.example/"}])
+            time.sleep(0.3)
+            self.assertIn("browser%20window", r.headers["Location"])
+            chrome.assert_called_once()
+            self.assertEqual(chrome.call_args[0][0], "fresh")
+            chrome.reset_mock()
+            self.save([{"name": "Fresh", "url": "https://fresh.example/"}])
+            time.sleep(0.3)
+            chrome.assert_not_called()          # only NEW sites open it
+            self.client.post("/settings/webchat-sites/fresh/login")
+            time.sleep(0.3)
+            chrome.assert_called_once()
+
     def test_save_persists_and_activates(self):
         r = self.save([SITE])
         self.assertEqual(r.status_code, 302)
@@ -130,7 +158,7 @@ class AppTests(Base):
         r = self.client.post("/settings/webchat-sites",
                              data={"webchat_json": "{nope"})
         self.assertIn("error=", r.headers["Location"])
-        r = self.save([{"name": "x", "url": "https://a/"}])
+        r = self.save([{"name": "x", "url": "not a url"}])
         self.assertIn("error=", r.headers["Location"])
 
     def test_run_forms_offer_the_new_site(self):

@@ -1202,15 +1202,34 @@ def create_app(cfg) -> Flask:
             conn.close()
         return webchat.sanitize_sites(raw)[0]
 
+    def _open_sign_in(keys):
+        """Open the sign-in browser of each site in the background (starting
+        Chrome can take several seconds)."""
+        import threading
+        root = Path(cfg.db_path).parent / "webchat"
+
+        def run():
+            for key in keys:
+                try:
+                    webchat.start_chrome(key, root)
+                except Exception:  # noqa: BLE001 - shown by the Sign in button
+                    logging.getLogger("whisperradar").warning(
+                        "could not open the sign-in browser for %s", key,
+                        exc_info=True)
+
+        threading.Thread(target=run, daemon=True).start()
+
     @app.post("/settings/webchat-sites")
     def settings_webchat_sites_save():
-        """Save the chat sites you added (not the API LLMs)."""
+        """Save the chat sites you added (not the API LLMs). A site that is
+        new opens its sign-in browser straight away."""
         raw = (request.form.get("webchat_json") or "").strip()
         try:
             data = json.loads(raw) if raw else []
         except ValueError:
             return redirect("/settings?tab=Web+chat+LLMs&error=" + quote(
                 "Web chat LLMs must be valid JSON"))
+        before = {d["key"] for d in _webchat_sites_saved()}
         clean, problems = webchat.sanitize_sites(data)
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
@@ -1219,11 +1238,27 @@ def create_app(cfg) -> Flask:
             webchat.load_custom_sites(conn)
         finally:
             conn.close()
+        new = [d for d in clean if d["key"] not in before]
+        if new:
+            _open_sign_in([d["key"] for d in new])
         msg = f"Saved {len(clean)} web chat LLM(s)"
+        if new:
+            msg += (" - a browser window is opening for "
+                    + ", ".join(d["name"] for d in new)
+                    + ": sign in there and leave that window open")
         if problems:
             return redirect("/settings?tab=Web+chat+LLMs&error=" + quote(
                 msg + " - skipped: " + "; ".join(problems)[:300]))
         return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(msg))
+
+    @app.post("/settings/webchat-sites/<key>/login")
+    def settings_webchat_site_login(key):
+        if key not in webchat.SITES:
+            return redirect("/settings?tab=Web+chat+LLMs&error=Unknown+site")
+        _open_sign_in([key])
+        return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(
+            f"A browser window is opening for {webchat.SITES[key].name}: "
+            "sign in there and leave that window open"))
 
     @app.post("/settings/webchat-sites/<key>/test")
     def settings_webchat_site_test(key):
