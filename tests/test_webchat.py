@@ -95,7 +95,8 @@ class FakePage:
             return self.frame[1]
         if isinstance(js, str) and "Deep Think" in js:
             return True                      # z.ai level menu opened
-        if isinstance(js, str) and "querySelector(s)" in js:
+        if js is wc._BOX_THERE_JS or (isinstance(js, str)
+                                      and "querySelector(s)" in js):
             return self.has_box
         if isinstance(js, str) and "document.body.innerText" in js:
             return ("attached " + " ".join(
@@ -405,6 +406,25 @@ class SitesTests(unittest.TestCase):
         with self.assertRaises(wc.WebChatError):
             chat._page("nope")
 
+    def test_the_model_detector_only_clicks_real_pickers(self):
+        # it runs inside the user's SIGNED-IN Chrome: clicking brand/promo/
+        # dialog buttons opened blank tabs; these gates must stay in place.
+        # listing pass (no clicks):
+        for gate in ("isPicker", "promo.test(label", "h === 'dialog'",
+                     "brand.test"):
+            self.assertIn(gate, wc._DETECT_MODELS_JS)
+        # clicking pass (one candidate): rows must read like models, and
+        # window.open() must be stubbed so a promo cannot spawn a tab
+        for gate in ("modelishRow", "labels.some(modelishRow)",
+                     "window.open = _open"):
+            self.assertIn(gate, wc._DETECT_ONE_JS)
+
+    def test_the_picker_clicker_reports_opened_not_true(self):
+        # pick() compares the result to "opened"; a real `true` from the JS
+        # once made every saved-selector click report "picker not found"
+        self.assertIn("o.click(); return 'opened'", wc._CLICK_TEXT_JS)
+        self.assertIn("return 'opened';", wc._CLICK_TEXT_JS)      # no open: nothing to open
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -466,11 +486,90 @@ class AttachTests(unittest.TestCase):
         with mock.patch.object(wc, "cdp_alive", side_effect=lambda k: next(alive)), \
                 mock.patch.object(wc, "find_chrome", return_value="chrome"), \
                 mock.patch.object(wc.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = None
             self.assertTrue(wc.start_chrome("zai", "/tmp/x", wait=5))
         args = popen.call_args.args[0]
         self.assertIn("--remote-debugging-port=9222", args)
         self.assertTrue(any(a.startswith("--user-data-dir=") and "zai" in a
                             for a in args))
+
+    def test_a_profile_already_in_use_reports_fast_not_a_dead_port(self):
+        from unittest import mock
+        # Chrome forwards to the running instance and our process exits:
+        # the debugging port can never come up - return False quickly
+        with mock.patch.object(wc, "cdp_alive", return_value=False), \
+                mock.patch.object(wc, "find_chrome", return_value="chrome"), \
+                mock.patch.object(wc.subprocess, "Popen") as popen:
+            popen.return_value.poll.return_value = 0
+            self.assertFalse(wc.start_chrome("zai", "/tmp/x", wait=30))
+
+
+class AttachCustomSiteTests(unittest.TestCase):
+    """Chrome 154 here refuses to open a debugging port at all: every site -
+    including ChatGPT/Claude - must run in the app's OWN headed real Chrome
+    (verified live: it passes their bot checks), attached to only if a
+    debugging Chrome happens to be alive."""
+
+    def _chat(self):
+        from unittest import mock
+        chat = wc.WebChat("/tmp/none")
+        chat._pw = mock.Mock()
+        browser = chat._pw.chromium.connect_over_cdp.return_value
+        browser.contexts = []
+        browser.new_context.return_value.pages = []
+        chat._pw.chromium.launch_persistent_context.return_value.pages = []
+        return chat
+
+    def _gpt(self):
+        return [{"key": "gpt", "name": "GPT", "url": "https://chatgpt.com/"}]
+
+    def test_a_live_debug_chrome_is_attached_to(self):
+        from unittest import mock
+        try:
+            wc.set_custom_sites(self._gpt())
+            chat = self._chat()
+            with mock.patch.object(wc, "cdp_alive", return_value=True):
+                chat._page("gpt")
+            chat._pw.chromium.connect_over_cdp.assert_called_once()
+            chat._pw.chromium.launch_persistent_context.assert_not_called()
+        finally:
+            wc.set_custom_sites([])
+
+    def test_a_custom_site_without_debug_port_uses_our_own_chrome(self):
+        from unittest import mock
+        try:
+            wc.set_custom_sites(self._gpt())
+            chat = self._chat()
+            with mock.patch.object(wc, "cdp_alive", return_value=False), \
+                    mock.patch.object(wc, "profile_busy", return_value=False):
+                chat._page("gpt")
+            chat._pw.chromium.launch_persistent_context.assert_called_once()
+        finally:
+            wc.set_custom_sites([])
+
+    def test_a_locked_sign_in_window_is_reported_not_worked_around(self):
+        # a stray sign-in window holds the profile: launching anyway means
+        # forwarded requests and blank extra windows - say what to do
+        from unittest import mock
+        try:
+            wc.set_custom_sites(self._gpt())
+            chat = self._chat()
+            with mock.patch.object(wc, "cdp_alive", return_value=False), \
+                    mock.patch.object(wc, "profile_busy", return_value=True):
+                with self.assertRaises(wc.WebChatError) as cm:
+                    chat._page("gpt")
+            self.assertIn("Close it", str(cm.exception))
+            chat._pw.chromium.launch_persistent_context.assert_not_called()
+        finally:
+            wc.set_custom_sites([])
+
+    def test_a_builtin_site_behaves_the_same(self):
+        from unittest import mock
+        chat = self._chat()
+        with mock.patch.object(wc, "cdp_alive", return_value=False), \
+                mock.patch.object(wc, "profile_busy", return_value=False):
+            chat._page("zai")
+        chat._pw.chromium.launch_persistent_context.assert_called_once()
 
 
 class AdoptTests(unittest.TestCase):
@@ -487,6 +586,10 @@ class BusyTests(unittest.TestCase):
         page = FakePage(clk, wc.ZAI, [("", False)] * 10)
         page.busy = busy
         return clk, page
+
+    def test_the_cloudflare_interstitial_counts_as_a_human_check(self):
+        self.assertIn("just a moment", wc._BOT_JS)
+        self.assertIn("performing security verification", wc._BOT_JS)
 
     def test_a_capacity_banner_raises_model_busy(self):
         clk, page = self._page({"n": 1, "text": "The model is at capacity"})

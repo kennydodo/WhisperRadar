@@ -227,31 +227,47 @@ _SLUG = re.compile(r"[^a-z0-9]+")
 CUSTOM_PORT_START = 9230
 
 _CLICK_TEXT_JS = """(a) => {
-  if (a.open) { const o = document.querySelector(a.open);
-    if (!o) return 'missing-picker'; o.click(); }
-  return 'opened'; }"""
+  if (!a.open && !a.current) return 'opened';
+  let o = a.open ? document.querySelector(a.open) : null;
+  if (!o && a.current) {              // saved selector went stale: find the
+    const t = a.current.trim().toLowerCase();
+    o = [...document.querySelectorAll(
+        'button,[role=button],[role=combobox],[aria-haspopup]')]
+      .find(e => e.getBoundingClientRect().width > 0
+        && (e.innerText || '').trim().toLowerCase().split('\\n')[0] === t);
+  }
+  if (!o) return 'missing-picker';
+  o.click(); return 'opened'; }"""
 
 _PICK_ITEM_JS = r"""(text) => {
   const want = text.trim().toLowerCase();
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
   const first = e => (e.innerText || '').trim().split('\n')[0].trim()
                        .toLowerCase();
   const menu = [...document.querySelectorAll(
       '[role=menuitem],[role=option],[role=menuitemradio]')]
-    .filter(e => e.offsetParent && first(e) === want);
+    .filter(e => vis(e) && first(e) === want);
   const els = menu.length ? menu : [...document.querySelectorAll(
-      'div,button,li,span,a')].filter(e => e.offsetParent
+      'div,button,li,span,a')].filter(e => vis(e)
         && e.children.length === 0 && first(e) === want);
   if (!els.length) return 'missing';
   els[els.length - 1].click(); return 'clicked'; }"""
 
-# Finds the model picker of a chat page: the button that opens a menu or list
-# of entries (model names). Returns its selector, its current label and the
-# entries, or no entries when none was found.
-_DETECT_MODELS_JS = r"""async () => {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+# Lists the model-pickers of a chat page WITHOUT clicking anything (clicking
+# is done one-by-one from Python, with a real Escape key between tries, because
+# synthetic Escape does not reach React portals and a stuck-open menu would
+# poison every later candidate). Each entry: {open, current, text}.
+_DETECT_MODELS_JS = r"""() => {
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
   const esc = v => String(v).replace(/"/g, '\\"');
   const path = el => {
-    if (el.id) return '#' + CSS.escape(el.id);
+    // machine-generated ids (base-ui/radix ":r2q:" style) change every load:
+    // only an id that looks stable may be saved as the picker selector
+    const stableId = id => id && !/^(base-ui|radix|headlessui|\d|:)/i.test(id)
+                           && !/[-_:]r[0-9a-z]{2,}([-_:]?|)$/i.test(id);
+    if (stableId(el.id)) return '#' + CSS.escape(el.id);
     const t = el.getAttribute('data-testid');
     if (t) return el.tagName.toLowerCase() + '[data-testid="' + esc(t) + '"]';
     const a = el.getAttribute('aria-label');
@@ -266,36 +282,84 @@ _DETECT_MODELS_JS = r"""async () => {
     return parts.join(' > ');
   };
   const modelish = /model|gpt|claude|gemini|glm|grok|llama|qwen|mistral|flash|\bpro\b|sonnet|opus|haiku|auto|thinking|instant|deepseek|\bo[134]\b/i;
-  const junk = /log ?out|sign ?out|settings|profile|account|help|upgrade|share|new chat|history/i;
+  // the site's own shell (nav/sidebar) hides real pickers too sometimes, so
+  // chrome only disqualifies the WEAK (name-based) candidates; an explicit
+  // menu/listbox/combobox declaration counts wherever it lives, as long as it
+  // is not the brand or a promo button (those opened the blank-tab storm)
+  const inChrome = b => !!b.closest(
+      'nav,[class*=sidebar],[class*=side-bar],[class*=left-panel],'
+      + '[class*=app-list]');
+  const promo = /download|install|get the|mobile|desktop|\bapp\b|extension|careers|blog|whatsapp|telegram|twitter|instagram/i;
+  const brand = /^(chatgpt|gpt|claude ?ai?|glm|deepseek|gemini)[ *·•\-]*$/i;
   const label = b => (b.innerText || '') + ' ' + (b.getAttribute('aria-label')
-      || '') + ' ' + (b.getAttribute('data-testid') || '');
+      || '') + ' ' + (b.getAttribute('data-testid') || '') + ' ' +
+      (b.getAttribute('title') || '');
+  const isPicker = b => {
+    const txt = (b.innerText || '').trim();
+    if (brand.test(txt) || promo.test(label(b))) return false;
+    const h = (b.getAttribute('aria-haspopup') || '').toLowerCase();
+    if (h === 'dialog') return false;         // "Deep research", modals
+    if (h === 'menu' || h === 'listbox' || h === 'true' || h === 'tree'
+        || b.getAttribute('role') === 'combobox') return true;
+    return modelish.test(label(b)) && !inChrome(b);
+  };
   const cands = [...document.querySelectorAll(
-      'button,[role=button],[role=combobox]')].filter(b => {
-    const h = b.getAttribute('aria-haspopup');
+      'button,[role=button],[role=combobox],[aria-haspopup]')].filter(b => {
     const t = (b.innerText || '').trim();
-    return b.offsetParent && t.length > 0 && t.length < 40
-      && (h === 'menu' || h === 'listbox' || h === 'true'
-          || b.getAttribute('role') === 'combobox' || modelish.test(label(b)));
+    return vis(b) && t.length > 0 && t.length < 60 && isPicker(b);
   });
   cands.sort((a, b) => modelish.test(label(b)) - modelish.test(label(a)));
-  for (const b of cands.slice(0, 8)) {
-    b.click(); await sleep(800);
-    const items = [...document.querySelectorAll(
-        '[role=menuitem],[role=option],[role=menuitemradio]')]
-      .filter(e => e.offsetParent);
-    const labels = [...new Set(items.map(e =>
-        (e.innerText || '').trim().split('\n')[0].trim())
-        .filter(x => x && x.length < 60))];
-    if (labels.length >= 2 && !labels.some(l => junk.test(l))) {
-      return {open: path(b),
-              current: (b.innerText || '').trim().split('\n')[0],
-              items: labels};
+  return {cands: cands.slice(0, 10).map(b => ({
+             open: path(b),
+             current: (b.innerText || '').trim().split('\n')[0],
+             text: label(b).slice(0, 120)}))}; }"""
+
+# One candidate: click its picker, read the menu rows, and only report them
+# when they read like MODELS (a Tools/Projects popover must not pass).
+_DETECT_ONE_JS = r"""async (a) => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
+  const junk = /log ?out|sign ?out|settings|profile|account|help|upgrade|share|new chat|history|api key|data controls|\beffort\b|more models|\bmanage\b|\badd\b/i;
+  const modelishRow = l => /gpt|sonnet|opus|haiku|gemini|glm|grok|llama|qwen|mistral|flash|deepseek|mini|\bo[134]\b|instant|thinking|auto|\d\.\d/i.test(l);
+  const rows = () => {
+    let els = [...document.querySelectorAll(
+        '[role=menuitem],[role=option],[role=menuitemradio]')].filter(vis);
+    if (els.length < 2) {            // some sites draw plain rows in a portal
+      const cont = [...document.querySelectorAll(
+          '[role=menu],[role=listbox],[data-radix-popper-content-wrapper],'
+          + '[class*=menu-content],[class*=dropdown-content],[class*=popover]')]
+        .filter(vis).pop();
+      if (cont) els = [...cont.querySelectorAll('button,li,[role]')]
+        .filter(e => vis(e) && (e.innerText || '').trim());
     }
-    document.dispatchEvent(new KeyboardEvent('keydown',
-        {key: 'Escape', bubbles: true}));
-    await sleep(250);
+    const out = [];
+    for (const e of els) {
+      const t = (e.innerText || '').trim().split('\n')[0].trim();
+      if (t && t.length < 60 && !junk.test(t) && !out.includes(t)) out.push(t);
+    }
+    return out;
+  };
+  const _open = window.open;                   // promos cannot spawn tabs
+  window.open = () => null;
+  const orig = location.href;
+  let b = a.open ? document.querySelector(a.open) : null;
+  if (!b && a.current) {              // the saved path rotted: find the button
+    const t = a.current.trim().toLowerCase();   // still showing that model name
+    b = [...document.querySelectorAll(
+        'button,[role=button],[role=combobox],[aria-haspopup]')]
+      .find(e => vis(e) && (e.innerText || '').trim().toLowerCase()
+        .split('\n')[0] === t);
   }
-  return {open: '', current: '', items: []}; }"""
+  if (!b) { window.open = _open; return {items: [], moved: false}; }
+  b.click();
+  let labels = [];
+  for (let i = 0; i < 6; i++) {
+    await sleep(300); labels = rows(); if (labels.length >= 2) break;
+  }
+  window.open = _open;
+  const ok = labels.length >= 2 && labels.some(modelishRow);
+  return {items: ok ? labels : [], moved: location.href !== orig}; }"""
 
 _TOGGLE_JS = """(a) => {
   const want = a.text.trim().toLowerCase();
@@ -338,13 +402,32 @@ def _generic_prepare(spec: dict):
             if not item or not item.get("item"):
                 return
             try:
-                if item.get("open"):
-                    res = page.evaluate(_CLICK_TEXT_JS, {"open": item["open"]})
-                    if res != "opened":
+                opener = {"open": item.get("open") or "",
+                          "current": item.get("current") or ""}
+
+                def poll(rounds=4):
+                    res = "missing"
+                    for _ in range(rounds):
+                        page.wait_for_timeout(400)
+                        res = page.evaluate(_PICK_ITEM_JS, item["item"])
+                        if res == "clicked":
+                            break
+                    return res
+
+                def open_it():
+                    r = page.evaluate(_CLICK_TEXT_JS, opener)
+                    if r != "opened":
                         notes.append(f"{what}: picker not found")
-                        return
-                    page.wait_for_timeout(600)
-                res = page.evaluate(_PICK_ITEM_JS, item["item"])
+                    return r == "opened"
+
+                # the menu may already be open (right after a detection run:
+                # clicking the trigger then CLOSES it), so try the row first,
+                # open only if needed, and re-open if a toggle closed it
+                res = poll(1)
+                if res != "clicked" and open_it():
+                    res = poll()
+                    if res != "clicked" and open_it():
+                        res = poll()
                 page.wait_for_timeout(500)
                 notes.append(f"{what} {item.get('label') or item['item']}"
                              + ("" if res == "clicked"
@@ -381,23 +464,32 @@ DEFAULT_GENERATING = ('[aria-label*="Stop" i], [title*="Stop" i], '
                       '[data-testid*="stop" i], [class*="stop-generat" i]')
 
 _GENERIC_SEND_JS = """() => {
-  const ta = document.querySelector(%s);
+  const list = [...document.querySelectorAll(%s)];
+  const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0] || null;
   let scope = document;
   if (ta) scope = ta.closest('form') || (ta.parentElement && ta.parentElement
       .parentElement && ta.parentElement.parentElement.parentElement) || document;
   const cands = [...scope.querySelectorAll('button,[role=button]')].filter(
       b => !b.disabled && b.getAttribute('aria-disabled') !== 'true');
-  const word = /send|submit|ask|generate/i;
-  let b = cands.find(x => word.test([x.getAttribute('aria-label'),
-      x.getAttribute('title'), x.getAttribute('data-testid'), x.id,
-      x.innerText].join(' ')));
+  // a WHOLE word of the accessible name: "Ask" must not match "Task",
+  // "stop" must not match "Deep research"; ChatGPT's composer button is
+  // named only by its class, so a type=submit inside the composer counts
+  const word = w => new RegExp('\\\\b(' + w + ')\\\\b', 'i');
+  const att = x => [x.getAttribute('aria-label'), x.getAttribute('title'),
+      x.getAttribute('data-testid'), x.id, (x.innerText || '').trim()];
+  const send = word('send|submit|ask|generate');
+  const no = word('stop|continue|up arrow|model|deep|research');
+  let b = cands.find(x => att(x).some(v => v && send.test(v) && !no.test(v)));
+  if (!b && ta && ta.closest('form'))
+    b = [...ta.closest('form').querySelectorAll('button[type=submit]')]
+        .find(x => !x.disabled && !att(x).some(v => v && no.test(v)));
   if (!b) b = cands[cands.length - 1];
   if (!b) return false;
   b.click(); return true; }"""
 
 
 def site_from_def(d: dict) -> Site:
-    box = d.get("box") or "textarea"
+    box = d.get("box") or ("textarea, [contenteditable=true], [role=textbox]")
     sel_stop = d.get("generating") or DEFAULT_GENERATING
     sent = d.get("sent_part") or ""
     login = tuple(x.strip() for x in str(d.get("login_part") or "").split(",")
@@ -473,7 +565,7 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
                     continue
                 seen.add(iid)
                 row = {"id": iid, "label": label}
-                for f in ("open", "item", "text"):
+                for f in ("open", "item", "text", "current"):
                     if str(it.get(f) or "").strip():
                         row[f] = str(it[f]).strip()
                 res.append(row)
@@ -542,7 +634,9 @@ def load_custom_sites(conn) -> list[str]:
 CONTINUE_LABELS = ("continue generating", "continue", "weiter")
 
 _BOT_JS = """() => { const t=(document.body.innerText||'').toLowerCase();
-  return /verify (that )?you are (a )?human|are you a robot|complete the captcha|security check|checking your browser/.test(t)
+  const ti=(document.title||'').toLowerCase();
+  return /verify (that )?you are (a )?human|are you a robot|complete the captcha|security check|checking your browser|performing security verification|verifies you are not a human|verifies you are not a bot/.test(t)
+         || /just a moment|verify you are human|pardon our interruption/.test(ti)
          || !!document.querySelector('iframe[src*=captcha],iframe[src*=turnstile],#cf-challenge-running'); }"""
 
 # Words of a "model is busy" banner. Matched only in short elements OUTSIDE the
@@ -593,9 +687,18 @@ _PEAK_JS = """(args) => {
   return null; }"""
 
 _PASTE_JS = """(args) => {
-  const ta=document.querySelector(args.box); if(!ta) return -1;
-  const set=Object.getOwnPropertyDescriptor(
-    HTMLTextAreaElement.prototype,'value').set;
+  const list = [...document.querySelectorAll(args.box)];
+  const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0];
+  if (!ta) return -1;
+  if (ta.isContentEditable) {                 // Claude's composer et al.
+    ta.focus();
+    try { const sel=window.getSelection(), r=document.createRange();
+          r.selectNodeContents(ta); sel.removeAllRanges(); sel.addRange(r);
+          document.execCommand('insertText', false, args.text); }
+    catch (e) { ta.textContent = args.text; }
+    return (ta.innerText||ta.textContent||'').replace(/\\u200b/g,'').length; }
+  const proto = ta.tagName === 'INPUT' ? HTMLInputElement : HTMLTextAreaElement;
+  const set=Object.getOwnPropertyDescriptor(proto.prototype,'value').set;
   set.call(ta,args.text); ta.dispatchEvent(new Event('input',{bubbles:true}));
   ta.focus(); return ta.value.length; }"""
 
@@ -631,8 +734,11 @@ _CAPTURE_JS = """() => {
 _CAP_RESET_JS = "() => { window.__wr_cap = window.__wr_cap || []; window.__wr_cap.length = 0; }"
 _CAP_GET_JS = "() => (window.__wr_cap || []).map(r => ({url: r.url, done: r.done, text: r.chunks.join('')}))"
 
-_TA_LEN_JS = """(sel) => { const t=document.querySelector(sel);
-  return t ? t.value.length : -1; }"""
+_TA_LEN_JS = """(sel) => { const list=[...document.querySelectorAll(sel)];
+  const t=list.find(e => e.getBoundingClientRect().width > 0) || list[0];
+  if(!t) return -1;
+  if (t.isContentEditable) return (t.textContent||'').length;
+  return (t.value || '').length; }"""
 _MSG_COUNT_JS = "() => document.querySelectorAll('.ds-message').length"
 _PAGE_TAIL_JS = "() => (document.body.innerText||'').trim().slice(-300)"
 
@@ -899,6 +1005,18 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
                 clean_reply(last_text))
 
 
+# the prompt box must be VISIBLE: pages carry hidden off-screen textareas,
+# and scoping the send/paste to one of those is how "no send button" happened
+_BOX_THERE_JS = """(s) => {
+  const q = document.querySelector(s);
+  if (!q) return false;
+  const r = q.getBoundingClientRect();
+  if (r.width > 0 || r.height > 0) return true;
+  return [...document.querySelectorAll(s)].some(
+      e => { const b = e.getBoundingClientRect();
+             return b.width > 0 || b.height > 0; }); }"""
+
+
 def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
     t0 = clock()
     while True:
@@ -910,7 +1028,7 @@ def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
             raise NeedsSignIn(
                 f"{site.name} needs you to sign in: run "
                 f"`python -m whisperradar.webchat login {site.key}`")
-        if page.evaluate("(s)=>!!document.querySelector(s)", site.box):
+        if page.evaluate(_BOX_THERE_JS, site.box):
             return
         if clock() - t0 > limit:
             raise NeedsSignIn(
@@ -1056,14 +1174,113 @@ def start_chrome(key: str, profile_root, wait: float = 20.0) -> bool:
     if os.name == "nt":
         flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
                  | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-    subprocess.Popen(args, creationflags=flags, close_fds=True,
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(args, creationflags=flags, close_fds=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     t0 = time.monotonic()
     while time.monotonic() - t0 < wait:
         if cdp_alive(key):
             return True
+        if proc.poll() is not None:
+            # the process we launched exited: a Chrome already uses this
+            # profile and swallowed our request (forwarding) - a debugging
+            # port can never come up while those windows stay open
+            return False
         time.sleep(0.5)
     return False
+
+
+def profile_busy(profile) -> bool:
+    """A browser process running with this --user-data-dir? It locks the
+    profile: a new launch would forward to it (nothing happens) or make a
+    second stray window - never a clean start."""
+    if os.name != "nt":
+        lock = Path(profile) / "SingletonLock"
+        return lock.exists()
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process -Filter "
+             "\"Name='chrome.exe' or Name='msedge.exe'\" | "
+             "ForEach-Object CommandLine"],
+            capture_output=True, text=True, timeout=12).stdout or ""
+    except Exception:  # noqa: BLE001 - best effort
+        return False
+    want = str(profile).lower().strip('"')
+    return any(want in line.lower() for line in out.splitlines()
+               if line.strip())
+
+
+def launch_persistent(pw, site: Site, profile_root, headless: bool = False,
+                      channel: str | None = None):
+    """The app's own persistent browser for a site - the same window that
+    z.ai/DeepSeek run in and that ChatGPT/Claude accept (headed real Chrome
+    passes their bot checks; a debugging port is NOT needed)."""
+    profile = Path(profile_root) / site.key
+    profile.mkdir(parents=True, exist_ok=True)
+    if not cdp_alive(site.key) and profile_busy(profile):
+        raise WebChatError(
+            f"{site.name}: a browser window is still open on its sign-in "
+            f"profile. Close it (your sign-in is kept) and try again")
+    kw = {"headless": headless,
+          "viewport": {"width": 1100, "height": 900},
+          # Google refuses sign-in in a browser that announces
+          # itself as automated; drop those tells.
+          "ignore_default_args": ["--enable-automation"],
+          "args": ["--disable-blink-features=AutomationControlled"]}
+    # Prefer the real installed Chrome, then Edge, then Playwright's
+    # own Chromium (the first two pass Google's sign-in check).
+    last: Exception | None = None
+    for ch in ([channel] if channel else ["chrome", "msedge", None]):
+        if ch:
+            kw["channel"] = ch
+        else:
+            kw.pop("channel", None)
+        try:
+            return pw.chromium.launch_persistent_context(str(profile), **kw)
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            if channel:
+                raise
+    raise last or WebChatError("could not launch a browser")
+
+
+def open_sign_in_window(key: str, profile_root) -> None:
+    """Open the site in the very browser a run uses and hold it while you
+    sign in; close the window when done - the profile keeps the session."""
+    if key not in SITES:
+        raise WebChatError(f"Unknown chat site '{key}'")
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise WebChatError("Playwright is not installed") from exc
+    site = SITES[key]
+    if cdp_alive(key):
+        with sync_playwright() as pw:
+            browser = pw.chromium.connect_over_cdp(cdp_endpoint(key))
+            ctx = browser.contexts[0] if browser.contexts \
+                else browser.new_context()
+            for pg in ctx.pages:
+                if site.url.split("//")[-1].split("/")[0] in str(pg.url):
+                    pg.bring_to_front()
+                    return
+            pg = ctx.new_page()
+            pg.goto(site.url)
+            pg.bring_to_front()
+        return
+    with sync_playwright() as pw:
+        ctx = launch_persistent(pw, site, profile_root)
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        try:
+            page.goto(site.url)
+        except Exception:  # noqa: BLE001 - the window shows whatever loaded
+            pass
+        page.bring_to_front()
+        while ctx.pages:                 # hold the window while you sign in
+            time.sleep(0.5)
+        try:
+            ctx.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class WebChat:
@@ -1084,6 +1301,10 @@ class WebChat:
         self._attached: set = set()     # sites driven in the user's Chrome
         self.should_stop = None         # () -> bool, checked while waiting
         self._urls: dict = {}       # site -> URL of its current chat
+
+    def _launch(self, key: str):
+        return launch_persistent(self._pw, SITES[key], self.profile_root,
+                                 self.headless, self.channel)
 
     def __enter__(self):
         try:
@@ -1114,35 +1335,14 @@ class WebChat:
             raise WebChatError(f"Unknown chat site '{key}' "
                                f"(known: {', '.join(SITES)})")
         if key not in self._ctx and cdp_alive(key):
+            # a debugging Chrome (started with `login`, or a leftover that
+            # DID accept the port): drive that instead of opening a window
             browser = self._pw.chromium.connect_over_cdp(cdp_endpoint(key))
             self._ctx[key] = (browser.contexts[0] if browser.contexts
                               else browser.new_context())
             self._attached.add(key)
         if key not in self._ctx:
-            profile = self.profile_root / key
-            profile.mkdir(parents=True, exist_ok=True)
-            kw = {"headless": self.headless,
-                  "viewport": {"width": 1100, "height": 900},
-                  # Google refuses sign-in in a browser that announces
-                  # itself as automated; drop those tells.
-                  "ignore_default_args": ["--enable-automation"],
-                  "args": ["--disable-blink-features=AutomationControlled"]}
-            ctx = None
-            # Prefer the real installed Chrome, then Edge, then Playwright's
-            # own Chromium (the first two pass Google's sign-in check).
-            for ch in ([self.channel] if self.channel else ["chrome", "msedge", None]):
-                if ch:
-                    kw["channel"] = ch
-                else:
-                    kw.pop("channel", None)
-                try:
-                    ctx = self._pw.chromium.launch_persistent_context(
-                        str(profile), **kw)
-                    break
-                except Exception:
-                    if ch is None or self.channel:
-                        raise
-            self._ctx[key] = ctx
+            self._ctx[key] = self._launch(key)
         ctx = self._ctx[key]
         if key not in self._hooked:
             self._hooked.add(key)
@@ -1160,17 +1360,44 @@ class WebChat:
 
     def detect_models(self, key: str) -> dict:
         """Open the site and read its model picker: {open, current, items}.
-        `items` is empty when no model menu could be found."""
+        `items` is empty when no model menu could be found. Candidate buttons
+        are tried one by one from here, each on a clean page and with a REAL
+        Escape between them - a synthetic Escape does not reach React portals,
+        and one menu left open makes every later candidate click a no-op."""
         page, site = self._page(key), SITES[key]
-        page.goto(site.url)
-        _wait_for_box(page, site, time.monotonic)
-        page.wait_for_timeout(1500)
-        res = page.evaluate(_DETECT_MODELS_JS)
-        try:                                   # close the menu again
-            page.keyboard.press("Escape")
-        except Exception:  # noqa: BLE001
-            pass
-        return res if isinstance(res, dict) else {"items": []}
+        for attempt in range(3):               # headers fill their name late
+            page.goto(site.url)
+            _wait_for_box(page, site, time.monotonic)
+            page.wait_for_timeout(1500 + 2000 * attempt)
+            try:
+                listing = page.evaluate(_DETECT_MODELS_JS)
+            except Exception as exc:  # noqa: BLE001
+                return {"open": "", "current": "", "items": [],
+                        "error": f"{type(exc).__name__}: {exc}"[:160]}
+            cands = listing.get("cands") if isinstance(listing, dict) else []
+            for c in cands or []:
+                try:
+                    one = page.evaluate(_DETECT_ONE_JS,
+                                        {"open": c.get("open"),
+                                         "current": c.get("current")})
+                except Exception:  # noqa: BLE001
+                    one = {"items": []}
+                if one.get("items"):
+                    return {"open": c.get("open"), "current": c.get("current"),
+                            "items": one["items"]}
+                if one.get("moved"):           # a click that navigated: back
+                    page.goto(site.url)
+                    _wait_for_box(page, site, time.monotonic)
+                    page.wait_for_timeout(1200)
+                else:
+                    try:
+                        page.keyboard.press("Escape")   # the real dismiss
+                        page.wait_for_timeout(400)
+                    except Exception:  # noqa: BLE001
+                        pass
+            if cands:
+                break                          # candidates existed; no retry
+        return {"open": "", "current": "", "items": []}
 
     def adopt(self, key: str, url: str) -> None:
         """Continue an earlier chat: the next `new_chat=False` ask opens `url`."""
@@ -1256,19 +1483,79 @@ class WebChat:
         while time.monotonic() - t0 < wait:
             url = str(page.url or "")
             if (not any(p in url for p in site.login_url_part)
-                    and page.evaluate("(s)=>!!document.querySelector(s)",
-                                      site.box)):
+                    and page.evaluate(_BOX_THERE_JS, site.box)):
                 return True
             page.wait_for_timeout(1500)
         return False
 
+    def inspect(self, key: str) -> str:
+        """Open the site and report its prompt box, its model-like buttons and
+        what happens when each is clicked - so a site whose menu the auto
+        -detection misses can be understood from the real, signed-in page."""
+        page = self._page(key)
+        page.goto(SITES[key].url)
+        _wait_for_box(page, SITES[key], time.monotonic, limit=20)
+        info = page.evaluate(_INSPECT_JS)
+        out = [f"url: {page.url}",
+               f"box: {info.get('box')} | reply el: {info.get('reply')} "
+               f"| buttons: {info.get('count')}"]
+        for b in info.get("cands") or []:
+            out.append(f"  [{b['tag']}] text={b['text']!r} "
+                       f"popup={b['popup']!r} role={b['role']!r} "
+                       f"testid={b['testid']!r} label={b['aria']!r} "
+                       f"in={b['in']!r}")
+        if info.get("where"):
+            out.append("  where the model-named buttons live:")
+            for w in info["where"]:
+                out.append(f"    {w['text']!r}: form={w['inForm']} "
+                           f"dialog={w['inDialog']} header={w['inHeader']}")
+        return "\n".join(out)
+
+
+_INSPECT_JS = r"""() => {
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
+  const btns = [...document.querySelectorAll(
+      'button,[role=button],[role=combobox],[aria-haspopup]')].filter(vis);
+  const modelish = /model|gpt|claude|gemini|glm|grok|llama|qwen|mistral|flash|\bpro\b|sonnet|opus|haiku|auto|thinking|instant|deepseek|\bo[134]\b/i;
+  const label = b => ((b.innerText||'') + ' ' + (b.getAttribute('aria-label')
+      || '') + ' ' + (b.getAttribute('data-testid') || '') + ' ' +
+      (b.getAttribute('title') || ''));
+  const pick = btns.filter(b => {
+      const t = (b.innerText||'').trim();
+      const h = (b.getAttribute('aria-haspopup')||'').toLowerCase();
+      return (h === 'menu' || h === 'listbox' || h === 'true'
+              || b.getAttribute('role') === 'combobox'
+              || modelish.test(label(b)))
+          && t.length && t.length < 60; });
+  return {
+    box: !!document.querySelector(
+        "textarea,[contenteditable=true],[role=textbox]"),
+    reply: !!document.querySelector(
+        '[data-message-author-role=assistant],[class*=assistant],[class*=markdown]'),
+    count: btns.length,
+    cands: pick.slice(0, 24).map(b => ({
+      tag: b.tagName, text: (b.innerText||'').trim().split('\n')[0].slice(0,36),
+      popup: b.getAttribute('aria-haspopup'), role: b.getAttribute('role'),
+      testid: (b.getAttribute('data-testid')||'').slice(0,44),
+      aria: (b.getAttribute('aria-label')||'').slice(0,44),
+      in: (b.closest('nav,header,[class*=sidebar],[class*=left-panel]')
+           ? 'chrome' : 'page') })),
+    // where each picker lives: the composer (form), the header bar, a dialog
+    where: btns.filter(b => modelish.test(label(b))).slice(0, 12).map(b => ({
+      text: (b.innerText||'').trim().split('\n')[0].slice(0,36),
+      inForm: !!b.closest('form'),
+      inDialog: !!b.closest('[role=dialog],[aria-modal=true]'),
+      inHeader: !!b.closest('header,[class*=header],[class*=topbar]') }))
+  }; }"""
+
 
 def _main(argv: list[str]) -> int:
     from . import config
-    if len(argv) < 2 or argv[0] not in ("login", "ask"):
+    if len(argv) < 2 or argv[0] not in ("login", "ask", "inspect"):
         print("usage: python -m whisperradar.webchat login <site>\n"
-              "       python -m whisperradar.webchat ask <site> "
-              "\"prompt\"")
+              "       python -m whisperradar.webchat ask <site> \"prompt\"\n"
+              "       python -m whisperradar.webchat inspect <site>")
         return 2
     cfg = config.load_config()
     root = Path(cfg.db_path).parent / "webchat"
@@ -1286,13 +1573,26 @@ def _main(argv: list[str]) -> int:
         if argv[1] not in SITES:
             print("unknown site: " + argv[1])
             return 2
-        ok = start_chrome(argv[1], root)
-        print("Chrome is open for " + argv[1] + (
-            ". Sign in there (email, GitHub or Google all work), make sure "
-            "the chat box shows, and LEAVE THAT WINDOW OPEN. A run attaches "
-            "to it; you do not need to press anything here."
-            if ok else ", but it did not answer on its debugging port."))
-        return 0 if ok else 1
+        print("opening " + SITES[argv[1]].name + ": sign in in the window "
+              "and CLOSE it when done - the profile keeps your session.")
+        try:
+            open_sign_in_window(argv[1], root)
+        except WebChatError as exc:
+            print(exc)
+            return 1
+        print("done - the sign-in is kept for runs.")
+        return 0
+    if argv[0] == "inspect":
+        if argv[1] not in SITES:
+            print("unknown site: " + argv[1])
+            return 2
+        with WebChat(root) as chat:
+            try:
+                print(chat.inspect(argv[1]))
+            except Exception as exc:  # noqa: BLE001
+                print(type(exc).__name__ + ": " + str(exc)[:200])
+                return 1
+        return 0
     with WebChat(root) as chat:
         print(chat.ask(argv[1], " ".join(argv[2:]), log=print))
     return 0
