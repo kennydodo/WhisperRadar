@@ -1668,3 +1668,7 @@ a new reply (count up, generating, or text different from the text before the se
 
 ## Manual mode stops after reference images (TODO)
 - In manual mode, finishing the `refs` stage must NOT start the `images` stage; the person starts it. Auto Run (`run_pipeline`) keeps going from `refs` to `images`. Currently manual mode continues - to be fixed.
+
+## Production folders
+- Setting `productions_root` (Settings > Production folders location). A new production without its own working folder gets `<root>/<safe title>` (`studio.auto_work_dir`, `(2)`, `(3)` on clashes), created immediately. Applies to Studio "Create" and Auto Run's `producer`. Empty root = `data/studio/<id>`.
+- New-production form: "or new channel" - when no channel is picked, a typed name finds the channel (case-insensitive) or creates it and attaches the production.

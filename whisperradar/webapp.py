@@ -2360,6 +2360,7 @@ def create_app(cfg) -> Flask:
         source = (request.form.get("source_video_id") or "").strip() or None
         work_dir = (request.form.get("work_dir") or "").strip() or None
         own_channel = (request.form.get("own_channel_id") or "").strip() or None
+        new_channel = (request.form.get("channel_name") or "").strip()
         if work_dir:
             work_dir = str(Path(work_dir).expanduser().resolve())
         if not title:
@@ -2380,6 +2381,20 @@ def create_app(cfg) -> Flask:
                         f"That topic already has a production in this "
                         f"channel: #{taken['id']} {taken['title'][:60]} "
                         f"({db.SOURCE_USE_LABELS.get(taken['status'], taken['status'])})"))
+            if not work_dir:
+                try:
+                    work_dir = studio.auto_work_dir(cfg, conn, title)
+                except RuntimeError as exc:
+                    return redirect(f"/studio?error={quote(str(exc)[:150])}")
+            if not own_channel and new_channel:
+                # no channel picked: use the one with that name, or make it
+                oc = db.get_own_channel(conn, new_channel)
+                if not oc:
+                    db.create_own_channel(conn, new_channel,
+                                          genre=genre if genre != "general"
+                                          else None)
+                    oc = db.get_own_channel(conn, new_channel)
+                own_channel = str(oc["id"])
             pid = db.create_production(conn, title, genre, source, work_dir)
             row = db.get_video(conn, source) if source else None
             seeded = {"source": "", "bible": False, "style": False, "refs": 0}
@@ -2395,6 +2410,7 @@ def create_app(cfg) -> Flask:
                     seeded = studio.seed_production(cfg, conn, prod)
         finally:
             conn.close()
+        studio.prod_dir(cfg, pid)       # the folder exists from the start
         if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
             pdir = studio.prod_dir(cfg, pid)
             shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")

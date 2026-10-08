@@ -120,6 +120,40 @@ def prod_dir(cfg, pid: int) -> Path:
 
 MARKER = ".whisperradar-production"
 
+_BAD_NAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def safe_folder_name(title: str, limit: int = 80) -> str:
+    """A title as a Windows-safe folder name."""
+    name = _BAD_NAME_CHARS.sub(" ", title or "")
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    return (name[:limit].strip(" .") or "production")
+
+
+def auto_work_dir(cfg, conn, title: str) -> str | None:
+    """<productions_root>/<title> for a new production, or None when no
+    location is set. A name already taken by something that is not a
+    WhisperRadar production folder gets " (2)", " (3)", ... appended."""
+    from . import settings
+
+    root = str(settings.load(conn).get("productions_root") or "").strip()
+    if not root:
+        return None
+    base = Path(root).expanduser()
+    name = safe_folder_name(title)
+    for n in range(1, 200):
+        cand = base / (name if n == 1 else f"{name} ({n})")
+        if not cand.exists() or (not any(cand.iterdir())
+                                 and not _is_claimed(conn, cand)):
+            return str(validate_work_dir(cfg, cand))
+    raise RuntimeError(f"No free folder name for '{name}' in {base}")
+
+
+def _is_claimed(conn, path: Path) -> bool:
+    row = conn.execute("SELECT 1 FROM productions WHERE work_dir = ?",
+                       (str(path.resolve()),)).fetchone()
+    return bool(row)
+
 
 def _write_marker(d: Path) -> None:
     try:

@@ -88,6 +88,14 @@ SPEC: list[dict] = [
                 "production's own choice both override this.",
     },
     {
+        "key": "productions_root", "type": "str", "default": "",
+        "label": "Production folders location",
+        "help": "One folder for all productions. Each new production gets "
+                "its own sub-folder here, named after its title, created "
+                "automatically. Empty = data\\studio\\<id>. A production "
+                "created with its own working folder keeps that one.",
+    },
+    {
         "key": "ai33_api_key", "type": "str", "default": "",
         "label": "OpenSpeaker (ai33.pro) API key",
         "help": "Narration key used by the audio stage's AI33 TTS hook and the "
@@ -527,6 +535,7 @@ SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 GROUPS: list[tuple[str, list[str]]] = [
     ("LLM", ["llm_default", "producer_llm_provider", "llm_fallback_provider",
              "ai33_api_key", "ai33_base_url"]),
+    ("Production folders", ["productions_root"]),
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",

@@ -97,7 +97,7 @@
 <div class="wrap">
   <h1>Studio</h1>
   <p class="sub">turn competitor research into original videos - every stage is yours to run or redo</p>
-  <div class="muted" style="font-size:12px; margin:-10px 0 14px">Productions live in their own working folder (script, style, audio, srt, images, shotlist.json, final render) - leave it empty on create to use <span class="mono">data\studio\&lt;id&gt;</span>.</div>
+  <div class="muted" style="font-size:12px; margin:-10px 0 14px">Productions live in their own working folder (script, style, audio, srt, images, shotlist.json, final render) - leave it empty to use the <b>Production folders location</b> from Settings (one sub-folder per title), or <span class="mono">data\studio\&lt;id&gt;</span> if none is set.</div>
 
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
@@ -158,6 +158,11 @@
           <option value="{{ oc['id'] }}">{{ oc['name'] }}</option>
           {% endfor %}
         </select>
+      </div>
+      <div>
+        <label>or new channel</label>
+        <input type="text" name="channel_name" placeholder="created if missing" style="width:150px"
+               title="Used when no channel is picked: finds the channel with this name or creates it, and adds the production to it">
       </div>
       {% endif %}
       <div>

@@ -312,8 +312,14 @@ def run(cfg, log=None, job=None, stop_before: str | None = None,
             log(f"[produce] {oc['name']}: {choice['method']} pick -> "
                 f"'{title}' (from [{video['channel_name']}] {video['title'][:60]})"
                 + (f" - {choice['reason']}" if choice["reason"] else ""))
+            try:
+                work_dir = studio.auto_work_dir(cfg, conn, title)
+            except RuntimeError as exc:
+                log(f"[produce] no production folder under the set location "
+                    f"({exc}); using the default")
+                work_dir = None
             pid = db.create_production(conn, title, oc["genre"],
-                                       video["video_id"], None)
+                                       video["video_id"], work_dir)
             # llm_provider is NOT persisted here - see autorun._run_script's
             # comment. An implicit pin at creation time would outrank the
             # channel's producer_llm_provider / the global Default LLM
