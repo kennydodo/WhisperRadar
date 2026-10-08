@@ -1071,11 +1071,18 @@
         <li>Images: {% if steps.get("images") %}<span class="badge done">done</span> <span class="muted">{{ images|length }} file(s)</span>{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Preview / final video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if review_video %}<a href="{{ review_video_url }}">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>NLE export: {% if nle_projects %}{% for n in nle_projects %}{% if n.url %}<a href="{{ n.url }}">{{ n.label }}</a>{% elif n.zip_url %}<a href="{{ n.zip_url }}">{{ n.label }} (.zip)</a>{% else %}<span class="mono">{{ n.rel }}</span>{% endif %}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Publish kit: {% if kit_ready %}<span class="badge done">ready</span>{% else %}<span class="badge pending">missing</span>{% endif %} &middot; <a href="/studio/{{ prod['id'] }}/kit">open</a></li>
+        <li>Thumbnail: {% if thumb_count %}<span class="badge done">{{ thumb_count }} concept(s)</span>{% else %}<span class="badge pending">none yet</span>{% endif %} &middot; <a href="/studio/{{ prod['id'] }}/thumbnails">generate concepts</a></li>
       </ul>
       {% if not steps.get("merge") %}
       <div class="warn" style="margin:8px 0">The merge stage is not in the system yet. Build the preview + NLE export, or upload a final video, before approving.</div>
       {% endif %}
+      {% if not thumb_count %}
+      <div class="note" style="margin:8px 0">No thumbnail was generated for this production{% if not plan_exists %} (it was started before / without the packaging plan, which is what normally seeds one){% endif %}. Generate thumbnail concepts here &mdash; it runs in the web chat, like the other creative stages.</div>
+      {% endif %}
       <div class="actions">
+        <a class="btn" href="/studio/{{ prod['id'] }}/thumbnails" title="Design thumbnail concepts and their image prompts in the web chat">
+          {{ 'Open thumbnails' if thumb_count else 'Generate thumbnail concepts' }}</a>
         <form method="post" action="/studio/{{ prod['id'] }}/review/approve">
           <button type="submit" class="green">Approve &amp; mark ready to publish</button>
         </form>
