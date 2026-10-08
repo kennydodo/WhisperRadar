@@ -535,7 +535,6 @@ SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 GROUPS: list[tuple[str, list[str]]] = [
     ("LLM", ["llm_default", "producer_llm_provider", "llm_fallback_provider",
              "ai33_api_key", "ai33_base_url"]),
-    ("Production folders", ["productions_root"]),
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
@@ -565,7 +564,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "notify_on_success",
     ]),
     ("Service handling", ["services_autostart", "services_managed",
-                         "show_apply_all"]),
+                         "show_apply_all", "productions_root"]),
 ]
 
 
