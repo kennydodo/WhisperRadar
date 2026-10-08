@@ -105,7 +105,9 @@ class AutoPlanStepTests(ApiPlanTests):
         return logs, llm
 
     def test_runs_and_applies_the_title(self):
-        logs, _ = self.auto([json.dumps(good()), verdict(9)])
+        # auto-run plans through the SETTING bar (default 9.5), so a passing
+        # verdict must clear it - 9 would no longer be enough
+        logs, _ = self.auto([json.dumps(good()), verdict(9.6)])
         self.assertEqual(self._title(), "The coin jar secret 0")
         self.assertTrue(pp.load_plan(self.pdir)["applied"])
         self.assertTrue(any("applied" in m for m in logs))

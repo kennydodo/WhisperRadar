@@ -2213,7 +2213,8 @@ def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None) -> None:
         old_title = prod["title"] if prod else ""
         plan = packplan.run_plan_api(cfg, pid, writer, judge,
                                      log=lambda m: log(f"[auto-run] {m}"),
-                                     should_stop=cancel or (lambda: False))
+                                     should_stop=cancel or (lambda: False),
+                                     min_score=eff.get("plan_min_rating"))
         if plan.get("status") == "ready":
             packplan.apply_plan(cfg, pid)
             log(f"[auto-run] packaging plan applied - title: "

@@ -158,15 +158,13 @@
         </div>
       </details>
       {% endif %}
-      {% if channel_locked %}
-      <div style="flex:1; font-size:13px">
-        <span class="muted" style="font-size:12px">channel</span>
-        <b>{{ own_channel_name }}</b>
-        <span class="muted" style="font-size:12px">- you are working inside this channel. <a href="/studio">Leave the production</a> to switch.</span>
-      </div>
-      {% else %}
-      <details style="flex:1">
-        <summary class="muted" style="font-size:12px; cursor:pointer">change channel</summary>
+      <details style="flex:1" {{ 'open' if not channel_locked else '' }}>
+        <summary class="muted" style="font-size:12px; cursor:pointer">
+          {% if channel_locked %}change channel (currently {{ own_channel_name }})
+          {% else %}change channel{% endif %}</summary>
+        {% if channel_locked %}
+        <div class="muted" style="font-size:12px; margin-bottom:6px">You are working inside this channel. Reassigning changes which channel's defaults (style, bible, engine, render settings) drive the later stages - it does not move the production folder.</div>
+        {% endif %}
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/own-channel">
           <select name="own_channel_id" style="min-width:220px">
             <option value="">(none - legacy whisperradar channel)</option>
@@ -182,7 +180,6 @@
           {% endif %}
         </form>
       </details>
-      {% endif %}
       <details style="flex:1">
         <summary class="muted" style="font-size:12px; cursor:pointer">change folder</summary>
         <form class="inline" method="post" action="/studio/{{ prod['id'] }}/workdir"

@@ -175,6 +175,7 @@
       <td style="font-size:12px">{% for s in c.sample[:2] %}{{ s.title }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
       <td class="num"><form method="post" action="/channels/add" style="margin:0">
         <input type="hidden" name="url" value="{{ c.channel_id }}"><input type="hidden" name="name" value="{{ c.name }}">
+        <input type="hidden" name="return" value="/research?tab=channels">
         <input type="hidden" name="genre" value="{{ genres[0] if genres else 'general' }}">
         <button type="submit" title="Start watching this channel">Watch</button></form></td></tr>{% endfor %}
     </tbody></table></div>

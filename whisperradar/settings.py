@@ -283,6 +283,15 @@ SPEC: list[dict] = [
                 "regenerated with the judge's feedback.",
     },
     {
+        "key": "plan_min_rating", "type": "float", "default": 9.5,
+        "min": 1.0, "max": 10.0,
+        "label": "Packaging: minimum score",
+        "help": "The packaging plan, the publish kit and the thumbnail "
+                "concepts are each judged 1-10. A round only passes at or "
+                "above this score with nothing left to fix; below it the "
+                "writer revises. One bar for all three (was a fixed 8.0).",
+    },
+    {
         "key": "script_max_overlap", "type": "float", "default": 0.12,
         "min": 0.0, "max": 1.0,
         "label": "Script: target overlap",
@@ -542,7 +551,8 @@ GROUPS: list[tuple[str, list[str]]] = [
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script & shotlist", [
-        "script_min_rating", "script_max_overlap", "script_hard_overlap",
+        "script_min_rating", "plan_min_rating", "script_max_overlap",
+        "script_hard_overlap",
         "script_max_attempts", "script_judge_provider",
         "script_judge_temperature",
         "shotlist_min_alignment", "shotlist_max_attempts",
@@ -709,7 +719,9 @@ def for_production(conn, prod) -> dict:
                                   or glob["producer_llm_provider"] or None),
         # script quality gate (see the SPEC help text for the semantics)
         "script_min_rating": float(row_get(own, "script_min_rating",
-                                           glob["script_min_rating"])),
+                                            glob["script_min_rating"])),
+        # packaging plan / publish kit / thumbnail concepts share one bar
+        "plan_min_rating": float(glob["plan_min_rating"]),
         "script_max_overlap": float(row_get(own, "script_max_overlap",
                                             glob["script_max_overlap"])),
         "script_hard_overlap": float(glob["script_hard_overlap"]),

@@ -24,7 +24,20 @@ MAX_BYTES = 2_000_000          # YouTube's thumbnail limit is 2 MB
 MIN_CONCEPTS, MAX_CONCEPTS = 3, 5
 TEXT_MAX_WORDS = 4
 TEXT_MAX_CHARS = 28
-MIN_SCORE = 8.0
+MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
+
+
+def pass_mark(cfg) -> float:
+    """The configured packaging pass mark (Settings > Packaging)."""
+    try:
+        from . import db, settings
+        conn = db.connect(cfg.db_path)
+        try:
+            return float(settings.load(conn)["plan_min_rating"])
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - never fail a stage over the bar
+        return MIN_SCORE
 LAYOUTS = {
     "character_host": "the character and the host together",
     "character": "the character alone",
@@ -221,7 +234,8 @@ def _concepts_json(concepts: list[dict]) -> str:
                       ensure_ascii=False, indent=1)
 
 
-def judge_prompt(ctx: dict, concepts: list[dict], faults: list[str]) -> str:
+def judge_prompt(ctx: dict, concepts: list[dict], faults: list[str],
+                 min_score: float = MIN_SCORE) -> str:
     return f"""You are a strict YouTube thumbnail reviewer. Judge these thumbnail concepts for a video.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
@@ -239,7 +253,7 @@ Score 1-10 how likely the BEST of these is to win the click at phone size next t
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
-"pass" is true only when the score is {MIN_SCORE:g} or higher and nothing is left to fix."""
+"pass" is true only when the score is {min_score:g} or higher and nothing is left to fix."""
 
 
 def judge_followup(concepts: list[dict], faults: list[str]) -> str:
@@ -299,7 +313,8 @@ def run_concepts(cfg, pid: int, transport, writer: str = "zai",
                                log, new_chat=False, ready=ws._is_json_verdict)
             else:
                 raw = ws._send(transport, judge,
-                               lambda f: judge_prompt(ctx, concepts, faults),
+                               lambda f: judge_prompt(ctx, concepts, faults,
+                                                      min_score),
                                log, ready=ws._is_json_verdict)
             verdict = studio._parse_json_object(raw)
             if verdict:
@@ -348,7 +363,7 @@ def concepts_job(cfg, pid: int, writer: str, judge: str, log,
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
         run_concepts(cfg, pid, t, writer, judge, log=log,
-                     should_stop=should_stop)
+                     should_stop=should_stop, min_score=pass_mark(cfg))
 
 
 # ---- art -----------------------------------------------------------------------

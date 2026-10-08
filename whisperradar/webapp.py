@@ -841,7 +841,7 @@ def create_app(cfg) -> Flask:
                  "used": youtube_api.quota_used(cfg),
                  "left": youtube_api.quota_left(cfg),
                  "limit": youtube_api.DAILY_LIMIT},
-            discovered=_load_discovered(),
+            discovered=_discovered_unwatched(channels),
             f={"mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
                "per": per,
                "channel": channel_id, "genre": genre, "q": q,
@@ -868,6 +868,16 @@ def create_app(cfg) -> Flask:
             return json.loads(_discover_path().read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {"query": "", "channels": []}
+
+    def _discovered_unwatched(channels):
+        """The persisted discover results minus any channel already being
+        watched, so a row you just clicked "Watch" on disappears instead of
+        still offering it."""
+        disc = _load_discovered()
+        watched = {c["channel_id"] for c in channels}
+        disc["channels"] = [c for c in disc.get("channels", [])
+                            if c.get("channel_id") not in watched]
+        return disc
 
     def _research_back(tab, **kw):
         key, val = next(iter(kw.items()))
@@ -1049,12 +1059,24 @@ def create_app(cfg) -> Flask:
                 kind=kind,
                 genre=genre,
             )
-            return _back(request, msg="Channel added", base="/watched")
+            return _add_channel_back("Channel added")
         except Exception as exc:
-            return _back(request, error=f"Could not resolve channel: {exc}",
-                         base="/watched")
+            return _add_channel_back(
+                None, error=f"Could not resolve channel: {exc}")
         finally:
             conn.close()
+
+    def _add_channel_back(msg=None, error=None):
+        """Return to wherever the add form lives. The Watched page and the
+        Research discovered list both post here; the form's hidden `return`
+        field says where to go back to, so watching a discovered channel
+        stays on Research instead of jumping to /watched."""
+        ret = (request.form.get("return") or "").strip()
+        if ret.startswith("/") and not ret.startswith("//"):
+            sep = "&" if "?" in ret else "?"
+            note = "msg" if msg else "error"
+            return redirect(ret + sep + note + "=" + quote(msg or error or ""))
+        return _back(request, msg=msg, error=error, base="/watched")
 
     @app.post("/channels/backfill")
     def channels_backfill():
