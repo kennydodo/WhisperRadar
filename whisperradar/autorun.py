@@ -2234,6 +2234,49 @@ def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None) -> None:
             f"{str(exc)[:200]}")
 
 
+def _auto_thumbnails(cfg, pid: int, provider: str | None, log,
+                     cancel=None) -> None:
+    """Auto-run's thumbnail concepts, after the pipeline: design thumbnail
+    concepts and their image prompts with the API providers (no browser), so a
+    finished production is never left without a thumbnail. Skipped when
+    switched off or concepts already exist; NEVER fatal - a failure just means
+    the reviewer generates them from the Thumbnails page."""
+    from . import thumbnails
+    conn = _connect(cfg)
+    try:
+        if not settings.load(conn).get("autorun_thumbnails", True):
+            return
+    finally:
+        conn.close()
+    try:
+        pdir = studio.prod_dir(cfg, pid)
+        if thumbnails.load_thumbs(pdir).get("concepts"):
+            log("[auto-run] thumbnails: concepts exist - keeping them")
+            return
+        if not (pdir / "script.md").exists():
+            log("[auto-run] thumbnails: no script yet - skipping")
+            return
+        writer = _stage_provider(cfg, pid, "script", override=provider)
+        eff = _effective(cfg, pid)
+        judge = studio.judge_provider(cfg, writer, eff["script_judge_provider"])
+        data = thumbnails.run_concepts_api(
+            cfg, pid, writer, judge,
+            log=lambda m: log(f"[auto-run] {m}"),
+            should_stop=cancel or (lambda: False),
+            min_score=eff.get("plan_min_rating"))
+        conn = _connect(cfg)
+        try:
+            db.add_step(conn, pid, "merge", "auto",
+                        detail=f"thumbnails: {data.get('status')}, "
+                               f"{len(data.get('concepts', []))} concept(s), "
+                               f"score {data.get('score')}")
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - thumbnails must never stop a run
+        log(f"[auto-run] thumbnails skipped: {type(exc).__name__}: "
+            f"{str(exc)[:200]}")
+
+
 def run_pipeline(cfg, pid: int, job=None, log=None,
                  stop_before: str | None = None,
                  provider: str | None = None) -> str:
@@ -2341,6 +2384,9 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
         finally:
             conn.close()
         log(f"[auto-run] stage {i}/{total}: {stage} - done")
+    # the pipeline is done (not stopped/paused/failed - those returned early);
+    # give the finished production its thumbnail concepts before review
+    _auto_thumbnails(cfg, pid, provider, log, cancel_check)
     summary = (f"Auto-run complete: {ran} stage(s) executed, "
                f"{total - ran} skipped - ready for review")
     log(f"[auto-run] pipeline finished - {summary}")

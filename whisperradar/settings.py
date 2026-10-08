@@ -177,6 +177,16 @@ SPEC: list[dict] = [
                 "on with the original title.",
     },
     {
+        "key": "autorun_thumbnails", "type": "bool", "default": True,
+        "label": "Generate thumbnail concepts at the end (Auto Run)",
+        "help": "After the pipeline finishes, Auto Run designs the thumbnail "
+                "concepts and their image prompts with your API LLMs (no "
+                "browser), so a finished production is never left without a "
+                "thumbnail. Concepts that already exist are kept. If it fails "
+                "the run still completes - generate them from the Thumbnails "
+                "page instead.",
+    },
+    {
         "key": "resume_cooldown_minutes", "type": "int", "default": 60,
         "min": 5, "max": 1440,
         "label": "Resume cooldown (minutes)",
@@ -539,7 +549,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
-        "autorun_plan",
+        "autorun_plan", "autorun_thumbnails",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script & shotlist", [
