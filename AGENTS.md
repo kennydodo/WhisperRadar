@@ -1666,8 +1666,8 @@ a new reply (count up, generating, or text different from the text before the se
 - The judge's follow-up message states the software-measured length, window and overlap, and that outside-window fails the bar.
 - Best-of-attempts prefers in-window drafts before score.
 
-## Manual mode stops after reference images (TODO)
-- In manual mode, finishing the `refs` stage must NOT start the `images` stage; the person starts it. Auto Run (`run_pipeline`) keeps going from `refs` to `images`. Currently manual mode continues - to be fixed.
+## Manual mode stops after reference images (DONE 2026-10-08)
+- See "Manual refs stop before images" below.
 
 ## Production folders
 - Setting `productions_root` (Settings > Service handling > Production folders location). A new production without its own working folder gets `<root>/<safe title>` (`studio.auto_work_dir`, `(2)`, `(3)` on clashes), created immediately. Applies to Studio "Create" and Auto Run's `producer`. Empty root = `data/studio/<id>`.
@@ -1675,3 +1675,10 @@ a new reply (count up, generating, or text different from the text before the se
 
 ## Manual refs stop before images
 - The Studio references stage's "Run refs stage" button posts to `/studio/<pid>/refs/run`, which runs ONLY `refs` (`run_stage_and_advance`). It used to post to `/auto-run`, which ran refs and then carried on into image generation. Render images stays its own button. Auto Run (`run_pipeline`, `RUN_STAGES`) is unchanged and still goes refs -> images.
+
+## NEXT SESSION - bring ImgToVideo inside WhisperRadar as a script/module (asked 2026-10-08)
+- Ask: "convert ImgToVideo to a script and bring it inside WhisperRadar". Not started; scoped only.
+- What ImgToVideo is (`D:\Repos\ImgToVideo`, .NET solution `ImgToVideo.slnx`): deterministic tool turning a folder of illustrations + narration audio + SRT into a timed rough cut with restrained motion, plus a Premiere FCP7 timeline and CapCut export. Projects: Core (models, SRT parser, filename parser, scene inference, timing engine, motion engine, edit planner), Ffmpeg (preview/final render plan, runner, ffprobe), Premiere, CapCut, ImageGen, Cli (`render-final <folder> [--preview]`), App (WPF). 242 unit tests. Needs ffmpeg/ffprobe. Sound effects (pop_bubble default, "pop" alias, variants) and per-channel `brief_sfx` / `sound.default_pop` live in its options.
+- WhisperRadar today calls it as an external CLI from the merge stage (`studio.prepare_project_folder` writes `imgtovideo.json`; `merge_command`).
+- Decide first: (a) port only what the merge stage needs (timing + motion + ffmpeg filtergraph + sound effects) to a Python module `whisperradar/video_render.py`, keeping the CLI as fallback behind a setting; or (b) keep the C# engine and just bundle/auto-build the CLI. Port the 242 tests' key cases (frame-exact timing coverage, motion rects, crossfades, SFX placement) as Python tests before switching the default.
+- Premiere/CapCut exports and the WPF editor are likely out of scope for the first cut.
