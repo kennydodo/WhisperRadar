@@ -1260,10 +1260,60 @@ def create_app(cfg) -> Flask:
             f"A browser window is opening for {webchat.SITES[key].name}: "
             "sign in there and leave that window open"))
 
+    def _detect_models_and_save(key, chat, log):
+        """Read the model menu of a site and keep it in the site's saved
+        definition. Returns the model labels found (empty = none found)."""
+        try:
+            res = chat.detect_models(key)
+        except Exception as exc:  # noqa: BLE001 - reported, never fatal
+            log(f"could not read the model menu: {exc}"[:200])
+            return []
+        items = [str(x) for x in res.get("items") or [] if str(x).strip()]
+        if not items:
+            log("no model menu found on that page - the site's own model "
+                "will be used")
+            return []
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            saved = json.loads(db.get_setting(conn, "webchat_sites") or "[]")
+            for d in saved:
+                if d.get("key") == key:
+                    d["models"] = [{"label": t, "item": t,
+                                    "open": res.get("open") or ""}
+                                   for t in items]
+            db.set_setting(conn, "webchat_sites", json.dumps(saved))
+            webchat.load_custom_sites(conn)
+        finally:
+            conn.close()
+        log(f"found {len(items)} model(s): " + ", ".join(items)[:300]
+            + (f" (now: {res.get('current')})" if res.get("current") else ""))
+        return items
+
+    @app.post("/settings/webchat-sites/<key>/models")
+    def settings_webchat_site_models(key):
+        """Open the site and read its model list automatically."""
+        if key not in webchat.SITES or key in webchat.BUILTIN_KEYS:
+            return redirect("/settings?tab=Web+chat+LLMs&error=Unknown+site")
+        if sjob.running:
+            return redirect("/settings?tab=Web+chat+LLMs&error=" + quote(
+                "A job is already running"))
+        name = webchat.SITES[key].name
+
+        def worker():
+            sjob.log.append(f"opening {name} to read its models - sign in "
+                            f"first if it asks")
+            with webstages.web_transport(cfg, sjob.log.append) as transport:
+                _detect_models_and_save(key, transport.chat, sjob.log.append)
+
+        sjob.start(worker, f"finding models ({name})")
+        return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(
+            f"Reading the models of {name} - reload this page in a moment"))
+
     @app.post("/settings/webchat-sites/<key>/test")
     def settings_webchat_site_test(key):
-        """Open the site, apply its model / level / switches and ask it for
-        one word; the job log says which step worked."""
+        """Open the site, ask it for one word, and read its models if they are
+        not known yet; the job log says which step worked."""
         if key not in webchat.SITES:
             return redirect("/settings?tab=Web+chat+LLMs&error=Unknown+site")
         if sjob.running:
@@ -1271,19 +1321,26 @@ def create_app(cfg) -> Flask:
                 "A job is already running"))
         options = _chat_options(request.form)
         _job = sjob._real()
+        site = webchat.SITES[key]
+        known = bool(webchat.custom_sites_ui() and any(
+            u["key"] == key and u.get("models")
+            for u in webchat.custom_sites_ui()))
 
         def worker():
             with webstages.web_transport(cfg, sjob.log.append,
                                          options) as transport:
                 transport.set_stop(lambda: _job.cancel)
                 reply = transport.ask(key, "Reply with the single word OK.")
-                sjob.log.append(f"{webchat.SITES[key].name} answered: "
+                sjob.log.append(f"{site.name} answered: "
                                 f"{' '.join(str(reply).split())[:200]}")
+                if not known and key not in webchat.BUILTIN_KEYS:
+                    _detect_models_and_save(key, transport.chat,
+                                            sjob.log.append)
 
-        sjob.start(worker, f"web chat test ({webchat.SITES[key].name})")
+        sjob.start(worker, f"web chat test ({site.name})")
         return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(
-            "Test started - a browser window opens (sign in first with: "
-            f"python -m whisperradar.webchat login {key})"))
+            "Test started - a browser window opens (sign in first if it "
+            "asks)"))
 
     @app.get("/settings")
     def settings_page():

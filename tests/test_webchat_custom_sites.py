@@ -96,6 +96,15 @@ class DefinitionTests(Base):
         self.assertIn("Small", msg)
         self.assertIn("Web search off", msg)
 
+    def test_no_model_asked_leaves_the_site_alone(self):
+        webchat.set_custom_sites([SITE])
+        page = FakePage()
+        webchat.SITES["my-chat"].prepare(page, model=None, level=None,
+                                         toggles={})
+        self.assertFalse([a for a in page.calls
+                          if isinstance(a, str)
+                          or (isinstance(a, dict) and "open" in a)])
+
     def test_unfindable_picker_is_reported_not_fatal(self):
         webchat.set_custom_sites([SITE])
 
@@ -196,6 +205,50 @@ class AppTests(Base):
             "model": "small", "level": "high",
             "toggles": {"deepthink": True, "web-search": False}})
         self.assertIn("zai", opts)
+
+    def test_find_models_reads_and_saves_the_menu(self):
+        import contextlib
+        import time
+        from unittest import mock
+        from whisperradar import webstages
+        self.save([{"name": "Fresh", "url": "https://fresh.example/"}])
+
+        class Chat:
+            def detect_models(self, key):
+                return {"open": "#pick", "current": "Auto",
+                        "items": ["Auto", "Think harder", "Fast"]}
+
+        @contextlib.contextmanager
+        def fake_transport(cfg, log, options=None):
+            yield mock.Mock(chat=Chat())
+
+        with mock.patch.object(webchat, "start_chrome"), \
+             mock.patch.object(webstages, "web_transport", fake_transport):
+            r = self.client.post("/settings/webchat-sites/fresh/models")
+            time.sleep(0.6)
+        self.assertIn("msg=", r.headers["Location"])
+        ui = {u["key"]: u for u in webchat.custom_sites_ui()}
+        self.assertEqual([m["label"] for m in ui["fresh"]["models"]],
+                         ["Auto", "Think harder", "Fast"])
+        self.assertEqual(ui["fresh"]["models"][0]["open"], "#pick")
+        page = self.client.get("/settings").get_data(as_text=True)
+        self.assertIn("Think harder", page)
+        # and the run forms offer them
+        conn = db.connect(self.cfg.db_path)
+        pid = db.create_production(conn, "T")
+        conn.close()
+        html = self.client.get(f"/studio/{pid}/plan").get_data(as_text=True)
+        self.assertIn("Think harder", html)
+        self.assertIn("zai_model", html)
+
+    def test_run_forms_show_only_the_chosen_sites_controls(self):
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        pid = db.create_production(conn, "T")
+        conn.close()
+        html = self.client.get(f"/studio/{pid}/plan").get_data(as_text=True)
+        self.assertIn("BUILTIN", html)
+        self.assertIn("sync()", html)
 
     def test_unknown_site_test_is_refused(self):
         r = self.client.post("/settings/webchat-sites/nope/test")

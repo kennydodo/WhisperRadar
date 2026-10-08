@@ -1,10 +1,12 @@
-{# Adds the chat sites you defined (Settings > Web chat LLMs) to every Writer /
-   Judge dropdown on the page, with their own model / level / switch controls.
-   z.ai and DeepSeek keep their built-in controls. #}
+{# Run forms: the model / thinking / switch controls follow the Writer and
+   Judge you pick - only the chosen sites' controls show. Sites you added in
+   Settings > Web chat LLMs are added to the dropdowns, with the models the app
+   found on their page. #}
 <script>
 (function () {
   var SITES = {{ webchat_custom_sites()|tojson }};
-  if (!SITES.length) return;
+  var BUILTIN = {zai: ['zai_model', 'zai_thinking'],
+                 deepseek: ['deepseek_deepthink', 'deepseek_search']};
   function sel(name, items, title) {
     var s = document.createElement('select'); s.name = name; s.title = title || '';
     items.forEach(function (it) { s.add(new Option(it[1], it[0])); });
@@ -21,31 +23,55 @@
       }
     });
   });
-  var done = new Set();
+  var forms = new Set();
   document.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (s) {
     var form = s.closest('form');
-    if (!form || done.has(form)) return;
-    done.add(form);
+    if (!form || forms.has(form)) return;
+    forms.add(form);
     var row = document.createElement('div');
     row.style.cssText = 'flex-basis:100%;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
     SITES.forEach(function (site) {
+      var grp = document.createElement('span'); grp.dataset.site = site.key;
+      grp.style.cssText = 'display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap';
       var tag = document.createElement('span'); tag.className = 'muted';
-      tag.style.fontSize = '12px'; tag.textContent = site.name + ':'; row.appendChild(tag);
+      tag.style.fontSize = '12px'; tag.textContent = site.name + ':'; grp.appendChild(tag);
       if ((site.models || []).length) {
-        row.appendChild(field('Model', sel('wc_' + site.key + '_model',
-          site.models.map(function (m) { return [m.id, m.label]; }), site.name + ' model for this run')));
+        grp.appendChild(field('Model', sel('wc_' + site.key + '_model',
+          [['', "as the site has it"]].concat(site.models.map(function (m) { return [m.id, m.label]; })),
+          site.name + ' model for this run')));
       }
       if ((site.levels || []).length) {
-        row.appendChild(field(site.level_label || 'Level', sel('wc_' + site.key + '_level',
-          site.levels.map(function (m) { return [m.id, m.label]; }), site.name + ' level for this run')));
+        grp.appendChild(field(site.level_label || 'Level', sel('wc_' + site.key + '_level',
+          [['', "as the site has it"]].concat(site.levels.map(function (m) { return [m.id, m.label]; })),
+          site.name + ' level for this run')));
       }
       (site.toggles || []).forEach(function (t) {
-        row.appendChild(field(t.label, sel('wc_' + site.key + '_' + t.id,
+        grp.appendChild(field(t.label, sel('wc_' + site.key + '_' + t.id,
           [['off', 'Off'], ['on', 'On']], site.name + ' ' + t.label)));
       });
+      if (grp.children.length > 1) row.appendChild(grp);
     });
-    var btn = form.querySelector('button[type=submit]');
-    if (btn) form.insertBefore(row, btn); else form.appendChild(row);
+    if (row.children.length) {
+      var btn = form.querySelector('button[type=submit]');
+      if (btn) form.insertBefore(row, btn); else form.appendChild(row);
+    }
+    function sync() {
+      var chosen = {};
+      form.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (x) { chosen[x.value] = 1; });
+      Object.keys(BUILTIN).forEach(function (key) {
+        BUILTIN[key].forEach(function (n) {
+          var el = form.querySelector('select[name=' + n + ']');
+          if (el) (el.closest('label') || el).style.display = chosen[key] ? '' : 'none';
+        });
+      });
+      form.querySelectorAll('[data-site]').forEach(function (g) {
+        g.style.display = chosen[g.dataset.site] ? 'inline-flex' : 'none';
+      });
+    }
+    form.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (x) {
+      x.addEventListener('change', sync);
+    });
+    sync();
   });
 })();
 </script>

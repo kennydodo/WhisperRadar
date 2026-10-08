@@ -231,14 +231,71 @@ _CLICK_TEXT_JS = """(a) => {
     if (!o) return 'missing-picker'; o.click(); }
   return 'opened'; }"""
 
-_PICK_ITEM_JS = """(text) => {
+_PICK_ITEM_JS = r"""(text) => {
   const want = text.trim().toLowerCase();
-  const els = [...document.querySelectorAll(
-      'div,button,li,span,a,[role=menuitem],[role=option]')]
-    .filter(e => e.children.length === 0 || e.getAttribute('role'))
-    .filter(e => (e.innerText || '').trim().toLowerCase() === want);
+  const first = e => (e.innerText || '').trim().split('\n')[0].trim()
+                       .toLowerCase();
+  const menu = [...document.querySelectorAll(
+      '[role=menuitem],[role=option],[role=menuitemradio]')]
+    .filter(e => e.offsetParent && first(e) === want);
+  const els = menu.length ? menu : [...document.querySelectorAll(
+      'div,button,li,span,a')].filter(e => e.offsetParent
+        && e.children.length === 0 && first(e) === want);
   if (!els.length) return 'missing';
   els[els.length - 1].click(); return 'clicked'; }"""
+
+# Finds the model picker of a chat page: the button that opens a menu or list
+# of entries (model names). Returns its selector, its current label and the
+# entries, or no entries when none was found.
+_DETECT_MODELS_JS = r"""async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const esc = v => String(v).replace(/"/g, '\\"');
+  const path = el => {
+    if (el.id) return '#' + CSS.escape(el.id);
+    const t = el.getAttribute('data-testid');
+    if (t) return el.tagName.toLowerCase() + '[data-testid="' + esc(t) + '"]';
+    const a = el.getAttribute('aria-label');
+    if (a) return el.tagName.toLowerCase() + '[aria-label="' + esc(a) + '"]';
+    const parts = [];
+    while (el && el.nodeType === 1 && parts.length < 6) {
+      let i = 1, s = el;
+      while ((s = s.previousElementSibling)) if (s.tagName === el.tagName) i++;
+      parts.unshift(el.tagName.toLowerCase() + ':nth-of-type(' + i + ')');
+      el = el.parentElement;
+    }
+    return parts.join(' > ');
+  };
+  const modelish = /model|gpt|claude|gemini|glm|grok|llama|qwen|mistral|flash|\bpro\b|sonnet|opus|haiku|auto|thinking|instant|deepseek|\bo[134]\b/i;
+  const junk = /log ?out|sign ?out|settings|profile|account|help|upgrade|share|new chat|history/i;
+  const label = b => (b.innerText || '') + ' ' + (b.getAttribute('aria-label')
+      || '') + ' ' + (b.getAttribute('data-testid') || '');
+  const cands = [...document.querySelectorAll(
+      'button,[role=button],[role=combobox]')].filter(b => {
+    const h = b.getAttribute('aria-haspopup');
+    const t = (b.innerText || '').trim();
+    return b.offsetParent && t.length > 0 && t.length < 40
+      && (h === 'menu' || h === 'listbox' || h === 'true'
+          || b.getAttribute('role') === 'combobox' || modelish.test(label(b)));
+  });
+  cands.sort((a, b) => modelish.test(label(b)) - modelish.test(label(a)));
+  for (const b of cands.slice(0, 8)) {
+    b.click(); await sleep(800);
+    const items = [...document.querySelectorAll(
+        '[role=menuitem],[role=option],[role=menuitemradio]')]
+      .filter(e => e.offsetParent);
+    const labels = [...new Set(items.map(e =>
+        (e.innerText || '').trim().split('\n')[0].trim())
+        .filter(x => x && x.length < 60))];
+    if (labels.length >= 2 && !labels.some(l => junk.test(l))) {
+      return {open: path(b),
+              current: (b.innerText || '').trim().split('\n')[0],
+              items: labels};
+    }
+    document.dispatchEvent(new KeyboardEvent('keydown',
+        {key: 'Escape', bubbles: true}));
+    await sleep(250);
+  }
+  return {open: '', current: '', items: []}; }"""
 
 _TOGGLE_JS = """(a) => {
   const want = a.text.trim().toLowerCase();
@@ -260,10 +317,13 @@ _TOGGLE_JS = """(a) => {
 
 
 def _by_id(items, wanted):
+    """The entry the run asked for; nothing asked = leave the site as it is."""
+    if not wanted:
+        return None
     for it in items or []:
         if it.get("id") == wanted:
             return it
-    return (items or [None])[0]
+    return None
 
 
 def _generic_prepare(spec: dict):
@@ -1091,6 +1151,20 @@ class WebChat:
                 if host in str(pg.url):
                     return pg
         return ctx.pages[0] if ctx.pages else ctx.new_page()
+
+    def detect_models(self, key: str) -> dict:
+        """Open the site and read its model picker: {open, current, items}.
+        `items` is empty when no model menu could be found."""
+        page, site = self._page(key), SITES[key]
+        page.goto(site.url)
+        _wait_for_box(page, site, time.monotonic)
+        page.wait_for_timeout(1500)
+        res = page.evaluate(_DETECT_MODELS_JS)
+        try:                                   # close the menu again
+            page.keyboard.press("Escape")
+        except Exception:  # noqa: BLE001
+            pass
+        return res if isinstance(res, dict) else {"items": []}
 
     def adopt(self, key: str, url: str) -> None:
         """Continue an earlier chat: the next `new_chat=False` ask opens `url`."""
