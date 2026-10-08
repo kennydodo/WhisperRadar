@@ -1672,3 +1672,6 @@ a new reply (count up, generating, or text different from the text before the se
 ## Production folders
 - Setting `productions_root` (Settings > Service handling > Production folders location). A new production without its own working folder gets `<root>/<safe title>` (`studio.auto_work_dir`, `(2)`, `(3)` on clashes), created immediately. Applies to Studio "Create" and Auto Run's `producer`. Empty root = `data/studio/<id>`.
 - New-production form: "or new channel" - when no channel is picked, a typed name finds the channel (case-insensitive) or creates it and attaches the production.
+
+## Manual refs stop before images
+- The Studio references stage's "Run refs stage" button posts to `/studio/<pid>/refs/run`, which runs ONLY `refs` (`run_stage_and_advance`). It used to post to `/auto-run`, which ran refs and then carried on into image generation. Render images stays its own button. Auto Run (`run_pipeline`, `RUN_STAGES`) is unchanged and still goes refs -> images.

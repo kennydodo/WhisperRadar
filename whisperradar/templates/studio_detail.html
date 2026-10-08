@@ -848,9 +848,8 @@
         {% endfor %}
       </table>
       <div class="actions" style="margin-top:10px">
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/auto-run"
-              onsubmit="return wrConfirmSubmit(this, 'Run the refs stage now? Supplied refs are left alone; refs with no file are generated from their prompts.')">
-          <input type="hidden" name="from_stage" value="refs">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/refs/run"
+              onsubmit="return wrConfirmSubmit(this, 'Run the refs stage now? Supplied refs are left alone; refs with no file are generated from their prompts. It stops there - image generation is started separately.')">
           <button type="submit" class="green" {{ 'disabled' if job.running else '' }}>
             Run refs stage
           </button>

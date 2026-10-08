@@ -3552,6 +3552,29 @@ def create_app(cfg) -> Flask:
                 "flow_project_url": flow_project_url,
                 "renderly_channel": renderly_channel}, engine
 
+    @app.post("/studio/<int:pid>/refs/run")
+    def studio_refs_run(pid):
+        """Manual: run ONLY the references stage. It moves the production on
+        to the images stage but never starts it - Render images is its own
+        button. (Auto Run is a different route and still chains the stages.)"""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        if not (pdir / "shotlist.json").exists():
+            return _studio_url(pid, error="Generate the shotlist first")
+        _job = sjob._real()
+
+        def worker():
+            autorun.raise_result(autorun.run_stage_and_advance(
+                cfg, pid, "refs", {
+                    "log": sjob.log.append,
+                    "cancel": (lambda _j=_job: _j.cancel)}))
+
+        sjob.start(worker, "reference images")
+        return _studio_url(pid, msg="Reference images started - run the "
+                                    "images stage yourself when they are "
+                                    "ready")
+
     @app.post("/studio/<int:pid>/images/render")
     def studio_images_render(pid):
         if sjob.running:
