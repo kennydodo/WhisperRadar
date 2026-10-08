@@ -7,6 +7,12 @@
   var SITES = {{ webchat_custom_sites()|tojson }};
   var BUILTIN = {zai: ['zai_model', 'zai_thinking'],
                  deepseek: ['deepseek_deepthink', 'deepseek_search']};
+  var BUILTIN_CTRLS = {
+    zai: [['Model', 'zai_model', [['flash', 'GLM-5.3-Flash'], ['5.3', 'GLM-5.3'], ['5.2', 'GLM-5.2']], 'z.ai model for this run'],
+          ['Deep Think', 'zai_thinking', [['Low', 'Low'], ['High', 'High'], ['Max', 'Max']], 'z.ai Deep Think level']],
+    deepseek: [['DeepThink', 'deepseek_deepthink', [['on', 'On'], ['off', 'Off']], "DeepSeek's DeepThink switch"],
+               ['Search', 'deepseek_search', [['off', 'Off'], ['on', 'On']], "DeepSeek's web Search switch"]]
+  };
   function sel(name, items, title) {
     var s = document.createElement('select'); s.name = name; s.title = title || '';
     items.forEach(function (it) { s.add(new Option(it[1], it[0])); });
@@ -51,9 +57,32 @@
       });
       if (grp.children.length > 1) row.appendChild(grp);
     });
+    // the built-ins' controls too: z.ai/DeepSeek only had their Model/Switch
+    // selects in some forms' static markup - every run form gets them, and
+    // each is shown only while that site is the chosen Writer or Judge
+    Object.keys(BUILTIN).forEach(function (key) {
+      var grp = document.createElement('span'); grp.dataset.site = key;
+      grp.style.cssText = 'display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap';
+      var tag = document.createElement('span'); tag.className = 'muted';
+      tag.style.fontSize = '12px';
+      tag.textContent = (key === 'zai' ? 'z.ai' : 'DeepSeek') + ':';
+      grp.appendChild(tag);
+      BUILTIN_CTRLS[key].forEach(function (c) {
+        if (!form.querySelector('select[name=' + c[1] + ']'))
+          grp.appendChild(field(c[0], sel(c[1], c[2], c[3])));
+      });
+      if (grp.children.length > 1) row.appendChild(grp);
+    });
     if (row.children.length) {
+      // insert before the submit button - but on plan/kit/research/thumbs the
+      // button sits inside a wrapper div, so walk up to the form's own child
+      // (insertBefore with a non-child threw and killed the whole setup)
       var btn = form.querySelector('button[type=submit]');
-      if (btn) form.insertBefore(row, btn); else form.appendChild(row);
+      var anchor = btn;
+      while (anchor && anchor.parentElement !== form)
+        anchor = anchor.parentElement;
+      if (anchor) form.insertBefore(row, anchor);
+      else form.appendChild(row);
     }
     function sync() {
       var chosen = {};
@@ -68,9 +97,40 @@
         g.style.display = chosen[g.dataset.site] ? 'inline-flex' : 'none';
       });
     }
+    // The run reloads (or redirects back to) this page, which would put the
+    // Writer/Judge selects on their first options - z.ai (GLM) and DeepSeek -
+    // and the LLMs you added back at the end, unselected. Remember this form's
+    // picks (by its action) and restore them after the options are re-added.
+    var KEY = 'wrwc:' + (form.getAttribute('action') || location.pathname);
+    var watched = function () {
+      return form.querySelectorAll('select[name=writer], select[name=judge], select[name^=wc_]');
+    };
+    function saveSel() {
+      try {
+        var o = {};
+        watched().forEach(function (x) { o[x.name] = x.value; });
+        localStorage.setItem(KEY, JSON.stringify(o));
+      } catch (e) {}
+    }
+    function restoreSel() {
+      try {
+        var o = JSON.parse(localStorage.getItem(KEY) || '{}');
+        Object.keys(o).forEach(function (n) {
+          var el = form.querySelector('select[name=' + CSS.escape(n) + ']');
+          if (el && [].some.call(el.options, function (op) { return op.value === o[n]; }))
+            el.value = o[n];
+        });
+      } catch (e) {}
+    }
+    restoreSel();
     form.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (x) {
       x.addEventListener('change', sync);
+      x.addEventListener('change', saveSel);
     });
+    form.querySelectorAll('select[name^=wc_]').forEach(function (x) {
+      x.addEventListener('change', saveSel);
+    });
+    form.addEventListener('submit', saveSel);
     sync();
   });
 })();

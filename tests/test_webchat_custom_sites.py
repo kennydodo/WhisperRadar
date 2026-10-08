@@ -60,7 +60,8 @@ class DefinitionTests(Base):
         self.assertEqual(problems, [])
         webchat.set_custom_sites(defs)
         site = webchat.SITES["plain"]
-        self.assertEqual(site.box, "textarea")
+        self.assertIn("textarea", site.box)
+        self.assertIn("contenteditable", site.box)
         self.assertIn("assistant", site.reply)
         self.assertIn("Stop", site.generating_js)
         self.assertIn("/chat", site.sent_js)       # start page = not started
@@ -127,7 +128,7 @@ class AppTests(Base):
 
     def tearDown(self):
         super().tearDown()
-        self.tmp.cleanup()
+        wr_tmp.cleanup(self.tmp)
 
     def save(self, sites):
         return self.client.post("/settings/webchat-sites",
@@ -136,19 +137,19 @@ class AppTests(Base):
     def test_saving_a_new_site_opens_its_sign_in_browser(self):
         from unittest import mock
         import time
-        with mock.patch.object(webchat, "start_chrome") as chrome:
+        with mock.patch.object(webchat, "open_sign_in_window") as win:
             r = self.save([{"name": "Fresh", "url": "https://fresh.example/"}])
             time.sleep(0.3)
             self.assertIn("browser%20window", r.headers["Location"])
-            chrome.assert_called_once()
-            self.assertEqual(chrome.call_args[0][0], "fresh")
-            chrome.reset_mock()
+            win.assert_called_once()
+            self.assertEqual(win.call_args[0][0], "fresh")
+            win.reset_mock()
             self.save([{"name": "Fresh", "url": "https://fresh.example/"}])
             time.sleep(0.3)
-            chrome.assert_not_called()          # only NEW sites open it
+            win.assert_not_called()              # only NEW sites open it
             self.client.post("/settings/webchat-sites/fresh/login")
             time.sleep(0.3)
-            chrome.assert_called_once()
+            win.assert_called_once()
 
     def test_save_persists_and_activates(self):
         r = self.save([SITE])

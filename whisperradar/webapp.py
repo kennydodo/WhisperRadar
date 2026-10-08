@@ -1203,15 +1203,15 @@ def create_app(cfg) -> Flask:
         return webchat.sanitize_sites(raw)[0]
 
     def _open_sign_in(keys):
-        """Open the sign-in browser of each site in the background (starting
-        Chrome can take several seconds)."""
+        """Open each site's sign-in window (the very browser a run uses) in
+        the background; it is held while you sign in and closed with it."""
         import threading
         root = Path(cfg.db_path).parent / "webchat"
 
         def run():
             for key in keys:
                 try:
-                    webchat.start_chrome(key, root)
+                    webchat.open_sign_in_window(key, root)
                 except Exception:  # noqa: BLE001 - shown by the Sign in button
                     logging.getLogger("whisperradar").warning(
                         "could not open the sign-in browser for %s", key,
@@ -1245,7 +1245,7 @@ def create_app(cfg) -> Flask:
         if new:
             msg += (" - a browser window is opening for "
                     + ", ".join(d["name"] for d in new)
-                    + ": sign in there and leave that window open")
+                    + ": sign in there and close it when you are done")
         if problems:
             return redirect("/settings?tab=Web+chat+LLMs&error=" + quote(
                 msg + " - skipped: " + "; ".join(problems)[:300]))
@@ -1258,7 +1258,7 @@ def create_app(cfg) -> Flask:
         _open_sign_in([key])
         return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(
             f"A browser window is opening for {webchat.SITES[key].name}: "
-            "sign in there and leave that window open"))
+            "sign in there and close it when you are done"))
 
     def _detect_models_and_save(key, chat, log):
         """Read the model menu of a site and keep it in the site's saved
@@ -1280,7 +1280,8 @@ def create_app(cfg) -> Flask:
             for d in saved:
                 if d.get("key") == key:
                     d["models"] = [{"label": t, "item": t,
-                                    "open": res.get("open") or ""}
+                                    "open": res.get("open") or "",
+                                    "current": res.get("current") or ""}
                                    for t in items]
             db.set_setting(conn, "webchat_sites", json.dumps(saved))
             webchat.load_custom_sites(conn)
