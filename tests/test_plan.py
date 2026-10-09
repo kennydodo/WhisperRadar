@@ -15,8 +15,10 @@ from whisperradar.webapp import create_app  # noqa: E402
 
 def good(**over):
     p = {"keyword": "coin jar",
-         "titles": [{"text": f"The coin jar secret {i}", "why": "x"}
-                    for i in range(10)],
+         "titles": [{"text": f"{w} coin jar secret {i}", "why": "x"}
+                    for i, w in enumerate(
+                        ["The", "Why", "How", "The", "Stop", "Your",
+                         "Nobody", "Every", "Before", "After"])],
          "title": "The coin jar secret 0",
          "promise": "You will know why the jar always fills up.",
          "hook": "Start with the jar overflowing.",
@@ -92,6 +94,52 @@ class PhrasingTests(unittest.TestCase):
     def test_prompts_ask_for_natural_phrasing(self):
         self.assertIn("reads like a real sentence", pp._RULES)
         self.assertIn("NEVER stuffed", pp._RULES)
+
+
+class VarietyTests(unittest.TestCase):
+    def titles(self, texts, persp=None):
+        return [{"text": t, "perspective": (persp[i] if persp else "")}
+                for i, t in enumerate(texts)]
+
+    def test_same_opening_more_than_twice_fails(self):
+        same = [f"Downsizing your stuff {w}" for w in
+                ("saves cash", "frees equity", "ends bills", "feels hard",
+                 "pays off", "beats saving", "builds wealth", "cuts costs",
+                 "is not decluttering", "works like a raise")]
+        faults = pp.local_faults(pp.parse_plan(good(
+            keyword="downsizing your stuff",
+            title="Downsizing your stuff saves cash",
+            titles=self.titles(same))))
+        self.assertTrue(any("start with" in f for f in faults))
+
+    def test_varied_openings_pass(self):
+        faults = pp.local_faults(pp.parse_plan(good()))
+        self.assertFalse([f for f in faults if "start with" in f])
+
+    def test_new_style_plan_needs_four_perspectives(self):
+        persp = ["clone", "clone", "hard truth", "hard truth", "list",
+                 "list", "clone", "list", "hard truth", "clone"]
+        plan = pp.parse_plan(good(
+            formula="[blunt truth] ([Why] X is the smartest move)",
+            titles=self.titles([f"{w} coin jar secret {i}" for i, w in
+                                enumerate("The Why How Inside Stop Your "
+                                          "Nobody Every Before After".split())],
+                               persp)))
+        plan["title"] = plan["titles"][0]["text"]
+        self.assertTrue(any("perspective" in f for f in pp.local_faults(plan)))
+        plan["titles"][5]["perspective"] = "i tried it"
+        plan["titles"][6]["perspective"] = "hidden cost"
+        self.assertFalse([f for f in pp.local_faults(plan)
+                          if "perspective" in f])
+
+    def test_reasons_are_cut_to_one_short_line(self):
+        plan = pp.parse_plan(good(titles=[{"text": "A coin jar", "why": "x" * 400}]))
+        self.assertLessEqual(len(plan["titles"][0]["why"]), pp.WHY_MAX)
+
+    def test_prompt_asks_for_formula_and_perspectives(self):
+        self.assertIn("FORMULA", pp._RULES)
+        self.assertIn("PERSPECTIVES", pp._RULES)
+        self.assertIn("does NOT have to be the first words", pp._RULES)
 
 
 class VettedTitleTests(unittest.TestCase):

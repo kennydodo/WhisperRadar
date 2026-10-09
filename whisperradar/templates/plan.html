@@ -121,8 +121,9 @@
   {% if plan.titles %}
   <div class="panel">
     <h2>Title options</h2>
+    {% if plan.formula %}<div class="muted" style="font-size:12px;margin:4px 0">Source title formula: {{ plan.formula }}</div>{% endif %}
     <ul class="titles">
-      {% for t in plan.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}
+      {% for t in plan.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.perspective %} &middot; <b>{{ t.perspective }}</b>{% endif %}{% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}
     </ul>
   </div>
   {% endif %}

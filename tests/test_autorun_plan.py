@@ -49,9 +49,9 @@ class ApiPlanTests(Base):
 
     def test_a_revision_carries_the_previous_attempt_and_verdict(self):
         plan, llm = self.run_api([json.dumps(good()), verdict(5),
-                                  json.dumps(good(title="The coin jar secret 1")),
+                                  json.dumps(good(title="Why coin jar secret 1")),
                                   verdict(9)])
-        self.assertEqual(plan["title"], "The coin jar secret 1")
+        self.assertEqual(plan["title"], "Why coin jar secret 1")
         revision = llm.calls[2][1]
         self.assertIn("YOUR PREVIOUS ATTEMPT", revision)
         self.assertIn("Change ONLY", revision)

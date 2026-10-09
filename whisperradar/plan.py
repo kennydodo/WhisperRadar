@@ -19,6 +19,10 @@ TITLE_GOOD = 60
 MIN_TITLES = 10         # the plan keeps the top 10 of what the writer drafts
 TITLES_KEEP = 10
 DRAFT_TITLES = 20
+WHY_MAX = 160            # a reason is one short line, not an essay
+OPENING_WORDS = 3        # titles sharing these first words ...
+OPENING_MAX = 2          # ... may appear at most this many times
+MIN_PERSPECTIVES = 4     # distinct angles among the options
 TRANSCRIPT_MAX = 24000   # characters of the original script the writer sees
 MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
 
@@ -40,8 +44,8 @@ LAYOUTS = ("character_host", "character", "host")
 
 
 def empty_plan() -> dict:
-    return {"keyword": "", "titles": [], "title": "", "promise": "",
-            "hook": "", "thumbnail": {"layout": "character", "text": "",
+    return {"keyword": "", "formula": "", "titles": [], "title": "",
+            "promise": "", "hook": "", "thumbnail": {"layout": "character", "text": "",
                                       "idea": ""},
             "status": "none", "score": None, "applied": False}
 
@@ -95,13 +99,16 @@ def parse_plan(raw) -> dict:
     if not isinstance(raw, dict):
         return plan
     plan["keyword"] = _s(raw.get("keyword"))
+    plan["formula"] = _s(raw.get("formula"))[:300]
     titles = []
     for t in raw.get("titles") or []:
         text = _s(t.get("text") if isinstance(t, dict) else t)
         if text and text.lower() not in [x["text"].lower() for x in titles]:
+            isd = isinstance(t, dict)
             titles.append({"text": text,
-                           "why": _s(t.get("why")) if isinstance(t, dict)
-                           else ""})
+                           "perspective": (_s(t.get("perspective"))[:40]
+                                           if isd else ""),
+                           "why": (_s(t.get("why"))[:WHY_MAX] if isd else "")})
     plan["titles"] = titles[:TITLES_KEEP]
     title = _s(raw.get("title"))
     # a title that is a candidate in all but punctuation/case becomes the
@@ -228,6 +235,34 @@ def awkward_title(title: str) -> str:
     return ""
 
 
+def variety_faults(plan: dict) -> list[str]:
+    """Ten titles must not be one title reworded: no more than OPENING_MAX
+    of them may start with the same first words, and the options must come
+    from several perspectives."""
+    f = []
+    opens: dict[str, int] = {}
+    for t in plan["titles"]:
+        key = " ".join(_words(t["text"])[:OPENING_WORDS])
+        if key:
+            opens[key] = opens.get(key, 0) + 1
+    worst = max(opens.items(), key=lambda kv: kv[1], default=("", 0))
+    if worst[1] > OPENING_MAX:
+        f.append(f"{worst[1]} title options start with \"{worst[0]}\": no "
+                 f"more than {OPENING_MAX} may open with the same words - "
+                 "vary the opening and the sentence shape (the keyword may "
+                 "sit anywhere in the first "
+                 f"{TITLE_GOOD} characters)")
+    persp = {t.get("perspective", "").lower() for t in plan["titles"]
+             if t.get("perspective")}
+    # plans made before the formula/perspective step have neither: leave them
+    if plan["titles"] and plan.get("formula") and \
+            len(persp) < MIN_PERSPECTIVES:
+        f.append(f"the options use {len(persp)} perspective(s); use at least "
+                 f"{MIN_PERSPECTIVES} different ones (the formula stays, the "
+                 "angle changes)")
+    return f
+
+
 def phrasing_faults(plan: dict) -> list[str]:
     """The chosen title must read naturally; so must most of the options."""
     f = []
@@ -268,6 +303,7 @@ def local_faults(plan: dict, source_title: str = "",
         return ["no title"]
     f += originality_faults(plan, source_title, transcript)
     f += phrasing_faults(plan)
+    f += variety_faults(plan)
     if len(title) > TITLE_MAX:
         f.append(f"title is {len(title)} characters; YouTube allows "
                  f"{TITLE_MAX}")
@@ -390,11 +426,14 @@ def context(cfg, pid: int) -> dict:
 
 
 _RULES = f"""Rules for the plan:
-- Titles are the most important part. The goal is to REPLICATE the source video: write titles SIMILAR to its title and to what the original script is about - same topic, same main keyword, the same kind of promise and curiosity gap, the same title patterns that made it work - while the content perspective may change a little (a slightly different angle, audience, scenario or twist the video can still deliver). Do not write a title that is identical to the source's.
-- Every title is at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
+- Titles are the most important part. The goal is to REPLICATE the source video. Work in this order:
+  1. FORMULA: read the source title and the original script and write down the title formula that made it work - its skeleton in a line, e.g. "[blunt truth] ([Why] [topic] is the [superlative] [thing] you're [avoiding])" or "[Number] + [things] + [no longer worth it] + [year]". Keep the formula's parts, and the source's number and year if it has them.
+  2. PERSPECTIVES: write titles that keep that formula but change the content perspective a little. Cover at least {MIN_PERSPECTIVES} different perspectives from, for example: the direct clone (same angle), a hard truth / confrontation, "I tried / I quit" personal experiment, what smart or rich people do differently, a hidden cost or leak, a mistake to stop making, a numbered list, a before-vs-after contrast, an urgency or timing angle. Pick perspectives the original script can truly deliver.
+  3. Titles are SIMILAR to the source's in pattern, topic and promise - never identical to it.
+- Every title is at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD} - the keyword may sit anywhere in that stretch; it does NOT have to be the first words. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
   Bad (never write like this): "Japanese Home Habits Hacks Secrets Revealed Now", "Coin Jar Rule: Coin Jar Secret (You Do Without Knowing)", "Habits Home Japanese That Work". Test every title by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
   Only promise what the original script's topic can deliver. If a title promises a number of points ("7 reasons"), it may match or stay close to the source's number.
-- Draft about {DRAFT_TITLES} titles first (different patterns, all close to the source), then RANK them by how likely each is to win the click while staying true to the original, and keep the TOP {TITLES_KEEP} in rank order (rank 1 first), each with a short "why" naming the pattern it uses and why it ranks there.
+- Draft about {DRAFT_TITLES} titles first (different patterns, all close to the source), then RANK them by how likely each is to win the click while staying true to the original, and keep the TOP {TITLES_KEEP} in rank order (rank 1 first), each with its "perspective" (2-4 words) and a "why" of ONE short line (under {WHY_MAX} characters).
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
 - The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone). The thumbnails are designed in their own stage, so keep this short."""
 
@@ -441,14 +480,16 @@ THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 
 Reply with ONE JSON object and nothing else:
 {{"keyword": "the main search phrase (2-4 words)",
- "titles": [{{"text": "...", "why": "pattern used"}}, ... exactly {TITLES_KEEP} titles: the top {TITLES_KEEP} of the ~{DRAFT_TITLES} you drafted, ranked, rank 1 first, all similar to the source, none identical to it],
+ "formula": "the source title's formula in one line",
+ "titles": [{{"text": "...", "perspective": "2-4 words", "why": "one short line"}}, ... exactly {TITLES_KEEP} titles: the top {TITLES_KEEP} of the ~{DRAFT_TITLES} you drafted, ranked, rank 1 first, all similar to the source, none identical to it],
  "title": "rank 1, copied exactly from the options",
  "promise": "...",
  "thumbnail": {{"layout": "character_host|character|host", "text": "2-4 words", "idea": "one line"}}}}"""
 
 
 def _plan_json(plan: dict) -> str:
-    return json.dumps({k: plan[k] for k in ("keyword", "titles", "title",
+    return json.dumps({k: plan[k] for k in ("keyword", "formula", "titles",
+                                            "title",
                                             "promise", "thumbnail")},
                       ensure_ascii=False, indent=1)
 
@@ -472,7 +513,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
+Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or fewer than {MIN_PERSPECTIVES} real perspectives - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
