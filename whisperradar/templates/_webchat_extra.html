@@ -84,17 +84,45 @@
       if (anchor) form.insertBefore(row, anchor);
       else form.appendChild(row);
     }
-    function sync() {
-      var chosen = {};
-      form.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (x) { chosen[x.value] = 1; });
-      Object.keys(BUILTIN).forEach(function (key) {
-        BUILTIN[key].forEach(function (n) {
+    // Each role (Writer, Judge) shows ITS site's settings on the same line,
+    // right after the role's own dropdown; the settings of a site that is not
+    // chosen are hidden. (If both roles pick the same site, its settings sit
+    // after the Writer.)
+    function controlsOf(site) {
+      var els = [];
+      var span = form.querySelector('span[data-site="' + site + '"]');
+      if (BUILTIN[site]) {
+        BUILTIN[site].forEach(function (n) {
           var el = form.querySelector('select[name=' + n + ']');
-          if (el) (el.closest('label') || el).style.display = chosen[key] ? '' : 'none';
+          if (!el) return;
+          var holder = el.closest('span[data-site]') || el.closest('label') || el;
+          if (els.indexOf(holder) < 0) els.push(holder);
+        });
+      } else if (span) {
+        els.push(span);
+      }
+      return els;
+    }
+    function show(el, on) {
+      el.style.display = on ? (el.matches('span[data-site]') ? 'inline-flex' : '') : 'none';
+    }
+    function sync() {
+      var sites = Object.keys(BUILTIN).concat(SITES.map(function (x) { return x.key; }));
+      var placed = {};
+      form.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (sel) {
+        var site = sel.value;
+        if (placed[site]) return;
+        placed[site] = true;
+        var prev = sel.closest('label') || sel;
+        controlsOf(site).forEach(function (c) {
+          if (prev.parentNode) prev.parentNode.insertBefore(c, prev.nextSibling);
+          show(c, true);
+          prev = c;
         });
       });
-      form.querySelectorAll('[data-site]').forEach(function (g) {
-        g.style.display = chosen[g.dataset.site] ? 'inline-flex' : 'none';
+      sites.forEach(function (site) {
+        if (placed[site]) return;
+        controlsOf(site).forEach(function (c) { show(c, false); });
       });
     }
     // The run reloads (or redirects back to) this page, which would put the
