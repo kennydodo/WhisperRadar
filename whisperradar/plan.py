@@ -536,6 +536,33 @@ def context(cfg, pid: int) -> dict:
     except Exception:  # noqa: BLE001
         transcript = ""
     ctx["source"] = src
+    ctx["niche"] = None
+    try:
+        from . import niche_profile
+        conn = db.connect(cfg.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT v.video_id, v.channel_id, c.name AS channel_name,"
+                " c.genre AS genre, v.title, v.url, v.published_at,"
+                " v.view_count, v.duration, v.status FROM videos v"
+                " JOIN channels c ON c.channel_id = v.channel_id"
+                " WHERE c.active = 1 AND v.view_count IS NOT NULL").fetchall()
+            prod2 = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        # the source video's own niche decides the references, not the
+        # (possibly "general") genre of the channel the video is made for
+        genre = ((src or {}).get("genre") or prod2["genre"]
+                 or ctx.get("genre") or "")
+        prof = niche_profile.build(
+            outliers.build(rows), genre, (src or {}).get("channel_id") or "",
+            (src or {}).get("channel_name") or "",
+            (src or {}).get("title") or "")
+        ctx["niche"] = prof
+        if prof["refs"]:
+            ctx["refs"] = prof["refs"]
+    except Exception:  # noqa: BLE001 - the planner works without a profile
+        pass
     # the plan writer replicates the source: it gets the original script
     ctx["transcript"] = (transcript or "").strip()[:TRANSCRIPT_MAX]
     ctx["brief"] = ""
@@ -591,6 +618,11 @@ def _refs_without_source(ctx: dict) -> str:
     return _refs_text({**ctx, "refs": refs})
 
 
+def _niche_text(ctx: dict) -> str:
+    from . import niche_profile
+    return niche_profile.prompt_block(ctx.get("niche"))
+
+
 def _original_script(ctx: dict) -> str:
     t = (ctx.get("transcript") or "").strip()
     return t or "(not available - rely on the source title and the brief)"
@@ -607,6 +639,7 @@ THE ORIGINAL SCRIPT (the video we are replicating - it already proved the topic 
 
 TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns and phrasing):
 {_refs_without_source(ctx)}
+{_niche_text(ctx)}
 
 THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 {past}
@@ -642,6 +675,7 @@ CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
 THE ORIGINAL SCRIPT (excerpt): {_original_script(ctx)[:6000]}
 COMPARABLE TITLES THAT PERFORMED WELL IN THIS NICHE:
 {_refs_without_source(ctx)}
+{_niche_text(ctx)}
 
 THE PLAN:
 {_plan_json(plan)}
