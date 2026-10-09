@@ -16,7 +16,10 @@ from typing import Callable
 PLAN_FILE = "packaging_plan.json"
 TITLE_MAX = 100
 TITLE_GOOD = 60
-MIN_TITLES = 5
+MIN_TITLES = 10         # the plan keeps the top 10 of what the writer drafts
+TITLES_KEEP = 10
+DRAFT_TITLES = 20
+TRANSCRIPT_MAX = 24000   # characters of the original script the writer sees
 MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
 
 
@@ -99,7 +102,7 @@ def parse_plan(raw) -> dict:
             titles.append({"text": text,
                            "why": _s(t.get("why")) if isinstance(t, dict)
                            else ""})
-    plan["titles"] = titles[:12]
+    plan["titles"] = titles[:TITLES_KEEP]
     title = _s(raw.get("title"))
     # a title that is a candidate in all but punctuation/case becomes the
     # candidate's exact string; anything else stays as written (and is a
@@ -176,31 +179,20 @@ def list_numbers(title: str) -> set[int]:
 
 def originality_faults(plan: dict, source_title: str = "",
                        transcript: str = "") -> list[str]:
-    """The title and hook must be OUR OWN, built on the keyword - not the
-    source's title or opening reworded. Messages never quote the source
-    (they are forwarded to the writer)."""
+    """We are replicating the source video, so titles should be SIMILAR to
+    it. The one thing rejected is the source's own title, word for word -
+    that is a duplicate, not a replica."""
     f = []
     title = plan.get("title") or ""
     if source_title and title:
         norm = " ".join(_words(source_title))
-        if " ".join(_words(title)) == norm or title_similarity(
-                title, source_title, plan.get("keyword", "")) > TITLE_SIM_MAX:
-            f.append("the title copies the source video's title: keep the "
-                     "keyword but write a new sentence with a new angle "
-                     "(ordinary shared words are fine; the structure and "
-                     "promise must be new)")
-        same = list_numbers(title) & list_numbers(source_title)
-        if same:
-            f.append(f"the title promises {min(same)} points, the same count "
-                     f"as the source video: use a different number (for "
-                     f"example one or two more or fewer)")
-        if any(" ".join(_words(t["text"])) == norm for t in plan["titles"]):
-            f.append("one of the title options is the source video's own "
-                     "title: replace it with an original option")
-    if transcript and plan.get("hook") and shared_run(plan["hook"],
-                                                      transcript):
-        f.append(f"the hook reuses {HOOK_RUN}+ words in a row from the "
-                 "source: write a different opening of equal strength")
+        if " ".join(_words(title)) == norm:
+            f.append("the chosen title is identical to the source video's "
+                     "title: keep its pattern and keywords but change the "
+                     "wording or the angle a little")
+        elif any(" ".join(_words(t["text"])) == norm for t in plan["titles"]):
+            f.append("one of the title options is identical to the source "
+                     "video's title: replace it with a close variation")
     return f
 
 
@@ -295,8 +287,6 @@ def local_faults(plan: dict, source_title: str = "",
                  f"(got {len(plan['titles'])})")
     if not plan["promise"]:
         f.append("no promise: say what the viewer will get")
-    if not plan["hook"]:
-        f.append("no opening hook")
     th = plan["thumbnail"]
     n = len(th["text"].split())
     if not th["text"] or n > THUMB_WORDS:
@@ -386,8 +376,8 @@ def context(cfg, pid: int) -> dict:
     except Exception:  # noqa: BLE001
         transcript = ""
     ctx["source"] = src
-    # the transcript stays here for the CODE checks only; no prompt gets it
-    ctx["transcript"] = (transcript or "").strip()[:5000]
+    # the plan writer replicates the source: it gets the original script
+    ctx["transcript"] = (transcript or "").strip()[:TRANSCRIPT_MAX]
     ctx["brief"] = ""
     try:
         have = (ctx["pdir"] / autorun.RESEARCH_NOTES_FILE).read_text(
@@ -400,13 +390,13 @@ def context(cfg, pid: int) -> dict:
 
 
 _RULES = f"""Rules for the plan:
-- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. The title must read like a real sentence a person would say out loud to a friend: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
-  Good shapes (learn the shape, never copy the words): "Why [keyword phrase] Quietly [does something surprising]", "The [keyword phrase] Mistake That Costs You [thing]", "I Tried [keyword phrase] for [time] - Here's What Changed", "[Number] [keyword phrase] Habits That Actually [result]", "Stop [doing the common thing] - Do This [keyword phrase] Instead".
-  Bad (never write like this): "Japanese Home Habits Hacks Secrets Revealed Now", "Coin Jar Rule: Coin Jar Secret (You Do Without Knowing)", "Habits Home Japanese That Work". Test every option by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
-  The source video proved its TOPIC: take its main keyword and the story it tells, then write OUR OWN title around that keyword - as strong as the source's, from a fresh angle and with our own sentence structure. Sharing ordinary words with the source is fine (the keyword and plain words like "home" or "habits" will repeat); what must differ is the sentence, the angle and the promise. Never use the source title, and no option may be a lightly reworded copy of it. Only promise what the topic in the brief can deliver. If the title promises a number of points ("7 reasons", "10 signs"), the number must DIFFER from the source title's number (8 or 12 where it says 10) - the same count is rejected.
+- Titles are the most important part. The goal is to REPLICATE the source video: write titles SIMILAR to its title and to what the original script is about - same topic, same main keyword, the same kind of promise and curiosity gap, the same title patterns that made it work - while the content perspective may change a little (a slightly different angle, audience, scenario or twist the video can still deliver). Do not write a title that is identical to the source's.
+- Every title is at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
+  Bad (never write like this): "Japanese Home Habits Hacks Secrets Revealed Now", "Coin Jar Rule: Coin Jar Secret (You Do Without Knowing)", "Habits Home Japanese That Work". Test every title by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
+  Only promise what the original script's topic can deliver. If a title promises a number of points ("7 reasons"), it may match or stay close to the source's number.
+- Draft about {DRAFT_TITLES} titles first (different patterns, all close to the source), then RANK them by how likely each is to win the click while staying true to the original, and keep the TOP {TITLES_KEEP} in rank order (rank 1 first), each with a short "why" naming the pattern it uses and why it ranks there.
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
-- The hook is how the first 15 seconds start (a question, a surprising fact, a scene) - one or two sentences. It must be as gripping as the source's opening but NOT the same hook: a different first image, question or fact, never its wording.
-- The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone)."""
+- The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone). The thumbnails are designed in their own stage, so keep this short."""
 
 
 def _source_text(ctx: dict) -> str:
@@ -420,21 +410,30 @@ def _source_text(ctx: dict) -> str:
             f", {views}{mult})")
 
 
+def _original_script(ctx: dict) -> str:
+    t = (ctx.get("transcript") or "").strip()
+    return t or "(not available - rely on the source title and the brief)"
+
+
 def writer_prompt(ctx: dict) -> str:
     from .packaging import _refs_text
     past = "\n".join(f"- {t}" for t in ctx["past_titles"]) or "(none yet)"
-    return f"""You are a YouTube packaging strategist. Before this video is written, design how it will be sold: the title, the promise, the opening hook and the thumbnail idea.
+    return f"""You are a YouTube packaging strategist. I want to replicate this video. Provide titles similar to this one, but the content perspective may change a little. Titles matter most.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
 WORKING TITLE: {ctx['title']}
-SOURCE VIDEO (what it is based on - it already proved the topic works): {_source_text(ctx)}
-BRIEF (what the video is about, and the KEYWORDS your titles and hook must be built from):
+SOURCE VIDEO (the one we are replicating - it already proved the topic works): {_source_text(ctx)}
+
+THE ORIGINAL SCRIPT (read it: this is what the titles must be true to):
+{_original_script(ctx)}
+
+BRIEF (topic and KEYWORDS your titles must be built from):
 {ctx.get('brief') or '(not available)'}
 
-TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns, do not copy):
+TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns and phrasing):
 {_refs_text(ctx)}
 
-THIS CHANNEL'S EARLIER TITLES (stay consistent, do not repeat):
+THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 {past}
 
 {ctx.get('learned') or ''}
@@ -442,15 +441,15 @@ THIS CHANNEL'S EARLIER TITLES (stay consistent, do not repeat):
 
 Reply with ONE JSON object and nothing else:
 {{"keyword": "the main search phrase (2-4 words)",
- "titles": [{{"text": "...", "why": "pattern used"}}, ... {MIN_TITLES + 3} options: all original titles built on the keyword, from different angles - none is the source title],
- "title": "the best one, copied exactly from the options",
- "promise": "...", "hook": "...",
+ "titles": [{{"text": "...", "why": "pattern used"}}, ... exactly {TITLES_KEEP} titles: the top {TITLES_KEEP} of the ~{DRAFT_TITLES} you drafted, ranked, rank 1 first, all similar to the source, none identical to it],
+ "title": "rank 1, copied exactly from the options",
+ "promise": "...",
  "thumbnail": {{"layout": "character_host|character|host", "text": "2-4 words", "idea": "one line"}}}}"""
 
 
 def _plan_json(plan: dict) -> str:
     return json.dumps({k: plan[k] for k in ("keyword", "titles", "title",
-                                            "promise", "hook", "thumbnail")},
+                                            "promise", "thumbnail")},
                       ensure_ascii=False, indent=1)
 
 
@@ -461,6 +460,7 @@ def judge_prompt(ctx: dict, plan: dict, faults: list[str],
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
 SOURCE VIDEO: {_source_text(ctx)}
+THE ORIGINAL SCRIPT (excerpt): {_original_script(ctx)[:6000]}
 BRIEF (topic and KEYWORDS): {ctx.get('brief') or '(not available)'}
 COMPARABLE TITLES THAT PERFORMED WELL IN THIS NICHE:
 {_refs_text(ctx)}
@@ -472,7 +472,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Originality is part of the job: FAIL the plan (pass false, score below the bar) if the title, any option or the hook is the source's own or a reworded copy of it. The same topic and keyword are right; the same wording or hook is not. In "faults" and "fixes" NEVER quote or restate the source's title, hook or wording - say only that it is too close and what kind of change is needed; the strategist has to invent it. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the topic can keep, a hook that starts fast, a thumbnail idea that adds to the title. Name the exact text that is weak.
+Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}

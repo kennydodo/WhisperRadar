@@ -17,12 +17,12 @@ BRIEF = ("BRIEF: What hides in an old coin jar and how to check it.\n"
          "KEYWORDS: coin jar, rare coins, mint mark, 1943 penny, coin value")
 
 
-class PlanSeesNoTranscript(Base):
+class PlanSeesTheOriginalScript(Base):
     def setUp(self):
         super().setUp()
         autorun.save_brief(self.pdir, BRIEF, SOURCE)
 
-    def test_plan_prompts_carry_brief_not_transcript(self):
+    def test_plan_prompts_carry_brief_and_the_original_script(self):
         ctx = pp.context(self.cfg, self.pid)
         self.assertIn("rare coins", ctx["brief"])
         plan = pp.parse_plan({"keyword": "coin jar", "title": "t",
@@ -30,7 +30,8 @@ class PlanSeesNoTranscript(Base):
                               "thumbnail": {"text": "x"}})
         for text in (pp.writer_prompt(ctx), pp.judge_prompt(ctx, plan, [])):
             self.assertIn("rare coins", text)
-            self.assertNotIn(SOURCE[:80], text)
+            # titles replicate the source, so the plan stage reads its script
+            self.assertIn(SOURCE[:80], text)
 
     def test_missing_brief_is_asked_from_the_judge_chat(self):
         (self.pdir / "research_notes.json").unlink()
@@ -47,7 +48,7 @@ class PlanSeesNoTranscript(Base):
 
 
 class PlanNumbers(unittest.TestCase):
-    def test_same_list_number_fails_other_passes(self):
+    def test_same_list_number_is_allowed_now(self):
         def plan(title):
             return pp.parse_plan({"keyword": "coin jar", "title": title,
                                   "titles": [{"text": title, "why": "x"}] * 6,
@@ -55,9 +56,7 @@ class PlanNumbers(unittest.TestCase):
                                   "thumbnail": {"text": "WOW"}})
         src = "10 Coin Jar Mistakes That Cost You Money"
         same = pp.originality_faults(plan("Ten coin jar errors to avoid"), src)
-        self.assertTrue(any("same count" in f for f in same))
-        other = pp.originality_faults(plan("12 coin jar errors to avoid"), src)
-        self.assertFalse(any("same count" in f for f in other))
+        self.assertEqual(same, [])
         self.assertEqual(pp.list_numbers("In 1943 there were 12 reasons"), {12})
 
 
