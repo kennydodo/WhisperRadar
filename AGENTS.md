@@ -1677,3 +1677,4 @@ The script judge is also told to judge BEAT BY BEAT against the facts/source, an
 
 ## Auto Run web-chat writer/judge
 Settings > Auto Run: `autorun_writer` / `autorun_judge` (any chat site, built-in or added; `sites: True` choice, validated against `webchat.SITES`). `autorun._webchat_pair(cfg)` returns (writer, judge, options) for script/shotlist/plan/thumbnails in the webchat transport; options = the model/level settings of the LAST web chat run form (`_chat_options` stores them in db setting `webchat_last_options`). Previously "zai"/"deepseek" were hard-coded.
+Style & bible refresh: a run collects frames into `frames.new` and replaces frames + style.md + bible.md together only on success; a failed refresh leaves the previous result untouched.

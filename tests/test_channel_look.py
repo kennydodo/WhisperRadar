@@ -121,6 +121,28 @@ class LookTests(unittest.TestCase):
                 for i in range(3)])
         self.assertLessEqual(len(tr.calls[0][2]), channel_look.MAX_ATTACH)
 
+    def test_failed_refresh_keeps_the_saved_result(self):
+        kw = dict(download=lambda url, d: (d / "x.mp4", 600),
+                  grab=self._grab, thumbs=None)
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=6, **kw)
+        first = channel_look.load(self.cfg, "UCrival")
+
+        class Boom:
+            def ask(self, *a, **k):
+                raise RuntimeError("chat failed")
+        with self.assertRaises(RuntimeError):
+            channel_look.run(self.cfg, "UCrival", "chatgpt", Boom(),
+                             lambda m: None, n_frames=6, **kw)
+        again = channel_look.load(self.cfg, "UCrival")
+        self.assertEqual(again["style"], first["style"])
+        self.assertEqual(again["files"], first["files"])
+        # a successful refresh replaces everything
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=5, **kw)
+        self.assertEqual(len(channel_look.load(self.cfg, "UCrival")["files"]),
+                         5)
+
     def test_too_few_frames_fails(self):
         with self.assertRaises(RuntimeError):
             channel_look.run(
