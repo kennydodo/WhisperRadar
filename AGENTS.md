@@ -1652,3 +1652,6 @@ Qwen sometimes creates the chat (it shows in the sidebar) while the watched page
 
 ## Reuse one chat for Qwen
 `webchat.REUSE_CHAT = ("qwen",)`: the first Qwen ask opens a new chat and remembers its URL (`WebChat._home`); every later "new chat" ask continues that chat instead (avoids the start-page fallback). Context accumulates in that chat; restart the app (or remove the key from REUSE_CHAT) for a clean one.
+
+## One production = one chat per LLM
+`plan.run_plan` now adopts the production's saved chats (`webstages.adopt_chats`, same file the script/shotlist stages use) and `plan_job` saves them afterwards, so packaging plan -> script -> shotlist continue in the same chat of each LLM. A chat that cannot be reopened falls back to a new one (`_send_in`). `webchat.REUSE_CHAT` (Qwen) only applies within one job.
