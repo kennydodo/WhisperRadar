@@ -206,6 +206,9 @@ DEEPSEEK = Site(
 
 SITES = {s.key: s for s in (ZAI, DEEPSEEK)}
 BUILTIN_KEYS = tuple(SITES)
+# Sites whose "new chat" page is unreliable after a send (Qwen falls back to
+# the empty start page): ONE chat is created and every later ask continues it.
+REUSE_CHAT = ("qwen",)
 
 
 # ---- chat sites you add yourself (Settings > Web chat LLMs) -------------------
@@ -1569,6 +1572,7 @@ class WebChat:
         self._attached: set = set()     # sites driven in the user's Chrome
         self.should_stop = None         # () -> bool, checked while waiting
         self._urls: dict = {}       # site -> URL of its current chat
+        self._home: dict = {}       # site -> the one chat reused (REUSE_CHAT)
 
     def _launch(self, key: str):
         return launch_persistent(self._pw, SITES[key], self.profile_root,
@@ -1681,6 +1685,11 @@ class WebChat:
             **kw) -> str:
         page, site = self._page(key), SITES[key]
         saved = self._urls.get(key)
+        reuse = key in REUSE_CHAT
+        if new_chat and reuse and self._home.get(key):
+            # continue the one chat instead of opening a new one
+            saved = self._home[key]
+            new_chat = False
         if new_chat:
             self._urls.pop(key, None)
         elif saved:
@@ -1726,6 +1735,8 @@ class WebChat:
         try:
             if page.evaluate(site.sent_js):
                 self._urls[key] = page.url.split("#")[0]
+                if key in REUSE_CHAT and not self._home.get(key):
+                    self._home[key] = self._urls[key]
         except Exception:  # noqa: BLE001
             pass
         return reply

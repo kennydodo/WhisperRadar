@@ -1649,3 +1649,6 @@ a new reply (count up, generating, or text different from the text before the se
 
 ## Qwen: page falls back to the start page after send
 Qwen sometimes creates the chat (it shows in the sidebar) while the watched page returns to the empty start page, URL `/`. `_ask_inner` now records the sidebar chat links before sending; if after 20 s the page is not in a chat, it opens the first link that is new since the send and collects the reply there ("the page went back to the start page; opening the new chat ..." in the log). If that line never appears, the sidebar items are not `<a href=".../c/<id>">` - run Diagnose and check.
+
+## Reuse one chat for Qwen
+`webchat.REUSE_CHAT = ("qwen",)`: the first Qwen ask opens a new chat and remembers its URL (`WebChat._home`); every later "new chat" ask continues that chat instead (avoids the start-page fallback). Context accumulates in that chat; restart the app (or remove the key from REUSE_CHAT) for a clean one.
