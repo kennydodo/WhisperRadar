@@ -133,6 +133,40 @@ class ProdTests(Base):
         html = c.get(f"/studio/{self.pid}/thumbnails").get_data(as_text=True)
         self.assertIn("inspiration/hit.jpg", html)
 
+class OriginalityTests(unittest.TestCase):
+    SRC = "I Found The Secret Lab Where Animals Learn To Talk"
+
+    def plan(self, **o):
+        return pp.parse_plan(good(**o))
+
+    def test_title_similarity(self):
+        self.assertGreater(pp.title_similarity(
+            "Secret Lab Where Animals Learn To Talk", self.SRC, "secret lab"), 0.5)
+        self.assertLess(pp.title_similarity(
+            "Inside the secret lab that taught a fox to speak", self.SRC,
+            "secret lab"), 0.5)
+
+    def test_copied_title_and_source_option_fail(self):
+        kw = dict(keyword="secret lab")
+        p = self.plan(title=self.SRC, **kw)
+        faults = pp.local_faults(p, self.SRC)
+        self.assertTrue(any("copies the source" in f for f in faults))
+        for f in faults:
+            self.assertNotIn("Animals Learn", f)   # never quotes the source
+
+    def test_own_title_passes(self):
+        p = self.plan(title="Inside the secret lab that taught a fox to speak",
+                      keyword="secret lab")
+        self.assertFalse([f for f in pp.local_faults(p, self.SRC)
+                          if "source" in f])
+
+    def test_hook_reusing_source_words_fails(self):
+        p = self.plan(hook="Nobody expected the door to open that night")
+        f = pp.originality_faults(
+            p, "", "and nobody expected the door to open that night at all")
+        self.assertTrue(f)
+        self.assertNotIn("nobody", " ".join(f).lower())
+
 
 if __name__ == "__main__":
     unittest.main()

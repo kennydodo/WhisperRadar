@@ -97,11 +97,85 @@ def parse_plan(raw) -> dict:
     return plan
 
 
-def local_faults(plan: dict) -> list[str]:
+_STOP = set("a an the and or of to in on at for with is are was were be "
+            "how why what who this that it its you your i my we our from by "
+            "as not no vs".split())
+TITLE_SIM_MAX = 0.5    # share of the title's new words also in the source's
+HOOK_RUN = 4           # words in a row the hook may share with the source
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", (text or "").lower())
+
+
+def title_similarity(title: str, source_title: str, keyword: str = "") -> float:
+    """How much of `title` (beyond the main keyword and filler words) is
+    just the source title's own wording: 0 = own words, 1 = a copy."""
+    kw = set(_words(keyword))
+    mine = [w for w in _words(title) if w not in _STOP and w not in kw]
+    theirs = set(_words(source_title))
+    if not mine:
+        return 0.0
+    return sum(w in theirs for w in mine) / len(mine)
+
+
+def shared_run(a: str, b: str, n: int = HOOK_RUN) -> str:
+    """The first n-word run that appears in both texts, or ''."""
+    wa, wb = _words(a), _words(b)
+    grams = {" ".join(wb[i:i + n]) for i in range(len(wb) - n + 1)}
+    for i in range(len(wa) - n + 1):
+        g = " ".join(wa[i:i + n])
+        if g in grams:
+            return g
+    return ""
+
+
+def originality_faults(plan: dict, source_title: str = "",
+                       transcript: str = "") -> list[str]:
+    """The title and hook must be OUR OWN, built on the keyword - not the
+    source's title or opening reworded. Messages never quote the source
+    (they are forwarded to the writer)."""
+    f = []
+    title = plan.get("title") or ""
+    if source_title and title:
+        norm = " ".join(_words(source_title))
+        if " ".join(_words(title)) == norm or title_similarity(
+                title, source_title, plan.get("keyword", "")) > TITLE_SIM_MAX:
+            f.append("the title copies the source video's title: keep the "
+                     "keyword but write a new title with different words "
+                     "and a new angle")
+        if any(" ".join(_words(t["text"])) == norm for t in plan["titles"]):
+            f.append("one of the title options is the source video's own "
+                     "title: replace it with an original option")
+    if transcript and plan.get("hook") and shared_run(plan["hook"],
+                                                      transcript):
+        f.append(f"the hook reuses {HOOK_RUN}+ words in a row from the "
+                 "source: write a different opening of equal strength")
+    return f
+
+
+def _origin(ctx: dict) -> tuple[str, str]:
+    """(source video title, start of its transcript) for the originality
+    checks; the working title is NOT used - it may be our own earlier plan."""
+    return ((ctx.get("source") or {}).get("title") or "", ctx.get("transcript") or "")
+
+
+def faults_for(cfg, pid: int, plan: dict) -> list[str]:
+    """local_faults including the originality checks against the source."""
+    try:
+        origin = _origin(context(cfg, pid))
+    except Exception:  # noqa: BLE001 - a page must still render
+        origin = ("", "")
+    return local_faults(plan, *origin)
+
+
+def local_faults(plan: dict, source_title: str = "",
+                 transcript: str = "") -> list[str]:
     f = []
     title = plan["title"]
     if not title:
         return ["no title"]
+    f += originality_faults(plan, source_title, transcript)
     if len(title) > TITLE_MAX:
         f.append(f"title is {len(title)} characters; YouTube allows "
                  f"{TITLE_MAX}")
@@ -214,9 +288,9 @@ def context(cfg, pid: int) -> dict:
 
 
 _RULES = f"""Rules for the plan:
-- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji. The source video's title is PROVEN: keep its main keyword and its promise. Keep the source title itself as one option if you cannot beat it; the others are close variations (clearer, shorter, a stronger hook) or new angles on the same promise. Never promise anything the source's facts cannot support.
+- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji. The source video proved its TOPIC: take its main keyword and the story it tells, then write OUR OWN title around that keyword - as strong as the source's, in different words and from a fresh angle. Never use the source title, and no option may be a reworded copy of it. Never promise anything the source's facts cannot support.
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
-- The hook is how the first 15 seconds start (a question, a surprising fact, a scene) - one or two sentences.
+- The hook is how the first 15 seconds start (a question, a surprising fact, a scene) - one or two sentences. It must be as gripping as the source's opening but NOT the same hook: a different first image, question or fact, never its wording.
 - The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone)."""
 
 
@@ -253,7 +327,7 @@ THIS CHANNEL'S EARLIER TITLES (stay consistent, do not repeat):
 
 Reply with ONE JSON object and nothing else:
 {{"keyword": "the main search phrase (2-4 words)",
- "titles": [{{"text": "...", "why": "pattern used"}}, ... {MIN_TITLES + 3} options: the source title if it is still good, close variations, and new angles],
+ "titles": [{{"text": "...", "why": "pattern used"}}, ... {MIN_TITLES + 3} options: all original titles built on the keyword, from different angles - none is the source title],
  "title": "the best one, copied exactly from the options",
  "promise": "...", "hook": "...",
  "thumbnail": {{"layout": "character_host|character|host", "text": "2-4 words", "idea": "one line"}}}}"""
@@ -283,7 +357,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the source's facts. Check: a real curiosity gap that is not clickbait, the keyword early, a promise the source material can keep, a hook that starts fast, a thumbnail idea that adds to the title. Name the exact text that is weak.
+Originality is part of the job: FAIL the plan (pass false, score below the bar) if the title, any option or the hook is the source's own or a reworded copy of it. The same topic and keyword are right; the same wording or hook is not. In "faults" and "fixes" NEVER quote or restate the source's title, hook or wording - say only that it is too close and what kind of change is needed; the strategist has to invent it. Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the source's facts. Check: a real curiosity gap that is not clickbait, the keyword early, a promise the source material can keep, a hook that starts fast, a thumbnail idea that adds to the title. Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
@@ -339,7 +413,7 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
                 "complete plan as ONE JSON object in the format given, and "
                 "nothing else.", (), new_chat=False, ready=ws._has_json)
             continue
-        faults = local_faults(plan)
+        faults = local_faults(plan, *_origin(ctx))
         log(f"round {rnd}: \"{plan['title'][:70]}\" - {len(faults)} rule "
             f"fault(s); asking {judge} to review")
         verdict, score = {}, None
@@ -428,7 +502,7 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
             prompt = base + ("\n\nYour last reply had no usable JSON plan. "
                              "Reply with ONE JSON object only.")
             continue
-        faults = local_faults(plan)
+        faults = local_faults(plan, *_origin(ctx))
         verdict, score = {}, None
         if judge:
             try:
