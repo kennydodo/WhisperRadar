@@ -80,7 +80,7 @@
 <div class="wrap">
   <p class="muted" style="margin:0 0 6px"><a href="/studio/{{ prod['id'] }}">&larr; back to the production</a></p>
   <h1>Packaging plan &mdash; {{ prod['title'] }}</h1>
-  <p class="sub">decide the title (the top 10, ranked, written to replicate the source video), the promise and the thumbnail idea <b>before</b> the script is written. The script is then written to this plan, and the publish kit and thumbnails start from it.</p>
+  <p class="sub">decide the title (the top 2 of each segment of the script, written to replicate the source video), the promise and the thumbnail idea <b>before</b> the script is written. The script is then written to this plan, and the publish kit and thumbnails start from it.</p>
   {% if prod['source_video_id'] %}<div class="panel" style="display:flex;gap:12px;align-items:center"><img src="https://i.ytimg.com/vi/{{ prod['source_video_id'] }}/mqdefault.jpg" alt="" style="width:160px;border-radius:6px"><div><div class="muted" style="font-size:12px">based on</div><a href="https://youtu.be/{{ prod['source_video_id'] }}" target="_blank" rel="noopener">its thumbnail &amp; video</a></div></div>{% endif %}
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
@@ -122,10 +122,15 @@
   <div class="panel">
     <h2>Title options</h2>
     {% if plan.formula %}<div class="muted" style="font-size:12px;margin:4px 0">Source title formula: {{ plan.formula }}</div>{% endif %}
+    {% if plan.segments %}
+      {% for g in plan.segments %}<div style="margin:10px 0 2px"><b>{{ loop.index }}. {{ g.name }}</b> <span class="muted">&middot; best of this segment</span></div>
+      <ul class="titles">{% for t in plan.titles if (t.segment or '')|lower == g.name|lower %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}</ul>{% endfor %}
+    {% else %}
     <ul class="titles">
       {% for t in plan.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.segment %} &middot; <b>{{ t.segment }}</b>{% endif %}{% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}
     </ul>
-    {% if plan.segments %}<details style="margin-top:10px"><summary class="muted" style="cursor:pointer">The script divided into {{ plan.segments|length }} segments, with the titles drafted for each</summary>
+    {% endif %}
+    {% if plan.segments %}<details style="margin-top:10px"><summary class="muted" style="cursor:pointer">All the titles drafted for each of the {{ plan.segments|length }} segments</summary>
       {% for g in plan.segments %}<div style="margin:8px 0 2px"><b>{{ loop.index }}. {{ g.name }}</b></div>
       <ul class="titles">{% for t in g.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t }}">use</button>{{ t }} <span class="muted">({{ t|length }})</span></li>{% endfor %}</ul>{% endfor %}
     </details>{% endif %}

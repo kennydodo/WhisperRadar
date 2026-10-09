@@ -18,7 +18,8 @@ def good(**over):
          "titles": [{"text": f"{w} coin jar secret {i}", "why": "x"}
                     for i, w in enumerate(
                         ["The", "Why", "How", "The", "Stop", "Your",
-                         "Nobody", "Every", "Before", "After"])],
+                         "Nobody", "Every", "Before", "After", "Inside",
+                         "Only"])],
          "title": "The coin jar secret 0",
          "promise": "You will know why the jar always fills up.",
          "hook": "Start with the jar overflowing.",
@@ -122,24 +123,25 @@ class VarietyTests(unittest.TestCase):
         faults = pp.local_faults(pp.parse_plan(good()))
         self.assertFalse([f for f in faults if "start with" in f])
 
-    def test_new_style_plan_needs_segments(self):
-        names = ["clone", "clone", "hard truth", "hard truth", "list",
-                 "list", "clone", "list", "hard truth", "clone"]
-        opens = "The Why How Inside Stop Your Nobody Every Before After".split()
-        plan = pp.parse_plan(good(
-            formula="[blunt truth] ([Why] X is the smartest move)",
-            titles=[{"text": f"{w} coin jar secret {i}", "segment": names[i]}
-                    for i, w in enumerate(opens)]))
+    def test_every_segment_needs_its_top_two(self):
+        opens = ("The Why How Inside Stop Your Nobody Every Before After "
+                 "Only Soon").split()
+        segs = [{"name": f"seg {k}", "titles": [f"a{k}", f"b{k}"]}
+                for k in range(6)]
+        titles = [{"text": f"{w} coin jar secret {i}",
+                   "segment": f"seg {i % 6}"} for i, w in enumerate(opens)]
+        plan = pp.parse_plan(good(formula="[f]", segments=segs,
+                                  titles=titles))
         plan["title"] = plan["titles"][0]["text"]
+        self.assertEqual([f for f in pp.local_faults(plan)
+                          if "segment" in f], [])        # 12 picks, 2 each
+        plan["titles"][11]["segment"] = "seg 0"          # seg 5 loses a pick
         faults = pp.local_faults(plan)
-        self.assertTrue(any("divide the whole script" in f for f in faults))
-        self.assertTrue(any("from 3 segment" in f for f in faults))
-        plan["segments"] = pp.parse_segments(
-            [{"name": f"seg {k}", "titles": [f"a{k}", f"b{k}"]}
-             for k in range(8)])
-        plan["titles"][5]["segment"] = "i tried it"
-        self.assertFalse([f for f in pp.local_faults(plan)
-                          if "segment" in f])
+        self.assertTrue(any("every segment needs its top 2" in f
+                            and "seg 5" in f for f in faults))
+        plan["segments"] = plan["segments"][:3]
+        self.assertTrue(any("divide the whole script" in f
+                            for f in pp.local_faults(plan)))
 
     def test_parse_segments_drops_junk_and_caps(self):
         segs = pp.parse_segments([
@@ -247,6 +249,22 @@ class ProdTests(Base):
         self.assertEqual(pp.load_plan(self.pdir)["title"],
                          "The coin jar secret 3")
 
+    def test_page_groups_the_picks_under_their_segments(self):
+        opens = "The Why How Inside Stop Your Nobody Every Before After Only Soon".split()
+        plan = pp.parse_plan(good(
+            formula="[f]",
+            segments=[{"name": f"Seg {k}", "titles": [f"draft {k}"]}
+                      for k in range(6)],
+            titles=[{"text": f"{w} coin jar secret {i}",
+                     "segment": f"Seg {i % 6}"} for i, w in enumerate(opens)]))
+        pp.save_plan(self.pdir, plan)
+        c = create_app(self.cfg).test_client()
+        html = c.get(f"/studio/{self.pid}/plan").get_data(as_text=True)
+        self.assertIn("1. Seg 0", html)
+        self.assertIn("6. Seg 5", html)
+        self.assertIn("best of this segment", html)
+        self.assertIn("All the titles drafted for each of the 6 segments", html)
+
     def test_pages(self):
         c = create_app(self.cfg).test_client()
         self.assertIn("Plan the packaging",
@@ -314,7 +332,7 @@ class ReplicateTests(unittest.TestCase):
 
     def test_an_option_equal_to_the_source_fails(self):
         titles = [{"text": self.SRC}] + [{"text": f"Secret lab idea {i} for you"}
-                                         for i in range(9)]
+                                         for i in range(11)]
         p = self.plan(titles=titles, title="Secret lab idea 1 for you",
                       keyword="secret lab")
         self.assertTrue(any("options is identical" in f
@@ -324,14 +342,14 @@ class ReplicateTests(unittest.TestCase):
         p = self.plan(hook="")
         self.assertEqual(pp.local_faults(p), [])
 
-    def test_needs_ten_titles_and_keeps_ten(self):
+    def test_needs_twelve_titles_and_caps_at_twenty_four(self):
         few = self.plan(titles=[{"text": f"Coin jar secret idea {i}"}
                                 for i in range(5)])
-        self.assertTrue(any("at least 10 title options" in f
+        self.assertTrue(any("at least 12 title options" in f
                             for f in pp.local_faults(few)))
         many = self.plan(titles=[{"text": f"Coin jar secret idea {i}"}
-                                 for i in range(14)])
-        self.assertEqual(len(many["titles"]), 10)
+                                 for i in range(30)])
+        self.assertEqual(len(many["titles"]), 24)
 
     def test_writer_and_judge_get_the_original_script_and_the_ask(self):
         ctx = {"channel": "C", "genre": "g", "channel_about": "", "title": "W",
@@ -348,9 +366,9 @@ class ReplicateTests(unittest.TestCase):
         self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", w)
         self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", j)
         self.assertNotIn('"hook"', w)
-        self.assertIn("exactly 10 titles", w)
+        self.assertIn("top 2", w)
         self.assertIn("ranked", w)
-        self.assertIn("segments", w)
+        self.assertIn("EACH segment", w)
 
 
 if __name__ == "__main__":
