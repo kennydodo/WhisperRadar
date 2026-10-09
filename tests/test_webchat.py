@@ -790,6 +790,17 @@ class ImageUploadTests(unittest.TestCase):
                          wc._name_counts(page, ["/tmp/narration.txt"]))
 
 
+class SignInWindowTests(unittest.TestCase):
+    def test_sign_in_uses_a_normal_chrome_so_google_login_works(self):
+        from unittest import mock
+        with mock.patch.object(wc, "cdp_alive", return_value=False), \
+                mock.patch.object(wc, "start_chrome", return_value=True) as sc, \
+                mock.patch.object(wc, "launch_persistent") as lp:
+            wc.open_sign_in_window("zai", "/tmp/profiles")
+        sc.assert_called_once()
+        lp.assert_not_called()
+
+
 class PeakHoursTests(unittest.TestCase):
     def test_peak_hours_popup_is_closed_and_the_model_kept(self):
         clk = Clock()

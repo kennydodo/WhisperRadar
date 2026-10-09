@@ -1555,6 +1555,15 @@ def open_sign_in_window(key: str, profile_root) -> None:
     except ImportError as exc:
         raise WebChatError("Playwright is not installed") from exc
     site = SITES[key]
+    if not cdp_alive(key):
+        # A NORMAL Chrome (no automation flags) so "Continue with Google" works:
+        # in the Playwright-driven window Google's pop-up stays blank. Runs
+        # attach to it over the debugging port afterwards.
+        try:
+            if start_chrome(key, profile_root):
+                return
+        except WebChatError:
+            pass        # no Chrome/Edge found: fall back to the driven window
     if cdp_alive(key):
         with sync_playwright() as pw:
             browser = pw.chromium.connect_over_cdp(cdp_endpoint(key))
