@@ -121,6 +121,7 @@
   {% if plan.titles %}
   <div class="panel">
     <h2>Title options</h2>
+    {% if plan.overview %}<div class="muted" style="font-size:12px;margin:4px 0">The whole video: {{ plan.overview }}</div>{% endif %}
     {% if plan.formula %}<div class="muted" style="font-size:12px;margin:4px 0">Source title formula: {{ plan.formula }}</div>{% endif %}
     {% if plan.segments %}
       {% for g in plan.segments %}<div style="margin:10px 0 2px"><b>{{ loop.index }}. {{ g.name }}</b> <span class="muted">&middot; best of this segment</span></div>
