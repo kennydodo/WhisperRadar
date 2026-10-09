@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import time
+from urllib.parse import urljoin
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -205,6 +206,9 @@ DEEPSEEK = Site(
 
 SITES = {s.key: s for s in (ZAI, DEEPSEEK)}
 BUILTIN_KEYS = tuple(SITES)
+# Sites whose "new chat" page is unreliable after a send (Qwen falls back to
+# the empty start page): ONE chat is created and every later ask continues it.
+REUSE_CHAT = ("qwen",)
 
 
 # ---- chat sites you add yourself (Settings > Web chat LLMs) -------------------
@@ -359,7 +363,8 @@ _DETECT_ONE_JS = r"""async (a) => {
   }
   window.open = _open;
   const ok = labels.length >= 2 && labels.some(modelishRow);
-  return {items: ok ? labels : [], moved: location.href !== orig}; }"""
+  return {items: ok ? labels : [], all: labels,
+          moved: location.href !== orig}; }"""
 
 _TOGGLE_JS = """(a) => {
   const want = a.text.trim().toLowerCase();
@@ -435,7 +440,8 @@ def _generic_prepare(spec: dict):
             except Exception as exc:  # noqa: BLE001
                 notes.append(f"{what}: {exc}"[:80])
 
-        pick("models", model, "model")
+        if spec.get("paid"):               # free accounts have no choice
+            pick("models", model, "model")
         pick("levels", level, spec.get("level_label") or "level")
         for tg in spec.get("toggles") or []:
             want = bool((toggles or {}).get(tg["id"], False))
@@ -466,11 +472,6 @@ DEFAULT_GENERATING = ('[aria-label*="Stop" i], [title*="Stop" i], '
 _GENERIC_SEND_JS = """() => {
   const list = [...document.querySelectorAll(%s)];
   const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0] || null;
-  let scope = document;
-  if (ta) scope = ta.closest('form') || (ta.parentElement && ta.parentElement
-      .parentElement && ta.parentElement.parentElement.parentElement) || document;
-  const cands = [...scope.querySelectorAll('button,[role=button]')].filter(
-      b => !b.disabled && b.getAttribute('aria-disabled') !== 'true');
   // a WHOLE word of the accessible name: "Ask" must not match "Task",
   // "stop" must not match "Deep research"; ChatGPT's composer button is
   // named only by its class, so a type=submit inside the composer counts
@@ -479,6 +480,22 @@ _GENERIC_SEND_JS = """() => {
       x.getAttribute('data-testid'), x.id, (x.innerText || '').trim()];
   const send = word('send|submit|ask|generate');
   const no = word('stop|continue|up arrow|model|deep|research');
+  const btns = el => [...el.querySelectorAll('button,[role=button]')];
+  let scope = document;
+  if (ta) {
+    scope = ta.closest('form');
+    if (!scope) {
+      // the send button is NOT always near the box (Claude's contenteditable
+      // sits 4+ levels below the composer): climb until a send-like button
+      // is inside, at most 8 levels
+      let el = ta.parentElement, i = 0;
+      while (el && i < 8 && !btns(el).some(x => att(x).some(
+          v => v && send.test(v) && !no.test(v)))) { el = el.parentElement; i++; }
+      scope = (el && i < 8) ? el : document;
+    }
+  }
+  const cands = [...scope.querySelectorAll('button,[role=button]')].filter(
+      b => !b.disabled && b.getAttribute('aria-disabled') !== 'true');
   let b = cands.find(x => att(x).some(v => v && send.test(v) && !no.test(v)));
   if (!b && ta && ta.closest('form'))
     b = [...ta.closest('form').querySelectorAll('button[type=submit]')]
@@ -544,7 +561,8 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
                  "sent_part": str(d.get("sent_part") or "").strip(),
                  "stream": str(d.get("stream") or "").strip(),
                  "level_label": str(d.get("level_label") or "").strip()
-                 or "Level"}
+                 or "Level",
+                 "paid": bool(d.get("paid"))}
         if not clean["url"].startswith(("http://", "https://")):
             problems.append(f"{name}: needs a web address starting with "
                             f"https://")
@@ -628,7 +646,7 @@ def load_custom_sites(conn) -> list[str]:
     for d in defs:
         _UI[d["key"]] = {k: d[k] for k in
                          ("key", "name", "models", "levels", "level_label",
-                          "toggles")}
+                          "toggles", "paid")}
     return keys
 
 CONTINUE_LABELS = ("continue generating", "continue", "weiter")
@@ -666,6 +684,81 @@ _BUSY_JS = """(args) => {
 
 # z.ai's "Currently in peak hours - switch to GLM-5.3-Flash" pop-up. It is
 # dismissed with Cancel / Close ONLY: the "Switch" button changes the model.
+_LIMIT_JS = r"""() => {
+  const re = /(chat|conversation) (is )?paused|paused until|usage (limit|resets)|reached (the |your )?(free |daily |usage |message )?limit|limit (reached|resets)/i;
+  const replies = [...document.querySelectorAll(%s)];
+  for (const e of document.querySelectorAll('div,p,span,li,[role=alert]')) {
+    if (e.children.length > 3) continue;
+    const t = (e.innerText || '').trim();
+    if (!t || t.length > 220 || !re.test(t)) continue;
+    if (replies.some(r => r.contains(e))) continue;
+    if (e.closest('[data-message-author-role=user]')) continue;
+    const r = e.getBoundingClientRect(); if (!r.width || !r.height) continue;
+    return t; }
+  return ''; }"""
+
+
+def _limit_banner(page, site: Site) -> str:
+    """A "Chat paused until usage resets at 2:37 PM" style notice (free plan
+    limit, e.g. after ChatGPT drew an image). Unlike `_busy` this ignores the
+    'already on the page' marks: the notice is usually there BEFORE the send
+    that then silently does nothing."""
+    try:
+        return str(page.evaluate(_LIMIT_JS % json.dumps(site.reply)) or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+_AGE_JS = r"""() => {
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
+  // the button may be a <div role=button> or a styled <span>: take the
+  // smallest visible element whose whole text is "Continue"
+  const b = [...document.querySelectorAll('button,[role=button],div,span,a')]
+    .filter(x => vis(x) && /^continue$/i.test((x.innerText || '').trim()))
+    .sort((p, q) => p.querySelectorAll('*').length - q.querySelectorAll('*').length)[0];
+  if (!b) return '';
+  let c = b, ok = false;
+  for (let i = 0; i < 8 && c.parentElement; i++) {
+    c = c.parentElement;
+    if (/confirm your age|year were you born|date of birth/i.test(c.innerText || '')) { ok = true; break; }
+  }
+  if (!ok) return '';
+  // only confirm what the page already shows (a year is filled in); never
+  // pick a birth year on the user's behalf
+  if (!/\b(19|20)\d{2}\b/.test(c.innerText || '')) return 'needs-year';
+  b.click(); return 'clicked'; }"""
+
+
+_CHAT_LINKS_JS = r"""() => [...document.querySelectorAll('a[href]')]
+  .map(a => a.getAttribute('href') || '')
+  .filter(h => /\/(c|chat)\/[0-9A-Za-z-]{8,}/.test(h))"""
+
+
+def _chat_links(page) -> list:
+    try:
+        return list(page.evaluate(_CHAT_LINKS_JS) or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _dismiss_age(page, log) -> bool:
+    """Qwen asks "Confirm your age to continue" again and again and blocks the
+    send behind it: press Continue when a year is already filled in."""
+    try:
+        res = page.evaluate(_AGE_JS)
+    except Exception:  # noqa: BLE001
+        return False
+    if res == "clicked":
+        log("age confirmation pop-up: pressed Continue (the year was already filled in)")
+        page.wait_for_timeout(800)
+        return True
+    if res == "needs-year":
+        log("an age confirmation pop-up needs a birth year - choose it once "
+            "in the sign-in window")
+    return False
+
+
 _PEAK_JS = """(args) => {
   const re=new RegExp(args.re,'i');
   for (const d of document.querySelectorAll(
@@ -831,7 +924,7 @@ def retry_when_busy(call, log, sleep=time.sleep, should_stop=None,
 
 # ---- one conversation -----------------------------------------------------------
 
-def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
+def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         timeout: float = 900, settle: float = 6.0, poll: float = 2.0,
         continue_max: int = 8, start_wait: float = 90.0,
         new_chat: bool = True, options: Optional[dict] = None,
@@ -861,7 +954,7 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         _busy(page, site)          # mark any banner already on the page
         start_wait = min(start_wait, 30.0)
     elif new_chat:
-        page.goto(site.url)
+        _goto(page, site.url)
     _wait_for_box(page, site, clock)
     if site.stream:
         page.evaluate(_CAPTURE_JS)         # no-op when already hooked
@@ -900,12 +993,21 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         # ten seconds to be accepted, and a second click on a send button that has
         # turned into a stop button would cancel the answer.
         peak = None
+        links_before = _chat_links(page)
+        _dismiss_age(page, log)
         for attempt in (1, 2, 3):
-            if not page.evaluate(site.send_js):
-                raise WebChatError(f"{site.name}: could not find the send button")
+            how = _press_send(page, site, log)
+            if not how:
+                raise WebChatError(
+                    f"{site.name}: could not find the send button - "
+                    + _composer_report(page, site))
             took = False
+            age_cleared = False
             for _ in range(30):
                 page.wait_for_timeout(1000)
+                if _dismiss_age(page, log):
+                    age_cleared = True       # the pop-up ate the send: redo it
+                    break
                 pk = _peak_dialog(page)
                 if pk:
                     peak = pk
@@ -913,23 +1015,48 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
                         f"it ({pk['clicked'] or 'could not'}); the model is "
                         f"NOT changed")
                     break
-                if (page.evaluate(_TA_LEN_JS, site.box) == 0
-                        or page.evaluate(site.generating_js)
-                        or (new_chat and page.evaluate(site.sent_js))
-                        or (page.evaluate(_MSG_COUNT_JS) or 0) > msgs_before
-                        or page.evaluate(_STATE_JS,
-                                         {"reply": site.reply})["count"] > before):
+                why = ("the box emptied" if page.evaluate(_TA_LEN_JS, site.box) == 0
+                       else "it is generating" if page.evaluate(site.generating_js)
+                       else "the address changed" if (
+                           new_chat and page.evaluate(site.sent_js))
+                       else "a new message appeared" if (
+                           (page.evaluate(_MSG_COUNT_JS) or 0) > msgs_before)
+                       else "a new reply element appeared" if page.evaluate(
+                           _STATE_JS, {"reply": site.reply})["count"] > before
+                       else "")
+                if why:
+                    log(f"{site.name}: send registered ({why})")
                     took = True
                     break
             if took:
                 break
+            if age_cleared:
+                continue
             if peak:
                 raise ModelBusy(f"{site.name} says: \"{peak['text'][:140]}\"")
-            log(f"{site.name}: the send did not register (try {attempt}/3)")
+            lim = _limit_banner(page, site)
+            if lim:
+                raise ModelBusy(f"{site.name} says: \"{lim[:140]}\"")
+            try:
+                sig = {"box_chars": page.evaluate(_TA_LEN_JS, site.box),
+                       "generating": bool(page.evaluate(site.generating_js)),
+                       "new_address": bool(page.evaluate(site.sent_js)),
+                       "messages": page.evaluate(_MSG_COUNT_JS),
+                       "replies": page.evaluate(
+                           _STATE_JS, {"reply": site.reply})["count"],
+                       "replies_before": before}
+            except Exception:  # noqa: BLE001
+                sig = {}
+            log(f"{site.name}: the send did not register (try {attempt}/3) "
+                f"{sig}")
 
     t0 = clock()
     last_text, stable_since, continues = "", clock(), 0
     started = False
+    probed = False
+    if resume:
+        links_before = []
+    followed = False
     active = clock()                       # last sign of life
     while True:
         page.wait_for_timeout(int(poll * 1000))
@@ -962,7 +1089,53 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
             # the new one starts: its text must not count as the answer
             if st["count"] > before or gen or (text and text != old_text):
                 started = True
+            elif not probed and clock() - t0 > 20:
+                # nothing yet: say where the chat is. A site may open the new
+                # chat in ANOTHER tab/page (the watched page then stays on
+                # the empty start page) - follow it there.
+                probed = True
+                try:
+                    pages = list(page.context.pages)
+                    log(f"{site.name}: no answer yet after 20 s; this page: "
+                        f"{page.url}; open pages: {[p.url for p in pages]}")
+                    for p in pages:
+                        if p is not page and p.evaluate(site.sent_js):
+                            page = p
+                            log(f"{site.name}: the chat is open in another "
+                                f"page - switched to it")
+                            break
+                except Exception:  # noqa: BLE001
+                    pass
+            if (not started and not followed and not resume
+                    and clock() - t0 > 20):
+                # The prompt went out and the site created the chat (it is in
+                # the sidebar) but the watched page fell back to the empty
+                # start page (Qwen). Open the chat that is new since the send.
+                try:
+                    if not page.evaluate(site.sent_js):
+                        new = [h for h in _chat_links(page)
+                               if h not in links_before]
+                        if new:
+                            followed = True
+                            log(f"{site.name}: the page went back to the "
+                                f"start page; opening the new chat {new[0]}")
+                            _goto(page, urljoin(page.url, new[0]))
+                            _wait_for_box(page, site, clock)
+                            c = page.evaluate(
+                                _STATE_JS, {"reply": site.reply})["count"]
+                            before, old_text = max(0, c - 1), ""
+                            started = True
+                            t0 = clock()
+                            continue
+                except Exception as exc:  # noqa: BLE001
+                    log(f"{site.name}: could not open the new chat ({exc})")
+                    followed = True
+            if started:
+                pass
             elif clock() - t0 > start_wait:
+                lim = _limit_banner(page, site)
+                if lim:
+                    raise ModelBusy(f"{site.name} says: \"{lim[:140]}\"")
                 tail = " ".join(str(page.evaluate(_PAGE_TAIL_JS)
                                     or "").split())[-240:]
                 raise WebChatTimeout(
@@ -1017,6 +1190,102 @@ _BOX_THERE_JS = """(s) => {
              return b.width > 0 || b.height > 0; }); }"""
 
 
+
+def _goto(page, url, wait: float = 60.0) -> None:
+    """Open a page and return once its HTML is there. Playwright's default
+    waits for the `load` event, which chat sites with endless analytics /
+    streaming requests (Qwen) never fire within 30 s - the box check after it
+    already waits for the real thing."""
+    page.goto(url, wait_until="domcontentloaded", timeout=int(wait * 1000))
+
+
+
+def _press_send(page, site: Site, log, wait: float = 12.0) -> str:
+    """Click the send button; '' when there is none. The button is often
+    disabled for a moment after a big paste (the page's framework has not seen
+    the text yet), so look again for a while before giving up, and as a last
+    resort press Enter in the box (every chat site sends on Enter)."""
+    for _ in range(max(1, int(wait / 0.5))):
+        if page.evaluate(site.send_js):
+            return "button"
+        page.wait_for_timeout(500)
+    try:
+        page.evaluate("""(sel) => { const l = [...document.querySelectorAll(sel)];
+            const e = l.find(x => x.getBoundingClientRect().width > 0) || l[0];
+            if (e) e.focus(); }""", site.box)
+        page.keyboard.press("Enter")
+    except Exception:  # noqa: BLE001
+        return ""
+    log(f"{site.name}: no send button found - pressed Enter in the box")
+    return "enter"
+
+
+_COMPOSER_JS = r"""(sel) => {
+  const list = [...document.querySelectorAll(sel)];
+  const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0]
+             || null;
+  const btns = el => [...el.querySelectorAll('button,[role=button]')];
+  let scope = document;
+  if (ta) {
+    scope = ta.closest('form');
+    if (!scope) {
+      let el = ta.parentElement, i = 0;
+      while (el && i < 8 && btns(el).length < 2) { el = el.parentElement; i++; }
+      scope = el || document;
+    }
+  }
+  return btns(scope).slice(0, 14)
+    .map(b => (b.getAttribute('aria-label') || b.getAttribute('data-testid')
+               || (b.innerText || '').trim() || b.tagName).slice(0, 30)
+         + (b.disabled || b.getAttribute('aria-disabled') === 'true'
+            ? ' (disabled)' : '')); }"""
+
+
+def _composer_report(page, site: Site) -> str:
+    """What buttons sit around the prompt box - for the 'no send button' error,
+    so the log shows why (all disabled? a limit banner? a different layout?)."""
+    try:
+        names = page.evaluate(_COMPOSER_JS, site.box) or []
+    except Exception:  # noqa: BLE001
+        names = []
+    return ("buttons near the box: " + "; ".join(names)) if names \
+        else "no buttons near the box"
+
+
+_DIAG_ROOT: Optional[Path] = None
+
+
+def _save_last(page, site: Site, outcome: str) -> None:
+    """Keep what the page looked like when a run ended (screenshot + the page
+    text + how it ended) in <profile root>/diag/<site>/last-run.*, so a reply
+    that was not picked up can be understood afterwards."""
+    if _DIAG_ROOT is None:
+        return
+    try:
+        d = _DIAG_ROOT / "diag" / site.key
+        d.mkdir(parents=True, exist_ok=True)
+        body = page.evaluate("() => (document.body.innerText || '')") or ""
+        names = ["last-run"] + ([] if outcome.startswith("ok")
+                                else ["last-failure"])
+        for n in names:                  # a failure is kept past later runs
+            (d / f"{n}.txt").write_text(
+                f"outcome: {outcome}\nurl: {page.url}\n\n{str(body)[-30000:]}",
+                encoding="utf-8")
+            page.screenshot(path=str(d / f"{n}.png"))
+    except Exception:  # noqa: BLE001 - diagnostics must never break a run
+        pass
+
+
+def ask(page, site: Site, *args, **kw) -> str:
+    try:
+        text = _ask_inner(page, site, *args, **kw)
+    except BaseException as exc:
+        _save_last(page, site, f"{type(exc).__name__}: {str(exc)[:300]}")
+        raise
+    _save_last(page, site, f"ok, {len(text)} characters")
+    return text
+
+
 def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
     t0 = clock()
     while True:
@@ -1037,9 +1306,34 @@ def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
         page.wait_for_timeout(1000)
 
 
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+# Chats like ChatGPT show an attached IMAGE as a thumbnail with no file name
+# anywhere in the page text, so the name check below can never succeed for
+# images. Count the visible thumbnails instead.
+_THUMB_COUNT_JS = """() => [...document.querySelectorAll('img')].filter(i => {
+  const r = i.getBoundingClientRect();
+  return r.width >= 40 && r.height >= 40 && i.offsetParent !== null;
+}).length"""
+
+
+def _is_image(name: str) -> bool:
+    return str(name).lower().endswith(IMAGE_EXTS)
+
+
+def _thumb_count(page) -> int:
+    try:
+        return int(page.evaluate(_THUMB_COUNT_JS))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _name_counts(page, files) -> dict:
     body = page.evaluate("()=>document.body.innerText") or ""
-    return {Path(str(f)).name: body.count(Path(str(f)).name) for f in files}
+    counts = {Path(str(f)).name: body.count(Path(str(f)).name) for f in files}
+    if files and all(_is_image(n) for n in counts):
+        counts["__thumbs__"] = _thumb_count(page)
+    return counts
 
 
 def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
@@ -1047,13 +1341,20 @@ def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
     """Wait until every NEW attachment shows in the chat. In a chat that
     already mentions narration.txt / shotlist.json the bare name is on the
     page from the start, so a file only counts once its name appears MORE
-    often than before the upload (else the send goes out without it)."""
+    often than before the upload (else the send goes out without it).
+
+    When every file is an image, the name may never appear (thumbnails only),
+    so that many NEW visible thumbnails count as uploaded too."""
     names = [Path(str(f)).name for f in files]
     seen = seen or {}
+    all_images = bool(names) and all(_is_image(n) for n in names)
     t0 = clock()
     while True:
         body = page.evaluate("()=>document.body.innerText") or ""
-        if all(body.count(n) > seen.get(n, 0) for n in names):
+        by_name = all(body.count(n) > seen.get(n, 0) for n in names)
+        by_thumbs = (all_images and "__thumbs__" in seen
+                     and _thumb_count(page) - seen["__thumbs__"] >= len(names))
+        if by_name or by_thumbs:
             page.wait_for_timeout(int(settle * 1000))   # let the upload finish
             return
         if clock() - t0 > limit:
@@ -1254,6 +1555,15 @@ def open_sign_in_window(key: str, profile_root) -> None:
     except ImportError as exc:
         raise WebChatError("Playwright is not installed") from exc
     site = SITES[key]
+    if not cdp_alive(key):
+        # A NORMAL Chrome (no automation flags) so "Continue with Google" works:
+        # in the Playwright-driven window Google's pop-up stays blank. Runs
+        # attach to it over the debugging port afterwards.
+        try:
+            if start_chrome(key, profile_root):
+                return
+        except WebChatError:
+            pass        # no Chrome/Edge found: fall back to the driven window
     if cdp_alive(key):
         with sync_playwright() as pw:
             browser = pw.chromium.connect_over_cdp(cdp_endpoint(key))
@@ -1264,14 +1574,14 @@ def open_sign_in_window(key: str, profile_root) -> None:
                     pg.bring_to_front()
                     return
             pg = ctx.new_page()
-            pg.goto(site.url)
+            _goto(pg, site.url)
             pg.bring_to_front()
         return
     with sync_playwright() as pw:
         ctx = launch_persistent(pw, site, profile_root)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            page.goto(site.url)
+            _goto(page, site.url)
         except Exception:  # noqa: BLE001 - the window shows whatever loaded
             pass
         page.bring_to_front()
@@ -1293,6 +1603,8 @@ class WebChat:
     def __init__(self, profile_root, headless: bool = False,
                  channel: str | None = None):
         self.profile_root = Path(profile_root)
+        global _DIAG_ROOT
+        _DIAG_ROOT = self.profile_root
         self.headless = headless
         self.channel = channel          # e.g. "chrome" / "msedge", or None
         self._pw = None
@@ -1301,6 +1613,7 @@ class WebChat:
         self._attached: set = set()     # sites driven in the user's Chrome
         self.should_stop = None         # () -> bool, checked while waiting
         self._urls: dict = {}       # site -> URL of its current chat
+        self._home: dict = {}       # site -> the one chat reused (REUSE_CHAT)
 
     def _launch(self, key: str):
         return launch_persistent(self._pw, SITES[key], self.profile_root,
@@ -1366,7 +1679,7 @@ class WebChat:
         and one menu left open makes every later candidate click a no-op."""
         page, site = self._page(key), SITES[key]
         for attempt in range(3):               # headers fill their name late
-            page.goto(site.url)
+            _goto(page, site.url)
             _wait_for_box(page, site, time.monotonic)
             page.wait_for_timeout(1500 + 2000 * attempt)
             try:
@@ -1386,7 +1699,7 @@ class WebChat:
                     return {"open": c.get("open"), "current": c.get("current"),
                             "items": one["items"]}
                 if one.get("moved"):           # a click that navigated: back
-                    page.goto(site.url)
+                    _goto(page, site.url)
                     _wait_for_box(page, site, time.monotonic)
                     page.wait_for_timeout(1200)
                 else:
@@ -1413,6 +1726,11 @@ class WebChat:
             **kw) -> str:
         page, site = self._page(key), SITES[key]
         saved = self._urls.get(key)
+        reuse = key in REUSE_CHAT
+        if new_chat and reuse and self._home.get(key):
+            # continue the one chat instead of opening a new one
+            saved = self._home[key]
+            new_chat = False
         if new_chat:
             self._urls.pop(key, None)
         elif saved:
@@ -1420,7 +1738,7 @@ class WebChat:
             # was reloaded onto a blank page), go back to it first
             try:
                 if page.url.split("#")[0] != saved:
-                    page.goto(saved)
+                    _goto(page, saved)
             except Exception:  # noqa: BLE001
                 pass
         if not new_chat:
@@ -1435,6 +1753,20 @@ class WebChat:
         log = kw.get("log") or (lambda m: None)
         kw.setdefault("stop", self.should_stop)
         try:
+            return self._ask_checked(page, site, key, prompt, files, new_chat,
+                                     options, kw, log)
+        except WebChatError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if "has been closed" in str(exc) or "Target closed" in str(exc):
+                raise WebChatError(
+                    f"{site.name}: the browser window was closed, so the run "
+                    f"stopped (close it only after the run is done)") from exc
+            raise
+
+    def _ask_checked(self, page, site, key, prompt, files, new_chat, options,
+                     kw, log):
+        try:
             reply = retry_when_busy(
                 lambda: ask(page, site, prompt, files, new_chat=new_chat,
                             options=options, **kw),
@@ -1444,6 +1776,8 @@ class WebChat:
         try:
             if page.evaluate(site.sent_js):
                 self._urls[key] = page.url.split("#")[0]
+                if key in REUSE_CHAT and not self._home.get(key):
+                    self._home[key] = self._urls[key]
         except Exception:  # noqa: BLE001
             pass
         return reply
@@ -1452,6 +1786,17 @@ class WebChat:
         """A stall is not the end: reload the same chat and collect what the
         site has by now (the answer may be finished, or still coming)."""
         last = exc
+        try:
+            started = bool(page.evaluate(site.sent_js))
+        except Exception:  # noqa: BLE001
+            started = True
+        if not started:
+            # still on the empty start page: the prompt never went out.
+            # Reloading it would open the LAST chat of the site (Qwen does)
+            # and hand back an old answer as if it were the new one.
+            raise WebChatError(
+                f"{site.name}: the prompt never went out - the page is still "
+                f"an empty new chat ({exc})")
         for i in range(1, rounds + 1):
             log(f"{site.name}: {last} - reloading the chat and checking "
                 f"again ({i}/{rounds})")
@@ -1478,7 +1823,7 @@ class WebChat:
         """Open the site and wait for YOU to sign in (never typed for you)."""
         page = self._page(key)
         site = SITES[key]
-        page.goto(site.url)
+        _goto(page, site.url)
         t0 = time.monotonic()
         while time.monotonic() - t0 < wait:
             url = str(page.url or "")
@@ -1488,12 +1833,102 @@ class WebChat:
             page.wait_for_timeout(1500)
         return False
 
+    def diagnose(self, key: str, out_dir=None) -> str:
+        """A full report of what the signed-in page looks like to the
+        automation: prompt box(es), the buttons around it, which one 'send'
+        would click (without clicking), every model-picker candidate with the
+        rows its menu shows (before any model-name filtering) and a
+        screenshot of each. Written to <profile root>/diag/<key>/report.txt -
+        one command instead of guessing selectors."""
+        page, site = self._page(key), SITES[key]
+        d = Path(out_dir or (self.profile_root / "diag" / key))
+        d.mkdir(parents=True, exist_ok=True)
+        out: list[str] = []
+
+        def shot(name):
+            try:
+                page.screenshot(path=str(d / name))
+                out.append(f"  screenshot: {name}")
+            except Exception as exc:  # noqa: BLE001
+                out.append(f"  screenshot failed: {exc}"[:160])
+
+        t0 = time.monotonic()
+        try:
+            _goto(page, site.url)
+            _wait_for_box(page, site, time.monotonic, limit=40)
+            out.append(f"loaded in {time.monotonic() - t0:.1f}s: {page.url}")
+        except Exception as exc:  # noqa: BLE001
+            out.append(f"LOAD PROBLEM {type(exc).__name__}: {str(exc)[:200]}")
+        page.wait_for_timeout(2500)
+        out.append(f"title: {page.title()!r}")
+        shot("1-start.png")
+        out.append("prompt box selector: " + site.box)
+        out.append(page.evaluate(_BOX_REPORT_JS, site.box))
+        out.append("buttons around the box: " + "; ".join(
+            page.evaluate(_COMPOSER_JS, site.box) or ["(none)"]))
+        try:
+            page.evaluate(_PASTE_JS, {"box": site.box, "text": "hello"})
+            page.wait_for_timeout(800)
+            dry = site.send_js.replace(
+                "b.click(); return true;",
+                "return (b.getAttribute('aria-label') || b.innerText || "
+                "b.tagName) + ' | ' + b.outerHTML.slice(0, 220);")
+            if dry == site.send_js:
+                out.append("send button: (built-in site - not dry-run)")
+            else:
+                got = page.evaluate(dry)
+                out.append("send button WOULD BE: " + (
+                    str(got) if got else "NONE FOUND after typing 'hello'"))
+            shot("2-typed.png")
+        except Exception as exc:  # noqa: BLE001
+            out.append(f"typing test failed: {type(exc).__name__}: "
+                       f"{str(exc)[:160]}")
+        try:
+            _goto(page, site.url)
+            _wait_for_box(page, site, time.monotonic, limit=40)
+        except Exception as exc:  # noqa: BLE001 - report it, keep going
+            out.append(f"RELOAD PROBLEM {type(exc).__name__}: {str(exc)[:160]}")
+        page.wait_for_timeout(2500)
+        listing = page.evaluate(_DETECT_MODELS_JS) or {}
+        cands = listing.get("cands") or []
+        out.append(f"model-picker candidates: {len(cands)}")
+        for i, c in enumerate(cands, 1):
+            out.append(f"  #{i} shows {c.get('current')!r} path={c.get('open')}")
+            out.append(f"     label: {c.get('text')!r}")
+            try:
+                one = page.evaluate(_DETECT_ONE_JS, {"open": c.get("open"),
+                                                     "current": c.get("current")})
+            except Exception as exc:  # noqa: BLE001
+                out.append(f"     click failed: {str(exc)[:140]}")
+                continue
+            out.append(f"     rows seen: {one.get('all')} -> accepted as "
+                       f"models: {one.get('items')}")
+            shot(f"3-candidate-{i}.png")
+            if one.get("moved"):
+                try:
+                    _goto(page, site.url)
+                    _wait_for_box(page, site, time.monotonic, limit=40)
+                except Exception:  # noqa: BLE001
+                    pass
+                page.wait_for_timeout(1500)
+            else:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+        if not cands:
+            out.append("  (no button looked like a model picker - see "
+                       "1-start.png for what the page shows)")
+            out.append("all visible buttons: " + "; ".join(
+                page.evaluate(_ALL_BUTTONS_JS) or []))
+        text = "\n".join(out)
+        (d / "report.txt").write_text(text, encoding="utf-8")
+        return text
+
     def inspect(self, key: str) -> str:
         """Open the site and report its prompt box, its model-like buttons and
         what happens when each is clicked - so a site whose menu the auto
         -detection misses can be understood from the real, signed-in page."""
         page = self._page(key)
-        page.goto(SITES[key].url)
+        _goto(page, SITES[key].url)
         _wait_for_box(page, SITES[key], time.monotonic, limit=20)
         info = page.evaluate(_INSPECT_JS)
         out = [f"url: {page.url}",
@@ -1511,6 +1946,26 @@ class WebChat:
                            f"dialog={w['inDialog']} header={w['inHeader']}")
         return "\n".join(out)
 
+
+_BOX_REPORT_JS = r"""(sel) => [...document.querySelectorAll(sel)].slice(0, 6)
+  .map(e => { const r = e.getBoundingClientRect();
+    return '  box: <' + e.tagName.toLowerCase() + '> '
+      + (e.getAttribute('contenteditable') ? 'contenteditable ' : '')
+      + 'visible=' + (r.width > 0 && r.height > 0) + ' '
+      + Math.round(r.width) + 'x' + Math.round(r.height)
+      + ' placeholder=' + JSON.stringify((e.getAttribute('placeholder')
+        || e.getAttribute('data-placeholder') || '').slice(0, 40))
+      + ' id=' + (e.id || '') + ' class=' + (e.className || '').toString()
+        .slice(0, 50); }).join('\n') || '  (no element matches the box selector)'"""
+
+_ALL_BUTTONS_JS = r"""() => [...document.querySelectorAll(
+    'button,[role=button],[role=combobox],[aria-haspopup]')]
+  .filter(b => { const r = b.getBoundingClientRect();
+                 return r.width > 0 && r.height > 0; }).slice(0, 40)
+  .map(b => ((b.innerText || '').trim().split('\n')[0].slice(0, 28)
+    || b.getAttribute('aria-label') || b.getAttribute('data-testid')
+    || b.tagName) + (b.getAttribute('aria-haspopup')
+      ? '[popup=' + b.getAttribute('aria-haspopup') + ']' : ''))"""
 
 _INSPECT_JS = r"""() => {
   const vis = e => { const r = e.getBoundingClientRect();
@@ -1552,10 +2007,11 @@ _INSPECT_JS = r"""() => {
 
 def _main(argv: list[str]) -> int:
     from . import config
-    if len(argv) < 2 or argv[0] not in ("login", "ask", "inspect"):
+    if len(argv) < 2 or argv[0] not in ("login", "ask", "inspect", "diagnose"):
         print("usage: python -m whisperradar.webchat login <site>\n"
               "       python -m whisperradar.webchat ask <site> \"prompt\"\n"
-              "       python -m whisperradar.webchat inspect <site>")
+              "       python -m whisperradar.webchat inspect <site>\n"
+              "       python -m whisperradar.webchat diagnose <site>")
         return 2
     cfg = config.load_config()
     root = Path(cfg.db_path).parent / "webchat"
@@ -1581,6 +2037,18 @@ def _main(argv: list[str]) -> int:
             print(exc)
             return 1
         print("done - the sign-in is kept for runs.")
+        return 0
+    if argv[0] == "diagnose":
+        if argv[1] not in SITES:
+            print("unknown site: " + argv[1])
+            return 2
+        with WebChat(root) as chat:
+            try:
+                print(chat.diagnose(argv[1]))
+            except Exception as exc:  # noqa: BLE001
+                print(type(exc).__name__ + ": " + str(exc)[:300])
+                return 1
+        print("\nsaved in " + str(root / "diag" / argv[1]))
         return 0
     if argv[0] == "inspect":
         if argv[1] not in SITES:

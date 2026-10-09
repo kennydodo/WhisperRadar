@@ -44,7 +44,7 @@ class FakePage:
         self.prepared = False
 
     # Playwright-ish surface
-    def goto(self, url):
+    def goto(self, url, **kw):
         self.visited = url
 
     def wait_for_timeout(self, ms):
@@ -691,6 +691,9 @@ class TimeoutTests(unittest.TestCase):
         page = FakePage(clk, wc.ZAI, [("Late answer", False)] * 20)
         page.sent, page.frame = True, ("Late answer", False)
         page.reload = lambda: None
+        orig = page.evaluate
+        page.evaluate = lambda js, arg=None: (
+            True if js is wc.ZAI.sent_js else orig(js, arg))
         chat = wc.WebChat("x")
         logs = []
         out = chat._recover_timeout(page, wc.ZAI,
@@ -698,6 +701,23 @@ class TimeoutTests(unittest.TestCase):
                                     {"clock": clk}, logs.append)
         self.assertEqual(out, "Late answer")
         self.assertIn("reloading", logs[0])
+
+
+class NeverSentTests(unittest.TestCase):
+    def test_an_unstarted_chat_is_not_reloaded_into_an_old_answer(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("OLD answer", False)] * 20)
+        reloaded = []
+        page.reload = lambda: reloaded.append(1)
+        orig = page.evaluate
+        page.evaluate = lambda js, arg=None: (
+            False if js is wc.ZAI.sent_js else orig(js, arg))
+        with self.assertRaises(wc.WebChatError) as cm:
+            wc.WebChat("x")._recover_timeout(
+                page, wc.ZAI, wc.WebChatTimeout("z.ai stalled", ""),
+                {"clock": clk}, print)
+        self.assertIn("never went out", str(cm.exception))
+        self.assertEqual(reloaded, [])
 
 
 class UploadCountTests(unittest.TestCase):
@@ -724,6 +744,61 @@ class UploadCountTests(unittest.TestCase):
                              lambda m: None, seen=seen)
         self.assertEqual(page.n, 2)
         self.assertGreaterEqual(page.ticks, 5)
+
+
+class ImageUploadTests(unittest.TestCase):
+    """ChatGPT shows attached images as thumbnails: no file name in the text."""
+
+    def _page(self, clk, thumbs_after):
+        class P:
+            def __init__(self):
+                self.thumbs = 2            # logo / avatar already on the page
+                self.ticks = 0
+
+            def evaluate(self, js, arg=None):
+                if js is wc._THUMB_COUNT_JS:
+                    return self.thumbs
+                return "New chat"          # no file names anywhere
+
+            def wait_for_timeout(self, ms):
+                clk.t += ms / 1000.0
+                self.ticks += 1
+                if self.ticks == 4:
+                    self.thumbs += thumbs_after
+        return P()
+
+    def test_new_thumbnails_count_as_uploaded_images(self):
+        clk = Clock()
+        files = ["/tmp/f01.jpg", "/tmp/f02.jpg", "/tmp/t01.jpg"]
+        page = self._page(clk, 3)
+        seen = wc._name_counts(page, files)
+        wc._wait_for_uploads(page, files, clk, lambda m: None, seen=seen)
+        self.assertEqual(page.thumbs, 5)
+
+    def test_missing_thumbnails_still_time_out(self):
+        clk = Clock()
+        files = ["/tmp/f01.jpg", "/tmp/f02.jpg"]
+        page = self._page(clk, 0)
+        seen = wc._name_counts(page, files)
+        with self.assertRaises(wc.WebChatError):
+            wc._wait_for_uploads(page, files, clk, lambda m: None, seen=seen,
+                                 limit=10)
+
+    def test_non_image_files_do_not_use_the_thumbnail_rule(self):
+        page = self._page(Clock(), 0)
+        self.assertNotIn("__thumbs__",
+                         wc._name_counts(page, ["/tmp/narration.txt"]))
+
+
+class SignInWindowTests(unittest.TestCase):
+    def test_sign_in_uses_a_normal_chrome_so_google_login_works(self):
+        from unittest import mock
+        with mock.patch.object(wc, "cdp_alive", return_value=False), \
+                mock.patch.object(wc, "start_chrome", return_value=True) as sc, \
+                mock.patch.object(wc, "launch_persistent") as lp:
+            wc.open_sign_in_window("zai", "/tmp/profiles")
+        sc.assert_called_once()
+        lp.assert_not_called()
 
 
 class PeakHoursTests(unittest.TestCase):
@@ -775,3 +850,62 @@ class StaleReplyTests(unittest.TestCase):
         with self.assertRaises(wc.WebChatTimeout) as cm:
             wc.ask(page, wc.ZAI, "faults", clock=clk, start_wait=30)
         self.assertIn("did not start answering", str(cm.exception))
+
+
+class PressSendTests(unittest.TestCase):
+    """The send button may enable a moment after a big paste; with none at
+    all, Enter in the box is the fallback."""
+
+    class Page:
+        def __init__(self, enable_after=None):
+            self.calls, self.enable_after = 0, enable_after
+            self.keys, self.waited = [], 0
+            self.keyboard = self
+
+        def press(self, k):
+            self.keys.append(k)
+
+        def wait_for_timeout(self, ms):
+            self.waited += ms
+
+        def evaluate(self, js, arg=None):
+            if js == "SEND":
+                self.calls += 1
+                return (self.enable_after is not None
+                        and self.calls > self.enable_after)
+            return None
+
+    def site(self):
+        return wc.Site(key="x", name="X", url="https://x/", box="textarea",
+                       reply=".r", send_js="SEND",
+                       generating_js="() => false", login_url_part=("login",))
+
+    def test_waits_for_the_button_to_enable(self):
+        pg = self.Page(enable_after=5)
+        self.assertEqual(wc._press_send(pg, self.site(), print), "button")
+        self.assertEqual(pg.keys, [])
+
+    def test_presses_enter_when_there_is_no_button(self):
+        pg = self.Page(enable_after=None)
+        self.assertEqual(wc._press_send(pg, self.site(), print), "enter")
+        self.assertEqual(pg.keys, ["Enter"])
+
+
+class DiagnoseSmokeTests(unittest.TestCase):
+    def test_diagnose_writes_a_report(self):
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            chat = wc.WebChat(t)
+            page = mock.MagicMock()
+            page.url = "https://chat.z.ai/"
+            page.title.return_value = "T"
+            page.evaluate.side_effect = lambda js, arg=None: (
+                {"cands": []} if js is wc._DETECT_MODELS_JS
+                else [] if js in (wc._COMPOSER_JS, wc._ALL_BUTTONS_JS)
+                else "  box" if js is wc._BOX_REPORT_JS
+                else True)
+            chat._page = lambda key: page
+            text = chat.diagnose("zai")
+            self.assertIn("model-picker candidates: 0", text)
+            self.assertTrue((Path(t) / "diag" / "zai" / "report.txt").exists())

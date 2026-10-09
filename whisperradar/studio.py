@@ -3607,6 +3607,50 @@ def load_manifest_brief(cfg, profile=None, presentation: str = "") -> str:
     return briefs.render_brief(text.strip(), profile, presentation)
 
 
+def _repair_smart_quotes(raw: str) -> str:
+    """Claude's web page shows a reply's JSON as ordinary text with
+    typographic quotes (“like this”) - also around quotes INSIDE a string.
+    Turn the double ones back into straight quotes and escape the ones that
+    are part of the text: a quote only closes a string when what follows is
+    `:`, `}`, `]`, the end, or a comma that leads on to a new string/object/
+    list/number. Single curly quotes become plain apostrophes."""
+    t = (raw.replace("\u201c", '"').replace("\u201d", '"')
+         .replace("\u2018", "'").replace("\u2019", "'"))
+    out, in_str, esc = [], False, False
+    for i, ch in enumerate(t):
+        if in_str and esc:
+            esc = False
+            out.append(ch)
+            continue
+        if in_str and ch == "\\":
+            esc = True
+            out.append(ch)
+            continue
+        if ch != '"':
+            out.append(ch)
+            continue
+        if not in_str:
+            in_str = True
+            out.append(ch)
+            continue
+        j = i + 1
+        while j < len(t) and t[j] in " \t\r\n":
+            j += 1
+        nxt = t[j] if j < len(t) else ""
+        closes = nxt in ("", ":", "}", "]")
+        if nxt == ",":
+            k = j + 1
+            while k < len(t) and t[k] in " \t\r\n":
+                k += 1
+            closes = k < len(t) and t[k] in '"{[-0123456789'
+        if closes:
+            in_str = False
+            out.append(ch)
+        else:
+            out.append('\\"')
+    return "".join(out)
+
+
 def _extract_json_object(text: str) -> tuple[dict, str]:
     """Extract the first balanced JSON object (string-aware) plus the tail
     after it - tolerant of extra documents following the JSON."""
@@ -3644,7 +3688,12 @@ def _extract_json_object(text: str) -> tuple[dict, str]:
                     try:
                         data = json.loads(cleaned, strict=False)
                     except ValueError:
-                        raise RuntimeError(f"shotlist JSON is invalid: {exc}")
+                        try:                  # Claude's page: curly quotes
+                            data = json.loads(_repair_smart_quotes(
+                                text[start:i + 1]), strict=False)
+                        except ValueError:
+                            raise RuntimeError(
+                                f"shotlist JSON is invalid: {exc}")
                 return data, text[i + 1:]
     raise RuntimeError("LLM returned an incomplete JSON object")
 

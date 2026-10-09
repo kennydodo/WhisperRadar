@@ -5,7 +5,7 @@
     <b>z.ai</b> and <b>DeepSeek</b> are built in. To add another, give it a name and
     its chat address and press <b>Save</b>: a browser window opens - sign in there
     and close it when you are done. The new LLM then appears in every Writer / Judge dropdown.
-    <b>Find models</b> reads the site's own model menu (after you signed in) and the models then show up in the run forms; <b>Test</b> sends it one word.
+    Tick <b>Paid account</b> only for a plan that lets you choose the model: then <b>Find models</b> reads the site's model menu and the models show up in the run forms. Free accounts have nothing to choose, so no model control is shown; <b>Test</b> sends it one word.
   </p>
   <form method="post" action="/settings/webchat-sites" id="wc-form">
     <input type="hidden" name="webchat_json" id="wc-json">
@@ -24,18 +24,20 @@
       h += '<div class="panel" style="margin-bottom:10px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
         + '<input placeholder="Name (e.g. ChatGPT)" data-i="' + i + '" data-f="name" value="' + wcEsc(s.name) + '" style="width:190px">'
         + '<input placeholder="Chat address (https://chatgpt.com/)" data-i="' + i + '" data-f="url" value="' + wcEsc(s.url) + '" style="flex:1;min-width:260px">'
+        + '<label style="white-space:nowrap" title="Tick for a paid account that lets you choose the model. Free accounts (and z.ai / DeepSeek / Qwen) have nothing to choose."><input type="checkbox" data-i="' + i + '" data-f="paid" onchange="wcRead();wcRender()"' + (s.paid ? ' checked' : '') + '> Paid account</label>'
         + (s.key ? '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/login" class="secondary">Sign in</button>'
-                   + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/models" class="secondary" title="Opens the site and reads its model menu">Find models</button>'
-                   + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/test" class="secondary">Test</button>' : '')
+                   + (s.paid ? '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/models" class="secondary" title="Opens the site and reads its model menu">Find models</button>' : '')
+                   + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/test" class="secondary">Test</button>'
+                   + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/diagnose" class="secondary" title="Saves a report + screenshots of what this site\'s page looks like to the automation (data/webchat/diag/' + wcEsc(s.key) + ')">Diagnose</button>' : '')
         + '<button type="button" onclick="wcRemove(' + i + ')">remove</button></div>'
-        + (s.key ? '<div class="muted" style="font-size:12px;margin-top:6px">Models: ' + ((s.models || []).length ? wcEsc(s.models.map(function (m) { return m.label; }).join(', ')) : 'not read yet - press Find models after signing in') + '</div>' : '')
+        + (s.key && s.paid ? '<div class="muted" style="font-size:12px;margin-top:6px">Models: ' + ((s.models || []).length ? wcEsc(s.models.map(function (m) { return m.label; }).join(', ')) : 'not read yet - press Find models after signing in') + '</div>' : '')
         + '</div>';
     });
     host.innerHTML = h || '<p class="muted">None added yet.</p>';
   }
   function wcRead() {
     document.querySelectorAll('#wc-editor [data-f]').forEach(function (el) {
-      var s = WCS[+el.dataset.i]; if (s) s[el.dataset.f] = el.value.trim();
+      var s = WCS[+el.dataset.i]; if (s) s[el.dataset.f] = (el.type === 'checkbox') ? el.checked : el.value.trim();
     });
   }
   function wcAdd() { wcRead(); WCS.push({ name: '', url: '' }); wcRender(); }

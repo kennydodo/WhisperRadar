@@ -170,6 +170,9 @@ class _Job:
         self.summary = None        # completion note from the last auto-run
         self.autorun_plan = None   # the plan the current/last auto-run used
 
+    def _real(self) -> "_Job":
+        return self                    # same interface as the sjob handle
+
     def start(self, fn, kind: str) -> bool:
         with self._lock:
             if self.running:
@@ -517,6 +520,11 @@ def create_app(cfg) -> Flask:
     scheduler_job = _Job(-1, "scheduled auto-run",
                          log_path=_studio_log_path(cfg))
 
+    # Research and watched-channel work (topics grouping, "style & bible")
+    # has a slot of its own: it must not wait for - or block - a production's
+    # job in the studio, nor the dashboard's job.
+    research_job = _Job(-2, "research", log_path=_studio_log_path(cfg))
+
     def _other_running_jobs() -> list[dict]:
         """Jobs running in channels other than the current one, for the
         'also running' note."""
@@ -524,6 +532,7 @@ def create_app(cfg) -> Flask:
         with channel_jobs_lock:
             slots = list(channel_jobs.values())
         slots.append(scheduler_job)
+        slots.append(research_job)
         return [{"channel_id": j.channel_id, "kind": j.kind, "pid": j.pid,
                  "scheduled": j.channel_id == -1}
                 for j in slots if j is not here and j.running]
@@ -847,7 +856,7 @@ def create_app(cfg) -> Flask:
                     else []),
             analysis=(_analysis(items, args.get("v")) if tab == "analyze"
                       else None),
-            topics=topics_mod.load_topics(cfg), job=sjob._real(),
+            topics=topics_mod.load_topics(cfg), job=research_job,
             api={"source": youtube_api.key_source(cfg),
                  "used": youtube_api.quota_used(cfg),
                  "left": youtube_api.quota_left(cfg),
@@ -952,7 +961,7 @@ def create_app(cfg) -> Flask:
     @app.post("/research/topics/generate")
     def research_topics_generate():
         from . import webchat
-        if sjob.running:
+        if research_job.running:
             return redirect("/research?tab=topics&error=A+job+is+already+running")
         writer = (request.form.get("writer") or "zai").strip()
         if writer not in webchat.SITES:
@@ -963,14 +972,14 @@ def create_app(cfg) -> Flask:
         except ValueError:
             mult = 3.0
         options = _chat_options(request.form)
-        log = sjob.log.append
-        job = sjob._real()
+        log = research_job.log.append
+        job = research_job
 
         def worker():
             topics_mod.topics_job(cfg, writer, genre, mult, log,
                                   lambda: job.cancel, options)
 
-        sjob.start(worker, f"topics in web chat ({writer})")
+        research_job.start(worker, f"topics in web chat ({writer})")
         return redirect("/research?tab=topics&msg=Grouping+started+-+a+"
                         "browser+window+will+open")
 
@@ -1310,6 +1319,30 @@ def create_app(cfg) -> Flask:
         sjob.start(worker, f"finding models ({name})")
         return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(
             f"Reading the models of {name} - reload this page in a moment"))
+
+    @app.post("/settings/webchat-sites/<key>/diagnose")
+    def settings_webchat_site_diagnose(key):
+        """Save a report (and screenshots) of what the signed-in page looks
+        like to the automation: box, buttons, send button, model pickers."""
+        tab = "/settings?tab=Web+chat+LLMs"
+        if key not in webchat.SITES:
+            return redirect(tab + "&error=Unknown+site")
+        if sjob.running:
+            return redirect(tab + "&error=" + quote("A job is already running"))
+        name = webchat.SITES[key].name
+        out = Path(cfg.db_path).parent / "webchat" / "diag" / key
+
+        def worker():
+            sjob.log.append(f"diagnosing {name} - a browser window opens")
+            with webstages.web_transport(cfg, sjob.log.append) as transport:
+                text = transport.chat.diagnose(key)
+            for line in text.splitlines():
+                sjob.log.append(line)
+            sjob.log.append(f"report and screenshots saved in {out}")
+
+        sjob.start(worker, f"diagnose ({name})")
+        return redirect(tab + "&msg=" + quote(
+            f"Diagnosing {name} - the report is saved in {out}"))
 
     @app.post("/settings/webchat-sites/<key>/test")
     def settings_webchat_site_test(key):
@@ -2252,6 +2285,8 @@ def create_app(cfg) -> Flask:
         also_running = []
         for o in _other_running_jobs():
             who = ("Scheduled auto-run" if o["scheduled"]
+                   else "Research / watched channels"
+                   if o["channel_id"] == -2
                    else own_by_id.get(o["channel_id"]) or "No channel")
             also_running.append({"who": who, "kind": o["kind"]})
         response = make_response(render_template(
@@ -4526,6 +4561,12 @@ def create_app(cfg) -> Flask:
         return _plan_back(pid, msg="Saved" + (
             "" if not faults else " - still to fix: " + "; ".join(faults[:3])))
 
+    @app.get("/research/job")
+    def research_job_status():
+        return {"running": research_job.running, "kind": research_job.kind,
+                "error": research_job.error,
+                "log": list(research_job.log)[-40:]}
+
     @app.get("/studio/job")
     def studio_job():
         return {"running": sjob.running, "kind": sjob.kind,
@@ -4537,4 +4578,7 @@ def create_app(cfg) -> Flask:
     # warm the Renderly readiness probe so the first page load is fast too
     threading.Thread(target=lambda: studio.renderly_ready(cfg.renderly_url),
                      daemon=True).start()
+    from . import look_routes
+    look_routes.register(app, cfg, research_job)
+
     return app

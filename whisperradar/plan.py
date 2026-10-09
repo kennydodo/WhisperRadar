@@ -301,13 +301,18 @@ def writer_feedback(verdict: dict, faults: list[str]) -> str:
 def run_plan(cfg, pid: int, transport, writer: str = "zai",
              judge: str = "deepseek", log: Callable[[str], None] = print,
              should_stop: Callable[[], bool] = lambda: False,
-             min_score: float = MIN_SCORE) -> dict:
+             min_score: float = MIN_SCORE, same_chats: bool = True) -> dict:
     from . import studio, webstages as ws
     ctx = context(cfg, pid)
     log(f"packaging plan for \"{ctx['title'][:70]}\" "
         f"({len(ctx['refs'])} reference title(s))")
-    reply = ws._send(transport, writer, lambda f: writer_prompt(ctx), log,
-                     ready=ws._has_json)
+    # one production = one chat per LLM: continue the chats the production
+    # already has (a chat that cannot be reopened is replaced by a new one)
+    kept = (ws.adopt_chats(cfg, pid, transport, {writer, judge}, log)
+            if same_chats else set())
+    reply, _w = ws._send_in(transport, writer, lambda f: writer_prompt(ctx),
+                            log, writer in kept, ready=ws._has_json)
+    judge_cont = judge in kept
     best, judge_open, rnd, empty = None, False, 0, 0
     while True:
         rnd += 1
@@ -316,7 +321,8 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
             empty += 1
             if empty >= 3:
                 raise ws.StageFailed(f"{writer} did not return a plan")
-            log(f"{writer}: no usable plan - asking again")
+            log(f"{writer}: no usable plan - asking again (it said: "
+                f"{' '.join(str(reply).split())[:200]!r})")
             reply = transport.ask(
                 writer, "Your reply had no usable JSON plan. Reply with the "
                 "complete plan as ONE JSON object in the format given, and "
@@ -332,10 +338,10 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
                                lambda f: judge_followup(plan, faults), log,
                                new_chat=False, ready=ws._is_json_verdict)
             else:
-                raw = ws._send(transport, judge,
-                               lambda f: judge_prompt(ctx, plan, faults,
-                                                      min_score), log,
-                               ready=ws._is_json_verdict)
+                raw, judge_cont = ws._send_in(
+                    transport, judge,
+                    lambda f: judge_prompt(ctx, plan, faults, min_score),
+                    log, judge_cont, ready=ws._is_json_verdict)
             verdict = studio._parse_json_object(raw)
             if verdict:
                 judge_open = True
@@ -380,8 +386,11 @@ def plan_job(cfg, pid: int, writer: str, judge: str, log,
     with ws.web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
-        run_plan(cfg, pid, t, writer, judge, log=log, should_stop=should_stop,
-                 min_score=mark)
+        try:
+            run_plan(cfg, pid, t, writer, judge, log=log,
+                     should_stop=should_stop, min_score=mark)
+        finally:
+            ws.save_chats(cfg, pid, t)
 
 
 def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,

@@ -41,7 +41,7 @@
       grp.style.cssText = 'display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap';
       var tag = document.createElement('span'); tag.className = 'muted';
       tag.style.fontSize = '12px'; tag.textContent = site.name + ':'; grp.appendChild(tag);
-      if ((site.models || []).length) {
+      if (site.paid && (site.models || []).length) {
         grp.appendChild(field('Model', sel('wc_' + site.key + '_model',
           [['', "as the site has it"]].concat(site.models.map(function (m) { return [m.id, m.label]; })),
           site.name + ' model for this run')));
@@ -101,20 +101,28 @@
     // Writer/Judge selects on their first options - z.ai (GLM) and DeepSeek -
     // and the LLMs you added back at the end, unselected. Remember this form's
     // picks (by its action) and restore them after the options are re-added.
-    var KEY = 'wrwc:' + (form.getAttribute('action') || location.pathname);
+    // Keyed by the form's action with ids removed (/studio/7/webchat/script ->
+    // /studio/#/webchat/script), so the picks follow you into every production;
+    // a global "last" key fills in forms that were never used.
+    var KEY = 'wrwc:' + (form.getAttribute('action') || location.pathname).replace(/\d+/g, '#');
+    var LAST = 'wrwc:last';
     var watched = function () {
-      return form.querySelectorAll('select[name=writer], select[name=judge], select[name^=wc_]');
+      return form.querySelectorAll('select[name=writer], select[name=judge], select[name^=wc_], select[name^=zai_], select[name^=deepseek_]');
     };
     function saveSel() {
       try {
-        var o = {};
-        watched().forEach(function (x) { o[x.name] = x.value; });
+        var o = {}, g = {};
+        try { g = JSON.parse(localStorage.getItem(LAST) || '{}') || {}; } catch (e) {}
+        watched().forEach(function (x) { o[x.name] = x.value; g[x.name] = x.value; });
         localStorage.setItem(KEY, JSON.stringify(o));
+        localStorage.setItem(LAST, JSON.stringify(g));
       } catch (e) {}
     }
     function restoreSel() {
       try {
-        var o = JSON.parse(localStorage.getItem(KEY) || '{}');
+        var own = JSON.parse(localStorage.getItem(KEY) || '{}') || {};
+        var last = JSON.parse(localStorage.getItem(LAST) || '{}') || {};
+        var o = Object.assign({}, own, last);
         Object.keys(o).forEach(function (n) {
           var el = form.querySelector('select[name=' + CSS.escape(n) + ']');
           if (el && [].some.call(el.options, function (op) { return op.value === o[n]; }))
@@ -127,7 +135,7 @@
       x.addEventListener('change', sync);
       x.addEventListener('change', saveSel);
     });
-    form.querySelectorAll('select[name^=wc_]').forEach(function (x) {
+    watched().forEach(function (x) {
       x.addEventListener('change', saveSel);
     });
     form.addEventListener('submit', saveSel);
