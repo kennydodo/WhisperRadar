@@ -122,6 +122,7 @@
   <div class="panel">
     <h2>Title options</h2>
     {% if plan.overview %}<div class="muted" style="font-size:12px;margin:4px 0">The whole video: {{ plan.overview }}</div>{% endif %}
+    {% if plan.points %}<details style="margin:6px 0"><summary class="muted" style="cursor:pointer">The {{ plan.points|length }} points the video will list</summary><ol class="muted" style="font-size:12px">{% for x in plan.points %}<li>{{ x }}</li>{% endfor %}</ol></details>{% endif %}
     {% if plan.formula %}<div class="muted" style="font-size:12px;margin:4px 0">Source title formula: {{ plan.formula }}</div>{% endif %}
     {% if plan.segments and plan.titles|length > 10 %}
       <div style="margin:10px 0 2px"><b>Top 10 of all</b> <span class="muted">&middot; best titles across every segment</span></div>

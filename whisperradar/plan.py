@@ -48,7 +48,7 @@ LAYOUTS = ("character_host", "character", "host")
 
 def empty_plan() -> dict:
     return {"keyword": "", "overview": "", "formula": "", "segments": [], "titles": [],
-            "title": "",
+            "points": [], "title": "",
             "promise": "", "hook": "", "thumbnail": {"layout": "character", "text": "",
                                       "idea": ""},
             "status": "none", "score": None, "applied": False}
@@ -141,6 +141,9 @@ def parse_plan(raw) -> dict:
     # fault, see local_faults)
     cand = candidate_title(titles, title)
     plan["title"] = cand or title or (titles[0]["text"] if titles else "")
+    pts = raw.get("points")
+    plan["points"] = [x for x in (_s(p.get("point") if isinstance(p, dict) else p)[:200]
+                                  for p in (pts if isinstance(pts, list) else [])) if x]
     plan["promise"] = _s(raw.get("promise"))
     plan["hook"] = _s(raw.get("hook"))
     th = raw.get("thumbnail") if isinstance(raw.get("thumbnail"), dict) else {}
@@ -334,19 +337,64 @@ _LISTICLE = re.compile(
     r"benefits?|problems?|risks?|questions?|myths?|types?|tricks?)\b", re.I)
 
 
-def scope_faults(plan: dict) -> list[str]:
-    """A title covers the WHOLE video. "4 Hidden Costs of ..." / "3 Ways to
-    ..." promise one list of parts - that is one slice of the script, not
-    the story - so no option may be a numbered list."""
-    bad = [t["text"] for t in plan["titles"] if _LISTICLE.search(t["text"])]
-    if _LISTICLE.search(plan.get("title") or "") and plan.get("title") not in bad:
-        bad.append(plan["title"])
-    if not bad:
-        return []
-    return [f"{len(bad)} title(s) are a numbered list of parts (for example "
-            f"\"{bad[0]}\"): a list of ways, reasons or costs is one slice "
-            "of the script, not the whole video - rewrite each as a title "
-            "for the overall subject, with no count"]
+_NUMWORDS = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen "
+    "twenty".split())}
+
+
+def list_count(title: str) -> int:
+    """N when a title is a numbered list ("10 Things ...", "Seven Ways ...");
+    0 when it is not."""
+    m = _LISTICLE.search(title or "")
+    if not m:
+        return 0
+    w = m.group(1).lower()
+    return int(w) if w.isdigit() else _NUMWORDS.get(w, 0)
+
+
+def count_range(n: int) -> tuple[int, int]:
+    """The counts a replica of an N-point list may use: about 20% either
+    way (10 -> 8..12), never the exact copy required."""
+    d = max(1, round(n * 0.2))
+    return max(2, n - d), n + d
+
+
+def scope_faults(plan: dict, source_title: str = "") -> list[str]:
+    """A title covers the WHOLE video. "4 Hidden Costs of ..." promises one
+    list of parts - one slice of the script. A count is allowed ONLY when
+    the source video is itself a list of N points: then the count must be
+    within ~20% of N, and the plan must LIST that many points."""
+    src = list_count(source_title)
+    titles = [t["text"] for t in plan["titles"]]
+    if plan.get("title") and plan["title"] not in titles:
+        titles.append(plan["title"])
+    counted = [(t, list_count(t)) for t in titles if list_count(t)]
+    f = []
+    if not src:
+        if counted:
+            f.append(f"{len(counted)} title(s) are a numbered list of parts "
+                     f"(for example \"{counted[0][0]}\"): a list of ways, "
+                     "reasons or costs is one slice of the script, not the "
+                     "whole video - rewrite each as a title for the overall "
+                     "subject, with no count")
+        return f
+    lo, hi = count_range(src)
+    off = [t for t, n in counted if not lo <= n <= hi]
+    if off:
+        f.append(f"{len(off)} title(s) use a count outside {lo}-{hi} (for "
+                 f"example \"{off[0]}\"): the source is a list of {src}, so "
+                 f"a numbered title must stay between {lo} and {hi}")
+    pts = plan.get("points") or []
+    if not lo <= len(pts) <= hi:
+        f.append(f"the source is a list of {src} points: list the points "
+                 f"the video will cover in \"points\" ({lo} to {hi} of "
+                 f"them, got {len(pts)}), each one a short line")
+    chosen = list_count(plan.get("title") or "")
+    if chosen and pts and chosen != len(pts):
+        f.append(f"the chosen title says {chosen} but \"points\" lists "
+                 f"{len(pts)}: they must match")
+    return f
 
 
 def narrow_faults(verdict: dict) -> list[str]:
@@ -384,7 +432,7 @@ def local_faults(plan: dict, source_title: str = "",
     f += originality_faults(plan, source_title, transcript)
     f += phrasing_faults(plan)
     f += variety_faults(plan)
-    f += scope_faults(plan)
+    f += scope_faults(plan, source_title)
     if len(title) > TITLE_MAX:
         f.append(f"title is {len(title)} characters; YouTube allows "
                  f"{TITLE_MAX}")
@@ -511,7 +559,7 @@ _RULES = f"""Rules for the plan:
   4. SELECT: from the drafts of EACH segment take its top {PICKS_PER_SEGMENT} titles (more only if a segment has extra strong ones) - every segment must be represented by at least {PICKS_PER_SEGMENT}. Then rank ALL the picks best first; rank 1 is the chosen title.
   Titles are SIMILAR to what the original video would be called - same topic, same promise, the patterns of the niche's winning titles.
   Every title is ONE short phrase (about 45-65 characters), never split into two parts: no colon, no dash, no brackets, no "X, and Y" second half. One clause, a clear topic and a stake, and nothing more. The source and the best titles in this niche show the shape; copy their structure, not their words.
-  A title represents the WHOLE video. The script is an overview of a subject; no single point makes the video. Never build a title on one item, example, object, cost, number, audience, scene or sub-topic from the script that is only part of the story. Name the overall subject (or the keyword) and the core value for the viewer. Test: delete any one section of the script - the title must still be completely true. If it describes only one part, widen it to the overall subject. NEVER use a numbered list as a title ("4 Ways to...", "3 Hidden Costs of...", "5 Reasons..."): a list of parts is one slice, not the story. Every option, not just the chosen one, must cover the whole video.
+  A title represents the WHOLE video. The script is an overview of a subject; no single point makes the video. Never build a title on one item, example, object, cost, number, audience, scene or sub-topic from the script that is only part of the story. Name the overall subject (or the keyword) and the core value for the viewer. Test: delete any one section of the script - the title must still be completely true. If it describes only one part, widen it to the overall subject. Do NOT use a numbered list as a title ("4 Ways to...", "3 Hidden Costs of...") - a list of parts is one slice, not the story - EXCEPT when the original script itself is a list of N points (a "10 things" video). Then numbered titles are allowed, the count must be between 0.8N and 1.2N (10 -> 8 to 12; it need not equal N), and you must LIST the points in "points" (the same number as the chosen title says), taken from the script's own points. Every option, not just the chosen one, must cover the whole video.
   A title is a TEASER, never the story. It names the topic and the value or stake for the viewer, and it leaves the answer, the reason, the mechanism, the numbers and the fix for the video. If the title could stand as a one-line summary of the video, it gives too much away: rewrite it. Never put the conclusion, the cause, a specific claim or the solution in the title. Bad: "[Problem], and [Topic] Is the [Verdict]" (problem + answer + verdict in one title). Good: a title that raises the question and makes the viewer need the video, e.g. "Why Nobody Wants Your [Thing] Anymore" or "What Nobody Tells You About [Topic]".
 - Every title is at most {TITLE_MAX} characters, and the promise inside the first {TITLE_GOOD}. The keyword does NOT have to be in every title - many titles should not contain it; it is the topic you anchor on, so titles can use other natural words for the same subject. When it does appear it may sit anywhere and need not be the first words. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. When the keyword is used it is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
   Bad (never write like this): a keyword pile ("[Topic] Hacks Secrets Revealed Now"), the keyword repeated or bolted on with a colon or brackets, or unnatural word order ("Habits Home Japanese That Work"). Test every title by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
@@ -572,6 +620,7 @@ Reply with ONE JSON object and nothing else:
  "formula": "the title formula you decided on, in one line",
  "segments": [{{"name": "2-5 words", "titles": ["...", "..."]}}, ... {SEGMENTS} segments of the script, about {PER_SEGMENT} drafted titles each],
  "titles": [{{"text": "...", "segment": "its segment's exact name", "why": "one short line"}}, ... the top {PICKS_PER_SEGMENT} (or more) of EACH segment, then ranked across ALL segments together, rank 1 first (the first 10 must be the 10 best of the whole video), all similar to the source, none identical to it],
+ "points": ["ONLY if the source is a list of N points and you use a count in a title: one short line per point the video will cover, between 0.8N and 1.2N of them (10 -> 8 to 12; not necessarily 10); otherwise leave empty"],
  "title": "rank 1, copied exactly from the options",
  "promise": "...",
  "thumbnail": {{"layout": "character_host|character|host", "text": "2-4 words", "idea": "one line"}}}}"""
@@ -579,7 +628,7 @@ Reply with ONE JSON object and nothing else:
 
 def _plan_json(plan: dict) -> str:
     return json.dumps({k: plan[k] for k in ("keyword", "overview", "formula", "segments",
-                                            "titles",
+                                            "titles", "points",
                                             "title",
                                             "promise", "thumbnail")},
                       ensure_ascii=False, indent=1)
@@ -601,7 +650,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Similarity is part of the job: the titles must replicate the video the script comes from - the same topic, promise and the title patterns of the niche, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise. Quote the weak title and give a closer rewrite in "fixes". Scope is part of the job and you audit EVERY title, one by one: read the plan's "overview", then for each of the {TITLES_KEEP} options ask "if any single section of the script were deleted, is this title still completely true, and does it describe the whole video?". A title built on ONE point, item, example, cost, audience, relationship, number or list from the script (furniture, rent, retirement, kids, "4 ways to...", "3 hidden costs of...") FAILS that audit, even if it sounds good. Put the exact text of EVERY title that fails in "narrow" (empty list only if all pass); any entry in "narrow" means the plan does not pass. Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or some segment has fewer than {PICKS_PER_SEGMENT} titles among the options, or the segments are not core values (they list the script's facts, costs, figures or claims instead) or a title uses the script's specifics instead of the topic and the value it sells, or the script was not really divided into segments - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced into a title that reads better without it. A title does not have to contain the keyword; it has to be natural. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the keyword is a phrase people really search for, taken from the script, the titles stay on that topic (without needing to repeat it) and sound like natural spoken English; a real curiosity gap that is not clickbait, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first ACROSS ALL segments (the first 10 options are the 10 best titles of the whole plan, shown on top). Name the exact text that is weak.
+Similarity is part of the job: the titles must replicate the video the script comes from - the same topic, promise and the title patterns of the niche, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise. Quote the weak title and give a closer rewrite in "fixes". Scope is part of the job and you audit EVERY title, one by one: read the plan's "overview", then for each of the {TITLES_KEEP} options ask "if any single section of the script were deleted, is this title still completely true, and does it describe the whole video?". A title built on ONE point, item, example, cost, audience, relationship, number or list from the script (furniture, rent, retirement, kids, "4 ways to...", "3 hidden costs of...") FAILS that audit, even if it sounds good. (A numbered title is fine ONLY when the script is itself a list; then check that "points" really lists the script's points, in a count between 0.8N and 1.2N, matching the number in the chosen title - if the points are missing, invented or do not match the script, FAIL and say so.) Put the exact text of EVERY title that fails in "narrow" (empty list only if all pass); any entry in "narrow" means the plan does not pass. Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or some segment has fewer than {PICKS_PER_SEGMENT} titles among the options, or the segments are not core values (they list the script's facts, costs, figures or claims instead) or a title uses the script's specifics instead of the topic and the value it sells, or the script was not really divided into segments - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced into a title that reads better without it. A title does not have to contain the keyword; it has to be natural. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the keyword is a phrase people really search for, taken from the script, the titles stay on that topic (without needing to repeat it) and sound like natural spoken English; a real curiosity gap that is not clickbait, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first ACROSS ALL segments (the first 10 options are the 10 best titles of the whole plan, shown on top). Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "narrow": ["exact title that covers only one point"], "faults": ["specific problem"], "fixes": ["specific rewrite"]}}

@@ -331,6 +331,30 @@ class ScopeTests(unittest.TestCase):
     def test_whole_video_titles_pass(self):
         self.assertEqual(pp.scope_faults(pp.parse_plan(good())), [])
 
+    def test_list_source_allows_a_count_within_20_percent(self):
+        src = "10 Things Nobody Tells You About Coin Jars"
+        pts = [f"point {i}" for i in range(9)]
+        p = pp.parse_plan(good(title="9 Things About Your Coin Jar", points=pts))
+        p["titles"][0]["text"] = p["title"]
+        self.assertEqual(pp.scope_faults(p, src), [])
+        # exactly 10 is fine too, 5 and 15 are not
+        for bad in ("5 Things About Your Coin Jar", "15 Things About Your Coin Jar"):
+            q = pp.parse_plan(good(title=bad, points=pts))
+            q["titles"][0]["text"] = q["title"]
+            self.assertTrue(any("outside 8-12" in x for x in pp.scope_faults(q, src)))
+        self.assertEqual(pp.count_range(10), (8, 12))
+
+    def test_list_source_forces_the_points(self):
+        src = "10 Things Nobody Tells You About Coin Jars"
+        p = pp.parse_plan(good(title="9 Things About Your Coin Jar"))
+        p["titles"][0]["text"] = p["title"]
+        f = pp.scope_faults(p, src)
+        self.assertTrue(any("list the points" in x for x in f))
+        p["points"] = ["a"] * 12
+        self.assertTrue(any("must match" in x for x in pp.scope_faults(p, src)))
+        p["points"] = ["a"] * 9
+        self.assertEqual(pp.scope_faults(p, src), [])
+
     def test_judge_narrow_titles_block_a_pass(self):
         v = {"score": 9.5, "pass": True,
              "narrow": ["You Are Paying Rent on Stuff You Never Use"]}
@@ -362,7 +386,7 @@ class ReplicateTests(unittest.TestCase):
 
     def test_same_number_and_shared_words_are_fine_now(self):
         p = self.plan(title="7 Secret Lab Rules Animals Follow",
-                      keyword="secret lab")
+                      keyword="secret lab", points=["p"] * 7)
         self.assertFalse([f for f in pp.local_faults(
             p, "7 Secret Lab Rules Animals Break") if "source" in f])
 
