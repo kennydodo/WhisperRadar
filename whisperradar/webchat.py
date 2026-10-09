@@ -1008,6 +1008,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
     t0 = clock()
     last_text, stable_since, continues = "", clock(), 0
     started = False
+    probed = False
     active = clock()                       # last sign of life
     while True:
         page.wait_for_timeout(int(poll * 1000))
@@ -1040,6 +1041,23 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
             # the new one starts: its text must not count as the answer
             if st["count"] > before or gen or (text and text != old_text):
                 started = True
+            elif not probed and clock() - t0 > 20:
+                # nothing yet: say where the chat is. A site may open the new
+                # chat in ANOTHER tab/page (the watched page then stays on
+                # the empty start page) - follow it there.
+                probed = True
+                try:
+                    pages = list(page.context.pages)
+                    log(f"{site.name}: no answer yet after 20 s; this page: "
+                        f"{page.url}; open pages: {[p.url for p in pages]}")
+                    for p in pages:
+                        if p is not page and p.evaluate(site.sent_js):
+                            page = p
+                            log(f"{site.name}: the chat is open in another "
+                                f"page - switched to it")
+                            break
+                except Exception:  # noqa: BLE001
+                    pass
             elif clock() - t0 > start_wait:
                 tail = " ".join(str(page.evaluate(_PAGE_TAIL_JS)
                                     or "").split())[-240:]
