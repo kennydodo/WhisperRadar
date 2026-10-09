@@ -36,6 +36,8 @@ from flask import (
 from . import external_prompts
 from . import demand as demand_mod
 from . import niche_chips
+from . import niche as niche_mod
+from . import similar as similar_mod
 from . import trending as trending_mod
 from . import timing as timing_mod
 from . import packaging
@@ -756,8 +758,8 @@ def create_app(cfg) -> Flask:
         from . import outliers
         args = request.args
         tab = (args.get("tab") if args.get("tab") in (
-            "topics", "channels", "keywords", "analyze", "trending")
-            else "outliers")
+            "topics", "channels", "keywords", "analyze", "trending",
+            "niches") else "outliers")
 
         def _num(name, default, cast=float):
             try:
@@ -858,6 +860,9 @@ def create_app(cfg) -> Flask:
             fmt_age=outliers.fmt_age, with_momentum=with_momentum,
             trend_feed=(trending_mod.load(cfg) if tab == "trending"
                         else None),
+            niche_cards=(niche_mod.cards(items) if tab == "niches" else []),
+            similar=(similar_mod.all_similar(items)
+                     if tab == "channels" else {}),
             kw=(insights.keywords(items) if tab == "keywords" else []),
             post_times=(timing_mod.best(items) if tab == "keywords"
                         else None),
