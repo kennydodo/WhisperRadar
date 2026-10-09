@@ -21,7 +21,7 @@ from typing import Callable
 
 from . import db
 
-MAX_ATTACH = 16                # images per message (Claude refuses > 20)
+MAX_ATTACH = 18                # images per message (Claude refuses > 20)
 THUMBS = 3                     # thumbnails of the first videos, as extras
 MAX_FRAMES = MAX_ATTACH - THUMBS
 MIN_FRAMES = 5
