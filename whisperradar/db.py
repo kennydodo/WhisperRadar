@@ -34,6 +34,19 @@ CREATE TABLE IF NOT EXISTS channel_snapshots (
     PRIMARY KEY (channel_id, taken_at)
 );
 
+-- the swipe file: winning patterns the person kept on purpose
+CREATE TABLE IF NOT EXISTS swipes (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL DEFAULT 'thumbnail',
+    note TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    thumb_url TEXT NOT NULL DEFAULT '',
+    video_id TEXT NOT NULL DEFAULT '',
+    channel_name TEXT NOT NULL DEFAULT '',
+    genre TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
 -- how each published video of ours did: views at 24h / 7d / 28d
 CREATE TABLE IF NOT EXISTS prod_results (
     production_id INTEGER NOT NULL,
@@ -579,6 +592,44 @@ def list_channel_snapshots(conn, since_days: int = 90, now=None) -> dict:
             {"taken_at": row[1], "subscribers": row[2], "views": row[3],
              "video_count": row[4]})
     return out
+
+
+SWIPE_KINDS = ("thumbnail", "title", "hook", "structure")
+
+
+def add_swipe(conn, kind: str = "thumbnail", title: str = "", note: str = "",
+              video_id: str = "", channel_name: str = "", genre: str = "",
+              thumb_url: str = "") -> int:
+    """Save a winning pattern. Re-saving the same video+kind returns the
+    existing row instead of duplicating it."""
+    if video_id:
+        dup = conn.execute(
+            "SELECT id FROM swipes WHERE video_id = ? AND kind = ?",
+            (video_id, kind)).fetchone()
+        if dup:
+            return dup["id"]
+    cur = conn.execute(
+        "INSERT INTO swipes (kind, note, title, thumb_url, video_id,"
+        " channel_name, genre) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (kind, note, title, thumb_url, video_id, channel_name, genre))
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_swipes(conn, limit: int = 50, kind: str = "") -> list[dict]:
+    sql = "SELECT * FROM swipes"
+    args: list = []
+    if kind:
+        sql += " WHERE kind = ?"
+        args.append(kind)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    return [dict(r) for r in conn.execute(sql, args)]
+
+
+def delete_swipe(conn, swipe_id: int) -> None:
+    conn.execute("DELETE FROM swipes WHERE id = ?", (swipe_id,))
+    conn.commit()
 
 
 def set_view_counts(conn, videos: list[dict]) -> int:

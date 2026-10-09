@@ -1003,6 +1003,51 @@ def create_app(cfg) -> Flask:
             f"{stored} of {len(ids)} channel(s) snapshotted "
             "(1 unit per 50 channels; once a day each)"))
 
+    @app.get("/swipes")
+    def swipes_page():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            rows = db.list_swipes(conn, limit=200,
+                                  kind=(request.args.get("kind") or "").strip())
+        finally:
+            conn.close()
+        return render_template(
+            "swipes.html", swipes=rows, kinds=db.SWIPE_KINDS,
+            kind=(request.args.get("kind") or "").strip(),
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/swipes")
+    def swipes_add():
+        kind = (request.form.get("kind") or "thumbnail").strip().lower()
+        if kind not in db.SWIPE_KINDS:
+            kind = "thumbnail"
+        fields = {f: (request.form.get(f) or "").strip()[:300]
+                  for f in ("title", "note", "video_id", "channel_name",
+                            "genre", "thumb_url")}
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_swipe(conn, kind=kind, **fields)
+        finally:
+            conn.close()
+        back = (request.form.get("back") or "/swipes").strip()
+        if not back.startswith("/"):
+            back = "/swipes"
+        sep = "&" if "?" in back else "?"
+        return redirect(back + sep + "msg=" + quote(
+            "Saved to the swipe file"))
+
+    @app.post("/swipes/<int:sid>/delete")
+    def swipes_delete(sid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.delete_swipe(conn, sid)
+        finally:
+            conn.close()
+        return redirect("/swipes?msg=" + quote("Removed"))
+
     @app.post("/research/discover")
     def research_discover():
         """Find channels not watched yet for a topic (100 API units)."""

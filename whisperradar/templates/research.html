@@ -77,6 +77,7 @@
   <a href="/research" class="active">Research</a>
   <a href="/studio">Studio</a>
   <a href="/finished">Finished</a>
+  <a href="/swipes">Swipe file</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
 </nav>
@@ -364,7 +365,17 @@
             <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">
             <button type="submit" title="Start a production from this video">Make this</button>
           </form>
-          <a href="/research?tab=analyze&v={{ r.video_id }}" style="font-size:12px">analyze</a></td>
+          <a href="/research?tab=analyze&v={{ r.video_id }}" style="font-size:12px">analyze</a>
+          <form method="post" action="/swipes" style="display:inline;margin:0">
+            <input type="hidden" name="kind" value="thumbnail">
+            <input type="hidden" name="title" value="{{ r.title }}">
+            <input type="hidden" name="video_id" value="{{ r.video_id }}">
+            <input type="hidden" name="channel_name" value="{{ r.channel_name }}">
+            <input type="hidden" name="genre" value="{{ r.genre or '' }}">
+            <input type="hidden" name="thumb_url" value="{{ r.thumb }}">
+            <input type="hidden" name="back" value="/research?tab=outliers">
+            <button type="submit" style="font-size:12px;padding:2px 8px" title="keep this winner in the swipe file">save</button>
+          </form></td>
       </tr>
     {% endfor %}
     </tbody>

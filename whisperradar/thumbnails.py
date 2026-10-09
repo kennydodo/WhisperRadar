@@ -201,6 +201,15 @@ def context(cfg, pid: int) -> dict:
     ctx["ref_text"] = "\n".join(
         f"- {n}: {(r.get('prompt') or '(supplied image)')[:300]}"
         for n, r in refs.items()) or "(none)"
+    try:
+        from . import db as _db
+        _conn = _db.connect(cfg.db_path)
+        try:
+            ctx["swipes"] = _db.list_swipes(_conn, limit=12)
+        finally:
+            _conn.close()
+    except Exception:  # noqa: BLE001 - a swipe failure never blocks writing
+        ctx["swipes"] = []
     return ctx
 
 
@@ -224,6 +233,19 @@ def _plan_text(ctx: dict) -> str:
     return learned + ("THUMBNAIL IDEA FROM THE PACKAGING PLAN (one of your concepts "
             f"should build on it): layout {t.get('layout')}, words "
             f"\"{t.get('text')}\", {t.get('idea')}\n\n")
+
+
+def _swipe_text(ctx: dict) -> str:
+    rows = ctx.get("swipes") or []
+    if not rows:
+        return ""
+    lines = "\n".join(
+        f"- {s['kind']}: \"{(s['title'] or '(untitled)')[:90]}\""
+        + (f" - {s['note'][:120]}" if s["note"] else "")
+        + (f" ({s['channel_name']})" if s["channel_name"] else "")
+        for s in rows)
+    return ("SWIPE FILE - patterns we kept on purpose: learn the device or "
+            "angle they show, do not copy them.\n" + lines + "\n\n")
 
 
 def writer_prompt(ctx: dict, has_inspiration: bool = False) -> str:
@@ -254,7 +276,7 @@ Reference images used in the video:
 THUMBNAILS THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (titles only - learn the angle):
 {chr(10).join(f'- {t} ({m:.0f}x)' for t, m in ctx['refs']) or '(none available)'}
 
-{_RULES}
+{_swipe_text(ctx)}{_RULES}
 
 Reply with ONE JSON object and nothing else:
 {{"concepts": [{{"layout": "character_host|character|host", "text": "2-4 words", "text_pos": "left|right|top|bottom", "text_color": "#FFFFFF", "accent": "#FFD400", "emphasis": "none|ellipse|arrow|underline", "focal": "auto|left|right|top|bottom|center", "art_prompt": "...", "idea": "one line: why this one gets the click"}}, ...]}}"""
