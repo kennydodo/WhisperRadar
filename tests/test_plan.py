@@ -319,6 +319,31 @@ class SourceTitleStaysOutTests(unittest.TestCase):
         self.assertNotIn("secret lab", text.lower())
 
 
+class ScopeTests(unittest.TestCase):
+    def test_numbered_list_titles_are_rejected(self):
+        p = pp.parse_plan(good())
+        p["titles"][3]["text"] = "4 Hidden Costs of Keeping Coin Jars Nobody Wants"
+        f = pp.scope_faults(p)
+        self.assertTrue(f and "numbered list" in f[0])
+        self.assertTrue(any("numbered list" in x for x in pp.local_faults(p)))
+
+    def test_whole_video_titles_pass(self):
+        self.assertEqual(pp.scope_faults(pp.parse_plan(good())), [])
+
+    def test_judge_narrow_titles_block_a_pass(self):
+        v = {"score": 9.5, "pass": True,
+             "narrow": ["You Are Paying Rent on Stuff You Never Use"]}
+        f = pp.narrow_faults(v)
+        self.assertTrue(f and "only one point" in f[0])
+        self.assertEqual(pp.narrow_faults({"narrow": []}), [])
+
+    def test_judge_audits_every_title(self):
+        prompt = pp.judge_prompt({"channel": "c", "genre": "g", "transcript": "x",
+                                  "refs": []}, pp.parse_plan(good()), [])
+        self.assertIn('"narrow"', prompt)
+        self.assertIn("EVERY title", prompt)
+
+
 class ReplicateTests(unittest.TestCase):
     SRC = "I Found The Secret Lab Where Animals Learn To Talk"
 
