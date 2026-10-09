@@ -94,9 +94,9 @@ class DefinitionTests(Base):
         self.assertIn("Small model", args)
         self.assertIn("High", args)
         self.assertIn({"text": "DeepThink", "want": True}, args)
-        self.assertIn({"text": "Search", "want": False}, args)
+        self.assertIn({"text": "Search", "want": True}, args)   # search is always on
         self.assertIn("Small", msg)
-        self.assertIn("Web search off", msg)
+        self.assertIn("Web search on", msg)
 
     def test_no_model_asked_leaves_the_site_alone(self):
         webchat.set_custom_sites([SITE])

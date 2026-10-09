@@ -259,14 +259,14 @@ class TogglePage:
 
 
 class ModeTests(unittest.TestCase):
-    def test_deepseek_defaults_are_deepthink_on_search_off(self):
-        page = TogglePage(deepthink=False, search=True)
+    def test_deepseek_defaults_are_deepthink_on_search_on(self):
+        page = TogglePage(deepthink=False, search=False)
         wc.DEEPSEEK.prepare(page)
-        self.assertEqual(page.state, {"DeepThink": True, "Search": False})
+        self.assertEqual(page.state, {"DeepThink": True, "Search": True})
         self.assertEqual(sorted(page.clicks), ["DeepThink", "Search"])
 
     def test_deepseek_switches_already_right_are_left_alone(self):
-        page = TogglePage(deepthink=True, search=False)
+        page = TogglePage(deepthink=True, search=True)
         wc.DEEPSEEK.prepare(page)
         self.assertEqual(page.clicks, [])
 

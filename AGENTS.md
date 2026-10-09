@@ -1719,3 +1719,11 @@ the original).
   are used. Its feedback/weak_spans are scrubbed (`scrub_for_writer`, allowing the
   script and the brief) and the prompt limits them to style/tone advice and keywords.
 - Length window stays 80-115% of the target.
+
+## Web search is always on
+Every web chat searches the web (writer researches, judge verifies claims):
+`webchat.is_search_toggle` forces any custom-site switch whose id/label matches
+search/browse/web to ON in `_generic_prepare`; `_deepseek_prepare` always turns
+Search on; `_zai_prepare` tries a "Web Search" control (best effort, only that
+exact label). The Search selects were removed from the forms. ChatGPT and Claude
+search on their own when they need to.

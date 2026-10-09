@@ -262,7 +262,7 @@ class OptionsTests(unittest.TestCase):
                                    {"deepthink": True, "search": True}))
         d = ws.WebTransport(Chat(), lambda m: None)
         d.ask("deepseek", "p")
-        self.assertEqual(seen[2][1], {"deepthink": True, "search": False})
+        self.assertEqual(seen[2][1], {"deepthink": True, "search": True})
 
 
 class RouteOptionTests(Base):
@@ -297,7 +297,7 @@ class RouteOptionTests(Base):
             opts = job.call_args.args[6]
         self.assertEqual(opts["zai"], {"thinking": "Low", "model": "flash"})
         self.assertEqual(opts["deepseek"], {"deepthink": True,
-                                            "search": False})
+                                            "search": True})
 
 class SendTests(unittest.TestCase):
     def test_big_prompts_switch_to_attached_files(self):

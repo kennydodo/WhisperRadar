@@ -4371,8 +4371,7 @@ def create_app(cfg) -> Flask:
             "deepseek": {
                 "deepthink": (form.get("deepseek_deepthink")
                               or "on") != "off",
-                "search": (form.get("deepseek_search")
-                           or "off") == "on"}}
+                "search": True}}      # web search is always on
         # remember them: Auto Run runs with the settings used last
         if not remember:
             return opts_all

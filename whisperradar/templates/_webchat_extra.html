@@ -6,12 +6,12 @@
 (function () {
   var SITES = {{ webchat_custom_sites()|tojson }};
   var BUILTIN = {zai: ['zai_model', 'zai_thinking'],
-                 deepseek: ['deepseek_deepthink', 'deepseek_search']};
+                 deepseek: ['deepseek_deepthink']};
   var BUILTIN_CTRLS = {
     zai: [['Model', 'zai_model', [['flash', 'GLM-5.3-Flash'], ['5.3', 'GLM-5.3'], ['5.2', 'GLM-5.2']], 'z.ai model for this run'],
           ['Deep Think', 'zai_thinking', [['Low', 'Low'], ['High', 'High'], ['Max', 'Max']], 'z.ai Deep Think level']],
     deepseek: [['DeepThink', 'deepseek_deepthink', [['on', 'On'], ['off', 'Off']], "DeepSeek's DeepThink switch"],
-               ['Search', 'deepseek_search', [['off', 'Off'], ['on', 'On']], "DeepSeek's web Search switch"]]
+]
   };
   function sel(name, items, title) {
     var s = document.createElement('select'); s.name = name; s.title = title || '';
@@ -52,6 +52,7 @@
           site.name + ' level for this run')));
       }
       (site.toggles || []).forEach(function (t) {
+        if (/search|browse|\bweb\b/i.test(t.id + ' ' + t.label)) return;   // always on
         grp.appendChild(field(t.label, sel('wc_' + site.key + '_' + t.id,
           [['off', 'Off'], ['on', 'On']], site.name + ' ' + t.label)));
       });
@@ -189,7 +190,6 @@
       if (o.zai) { set('zai_model', o.zai.model); set('zai_thinking', o.zai.thinking); }
       if (o.deepseek) {
         set('deepseek_deepthink', o.deepseek.deepthink === false ? 'off' : 'on');
-        set('deepseek_search', o.deepseek.search ? 'on' : 'off');
       }
       SITES.forEach(function (site) {
         var c = o[site.key]; if (!c) return;

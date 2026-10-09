@@ -114,6 +114,17 @@ def _zai_pick_model(page, model: str) -> None:
             f"whisperradar.webchat login zai - or pick GLM-5.3-Flash.")
 
 
+def _zai_search_on(page) -> None:
+    """Best effort: switch z.ai's "Web Search" on. Only a control labelled
+    'Web Search' is touched (a bare 'Search' is the sidebar's chat search)."""
+    try:
+        res = page.evaluate(_TOGGLE_JS, {"text": "web search", "want": True})
+        if res == "clicked":
+            page.wait_for_timeout(300)
+    except Exception:  # noqa: BLE001 - layout changed or fake page: skip
+        pass
+
+
 def _zai_prepare(page, thinking: str = "Low", model: str = "flash") -> None:
     """Pick the model, then z.ai's Deep Think level (it defaults to Max on
     every page load, and Max can spend the whole turn thinking and answer
@@ -124,6 +135,7 @@ def _zai_prepare(page, thinking: str = "Low", model: str = "flash") -> None:
         raise
     except Exception:  # noqa: BLE001 - the picker moved: keep the default
         pass
+    _zai_search_on(page)
     opened = page.evaluate("""() => {
         const spans=[...document.querySelectorAll('span')].filter(
           e=>/^(Low|High|Max)$/.test((e.innerText||'').trim())
@@ -167,9 +179,20 @@ _DS_TOGGLE_JS = """(args) => {
   t.click(); return 'clicked'; }"""
 
 
-def _deepseek_prepare(page, deepthink: bool = True, search: bool = False):
-    """DeepSeek remembers its two switches between chats; set both to what
-    the run asked for (DeepThink on, Search off by default)."""
+SEARCH_RE = re.compile(r"search|browse|\bweb\b", re.I)
+
+
+def is_search_toggle(tg: dict) -> bool:
+    """A switch that turns the site's web search on."""
+    return bool(SEARCH_RE.search(
+        f"{tg.get('id') or ''} {tg.get('label') or ''} {tg.get('text') or ''}"))
+
+
+def _deepseek_prepare(page, deepthink: bool = True, search: bool = True):
+    """DeepSeek remembers its two switches between chats; set DeepThink as
+    asked. Web Search is ALWAYS on: the writer researches and the judge
+    verifies claims, so every web chat searches the web."""
+    search = True
     for label, want in (("DeepThink", bool(deepthink)),
                         ("Search", bool(search))):
         res = page.evaluate(_DS_TOGGLE_JS, {"label": label, "want": want})
@@ -444,7 +467,8 @@ def _generic_prepare(spec: dict):
             pick("models", model, "model")
         pick("levels", level, spec.get("level_label") or "level")
         for tg in spec.get("toggles") or []:
-            want = bool((toggles or {}).get(tg["id"], False))
+            want = (True if is_search_toggle(tg)
+                    else bool((toggles or {}).get(tg["id"], False)))
             try:
                 res = page.evaluate(_TOGGLE_JS, {"text": tg.get("text")
                                                  or tg.get("label"),

@@ -90,6 +90,42 @@ class JudgeSeesOriginalWriterDoesNot(Base):
         self.assertNotIn("Hargrove", back)
         self.assertIn("open sharper", back)
 
+class WebSearchAlwaysOn(unittest.TestCase):
+    def test_search_toggles_are_forced_on(self):
+        from whisperradar import webchat
+        spec = {"name": "X", "toggles": [
+            {"id": "search", "label": "Web search", "text": "Search"},
+            {"id": "think", "label": "Think", "text": "Think"}]}
+        seen = []
+
+        class Page:
+            def evaluate(self, js, arg=None):
+                seen.append(arg)
+                return "ok"
+
+            def wait_for_timeout(self, ms):
+                pass
+        webchat._generic_prepare(spec)(Page(), toggles={"search": False,
+                                                        "think": False})
+        wants = {a["text"]: a["want"] for a in seen if a}
+        self.assertTrue(wants["Search"])
+        self.assertFalse(wants["Think"])
+        self.assertTrue(webchat.is_search_toggle({"label": "Browse the web"}))
+
+    def test_deepseek_search_cannot_be_turned_off(self):
+        from whisperradar import webchat
+        seen = []
+
+        class Page:
+            def evaluate(self, js, arg=None):
+                seen.append(arg)
+                return "ok"
+
+            def wait_for_timeout(self, ms):
+                pass
+        webchat._deepseek_prepare(Page(), deepthink=True, search=False)
+        self.assertTrue({a["label"]: a["want"] for a in seen}["Search"])
+
 
 if __name__ == "__main__":
     unittest.main()

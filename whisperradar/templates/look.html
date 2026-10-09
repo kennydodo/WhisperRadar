@@ -61,10 +61,11 @@
             {% for m in s.levels %}<option value="{{ m.id }}">{{ m.label }}</option>{% endfor %}
           </select></label>
         {% endif %}
-        {% for t in s.toggles or [] %}
+        {% for t in s.toggles or [] %}{% set _n = ((t.id or '') ~ ' ' ~ (t.label or ''))|lower %}
+        {% if 'search' not in _n and 'browse' not in _n and 'web' not in _n %}
         <label>{{ t.label }}
           <select name="wc_{{ s.key }}_{{ t.id }}"><option value="off">Off</option><option value="on">On</option></select></label>
-        {% endfor %}
+        {% endif %}{% endfor %}
       </span>
       {% endfor %}
       <label>Frames
