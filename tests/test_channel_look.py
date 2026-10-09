@@ -111,6 +111,29 @@ class LookTests(unittest.TestCase):
         self.assertTrue(names <= {"wr.db", "channel_look", "wr.db-wal",
                                   "wr.db-shm", "wr.db-journal"}, names)
 
+    def test_page_shows_the_chat_models_on_the_same_line(self):
+        from whisperradar import webchat
+        client = create_app(self.cfg).test_client()   # loads saved sites
+        site = {"key": "paidchat", "name": "Paid Chat", "paid": True,
+                "url": "https://example.com/", "box": "textarea",
+                "reply": ".r", "models": [{"id": "m1", "label": "Model One"}],
+                "levels": [{"id": "hi", "label": "High"}],
+                "level_label": "Thinking", "toggles": []}
+        defs, _ = webchat.sanitize_sites([site])
+        keys = webchat.set_custom_sites(defs)
+        webchat._UI["paidchat"] = {k: defs[0][k] for k in (
+            "key", "name", "models", "levels", "level_label", "toggles",
+            "paid")}
+        try:
+            r = client.get("/watched/UCrival/look")
+            html = r.get_data(as_text=True)
+            self.assertIn('name="wc_paidchat_model"', html)
+            self.assertIn("Model One", html)
+            self.assertIn('name="wc_paidchat_level"', html)
+        finally:
+            webchat.set_custom_sites([])
+            webchat._UI.clear()
+
     def test_total_attachments_are_capped(self):
         tr = FakeTransport()
         channel_look.run(
