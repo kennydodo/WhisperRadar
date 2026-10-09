@@ -3141,6 +3141,86 @@ def _ngrams(text: str, n: int = 5) -> set:
     return {tuple(words[i:i + n]) for i in range(max(0, len(words) - n + 1))}
 
 
+# ---- structure copy: a paraphrase that keeps the original's order ----------
+
+STRUCT_MATCH = 0.45        # Dice similarity of two sentences' content words
+STRUCT_MIN_MATCHED = 0.50  # share of script sentences that echo the source
+STRUCT_MIN_ORDER = 0.75    # ...and follow the source's order this closely
+_STOP = frozenset((
+    "the and for that this with from have has had are was were been will "
+    "would could should their there they them then than what when where "
+    "which while your you not but can its it's into about over just more "
+    "some such only also very out all any one two how why who whom his her "
+    "she him our ours these those being does did done off per via yet").split())
+
+
+def _stem(w: str) -> str:
+    for suf in ("ing", "ed", "es", "s"):
+        if len(w) > len(suf) + 3 and w.endswith(suf):
+            return w[:-len(suf)]
+    return w
+
+
+def _content_set(sentence: str) -> frozenset:
+    return frozenset(_stem(w) for w in re.findall(r"[a-z0-9']+",
+                                                    sentence.lower())
+                     if len(w) > 2 and w not in _STOP)
+
+
+def _sentences(text: str) -> list[frozenset]:
+    out = []
+    for part in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        if len(part.split()) >= 6:
+            cs = _content_set(part)
+            if len(cs) >= 3:
+                out.append(cs)
+    return out
+
+
+def structure_copy(script: str, source: str) -> dict:
+    """Does the script re-tell the source sentence by sentence, in the same
+    order, even with different words? `matched` = share of the script's
+    sentences whose content words mostly match one source sentence; `order`
+    = how much of that matched sequence runs in the source's own order
+    (1.0 = the same sequence). `flag` is set when both are high."""
+    import bisect
+    a, b = _sentences(script), _sentences(source)
+    if len(a) < 5 or len(b) < 5:
+        return {"matched": 0.0, "order": 0.0, "flag": False, "pairs": 0}
+    seq = []
+    for cs in a:
+        best, best_j = 0.0, -1
+        for j, ds in enumerate(b):
+            inter = len(cs & ds)
+            if not inter:
+                continue
+            sim = 2.0 * inter / (len(cs) + len(ds))
+            if sim > best:
+                best, best_j = sim, j
+        if best >= STRUCT_MATCH:
+            seq.append(best_j)
+    matched = len(seq) / len(a)
+    tails: list[int] = []                       # longest increasing run
+    for j in seq:
+        k = bisect.bisect_left(tails, j)
+        if k == len(tails):
+            tails.append(j)
+        else:
+            tails[k] = j
+    order = (len(tails) / len(seq)) if seq else 0.0
+    flag = (len(seq) >= 5 and matched >= STRUCT_MIN_MATCHED
+            and order >= STRUCT_MIN_ORDER)
+    return {"matched": round(matched, 3), "order": round(order, 3),
+            "flag": flag, "pairs": len(seq)}
+
+
+def structure_reason(info: dict) -> str:
+    return (f"the script re-tells the source in the same order "
+            f"({info['matched']:.0%} of its sentences echo a source sentence, "
+            f"{info['order']:.0%} of them in the source's order) - choose "
+            f"your own story structure and different angles")
+
+
 def overlap_ratio(script: str, source: str) -> float:
     """Share of the script's 5-grams that also appear in the source text."""
     a, b = _ngrams(script), _ngrams(source or "")

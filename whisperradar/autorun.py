@@ -712,6 +712,12 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         passed, why, too_long, too_short = _script_gate(
             words, target_words, overlap, score, min_rating, max_overlap,
             hard_overlap, rating.get("error"))
+        struct = studio.structure_copy(text, source_text)
+        if struct["flag"]:
+            passed = False
+            why = list(why) + [studio.structure_reason(struct)]
+            rating["feedback"] = list(rating.get("feedback") or []) + [
+                studio.structure_reason(struct)]
         (auto_dir / f"attempt-{attempt}.md").write_text(text + "\n",
                                                         encoding="utf-8")
         attempts.append({"attempt": attempt, "text": text, "overlap": overlap,

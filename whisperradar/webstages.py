@@ -469,6 +469,17 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             words, target, overlap, score, min_rating, max_overlap,
             hard_overlap, err)
         cut = studio.script_looks_truncated(script)
+        struct = (studio.structure_copy(script, source) if source.strip()
+                  else {"flag": False})
+        if source.strip():
+            log(f"round {rnd}: structure vs source - "
+                f"{struct.get('matched', 0):.0%} of sentences echo the "
+                f"source, order {struct.get('order', 0):.0%}"
+                + (" - TOO CLOSE" if struct["flag"] else ""))
+        if struct["flag"]:
+            passed = False
+            reasons.append(studio.structure_reason(struct))
+            judged["feedback"].append(studio.structure_reason(struct))
         from . import plan as _plan
         meta = _plan.meta_mentions(script)
         if meta:
