@@ -117,6 +117,108 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(Image.open(out).size, (1280, 720))
 
 
+class EmphasisTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.dir = Path(tempfile.mkdtemp())
+        self.art = png(self.dir / "a.png", (1280, 720), (200, 220, 255))
+
+    def base(self, **over):
+        c = {"text": "WAIT", "text_pos": "left", "text_color": "#FFFFFF",
+             "accent": "#FFD400"}
+        c.update(over)
+        return c
+
+    def px(self, concept, name):
+        out = th.compose(self.art, concept, self.dir / f"{name}.jpg")
+        return Image.open(out).convert("RGB")
+
+    def test_parse_keeps_emphasis_and_focal_and_defaults(self):
+        got = th.parse_concepts([
+            concept(emphasis="Ellipse", focal="RIGHT"),
+            concept("host", emphasis="sparkles", focal="nowhere"),
+            concept("host")])
+        self.assertEqual([(c["emphasis"], c["focal"]) for c in got],
+                         [("ellipse", "right"), ("none", "auto"),
+                          ("none", "auto")])
+
+    def test_concepts_json_round_trips_emphasis_and_focal(self):
+        got = th.parse_concepts([concept(emphasis="arrow", focal="top")])
+        back = th.parse_concepts(json.loads(th._concepts_json(got)))
+        self.assertEqual((back[0]["emphasis"], back[0]["focal"]),
+                         ("arrow", "top"))
+
+    def test_writer_prompt_explains_focal_and_follows_the_original(self):
+        ctx = {"channel": "C", "genre": "g", "channel_about": "", "kit_title": "T",
+               "keyword": "k", "script": "s", "bible": "b", "ref_text": "-",
+               "refs": [], "plan": {}, "learned": ""}
+        text = th.writer_prompt(ctx, has_inspiration=True)
+        self.assertIn('"focal"', text)
+        self.assertIn("OPPOSITE text_pos", text)
+        self.assertIn("FOLLOW the ORIGINAL", text)
+        self.assertIn("composition", text)
+
+    def test_device_on_the_text_side_is_a_rule_fault(self):
+        cs = th.parse_concepts(three())
+        cs[0].update(emphasis="ellipse", focal="left", text_pos="left")
+        self.assertTrue(any("sit on the words" in f
+                            for f in th.local_faults(cs)))
+        cs[0]["focal"] = "right"
+        self.assertFalse(any("sit on the words" in f
+                             for f in th.local_faults(cs)))
+
+    def test_every_device_changes_the_picture_and_stays_small(self):
+        plain = self.px(self.base(), "none")
+        for kind in ("ellipse", "arrow", "underline"):
+            im = self.px(self.base(emphasis=kind), kind)
+            self.assertEqual(im.size, (1280, 720))
+            self.assertNotEqual(plain.tobytes(), im.tobytes(), kind)
+            self.assertLess((self.dir / f"{kind}.jpg").stat().st_size,
+                            th.MAX_BYTES)
+
+    def test_device_without_text_does_not_raise(self):
+        plain = self.px(self.base(text=""), "t0")
+        for kind in ("ellipse", "arrow", "underline"):
+            im = self.px(self.base(text="", emphasis=kind), f"t{kind}")
+            if kind != "underline":     # nothing to underline without words
+                self.assertNotEqual(plain.tobytes(), im.tobytes(), kind)
+
+    def test_focal_point_moves_the_device(self):
+        red = th.EMPHASIS_RGB
+
+        def red_centre(focal):
+            im = self.px(self.base(text="", emphasis="ellipse", focal=focal),
+                         f"f_{focal}")
+            xs, ys = [], []
+            data = im.load()
+            for y in range(0, 720, 4):
+                for x in range(0, 1280, 4):
+                    r, g, b = data[x, y]
+                    if r > 200 and g < 90 and b < 90 and abs(r - red[0]) < 40:
+                        xs.append(x)
+                        ys.append(y)
+            self.assertTrue(xs, focal)
+            return sum(xs) / len(xs), sum(ys) / len(ys)
+
+        lx, _ = red_centre("left")
+        rx, _ = red_centre("right")
+        _, ty = red_centre("top")
+        _, by = red_centre("bottom")
+        self.assertLess(lx, 640 - 150)
+        self.assertGreater(rx, 640 + 150)
+        self.assertLess(ty, by)
+
+    def test_auto_focal_keeps_the_old_opposite_side_behaviour(self):
+        self.assertEqual(th.focal_point({"text_pos": "left"}),
+                         (th.W * 0.72, th.H * 0.52))
+        self.assertEqual(th.focal_point({"text_pos": "right"}),
+                         (th.W * 0.28, th.H * 0.52))
+        self.assertEqual(th.focal_point({"text_pos": "top", "focal": "auto"}),
+                         (th.W * 0.5, th.H * 0.72))
+        self.assertEqual(th.focal_point({"focal": "center"}),
+                         (th.W * 0.5, th.H * 0.5))
+
+
 class ProductionTests(Base):
     def setUp(self):
         super().setUp()
@@ -296,6 +398,18 @@ class PageTests(Base):
         self.assertIsNone(th.load_thumbs(self.pdir)["chosen"])
         r = self.client.post(self.url("/choose"), data={"id": "nope"})
         self.assertIn("error", r.headers["Location"])
+
+    def test_edit_emphasis_and_focal_from_the_page(self):
+        self.client.post(self.url("/save"), data={
+            "emph_c1": "arrow", "focal_c1": "right",
+            "emph_c2": "bogus", "focal_c2": "nowhere"})
+        cs = th.load_thumbs(self.pdir)["concepts"]
+        self.assertEqual((cs[0]["emphasis"], cs[0]["focal"]), ("arrow", "right"))
+        self.assertEqual((cs[1]["emphasis"], cs[1]["focal"]), ("none", "auto"))
+        (self.pdir / "script.md").write_text("x " * 50, "utf-8")
+        html = self.client.get(self.url()).get_data(as_text=True)
+        self.assertIn("Attention device", html)
+        self.assertIn('name="focal_c1"', html)
 
     def test_upload_your_own_picture(self):
         buf = io.BytesIO()

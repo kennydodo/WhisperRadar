@@ -50,6 +50,12 @@ POSITIONS = ("left", "right", "top", "bottom")
 # at it, or a brush underline under the words).
 EMPHASES = ("none", "ellipse", "arrow", "underline")
 EMPHASIS_RGB = (229, 49, 43)          # the bold red these devices use
+# Where the object the device points at sits in the picture. "auto" keeps
+# the old behaviour (the side opposite the words).
+FOCALS = ("auto", "left", "right", "top", "bottom", "center")
+_FOCAL_POINT = {"left": (0.28, 0.52), "right": (0.72, 0.52),
+                "top": (0.5, 0.30), "bottom": (0.5, 0.72),
+                "center": (0.5, 0.5)}
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 _LAYOUT_ART = {
@@ -129,6 +135,7 @@ def parse_concepts(raw) -> list[dict]:
             continue
         pos = str(it.get("text_pos") or "").strip().lower()
         emph = str(it.get("emphasis") or "").strip().lower()
+        focal = str(it.get("focal") or "").strip().lower()
         out.append({
             "id": f"c{len(out) + 1}", "layout": layout,
             "text": clean_text(it.get("text")),
@@ -136,6 +143,7 @@ def parse_concepts(raw) -> list[dict]:
             "text_color": _color(it.get("text_color"), "#FFFFFF"),
             "accent": _color(it.get("accent"), "#FFD400"),
             "emphasis": emph if emph in EMPHASES else "none",
+            "focal": focal if focal in FOCALS else "auto",
             "art_prompt": prompt,
             "idea": str(it.get("idea") or "").strip()[:200],
             "art_file": "", "final": "",
@@ -162,6 +170,11 @@ def local_faults(concepts: list[dict], title: str = "") -> list[str]:
         elif t in seen:
             faults.append(f"{c['id']}: same text as another concept")
         seen.add(t)
+        if (c.get("emphasis") in ("ellipse", "arrow")
+                and c.get("focal") == c.get("text_pos")):
+            faults.append(f"{c['id']}: the {c['emphasis']} would sit on the "
+                          "words - put the focal object on the other side "
+                          "from text_pos")
         if title and t and t == title.strip().lower():
             faults.append(f"{c['id']}: the text just repeats the title - "
                           "it should add to the title, not copy it")
@@ -198,6 +211,7 @@ _RULES = f"""Thumbnail rules:
 - Leave clear empty space on the side where the text goes (text_pos). The image itself has NO text, letters or logos - the words are added afterwards.
 - Make it FEEL like a YouTube thumbnail, not a calm illustration: one bold subject, a strong expression or emotion on the face, punchy saturated colour and dramatic light, high contrast - it has to read at phone size.
 - emphasis is a hand-drawn attention device the tool draws AFTER the art: "ellipse" (a bold red circle round the focal object), "arrow" (a red arrow pointing at it) or "underline" (a red brush stroke under the words); use "none" if it would clutter. When you pick one, say in art_prompt exactly what to circle or point at.
+- focal says where in the picture that object is: "left", "right", "top", "bottom" or "center" (or "auto"). It must be the side OPPOSITE text_pos, and the art_prompt must really put the object there. A good device circles or points at the thing the title is about (the clutter, the coin, the box) - NOT a face, nothing in particular, or the words. A reviewer marks a device that circles the wrong thing as a fault.
 - art_prompt must describe the whole picture on its own (who, expression, pose, background, lighting, colours) in the channel's art style, in under 500 characters. Describe the character and host from the descriptions given; do not assume the image tool knows them."""
 
 
@@ -217,8 +231,11 @@ def writer_prompt(ctx: dict, has_inspiration: bool = False) -> str:
         "ATTACHED IMAGES (visual inspiration): the FIRST is the ORIGINAL "
         "thumbnail of the source video this one is based on; the rest are the "
         "best-performing thumbnails in this niche. Study their composition, "
-        "colour, framing and energy and let them raise your bar - but design "
-        "something NEW for this video and do NOT copy them or their text.\n\n"
+        "colour, framing and energy. Make the new thumbnails FOLLOW the "
+        "ORIGINAL's composition: where its main subject sits, how large the "
+        "face or object is in the frame, its colour palette and its energy - "
+        "redrawn in this channel's art style. Design something NEW for this "
+        "video: do NOT copy their text or their exact characters.\n\n"
         if has_inspiration else "")
     return f"""You are a YouTube thumbnail designer. Design {MIN_CONCEPTS}-{MAX_CONCEPTS} thumbnail concepts for a finished video.
 
@@ -240,12 +257,12 @@ THUMBNAILS THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (titles only - learn the
 {_RULES}
 
 Reply with ONE JSON object and nothing else:
-{{"concepts": [{{"layout": "character_host|character|host", "text": "2-4 words", "text_pos": "left|right|top|bottom", "text_color": "#FFFFFF", "accent": "#FFD400", "emphasis": "none|ellipse|arrow|underline", "art_prompt": "...", "idea": "one line: why this one gets the click"}}, ...]}}"""
+{{"concepts": [{{"layout": "character_host|character|host", "text": "2-4 words", "text_pos": "left|right|top|bottom", "text_color": "#FFFFFF", "accent": "#FFD400", "emphasis": "none|ellipse|arrow|underline", "focal": "auto|left|right|top|bottom|center", "art_prompt": "...", "idea": "one line: why this one gets the click"}}, ...]}}"""
 
 
 def _concepts_json(concepts: list[dict]) -> str:
     keep = ("layout", "text", "text_pos", "text_color", "accent",
-            "emphasis", "art_prompt", "idea")
+            "emphasis", "focal", "art_prompt", "idea")
     return json.dumps({"concepts": [{k: c[k] for k in keep}
                                     for c in concepts]},
                       ensure_ascii=False, indent=1)
@@ -687,31 +704,48 @@ def _brush_underline(draw, x, w, y, size):
               fill=EMPHASIS_RGB, width=max(3, t // 2))
 
 
+def focal_point(concept: dict) -> tuple[float, float]:
+    """Where the attention device goes: the named focal area, else the side
+    opposite the text (the old fixed behaviour)."""
+    focal = concept.get("focal") or "auto"
+    if focal in _FOCAL_POINT:
+        fx, fy = _FOCAL_POINT[focal]
+        return W * fx, H * fy
+    pos = concept.get("text_pos") or "left"
+    if pos in ("left", "right"):
+        return W * (0.72 if pos == "left" else 0.28), H * 0.52
+    return W * 0.5, H * (0.72 if pos == "top" else 0.28)
+
+
 def _emphasis(draw, concept: dict):
-    """The hand-drawn attention device (ellipse / arrow) on the side opposite
-    the text. 'underline' is drawn by the caller (it needs the text position)."""
+    """The hand-drawn attention device (ellipse / arrow) at the focal point.
+    'underline' is drawn by the caller (it needs the text position)."""
     kind = concept.get("emphasis") or "none"
     if kind not in ("ellipse", "arrow"):
         return
-    pos = concept.get("text_pos") or "left"
+    cx, cy = focal_point(concept)
     if kind == "ellipse":
-        if pos in ("left", "right"):
-            cx, cy = W * (0.72 if pos == "left" else 0.28), H * 0.52
-        else:
-            cx, cy = W * 0.5, H * (0.72 if pos == "top" else 0.28)
-        _rough_ellipse(draw, cx, cy, W * 0.21, H * 0.36, EMPHASIS_RGB)
-    else:                                    # a short curved arrow into the focal area
-        if pos in ("left", "right"):
-            ax, ay = W * (0.30 if pos == "left" else 0.70), H * 0.5
-        else:
-            ax, ay = W * 0.5, H * (0.30 if pos == "top" else 0.70)
-        wdt = max(5, H // 90)
-        draw.line([(ax - W * 0.10, ay + H * 0.14), (ax - W * 0.02, ay + H * 0.02),
-                   (ax + W * 0.05, ay - H * 0.06)], fill=EMPHASIS_RGB,
-                  width=wdt, joint="curve")
-        hx, hy = ax + W * 0.05, ay - H * 0.06
-        draw.polygon([(hx, hy), (hx - W * 0.045, hy + H * 0.015),
-                      (hx - W * 0.012, hy + H * 0.06)], fill=EMPHASIS_RGB)
+        rx, ry = W * 0.21, H * 0.36
+        cx = min(max(cx, rx + W * 0.02), W - rx - W * 0.02)
+        cy = min(max(cy, ry + H * 0.02), H - ry - H * 0.02)
+        _rough_ellipse(draw, cx, cy, rx, ry, EMPHASIS_RGB)
+        return
+    # a short curved arrow whose tip lands on the focal point, coming in from
+    # the middle of the picture
+    sx = -1 if cx >= W / 2 else 1
+    tip = (cx, cy)
+    mid = (cx + sx * W * 0.06, cy + H * 0.05)
+    tail = (cx + sx * W * 0.14, cy + H * 0.17)
+    wdt = max(5, H // 90)
+    draw.line([tail, mid, tip], fill=EMPHASIS_RGB, width=wdt, joint="curve")
+    dx, dy = tip[0] - mid[0], tip[1] - mid[1]
+    norm = math.hypot(dx, dy) or 1.0
+    dx, dy = dx / norm, dy / norm
+    length, half = W * 0.05, W * 0.022
+    base = (tip[0] - dx * length, tip[1] - dy * length)
+    draw.polygon([tip, (base[0] - dy * half, base[1] + dx * half),
+                  (base[0] + dy * half, base[1] - dx * half)],
+                 fill=EMPHASIS_RGB)
 
 
 def compose(art_path, concept: dict, out_path) -> Path:

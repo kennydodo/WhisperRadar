@@ -4317,7 +4317,8 @@ def create_app(cfg) -> Flask:
         sheet = thumbnails.thumbs_dir(pdir) / "sheet.jpg"
         return render_template(
             "thumbs.html", prod=prod, data=data, layouts=thumbnails.LAYOUTS,
-            positions=thumbnails.POSITIONS, job=sjob._real(),
+            positions=thumbnails.POSITIONS, emphases=thumbnails.EMPHASES,
+            focals=thumbnails.FOCALS, job=sjob._real(),
             has_script=(pdir / "script.md").exists(),
             sheet_url=(f"/studio/file/{pid}/thumbnails/sheet.jpg?t={stamp}"
                        if sheet.is_file() else ""),
@@ -4394,6 +4395,12 @@ def create_app(cfg) -> Flask:
             pos = (form.get(f"pos_{i}") or "").strip()
             if pos in thumbnails.POSITIONS:
                 c["text_pos"] = pos
+            emph = (form.get(f"emph_{i}") or "").strip()
+            if emph in thumbnails.EMPHASES:
+                c["emphasis"] = emph
+            focal = (form.get(f"focal_{i}") or "").strip()
+            if focal in thumbnails.FOCALS:
+                c["focal"] = focal
             c["text_color"] = thumbnails._color(form.get(f"color_{i}"),
                                                 c["text_color"])
             c["accent"] = thumbnails._color(form.get(f"accent_{i}"),

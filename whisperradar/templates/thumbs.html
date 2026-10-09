@@ -161,6 +161,10 @@
         <label>Text colour<input type="color" name="color_{{ c.id }}" value="{{ c.text_color }}"></label>
         <label>Accent<input type="color" name="accent_{{ c.id }}" value="{{ c.accent }}"></label>
       </div>
+      <div class="row">
+        <label>Attention device<select name="emph_{{ c.id }}">{% for e in emphases %}<option {{ 'selected' if (c.emphasis or 'none') == e else '' }}>{{ e }}</option>{% endfor %}</select></label>
+        <label>Points at (focal)<select name="focal_{{ c.id }}">{% for f in focals %}<option {{ 'selected' if (c.focal or 'auto') == f else '' }}>{{ f }}</option>{% endfor %}</select></label>
+      </div>
       <label>Picture prompt</label>
       <textarea name="prompt_{{ c.id }}">{{ c.art_prompt }}</textarea>
       <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
