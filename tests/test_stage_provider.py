@@ -127,6 +127,9 @@ class RoutePersistsPick(unittest.TestCase):
         conn = db.connect(self.cfg.db_path)
         db.init_db(conn)
         db.set_stage_provider(conn, self.pid, "shots", CHOSEN)
+        # this test is about provider selection on the API path; pin it so the
+        # default web-chat transport doesn't try to drive a browser here
+        db.set_setting(conn, "autorun_transport", "api")
         conn.close()
         seen = {}
 

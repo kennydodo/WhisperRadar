@@ -202,10 +202,17 @@ def _plan_text(ctx: dict) -> str:
             f"\"{t.get('text')}\", {t.get('idea')}\n\n")
 
 
-def writer_prompt(ctx: dict) -> str:
+def writer_prompt(ctx: dict, has_inspiration: bool = False) -> str:
+    attached = (
+        "ATTACHED IMAGES (visual inspiration): the FIRST is the ORIGINAL "
+        "thumbnail of the source video this one is based on; the rest are the "
+        "best-performing thumbnails in this niche. Study their composition, "
+        "colour, framing and energy and let them raise your bar - but design "
+        "something NEW for this video and do NOT copy them or their text.\n\n"
+        if has_inspiration else "")
     return f"""You are a YouTube thumbnail designer. Design {MIN_CONCEPTS}-{MAX_CONCEPTS} thumbnail concepts for a finished video.
 
-CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
+{attached}CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
 VIDEO TITLE: {ctx['kit_title']}
 MAIN KEYWORD: {ctx['keyword'] or '(none)'}
 
@@ -286,8 +293,10 @@ def run_concepts(cfg, pid: int, transport, writer: str = "zai",
     if not ctx["script"]:
         raise ws.StageFailed("This production has no script yet.")
     log(f"thumbnails: designing concepts for \"{ctx['kit_title'][:70]}\"")
-    reply = ws._send(transport, writer, lambda f: writer_prompt(ctx), log,
-                     ready=ws._has_json)
+    uploads = inspiration_paths(cfg, pid)   # source + top outliers on disk
+    reply = ws._send(transport, writer,
+                     lambda f: writer_prompt(ctx, has_inspiration=bool(uploads)),
+                     log, ready=ws._has_json, uploads=uploads)
     best, judge_open, rnd, empty = None, False, 0, 0
     while True:
         rnd += 1
@@ -359,11 +368,91 @@ def concepts_job(cfg, pid: int, writer: str, judge: str, log,
                  should_stop: Callable[[], bool] = lambda: False,
                  options: dict | None = None) -> None:
     from . import webstages as ws
+    # pull the source + outlier thumbnails first so the writer sees them as
+    # visual inspiration (best effort - a network miss just means no images)
+    try:
+        fetch_inspiration(cfg, pid, log=log)
+    except Exception as exc:  # noqa: BLE001 - inspiration is a bonus, not fatal
+        log(f"thumbnails: inspiration unavailable ({type(exc).__name__})")
     with ws.web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
         run_concepts(cfg, pid, t, writer, judge, log=log,
                      should_stop=should_stop, min_score=pass_mark(cfg))
+
+
+def run_concepts_api(cfg, pid: int, writer: str | None, judge: str | None,
+                     log: Callable[[str], None] = print,
+                     should_stop: Callable[[], bool] = lambda: False,
+                     max_rounds: int = 3, min_score: float | None = None) -> dict:
+    """The same concepts loop as run_concepts, but through the configured API
+    LLM providers (what auto-run uses - no browser). Stateless calls, so each
+    revision is sent with the previous attempt and the verdict. With no judge
+    available a rule-clean set of concepts is accepted (score stays empty).
+    Keeps any art already made for an unchanged art prompt."""
+    from . import studio
+    min_score = pass_mark(cfg) if min_score is None else min_score
+    ctx = context(cfg, pid)
+    if not ctx["script"]:
+        raise RuntimeError("This production has no script yet.")
+    log(f"thumbnails: designing concepts for \"{ctx['kit_title'][:70]}\"")
+    base = writer_prompt(ctx)
+    best, prompt, rnd = None, base, 0
+    while rnd < max_rounds:
+        rnd += 1
+        raw = studio.llm_generate(cfg, prompt, provider=writer, temperature=0.8)
+        concepts = parse_concepts(studio._parse_json_object(raw))
+        if not concepts:
+            log(f"round {rnd}: no usable concepts in the reply")
+            prompt = base + ("\n\nYour last reply had no usable concepts. "
+                             'Reply with ONE JSON object {"concepts": [...]} '
+                             "and nothing else.")
+            continue
+        faults = local_faults(concepts, ctx["kit_title"])
+        verdict, score = {}, None
+        if judge:
+            try:
+                vraw = studio.llm_generate(
+                    cfg, judge_prompt(ctx, concepts, faults, min_score),
+                    provider=judge, temperature=0.2)
+                verdict = studio._parse_json_object(vraw)
+                score = round(float(verdict.get("score")), 1)
+            except (TypeError, ValueError):
+                score = None
+            except Exception as exc:  # noqa: BLE001 - a judge outage is not fatal
+                log(f"judge unavailable ({type(exc).__name__}) - using the "
+                    "rule checks only")
+                judge = None
+        passed = (not faults and (
+            (score is not None and score >= min_score
+             and verdict.get("pass") is not False)
+            or (judge is None)))
+        log(f"round {rnd}: {len(concepts)} concept(s), {len(faults)} fault(s), "
+            f"score {score if score is not None else 'n/a'} - "
+            + ("accepted" if passed else "not accepted"))
+        rank = (not faults, score or 0.0)
+        if best is None or rank > best[0]:
+            best = (rank, concepts, score, passed)
+        if passed or should_stop():
+            break
+        prompt = (base + "\n\nYOUR PREVIOUS CONCEPTS:\n"
+                  + json.dumps({"concepts": concepts}, ensure_ascii=False)
+                  + "\n\n" + writer_feedback(
+                      verdict or {"faults": faults or ["no verdict"]}, faults))
+    if best is None:
+        raise RuntimeError("the LLM returned no usable thumbnail concepts")
+    _rank, concepts, score, passed = best
+    data = load_thumbs(ctx["pdir"])
+    old = {c["art_prompt"]: c for c in data["concepts"] if c.get("art_file")}
+    for c in concepts:               # same art prompt = keep the made picture
+        prev = old.get(c["art_prompt"])
+        if prev:
+            c["art_file"], c["final"] = prev["art_file"], ""
+    data.update({"concepts": concepts, "score": score, "chosen": None,
+                 "status": "ready" if passed else "draft"})
+    save_thumbs(ctx["pdir"], data)
+    log("thumbnail concepts saved" + ("" if passed else " as a draft"))
+    return data
 
 
 # ---- art -----------------------------------------------------------------------
@@ -790,3 +879,26 @@ def inspiration_files(pdir) -> list[str]:
     if not d.is_dir():
         return []
     return sorted(p.name for p in d.glob("*.jpg"))
+
+
+INSPIRATION_MAX = 6
+
+
+def inspiration_paths(cfg, pid: int) -> list[str]:
+    """Local inspiration thumbnail paths already on disk, the SOURCE video's
+    first, then the top outliers - the set the concept writer is shown as
+    visual inspiration. Returns [] if none have been fetched yet (fetching is
+    done by concepts_job, not here, so tests stay offline)."""
+    from . import studio
+    pdir = studio.prod_dir(cfg, pid)
+    d = thumbs_dir(pdir) / INSPIRATION_DIR
+    items = inspiration_items(cfg, pid)
+    paths, seen = [], set()
+    for it in items:                       # source first, then outliers
+        p = d / f"{it['id']}.jpg"
+        if p.is_file() and it["id"] not in seen:
+            paths.append(str(p))
+            seen.add(it["id"])
+        if len(paths) >= INSPIRATION_MAX:
+            break
+    return paths

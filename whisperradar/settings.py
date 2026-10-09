@@ -185,6 +185,29 @@ SPEC: list[dict] = [
                 "on with the original title.",
     },
     {
+        "key": "autorun_thumbnails", "type": "bool", "default": True,
+        "label": "Generate thumbnail concepts at the end (Auto Run)",
+        "help": "After the pipeline finishes, Auto Run designs the thumbnail "
+                "concepts and their image prompts with your API LLMs (no "
+                "browser), so a finished production is never left without a "
+                "thumbnail. Concepts that already exist are kept. If it fails "
+                "the run still completes - generate them from the Thumbnails "
+                "page instead.",
+    },
+    {
+        "key": "autorun_transport", "type": "choice", "default": "webchat",
+        "choices": ["webchat", "api"],
+        "label": "Auto Run LLM transport (script, shotlist, plan, thumbnails)",
+        "help": "How Auto Run writes the creative stages. webchat = drive the "
+                "chat sites (z.ai writes, deepseek judges) through a browser, "
+                "like the manual Studio buttons - the run must have those "
+                "chats available, and a stage that can't pass stops the run so "
+                "you can continue by hand. api = the configured API providers "
+                "(no browser; what Auto Run used originally). Style always "
+                "uses the API. A stage that already has output is kept either "
+                "way.",
+    },
+    {
         "key": "resume_cooldown_minutes", "type": "int", "default": 60,
         "min": 5, "max": 1440,
         "label": "Resume cooldown (minutes)",
@@ -547,7 +570,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
-        "autorun_plan",
+        "autorun_plan", "autorun_thumbnails", "autorun_transport",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script & shotlist", [
