@@ -358,6 +358,11 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"reveals, new ending), never just reword them.\n"
            f"If the script mentions any of those, FAIL it, quote each "
            f"sentence in weak_spans and write in feedback: remove it.\n"
+           f"Your feedback and weak_spans are forwarded to the writer, who has "
+           f"never seen the original. Put NOTHING from the original in them: "
+           f"no names, companies, places, figures, events or quotes. Describe "
+           f"the problem and the kind of change needed; if names or "
+           f"scenario are reused, say 'invent your own', never what to use.\n"
            f"Score the writing honestly on its own merits - do not raise or "
            f"lower a score to fit the bar. After the scores, state PASS or "
            f"FAIL separately and list which bar items failed.")

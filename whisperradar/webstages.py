@@ -465,6 +465,12 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                          if str(x).strip()],
             "weak_spans": [str(x) for x in (verdict.get("weak_spans") or [])
                            if str(x).strip()]}
+        # the judge must never hand original-script details to the writer
+        for k in ("feedback", "weak_spans"):
+            judged[k], gone = studio.scrub_for_writer(judged[k], script, source)
+            if gone:
+                log(f"dropped {gone} judge note(s) in {k} that carried "
+                    f"details of the original")
         err = None if score is not None else (
             "no usable score in the judge's reply: "
             + " ".join(str(raw or "").split())[:120])

@@ -758,8 +758,11 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             _log_line(log_attempt + " - accepted")
             break
         _log_line(log_attempt + " - rejected (" + "; ".join(why) + ")")
+        safe_fb = studio.scrub_for_writer(
+            rating["feedback"] or rating["weak_spans"], text,
+            source_text + "\n" + (facts or ""))[0]
         previous = {"overlap": overlap, "runs": runs,
-                    "feedback": rating["feedback"] or rating["weak_spans"],
+                    "feedback": safe_fb,
                     "too_long": too_long, "too_short": too_short}
 
     # settle for the best draft rather than shipping a rejected one blindly -

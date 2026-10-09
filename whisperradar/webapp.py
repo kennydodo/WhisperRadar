@@ -4568,7 +4568,7 @@ def create_app(cfg) -> Flask:
         plan = packplan.load_plan(studio.prod_dir(cfg, pid))
         return render_template(
             "plan.html", prod=prod, plan=plan, job=sjob._real(),
-            faults=packplan.local_faults(plan) if plan["title"] else [],
+            faults=packplan.faults_for(cfg, pid, plan) if plan["title"] else [],
             layouts=thumbnails.LAYOUTS,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
@@ -4651,7 +4651,7 @@ def create_app(cfg) -> Flask:
             else plan["thumbnail"]["layout"],
             "text": thumbnails.clean_text(form.get("thumb_text")),
             "idea": (form.get("thumb_idea") or "").strip()}
-        faults = packplan.local_faults(plan)
+        faults = packplan.faults_for(cfg, pid, plan)
         plan["status"] = "ready" if not faults else "draft"
         packplan.save_plan(pdir, plan)
         if form.get("apply") and plan["title"]:

@@ -1680,3 +1680,21 @@ Settings > Auto Run: `autorun_writer` / `autorun_judge` (any chat site, built-in
 Style & bible refresh: a run collects frames into `frames.new` and replaces frames + style.md + bible.md together only on success; a failed refresh leaves the previous result untouched.
 Web chat run forms: `_webchat_extra.html` moves each role's settings (model/level/switches) right after that role's own dropdown (same line). The style & bible page (`look.html`) does the same for its single "Web chat" dropdown (paid sites show Model), remembers it, and `look_routes` passes the posted options to `web_transport`.
 Settings > Auto Run: `_webchat_extra.html` is included on the settings page too; the writer/judge dropdowns get their site's model/level/switch controls beside them (full-width field). Saved by `settings_save` into db setting `autorun_webchat_options` (via `_chat_options(remember=False)`) and applied from `window.WR_SERVER_OPTS`; `autorun._webchat_pair` prefers it over the last-used `webchat_last_options`.
+
+## Judge never feeds the writer original-script details
+The writer never sees the source, so judge output must not carry any of it.
+`studio.scrub_for_writer` drops judge `feedback`/`weak_spans` notes that name
+a capitalised word or quote a 4-word run found in the source/facts but not in
+the script under review (applied in `webstages.run_script` and the `autorun`
+retry path). Both judge prompts also say so. Notes for a production made before
+this change: regenerate the research notes (they may contain the original's
+names), then rerun the script stage.
+
+## Packaging plan: our own title and hook
+The source video proves the TOPIC (keyword + story), not its wording. The plan
+writer prompt now asks for original titles/hook on the keyword; the plan judge
+fails reworded copies (without quoting the source in faults/fixes); code checks
+`plan.originality_faults` (title word overlap > `TITLE_SIM_MAX` beyond the
+keyword, a title option equal to the source title, a hook sharing a
+`HOOK_RUN`-word run with the transcript). `plan.faults_for(cfg, pid, plan)` is
+the page-side wrapper. Existing plans keep their old titles until re-planned.

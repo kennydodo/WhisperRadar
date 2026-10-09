@@ -54,6 +54,26 @@ class StructureCopyTests(unittest.TestCase):
         shuffled = ". ".join(sents[::-1])
         self.assertFalse(studio.structure_copy(shuffled, SOURCE)["flag"])
 
+class ScrubForWriterTests(unittest.TestCase):
+    SRC = "Daniel Hargrove ran Apex Corp and quietly sold the failing plant in March."
+    SCRIPT = "Mara ran a small firm and sold a failing plant."
+
+    def test_drops_notes_with_source_names_or_phrases(self):
+        from whisperradar import studio
+        kept, gone = studio.scrub_for_writer(
+            ["Use Daniel Hargrove as the lead.",
+             "Say he quietly sold the failing plant in March.",
+             "Open with a different scene and change the ending."],
+            self.SCRIPT, self.SRC)
+        self.assertEqual(kept, ["Open with a different scene and change the ending."])
+        self.assertEqual(gone, 2)
+
+    def test_keeps_notes_about_the_scripts_own_text(self):
+        from whisperradar import studio
+        kept, gone = studio.scrub_for_writer(
+            ["The line 'Mara ran a small firm' is flat."], self.SCRIPT, self.SRC)
+        self.assertEqual(gone, 0)
+        self.assertEqual(len(kept), 1)
 
 if __name__ == "__main__":
     unittest.main()
