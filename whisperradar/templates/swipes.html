@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Swipe file</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+          --muted:#8b93a3; --accent:#4f8cff; --green:#3fb96f; --red:#e05c5c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width:980px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 2px; }
+  .muted { color:var(--muted); }
+  .panel { background:var(--panel); border:1px solid var(--border);
+           border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  a { color:var(--accent); text-decoration:none; }
+  input, select, textarea { background:#0f1115; color:var(--text);
+           border:1px solid var(--border); border-radius:6px; padding:6px 8px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px;
+           padding:7px 14px; cursor:pointer; }
+  .del { background:transparent; border:1px solid var(--border);
+         color:var(--muted); padding:3px 9px; font-size:12px; }
+  .msg { color:var(--green); } .err { color:var(--red); }
+  .badge { background:#222736; color:var(--muted); border-radius:5px;
+           padding:1px 7px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border);
+           vertical-align:top; }
+  img.th { width:120px; border-radius:6px; display:block; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body><div class="wrap">
+  <a href="/research">&larr; Research</a>
+  <h1>Swipe file</h1>
+  <div class="muted">Winning titles, thumbnails and angles you kept on purpose.
+    The thumbnail writer sees this list and is told to learn the device, not copy
+    it.</div>
+  {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+  <div class="panel">
+    <form method="post" action="/swipes" class="row">
+      <select name="kind">{% for k in kinds %}<option value="{{ k }}">{{ k }}</option>{% endfor %}</select>
+      <input type="text" name="title" size="40" placeholder="the winning title or hook" required>
+      <input type="text" name="note" size="40" placeholder="why it works (the device, the angle)">
+      <input type="hidden" name="back" value="/swipes">
+      <button type="submit">Save</button>
+    </form>
+    {% if kind %}<div class="muted" style="font-size:12px;margin-top:6px">filtered to {{ kind }} - <a href="/swipes">all</a></div>{% endif %}
+  </div>
+
+  {% if swipes %}<div class="panel" style="padding:0"><table>
+    <thead><tr><th></th><th>kept</th><th class="muted">from</th><th></th></tr></thead>
+    <tbody>
+    {% for s in swipes %}<tr>
+      <td>{% if s.thumb_url %}<a href="{{ s.thumb_url }}" target="_blank" rel="noopener"><img class="th" loading="lazy" src="{{ s.thumb_url }}" alt=""></a>{% endif %}</td>
+      <td><span class="badge"><a href="/swipes?kind={{ s.kind }}">{{ s.kind }}</a></span>
+        <div style="margin-top:4px">{{ s.title or '(no title)' }}</div>
+        {% if s.note %}<div class="muted" style="font-size:12px">{{ s.note }}</div>{% endif %}</td>
+      <td class="muted" style="font-size:12px">{{ s.channel_name }}{% if s.genre %} &middot; {{ s.genre }}{% endif %}{% if s.video_id %} &middot; <a href="https://www.youtube.com/watch?v={{ s.video_id }}" target="_blank" rel="noopener">video</a>{% endif %}<br>{{ s.created_at }}</td>
+      <td><form method="post" action="/swipes/{{ s.id }}/delete" style="margin:0">
+        <button class="del" type="submit" title="remove from the swipe file">remove</button>
+      </form></td></tr>{% endfor %}
+    </tbody></table></div>
+  {% else %}<div class="panel muted">Nothing saved yet. Press <b>save</b> on any
+    outlier row in Research, or add one by hand above.</div>{% endif %}
+</div></body></html>

@@ -77,6 +77,7 @@
   <a href="/research" class="active">Research</a>
   <a href="/studio">Studio</a>
   <a href="/finished">Finished</a>
+  <a href="/swipes">Swipe file</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
 </nav>
@@ -93,6 +94,7 @@
     <a href="/research?tab=keywords{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'keywords' else '' }}">Keywords</a>
     <a href="/research?tab=channels{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'channels' else '' }}">Channels</a>
     <a href="/research?tab=trending{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'trending' else '' }}">Trending</a>
+    <a href="/research?tab=niches{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'niches' else '' }}">Niches</a>
     <a href="/research?tab=analyze{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'analyze' else '' }}">Analyze</a>
   </div>
 
@@ -147,6 +149,20 @@
       <td class="num">{{ fmt_views(v.views) }}</td><td class="num">{{ fmt_views(v.vph) }}</td>
       <td class="num hide-sm muted">{{ (v.published_at or '')[:10] }}</td></tr>{% endfor %}
     </tbody></table></div>{% endif %}
+  {% elif tab == 'niches' %}
+  <div class="panel"><div class="note" style="margin:0">What to make next: each watched genre judged on its own newest videos. <b>heat</b> is the recent median multiplier over the niche's all-time median - above 1.0 means its newest videos beat their channels better than this niche ever did. Click a genre to see its outliers.</div></div>
+  {% if niche_cards %}<div class="panel" style="padding:0"><table>
+    <thead><tr><th>niche</th><th class="num">recent median</th><th class="num">heat</th><th class="num hide-sm">outlier %</th><th class="num hide-sm">breaking out</th><th class="num hide-sm">uploads/wk</th><th>verdict</th></tr></thead><tbody>
+    {% for n in niche_cards %}<tr>
+      <td class="title"><a href="/research?genre={{ n.genre|urlencode }}">{{ n.genre }}</a> <span class="muted" style="font-size:12px">{{ n.channels }} channel(s) &middot; {{ n.recent }} of {{ n.videos }} scored</span></td>
+      <td class="num">{{ ('%.1fx' % n.recent_median) if n.recent_median is not none else '-' }}</td>
+      <td class="num">{{ '%.2f' % n.heat if n.heat is not none else '-' }}</td>
+      <td class="num hide-sm">{{ '%.0f%%' % (n.outlier_rate * 100) }}</td>
+      <td class="num hide-sm">{{ n.breakouts or '-' }}</td>
+      <td class="num hide-sm">{{ '%.1f' % n.uploads_per_week if n.uploads_per_week is not none else '-' }}</td>
+      <td><span class="badge">{{ n.verdict }}</span> <span class="muted" style="font-size:12px">{{ n.why }}</span></td>
+    </tr>{% endfor %}</tbody></table></div>
+  {% else %}<div class="panel muted">Nothing to rank yet - a genre needs at least 5 of its videos scored (view counts plus enough channel history).</div>{% endif %}
   {% elif tab == 'analyze' %}
   <div class="panel">
     <form class="filters" method="get" action="/research">
@@ -169,11 +185,17 @@
     {% else %}<div class="panel muted">That video is not among the scored videos (it must belong to a watched channel and have a view count, and its channel needs 5+ other videos).</div>{% endif %}
   {% endif %}
   {% elif tab == 'channels' %}
+  <div class="panel"><form method="post" action="/research/channel-stats" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0">
+    <button type="submit">Snapshot channel sizes</button>
+    <span class="muted" style="font-size:12px">1 unit per 50 channels, at most one snapshot per channel a day. Two or more snapshots fill the <b>growing</b> column: subscribers per day over the window - rising channels get seen before their videos look like outliers.</span></form></div>
   {% if ranked %}<div class="panel" style="padding:0"><table>
-    <thead><tr><th>watched channel</th><th class="num">outliers (5x+)</th><th class="num hide-sm">of videos</th><th class="num">best</th><th class="num hide-sm">recent median</th><th class="num hide-sm">rising now</th></tr></thead><tbody>
-    {% for c in ranked[:25] %}<tr><td class="title"><a href="/research?channel={{ c.channel_id }}">{{ c.name }}</a> <span class="badge">{{ c.genre }}</span></td>
+    <thead><tr><th>watched channel</th><th class="num">outliers (5x+)</th><th class="num hide-sm">of videos</th><th class="num">best</th><th class="num hide-sm">recent median</th><th class="num hide-sm">rising now</th><th class="num hide-sm">growing</th></tr></thead><tbody>
+    {% for c in ranked[:25] %}<tr><td class="title"><a href="/research?channel={{ c.channel_id }}">{{ c.name }}</a> <span class="badge">{{ c.genre }}</span>
+      {% set sims = similar.get(c.channel_id) %}{% if sims %}<div class="muted" style="font-size:12px">also watch: {% for s in sims %}<a href="/research?channel={{ s.channel_id }}" title="shares: {{ s.shared|join(', ') }}">{{ s.name }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</td>
       <td class="num">{{ c.outliers }}</td><td class="num hide-sm muted">{{ c.scored }}</td><td class="num">{{ '%.1f' % c.best }}x</td>
-      <td class="num hide-sm">{{ ('%.1fx' % c.recent_median) if c.recent_median is not none else '-' }}</td><td class="num hide-sm">{{ c.rising or '-' }}</td></tr>{% endfor %}
+      <td class="num hide-sm">{{ ('%.1fx' % c.recent_median) if c.recent_median is not none else '-' }}</td><td class="num hide-sm">{{ c.rising or '-' }}</td>
+      {% set g = growth_map.get(c.channel_id) %}
+      <td class="num hide-sm" title="{{ '%+.0f subs over %.0f days' % (g.delta, g.span_days) if g else 'no snapshots yet' }}">{{ '%+.0f/day' % g.per_day if g else '-' }}</td></tr>{% endfor %}
     </tbody></table></div>
     <div class="note" style="margin-bottom:14px">Ranked by how often a channel's videos beat its own norm: the channels worth learning from. "recent median" is its newest 10 videos (needs publish dates).</div>
   {% endif %}
@@ -343,7 +365,17 @@
             <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">
             <button type="submit" title="Start a production from this video">Make this</button>
           </form>
-          <a href="/research?tab=analyze&v={{ r.video_id }}" style="font-size:12px">analyze</a></td>
+          <a href="/research?tab=analyze&v={{ r.video_id }}" style="font-size:12px">analyze</a>
+          <form method="post" action="/swipes" style="display:inline;margin:0">
+            <input type="hidden" name="kind" value="thumbnail">
+            <input type="hidden" name="title" value="{{ r.title }}">
+            <input type="hidden" name="video_id" value="{{ r.video_id }}">
+            <input type="hidden" name="channel_name" value="{{ r.channel_name }}">
+            <input type="hidden" name="genre" value="{{ r.genre or '' }}">
+            <input type="hidden" name="thumb_url" value="{{ r.thumb }}">
+            <input type="hidden" name="back" value="/research?tab=outliers">
+            <button type="submit" style="font-size:12px;padding:2px 8px" title="keep this winner in the swipe file">save</button>
+          </form></td>
       </tr>
     {% endfor %}
     </tbody>

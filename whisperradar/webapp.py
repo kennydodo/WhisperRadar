@@ -36,6 +36,9 @@ from flask import (
 from . import external_prompts
 from . import demand as demand_mod
 from . import niche_chips
+from . import niche as niche_mod
+from . import similar as similar_mod
+from . import growth as growth_mod
 from . import trending as trending_mod
 from . import timing as timing_mod
 from . import packaging
@@ -756,8 +759,8 @@ def create_app(cfg) -> Flask:
         from . import outliers
         args = request.args
         tab = (args.get("tab") if args.get("tab") in (
-            "topics", "channels", "keywords", "analyze", "trending")
-            else "outliers")
+            "topics", "channels", "keywords", "analyze", "trending",
+            "niches") else "outliers")
 
         def _num(name, default, cast=float):
             try:
@@ -802,6 +805,8 @@ def create_app(cfg) -> Flask:
             " v.view_count IS NOT NULL AND v.published_at IS NULL"
             ).fetchone()[0]
         snaps = db.list_snapshots(conn)
+        chan_snaps = {cid: growth_mod.velocity(sn) for cid, sn in
+                      db.list_channel_snapshots(conn).items()}
         conn.close()
         items = outliers.build(rows, snapshots=snaps)
         with_momentum = sum(1 for i in items if i["momentum"] is not None)
@@ -858,6 +863,10 @@ def create_app(cfg) -> Flask:
             fmt_age=outliers.fmt_age, with_momentum=with_momentum,
             trend_feed=(trending_mod.load(cfg) if tab == "trending"
                         else None),
+            niche_cards=(niche_mod.cards(items) if tab == "niches" else []),
+            growth_map=chan_snaps,
+            similar=(similar_mod.all_similar(items)
+                     if tab == "channels" else {}),
             kw=(insights.keywords(items) if tab == "keywords" else []),
             post_times=(timing_mod.best(items) if tab == "keywords"
                         else None),
@@ -965,6 +974,79 @@ def create_app(cfg) -> Flask:
         trending_mod.save(cfg, query, days, videos)
         return _research_back("trending", msg=f"{len(videos)} videos found "
                                               "(about 101 API units used)")
+
+    @app.post("/research/channel-stats")
+    def research_channel_stats():
+        """Snapshot every active channel's subscriber/view totals (1 unit
+        per 50 channels, at most one snapshot per channel per day)."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            ids = [c["channel_id"] for c in db.list_channels(conn)
+                   if c["active"]]
+        finally:
+            conn.close()
+        if not ids:
+            return _research_back("channels", error="No watched channels")
+        try:
+            stats = youtube_api.channel_stats(youtube_api.Client(cfg), ids)
+        except youtube_api.ApiError as exc:
+            return _research_back("channels", error=str(exc))
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            stored = db.record_channel_snapshots(
+                conn, [{"channel_id": cid, **s} for cid, s in stats.items()])
+        finally:
+            conn.close()
+        return _research_back("channels", msg=(
+            f"{stored} of {len(ids)} channel(s) snapshotted "
+            "(1 unit per 50 channels; once a day each)"))
+
+    @app.get("/swipes")
+    def swipes_page():
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            rows = db.list_swipes(conn, limit=200,
+                                  kind=(request.args.get("kind") or "").strip())
+        finally:
+            conn.close()
+        return render_template(
+            "swipes.html", swipes=rows, kinds=db.SWIPE_KINDS,
+            kind=(request.args.get("kind") or "").strip(),
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/swipes")
+    def swipes_add():
+        kind = (request.form.get("kind") or "thumbnail").strip().lower()
+        if kind not in db.SWIPE_KINDS:
+            kind = "thumbnail"
+        fields = {f: (request.form.get(f) or "").strip()[:300]
+                  for f in ("title", "note", "video_id", "channel_name",
+                            "genre", "thumb_url")}
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.add_swipe(conn, kind=kind, **fields)
+        finally:
+            conn.close()
+        back = (request.form.get("back") or "/swipes").strip()
+        if not back.startswith("/"):
+            back = "/swipes"
+        sep = "&" if "?" in back else "?"
+        return redirect(back + sep + "msg=" + quote(
+            "Saved to the swipe file"))
+
+    @app.post("/swipes/<int:sid>/delete")
+    def swipes_delete(sid):
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.delete_swipe(conn, sid)
+        finally:
+            conn.close()
+        return redirect("/swipes?msg=" + quote("Removed"))
 
     @app.post("/research/discover")
     def research_discover():

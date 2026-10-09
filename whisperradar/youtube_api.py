@@ -257,6 +257,29 @@ def fill_missing(cfg, conn, client: Client | None = None,
             "units": quota_used(cfg) - before}
 
 
+def channel_stats(client: Client, ids: list[str]) -> dict[str, dict]:
+    """{channel_id: {subscribers, views, video_count}} - 1 unit per request
+    of up to 50 ids. Hidden subscriber counts stay None (honest, not 0)."""
+    out = {}
+    ids = [i for i in dict.fromkeys(ids) if i]
+    for n in range(0, len(ids), 50):
+        data = client.call("channels", part="statistics",
+                           id=",".join(ids[n:n + 50]))
+        for item in data.get("items", []):
+            st = item.get("statistics") or {}
+
+            def _int(key):
+                v = st.get(key)
+                return int(v) if v is not None else None
+
+            subs = None if st.get("hiddenSubscriberCount") \
+                else _int("subscriberCount")
+            out[item.get("id")] = {"subscribers": subs,
+                                   "views": _int("viewCount"),
+                                   "video_count": _int("videoCount")}
+    return out
+
+
 def trending(client: Client, query: str, days: int = 7,
              max_results: int = 25, now=None) -> list[dict]:
     """The most-viewed videos for `query` published in the last `days` days,

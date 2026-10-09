@@ -151,7 +151,9 @@
       {% if c.final_url %}<img class="big" src="{{ c.final_url }}" alt="">
       {% elif c.art_url %}<img class="big" src="{{ c.art_url }}" alt="">
       {% else %}<div class="ph">no picture yet</div>{% endif %}
-      {% if c.final and c.metrics and c.metrics.warnings %}<div class="muted" style="font-size:12px;margin-top:4px" title="local check at phone size: contrast {{ c.metrics.contrast }}, colour {{ c.metrics.saturation }}, brightness {{ c.metrics.brightness }}">&#9888; {{ c.metrics.warnings|join(', ') }}</div>{% endif %}
+      {% if c.final and c.thumb_score %}<div class="muted" style="font-size:12px;margin-top:4px">
+        <b class="mult {{ 'm10' if c.thumb_score.score >= 70 else ('m5' if c.thumb_score.score >= 45 else 'm3') }}">{{ c.thumb_score.score }}/100 &middot; {{ c.thumb_score.label }}</b>
+        <span title="judge 60%, local phone-size check 40%; a missing half is scaled over 100 and said"> {{ c.thumb_score.why|join('; ') }}</span></div>{% endif %}
       <div style="margin-top:8px"><span class="chip">{{ layouts[c.layout] }}</span>
         {% if data.chosen == c.id %}<span class="badge ok">chosen</span>{% endif %}
         {% if c.idea %}<span class="muted" style="font-size:12px"> &middot; {{ c.idea }}</span>{% endif %}</div>

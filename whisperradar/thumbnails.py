@@ -201,6 +201,15 @@ def context(cfg, pid: int) -> dict:
     ctx["ref_text"] = "\n".join(
         f"- {n}: {(r.get('prompt') or '(supplied image)')[:300]}"
         for n, r in refs.items()) or "(none)"
+    try:
+        from . import db as _db
+        _conn = _db.connect(cfg.db_path)
+        try:
+            ctx["swipes"] = _db.list_swipes(_conn, limit=12)
+        finally:
+            _conn.close()
+    except Exception:  # noqa: BLE001 - a swipe failure never blocks writing
+        ctx["swipes"] = []
     return ctx
 
 
@@ -224,6 +233,19 @@ def _plan_text(ctx: dict) -> str:
     return learned + ("THUMBNAIL IDEA FROM THE PACKAGING PLAN (one of your concepts "
             f"should build on it): layout {t.get('layout')}, words "
             f"\"{t.get('text')}\", {t.get('idea')}\n\n")
+
+
+def _swipe_text(ctx: dict) -> str:
+    rows = ctx.get("swipes") or []
+    if not rows:
+        return ""
+    lines = "\n".join(
+        f"- {s['kind']}: \"{(s['title'] or '(untitled)')[:90]}\""
+        + (f" - {s['note'][:120]}" if s["note"] else "")
+        + (f" ({s['channel_name']})" if s["channel_name"] else "")
+        for s in rows)
+    return ("SWIPE FILE - patterns we kept on purpose: learn the device or "
+            "angle they show, do not copy them.\n" + lines + "\n\n")
 
 
 def writer_prompt(ctx: dict, has_inspiration: bool = False) -> str:
@@ -254,7 +276,7 @@ Reference images used in the video:
 THUMBNAILS THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (titles only - learn the angle):
 {chr(10).join(f'- {t} ({m:.0f}x)' for t, m in ctx['refs']) or '(none available)'}
 
-{_RULES}
+{_swipe_text(ctx)}{_RULES}
 
 Reply with ONE JSON object and nothing else:
 {{"concepts": [{{"layout": "character_host|character|host", "text": "2-4 words", "text_pos": "left|right|top|bottom", "text_color": "#FFFFFF", "accent": "#FFD400", "emphasis": "none|ellipse|arrow|underline", "focal": "auto|left|right|top|bottom|center", "art_prompt": "...", "idea": "one line: why this one gets the click"}}, ...]}}"""
@@ -819,6 +841,43 @@ def compose(art_path, concept: dict, out_path) -> Path:
     return out
 
 
+def thumb_score(concept: dict, set_score, metrics: dict | None) -> dict | None:
+    """One 0-100 number for a finished thumbnail: the reviewer's set score
+    (worth 60) plus how the file actually holds up at phone size (worth 40).
+    When one half is missing the other is scaled over 100 and the gap is
+    said out loud. None when we have neither - no number beats an invented
+    one."""
+    if set_score is None and not metrics:
+        return None
+    why, got, weight = [], 0.0, 0.0
+    if set_score is not None:
+        judge = max(0.0, min(float(set_score), 10.0))
+        got += judge * 6.0
+        weight += 60.0
+        why.append(f"reviewer {judge:g}/10")
+    else:
+        why.append("no reviewer score yet")
+    if metrics:
+        local = 40.0
+        for warn, cost in (("flat at phone size (low contrast)", 15),
+                           ("washed out (low colour punch)", 10),
+                           ("very dark", 8), ("very bright", 6)):
+            if warn in (metrics.get("warnings") or []):
+                local -= cost
+        got += max(local, 0.0)
+        weight += 40.0
+        why.append(f"phone size: contrast {metrics.get('contrast')}, "
+                   f"colour {metrics.get('saturation')}, "
+                   f"brightness {metrics.get('brightness')}")
+        why.extend(metrics.get("warnings") or [])
+    dev = (concept.get("emphasis") or "none") if concept else "none"
+    if dev != "none":
+        why.append(f"attention device: {dev}")
+    score = int(round(got / weight * 100.0)) if weight else 0
+    label = ("strong" if score >= 70 else "ok" if score >= 45 else "weak")
+    return {"score": score, "label": label, "why": why}
+
+
 def phone_metrics(path) -> dict:
     """Cheap, local read of how a finished thumbnail holds up at phone size
     (about 170 px wide): contrast, colour punch and brightness, plus a list
@@ -860,6 +919,8 @@ def compose_all(pdir) -> list[str]:
             c["metrics"] = phone_metrics(out)
         except Exception:  # noqa: BLE001 - a metric never blocks composing
             c.pop("metrics", None)
+        c["thumb_score"] = thumb_score(c, data.get("score"),
+                                       c.get("metrics"))
         done.append(c["id"])
     save_thumbs(pdir, data)
     contact_sheet(pdir)

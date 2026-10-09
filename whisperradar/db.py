@@ -23,6 +23,30 @@ CREATE TABLE IF NOT EXISTS view_snapshots (
     PRIMARY KEY (video_id, taken_at)
 );
 
+-- channel size over time: who is growing before their videos look like
+-- outliers yet
+CREATE TABLE IF NOT EXISTS channel_snapshots (
+    channel_id TEXT NOT NULL,
+    taken_at TEXT NOT NULL,          -- UTC ISO-8601
+    subscribers INTEGER,
+    views INTEGER,
+    video_count INTEGER,
+    PRIMARY KEY (channel_id, taken_at)
+);
+
+-- the swipe file: winning patterns the person kept on purpose
+CREATE TABLE IF NOT EXISTS swipes (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL DEFAULT 'thumbnail',
+    note TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    thumb_url TEXT NOT NULL DEFAULT '',
+    video_id TEXT NOT NULL DEFAULT '',
+    channel_name TEXT NOT NULL DEFAULT '',
+    genre TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+);
+
 -- how each published video of ours did: views at 24h / 7d / 28d
 CREATE TABLE IF NOT EXISTS prod_results (
     production_id INTEGER NOT NULL,
@@ -516,6 +540,96 @@ def list_snapshots(conn, since_days: int = 60, now=None) -> dict:
             continue
         out.setdefault(row[0], []).append((when, row[2]))
     return out
+
+
+CHANNEL_SNAPSHOT_GAP_HOURS = 22      # a day, minus a little clock drift
+
+
+def record_channel_snapshots(conn, stats: list[dict], now=None,
+                             min_gap_hours: float = CHANNEL_SNAPSHOT_GAP_HOURS
+                             ) -> int:
+    """stats: [{channel_id, subscribers, views, video_count}]. At most one
+    snapshot per channel per day. Returns how many were stored."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    stamp = now.astimezone(_dt.timezone.utc).isoformat(timespec="seconds")
+    cutoff = (now - _dt.timedelta(hours=min_gap_hours)).astimezone(
+        _dt.timezone.utc).isoformat(timespec="seconds")
+    stored = 0
+    for s in stats:
+        cid = s.get("channel_id")
+        if not cid:
+            continue
+        last = conn.execute(
+            "SELECT MAX(taken_at) FROM channel_snapshots"
+            " WHERE channel_id = ?", (cid,)).fetchone()[0]
+        if last and last > cutoff:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO channel_snapshots"
+            " (channel_id, taken_at, subscribers, views, video_count)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (cid, stamp, s.get("subscribers"), s.get("views"),
+             s.get("video_count")))
+        stored += 1
+    conn.commit()
+    return stored
+
+
+def list_channel_snapshots(conn, since_days: int = 90, now=None) -> dict:
+    """{channel_id: [{taken_at, subscribers, views, video_count}, ...]}
+    oldest first, for the last `since_days` days."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    since = (now - _dt.timedelta(days=since_days)).astimezone(
+        _dt.timezone.utc).isoformat(timespec="seconds")
+    out: dict = {}
+    for row in conn.execute(
+            "SELECT channel_id, taken_at, subscribers, views, video_count"
+            " FROM channel_snapshots WHERE taken_at >= ? ORDER BY taken_at",
+            (since,)):
+        out.setdefault(row[0], []).append(
+            {"taken_at": row[1], "subscribers": row[2], "views": row[3],
+             "video_count": row[4]})
+    return out
+
+
+SWIPE_KINDS = ("thumbnail", "title", "hook", "structure")
+
+
+def add_swipe(conn, kind: str = "thumbnail", title: str = "", note: str = "",
+              video_id: str = "", channel_name: str = "", genre: str = "",
+              thumb_url: str = "") -> int:
+    """Save a winning pattern. Re-saving the same video+kind returns the
+    existing row instead of duplicating it."""
+    if video_id:
+        dup = conn.execute(
+            "SELECT id FROM swipes WHERE video_id = ? AND kind = ?",
+            (video_id, kind)).fetchone()
+        if dup:
+            return dup["id"]
+    cur = conn.execute(
+        "INSERT INTO swipes (kind, note, title, thumb_url, video_id,"
+        " channel_name, genre) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (kind, note, title, thumb_url, video_id, channel_name, genre))
+    conn.commit()
+    return cur.lastrowid
+
+
+def list_swipes(conn, limit: int = 50, kind: str = "") -> list[dict]:
+    sql = "SELECT * FROM swipes"
+    args: list = []
+    if kind:
+        sql += " WHERE kind = ?"
+        args.append(kind)
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    return [dict(r) for r in conn.execute(sql, args)]
+
+
+def delete_swipe(conn, swipe_id: int) -> None:
+    conn.execute("DELETE FROM swipes WHERE id = ?", (swipe_id,))
+    conn.commit()
 
 
 def set_view_counts(conn, videos: list[dict]) -> int:
