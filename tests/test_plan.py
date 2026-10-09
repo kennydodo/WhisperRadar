@@ -58,6 +58,42 @@ class PureTests(unittest.TestCase):
         self.assertNotIn("hook", block.lower().replace("never", ""))
 
 
+class PhrasingTests(unittest.TestCase):
+    def test_awkward_titles_are_caught(self):
+        for bad in ("Coin Jar Rule: Coin Jar Secret (You Do Without Knowing)",
+                    "Why the coin jar always fills with",
+                    "Coin jar", "Coin Jar Rule: Why: It Works: Now",
+                    "COIN JAR SECRETS REVEALED NOW",
+                    "Coin jar habits that coin jar people do"):
+            self.assertTrue(pp.awkward_title(bad), bad)
+
+    def test_natural_titles_pass(self):
+        for ok in ("Why Your Coin Jar Quietly Beats Your Savings Account",
+                   "I Tried the Coin Jar Rule for 30 Days - Here's What Changed",
+                   "The Coin Jar Mistake That Costs You Hundreds"):
+            self.assertEqual(pp.awkward_title(ok), "", ok)
+
+    def test_plan_faults_name_the_title_and_the_options(self):
+        plan = pp.parse_plan(good(
+            title="Coin jar habits that coin jar people do",
+            titles=[{"text": t} for t in (
+                "Coin jar habits that coin jar people do",
+                "Coin jar rule: coin jar secret: why: now",
+                "Why the coin jar always fills with",
+                "Why Your Coin Jar Fills Up Faster Than You Think",
+                "The Coin Jar Mistake That Costs You Hundreds",
+                "I Tried the Coin Jar for 30 Days")]))
+        faults = pp.local_faults(plan)
+        self.assertTrue(any("chosen title reads awkwardly" in x
+                            for x in faults))
+        self.assertTrue(any("title options read awkwardly" in x
+                            for x in faults))
+
+    def test_prompts_ask_for_natural_phrasing(self):
+        self.assertIn("read like a real sentence", pp._RULES)
+        self.assertIn("NEVER stuffed", pp._RULES)
+
+
 class VettedTitleTests(unittest.TestCase):
     def test_free_form_title_is_a_fault(self):
         plan = pp.parse_plan(good(

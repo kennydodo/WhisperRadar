@@ -186,8 +186,9 @@ def originality_faults(plan: dict, source_title: str = "",
         if " ".join(_words(title)) == norm or title_similarity(
                 title, source_title, plan.get("keyword", "")) > TITLE_SIM_MAX:
             f.append("the title copies the source video's title: keep the "
-                     "keyword but write a new title with different words "
-                     "and a new angle")
+                     "keyword but write a new sentence with a new angle "
+                     "(ordinary shared words are fine; the structure and "
+                     "promise must be new)")
         same = list_numbers(title) & list_numbers(source_title)
         if same:
             f.append(f"the title promises {min(same)} points, the same count "
@@ -200,6 +201,55 @@ def originality_faults(plan: dict, source_title: str = "",
                                                       transcript):
         f.append(f"the hook reuses {HOOK_RUN}+ words in a row from the "
                  "source: write a different opening of equal strength")
+    return f
+
+
+_DANGLING = set("the a an of to and or with for in on at by your my this "
+                "that is are was were from as but if than".split())
+_SEP = re.compile(r"[:|]|\s[-\u2013\u2014]\s")
+
+
+def awkward_title(title: str) -> str:
+    """Why a title reads badly aloud ("" when it reads fine): the checks a
+    person makes by ear - it must sound like something a human would say,
+    not a keyword pile."""
+    t = _s(title)
+    words = _words(t)
+    if len(words) < 3:
+        return "too short to say anything"
+    if len(words) > 16:
+        return "too long to read in one breath"
+    if words[-1] in _DANGLING:
+        return f"ends on a dangling \"{words[-1]}\""
+    if len(_SEP.findall(t)) > 1 or ("(" in t and ")" in t) or "[" in t:
+        return "has extra separators/brackets instead of one clean sentence"
+    shout = [w for w in re.findall(r"[A-Za-z']{3,}", t) if w.isupper()]
+    if len(shout) > 1:
+        return "shouts in ALL CAPS"
+    seen: dict[str, int] = {}
+    for w in words:
+        if len(w) > 3 and w not in _STOP and not w.isdigit():
+            seen[w] = seen.get(w, 0) + 1
+    again = [w for w, n in seen.items() if n > 1]
+    if again:
+        return f"repeats \"{again[0]}\" (keyword stuffing)"
+    return ""
+
+
+def phrasing_faults(plan: dict) -> list[str]:
+    """The chosen title must read naturally; so must most of the options."""
+    f = []
+    why = awkward_title(plan.get("title") or "")
+    if why:
+        f.append(f"the chosen title reads awkwardly - it {why}: rewrite it "
+                 "as one natural sentence a person would say, keeping the "
+                 "keyword as a real phrase")
+    bad = [(t["text"], awkward_title(t["text"])) for t in plan["titles"]]
+    bad = [(a, b) for a, b in bad if b]
+    if len(bad) >= 3:
+        f.append(f"{len(bad)} title options read awkwardly (for example "
+                 f"\"{bad[0][0]}\" - it {bad[0][1]}): every option must "
+                 "sound like natural spoken English")
     return f
 
 
@@ -225,6 +275,7 @@ def local_faults(plan: dict, source_title: str = "",
     if not title:
         return ["no title"]
     f += originality_faults(plan, source_title, transcript)
+    f += phrasing_faults(plan)
     if len(title) > TITLE_MAX:
         f.append(f"title is {len(title)} characters; YouTube allows "
                  f"{TITLE_MAX}")
@@ -349,7 +400,10 @@ def context(cfg, pid: int) -> dict:
 
 
 _RULES = f"""Rules for the plan:
-- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji. The source video proved its TOPIC: take its main keyword and the story it tells, then write OUR OWN title around that keyword - as strong as the source's, in different words and from a fresh angle. Never use the source title, and no option may be a reworded copy of it. Only promise what the topic in the brief can deliver. If the title promises a number of points ("7 reasons", "10 signs"), the number must DIFFER from the source title's number (8 or 12 where it says 10) - the same count is rejected.
+- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. The title must read like a real sentence a person would say out loud to a friend: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
+  Good shapes (learn the shape, never copy the words): "Why [keyword phrase] Quietly [does something surprising]", "The [keyword phrase] Mistake That Costs You [thing]", "I Tried [keyword phrase] for [time] - Here's What Changed", "[Number] [keyword phrase] Habits That Actually [result]", "Stop [doing the common thing] - Do This [keyword phrase] Instead".
+  Bad (never write like this): "Japanese Home Habits Hacks Secrets Revealed Now", "Coin Jar Rule: Coin Jar Secret (You Do Without Knowing)", "Habits Home Japanese That Work". Test every option by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
+  The source video proved its TOPIC: take its main keyword and the story it tells, then write OUR OWN title around that keyword - as strong as the source's, from a fresh angle and with our own sentence structure. Sharing ordinary words with the source is fine (the keyword and plain words like "home" or "habits" will repeat); what must differ is the sentence, the angle and the promise. Never use the source title, and no option may be a lightly reworded copy of it. Only promise what the topic in the brief can deliver. If the title promises a number of points ("7 reasons", "10 signs"), the number must DIFFER from the source title's number (8 or 12 where it says 10) - the same count is rejected.
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
 - The hook is how the first 15 seconds start (a question, a surprising fact, a scene) - one or two sentences. It must be as gripping as the source's opening but NOT the same hook: a different first image, question or fact, never its wording.
 - The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone)."""
@@ -418,7 +472,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Originality is part of the job: FAIL the plan (pass false, score below the bar) if the title, any option or the hook is the source's own or a reworded copy of it. The same topic and keyword are right; the same wording or hook is not. In "faults" and "fixes" NEVER quote or restate the source's title, hook or wording - say only that it is too close and what kind of change is needed; the strategist has to invent it. Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords; a real curiosity gap that is not clickbait, the keyword early, a promise the topic can keep, a hook that starts fast, a thumbnail idea that adds to the title. Name the exact text that is weak.
+Originality is part of the job: FAIL the plan (pass false, score below the bar) if the title, any option or the hook is the source's own or a reworded copy of it. The same topic and keyword are right; the same wording or hook is not. In "faults" and "fixes" NEVER quote or restate the source's title, hook or wording - say only that it is too close and what kind of change is needed; the strategist has to invent it. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the topic can keep, a hook that starts fast, a thumbnail idea that adds to the title. Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
