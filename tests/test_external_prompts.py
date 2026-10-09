@@ -57,6 +57,8 @@ class Base(unittest.TestCase):
         (self.pdir / "source_transcript.txt").write_text(SOURCE, "utf-8")
         (self.pdir / "writing_style.md").write_text(WSTYLE, "utf-8")
         (self.pdir / "research_notes.md").write_text(NOTES, "utf-8")
+        (self.pdir / "research_notes.json").write_text(
+            '{"manual": true}', "utf-8")      # a usable brief is on file
         (self.pdir / "subtitles.srt").write_text(SRT, "utf-8")
 
     def tearDown(self):
@@ -122,7 +124,7 @@ class ScriptPromptTests(Base):
         text = ep.script_judge_prompt(self.cfg, self.pid, script)
         self.assertIn(script, text)
         self.assertIn(WSTYLE, text)
-        self.assertIn("5-gram overlap with the source transcript", text)
+        self.assertIn("5-gram overlap with the original", text)
         self.assertIn("THE CHANNEL'S BAR", text)
         self.assertNotIn(BIBLE, text)
 
@@ -429,28 +431,27 @@ class FilesModeTests(Base):
         text = ep.script_writer_prompt(self.cfg, self.pid, target_words=900,
                                        files=files)
         by = self._by_name(files)
-        self.assertEqual(set(by), {"writing_style.md", "research_notes.md"})
+        # the brief is tiny: always inline, never a file
+        self.assertEqual(set(by), {"writing_style.md"})
         self.assertIn(WSTYLE, by["writing_style.md"])
-        self.assertIn("pennies from 1943", by["research_notes.md"])
         self.assertNotIn(WSTYLE, text)
-        self.assertNotIn("pennies from 1943", text)
+        self.assertIn("pennies from 1943", text)
         self.assertIn("Missing: <the file names>", text)
         self.assertIn("attached writing_style.md", text)
-        self.assertIn("attached research_notes.md", text)
         self.assertIn("QUALITY BAR", text)       # limits stay in the prompt
         self.assertNotIn("@@", text)
 
     def test_pasted_notes_become_the_notes_file(self):
         files = []
-        ep.script_writer_prompt(self.cfg, self.pid, notes="- PASTED-N",
-                                files=files)
-        self.assertIn("PASTED-N", self._by_name(files)["research_notes.md"])
+        text = ep.script_writer_prompt(self.cfg, self.pid,
+                                       notes="- PASTED-N", files=files)
+        self.assertIn("PASTED-N", text)
 
     def test_writer_files_only_lists_what_exists(self):
         (self.pdir / "writing_style.md").unlink()
         files = []
         text = ep.script_writer_prompt(self.cfg, self.pid, files=files)
-        self.assertEqual([f["name"] for f in files], ["research_notes.md"])
+        self.assertEqual([f["name"] for f in files], [])
         self.assertNotIn("writing_style.md", text.split("QUALITY BAR")[0]
                          .split("TASK:")[0])
         self.assertIn("ask me to paste or attach the writing style", text)
@@ -459,14 +460,16 @@ class FilesModeTests(Base):
         files = []
         text = ep.script_judge_prompt(self.cfg, self.pid, "Judge me.",
                                       files=files)
+        # the original goes in as a file (tone/style/hook/ending only)
         self.assertEqual({f["name"] for f in files},
-                         {"writing_style.md", "research_notes.md"})
+                         {"writing_style.md", "source_facts.txt"})
         self.assertNotIn(WSTYLE, text)
+        self.assertIn("tone, style, hook, flow and ending", text)
         self.assertIn("Judge me.", text)         # the script stays inline
         self.assertIn("Missing:", text)
         self.assertNotIn("@@", text)
 
-    def test_judge_without_notes_attaches_the_source_as_facts(self):
+    def test_judge_attaches_the_original_script(self):
         (self.pdir / "research_notes.md").unlink()
         files = []
         ep.script_judge_prompt(self.cfg, self.pid, "x.", files=files)
@@ -522,7 +525,7 @@ class FilesRouteTests(Base):
         code, j = self._post(kind="script_writer", mode="files")
         self.assertEqual(code, 200)
         self.assertEqual({f["name"] for f in j["files"]},
-                         {"writing_style.md", "research_notes.md"})
+                         {"writing_style.md"})
         self.assertNotIn(WSTYLE, j["prompt"])
 
     def test_auto_stays_inline_when_small(self):
@@ -577,8 +580,8 @@ class StructureTests(Base):
         for text in (ep.script_writer_prompt(self.cfg, self.pid),):
             flat = " ".join(text.split())
             self.assertIn("Choose your OWN story structure", flat)
-            self.assertIn("must still make sense", flat)
-            self.assertIn("keep cause before effect", flat)
+            self.assertIn("You have NOT been given any existing script", flat)
+            self.assertIn("Work the KEYWORDS", flat)
 
 
 class RefsStageRemoveImageTests(Base):

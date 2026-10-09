@@ -1698,3 +1698,24 @@ fails reworded copies (without quoting the source in faults/fixes); code checks
 keyword, a title option equal to the source title, a hook sharing a
 `HOOK_RUN`-word run with the transcript). `plan.faults_for(cfg, pid, plan)` is
 the page-side wrapper. Existing plans keep their old titles until re-planned.
+
+## Keyword brief replaces the research notes (writer never sees the original)
+`research_notes.md` is now a KEYWORD BRIEF: `BRIEF:` (<=100 words, name-free, topic and
+angle only) + `KEYWORDS:` (8-15). Built by `studio.notes_prompt` ->
+`autorun.make_brief` (3 tries; `studio.brief_faults` checks length and 4-word
+overlap with the transcript; too long -> cut) and cached with meta
+`{"kind":"brief"}` (`autorun.save_brief`). Older fact notes are rebuilt;
+pasted notes (`manual`) are kept. A failed build gives "" - never the transcript.
+Web-chat flow: `webstages.ensure_brief` asks the JUDGE chat (the one allowed to see
+the original).
+- **Plan**: writer and judge get the original TITLE + the brief, no transcript
+  (`plan.context` keeps `transcript` for code checks only). Plan code checks:
+  title/hook originality, and `list_numbers`: a title promising the same number
+  of points as the source title fails (10 -> 8 or 12).
+- **Script writer**: title + brief + style + plan title/keyword. It researches the
+  topic itself; no facts from the original.
+- **Script judge** (`studio.rating_prompt(original=...)`): sees the original ONLY for
+  tone, style, hook, flow, ending; verifies real-world claims itself; checks keywords
+  are used. Its feedback/weak_spans are scrubbed (`scrub_for_writer`, allowing the
+  script and the brief) and the prompt limits them to style/tone advice and keywords.
+- Length window stays 80-115% of the target.

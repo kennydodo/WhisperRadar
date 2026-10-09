@@ -372,18 +372,54 @@ def save_manual_notes(pdir: Path, text: str) -> None:
 
 
 def _notes_cache_valid(pdir: Path, notes: str, source_text: str) -> bool:
+    """A cached file is reused only if the user wrote it or it is a keyword
+    BRIEF built from this very source. Older fact notes (long, full of the
+    original's names and details) are rebuilt as a brief."""
     try:
         meta = json.loads((Path(pdir) / RESEARCH_NOTES_META)
                           .read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        meta = None
-    if isinstance(meta, dict) and meta.get("manual"):
+        return False
+    if not isinstance(meta, dict):
+        return False
+    if meta.get("manual"):
         return True  # written or pasted by the user: never rebuilt
-    if isinstance(meta, dict) and "source_chars" in meta:
-        return meta["source_chars"] == len(source_text or "")
-    src_words = len((source_text or "").split())
-    return not src_words or (len(notes.split())
-                             >= NOTES_LEGACY_MIN_RATIO * src_words)
+    return (meta.get("kind") == "brief"
+            and meta.get("source_chars") == len(source_text or ""))
+
+
+def save_brief(pdir: Path, text: str, source_text: str) -> None:
+    pdir = Path(pdir)
+    (pdir / RESEARCH_NOTES_FILE).write_text(text.strip() + "\n",
+                                            encoding="utf-8")
+    (pdir / RESEARCH_NOTES_META).write_text(
+        json.dumps({"kind": "brief", "source_chars": len(source_text or ""),
+                    "words": len(text.split())}) + "\n", encoding="utf-8")
+
+
+def make_brief(ask, source_text: str, title: str, genre: str,
+               log=None) -> str:
+    """Ask for the keyword brief up to 3 times (`ask(prompt) -> str`), feeding
+    the code checks back; a still-too-long summary is cut to the limit."""
+    log = log or (lambda m: None)
+    prompt = studio.notes_prompt(title, genre, source_text)
+    brief, faults = {"summary": "", "keywords": []}, []
+    for attempt in range(1, 4):
+        raw = ask(prompt if not faults else
+                  prompt + "\n\nYour previous reply was rejected: "
+                  + "; ".join(faults) + ". Reply again with the two lines.")
+        brief = studio.parse_brief(raw)
+        faults = studio.brief_faults(brief, source_text)
+        if not faults:
+            break
+        log(f"keyword brief attempt {attempt}: " + "; ".join(faults))
+    if faults:
+        words = brief["summary"].split()
+        brief["summary"] = " ".join(words[:studio.BRIEF_WORDS])
+        if not brief["summary"]:
+            raise RuntimeError("no usable keyword brief: " + "; ".join(faults))
+    return studio.render_brief(brief)
+
 
 # Flow's "still busy" wave leaves some cards unrendered. Rather than failing the
 # stage, pause (the account settles) and resume: both engines skip what already
@@ -404,10 +440,9 @@ THROTTLE_PAUSE_SECONDS = 3600
 def _research_notes(cfg, pdir: Path, title: str, genre: str,
                     source_text: str, provider: str | None,
                     refresh: bool = False) -> str:
-    """Cached fact-notes for this production, generated once by the writer's
-    provider. The script is composed FROM these rather than from the transcript
-    prose, so it stops echoing the source: the first live run measured 93.5%
-    overlap with the transcript and the copycat gate rejects over 20%.
+    """The production's keyword BRIEF (<=100 words + keywords), generated once
+    and cached. It is all the writer learns about the original; the script
+    stage never sees the transcript's facts, names or wording.
 
     `refresh` re-derives the notes from the source transcript instead of using
     the cache - a manual regenerate wants a different factual phrasing so the
@@ -422,48 +457,25 @@ def _research_notes(cfg, pdir: Path, title: str, genre: str,
                           f"({len(cached.split())} words)")
                 return cached
             if cached:
-                _log_line(f"cached {RESEARCH_NOTES_FILE} looks incomplete "
-                          f"({len(cached.split())} words for a "
-                          f"{len((source_text or '').split())}-word source) - "
-                          f"rebuilding it")
+                _log_line(f"cached {RESEARCH_NOTES_FILE} is not a keyword "
+                          f"brief - rebuilding it")
         except OSError:
             pass
-    elif path.exists():
-        _log_line(f"regenerate: rebuilding {RESEARCH_NOTES_FILE} for a fresh take")
-    parts = studio.split_for_notes(source_text)
-    pieces: list[str] = []
     try:
-        for i, chunk in enumerate(parts, 1):
-            if len(parts) > 1:
-                _log_line(f"building research notes: part {i}/{len(parts)}")
-            out = studio.llm_generate(
-                cfg, studio.notes_prompt(title, genre, chunk,
-                                         part=(i, len(parts))),
-                provider=provider, max_tokens=studio.NOTES_MAX_TOKENS)
-            out = (out or "").strip()
-            if not out:
-                raise RuntimeError(f"part {i}/{len(parts)} came back empty")
-            chunk_words = len(chunk.split())
-            if chunk_words and len(out.split()) < 0.08 * chunk_words:
-                _log_line(f"warning: notes for part {i}/{len(parts)} are very "
-                          f"short ({len(out.split())} words for {chunk_words})")
-            pieces.append(out)
-    except Exception as exc:  # noqa: BLE001 - notes are an optimisation
-        _log_line(f"could not build research notes ({exc}); writing from the "
-                  f"transcript")
-        return source_text
-    notes = "\n\n".join(pieces).strip()
+        notes = make_brief(
+            lambda pr: studio.llm_generate(cfg, pr, provider=provider,
+                                           max_tokens=700),
+            source_text, title, genre, _log_line)
+    except Exception as exc:  # noqa: BLE001
+        # never fall back to the transcript: the writer must not see it
+        _log_line(f"could not build the keyword brief ({exc}); the writer "
+                  f"gets the title only")
+        return ""
     try:
-        path.write_text(notes + "\n", encoding="utf-8")
-        (pdir / RESEARCH_NOTES_META).write_text(
-            json.dumps({"source_chars": len(source_text or ""),
-                        "parts": len(parts),
-                        "words": len(notes.split())}) + "\n",
-            encoding="utf-8")
+        save_brief(pdir, notes, source_text)
     except OSError:
         pass
-    _log_line(f"built {RESEARCH_NOTES_FILE} ({len(notes.split())} words, "
-              f"{len(parts)} part(s))")
+    _log_line(f"built keyword brief ({len(notes.split())} words)")
     return notes
 
 
@@ -655,6 +667,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         existing_rating = studio.rate_script(
             cfg, prod["title"], prod["genre"], existing_text, facts,
             style_guide, judge, temperature=eff["script_judge_temperature"],
+            original=source_text,
             extra_direction=packplan.with_plan(cfg, prod,
                                          db.stage_extra(prod, "script")))
         existing_passed, _why, _tl, _ts = _script_gate(
@@ -689,7 +702,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         if previous and previous.get("too_short"):
             variation = ((variation + "\n") if variation else "") + (
                 f"The previous draft was far too short. Write the full "
-                f"{target_words} words and cover every fact in the notes.")
+                f"{target_words} words and cover the whole topic in depth.")
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
@@ -730,6 +743,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
                                     facts, style_guide, judge,
+                                    original=source_text,
                                     temperature=eff["script_judge_temperature"],
                                     extra_direction=packplan.with_plan(cfg, prod,
                                          db.stage_extra(prod, "script")))
@@ -759,8 +773,8 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             break
         _log_line(log_attempt + " - rejected (" + "; ".join(why) + ")")
         safe_fb = studio.scrub_for_writer(
-            rating["feedback"] or rating["weak_spans"], text,
-            source_text + "\n" + (facts or ""))[0]
+            rating["feedback"] or rating["weak_spans"], text, source_text,
+            allow=facts or "")[0]
         previous = {"overlap": overlap, "runs": runs,
                     "feedback": safe_fb,
                     "too_long": too_long, "too_short": too_short}

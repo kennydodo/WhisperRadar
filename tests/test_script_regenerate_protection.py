@@ -67,7 +67,7 @@ class ScriptRegenerateProtectionTests(unittest.TestCase):
 
     def _rate(self, existing_score, new_score):
         def fake_rate(cfg, title, genre, script, source, style_guide,
-                     provider, temperature=1.0, extra_direction=""):
+                     provider, temperature=1.0, extra_direction="", original=""):
             score = existing_score if script.strip() == EXISTING_SCRIPT \
                 else new_score
             return {"score": score, "criteria": {}, "feedback": [],

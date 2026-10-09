@@ -186,6 +186,37 @@ def _send(transport, site: str, build: Callable, log,
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+def ensure_brief(cfg, pid: int, transport, who: str, log,
+                 continuing: bool = False) -> tuple[str, bool]:
+    """The production's keyword brief (<=100 words + keywords), asked from
+    `who` - the chat that may see the original - when none is cached.
+    Returns (brief text, whether a chat of `who` is now open)."""
+    ctx = ep._context(cfg, pid)
+    pdir = ctx["pdir"]
+    source = autorun._source_transcript_text(cfg, pid)
+    have = ep._read(pdir / autorun.RESEARCH_NOTES_FILE)
+    if have and autorun._notes_cache_valid(pdir, have, source):
+        return have, False
+    if not source.strip():
+        return have, False
+    log(f"{who}: writing the keyword brief (topic + keywords, no names or "
+        f"plot)")
+    first = [True]
+
+    def ask(prompt: str) -> str:
+        if first[0]:
+            first[0] = False
+            return _send_in(transport, who, lambda f: prompt, log,
+                            continuing)[0]
+        return _send(transport, who, lambda f: prompt, log, new_chat=False)
+
+    brief = autorun.make_brief(ask, source, ctx["prod"]["title"],
+                               ctx["prod"]["genre"], log)
+    autorun.save_brief(pdir, brief, source)
+    log("keyword brief saved")
+    return brief, True
+
+
 def _is_json_verdict(text: str) -> bool:
     return bool(studio._parse_json_object(text))
 
@@ -369,11 +400,11 @@ def _length_delta(words: int, target: int) -> str:
     if words > hi:
         return (f"Your draft was {words} words - {words - hi} over the "
                 f"maximum of {hi}. Cut at least {words - target} words "
-                f"(drop repetition and side points, keep the facts).")
+                f"(drop repetition and side points, keep the brief's keywords).")
     if words < lo:
         return (f"Your draft was {words} words - {lo - words} under the "
                 f"minimum of {lo}. Add about {target - words} words using "
-                f"facts you have not used yet.")
+                f"depth on points you have not unpacked yet.")
     return f"Your draft was {words} words, inside {lo}-{hi}."
 
 
@@ -389,14 +420,14 @@ def _script_feedback(words: int, target: int, reasons: list[str],
         lines.append("Editor's feedback:")
         lines += [f"- {f}" for f in judged["feedback"]]
     if judged.get("weak_spans"):
-        lines.append("Passages the editor flagged as copied or weak:")
+        lines.append("Passages the editor flagged as weak:")
         lines += [f"- {w}" for w in judged["weak_spans"]]
     lines.append(
         f"Rewrite the COMPLETE script, fixing every point above and keeping "
         f"what the editor did not criticise. {_length_delta(words, target)} "
         f"It must be {lo}-{hi} words (target {target}); count before you "
-        f"reply. Use only the facts "
-        f"you were given. Same reply format as before: the finished script "
+        f"reply. Keep working in the brief's keywords; the story, research "
+        f"and wording stay your own. Same reply format as before: the finished script "
         f"as plain text only, no notes before or after it.")
     return "\n".join(lines)
 
@@ -415,6 +446,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
 
     def long_enough(text: str) -> bool:        # not just "Thinking..." / a stub
         return _wc(text) >= 0.5 * target
+
+    brief_text, _chat = ensure_brief(cfg, pid, transport, judge, log)
 
     reply = _send(transport, writer,
                   lambda f: ep.script_writer_prompt(cfg, pid, title, None,
@@ -467,7 +500,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                            if str(x).strip()]}
         # the judge must never hand original-script details to the writer
         for k in ("feedback", "weak_spans"):
-            judged[k], gone = studio.scrub_for_writer(judged[k], script, source)
+            judged[k], gone = studio.scrub_for_writer(judged[k], script,
+                                                      source, allow=brief_text)
             if gone:
                 log(f"dropped {gone} judge note(s) in {k} that carried "
                     f"details of the original")

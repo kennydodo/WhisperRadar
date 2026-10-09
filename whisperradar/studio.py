@@ -75,8 +75,8 @@ def variation_nudge(attempt: int = 1, overlap: float | None = None,
     if feedback:
         notes = "\n".join(f"  - {f}" for f in feedback[:6])
         parts.append(f"The editor asked for these fixes:\n{notes}")
-    parts.append("Reuse only facts, names and numbers - never the source's "
-                 "phrasing or sentence structure.")
+    parts.append("Invent your own names and scenario; keep using the "
+                 "brief's keywords.")
     return " ".join(parts)
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".flac", ".ogg")
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -3255,11 +3255,11 @@ def overlap_runs(script: str, source: str, n: int = 5,
 
 
 RATING_RUBRIC = [    ("hook", "Does the first 15 seconds earn attention without clickbait?"),
-    ("originality", "Is it a genuine rewrite, not a reworded copy?"),
-    ("accuracy", "Are the claims consistent with the SOURCE FACTS and not invented?"),
+    ("originality", "Is it its own script - own story, structure and wording - not a copy of the original?"),
+    ("accuracy", "Are the real-world claims true and checkable (verify them yourself), none invented?"),
     ("structure", "Clear beats, logical order, no filler or repetition?"),
     ("pacing", "Does it hold attention to the end at a spoken pace?"),
-    ("style_fit", "Does it obey the channel's style guide and tone?"),
+    ("style_fit", "Does it obey the channel's style guide and match the ORIGINAL's tone, style, hook and ending quality?"),
     ("ending", "Does it land a payoff rather than trailing off?"),
 ]
 
@@ -3306,7 +3306,8 @@ def shared_names(script: str, facts: str, limit: int = 12) -> list[str]:
     return both[:limit]
 
 
-def scrub_for_writer(items, script: str, source: str, n: int = 4) -> tuple[list[str], int]:
+def scrub_for_writer(items, script: str, source: str, n: int = 4,
+                     allow: str = "") -> tuple[list[str], int]:
     """Judge notes may go to the writer ONLY if they carry nothing from the
     original: drop any note that names a capitalised word, or quotes an
     n-word run, that is in the SOURCE but not in the script under review
@@ -3321,7 +3322,7 @@ def scrub_for_writer(items, script: str, source: str, n: int = 4) -> tuple[list[
         return {m.group(1) for m in re.finditer(r"\b([A-Z][a-z]{2,})\b", t or "")
                 if m.group(1).lower() not in _NAME_SKIP}
     src_g, src_c = grams(source), caps(source)
-    own_g, own_c = grams(script), caps(script)
+    own_g, own_c = grams(script) | grams(allow), caps(script) | caps(allow)
     kept, dropped = [], 0
     for it in items or []:
         it = str(it)
@@ -3334,19 +3335,19 @@ def scrub_for_writer(items, script: str, source: str, n: int = 4) -> tuple[list[
 
 def rating_prompt(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
-                  extra_direction: str = "") -> str:
+                  extra_direction: str = "", original: str = "") -> str:
+    """`source` is the writer's BRIEF (topic + keywords); `original` is the
+    existing video's script, shown to the judge ONLY to compare tone, style,
+    hook, flow and ending - never for facts, points or names."""
     rubric = "\n".join(f"- {name}: {desc}" for name, desc in RATING_RUBRIC)
-    facts = (source or "").strip()[:JUDGE_SOURCE_CHARS]
-    shared = shared_names(script or "", facts)
+    brief = (source or "").strip()[:4000]
+    orig = (original or "").strip()[:JUDGE_SOURCE_CHARS]
+    shared = shared_names(script or "", orig)
     names_note = (
         f"\nMeasured by software: names that appear in BOTH the script and "
-        f"the SOURCE FACTS: {', '.join(shared)}. A character or company name "
-        f"in this list is a copied name unless it is a real, well-known "
-        f"institution the facts discuss." if shared else "")
-    # The writer is told to follow the creator's additional direction, so the
-    # judge must see it too. Without it the judge penalised a script for doing
-    # exactly what the creator asked (e.g. matching the title's number of
-    # points when the source's own count differed).
+        f"the ORIGINAL: {', '.join(shared)}. A character or company name in "
+        f"this list is a copied name unless it is a real, well-known "
+        f"institution." if shared else "")
     direction = (extra_direction or "").strip()
     direction_block = ""
     if direction:
@@ -3355,34 +3356,43 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
             f"it): {direction}\n"
             f"Judge whether the script follows this direction, and do NOT "
             f"penalise it for doing what the direction asks, even where that "
-            f"differs from the title, the SOURCE FACTS' own structure or "
+            f"differs from the title or the ORIGINAL's own structure or "
             f"count. Invented facts are still penalised.\n\n")
     return (
         f"You are a ruthless YouTube script editor for the channel genre "
         f"'{genre}'. Score this script for the video \"{title}\".\n\n"
         f"Score each criterion 1-10:\n{rubric}\n\n"
-        f"Measured 5-gram overlap with the source transcript: {overlap:.1%}. "
+        f"Measured 5-gram overlap with the original: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
-        f"The SOURCE FACTS below are the ground truth for REAL-WORLD facts: "
-        f"a claim about a law, a rule, an institution, a statistic or history "
-        f"is accurate when it is consistent with them. Do NOT ask for external "
-        f"citations or sources - the SOURCE FACTS are the source. Penalise "
-        f"real-world claims that are absent from, or contradict, the SOURCE "
-        f"FACTS.\n"
-        f"STORY DRESSING IS NOT A FACT: the names of characters, companies, "
-        f"employers, towns and the personal figures of the scenario belong to "
-        f"the video the facts came from. The new script must invent its OWN. "
-        f"Never ask the writer to use a name or detail from the SOURCE FACTS; "
-        f"if the script reuses the source's character or company names or its "
-        f"scenario, fail originality and tell the writer to invent new ones. "
-        f"Do NOT penalise invented story details as 'absent from the facts'."
-        f"{names_note}\n"
-        f"Your feedback and weak_spans go straight to the writer, who has NEVER "
-        f"seen the source. They must contain nothing from the SOURCE FACTS: no "
-        f"names, companies, places, figures, events or quotes from it. Say "
-        f"what is wrong and what kind of change is needed, never what the "
-        f"source says.\n\n"
-        f"SOURCE FACTS:\n{facts or '(none)'}\n\n"
+        f"HOW TO JUDGE:\n"
+        f"- The writer researched the topic itself and never saw the "
+        f"ORIGINAL. Verify the script's real-world claims yourself (use your "
+        f"web search if you have it): penalise claims that are false, "
+        f"unverifiable or invented (numbers, laws, studies, quotes). Story "
+        f"details the script invents (characters, companies, places) are "
+        f"fine and must NOT be penalised as unsupported.\n"
+        f"- Use the ORIGINAL only to check TONE, STYLE, HOOK, FLOW and ENDING: "
+        f"does the script's voice, pacing and energy match it, is the hook as "
+        f"strong and of a comparable kind, does the flow build the same way, "
+        f"does the ending land as well? It must match in quality and feel, "
+        f"NOT copy: never compare or require the ORIGINAL's points, facts, "
+        f"examples, story or character names. If the script follows the "
+        f"original's sequence of beats, reuses its names or scenario, or "
+        f"echoes its opening or ending wording, fail originality.\n"
+        f"- Check the KEYWORDS from the BRIEF are used naturally; list any "
+        f"that are missing in feedback.\n"
+        f"- Your feedback and weak_spans are forwarded to the writer, who has "
+        f"NEVER seen the ORIGINAL. They may contain ONLY: advice about tone, "
+        f"style, pacing, hook strength or ending strength in your own words "
+        f"(e.g. 'the hook is slow - open with a sharper question'), real-world "
+        f"corrections, and keywords to use. They must NEVER contain anything "
+        f"from the ORIGINAL: no sentence, phrase, name, company, place, "
+        f"figure, event, opening or ending, and never 'do what the original "
+        f"does'. Never tell the writer to match the original's facts.\n"
+        f"{names_note}\n\n"
+        f"BRIEF AND KEYWORDS GIVEN TO THE WRITER:\n{brief or '(none)'}\n\n"
+        f"ORIGINAL (for tone, style, hook, flow and ending ONLY):\n"
+        f"{orig or '(none)'}\n\n"
         f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:3000]}\n\n"
         f"{direction_block}"
         f"SCRIPT:\n{script or ''}\n\n"
@@ -3390,8 +3400,8 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f'{{"score": <1-10 overall, one decimal>, '
         f'"criteria": {{"hook": <n>, "originality": <n>, "accuracy": <n>, '
         f'"structure": <n>, "pacing": <n>, "style_fit": <n>, "ending": <n>}}, '
-        f'"feedback": ["<specific, actionable fix>", ...], '
-        f'"weak_spans": ["<a passage that reads copied or weak>", ...]}}'
+        f'"feedback": ["<specific, actionable fix, free of anything from the original>", ...], '
+        f'"weak_spans": ["<a passage of the SCRIPT that reads weak>", ...]}}'
     )
 
 
@@ -3417,16 +3427,17 @@ def _parse_json_object(text: str) -> dict:
 
 def rate_script(cfg, title: str, genre: str, script: str, source: str,
                 style_guide: str, provider: str | None,
-                temperature: float = 1.0, extra_direction: str = "") -> dict:
+                temperature: float = 1.0, extra_direction: str = "",
+                original: str = "") -> dict:
     """LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
     Never raises: a judge failure must not lose a usable draft.
 
     `temperature` defaults to 1.0 (matching every other LLM call) but the
     script stage passes a low value here - the writer must keep varying
     between attempts, the judge scoring it should not."""
-    overlap = overlap_ratio(script, source)
+    overlap = overlap_ratio(script, original or source)
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap,
-                           extra_direction=extra_direction)
+                           extra_direction=extra_direction, original=original)
     try:
         # 900 was a flat guess (see 9aafa69) sized for a bare score - it never
         # accounted for the 7-field criteria object plus feedback[] plus
@@ -3452,6 +3463,9 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
                                                   dict) else {}
     feedback = [str(f) for f in (reply.get("feedback") or []) if str(f).strip()]
     weak = [str(s) for s in (reply.get("weak_spans") or []) if str(s).strip()]
+    if original:     # nothing of the original may reach the writer
+        feedback, _g1 = scrub_for_writer(feedback, script, original, allow=source)
+        weak, _g2 = scrub_for_writer(weak, script, original, allow=source)
     # A reply that parses to no score (prose, an empty answer, a different JSON
     # shape) used to surface only as a cryptic "rating n/a". Keep the reason so
     # the stage can say WHY the judge could not rate the draft.
@@ -3565,19 +3579,13 @@ Output ONLY the style guide markdown."""
 def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = 1200,
                   variation: str = "", extra_direction: str = "") -> str:
-    facts = (source_text or "").strip()
-    # The writer is told to use ONLY these facts, so silently dropping half the
-    # research shows up as accuracy failures. 60k chars (~15k tokens) fits every
-    # configured model; anything beyond that is logged rather than hidden.
-    if len(facts) > SOURCE_FACTS_MAX_CHARS:
-        log.warning("script: source transcript is %d chars - using the first "
-                    "%d (raise SOURCE_FACTS_MAX_CHARS if the model allows)",
-                    len(facts), SOURCE_FACTS_MAX_CHARS)
-        facts = facts[:SOURCE_FACTS_MAX_CHARS] + " ..."
+    facts = (source_text or "").strip()[:4000]      # a ~100-word brief
     if facts:
-        facts_block = f"FACTS gathered from research (use these, nothing else):\n{facts}"
+        facts_block = ("BRIEF (what the video is about, and the KEYWORDS you "
+                       f"must work in):\n{facts}")
     else:
-        facts_block = "No research transcript available - write from the title alone."
+        facts_block = ("No brief available - write from the title alone and "
+                       "research the topic yourself.")
     style = (style_guide or "").strip()
     if style:
         style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
@@ -3589,7 +3597,7 @@ hook pattern, structure, and CTA style all come from it):
     extra = (extra_direction or "").strip()
     if extra:
         extra = (f"\nADDITIONAL DIRECTION FROM THE CREATOR (follow it; where it "
-                 f"conflicts with the facts on structure or the number of "
+                 f"conflicts with the brief on structure or the number of "
                  f"points, the direction wins - but never invent facts to "
                  f"satisfy it):\n{extra}\n")
     return f"""You are an original YouTube scriptwriter for a {genre} channel.
@@ -3603,46 +3611,32 @@ TASK: Write an original YouTube script titled "{title}".
 Rules:
 - Follow the STYLE GUIDE above precisely. The script must feel like it was
   written by the writer described there.
-- Use ONLY the facts above. Never reuse sentences, phrasing, or the structure
-  of any source material - only the style is shared.
-- The facts are NOTES, not prose: write entirely new sentences and do not follow
-  their wording or order. No run of five or more consecutive words may match the
-  facts or any source material.
-- Choose your OWN story structure. The notes follow the order of an existing
-  video, which is not a story order: decide what the viewer should learn first,
-  where the tension or surprise lands, and how it ends, then arrange the facts
-  to serve that - a different opening beat, a different sequence and a different
-  closing from the order the notes list them in. The new order must still make
-  sense: set a fact up before the one that depends on it, keep cause before
-  effect, and never move a fact where it loses its meaning or its qualifiers.
-- Never state a specific number, measurement, legal claim, or behavioral/causal
-  detail unless it appears in the facts above. If a fact is approximate, qualified,
-  or uncertain, keep the script exactly that approximate, qualified, or uncertain -
-  do not sharpen it into something more specific, dramatic, or certain than the
-  facts actually support. When in doubt, describe it more vaguely, not more vividly.
-- Do not add a whole topic, comparison, example, or scenario that is not IN the
-  facts, even one that sounds plausible or is true in general (a comparison to a
-  different species, a historical period the facts do not cover, a hypothetical
-  process like "how a gathering would have worked"). If you need more material to
-  reach the target length, go deeper on a fact you already have - do not reach
-  for a new, ungrounded topic.
-- Match the facts' own confidence level. If a fact says "may have", "suggests",
-  "is consistent with", or "one possible explanation", the script must carry that
-  same hedge - never upgrade it into "proves", "shows that", "is why", or a flat
-  statement of what happened or why. A dramatic TELLING of a fact is fine; a more
-  CERTAIN version of the fact is not.
+- You write this script yourself, from scratch. Research the topic on your own
+  (use your web search if you have it) and build the script from what you
+  find. You have NOT been given any existing script: never try to recall,
+  imitate or reconstruct one. Your story, structure, examples, characters and
+  wording must all be your own.
+- Work the KEYWORDS from the brief into the script naturally, and cover the
+  topic the brief describes. They tell you what the video is about, nothing more.
+- Only state facts you are confident are real and could be checked: a number, a
+  law, a study, a date or a named institution must be true. Never invent
+  statistics or sources; when unsure, say it more vaguely, not more vividly.
+  Keep an uncertain claim as uncertain ("may have", "suggests") - never upgrade it
+  into "proves".
+- Choose your OWN story structure and decide yourself what the viewer should
+  learn first, where the tension or surprise lands, and how it ends.
+- Story dressing is yours to invent: if the script needs a character, a company, a
+  place or personal figures, make up NEW ones. Never reuse a character name,
+  company name or scenario detail from an earlier script of this channel.
 - State each idea ONCE, where it best belongs, then move on. Before writing a
   sentence, check whether the script has already made this point - if so, cut the
   new one rather than restating it "one more time" for emphasis. A script that
   circles back to summarize what it already explained is padding, not pacing.
-- Story dressing is yours to invent: if the script needs a character, a company, a place or personal figures, make up NEW ones. Never reuse a character name, company name or scenario detail that appears in the notes or in an earlier script of this channel - only real-world facts (laws, rules, institutions, statistics, history) come from the notes.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words - this is a real target, not a ceiling. If you are
   running short, do NOT pad by repeating a point already made; instead go deeper
-  on facts you have not fully unpacked yet, add another concrete example the
-  facts support, or slow down and narrate a moment instead of summarizing it.
-  Landing well under {target_words} words means you left facts unused, not that
-  you wrote a tighter script. Conversational, second person, no stage directions,
+  on a point you have not fully unpacked yet, add another concrete example from
+  your research, or slow down and narrate a moment instead of summarizing it. Conversational, second person, no stage directions,
   no scene labels.
 - Write ONE ending. Land the final point once, in a single short closing passage,
   then go straight into the call to action - do not summarize the video, restate
@@ -3685,37 +3679,74 @@ def split_for_notes(text: str, max_words: int = NOTES_CHUNK_WORDS) -> list[str]:
     return [" ".join(c) for c in chunks]
 
 
+BRIEF_WORDS = 100
+
+
 def notes_prompt(title: str, genre: str, source_text: str,
                  part: tuple[int, int] | None = None) -> str:
-    """Turn a source transcript into neutral research NOTES for the writer.
+    """Turn a source transcript into a short KEYWORD BRIEF for the writer.
 
-    Feeding the transcript itself as the 'facts' made the writer echo it: the
-    first live attempt measured 93.5% 5-gram overlap with the source, and the
-    copycat gate rejects anything over 20%. Notes in the model's own words break
-    that echo before the script is written."""
+    The writer must never see the original's facts, names or wording (the
+    scripts came out as copies of it). It gets only what the video is about
+    and the keywords to use; it researches the rest itself."""
     text = (source_text or "").strip()
     if len(text) > SOURCE_FACTS_MAX_CHARS:
         text = text[:SOURCE_FACTS_MAX_CHARS] + " ..."
-    part_note = ""
-    if part and part[1] > 1:
-        part_note = (f"\nThis is part {part[0]} of {part[1]} of the transcript. "
-                     f"Extract the facts from THIS part only - the other parts "
-                     f"are handled separately.\n")
-    return f"""You are a researcher for a {genre} YouTube channel. Below is a transcript of an existing video titled "{title}".
-{part_note}
-Extract the FACTS it contains as a terse bulleted list - every claim, number, name, place and example, one per line.
+    return f"""You prepare a brief for a {genre} YouTube channel. Below is a transcript of an existing video titled "{title}". Another writer will make a NEW video on the same topic and must NOT be able to copy this one.
+
+Write:
+BRIEF: at most {BRIEF_WORDS} words saying what the video is about, naturally containing as many of its important search keywords as fit. Topic and angle only.
+KEYWORDS: 8-15 keywords or short phrases (comma separated) a viewer would search for and that the new script must use.
 
 Rules:
-- Write in your own words. Copy no sentence, phrase or clause from the transcript: no run of five or more consecutive words may appear in your notes.
-- Facts only: no introduction, no commentary, no headings, no conclusion.
-- Keep every number and proper noun exactly as written WHEN it is a real-world fact: a law, a rule, an institution, a product, a historical event, a statistic, a study.
-- Do NOT carry over the story dressing of the video: the made-up names of its characters, its invented companies, employers, towns and the personal figures of its scenario (a salary, an account balance, a job title of the made-up person). Describe those only by role ("the protagonist", "their employer", "a coworker") and keep the general lesson, not the invented specifics - the new script must invent its own.
-- Group related facts under a short label line when that helps.
+- Copy no sentence or run of four or more consecutive words from the transcript.
+- No names of the video's characters, invented companies, employers or towns, no personal figures of its scenario, no quotes, no plot beats, no opening or ending, no order of events.
+- Real-world terms, laws, institutions and products are fine as keywords.
 
 TRANSCRIPT:
 {text}
 
-Output only the bullet list."""
+Reply with exactly the two lines BRIEF: and KEYWORDS: and nothing else."""
+
+
+def parse_brief(raw: str) -> dict:
+    """{'summary', 'keywords'} from a brief reply ('' / [] when missing)."""
+    raw = (raw or "").strip()
+    m = re.search(r"BRIEF\s*:\s*(.*?)(?:\n\s*KEYWORDS\s*:|$)", raw,
+                  re.S | re.I)
+    summary = " ".join((m.group(1) if m else "").split())
+    k = re.search(r"KEYWORDS\s*:\s*(.+)", raw, re.S | re.I)
+    kws = []
+    for x in re.split(r"[,;\n]", k.group(1) if k else ""):
+        x = x.strip(" -*\t.\"'")
+        if x and x.lower() not in [y.lower() for y in kws]:
+            kws.append(x)
+    return {"summary": summary, "keywords": kws[:20]}
+
+
+def render_brief(brief: dict) -> str:
+    return (f"BRIEF: {brief['summary']}\n"
+            f"KEYWORDS: {', '.join(brief['keywords'])}")
+
+
+def brief_faults(brief: dict, source_text: str = "") -> list[str]:
+    """Why a brief is unusable; messages never quote the source."""
+    f = []
+    n = len(brief["summary"].split())
+    if not n:
+        f.append("no BRIEF line")
+    elif n > BRIEF_WORDS:
+        f.append(f"the BRIEF is {n} words; at most {BRIEF_WORDS}")
+    if len(brief["keywords"]) < 5:
+        f.append("give 8-15 KEYWORDS")
+    if source_text:
+        def grams(t):
+            w = re.findall(r"[a-z0-9']+", (t or "").lower())
+            return {" ".join(w[i:i + 4]) for i in range(len(w) - 3)}
+        if grams(brief["summary"]) & grams(source_text):
+            f.append("the BRIEF repeats 4+ words in a row from the "
+                     "transcript: rewrite it in entirely new words")
+    return f
 
 
 def shotlist_prompts(pid_dir: Path) -> list[str]:

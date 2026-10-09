@@ -138,10 +138,12 @@ LEN_MAX_RATIO = 1.15
 
 _STYLE_TOKEN = "@@STYLE-FILE@@"
 _FACTS_TOKEN = "@@FACTS-FILE@@"
+_ORIG_TOKEN = "@@ORIGINAL-FILE@@"
 
 
 def _swap_blocks(text: str, out_files: list, style_ref: str = "",
-                 facts_ref: str = "", facts_label: str = "") -> str:
+                 facts_ref: str = "", facts_label: str = "",
+                 orig_ref: str = "") -> str:
     """Replace the token-marked style / facts blocks of a studio prompt with
     short references to the attached files."""
     text = re.sub(r"STYLE GUIDE \(match this exactly.*?\):\n" +
@@ -152,6 +154,9 @@ def _swap_blocks(text: str, out_files: list, style_ref: str = "",
                   lambda m: facts_ref, text)
     text = re.sub(r"SOURCE FACTS:\n" + re.escape(_FACTS_TOKEN),
                   lambda m: facts_ref, text)
+    text = re.sub(r"ORIGINAL \(for tone, style, hook, flow and ending "
+                  r"ONLY\):\n" + re.escape(_ORIG_TOKEN),
+                  lambda m: orig_ref, text)
     text = re.sub(r"CHANNEL STYLE GUIDE:\n" + re.escape(_STYLE_TOKEN),
                   lambda m: style_ref, text)
     return text
@@ -232,12 +237,8 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         if style:
             _add_file(out_files, WRITING_STYLE_FILE, style,
                       "the writing style guide - match it exactly")
-        if facts:
-            _add_file(out_files, NOTES_FILE, facts,
-                      "the research notes - the only facts you may use")
     text = studio.script_prompt(
-        _title(ctx, title), prod["genre"],
-        _FACTS_TOKEN if (files is not None and facts) else facts,
+        _title(ctx, title), prod["genre"], facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
         extra_direction=packplan.with_plan(cfg, prod,
@@ -261,10 +262,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
     if files is not None:
         text = _swap_blocks(text, out_files,
                             style_ref=f"STYLE GUIDE: in the attached "
-                            f"{WRITING_STYLE_FILE} (read all of it).",
-                            facts_ref=f"FACTS gathered from research (use "
-                            f"these, nothing else): in the attached "
-                            f"{NOTES_FILE} (read all of it).")
+                            f"{WRITING_STYLE_FILE} (read all of it).")
         files.extend(out_files)
         text = _gate(out_files) + text
     return text + bar + _SCRIPT_REPLY_FORMAT
@@ -284,37 +282,34 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
     style = (style_guide if style_guide is not None
              else _writing_style(ctx)).strip()
     source = autorun._source_transcript_text(cfg, pid)
+    # the writer's BRIEF (topic + keywords); the original script is shown to
+    # the judge for tone, style, hook, flow and ending only
     facts = (notes if notes is not None else _research_notes(ctx)).strip()
-    # the built-in judge grades against the writer's notes; with none, the
-    # source is the only ground truth there is
-    facts = facts or source
     overlap = studio.overlap_ratio(script, source) if source.strip() else 0.0
     out_files: list[dict] = []
     if files is not None:
-        if facts:
-            from_notes = bool((notes if notes is not None
-                               else _research_notes(ctx)).strip())
-            _add_file(out_files, NOTES_FILE if from_notes
-                      else SOURCE_FACTS_FILE, facts,
-                      "the facts the script must be accurate against")
+        if source.strip():
+            _add_file(out_files, SOURCE_FACTS_FILE, source.strip(),
+                      "the ORIGINAL script - compare tone, style, hook, flow "
+                      "and ending only; never facts, points or names")
         if style:
             _add_file(out_files, WRITING_STYLE_FILE, style,
                       "the writing style guide the script should match")
     text = studio.rating_prompt(
-        _title(ctx, title), prod["genre"], script,
-        _FACTS_TOKEN if (files is not None and facts) else facts,
+        _title(ctx, title), prod["genre"], script, facts,
         _STYLE_TOKEN if (files is not None and style) else style, overlap,
         extra_direction=packplan.with_plan(cfg, prod,
-                                         db.stage_extra(prod, "script")))
+                                         db.stage_extra(prod, "script")),
+        original=(_ORIG_TOKEN if (files is not None and source.strip())
+                  else source))
     if files is not None:
-        by = {f["name"]: f for f in out_files}
-        fname = (NOTES_FILE if NOTES_FILE in by else SOURCE_FACTS_FILE)
         text = _swap_blocks(
             text, out_files,
             style_ref=f"CHANNEL STYLE GUIDE: in the attached "
                       f"{WRITING_STYLE_FILE} (read all of it).",
-            facts_ref=f"SOURCE FACTS: in the attached {fname} (read all of "
-                      f"it).")
+            orig_ref=f"ORIGINAL (for tone, style, hook, flow and ending "
+                     f"ONLY): in the attached {SOURCE_FACTS_FILE} (read all "
+                     f"of it).")
     target = _target_words(cfg, pid, target_words)
     lo, hi = _length_window(target)
     words = len(re.findall(r"\w+", script))
@@ -323,10 +318,10 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
     if own_script:
         text = text.replace("SCRIPT:\n\n", f"SCRIPT: in the attached "
                             f"{SCRIPT_FILE} (read all of it).\n\n")
-        text = re.sub(r"Measured 5-gram overlap with the source transcript: "
+        text = re.sub(r"Measured 5-gram overlap with the original: "
                       r"[\d.]+%\. ", "Overlap with the source was not "
                       "measured: estimate it yourself by comparing the "
-                      "script with the SOURCE FACTS. ", text)
+                      "script with the ORIGINAL. ", text)
         extra = [{"name": SCRIPT_FILE, "about": "the script to judge - "
                   "attach your own script file"}]
     st = (studio.structure_copy(script, source) if (script and source.strip())
@@ -349,13 +344,14 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"(target {target}); ends on a complete sentence; it is spoken "
            f"narration only - it never mentions or alludes to the "
            f"thumbnail, cover, video title or packaging.{measured}\n"
-           f"Judge it BEAT BY BEAT against the facts and the source: list "
-           f"the script's beats in order and say whether each one only "
-           f"re-tells the source's matching beat in the same position. A "
-           f"script that follows the source's sequence of beats - even in "
-           f"new words - fails 'originality'; say which beats to move, "
-           f"merge, cut or open differently (new opening, new order of "
-           f"reveals, new ending), never just reword them.\n"
+           f"Judge it BEAT BY BEAT against the ORIGINAL, for tone, style, hook, "
+           f"flow and ending ONLY: the script must match them in quality and "
+           f"feel without copying. A script that follows the original's "
+           f"sequence of beats, or reuses its names or scenario, fails "
+           f"'originality' - tell the writer only the KIND of change (a "
+           f"different opening, a different order of reveals, a new ending), "
+           f"never what the original does. Never judge or require the "
+           f"original's facts or points.\n"
            f"If the script mentions any of those, FAIL it, quote each "
            f"sentence in weak_spans and write in feedback: remove it.\n"
            f"Your feedback and weak_spans are forwarded to the writer, who has "

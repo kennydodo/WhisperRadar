@@ -41,6 +41,8 @@ class ResearchNotesTests(unittest.TestCase):
         self.pdir = Path(tempfile.mkdtemp())
         (self.pdir / autorun.RESEARCH_NOTES_FILE).write_text(
             "cached facts\n", encoding="utf-8")
+        (self.pdir / autorun.RESEARCH_NOTES_META).write_text(
+            '{"manual": true}', encoding="utf-8")
 
     def test_uses_cache_by_default(self):
         with mock.patch("whisperradar.studio.llm_generate") as gen:
@@ -51,15 +53,16 @@ class ResearchNotesTests(unittest.TestCase):
 
     def test_refresh_rebuilds_the_notes(self):
         with mock.patch("whisperradar.studio.llm_generate",
-                        return_value="fresh facts\n") as gen:
+                        return_value="BRIEF: fresh facts\nKEYWORDS: a, b, c, d, e\n") as gen:
             notes = autorun._research_notes(
                 self.cfg, self.pdir, "T", "general", "source", None,
                 refresh=True)
-        self.assertEqual(notes, "fresh facts")
+        self.assertEqual(notes, "BRIEF: fresh facts\nKEYWORDS: a, b, c, d, e")
         gen.assert_called_once()
         self.assertEqual(
             (self.pdir / autorun.RESEARCH_NOTES_FILE).read_text(
-                encoding="utf-8"), "fresh facts\n")
+                encoding="utf-8"),
+            "BRIEF: fresh facts\nKEYWORDS: a, b, c, d, e\n")
 
 
 class RateScriptErrorTests(unittest.TestCase):

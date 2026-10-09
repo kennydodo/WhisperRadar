@@ -1,8 +1,8 @@
-"""The research-notes pass that stops the script echoing the source.
+"""The keyword brief that replaces the research notes.
 
-The first live run produced a script with 93.5% 5-gram overlap with the source
-transcript (the copycat gate rejects over 20%), because the writer was handed the
-transcript prose as "facts". The writer now composes from cached, neutral notes.
+The writer must never see the original's facts, names or wording (scripts came
+out as copies of it). It gets a <=100-word brief plus keywords, cached per
+production, and researches the rest itself.
 
 Run: python -m unittest discover -s tests
 """
@@ -18,131 +18,97 @@ from tests import wr_tmp  # noqa: E402
 
 from whisperradar import autorun, studio  # noqa: E402
 
+GOOD = ("BRIEF: How compound interest quietly builds wealth over decades and "
+        "why starting early matters.\n"
+        "KEYWORDS: compound interest, wealth, saving early, retirement, "
+        "investing, index funds")
 
-class ResearchNotesTests(unittest.TestCase):
-    def test_notes_are_generated_once_and_cached(self):
+
+class BriefTests(unittest.TestCase):
+    def test_generated_once_and_cached(self):
         with wr_tmp.tempdir() as d:
-            pdir = Path(d)
             calls = []
 
             def fake_llm(cfg, prompt, provider=None, max_tokens=None):
                 calls.append(prompt)
-                return "- the woman lives in Nagoya\n- the routine takes 15 minutes"
+                return GOOD
 
             with mock.patch.object(studio, "llm_generate", fake_llm):
-                first = autorun._research_notes(object(), pdir, "T", "Lifestyle",
-                                                "raw transcript text", "deepseek")
-                second = autorun._research_notes(object(), pdir, "T", "Lifestyle",
-                                                 "raw transcript text", "deepseek")
+                a = autorun._research_notes(object(), Path(d), "T", "g",
+                                            "raw transcript text", "x")
+                b = autorun._research_notes(object(), Path(d), "T", "g",
+                                            "raw transcript text", "x")
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(a, b)
+            self.assertIn("KEYWORDS:", a)
 
-            self.assertEqual(len(calls), 1, "the second call must use the cache")
-            self.assertEqual(first, second)
-            self.assertTrue((pdir / autorun.RESEARCH_NOTES_FILE).exists())
+    def test_failure_gives_nothing_never_the_transcript(self):
+        def boom(*a, **k):
+            raise RuntimeError("provider down")
 
-    def test_a_failed_notes_call_falls_back_to_the_transcript(self):
-        with wr_tmp.tempdir() as d:
-            def boom(*a, **k):
-                raise RuntimeError("provider down")
-
-            with mock.patch.object(studio, "llm_generate", boom):
-                out = autorun._research_notes(object(), Path(d), "T", "g",
-                                              "raw transcript text", None)
-            self.assertEqual(out, "raw transcript text")
-
-    def test_both_prompts_forbid_five_word_reuse(self):
-        self.assertIn("five or more consecutive words",
-                      studio.notes_prompt("T", "g", "transcript"))
-        self.assertIn("five or more consecutive words",
-                      studio.script_prompt("T", "g", "facts"))
-
-
-class ChunkedNotesTests(unittest.TestCase):
-    """Notes are built part by part so a long transcript can never be cut off
-    partway (an 11-rule transcript once produced notes that stopped at rule 7)."""
-
-    def _transcript(self, sentences=400):
-        return " ".join(f"Rule {i} says something about habit {i}."
-                        for i in range(sentences))
-
-    def test_split_covers_every_word_in_order(self):
-        text = self._transcript()
-        parts = studio.split_for_notes(text)
-        self.assertGreater(len(parts), 1)
-        self.assertEqual(" ".join(parts).split(), text.split())
-        for part in parts[:-1]:
-            self.assertTrue(part.endswith("."), "cuts at a sentence end")
-
-    def test_short_text_is_one_part(self):
-        self.assertEqual(studio.split_for_notes("a short transcript."),
-                         ["a short transcript."])
-
-    def test_long_source_builds_notes_for_every_part(self):
-        text = self._transcript()
-        n_parts = len(studio.split_for_notes(text))
-        prompts = []
-
-        def fake_llm(cfg, prompt, provider=None, max_tokens=None):
-            prompts.append(prompt)
-            return f"- fact from call {len(prompts)}"
-
-        with wr_tmp.tempdir() as d, \
-                mock.patch.object(studio, "llm_generate", fake_llm):
-            notes = autorun._research_notes(object(), Path(d), "T", "g",
-                                            text, None)
-        self.assertEqual(len(prompts), n_parts)
-        self.assertIn(f"part 1 of {n_parts}", prompts[0])
-        for i in range(1, n_parts + 1):
-            self.assertIn(f"- fact from call {i}", notes)
-
-    def test_one_empty_part_falls_back_to_the_transcript(self):
-        text = self._transcript()
-        replies = iter(["- ok", ""])
-
-        def fake_llm(cfg, prompt, provider=None, max_tokens=None):
-            return next(replies, "- more")
-
-        with wr_tmp.tempdir() as d, \
-                mock.patch.object(studio, "llm_generate", fake_llm):
+        with wr_tmp.tempdir() as d, mock.patch.object(studio, "llm_generate", boom):
             out = autorun._research_notes(object(), Path(d), "T", "g",
-                                          text, None)
-            self.assertEqual(out, text)
-            self.assertFalse((Path(d) / autorun.RESEARCH_NOTES_FILE).exists())
+                                          "raw transcript text", None)
+        self.assertEqual(out, "")
 
-    def test_old_cut_off_notes_are_rebuilt_once(self):
-        text = self._transcript()          # thousands of words
+    def test_old_fact_notes_are_rebuilt_manual_ones_kept(self):
         with wr_tmp.tempdir() as d:
             pdir = Path(d)
             (pdir / autorun.RESEARCH_NOTES_FILE).write_text(
-                "- a handful of old notes cut off mid-wo\n", encoding="utf-8")
+                "- Daniel Hargrove ran Apex Corp\n", encoding="utf-8")
             calls = []
 
             def fake_llm(cfg, prompt, provider=None, max_tokens=None):
                 calls.append(1)
-                return "- fresh complete notes for this part"
+                return GOOD
 
             with mock.patch.object(studio, "llm_generate", fake_llm):
-                autorun._research_notes(object(), pdir, "T", "g", text, None)
-                first_calls = len(calls)
-                autorun._research_notes(object(), pdir, "T", "g", text, None)
-            self.assertGreater(first_calls, 0, "legacy notes must be rebuilt")
-            self.assertEqual(len(calls), first_calls,
-                             "once rebuilt (meta written) the cache is trusted")
+                out = autorun._research_notes(object(), pdir, "T", "g", "src", None)
+            self.assertEqual(len(calls), 1)
+            self.assertNotIn("Hargrove", out)
+            autorun.save_manual_notes(pdir, "my own notes")
+            with mock.patch.object(studio, "llm_generate", fake_llm):
+                out = autorun._research_notes(object(), pdir, "T", "g", "src", None)
+            self.assertEqual(out, "my own notes")
 
-    def test_notes_for_a_changed_source_are_rebuilt(self):
+    def test_changed_source_rebuilds(self):
         with wr_tmp.tempdir() as d:
-            pdir = Path(d)
             calls = []
 
             def fake_llm(cfg, prompt, provider=None, max_tokens=None):
                 calls.append(1)
-                return "- fact"
+                return GOOD
 
             with mock.patch.object(studio, "llm_generate", fake_llm):
-                autorun._research_notes(object(), pdir, "T", "g", "one text", None)
-                autorun._research_notes(object(), pdir, "T", "g",
+                autorun._research_notes(object(), Path(d), "T", "g", "one", None)
+                autorun._research_notes(object(), Path(d), "T", "g",
                                         "a different source text", None)
             self.assertEqual(len(calls), 2)
 
+    def test_overlong_or_copying_brief_is_retried_then_cut(self):
+        src = "the quick brown fox jumps over the lazy dog every single morning"
+        replies = iter([
+            "BRIEF: the quick brown fox jumps over it\nKEYWORDS: a, b, c, d, e",
+            "BRIEF: " + "word " * 140 + "\nKEYWORDS: a, b, c, d, e, f",
+            "BRIEF: " + "word " * 140 + "\nKEYWORDS: a, b, c, d, e, f"])
+        out = autorun.make_brief(lambda p: next(replies), src, "T", "g")
+        summary = studio.parse_brief(out)["summary"]
+        self.assertLessEqual(len(summary.split()), studio.BRIEF_WORDS)
+
+    def test_prompts(self):
+        p = studio.notes_prompt("T", "g", "transcript")
+        self.assertIn("100 words", p)
+        self.assertIn("KEYWORDS", p)
+        self.assertIn("No names of the video's characters", p)
+        w = studio.script_prompt("T", "g", GOOD)
+        self.assertIn("You have NOT been given any existing script", w)
+        self.assertIn("compound interest", w)
+
+    def test_parse_and_faults(self):
+        b = studio.parse_brief(GOOD)
+        self.assertEqual(len(b["keywords"]), 6)
+        self.assertEqual(studio.brief_faults(b), [])
+        self.assertTrue(studio.brief_faults({"summary": "", "keywords": []}))
 
 
 if __name__ == "__main__":

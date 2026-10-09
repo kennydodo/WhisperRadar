@@ -151,6 +151,29 @@ def shared_run(a: str, b: str, n: int = HOOK_RUN) -> str:
     return ""
 
 
+_NUM_WORDS = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty"
+    .split())}
+_NUM_WORDS.update({"thirty": 30, "forty": 40, "fifty": 50, "hundred": 100})
+
+
+def list_numbers(title: str) -> set[int]:
+    """Numbers a title promises ("10 reasons", "Seven signs"); years skipped."""
+    out = set()
+    for w in re.findall(r"\d[\d,]*|[a-zA-Z]+", title or ""):
+        if w[0].isdigit():
+            try:
+                n = int(w.replace(",", ""))
+            except ValueError:
+                continue
+            if n < 1000:
+                out.add(n)
+        elif w.lower() in _NUM_WORDS:
+            out.add(_NUM_WORDS[w.lower()])
+    return out
+
+
 def originality_faults(plan: dict, source_title: str = "",
                        transcript: str = "") -> list[str]:
     """The title and hook must be OUR OWN, built on the keyword - not the
@@ -165,6 +188,11 @@ def originality_faults(plan: dict, source_title: str = "",
             f.append("the title copies the source video's title: keep the "
                      "keyword but write a new title with different words "
                      "and a new angle")
+        same = list_numbers(title) & list_numbers(source_title)
+        if same:
+            f.append(f"the title promises {min(same)} points, the same count "
+                     f"as the source video: use a different number (for "
+                     f"example one or two more or fewer)")
         if any(" ".join(_words(t["text"])) == norm for t in plan["titles"]):
             f.append("one of the title options is the source video's own "
                      "title: replace it with an original option")
@@ -307,12 +335,21 @@ def context(cfg, pid: int) -> dict:
     except Exception:  # noqa: BLE001
         transcript = ""
     ctx["source"] = src
+    # the transcript stays here for the CODE checks only; no prompt gets it
     ctx["transcript"] = (transcript or "").strip()[:5000]
+    ctx["brief"] = ""
+    try:
+        have = (ctx["pdir"] / autorun.RESEARCH_NOTES_FILE).read_text(
+            encoding="utf-8").strip()
+        if have and autorun._notes_cache_valid(ctx["pdir"], have, transcript):
+            ctx["brief"] = have
+    except OSError:
+        pass
     return ctx
 
 
 _RULES = f"""Rules for the plan:
-- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji. The source video proved its TOPIC: take its main keyword and the story it tells, then write OUR OWN title around that keyword - as strong as the source's, in different words and from a fresh angle. Never use the source title, and no option may be a reworded copy of it. Never promise anything the source's facts cannot support.
+- Title: at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD}. One clear curiosity gap that the video can truly deliver. No ALL CAPS shouting, at most one emoji. The source video proved its TOPIC: take its main keyword and the story it tells, then write OUR OWN title around that keyword - as strong as the source's, in different words and from a fresh angle. Never use the source title, and no option may be a reworded copy of it. Only promise what the topic in the brief can deliver. If the title promises a number of points ("7 reasons", "10 signs"), the number must DIFFER from the source title's number (8 or 12 where it says 10) - the same count is rejected.
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
 - The hook is how the first 15 seconds start (a question, a surprising fact, a scene) - one or two sentences. It must be as gripping as the source's opening but NOT the same hook: a different first image, question or fact, never its wording.
 - The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone)."""
@@ -337,8 +374,8 @@ def writer_prompt(ctx: dict) -> str:
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
 WORKING TITLE: {ctx['title']}
 SOURCE VIDEO (what it is based on - it already proved the topic works): {_source_text(ctx)}
-START OF THE SOURCE'S TRANSCRIPT (for the facts and angle only):
-{ctx['transcript'] or '(not available)'}
+BRIEF (what the video is about, and the KEYWORDS your titles and hook must be built from):
+{ctx.get('brief') or '(not available)'}
 
 TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns, do not copy):
 {_refs_text(ctx)}
@@ -370,7 +407,7 @@ def judge_prompt(ctx: dict, plan: dict, faults: list[str],
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
 SOURCE VIDEO: {_source_text(ctx)}
-THE SOURCE'S FACTS (start of its transcript): {ctx['transcript'][:1500] or '(not available)'}
+BRIEF (topic and KEYWORDS): {ctx.get('brief') or '(not available)'}
 COMPARABLE TITLES THAT PERFORMED WELL IN THIS NICHE:
 {_refs_text(ctx)}
 
@@ -381,7 +418,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Originality is part of the job: FAIL the plan (pass false, score below the bar) if the title, any option or the hook is the source's own or a reworded copy of it. The same topic and keyword are right; the same wording or hook is not. In "faults" and "fixes" NEVER quote or restate the source's title, hook or wording - say only that it is too close and what kind of change is needed; the strategist has to invent it. Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the source's facts. Check: a real curiosity gap that is not clickbait, the keyword early, a promise the source material can keep, a hook that starts fast, a thumbnail idea that adds to the title. Name the exact text that is weak.
+Originality is part of the job: FAIL the plan (pass false, score below the bar) if the title, any option or the hook is the source's own or a reworded copy of it. The same topic and keyword are right; the same wording or hook is not. In "faults" and "fixes" NEVER quote or restate the source's title, hook or wording - say only that it is too close and what kind of change is needed; the strategist has to invent it. Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords; a real curiosity gap that is not clickbait, the keyword early, a promise the topic can keep, a hook that starts fast, a thumbnail idea that adds to the title. Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
@@ -419,9 +456,13 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
     # already has (a chat that cannot be reopened is replaced by a new one)
     kept = (ws.adopt_chats(cfg, pid, transport, {writer, judge}, log)
             if same_chats else set())
+    judge_cont = judge in kept
+    if not ctx["brief"] and ctx["transcript"]:
+        ctx["brief"], built = ws.ensure_brief(cfg, pid, transport, judge, log,
+                                              judge_cont)
+        judge_cont = judge_cont or built
     reply, _w = ws._send_in(transport, writer, lambda f: writer_prompt(ctx),
                             log, writer in kept, ready=ws._has_json)
-    judge_cont = judge in kept
     best, judge_open, rnd, empty = None, False, 0, 0
     while True:
         rnd += 1
@@ -514,6 +555,12 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
     ctx = context(cfg, pid)
     log(f"packaging plan for \"{ctx['title'][:70]}\" "
         f"({len(ctx['refs'])} reference title(s))")
+    if not ctx["brief"] and ctx["transcript"]:
+        from . import autorun
+        full = autorun._source_transcript_text(cfg, pid)
+        ctx["brief"] = autorun._research_notes(
+            cfg, ctx["pdir"], ctx["title"], ctx["genre"], full,
+            judge or writer)
     base = writer_prompt(ctx)
     best, prompt, rnd = None, base, 0
     while rnd < max_rounds:
