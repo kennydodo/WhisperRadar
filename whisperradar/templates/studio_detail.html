@@ -121,7 +121,7 @@
   <h1>{{ prod["title"] }}
     {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
   </h1>
-  <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a></div>
+  <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a> &middot; <a href="/studio/{{ prod['id'] }}/shorts" style="font-size:13px">Shorts</a></div>
   <div class="sub">
     <span class="badge genre">{{ prod["genre"] }}</span>
     {% if own_channel_name %}

@@ -181,3 +181,15 @@ Renderly upscaler on the user's machine; Platform trending feed, keyword
 demand, visual-similarity ranking, best-time-to-post, Shorts clipping,
 WhisperRadar-as-MCP are unstarted (Qwen's list A.3-A.8). Then: merge the
 branch into master and `git worktree remove` the worktree.
+
+### Update 2 - Qwen's vidIQ list (A.3-A.7) done locally, MCP deliberately skipped
+- A.3 Trending feed: Research > Trending (`youtube_api.trending`, `trending.py`;
+  ~101 quota units per search, result cached in trending.json).
+- A.4 Keyword demand: `demand.py` (autocomplete + niche title counts -> 0-100
+  score) on the Keywords tab. A local estimate, not a search volume.
+- A.5 Visual similarity: `thumbnails.visual_similarity/rank_by_similarity`;
+  the writer is shown the pooled winners closest to the original.
+- A.6 Best time to post: `timing.py` (UTC weekday/hour by median multiplier).
+- A.7 Shorts: `shorts.py` + /studio/<id>/shorts (picks 20-58 s windows from the
+  subtitles, cuts 9:16 with blurred background + burned-in captions; checked with
+  real ffmpeg). A.8 (MCP server) intentionally not built.

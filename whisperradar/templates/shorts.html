@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Shorts</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+          --muted:#8b93a3; --accent:#4f8cff; --green:#3fb96f; --red:#e05c5c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 2px; }
+  .muted { color:var(--muted); }
+  .panel { background:var(--panel); border:1px solid var(--border);
+           border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  a { color:var(--accent); text-decoration:none; }
+  input { background:#0f1115; color:var(--text); border:1px solid var(--border);
+          border-radius:6px; padding:6px 8px; width:70px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px;
+           padding:7px 14px; cursor:pointer; }
+  .msg { color:var(--green); } .err { color:var(--red); }
+  table { width:100%; border-collapse:collapse; }
+  td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+</style>
+</head>
+<body><div class="wrap">
+  <a href="/studio/{{ prod['id'] }}">&larr; {{ prod['title'] }}</a>
+  <h1>Shorts</h1>
+  <div class="muted">Cuts the strongest 20&ndash;58 second moments of the finished video into vertical 9:16 clips with captions burned in.</div>
+  {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  <div class="panel">
+    {% if not ready %}<div class="muted">Needs the finished video (final.mp4) and its subtitles in this production.</div>{% endif %}
+    {% if plan %}<table><thead><tr><th>#</th><th>from</th><th>to</th><th>opens with</th><th>score</th></tr></thead><tbody>
+      {% for c in plan %}<tr><td>{{ loop.index }}</td><td>{{ '%d:%02d' % (c.start // 60, c.start % 60) }}</td><td>{{ '%d:%02d' % (c.end // 60, c.end % 60) }}</td><td>{{ c.hook }}</td><td>{{ c.score }}</td></tr>{% endfor %}
+    </tbody></table>{% endif %}
+    <form method="post" action="/studio/{{ prod['id'] }}/shorts/make" style="margin-top:10px">
+      <label>clips <input type="number" name="n" min="1" max="6" value="3"></label>
+      <button type="submit" {{ '' if ready else 'disabled' }}>Make the clips</button>
+    </form>
+  </div>
+  {% if files %}<div class="panel"><b>Made</b>
+    {% for f in files %}<div><a href="/studio/file/{{ prod['id'] }}/shorts/{{ f }}">{{ f }}</a></div>{% endfor %}
+  </div>{% endif %}
+</div></body></html>

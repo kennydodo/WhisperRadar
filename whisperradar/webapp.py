@@ -4544,6 +4544,45 @@ def create_app(cfg) -> Flask:
             layouts=thumbnails.LAYOUTS,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
+    @app.get("/studio/<int:pid>/shorts")
+    def studio_shorts(pid):
+        from . import shorts as shorts_mod
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        if not prod:
+            return redirect("/studio?error=Unknown+production")
+        pdir = studio.prod_dir(cfg, pid)
+        ready = bool(studio.find_srt(pdir) and studio.find_final(pdir))
+        plan = []
+        if studio.find_srt(pdir):
+            cues = shorts_mod.parse_srt(studio.find_srt(pdir).read_text(
+                encoding="utf-8", errors="replace"))
+            plan = shorts_mod.plan_clips(cues, n=3)
+        d = shorts_mod.shorts_dir(pdir)
+        files = sorted(p.name for p in d.glob("short*.mp4")) \
+            if d.is_dir() else []
+        return render_template(
+            "shorts.html", prod=prod, ready=ready, plan=plan, files=files,
+            msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/shorts/make")
+    def studio_shorts_make(pid):
+        from . import shorts as shorts_mod
+        try:
+            n = max(1, min(int(request.form.get("n") or 3), 6))
+        except ValueError:
+            n = 3
+        try:
+            done = shorts_mod.make_clips(studio.prod_dir(cfg, pid), n=n)
+        except ValueError as exc:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(str(exc)))
+        return redirect(f"/studio/{pid}/shorts?msg=" + quote(
+            f"{len(done)} clip(s) made"))
+
     @app.post("/studio/<int:pid>/plan/generate")
     def studio_plan_generate(pid):
         from . import plan as packplan, webchat
