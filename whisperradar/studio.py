@@ -3280,11 +3280,69 @@ RATING_RUBRIC = [    ("hook", "Does the first 15 seconds earn attention without 
 JUDGE_SOURCE_CHARS = SOURCE_FACTS_MAX_CHARS
 
 
+_NAME_SKIP = frozenset((
+    "january february march april may june july august september october "
+    "november december monday tuesday wednesday thursday friday saturday "
+    "sunday i i'm i've i'll i'd the a an and but or so if when then this "
+    "that it he she they we you your our their his her my").split())
+
+
+def shared_names(script: str, facts: str, limit: int = 12) -> list[str]:
+    """Capitalised names (mid-sentence, 2+ letters) that the script and the
+    facts both use: a character or company name carried over from the
+    source shows up here. Real institutions show up too - the judge decides."""
+    def names(text: str) -> dict:
+        out: dict = {}
+        for m in re.finditer(r"(?<![.!?\n]\s)(?<!^)\b([A-Z][a-z]{2,}"
+                             r"(?:\s+[A-Z][a-z]{2,})?)\b", text or ""):
+            w = m.group(1)
+            if w.lower() in _NAME_SKIP:
+                continue
+            out[w] = out.get(w, 0) + 1
+        return out
+    a, b = names(script), names(facts)
+    both = [w for w in a if w in b]
+    both.sort(key=lambda w: -(a[w] + b[w]))
+    return both[:limit]
+
+
+def scrub_for_writer(items, script: str, source: str, n: int = 4) -> tuple[list[str], int]:
+    """Judge notes may go to the writer ONLY if they carry nothing from the
+    original: drop any note that names a capitalised word, or quotes an
+    n-word run, that is in the SOURCE but not in the script under review
+    (the writer never saw the source, so that would be the judge handing
+    it over). Notes about the script's own text pass. Returns (kept, dropped)."""
+    def toks(t):
+        return re.findall(r"[a-z0-9']+", (t or "").lower())
+    def grams(t):
+        w = toks(t)
+        return {" ".join(w[i:i + n]) for i in range(len(w) - n + 1)}
+    def caps(t):
+        return {m.group(1) for m in re.finditer(r"\b([A-Z][a-z]{2,})\b", t or "")
+                if m.group(1).lower() not in _NAME_SKIP}
+    src_g, src_c = grams(source), caps(source)
+    own_g, own_c = grams(script), caps(script)
+    kept, dropped = [], 0
+    for it in items or []:
+        it = str(it)
+        if (grams(it) & src_g) - own_g or (caps(it) & src_c) - own_c:
+            dropped += 1
+            continue
+        kept.append(it)
+    return kept, dropped
+
+
 def rating_prompt(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "") -> str:
     rubric = "\n".join(f"- {name}: {desc}" for name, desc in RATING_RUBRIC)
     facts = (source or "").strip()[:JUDGE_SOURCE_CHARS]
+    shared = shared_names(script or "", facts)
+    names_note = (
+        f"\nMeasured by software: names that appear in BOTH the script and "
+        f"the SOURCE FACTS: {', '.join(shared)}. A character or company name "
+        f"in this list is a copied name unless it is a real, well-known "
+        f"institution the facts discuss." if shared else "")
     # The writer is told to follow the creator's additional direction, so the
     # judge must see it too. Without it the judge penalised a script for doing
     # exactly what the creator asked (e.g. matching the title's number of
@@ -3305,10 +3363,25 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"Score each criterion 1-10:\n{rubric}\n\n"
         f"Measured 5-gram overlap with the source transcript: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
-        f"The SOURCE FACTS below are the ground truth: a claim is accurate when "
-        f"it is consistent with them. Do NOT ask for external citations or "
-        f"sources - the SOURCE FACTS are the source. Penalise only claims that "
-        f"are absent from, or contradict, the SOURCE FACTS.\n\n"
+        f"The SOURCE FACTS below are the ground truth for REAL-WORLD facts: "
+        f"a claim about a law, a rule, an institution, a statistic or history "
+        f"is accurate when it is consistent with them. Do NOT ask for external "
+        f"citations or sources - the SOURCE FACTS are the source. Penalise "
+        f"real-world claims that are absent from, or contradict, the SOURCE "
+        f"FACTS.\n"
+        f"STORY DRESSING IS NOT A FACT: the names of characters, companies, "
+        f"employers, towns and the personal figures of the scenario belong to "
+        f"the video the facts came from. The new script must invent its OWN. "
+        f"Never ask the writer to use a name or detail from the SOURCE FACTS; "
+        f"if the script reuses the source's character or company names or its "
+        f"scenario, fail originality and tell the writer to invent new ones. "
+        f"Do NOT penalise invented story details as 'absent from the facts'."
+        f"{names_note}\n"
+        f"Your feedback and weak_spans go straight to the writer, who has NEVER "
+        f"seen the source. They must contain nothing from the SOURCE FACTS: no "
+        f"names, companies, places, figures, events or quotes from it. Say "
+        f"what is wrong and what kind of change is needed, never what the "
+        f"source says.\n\n"
         f"SOURCE FACTS:\n{facts or '(none)'}\n\n"
         f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:3000]}\n\n"
         f"{direction_block}"
@@ -3562,6 +3635,7 @@ Rules:
   sentence, check whether the script has already made this point - if so, cut the
   new one rather than restating it "one more time" for emphasis. A script that
   circles back to summarize what it already explained is padding, not pacing.
+- Story dressing is yours to invent: if the script needs a character, a company, a place or personal figures, make up NEW ones. Never reuse a character name, company name or scenario detail that appears in the notes or in an earlier script of this channel - only real-world facts (laws, rules, institutions, statistics, history) come from the notes.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words - this is a real target, not a ceiling. If you are
   running short, do NOT pad by repeating a point already made; instead go deeper
@@ -3634,7 +3708,8 @@ Extract the FACTS it contains as a terse bulleted list - every claim, number, na
 Rules:
 - Write in your own words. Copy no sentence, phrase or clause from the transcript: no run of five or more consecutive words may appear in your notes.
 - Facts only: no introduction, no commentary, no headings, no conclusion.
-- Keep every number and proper noun exactly as written.
+- Keep every number and proper noun exactly as written WHEN it is a real-world fact: a law, a rule, an institution, a product, a historical event, a statistic, a study.
+- Do NOT carry over the story dressing of the video: the made-up names of its characters, its invented companies, employers, towns and the personal figures of its scenario (a salary, an account balance, a job title of the made-up person). Describe those only by role ("the protagonist", "their employer", "a coworker") and keep the general lesson, not the invented specifics - the new script must invent its own.
 - Group related facts under a short label line when that helps.
 
 TRANSCRIPT:
