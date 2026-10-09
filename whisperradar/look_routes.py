@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from flask import abort, redirect, render_template, request, send_from_directory
+from flask import abort, jsonify, redirect, render_template, request, send_from_directory
 
 from . import channel_look, db, webchat, webstages
 
@@ -27,10 +27,20 @@ def register(app, cfg, sjob) -> None:
         return render_template(
             "look.html", ch=ch, sites=sites,
             look=channel_look.load(cfg, ch["channel_id"]),
+            running=bool(sjob.running),
             default_frames=channel_look.DEFAULT_FRAMES,
             min_frames=channel_look.MIN_FRAMES,
             max_frames=channel_look.MAX_FRAMES,
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.get("/watched/<key>/look/status")
+    def look_status(key):
+        """Polled by the page: reloads itself when the job has finished."""
+        try:
+            last = str(list(sjob.log)[-1])[:300]
+        except Exception:  # noqa: BLE001
+            last = ""
+        return jsonify(running=bool(sjob.running), last=last)
 
     @app.get("/watched/<key>/look/frame/<name>")
     def look_frame(key, name):
@@ -70,4 +80,4 @@ def register(app, cfg, sjob) -> None:
         sjob.start(worker, f"style & bible ({ch['name']})")
         return redirect(base + "?msg=" + quote(
             "Started - it downloads a few videos at low resolution, takes "
-            "frames and asks the chat. Reload this page when the job is done."))
+            "frames and asks the chat. This page reloads itself when the job is done."))
