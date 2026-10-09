@@ -1555,7 +1555,7 @@ class WebChat:
         screenshot of each. Written to <profile root>/diag/<key>/report.txt -
         one command instead of guessing selectors."""
         page, site = self._page(key), SITES[key]
-        d = Path(out_dir or (self.root / "diag" / key))
+        d = Path(out_dir or (self.profile_root / "diag" / key))
         d.mkdir(parents=True, exist_ok=True)
         out: list[str] = []
 
@@ -1597,8 +1597,11 @@ class WebChat:
         except Exception as exc:  # noqa: BLE001
             out.append(f"typing test failed: {type(exc).__name__}: "
                        f"{str(exc)[:160]}")
-        _goto(page, site.url)
-        _wait_for_box(page, site, time.monotonic, limit=40)
+        try:
+            _goto(page, site.url)
+            _wait_for_box(page, site, time.monotonic, limit=40)
+        except Exception as exc:  # noqa: BLE001 - report it, keep going
+            out.append(f"RELOAD PROBLEM {type(exc).__name__}: {str(exc)[:160]}")
         page.wait_for_timeout(2500)
         listing = page.evaluate(_DETECT_MODELS_JS) or {}
         cands = listing.get("cands") or []
@@ -1616,8 +1619,11 @@ class WebChat:
                        f"models: {one.get('items')}")
             shot(f"3-candidate-{i}.png")
             if one.get("moved"):
-                _goto(page, site.url)
-                _wait_for_box(page, site, time.monotonic, limit=40)
+                try:
+                    _goto(page, site.url)
+                    _wait_for_box(page, site, time.monotonic, limit=40)
+                except Exception:  # noqa: BLE001
+                    pass
                 page.wait_for_timeout(1500)
             else:
                 page.keyboard.press("Escape")

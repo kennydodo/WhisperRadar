@@ -814,3 +814,23 @@ class PressSendTests(unittest.TestCase):
         pg = self.Page(enable_after=None)
         self.assertEqual(wc._press_send(pg, self.site(), print), "enter")
         self.assertEqual(pg.keys, ["Enter"])
+
+
+class DiagnoseSmokeTests(unittest.TestCase):
+    def test_diagnose_writes_a_report(self):
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as t:
+            chat = wc.WebChat(t)
+            page = mock.MagicMock()
+            page.url = "https://chat.z.ai/"
+            page.title.return_value = "T"
+            page.evaluate.side_effect = lambda js, arg=None: (
+                {"cands": []} if js is wc._DETECT_MODELS_JS
+                else [] if js in (wc._COMPOSER_JS, wc._ALL_BUTTONS_JS)
+                else "  box" if js is wc._BOX_REPORT_JS
+                else True)
+            chat._page = lambda key: page
+            text = chat.diagnose("zai")
+            self.assertIn("model-picker candidates: 0", text)
+            self.assertTrue((Path(t) / "diag" / "zai" / "report.txt").exists())
