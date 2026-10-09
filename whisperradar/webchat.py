@@ -22,6 +22,7 @@ import re
 import shutil
 import subprocess
 import time
+from urllib.parse import urljoin
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -726,6 +727,18 @@ _AGE_JS = r"""() => {
   b.click(); return 'clicked'; }"""
 
 
+_CHAT_LINKS_JS = r"""() => [...document.querySelectorAll('a[href]')]
+  .map(a => a.getAttribute('href') || '')
+  .filter(h => /\/(c|chat)\/[0-9A-Za-z-]{8,}/.test(h))"""
+
+
+def _chat_links(page) -> list:
+    try:
+        return list(page.evaluate(_CHAT_LINKS_JS) or [])
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _dismiss_age(page, log) -> bool:
     """Qwen asks "Confirm your age to continue" again and again and blocks the
     send behind it: press Continue when a year is already filled in."""
@@ -977,6 +990,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         # ten seconds to be accepted, and a second click on a send button that has
         # turned into a stop button would cancel the answer.
         peak = None
+        links_before = _chat_links(page)
         _dismiss_age(page, log)
         for attempt in (1, 2, 3):
             how = _press_send(page, site, log)
@@ -1037,6 +1051,9 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
     last_text, stable_since, continues = "", clock(), 0
     started = False
     probed = False
+    if resume:
+        links_before = []
+    followed = False
     active = clock()                       # last sign of life
     while True:
         page.wait_for_timeout(int(poll * 1000))
@@ -1086,6 +1103,32 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                             break
                 except Exception:  # noqa: BLE001
                     pass
+            if (not started and not followed and not resume
+                    and clock() - t0 > 20):
+                # The prompt went out and the site created the chat (it is in
+                # the sidebar) but the watched page fell back to the empty
+                # start page (Qwen). Open the chat that is new since the send.
+                try:
+                    if not page.evaluate(site.sent_js):
+                        new = [h for h in _chat_links(page)
+                               if h not in links_before]
+                        if new:
+                            followed = True
+                            log(f"{site.name}: the page went back to the "
+                                f"start page; opening the new chat {new[0]}")
+                            _goto(page, urljoin(page.url, new[0]))
+                            _wait_for_box(page, site, clock)
+                            c = page.evaluate(
+                                _STATE_JS, {"reply": site.reply})["count"]
+                            before, old_text = max(0, c - 1), ""
+                            started = True
+                            t0 = clock()
+                            continue
+                except Exception as exc:  # noqa: BLE001
+                    log(f"{site.name}: could not open the new chat ({exc})")
+                    followed = True
+            if started:
+                pass
             elif clock() - t0 > start_wait:
                 lim = _limit_banner(page, site)
                 if lim:
