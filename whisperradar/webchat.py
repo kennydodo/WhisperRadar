@@ -467,11 +467,6 @@ DEFAULT_GENERATING = ('[aria-label*="Stop" i], [title*="Stop" i], '
 _GENERIC_SEND_JS = """() => {
   const list = [...document.querySelectorAll(%s)];
   const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0] || null;
-  let scope = document;
-  if (ta) scope = ta.closest('form') || (ta.parentElement && ta.parentElement
-      .parentElement && ta.parentElement.parentElement.parentElement) || document;
-  const cands = [...scope.querySelectorAll('button,[role=button]')].filter(
-      b => !b.disabled && b.getAttribute('aria-disabled') !== 'true');
   // a WHOLE word of the accessible name: "Ask" must not match "Task",
   // "stop" must not match "Deep research"; ChatGPT's composer button is
   // named only by its class, so a type=submit inside the composer counts
@@ -480,6 +475,22 @@ _GENERIC_SEND_JS = """() => {
       x.getAttribute('data-testid'), x.id, (x.innerText || '').trim()];
   const send = word('send|submit|ask|generate');
   const no = word('stop|continue|up arrow|model|deep|research');
+  const btns = el => [...el.querySelectorAll('button,[role=button]')];
+  let scope = document;
+  if (ta) {
+    scope = ta.closest('form');
+    if (!scope) {
+      // the send button is NOT always near the box (Claude's contenteditable
+      // sits 4+ levels below the composer): climb until a send-like button
+      // is inside, at most 8 levels
+      let el = ta.parentElement, i = 0;
+      while (el && i < 8 && !btns(el).some(x => att(x).some(
+          v => v && send.test(v) && !no.test(v)))) { el = el.parentElement; i++; }
+      scope = (el && i < 8) ? el : document;
+    }
+  }
+  const cands = [...scope.querySelectorAll('button,[role=button]')].filter(
+      b => !b.disabled && b.getAttribute('aria-disabled') !== 'true');
   let b = cands.find(x => att(x).some(v => v && send.test(v) && !no.test(v)));
   if (!b && ta && ta.closest('form'))
     b = [...ta.closest('form').querySelectorAll('button[type=submit]')]
@@ -1055,10 +1066,17 @@ _COMPOSER_JS = r"""(sel) => {
   const list = [...document.querySelectorAll(sel)];
   const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0]
              || null;
+  const btns = el => [...el.querySelectorAll('button,[role=button]')];
   let scope = document;
-  if (ta) scope = ta.closest('form') || (ta.parentElement && ta.parentElement
-      .parentElement && ta.parentElement.parentElement.parentElement) || document;
-  return [...scope.querySelectorAll('button,[role=button]')].slice(0, 14)
+  if (ta) {
+    scope = ta.closest('form');
+    if (!scope) {
+      let el = ta.parentElement, i = 0;
+      while (el && i < 8 && btns(el).length < 2) { el = el.parentElement; i++; }
+      scope = el || document;
+    }
+  }
+  return btns(scope).slice(0, 14)
     .map(b => (b.getAttribute('aria-label') || b.getAttribute('data-testid')
                || (b.innerText || '').trim() || b.tagName).slice(0, 30)
          + (b.disabled || b.getAttribute('aria-disabled') === 'true'
