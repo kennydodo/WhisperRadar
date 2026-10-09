@@ -152,14 +152,16 @@ def _send_in(transport, site: str, build, log, continuing: bool, ready=None):
 
 
 def _send(transport, site: str, build: Callable, log,
-          new_chat: bool = True, ready=None):
-    """Build the prompt inline; switch to attached files when it is too big."""
+          new_chat: bool = True, ready=None, uploads=()):
+    """Build the prompt inline; switch to attached files when it is too big.
+    `uploads` are extra files (e.g. inspiration images) always attached
+    alongside the prompt."""
     text = build(None)
     files = None
     if len(text) > INLINE_MAX_CHARS:
         files = []
         text = build(files)
-    tmp, paths = None, []
+    tmp, paths = None, list(uploads)
     try:
         if files:
             tmp = tempfile.mkdtemp(prefix="wr_webchat_")

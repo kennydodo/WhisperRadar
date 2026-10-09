@@ -202,10 +202,17 @@ def _plan_text(ctx: dict) -> str:
             f"\"{t.get('text')}\", {t.get('idea')}\n\n")
 
 
-def writer_prompt(ctx: dict) -> str:
+def writer_prompt(ctx: dict, has_inspiration: bool = False) -> str:
+    attached = (
+        "ATTACHED IMAGES (visual inspiration): the FIRST is the ORIGINAL "
+        "thumbnail of the source video this one is based on; the rest are the "
+        "best-performing thumbnails in this niche. Study their composition, "
+        "colour, framing and energy and let them raise your bar - but design "
+        "something NEW for this video and do NOT copy them or their text.\n\n"
+        if has_inspiration else "")
     return f"""You are a YouTube thumbnail designer. Design {MIN_CONCEPTS}-{MAX_CONCEPTS} thumbnail concepts for a finished video.
 
-CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
+{attached}CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
 VIDEO TITLE: {ctx['kit_title']}
 MAIN KEYWORD: {ctx['keyword'] or '(none)'}
 
@@ -286,8 +293,10 @@ def run_concepts(cfg, pid: int, transport, writer: str = "zai",
     if not ctx["script"]:
         raise ws.StageFailed("This production has no script yet.")
     log(f"thumbnails: designing concepts for \"{ctx['kit_title'][:70]}\"")
-    reply = ws._send(transport, writer, lambda f: writer_prompt(ctx), log,
-                     ready=ws._has_json)
+    uploads = inspiration_paths(cfg, pid)   # source + top outliers on disk
+    reply = ws._send(transport, writer,
+                     lambda f: writer_prompt(ctx, has_inspiration=bool(uploads)),
+                     log, ready=ws._has_json, uploads=uploads)
     best, judge_open, rnd, empty = None, False, 0, 0
     while True:
         rnd += 1
@@ -359,6 +368,12 @@ def concepts_job(cfg, pid: int, writer: str, judge: str, log,
                  should_stop: Callable[[], bool] = lambda: False,
                  options: dict | None = None) -> None:
     from . import webstages as ws
+    # pull the source + outlier thumbnails first so the writer sees them as
+    # visual inspiration (best effort - a network miss just means no images)
+    try:
+        fetch_inspiration(cfg, pid, log=log)
+    except Exception as exc:  # noqa: BLE001 - inspiration is a bonus, not fatal
+        log(f"thumbnails: inspiration unavailable ({type(exc).__name__})")
     with ws.web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
@@ -864,3 +879,26 @@ def inspiration_files(pdir) -> list[str]:
     if not d.is_dir():
         return []
     return sorted(p.name for p in d.glob("*.jpg"))
+
+
+INSPIRATION_MAX = 6
+
+
+def inspiration_paths(cfg, pid: int) -> list[str]:
+    """Local inspiration thumbnail paths already on disk, the SOURCE video's
+    first, then the top outliers - the set the concept writer is shown as
+    visual inspiration. Returns [] if none have been fetched yet (fetching is
+    done by concepts_job, not here, so tests stay offline)."""
+    from . import studio
+    pdir = studio.prod_dir(cfg, pid)
+    d = thumbs_dir(pdir) / INSPIRATION_DIR
+    items = inspiration_items(cfg, pid)
+    paths, seen = [], set()
+    for it in items:                       # source first, then outliers
+        p = d / f"{it['id']}.jpg"
+        if p.is_file() and it["id"] not in seen:
+            paths.append(str(p))
+            seen.add(it["id"])
+        if len(paths) >= INSPIRATION_MAX:
+            break
+    return paths
