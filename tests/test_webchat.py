@@ -691,6 +691,9 @@ class TimeoutTests(unittest.TestCase):
         page = FakePage(clk, wc.ZAI, [("Late answer", False)] * 20)
         page.sent, page.frame = True, ("Late answer", False)
         page.reload = lambda: None
+        orig = page.evaluate
+        page.evaluate = lambda js, arg=None: (
+            True if js is wc.ZAI.sent_js else orig(js, arg))
         chat = wc.WebChat("x")
         logs = []
         out = chat._recover_timeout(page, wc.ZAI,
@@ -698,6 +701,23 @@ class TimeoutTests(unittest.TestCase):
                                     {"clock": clk}, logs.append)
         self.assertEqual(out, "Late answer")
         self.assertIn("reloading", logs[0])
+
+
+class NeverSentTests(unittest.TestCase):
+    def test_an_unstarted_chat_is_not_reloaded_into_an_old_answer(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("OLD answer", False)] * 20)
+        reloaded = []
+        page.reload = lambda: reloaded.append(1)
+        orig = page.evaluate
+        page.evaluate = lambda js, arg=None: (
+            False if js is wc.ZAI.sent_js else orig(js, arg))
+        with self.assertRaises(wc.WebChatError) as cm:
+            wc.WebChat("x")._recover_timeout(
+                page, wc.ZAI, wc.WebChatTimeout("z.ai stalled", ""),
+                {"clock": clk}, print)
+        self.assertIn("never went out", str(cm.exception))
+        self.assertEqual(reloaded, [])
 
 
 class UploadCountTests(unittest.TestCase):

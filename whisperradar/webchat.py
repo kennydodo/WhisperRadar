@@ -683,11 +683,14 @@ _BUSY_JS = """(args) => {
 _AGE_JS = r"""() => {
   const vis = e => { const r = e.getBoundingClientRect();
                      return r.width > 0 && r.height > 0; };
-  const b = [...document.querySelectorAll('button')].filter(vis)
-    .find(x => /^continue$/i.test((x.innerText || '').trim()));
+  // the button may be a <div role=button> or a styled <span>: take the
+  // smallest visible element whose whole text is "Continue"
+  const b = [...document.querySelectorAll('button,[role=button],div,span,a')]
+    .filter(x => vis(x) && /^continue$/i.test((x.innerText || '').trim()))
+    .sort((p, q) => p.querySelectorAll('*').length - q.querySelectorAll('*').length)[0];
   if (!b) return '';
   let c = b, ok = false;
-  for (let i = 0; i < 6 && c.parentElement; i++) {
+  for (let i = 0; i < 8 && c.parentElement; i++) {
     c = c.parentElement;
     if (/confirm your age|year were you born|date of birth/i.test(c.innerText || '')) { ok = true; break; }
   }
@@ -970,12 +973,17 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                         f"it ({pk['clicked'] or 'could not'}); the model is "
                         f"NOT changed")
                     break
-                if (page.evaluate(_TA_LEN_JS, site.box) == 0
-                        or page.evaluate(site.generating_js)
-                        or (new_chat and page.evaluate(site.sent_js))
-                        or (page.evaluate(_MSG_COUNT_JS) or 0) > msgs_before
-                        or page.evaluate(_STATE_JS,
-                                         {"reply": site.reply})["count"] > before):
+                why = ("the box emptied" if page.evaluate(_TA_LEN_JS, site.box) == 0
+                       else "it is generating" if page.evaluate(site.generating_js)
+                       else "the address changed" if (
+                           new_chat and page.evaluate(site.sent_js))
+                       else "a new message appeared" if (
+                           (page.evaluate(_MSG_COUNT_JS) or 0) > msgs_before)
+                       else "a new reply element appeared" if page.evaluate(
+                           _STATE_JS, {"reply": site.reply})["count"] > before
+                       else "")
+                if why:
+                    log(f"{site.name}: send registered ({why})")
                     took = True
                     break
             if took:
@@ -1162,10 +1170,13 @@ def _save_last(page, site: Site, outcome: str) -> None:
         d = _DIAG_ROOT / "diag" / site.key
         d.mkdir(parents=True, exist_ok=True)
         body = page.evaluate("() => (document.body.innerText || '')") or ""
-        (d / "last-run.txt").write_text(
-            f"outcome: {outcome}\nurl: {page.url}\n\n{str(body)[-30000:]}",
-            encoding="utf-8")
-        page.screenshot(path=str(d / "last-run.png"))
+        names = ["last-run"] + ([] if outcome.startswith("ok")
+                                else ["last-failure"])
+        for n in names:                  # a failure is kept past later runs
+            (d / f"{n}.txt").write_text(
+                f"outcome: {outcome}\nurl: {page.url}\n\n{str(body)[-30000:]}",
+                encoding="utf-8")
+            page.screenshot(path=str(d / f"{n}.png"))
     except Exception:  # noqa: BLE001 - diagnostics must never break a run
         pass
 
@@ -1600,6 +1611,20 @@ class WebChat:
         log = kw.get("log") or (lambda m: None)
         kw.setdefault("stop", self.should_stop)
         try:
+            return self._ask_checked(page, site, key, prompt, files, new_chat,
+                                     options, kw, log)
+        except WebChatError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if "has been closed" in str(exc) or "Target closed" in str(exc):
+                raise WebChatError(
+                    f"{site.name}: the browser window was closed, so the run "
+                    f"stopped (close it only after the run is done)") from exc
+            raise
+
+    def _ask_checked(self, page, site, key, prompt, files, new_chat, options,
+                     kw, log):
+        try:
             reply = retry_when_busy(
                 lambda: ask(page, site, prompt, files, new_chat=new_chat,
                             options=options, **kw),
@@ -1617,6 +1642,17 @@ class WebChat:
         """A stall is not the end: reload the same chat and collect what the
         site has by now (the answer may be finished, or still coming)."""
         last = exc
+        try:
+            started = bool(page.evaluate(site.sent_js))
+        except Exception:  # noqa: BLE001
+            started = True
+        if not started:
+            # still on the empty start page: the prompt never went out.
+            # Reloading it would open the LAST chat of the site (Qwen does)
+            # and hand back an old answer as if it were the new one.
+            raise WebChatError(
+                f"{site.name}: the prompt never went out - the page is still "
+                f"an empty new chat ({exc})")
         for i in range(1, rounds + 1):
             log(f"{site.name}: {last} - reloading the chat and checking "
                 f"again ({i}/{rounds})")
