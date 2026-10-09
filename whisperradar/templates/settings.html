@@ -181,7 +181,13 @@
             </div>
           {% else %}
             <label class="field" for="f-{{ entry.key }}">{{ entry.label }}</label>
-            {% if entry.type == 'choice' %}
+            {% if entry.type == 'choice' and entry.sites %}
+              <select name="{{ entry.key }}" id="f-{{ entry.key }}">
+                {% for key, nm in site_choices %}
+                <option value="{{ key }}" {{ 'selected' if values[entry.key] == key else '' }}>{{ nm }}</option>
+                {% endfor %}
+              </select>
+            {% elif entry.type == 'choice' %}
               <select name="{{ entry.key }}" id="f-{{ entry.key }}">
                 {% for opt in entry.choices %}
                 <option value="{{ opt }}" {{ 'selected' if values[entry.key] == opt else '' }}>{{ entry.choice_labels[opt] if entry.choice_labels is defined and opt in entry.choice_labels else opt }}</option>

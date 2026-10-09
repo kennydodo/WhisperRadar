@@ -208,6 +208,24 @@ SPEC: list[dict] = [
                 "way.",
     },
     {
+        "key": "autorun_writer", "type": "choice", "default": "zai",
+        "choices": ["zai", "deepseek"], "sites": True,
+        "label": "Auto Run web chat: writer",
+        "help": "The chat site that WRITES script, shotlist, packaging plan "
+                "and thumbnail concepts when the transport is webchat. Sites "
+                "you added under Web chat LLMs are listed too. Its model and "
+                "thinking level are the ones you used last in any web chat "
+                "run form.",
+    },
+    {
+        "key": "autorun_judge", "type": "choice", "default": "deepseek",
+        "choices": ["zai", "deepseek"], "sites": True,
+        "label": "Auto Run web chat: judge",
+        "help": "The chat site that JUDGES those stages. Use a different "
+                "site than the writer: they share one browser profile per "
+                "site.",
+    },
+    {
         "key": "resume_cooldown_minutes", "type": "int", "default": 60,
         "min": 5, "max": 1440,
         "label": "Resume cooldown (minutes)",
@@ -571,6 +589,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
         "autorun_plan", "autorun_thumbnails", "autorun_transport",
+        "autorun_writer", "autorun_judge",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script & shotlist", [
@@ -659,6 +678,9 @@ def _coerce(entry: dict, raw):
             value = min(entry["max"], value)
         return round(value, 3)
     if kind == "choice":
+        if entry.get("sites"):           # any chat site, built-in or added
+            from . import webchat
+            return text if text in webchat.SITES else entry["default"]
         return text if text in entry["choices"] else entry["default"]
     if kind == "time":
         return text if _TIME_RE.match(text) else entry["default"]

@@ -527,6 +527,30 @@ def _script_criteria_line(score: float | None, min_rating: float,
            f"{length_mark} length {words}/{target_words} words ({pct})")
 
 
+def _webchat_pair(cfg) -> tuple[str, str, dict | None]:
+    """(writer, judge, options) Auto Run uses for the web-chat transport: the
+    sites chosen in Settings and the model/level settings used last in any
+    web chat run form."""
+    from . import webchat
+    conn = _connect(cfg)
+    try:
+        st = settings.load(conn)
+        raw = db.get_setting(conn, "webchat_last_options")
+    finally:
+        conn.close()
+    writer = st.get("autorun_writer") or "zai"
+    judge = st.get("autorun_judge") or "deepseek"
+    if writer not in webchat.SITES:
+        writer = "zai"
+    if judge not in webchat.SITES:
+        judge = "deepseek"
+    try:
+        options = json.loads(raw) if raw else None
+    except (TypeError, ValueError):
+        options = None
+    return writer, judge, options if isinstance(options, dict) else None
+
+
 def _run_script(cfg, pid: int, provider: str | None = None,
                 log=None, cancel=None, transport: str | None = None) -> None:
     if transport == "webchat":
@@ -534,9 +558,9 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         # manual button; it raises StageFailed if nothing passes, so the run
         # stops for the user to continue rather than advancing on a bad draft
         from . import webstages
-        webstages.script_job(cfg, pid, "zai", "deepseek",
-                             log or (lambda m: None),
-                             should_stop=_bounded_stop(cancel))
+        w, j, o = _webchat_pair(cfg)
+        webstages.script_job(cfg, pid, w, j, log or (lambda m: None),
+                             should_stop=_bounded_stop(cancel), options=o)
         return
     t0 = time.monotonic()
     conn = _connect(cfg)
@@ -964,9 +988,9 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                log=None, cancel=None, transport: str | None = None) -> None:
     if transport == "webchat":
         from . import webstages
-        webstages.shotlist_job(cfg, pid, "zai", "deepseek",
-                               log or (lambda m: None),
-                               should_stop=_bounded_stop(cancel))
+        w, j, o = _webchat_pair(cfg)
+        webstages.shotlist_job(cfg, pid, w, j, log or (lambda m: None),
+                               should_stop=_bounded_stop(cancel), options=o)
         return
     t0 = time.monotonic()
     conn = _connect(cfg)
@@ -2270,9 +2294,10 @@ def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None,
         if transport == "webchat":
             # drive the plan through the chat sites (browser), like the manual
             # plan button; it saves the best set (ready or draft) itself
-            packplan.plan_job(cfg, pid, "zai", "deepseek",
+            w, j, o = _webchat_pair(cfg)
+            packplan.plan_job(cfg, pid, w, j,
                               lambda m: log(f"[auto-run] {m}"),
-                              should_stop=_bounded_stop(cancel))
+                              should_stop=_bounded_stop(cancel), options=o)
             plan = packplan.load_plan(pdir)
         else:
             writer = _stage_provider(cfg, pid, "script", override=provider)
@@ -2325,9 +2350,11 @@ def _auto_thumbnails(cfg, pid: int, provider: str | None, log,
             log("[auto-run] thumbnails: no script yet - skipping")
             return
         if transport == "webchat":
-            thumbnails.concepts_job(cfg, pid, "zai", "deepseek",
+            w, j, o = _webchat_pair(cfg)
+            thumbnails.concepts_job(cfg, pid, w, j,
                                     lambda m: log(f"[auto-run] {m}"),
-                                    should_stop=_bounded_stop(cancel))
+                                    should_stop=_bounded_stop(cancel),
+                                    options=o)
             data = thumbnails.load_thumbs(pdir)
         else:
             writer = _stage_provider(cfg, pid, "script", override=provider)

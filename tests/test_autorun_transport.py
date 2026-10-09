@@ -91,5 +91,30 @@ class PlanThumbsRoutingTests(Base):
         cj.assert_called_once()
 
 
+class WebchatPairTests(Base):
+    def test_pair_comes_from_settings_and_last_options(self):
+        import json
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.set_setting(conn, "webchat_last_options",
+                       json.dumps({"zai": {"model": "5.3"}}))
+        conn.close()
+        w, j, o = autorun._webchat_pair(self.cfg)
+        self.assertEqual((w, j), ("zai", "deepseek"))     # the defaults
+        self.assertEqual(o["zai"]["model"], "5.3")
+        conn = db.connect(self.cfg.db_path)
+        settings.save(conn, {"autorun_writer": "deepseek",
+                             "autorun_judge": "zai"})
+        conn.close()
+        w, j, _o = autorun._webchat_pair(self.cfg)
+        self.assertEqual((w, j), ("deepseek", "zai"))
+
+    def test_unknown_site_falls_back(self):
+        conn = db.connect(self.cfg.db_path)
+        db.set_setting(conn, "autorun_writer", "gone")
+        conn.close()
+        self.assertEqual(autorun._webchat_pair(self.cfg)[0], "zai")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1394,6 +1394,8 @@ def create_app(cfg) -> Flask:
             providers=[p["name"] for p in studio.providers(cfg)],
             providers_nested=studio.providers_nested(cfg),
             webchat_sites=_webchat_sites_saved(),
+            site_choices=[(k, getattr(v, "name", k))
+                          for k, v in webchat.SITES.items()],
             scheduler=sched.status(),
             services=services.MANAGER.status_cached(cfg),
             flowbatch_ready=studio.flowbatch_ready(cfg),
@@ -4232,7 +4234,7 @@ def create_app(cfg) -> Flask:
                     "toggles": {t["id"]: form.get(f"wc_{key}_{t['id']}")
                                 == "on" for t in site.get("toggles") or []}}
             custom[key] = opts
-        return {
+        opts_all = {
             **custom,
             "zai": {"thinking": level if level in ("Low", "High", "Max")
                     else "Low",
@@ -4243,6 +4245,18 @@ def create_app(cfg) -> Flask:
                               or "on") != "off",
                 "search": (form.get("deepseek_search")
                            or "off") == "on"}}
+        # remember them: Auto Run runs with the settings used last
+        try:
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                db.set_setting(conn, "webchat_last_options",
+                               json.dumps(opts_all))
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001 - remembering is a convenience
+            pass
+        return opts_all
 
     def _kit_page_data(pid):
         from . import packaging
