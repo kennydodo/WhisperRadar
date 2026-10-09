@@ -123,6 +123,10 @@
     <h2>Title options</h2>
     {% if plan.overview %}<div class="muted" style="font-size:12px;margin:4px 0">The whole video: {{ plan.overview }}</div>{% endif %}
     {% if plan.formula %}<div class="muted" style="font-size:12px;margin:4px 0">Source title formula: {{ plan.formula }}</div>{% endif %}
+    {% if plan.segments and plan.titles|length > 10 %}
+      <div style="margin:10px 0 2px"><b>Top 10 of all</b> <span class="muted">&middot; best titles across every segment</span></div>
+      <ul class="titles">{% for t in plan.titles[:10] %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button><b>{{ loop.index }}.</b> {{ t.text }} <span class="muted">({{ t.text|length }}){% if t.segment %} &middot; {{ t.segment }}{% endif %}</span></li>{% endfor %}</ul>
+    {% endif %}
     {% if plan.segments %}
       {% for g in plan.segments %}<div style="margin:10px 0 2px"><b>{{ loop.index }}. {{ g.name }}</b> <span class="muted">&middot; best of this segment</span></div>
       <ul class="titles">{% for t in plan.titles if (t.segment or '')|lower == g.name|lower %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}</ul>{% endfor %}

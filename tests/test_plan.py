@@ -36,10 +36,11 @@ class PureTests(unittest.TestCase):
     def test_faults(self):
         def f(**o):
             return pp.local_faults(pp.parse_plan(good(**o)))
-        self.assertTrue(any("not in the title" in x
-                            for x in f(title="Something else")))
-        self.assertTrue(any("after the first" in x for x in f(
-            title="x" * 70 + " coin jar")))
+        # the keyword need not be in the title (or the options)
+        p = good()
+        p["title"] = p["titles"][0]["text"] = "The jar nobody explains"
+        self.assertFalse(any("keyword" in x for x in
+                             pp.local_faults(pp.parse_plan(p))))
         self.assertTrue(any("characters" in x for x in f(
             title="coin jar " + "y" * 100)))
         self.assertTrue(any("title options" in x for x in f(titles=[])))
@@ -164,7 +165,7 @@ class VarietyTests(unittest.TestCase):
         self.assertIn("FORMULA", pp._RULES)
         self.assertIn("SEGMENTS", pp._RULES)
         self.assertIn("READ the WHOLE original script", pp._RULES)
-        self.assertIn("does NOT have to be the first words", pp._RULES)
+        self.assertIn("does NOT have to be in every title", pp._RULES)
 
 
 class TeaserTests(unittest.TestCase):
