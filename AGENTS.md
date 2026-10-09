@@ -1658,3 +1658,6 @@ Qwen sometimes creates the chat (it shows in the sidebar) while the watched page
 
 ## Remembered LLM + settings
 `_webchat_extra.html` saves every writer/judge/model/level/toggle select (incl. zai_*, deepseek_*) to localStorage on change/submit under a per-form key (ids stripped from the action) plus a global `wrwc:last`; the global one wins on load, so the last picks show in every run form and production.
+
+## Style & bible: coverage
+Up to 20 frames from up to 8 videos (default 12 frames); videos are the most viewed but near-duplicate titles are skipped; each video's frames start early (intro) and are shifted per video; the first 3 thumbnails are added as `t01.jpg`... A free-text "hint" on the page goes into the prompt. The prompt asks for hex codes inline and for every kind of recurring subject (or an explicit "no recurring character"). Not done: splitting into two messages when a site rejects that many attachments - lower the frame count if the upload fails.

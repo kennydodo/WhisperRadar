@@ -62,6 +62,30 @@ class LookTests(unittest.TestCase):
         self.assertEqual(channel_look.parse_reply("just text"),
                          ("just text", ""))
 
+    def test_frame_times_have_an_early_frame_and_shift(self):
+        a = channel_look.frame_times(600, 4, 0.0)
+        b = channel_look.frame_times(600, 4, 0.7)
+        self.assertEqual(len(a), 4)
+        self.assertLess(a[0], 30)
+        self.assertNotEqual(a, b)
+        self.assertTrue(all(0 < t < 600 for t in a + b))
+        self.assertEqual(len(channel_look.frame_times(0, 2)), 2)
+
+    def test_similar_titles_are_not_all_picked(self):
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE videos (video_id, channel_id, title, "
+                     "view_count, published_at)")
+        rows = [("a", "Why Humans Never Eat Hippos Meat", 100),
+                ("b", "Why Humans Never Eat Hippos Meat Today", 90),
+                ("c", "Cheetahs Are Friendly Pets", 80)]
+        for vid, t, v in rows:
+            conn.execute("INSERT INTO videos VALUES (?,?,?,?,?)",
+                         (vid, "C", t, v, "2026"))
+        got = [v["video_id"] for v in channel_look.pick_videos(conn, "C", 2)]
+        self.assertEqual(got, ["a", "c"])
+
     def test_split_counts_within_range(self):
         self.assertEqual(sum(channel_look.split_counts(8, 3)), 8)
         self.assertEqual(channel_look.split_counts(5, 9), [1] * 5)
@@ -71,9 +95,11 @@ class LookTests(unittest.TestCase):
         logs = []
         meta = channel_look.run(
             self.cfg, "UCrival", "chatgpt", tr, logs.append, n_frames=6,
-            download=lambda url, d: (d / "x.mp4", 600), grab=self._grab)
+            download=lambda url, d: (d / "x.mp4", 600), grab=self._grab,
+            hint="has a cartoon narrator", thumbs=None)
         self.assertEqual(meta["frames"], 6)
         site, prompt, files = tr.calls[0]
+        self.assertIn("has a cartoon narrator", prompt)
         self.assertEqual(len(files), 6)
         self.assertIn("Title 2", prompt)  # most viewed is picked first
         got = channel_look.load(self.cfg, "UCrival")
@@ -90,7 +116,7 @@ class LookTests(unittest.TestCase):
             channel_look.run(
                 self.cfg, "UCrival", "chatgpt", FakeTransport(), print,
                 download=lambda u, d: (_ for _ in ()).throw(OSError("no")),
-                grab=self._grab)
+                grab=self._grab, thumbs=None)
 
     def test_pages_render(self):
         client = create_app(self.cfg).test_client()

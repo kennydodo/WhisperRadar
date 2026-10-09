@@ -68,6 +68,7 @@ def register(app, cfg, sjob) -> None:
                          channel_look.DEFAULT_FRAMES)
         except ValueError:
             frames = channel_look.DEFAULT_FRAMES
+        hint = (request.form.get("hint") or "").strip()[:600]
         _job = sjob._real()
         cid = ch["channel_id"]
 
@@ -75,7 +76,7 @@ def register(app, cfg, sjob) -> None:
             with webstages.web_transport(cfg, sjob.log.append) as transport:
                 transport.set_stop(lambda: _job.cancel)
                 channel_look.run(cfg, cid, site, transport, sjob.log.append,
-                                 n_frames=frames)
+                                 n_frames=frames, hint=hint)
 
         sjob.start(worker, f"style & bible ({ch['name']})")
         return redirect(base + "?msg=" + quote(

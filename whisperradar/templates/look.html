@@ -48,6 +48,9 @@
       <label>Frames
         <input type="number" name="frames" value="{{ default_frames }}"
                min="{{ min_frames }}" max="{{ max_frames }}" style="width:70px"></label>
+      <label style="flex-basis:100%">Hint for the chat (optional)
+        <input type="text" name="hint" maxlength="600" style="width:100%"
+               placeholder="e.g. the channel has a recurring cartoon narrator / protagonist"></label>
       <button type="submit">{{ 'Get style & bible again' if look else 'Get style & bible' }}</button>
     </form>
     <p class="muted" style="margin:8px 0 0">Takes frames from this channel's most
