@@ -1665,3 +1665,6 @@ Attachment cap: Claude refused 21 images ("at most 20 attachments"). `channel_lo
 
 ## Job slots
 Four kinds of slot: one per OWN channel (`sjob`, studio production jobs), the dashboard `job` (backfill, view counts, downloads), `scheduler_job` (scheduled auto-run) and `research_job` (research topics grouping and the watched channel "style & bible"; `/research/job` is its status). Research no longer waits for a production's job. Caution: two jobs that use the SAME web chat site at once share one browser profile and will collide - only run one LLM job per site.
+
+## Script must not mention the thumbnail
+`plan.plan_block` (appended to the script writer AND judge prompts) used to say "Thumbnail says: ... pay this off early", so scripts started to talk about the thumbnail. It now gives the cover idea without the word, and states the rule that narration never mentions thumbnail/cover/title/packaging. `plan.meta_mentions` is a code check in `webstages.run_script`: a mention fails the round and goes back to the writer as feedback.

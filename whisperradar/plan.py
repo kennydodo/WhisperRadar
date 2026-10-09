@@ -145,9 +145,24 @@ def plan_block(plan: dict) -> str:
         lines.append(f"- Opening hook (the first lines should do this): "
                      f"{plan['hook']}")
     if th.get("text"):
-        lines.append(f"- Thumbnail says: \"{th['text']}\" - the script must "
-                     "pay this off early, in the first minute")
+        lines.append(f"- The idea on the cover is: \"{th['text']}\" - the "
+                     "script must pay this idea off early, in the first "
+                     "minute, through the story itself")
+    lines.append("- RULE: the script is spoken narration only. It must NEVER "
+                 "mention or allude to the thumbnail, the cover, the title, "
+                 "the packaging, or this plan. A judge must list every such "
+                 "mention as a failure and the writer must remove it.")
     return "\n".join(lines)
+
+
+_META_RE = re.compile(
+    r"\b(thumbnails?|thumb|cover image|video title|packaging plan)\b", re.I)
+
+
+def meta_mentions(script: str) -> list[str]:
+    """Words in a spoken script that talk about the video's packaging (the
+    thumbnail, the title...): they must not be in narration."""
+    return sorted({m.group(1).lower() for m in _META_RE.finditer(script or "")})
 
 
 def with_plan(cfg, prod, direction: str) -> str:

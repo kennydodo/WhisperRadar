@@ -127,3 +127,18 @@ class ProdTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MetaMentionTests(unittest.TestCase):
+    def test_thumbnail_words_are_found(self):
+        from whisperradar import plan
+        self.assertEqual(plan.meta_mentions("As the Thumbnail says, wait."),
+                         ["thumbnail"])
+        self.assertEqual(plan.meta_mentions("You walk home."), [])
+
+    def test_block_forbids_mentioning_the_cover(self):
+        from whisperradar import plan
+        block = plan.plan_block({"title": "T", "promise": "P", "hook": "",
+                                 "thumbnail": {"text": "WAKE UP"}})
+        self.assertIn("NEVER", block)
+        self.assertNotIn("Thumbnail says", block)

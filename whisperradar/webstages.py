@@ -469,6 +469,17 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             words, target, overlap, score, min_rating, max_overlap,
             hard_overlap, err)
         cut = studio.script_looks_truncated(script)
+        from . import plan as _plan
+        meta = _plan.meta_mentions(script)
+        if meta:
+            passed = False
+            reasons.append("the script mentions the video's packaging ("
+                           + ", ".join(meta) + ") - remove every mention; "
+                           "narration never refers to the thumbnail or title")
+            judged["feedback"].append(
+                "Remove every mention of the " + "/".join(meta)
+                + ": the script is spoken narration and must never refer to "
+                "the thumbnail, cover or title.")
         if cut:
             passed = False
             reasons.append("the script looks cut off")
