@@ -34,7 +34,10 @@ from flask import (
 )
 
 from . import external_prompts
+from . import demand as demand_mod
 from . import niche_chips
+from . import trending as trending_mod
+from . import timing as timing_mod
 from . import packaging
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
@@ -753,7 +756,8 @@ def create_app(cfg) -> Flask:
         from . import outliers
         args = request.args
         tab = (args.get("tab") if args.get("tab") in (
-            "topics", "channels", "keywords", "analyze") else "outliers")
+            "topics", "channels", "keywords", "analyze", "trending")
+            else "outliers")
 
         def _num(name, default, cast=float):
             try:
@@ -852,7 +856,16 @@ def create_app(cfg) -> Flask:
             reverse=reverse,
             selected_own=selected_own, fmt_views=outliers.fmt_views,
             fmt_age=outliers.fmt_age, with_momentum=with_momentum,
+            trend_feed=(trending_mod.load(cfg) if tab == "trending"
+                        else None),
             kw=(insights.keywords(items) if tab == "keywords" else []),
+            post_times=(timing_mod.best(items) if tab == "keywords"
+                        else None),
+            demand=(demand_mod.score(
+                args.get("demand").strip(),
+                demand_mod.suggestions(args.get("demand").strip()), items)
+                if tab == "keywords" and (args.get("demand") or "").strip()
+                else None),
             ranked=(insights.rank_channels(items) if tab == "channels"
                     else []),
             analysis=(_analysis(items, args.get("v")) if tab == "analyze"
@@ -932,6 +945,26 @@ def create_app(cfg) -> Flask:
         return _research_back("outliers", msg=(
             f"{res['dated']} of {res['looked_up']} videos dated "
             f"({res['units']} API units used)"))
+
+    @app.post("/research/trending")
+    def research_trending():
+        """What is being watched now for a phrase (about 101 API units);
+        the result is kept for the Trending tab."""
+        query = (request.form.get("q") or "").strip()
+        if not query:
+            return _research_back("trending", error="Enter a phrase")
+        try:
+            days = int(request.form.get("days") or 7)
+        except ValueError:
+            days = 7
+        try:
+            videos = youtube_api.trending(youtube_api.Client(cfg), query,
+                                          days)
+        except youtube_api.ApiError as exc:
+            return _research_back("trending", error=str(exc))
+        trending_mod.save(cfg, query, days, videos)
+        return _research_back("trending", msg=f"{len(videos)} videos found "
+                                              "(about 101 API units used)")
 
     @app.post("/research/discover")
     def research_discover():

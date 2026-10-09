@@ -117,6 +117,28 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(Image.open(out).size, (1280, 720))
 
 
+class SimilarityTests(unittest.TestCase):
+    def test_alike_pictures_rank_first(self):
+        import tempfile
+        from PIL import Image, ImageDraw
+        with tempfile.TemporaryDirectory() as d:
+            def make(name, bg, box):
+                im = Image.new("RGB", (320, 180), bg)
+                ImageDraw.Draw(im).rectangle(box, fill=(250, 250, 250))
+                p = Path(d) / name
+                im.save(p)
+                return str(p)
+            ref = make("ref.png", (200, 30, 30), (200, 20, 300, 160))
+            near = make("near.png", (210, 40, 35), (190, 25, 295, 150))
+            far = make("far.png", (20, 40, 200), (10, 20, 100, 160))
+            self.assertGreater(th.visual_similarity(ref, near),
+                               th.visual_similarity(ref, far))
+            self.assertEqual(th.rank_by_similarity([far, near], ref),
+                             [near, far])
+            self.assertEqual(th.rank_by_similarity(
+                [str(Path(d) / "missing.png"), near], ref)[0], near)
+
+
 class PhoneMetricsTests(unittest.TestCase):
     def test_flat_grey_warns_and_punchy_image_does_not(self):
         import tempfile

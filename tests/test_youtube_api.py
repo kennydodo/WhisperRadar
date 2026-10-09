@@ -128,6 +128,29 @@ class CallTests(Base):
         self.assertEqual(got["v5"]["duration"], 600)
         self.assertEqual(got["v5"]["view_count"], 1000)
 
+    def test_trending_ranks_by_views_per_hour(self):
+        import datetime as dt
+        now = dt.datetime(2026, 10, 9, 12, tzinfo=dt.timezone.utc)
+
+        def answer(url):
+            if "/search" in url:
+                self.assertIn("publishedAfter=2026-10-02", url)
+                self.assertIn("order=viewCount", url)
+                return {"items": [
+                    {"id": {"videoId": "old"}, "snippet": {"channelTitle": "A"}},
+                    {"id": {"videoId": "new"}, "snippet": {"channelTitle": "B"}}]}
+            return {"items": [
+                {"id": "old", "snippet": {"title": "Old", "channelId": "C1",
+                 "publishedAt": "2026-10-02T12:00:00Z"},
+                 "statistics": {"viewCount": "7000"}},
+                {"id": "new", "snippet": {"title": "New", "channelId": "C2",
+                 "publishedAt": "2026-10-09T00:00:00Z"},
+                 "statistics": {"viewCount": "6000"}}]}
+        got = ya.trending(ya.Client(self.cfg, http=Fake(answer)), "q", 7, now=now)
+        self.assertEqual([v["video_id"] for v in got], ["new", "old"])
+        self.assertEqual(got[0]["vph"], 500.0)
+        self.assertEqual(got[0]["channel_name"], "B")
+
     def test_fill_missing_dates_videos_and_records_snapshots(self):
         db.add_channel(self.conn, "Chan", "UC1", genre="g")
         db.upsert_videos(self.conn, "UC1", [

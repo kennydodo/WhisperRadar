@@ -92,6 +92,7 @@
     <a href="/research?tab=topics{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'topics' else '' }}">Topics</a>
     <a href="/research?tab=keywords{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'keywords' else '' }}">Keywords</a>
     <a href="/research?tab=channels{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'channels' else '' }}">Channels</a>
+    <a href="/research?tab=trending{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'trending' else '' }}">Trending</a>
     <a href="/research?tab=analyze{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'analyze' else '' }}">Analyze</a>
   </div>
 
@@ -106,6 +107,22 @@
   {% endif %}
   {% if tab == 'keywords' %}
   <div class="panel"><div class="note" style="margin:0">Words and word pairs that appear in outlier titles (3x or more) far more often than in all titles. <b>lift</b> 2.0 means twice as common. Click a word to see its videos.</div></div>
+  <div class="panel">
+    <form method="get" action="/research" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="hidden" name="tab" value="keywords">
+      <label>Keyword demand <input type="search" name="demand" value="{{ demand.phrase if demand else '' }}" placeholder="a phrase, e.g. coin jar"></label>
+      <button type="submit">Check</button>
+    </form>
+    {% if demand %}<div class="note" style="margin-top:8px"><b>{{ demand.label }}</b> ({{ demand.score }}/100) &middot;
+      {{ demand.outlier_titles }} winning title(s) and {{ demand.all_titles }} title(s) name it &middot;
+      {% if demand.suggestions %}YouTube suggests: {{ demand.suggestions[:8]|join(', ') }}{% else %}no autocomplete suggestions (offline or unknown phrase){% endif %}
+      <div class="muted">{{ demand.note }}</div></div>{% endif %}
+  </div>
+  {% if post_times %}<div class="panel"><div class="note" style="margin:0"><b>Best time to post</b> (from our tracked videos)
+    {% if post_times.ready %}<br>
+    Day: {% for s in post_times.weekday %}{{ s.label }} {{ s.median }}x ({{ s.videos }}){% if not loop.last %}, {% endif %}{% endfor %}
+    <br>Hour: {% for s in post_times.hour %}{{ s.label }} {{ s.median }}x ({{ s.videos }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+    <div class="muted">{{ post_times.note }}</div></div></div>{% endif %}
   {% if kw %}<div class="panel" style="padding:0"><table>
     <thead><tr><th>word / phrase</th><th class="num">lift</th><th class="num">in outliers</th><th class="num hide-sm">in all</th><th class="hide-sm">example</th></tr></thead><tbody>
     {% for k in kw %}<tr><td class="title"><a href="/research?q={{ k.term|urlencode }}&mult=3">{{ k.term }}</a></td>
@@ -113,6 +130,23 @@
       <td class="hide-sm muted" style="font-size:12px">{{ k.example }}</td></tr>{% endfor %}
     </tbody></table></div>
   {% else %}<div class="panel muted">Not enough outliers yet to find patterns (needs at least 3 outliers and terms that repeat 5+ times).</div>{% endif %}
+  {% elif tab == 'trending' %}
+  <div class="panel">
+    <form method="post" action="/research/trending" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label>phrase <input type="text" name="q" value="{{ trend_feed.query }}" placeholder="e.g. japanese home habits"></label>
+      <label>last <select name="days">{% for d in [3, 7, 14, 30] %}<option value="{{ d }}" {{ 'selected' if trend_feed.days == d else '' }}>{{ d }} days</option>{% endfor %}</select></label>
+      <button type="submit">Find what is being watched</button>
+    </form>
+    <div class="note">Costs about 101 YouTube API units per search. The result is kept below, so reloading is free. Ranked by views per hour since upload.</div>
+  </div>
+  {% if trend_feed.videos %}<div class="panel" style="padding:0"><table>
+    <thead><tr><th></th><th>video</th><th class="num">views</th><th class="num">views / hour</th><th class="num hide-sm">age</th></tr></thead><tbody>
+    {% for v in trend_feed.videos %}<tr>
+      <td><a href="{{ v.url }}" target="_blank" rel="noopener"><img class="th" loading="lazy" src="{{ v.thumb }}" alt=""></a></td>
+      <td><div class="title"><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a></div><div class="muted" style="font-size:12px">{{ v.channel_name }}</div></td>
+      <td class="num">{{ fmt_views(v.views) }}</td><td class="num">{{ fmt_views(v.vph) }}</td>
+      <td class="num hide-sm muted">{{ (v.published_at or '')[:10] }}</td></tr>{% endfor %}
+    </tbody></table></div>{% endif %}
   {% elif tab == 'analyze' %}
   <div class="panel">
     <form class="filters" method="get" action="/research">

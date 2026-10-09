@@ -19,8 +19,8 @@ WINDOW = 30                # previous uploads that define a channel's norm
 MIN_BASELINE = 5           # fewer comparison videos than this = no verdict
 SHORT_SECONDS = 61         # <= this is a Short (when the duration is known)
 
-SORTS = ("multiplier", "views", "vpd", "recent", "momentum", "title",
-         "channel")
+SORTS = ("multiplier", "views", "vpd", "vph", "breakout", "recent",
+         "momentum", "title", "channel")
 MOMENTUM_MIN_HOURS = 12        # snapshots closer than this say nothing
 MOMENTUM_WINDOW_DAYS = 7
 RISING, COOLING = 1.5, 0.5     # momentum vs the video's own lifetime pace

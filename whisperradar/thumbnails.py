@@ -986,7 +986,7 @@ def fetch_inspiration(cfg, pid: int, log=print, opener=None) -> list[dict]:
     d = thumbs_dir(studio.prod_dir(cfg, pid)) / INSPIRATION_DIR
     d.mkdir(parents=True, exist_ok=True)
     got = []
-    for it in inspiration_items(cfg, pid):
+    for it in inspiration_items(cfg, pid, limit=INSPIRATION_POOL):
         target = d / f"{it['id']}.jpg"
         if not target.is_file():
             for name in ("maxresdefault", "hqdefault"):
@@ -1015,6 +1015,52 @@ def inspiration_files(pdir) -> list[str]:
 INSPIRATION_MAX = 6
 
 
+def _signature(path):
+    """A small visual fingerprint: a coarse colour histogram and a 9x8
+    difference hash of the layout. Local, no model."""
+    from PIL import Image
+    im = Image.open(path).convert("RGB")
+    small = im.resize((32, 18))
+    hist = [0.0] * 64
+    raw = small.tobytes()
+    for k in range(0, len(raw), 3):
+        r, g, b = raw[k], raw[k + 1], raw[k + 2]
+        hist[(r // 64) * 16 + (g // 64) * 4 + (b // 64)] += 1
+    total = sum(hist) or 1
+    hist = [h / total for h in hist]
+    g = im.convert("L").resize((9, 8))
+    px = list(g.tobytes())
+    bits = [1 if px[y * 9 + x] > px[y * 9 + x + 1] else 0
+            for y in range(8) for x in range(8)]
+    return hist, bits
+
+
+def visual_similarity(path_a, path_b) -> float:
+    """0 (nothing alike) .. 1 (the same picture) - palette overlap blended
+    with layout (edge pattern) agreement."""
+    ha, ba = _signature(path_a)
+    hb, bb = _signature(path_b)
+    palette = sum(min(x, y) for x, y in zip(ha, hb))
+    layout = sum(1 for x, y in zip(ba, bb) if x == y) / len(ba)
+    return round(0.6 * palette + 0.4 * layout, 4)
+
+
+def rank_by_similarity(paths: list[str], reference: str) -> list[str]:
+    """`paths` ordered by how much they look like `reference` (most alike
+    first). A file that cannot be read goes last."""
+    scored = []
+    for p in paths:
+        try:
+            scored.append((visual_similarity(reference, p), p))
+        except Exception:  # noqa: BLE001
+            scored.append((-1.0, p))
+    scored.sort(key=lambda t: -t[0])
+    return [p for _s, p in scored]
+
+
+INSPIRATION_POOL = 12
+
+
 def inspiration_paths(cfg, pid: int) -> list[str]:
     """Local inspiration thumbnail paths already on disk, the SOURCE video's
     first, then the top outliers - the set the concept writer is shown as
@@ -1023,13 +1069,19 @@ def inspiration_paths(cfg, pid: int) -> list[str]:
     from . import studio
     pdir = studio.prod_dir(cfg, pid)
     d = thumbs_dir(pdir) / INSPIRATION_DIR
-    items = inspiration_items(cfg, pid)
-    paths, seen = [], set()
+    items = inspiration_items(cfg, pid, limit=INSPIRATION_POOL)
+    source, pool, seen = None, [], set()
     for it in items:                       # source first, then outliers
         p = d / f"{it['id']}.jpg"
-        if p.is_file() and it["id"] not in seen:
-            paths.append(str(p))
-            seen.add(it["id"])
-        if len(paths) >= INSPIRATION_MAX:
-            break
-    return paths
+        if not p.is_file() or it["id"] in seen:
+            continue
+        seen.add(it["id"])
+        if it.get("source") and source is None:
+            source = str(p)
+        else:
+            pool.append(str(p))
+    # the writer sees the winners that look most like the original
+    if source and len(pool) > 1:
+        pool = rank_by_similarity(pool, source)
+    return ([source] if source else []) + pool[:INSPIRATION_MAX
+                                              - (1 if source else 0)]

@@ -257,6 +257,49 @@ def fill_missing(cfg, conn, client: Client | None = None,
             "units": quota_used(cfg) - before}
 
 
+def trending(client: Client, query: str, days: int = 7,
+             max_results: int = 25, now=None) -> list[dict]:
+    """The most-viewed videos for `query` published in the last `days` days,
+    with views per hour since upload. Costs 100 (search) + 1 (details)."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    days = max(1, min(int(days), 60))
+    after = (now - _dt.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data = client.call("search", part="snippet", q=query, type="video",
+                       order="viewCount", publishedAfter=after,
+                       maxResults=min(50, max(1, int(max_results))),
+                       relevanceLanguage="en")
+    names = {}
+    for item in data.get("items", []):
+        vid = item.get("id", {}).get("videoId")
+        if vid:
+            names[vid] = item.get("snippet", {}).get("channelTitle", "")
+    details = video_details(client, list(names))
+    out = []
+    for vid, d in details.items():
+        when = None
+        if d.get("published_at"):
+            try:
+                when = _dt.datetime.fromisoformat(
+                    d["published_at"].replace("Z", "+00:00"))
+            except ValueError:
+                when = None
+        hours = (max((now - when).total_seconds() / 3600.0, 1.0)
+                 if when else None)
+        views = d.get("view_count")
+        out.append({"video_id": vid, "title": d["title"],
+                    "channel_id": d["channel_id"],
+                    "channel_name": names.get(vid, ""),
+                    "published_at": d.get("published_at"),
+                    "duration": d.get("duration"), "views": views,
+                    "vph": (round(views / hours, 1)
+                            if views is not None and hours else None),
+                    "url": f"https://www.youtube.com/watch?v={vid}",
+                    "thumb": f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg"})
+    out.sort(key=lambda v: -(v["vph"] or 0))
+    return out
+
+
 def discover_channels(client: Client, query: str, watched: set[str],
                       max_results: int = 25, min_subs: int = 0,
                       max_subs: int | None = None) -> list[dict]:

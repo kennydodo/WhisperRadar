@@ -83,6 +83,38 @@ class PageTests(unittest.TestCase):
     def get(self, qs=""):
         return self.client.get("/research?" + qs).get_data(as_text=True)
 
+    def test_new_sorts_are_accepted_by_the_page(self):
+        for key in ("vph", "breakout"):
+            html = self.get(f"sort={key}")
+            self.assertIn(f'<option value="{key}" selected', html)
+        self.assertIn("search like a niche", self.get(""))
+
+    def test_keywords_tab_shows_demand_and_timing(self):
+        from unittest import mock
+        with mock.patch("whisperradar.demand.suggestions",
+                        return_value=["hit", "hit two"]):
+            html = self.get("tab=keywords&demand=hit")
+        self.assertIn("Keyword demand", html)
+        self.assertIn("YouTube suggests: hit, hit two", html)
+        self.assertIn("Best time to post", html)
+
+    def test_trending_tab_saves_and_shows_the_feed(self):
+        from unittest import mock
+        vids = [{"video_id": "t1", "title": "Hot take", "channel_id": "C",
+                 "channel_name": "Chan", "published_at": "2026-10-08T00:00:00Z",
+                 "duration": 600, "views": 5000, "vph": 250.0,
+                 "url": "https://www.youtube.com/watch?v=t1",
+                 "thumb": "https://i.ytimg.com/vi/t1/mqdefault.jpg"}]
+        with mock.patch("whisperradar.youtube_api.Client"), \
+                mock.patch("whisperradar.youtube_api.trending",
+                           return_value=vids):
+            r = self.client.post("/research/trending",
+                                 data={"q": "habits", "days": "7"})
+        self.assertEqual(r.status_code, 302)
+        html = self.get("tab=trending")
+        self.assertIn("Hot take", html)
+        self.assertIn('value="habits"', html)
+
     def test_pages_and_per_page(self):
         html = self.get("per=25")
         self.assertIn("page 1 of 2", html)
