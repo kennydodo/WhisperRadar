@@ -78,6 +78,25 @@
   {% endif %}
 </div>
 <script>
+(function () {
+  // remember the last web chat picked here (and the frame count)
+  var K = 'wrwc:look';
+  var site = document.querySelector('select[name=site]');
+  var fr = document.querySelector('input[name=frames]');
+  if (!site) return;
+  try {
+    var o = JSON.parse(localStorage.getItem(K) || '{}') || {};
+    if (o.site && [].some.call(site.options, function (op) { return op.value === o.site; }))
+      site.value = o.site;
+    if (o.frames && fr) fr.value = o.frames;
+  } catch (e) {}
+  function save() {
+    try { localStorage.setItem(K, JSON.stringify({site: site.value, frames: fr && fr.value})); } catch (e) {}
+  }
+  site.addEventListener('change', save);
+  if (fr) fr.addEventListener('change', save);
+  site.form.addEventListener('submit', save);
+})();
 function cp(id){ navigator.clipboard.writeText(document.getElementById(id).textContent); }
 </script>
 </body>
