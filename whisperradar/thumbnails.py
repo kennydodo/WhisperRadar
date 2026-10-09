@@ -11,6 +11,7 @@ or an image engine. The engine call mirrors how the reference images are made
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import tempfile
@@ -44,6 +45,11 @@ LAYOUTS = {
     "host": "the host alone",
 }
 POSITIONS = ("left", "right", "top", "bottom")
+# Hand-drawn attention devices the composer draws over the art (a YouTube
+# thumbnail staple: a red ellipse around the focal object, an arrow pointing
+# at it, or a brush underline under the words).
+EMPHASES = ("none", "ellipse", "arrow", "underline")
+EMPHASIS_RGB = (229, 49, 43)          # the bold red these devices use
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 _LAYOUT_ART = {
@@ -122,12 +128,14 @@ def parse_concepts(raw) -> list[dict]:
         if not prompt:
             continue
         pos = str(it.get("text_pos") or "").strip().lower()
+        emph = str(it.get("emphasis") or "").strip().lower()
         out.append({
             "id": f"c{len(out) + 1}", "layout": layout,
             "text": clean_text(it.get("text")),
             "text_pos": pos if pos in POSITIONS else "left",
             "text_color": _color(it.get("text_color"), "#FFFFFF"),
             "accent": _color(it.get("accent"), "#FFD400"),
+            "emphasis": emph if emph in EMPHASES else "none",
             "art_prompt": prompt,
             "idea": str(it.get("idea") or "").strip()[:200],
             "art_file": "", "final": "",
@@ -188,6 +196,8 @@ _RULES = f"""Thumbnail rules:
 - The words add to the title, they never repeat it: at most {TEXT_MAX_WORDS} words, short and catchy, a curiosity gap, a number or a reaction (e.g. "NOBODY KNEW", "WAIT, WHAT?").
 - Three layouts exist: "character_host" (the character and the human host together), "character" (the character alone) and "host" (the host alone). Mix them across the concepts.
 - Leave clear empty space on the side where the text goes (text_pos). The image itself has NO text, letters or logos - the words are added afterwards.
+- Make it FEEL like a YouTube thumbnail, not a calm illustration: one bold subject, a strong expression or emotion on the face, punchy saturated colour and dramatic light, high contrast - it has to read at phone size.
+- emphasis is a hand-drawn attention device the tool draws AFTER the art: "ellipse" (a bold red circle round the focal object), "arrow" (a red arrow pointing at it) or "underline" (a red brush stroke under the words); use "none" if it would clutter. When you pick one, say in art_prompt exactly what to circle or point at.
 - art_prompt must describe the whole picture on its own (who, expression, pose, background, lighting, colours) in the channel's art style, in under 500 characters. Describe the character and host from the descriptions given; do not assume the image tool knows them."""
 
 
@@ -230,12 +240,12 @@ THUMBNAILS THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (titles only - learn the
 {_RULES}
 
 Reply with ONE JSON object and nothing else:
-{{"concepts": [{{"layout": "character_host|character|host", "text": "2-4 words", "text_pos": "left|right|top|bottom", "text_color": "#FFFFFF", "accent": "#FFD400", "art_prompt": "...", "idea": "one line: why this one gets the click"}}, ...]}}"""
+{{"concepts": [{{"layout": "character_host|character|host", "text": "2-4 words", "text_pos": "left|right|top|bottom", "text_color": "#FFFFFF", "accent": "#FFD400", "emphasis": "none|ellipse|arrow|underline", "art_prompt": "...", "idea": "one line: why this one gets the click"}}, ...]}}"""
 
 
 def _concepts_json(concepts: list[dict]) -> str:
     keep = ("layout", "text", "text_pos", "text_color", "accent",
-            "art_prompt", "idea")
+            "emphasis", "art_prompt", "idea")
     return json.dumps({"concepts": [{k: c[k] for k in keep}
                                     for c in concepts]},
                       ensure_ascii=False, indent=1)
@@ -655,12 +665,62 @@ def _wrap(draw, text: str, font, max_w: int) -> list[str]:
     return best[1]
 
 
+def _rough_ellipse(draw, cx, cy, rx, ry, color, width=9):
+    """A hand-drawn double-stroke ellipse (the red 'look here' circle)."""
+    for k, (jit, wmul) in enumerate(((1.0, 1.0), (-0.7, 0.6))):
+        pts = []
+        n = 90
+        for i in range(n + 1):
+            a = 2 * math.pi * i / n
+            d = jit * rx * 0.035 * math.sin(a * 6 + k * 1.7)
+            pts.append((cx + (rx + d) * math.cos(a),
+                        cy + (ry + d) * math.sin(a)))
+        draw.line(pts, fill=color, width=max(3, int(width * wmul)),
+                  joint="curve")
+
+
+def _brush_underline(draw, x, w, y, size):
+    """A slightly tapered brush stroke under the accent line."""
+    t = max(6, size // 7)
+    draw.line([(x, y), (x + w, y)], fill=EMPHASIS_RGB, width=t)
+    draw.line([(x + w * 0.06, y + t * 0.6), (x + w * 0.96, y + t * 0.6)],
+              fill=EMPHASIS_RGB, width=max(3, t // 2))
+
+
+def _emphasis(draw, concept: dict):
+    """The hand-drawn attention device (ellipse / arrow) on the side opposite
+    the text. 'underline' is drawn by the caller (it needs the text position)."""
+    kind = concept.get("emphasis") or "none"
+    if kind not in ("ellipse", "arrow"):
+        return
+    pos = concept.get("text_pos") or "left"
+    if kind == "ellipse":
+        if pos in ("left", "right"):
+            cx, cy = W * (0.72 if pos == "left" else 0.28), H * 0.52
+        else:
+            cx, cy = W * 0.5, H * (0.72 if pos == "top" else 0.28)
+        _rough_ellipse(draw, cx, cy, W * 0.21, H * 0.36, EMPHASIS_RGB)
+    else:                                    # a short curved arrow into the focal area
+        if pos in ("left", "right"):
+            ax, ay = W * (0.30 if pos == "left" else 0.70), H * 0.5
+        else:
+            ax, ay = W * 0.5, H * (0.30 if pos == "top" else 0.70)
+        wdt = max(5, H // 90)
+        draw.line([(ax - W * 0.10, ay + H * 0.14), (ax - W * 0.02, ay + H * 0.02),
+                   (ax + W * 0.05, ay - H * 0.06)], fill=EMPHASIS_RGB,
+                  width=wdt, joint="curve")
+        hx, hy = ax + W * 0.05, ay - H * 0.06
+        draw.polygon([(hx, hy), (hx - W * 0.045, hy + H * 0.015),
+                      (hx - W * 0.012, hy + H * 0.06)], fill=EMPHASIS_RGB)
+
+
 def compose(art_path, concept: dict, out_path) -> Path:
     """The final 1280x720 JPEG: the art covered to size, a soft dark
     gradient behind the words, the words big with a black outline (the
     second line in the accent colour). Under 2 MB."""
     from PIL import Image, ImageDraw
     img = _cover(Image.open(art_path), W, H)
+    draw = ImageDraw.Draw(img)          # also for the no-text + emphasis path
     pos = concept.get("text_pos") or "left"
     text = (concept.get("text") or "").upper()
     if text:
@@ -707,6 +767,13 @@ def compose(art_path, concept: dict, out_path) -> Path:
             draw.text((x, y0 + i * size * 1.05), line, font=font,
                       fill=accent if (i == 1 and len(lines) > 1) else main,
                       stroke_width=stroke, stroke_fill=(0, 0, 0))
+        if concept.get("emphasis") == "underline":
+            _brush_underline(draw, x, lw, y0 + (len(lines) - 1) * size * 1.05
+                             + size * 1.02, size)
+        else:
+            _emphasis(draw, concept)
+    else:
+        _emphasis(draw, concept)
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     for quality in (92, 85, 78, 70, 60):
