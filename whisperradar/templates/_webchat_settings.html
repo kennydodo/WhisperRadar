@@ -26,7 +26,8 @@
         + '<input placeholder="Chat address (https://chatgpt.com/)" data-i="' + i + '" data-f="url" value="' + wcEsc(s.url) + '" style="flex:1;min-width:260px">'
         + (s.key ? '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/login" class="secondary">Sign in</button>'
                    + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/models" class="secondary" title="Opens the site and reads its model menu">Find models</button>'
-                   + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/test" class="secondary">Test</button>' : '')
+                   + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/test" class="secondary">Test</button>'
+                   + '<button type="submit" formaction="/settings/webchat-sites/' + encodeURIComponent(s.key) + '/diagnose" class="secondary" title="Saves a report + screenshots of what this site\'s page looks like to the automation (data/webchat/diag/' + wcEsc(s.key) + ')">Diagnose</button>' : '')
         + '<button type="button" onclick="wcRemove(' + i + ')">remove</button></div>'
         + (s.key ? '<div class="muted" style="font-size:12px;margin-top:6px">Models: ' + ((s.models || []).length ? wcEsc(s.models.map(function (m) { return m.label; }).join(', ')) : 'not read yet - press Find models after signing in') + '</div>' : '')
         + '</div>';

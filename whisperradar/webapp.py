@@ -1311,6 +1311,30 @@ def create_app(cfg) -> Flask:
         return redirect("/settings?tab=Web+chat+LLMs&msg=" + quote(
             f"Reading the models of {name} - reload this page in a moment"))
 
+    @app.post("/settings/webchat-sites/<key>/diagnose")
+    def settings_webchat_site_diagnose(key):
+        """Save a report (and screenshots) of what the signed-in page looks
+        like to the automation: box, buttons, send button, model pickers."""
+        tab = "/settings?tab=Web+chat+LLMs"
+        if key not in webchat.SITES:
+            return redirect(tab + "&error=Unknown+site")
+        if sjob.running:
+            return redirect(tab + "&error=" + quote("A job is already running"))
+        name = webchat.SITES[key].name
+        out = Path(cfg.db_path).parent / "webchat" / "diag" / key
+
+        def worker():
+            sjob.log.append(f"diagnosing {name} - a browser window opens")
+            with webstages.web_transport(cfg, sjob.log.append) as transport:
+                text = transport.chat.diagnose(key)
+            for line in text.splitlines():
+                sjob.log.append(line)
+            sjob.log.append(f"report and screenshots saved in {out}")
+
+        sjob.start(worker, f"diagnose ({name})")
+        return redirect(tab + "&msg=" + quote(
+            f"Diagnosing {name} - the report is saved in {out}"))
+
     @app.post("/settings/webchat-sites/<key>/test")
     def settings_webchat_site_test(key):
         """Open the site, ask it for one word, and read its models if they are

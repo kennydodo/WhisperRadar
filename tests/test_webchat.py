@@ -44,7 +44,7 @@ class FakePage:
         self.prepared = False
 
     # Playwright-ish surface
-    def goto(self, url):
+    def goto(self, url, **kw):
         self.visited = url
 
     def wait_for_timeout(self, ms):
@@ -775,3 +775,42 @@ class StaleReplyTests(unittest.TestCase):
         with self.assertRaises(wc.WebChatTimeout) as cm:
             wc.ask(page, wc.ZAI, "faults", clock=clk, start_wait=30)
         self.assertIn("did not start answering", str(cm.exception))
+
+
+class PressSendTests(unittest.TestCase):
+    """The send button may enable a moment after a big paste; with none at
+    all, Enter in the box is the fallback."""
+
+    class Page:
+        def __init__(self, enable_after=None):
+            self.calls, self.enable_after = 0, enable_after
+            self.keys, self.waited = [], 0
+            self.keyboard = self
+
+        def press(self, k):
+            self.keys.append(k)
+
+        def wait_for_timeout(self, ms):
+            self.waited += ms
+
+        def evaluate(self, js, arg=None):
+            if js == "SEND":
+                self.calls += 1
+                return (self.enable_after is not None
+                        and self.calls > self.enable_after)
+            return None
+
+    def site(self):
+        return wc.Site(key="x", name="X", url="https://x/", box="textarea",
+                       reply=".r", send_js="SEND",
+                       generating_js="() => false", login_url_part=("login",))
+
+    def test_waits_for_the_button_to_enable(self):
+        pg = self.Page(enable_after=5)
+        self.assertEqual(wc._press_send(pg, self.site(), print), "button")
+        self.assertEqual(pg.keys, [])
+
+    def test_presses_enter_when_there_is_no_button(self):
+        pg = self.Page(enable_after=None)
+        self.assertEqual(wc._press_send(pg, self.site(), print), "enter")
+        self.assertEqual(pg.keys, ["Enter"])

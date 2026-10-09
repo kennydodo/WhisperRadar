@@ -1634,3 +1634,8 @@ a new reply (count up, generating, or text different from the text before the se
 - Reply is split on `=== STYLE GUIDE ===` / `=== BIBLE ===`; saved to `data/channel_look/<channel_id>/{style.md,bible.md,meta.json,frames/}`. It stays with the WATCHED channel; nothing is copied into own channels (user copies by hand from the page).
 - Routes live in `look_routes.py` (one `register` call at the end of `create_app`), so merging with other webapp.py work is trivial. Tests: tests/test_channel_look.py.
 - Not yet verified live (real yt-dlp download + a real image chat). Possible follow-up: "Apply to my channel" copy button.
+
+## Web chat probing (2026-10-09)
+- `webchat.diagnose(key)` / Settings > Web chat LLMs > **Diagnose** (or `python -m whisperradar.webchat diagnose <site>`, with no app window open on that profile): saves `data/webchat/diag/<key>/report.txt` + screenshots - prompt box element, buttons around it, which button "send" WOULD click after typing, every model-picker candidate with the raw menu rows (before the model-name filter) and a screenshot of each. Read this first when a site's model menu/send fails instead of guessing selectors.
+- Page loads use `_goto` (`wait_until=domcontentloaded`, 60 s): Qwen never fires `load` within 30 s (Find models failed with `Page.goto Timeout`).
+- Sending: `_press_send` waits up to ~12 s for the send button to exist/enable after a big paste (Claude judge: "could not find the send button"), then presses Enter in the box; the error now lists the buttons near the box.

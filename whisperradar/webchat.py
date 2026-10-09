@@ -359,7 +359,8 @@ _DETECT_ONE_JS = r"""async (a) => {
   }
   window.open = _open;
   const ok = labels.length >= 2 && labels.some(modelishRow);
-  return {items: ok ? labels : [], moved: location.href !== orig}; }"""
+  return {items: ok ? labels : [], all: labels,
+          moved: location.href !== orig}; }"""
 
 _TOGGLE_JS = """(a) => {
   const want = a.text.trim().toLowerCase();
@@ -861,7 +862,7 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         _busy(page, site)          # mark any banner already on the page
         start_wait = min(start_wait, 30.0)
     elif new_chat:
-        page.goto(site.url)
+        _goto(page, site.url)
     _wait_for_box(page, site, clock)
     if site.stream:
         page.evaluate(_CAPTURE_JS)         # no-op when already hooked
@@ -901,8 +902,11 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         # turned into a stop button would cancel the answer.
         peak = None
         for attempt in (1, 2, 3):
-            if not page.evaluate(site.send_js):
-                raise WebChatError(f"{site.name}: could not find the send button")
+            how = _press_send(page, site, log)
+            if not how:
+                raise WebChatError(
+                    f"{site.name}: could not find the send button - "
+                    + _composer_report(page, site))
             took = False
             for _ in range(30):
                 page.wait_for_timeout(1000)
@@ -1015,6 +1019,61 @@ _BOX_THERE_JS = """(s) => {
   return [...document.querySelectorAll(s)].some(
       e => { const b = e.getBoundingClientRect();
              return b.width > 0 || b.height > 0; }); }"""
+
+
+
+def _goto(page, url, wait: float = 60.0) -> None:
+    """Open a page and return once its HTML is there. Playwright's default
+    waits for the `load` event, which chat sites with endless analytics /
+    streaming requests (Qwen) never fire within 30 s - the box check after it
+    already waits for the real thing."""
+    page.goto(url, wait_until="domcontentloaded", timeout=int(wait * 1000))
+
+
+
+def _press_send(page, site: Site, log, wait: float = 12.0) -> str:
+    """Click the send button; '' when there is none. The button is often
+    disabled for a moment after a big paste (the page's framework has not seen
+    the text yet), so look again for a while before giving up, and as a last
+    resort press Enter in the box (every chat site sends on Enter)."""
+    for _ in range(max(1, int(wait / 0.5))):
+        if page.evaluate(site.send_js):
+            return "button"
+        page.wait_for_timeout(500)
+    try:
+        page.evaluate("""(sel) => { const l = [...document.querySelectorAll(sel)];
+            const e = l.find(x => x.getBoundingClientRect().width > 0) || l[0];
+            if (e) e.focus(); }""", site.box)
+        page.keyboard.press("Enter")
+    except Exception:  # noqa: BLE001
+        return ""
+    log(f"{site.name}: no send button found - pressed Enter in the box")
+    return "enter"
+
+
+_COMPOSER_JS = r"""(sel) => {
+  const list = [...document.querySelectorAll(sel)];
+  const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0]
+             || null;
+  let scope = document;
+  if (ta) scope = ta.closest('form') || (ta.parentElement && ta.parentElement
+      .parentElement && ta.parentElement.parentElement.parentElement) || document;
+  return [...scope.querySelectorAll('button,[role=button]')].slice(0, 14)
+    .map(b => (b.getAttribute('aria-label') || b.getAttribute('data-testid')
+               || (b.innerText || '').trim() || b.tagName).slice(0, 30)
+         + (b.disabled || b.getAttribute('aria-disabled') === 'true'
+            ? ' (disabled)' : '')); }"""
+
+
+def _composer_report(page, site: Site) -> str:
+    """What buttons sit around the prompt box - for the 'no send button' error,
+    so the log shows why (all disabled? a limit banner? a different layout?)."""
+    try:
+        names = page.evaluate(_COMPOSER_JS, site.box) or []
+    except Exception:  # noqa: BLE001
+        names = []
+    return ("buttons near the box: " + "; ".join(names)) if names \
+        else "no buttons near the box"
 
 
 def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
@@ -1264,14 +1323,14 @@ def open_sign_in_window(key: str, profile_root) -> None:
                     pg.bring_to_front()
                     return
             pg = ctx.new_page()
-            pg.goto(site.url)
+            _goto(pg, site.url)
             pg.bring_to_front()
         return
     with sync_playwright() as pw:
         ctx = launch_persistent(pw, site, profile_root)
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         try:
-            page.goto(site.url)
+            _goto(page, site.url)
         except Exception:  # noqa: BLE001 - the window shows whatever loaded
             pass
         page.bring_to_front()
@@ -1366,7 +1425,7 @@ class WebChat:
         and one menu left open makes every later candidate click a no-op."""
         page, site = self._page(key), SITES[key]
         for attempt in range(3):               # headers fill their name late
-            page.goto(site.url)
+            _goto(page, site.url)
             _wait_for_box(page, site, time.monotonic)
             page.wait_for_timeout(1500 + 2000 * attempt)
             try:
@@ -1386,7 +1445,7 @@ class WebChat:
                     return {"open": c.get("open"), "current": c.get("current"),
                             "items": one["items"]}
                 if one.get("moved"):           # a click that navigated: back
-                    page.goto(site.url)
+                    _goto(page, site.url)
                     _wait_for_box(page, site, time.monotonic)
                     page.wait_for_timeout(1200)
                 else:
@@ -1420,7 +1479,7 @@ class WebChat:
             # was reloaded onto a blank page), go back to it first
             try:
                 if page.url.split("#")[0] != saved:
-                    page.goto(saved)
+                    _goto(page, saved)
             except Exception:  # noqa: BLE001
                 pass
         if not new_chat:
@@ -1478,7 +1537,7 @@ class WebChat:
         """Open the site and wait for YOU to sign in (never typed for you)."""
         page = self._page(key)
         site = SITES[key]
-        page.goto(site.url)
+        _goto(page, site.url)
         t0 = time.monotonic()
         while time.monotonic() - t0 < wait:
             url = str(page.url or "")
@@ -1488,12 +1547,96 @@ class WebChat:
             page.wait_for_timeout(1500)
         return False
 
+    def diagnose(self, key: str, out_dir=None) -> str:
+        """A full report of what the signed-in page looks like to the
+        automation: prompt box(es), the buttons around it, which one 'send'
+        would click (without clicking), every model-picker candidate with the
+        rows its menu shows (before any model-name filtering) and a
+        screenshot of each. Written to <profile root>/diag/<key>/report.txt -
+        one command instead of guessing selectors."""
+        page, site = self._page(key), SITES[key]
+        d = Path(out_dir or (self.root / "diag" / key))
+        d.mkdir(parents=True, exist_ok=True)
+        out: list[str] = []
+
+        def shot(name):
+            try:
+                page.screenshot(path=str(d / name))
+                out.append(f"  screenshot: {name}")
+            except Exception as exc:  # noqa: BLE001
+                out.append(f"  screenshot failed: {exc}"[:160])
+
+        t0 = time.monotonic()
+        try:
+            _goto(page, site.url)
+            _wait_for_box(page, site, time.monotonic, limit=40)
+            out.append(f"loaded in {time.monotonic() - t0:.1f}s: {page.url}")
+        except Exception as exc:  # noqa: BLE001
+            out.append(f"LOAD PROBLEM {type(exc).__name__}: {str(exc)[:200]}")
+        page.wait_for_timeout(2500)
+        out.append(f"title: {page.title()!r}")
+        shot("1-start.png")
+        out.append("prompt box selector: " + site.box)
+        out.append(page.evaluate(_BOX_REPORT_JS, site.box))
+        out.append("buttons around the box: " + "; ".join(
+            page.evaluate(_COMPOSER_JS, site.box) or ["(none)"]))
+        try:
+            page.evaluate(_PASTE_JS, {"box": site.box, "text": "hello"})
+            page.wait_for_timeout(800)
+            dry = site.send_js.replace(
+                "b.click(); return true;",
+                "return (b.getAttribute('aria-label') || b.innerText || "
+                "b.tagName) + ' | ' + b.outerHTML.slice(0, 220);")
+            if dry == site.send_js:
+                out.append("send button: (built-in site - not dry-run)")
+            else:
+                got = page.evaluate(dry)
+                out.append("send button WOULD BE: " + (
+                    str(got) if got else "NONE FOUND after typing 'hello'"))
+            shot("2-typed.png")
+        except Exception as exc:  # noqa: BLE001
+            out.append(f"typing test failed: {type(exc).__name__}: "
+                       f"{str(exc)[:160]}")
+        _goto(page, site.url)
+        _wait_for_box(page, site, time.monotonic, limit=40)
+        page.wait_for_timeout(2500)
+        listing = page.evaluate(_DETECT_MODELS_JS) or {}
+        cands = listing.get("cands") or []
+        out.append(f"model-picker candidates: {len(cands)}")
+        for i, c in enumerate(cands, 1):
+            out.append(f"  #{i} shows {c.get('current')!r} path={c.get('open')}")
+            out.append(f"     label: {c.get('text')!r}")
+            try:
+                one = page.evaluate(_DETECT_ONE_JS, {"open": c.get("open"),
+                                                     "current": c.get("current")})
+            except Exception as exc:  # noqa: BLE001
+                out.append(f"     click failed: {str(exc)[:140]}")
+                continue
+            out.append(f"     rows seen: {one.get('all')} -> accepted as "
+                       f"models: {one.get('items')}")
+            shot(f"3-candidate-{i}.png")
+            if one.get("moved"):
+                _goto(page, site.url)
+                _wait_for_box(page, site, time.monotonic, limit=40)
+                page.wait_for_timeout(1500)
+            else:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(500)
+        if not cands:
+            out.append("  (no button looked like a model picker - see "
+                       "1-start.png for what the page shows)")
+            out.append("all visible buttons: " + "; ".join(
+                page.evaluate(_ALL_BUTTONS_JS) or []))
+        text = "\n".join(out)
+        (d / "report.txt").write_text(text, encoding="utf-8")
+        return text
+
     def inspect(self, key: str) -> str:
         """Open the site and report its prompt box, its model-like buttons and
         what happens when each is clicked - so a site whose menu the auto
         -detection misses can be understood from the real, signed-in page."""
         page = self._page(key)
-        page.goto(SITES[key].url)
+        _goto(page, SITES[key].url)
         _wait_for_box(page, SITES[key], time.monotonic, limit=20)
         info = page.evaluate(_INSPECT_JS)
         out = [f"url: {page.url}",
@@ -1511,6 +1654,26 @@ class WebChat:
                            f"dialog={w['inDialog']} header={w['inHeader']}")
         return "\n".join(out)
 
+
+_BOX_REPORT_JS = r"""(sel) => [...document.querySelectorAll(sel)].slice(0, 6)
+  .map(e => { const r = e.getBoundingClientRect();
+    return '  box: <' + e.tagName.toLowerCase() + '> '
+      + (e.getAttribute('contenteditable') ? 'contenteditable ' : '')
+      + 'visible=' + (r.width > 0 && r.height > 0) + ' '
+      + Math.round(r.width) + 'x' + Math.round(r.height)
+      + ' placeholder=' + JSON.stringify((e.getAttribute('placeholder')
+        || e.getAttribute('data-placeholder') || '').slice(0, 40))
+      + ' id=' + (e.id || '') + ' class=' + (e.className || '').toString()
+        .slice(0, 50); }).join('\n') || '  (no element matches the box selector)'"""
+
+_ALL_BUTTONS_JS = r"""() => [...document.querySelectorAll(
+    'button,[role=button],[role=combobox],[aria-haspopup]')]
+  .filter(b => { const r = b.getBoundingClientRect();
+                 return r.width > 0 && r.height > 0; }).slice(0, 40)
+  .map(b => ((b.innerText || '').trim().split('\n')[0].slice(0, 28)
+    || b.getAttribute('aria-label') || b.getAttribute('data-testid')
+    || b.tagName) + (b.getAttribute('aria-haspopup')
+      ? '[popup=' + b.getAttribute('aria-haspopup') + ']' : ''))"""
 
 _INSPECT_JS = r"""() => {
   const vis = e => { const r = e.getBoundingClientRect();
@@ -1552,10 +1715,11 @@ _INSPECT_JS = r"""() => {
 
 def _main(argv: list[str]) -> int:
     from . import config
-    if len(argv) < 2 or argv[0] not in ("login", "ask", "inspect"):
+    if len(argv) < 2 or argv[0] not in ("login", "ask", "inspect", "diagnose"):
         print("usage: python -m whisperradar.webchat login <site>\n"
               "       python -m whisperradar.webchat ask <site> \"prompt\"\n"
-              "       python -m whisperradar.webchat inspect <site>")
+              "       python -m whisperradar.webchat inspect <site>\n"
+              "       python -m whisperradar.webchat diagnose <site>")
         return 2
     cfg = config.load_config()
     root = Path(cfg.db_path).parent / "webchat"
@@ -1581,6 +1745,18 @@ def _main(argv: list[str]) -> int:
             print(exc)
             return 1
         print("done - the sign-in is kept for runs.")
+        return 0
+    if argv[0] == "diagnose":
+        if argv[1] not in SITES:
+            print("unknown site: " + argv[1])
+            return 2
+        with WebChat(root) as chat:
+            try:
+                print(chat.diagnose(argv[1]))
+            except Exception as exc:  # noqa: BLE001
+                print(type(exc).__name__ + ": " + str(exc)[:300])
+                return 1
+        print("\nsaved in " + str(root / "diag" / argv[1]))
         return 0
     if argv[0] == "inspect":
         if argv[1] not in SITES:
