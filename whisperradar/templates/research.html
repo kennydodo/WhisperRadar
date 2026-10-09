@@ -184,12 +184,17 @@
     {% else %}<div class="panel muted">That video is not among the scored videos (it must belong to a watched channel and have a view count, and its channel needs 5+ other videos).</div>{% endif %}
   {% endif %}
   {% elif tab == 'channels' %}
+  <div class="panel"><form method="post" action="/research/channel-stats" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0">
+    <button type="submit">Snapshot channel sizes</button>
+    <span class="muted" style="font-size:12px">1 unit per 50 channels, at most one snapshot per channel a day. Two or more snapshots fill the <b>growing</b> column: subscribers per day over the window - rising channels get seen before their videos look like outliers.</span></form></div>
   {% if ranked %}<div class="panel" style="padding:0"><table>
-    <thead><tr><th>watched channel</th><th class="num">outliers (5x+)</th><th class="num hide-sm">of videos</th><th class="num">best</th><th class="num hide-sm">recent median</th><th class="num hide-sm">rising now</th></tr></thead><tbody>
+    <thead><tr><th>watched channel</th><th class="num">outliers (5x+)</th><th class="num hide-sm">of videos</th><th class="num">best</th><th class="num hide-sm">recent median</th><th class="num hide-sm">rising now</th><th class="num hide-sm">growing</th></tr></thead><tbody>
     {% for c in ranked[:25] %}<tr><td class="title"><a href="/research?channel={{ c.channel_id }}">{{ c.name }}</a> <span class="badge">{{ c.genre }}</span>
       {% set sims = similar.get(c.channel_id) %}{% if sims %}<div class="muted" style="font-size:12px">also watch: {% for s in sims %}<a href="/research?channel={{ s.channel_id }}" title="shares: {{ s.shared|join(', ') }}">{{ s.name }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</td>
       <td class="num">{{ c.outliers }}</td><td class="num hide-sm muted">{{ c.scored }}</td><td class="num">{{ '%.1f' % c.best }}x</td>
-      <td class="num hide-sm">{{ ('%.1fx' % c.recent_median) if c.recent_median is not none else '-' }}</td><td class="num hide-sm">{{ c.rising or '-' }}</td></tr>{% endfor %}
+      <td class="num hide-sm">{{ ('%.1fx' % c.recent_median) if c.recent_median is not none else '-' }}</td><td class="num hide-sm">{{ c.rising or '-' }}</td>
+      {% set g = growth_map.get(c.channel_id) %}
+      <td class="num hide-sm" title="{{ '%+.0f subs over %.0f days' % (g.delta, g.span_days) if g else 'no snapshots yet' }}">{{ '%+.0f/day' % g.per_day if g else '-' }}</td></tr>{% endfor %}
     </tbody></table></div>
     <div class="note" style="margin-bottom:14px">Ranked by how often a channel's videos beat its own norm: the channels worth learning from. "recent median" is its newest 10 videos (needs publish dates).</div>
   {% endif %}

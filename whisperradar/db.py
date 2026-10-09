@@ -23,6 +23,17 @@ CREATE TABLE IF NOT EXISTS view_snapshots (
     PRIMARY KEY (video_id, taken_at)
 );
 
+-- channel size over time: who is growing before their videos look like
+-- outliers yet
+CREATE TABLE IF NOT EXISTS channel_snapshots (
+    channel_id TEXT NOT NULL,
+    taken_at TEXT NOT NULL,          -- UTC ISO-8601
+    subscribers INTEGER,
+    views INTEGER,
+    video_count INTEGER,
+    PRIMARY KEY (channel_id, taken_at)
+);
+
 -- how each published video of ours did: views at 24h / 7d / 28d
 CREATE TABLE IF NOT EXISTS prod_results (
     production_id INTEGER NOT NULL,
@@ -515,6 +526,58 @@ def list_snapshots(conn, since_days: int = 60, now=None) -> dict:
         except ValueError:
             continue
         out.setdefault(row[0], []).append((when, row[2]))
+    return out
+
+
+CHANNEL_SNAPSHOT_GAP_HOURS = 22      # a day, minus a little clock drift
+
+
+def record_channel_snapshots(conn, stats: list[dict], now=None,
+                             min_gap_hours: float = CHANNEL_SNAPSHOT_GAP_HOURS
+                             ) -> int:
+    """stats: [{channel_id, subscribers, views, video_count}]. At most one
+    snapshot per channel per day. Returns how many were stored."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    stamp = now.astimezone(_dt.timezone.utc).isoformat(timespec="seconds")
+    cutoff = (now - _dt.timedelta(hours=min_gap_hours)).astimezone(
+        _dt.timezone.utc).isoformat(timespec="seconds")
+    stored = 0
+    for s in stats:
+        cid = s.get("channel_id")
+        if not cid:
+            continue
+        last = conn.execute(
+            "SELECT MAX(taken_at) FROM channel_snapshots"
+            " WHERE channel_id = ?", (cid,)).fetchone()[0]
+        if last and last > cutoff:
+            continue
+        conn.execute(
+            "INSERT OR IGNORE INTO channel_snapshots"
+            " (channel_id, taken_at, subscribers, views, video_count)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (cid, stamp, s.get("subscribers"), s.get("views"),
+             s.get("video_count")))
+        stored += 1
+    conn.commit()
+    return stored
+
+
+def list_channel_snapshots(conn, since_days: int = 90, now=None) -> dict:
+    """{channel_id: [{taken_at, subscribers, views, video_count}, ...]}
+    oldest first, for the last `since_days` days."""
+    import datetime as _dt
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    since = (now - _dt.timedelta(days=since_days)).astimezone(
+        _dt.timezone.utc).isoformat(timespec="seconds")
+    out: dict = {}
+    for row in conn.execute(
+            "SELECT channel_id, taken_at, subscribers, views, video_count"
+            " FROM channel_snapshots WHERE taken_at >= ? ORDER BY taken_at",
+            (since,)):
+        out.setdefault(row[0], []).append(
+            {"taken_at": row[1], "subscribers": row[2], "views": row[3],
+             "video_count": row[4]})
     return out
 
 
