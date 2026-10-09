@@ -122,21 +122,37 @@ class VarietyTests(unittest.TestCase):
         faults = pp.local_faults(pp.parse_plan(good()))
         self.assertFalse([f for f in faults if "start with" in f])
 
-    def test_new_style_plan_needs_four_perspectives(self):
-        persp = ["clone", "clone", "hard truth", "hard truth", "list",
+    def test_new_style_plan_needs_segments(self):
+        names = ["clone", "clone", "hard truth", "hard truth", "list",
                  "list", "clone", "list", "hard truth", "clone"]
+        opens = "The Why How Inside Stop Your Nobody Every Before After".split()
         plan = pp.parse_plan(good(
             formula="[blunt truth] ([Why] X is the smartest move)",
-            titles=self.titles([f"{w} coin jar secret {i}" for i, w in
-                                enumerate("The Why How Inside Stop Your "
-                                          "Nobody Every Before After".split())],
-                               persp)))
+            titles=[{"text": f"{w} coin jar secret {i}", "segment": names[i]}
+                    for i, w in enumerate(opens)]))
         plan["title"] = plan["titles"][0]["text"]
-        self.assertTrue(any("perspective" in f for f in pp.local_faults(plan)))
-        plan["titles"][5]["perspective"] = "i tried it"
-        plan["titles"][6]["perspective"] = "hidden cost"
+        faults = pp.local_faults(plan)
+        self.assertTrue(any("divide the whole script" in f for f in faults))
+        self.assertTrue(any("from 3 segment" in f for f in faults))
+        plan["segments"] = pp.parse_segments(
+            [{"name": f"seg {k}", "titles": [f"a{k}", f"b{k}"]}
+             for k in range(8)])
+        plan["titles"][5]["segment"] = "i tried it"
         self.assertFalse([f for f in pp.local_faults(plan)
-                          if "perspective" in f])
+                          if "segment" in f])
+
+    def test_parse_segments_drops_junk_and_caps(self):
+        segs = pp.parse_segments([
+            {"name": "A", "titles": ["x", "X", "y"]}, {"name": "", "titles": ["z"]},
+            "junk", {"name": "B", "titles": []},
+            {"name": "C", "titles": [{"text": "t1"}]}])
+        self.assertEqual([g["name"] for g in segs], ["A", "C"])
+        self.assertEqual(segs[0]["titles"], ["x", "y"])
+
+    def test_old_perspective_key_still_reads(self):
+        plan = pp.parse_plan(good(titles=[{"text": "A coin jar tale",
+                                           "perspective": "hidden cost"}]))
+        self.assertEqual(plan["titles"][0]["segment"], "hidden cost")
 
     def test_reasons_are_cut_to_one_short_line(self):
         plan = pp.parse_plan(good(titles=[{"text": "A coin jar", "why": "x" * 400}]))
@@ -144,7 +160,8 @@ class VarietyTests(unittest.TestCase):
 
     def test_prompt_asks_for_formula_and_perspectives(self):
         self.assertIn("FORMULA", pp._RULES)
-        self.assertIn("PERSPECTIVES", pp._RULES)
+        self.assertIn("SEGMENTS", pp._RULES)
+        self.assertIn("READ the WHOLE original script", pp._RULES)
         self.assertIn("does NOT have to be the first words", pp._RULES)
 
 
@@ -167,7 +184,7 @@ class TeaserTests(unittest.TestCase):
 
     def test_rules_and_judge_forbid_spoilers_and_segments(self):
         self.assertIn("TEASER", pp._RULES)
-        self.assertIn("not divided into segments", pp._RULES)
+        self.assertIn("never split into two parts", pp._RULES)
         ctx = {"channel": "C", "genre": "g", "brief": "B", "transcript": "T",
                "source": None}
         import unittest.mock as mock
@@ -332,7 +349,8 @@ class ReplicateTests(unittest.TestCase):
         self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", j)
         self.assertNotIn('"hook"', w)
         self.assertIn("exactly 10 titles", w)
-        self.assertIn("RANK", w)
+        self.assertIn("ranked", w)
+        self.assertIn("segments", w)
 
 
 if __name__ == "__main__":

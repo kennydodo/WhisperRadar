@@ -18,11 +18,14 @@ TITLE_MAX = 100
 TITLE_GOOD = 60
 MIN_TITLES = 10         # the plan keeps the top 10 of what the writer drafts
 TITLES_KEEP = 10
-DRAFT_TITLES = 20
+SEGMENTS = 8             # the script is divided into this many segments
+PER_SEGMENT = 5          # titles drafted for each segment
+DRAFT_TITLES = SEGMENTS * PER_SEGMENT
 WHY_MAX = 160            # a reason is one short line, not an essay
 OPENING_WORDS = 3        # titles sharing these first words ...
 OPENING_MAX = 2          # ... may appear at most this many times
-MIN_PERSPECTIVES = 4     # distinct angles among the options
+MIN_SEGMENTS = 4         # distinct segments the top options come from
+MIN_DRAFT_SEGMENTS = 6   # segments the writer must have drafted
 TRANSCRIPT_MAX = 24000   # characters of the original script the writer sees
 MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
 
@@ -44,7 +47,8 @@ LAYOUTS = ("character_host", "character", "host")
 
 
 def empty_plan() -> dict:
-    return {"keyword": "", "formula": "", "titles": [], "title": "",
+    return {"keyword": "", "formula": "", "segments": [], "titles": [],
+            "title": "",
             "promise": "", "hook": "", "thumbnail": {"layout": "character", "text": "",
                                       "idea": ""},
             "status": "none", "score": None, "applied": False}
@@ -93,6 +97,24 @@ def candidate_title(titles: list, title: str) -> str:
     return ""
 
 
+def parse_segments(raw) -> list[dict]:
+    """[{name, titles: [str]}] - the script divided into segments, with the
+    titles drafted for each. Junk is dropped."""
+    out = []
+    for seg in raw or []:
+        if not isinstance(seg, dict):
+            continue
+        name = _s(seg.get("name") or seg.get("segment"))[:60]
+        titles = []
+        for t in seg.get("titles") or []:
+            text = _s(t.get("text") if isinstance(t, dict) else t)
+            if text and text.lower() not in [x.lower() for x in titles]:
+                titles.append(text)
+        if name and titles:
+            out.append({"name": name, "titles": titles[:PER_SEGMENT + 2]})
+    return out[:SEGMENTS + 2]
+
+
 def parse_plan(raw) -> dict:
     """Normalise the writer's JSON. Missing parts stay empty."""
     plan = empty_plan()
@@ -100,14 +122,16 @@ def parse_plan(raw) -> dict:
         return plan
     plan["keyword"] = _s(raw.get("keyword"))
     plan["formula"] = _s(raw.get("formula"))[:300]
+    plan["segments"] = parse_segments(raw.get("segments"))
     titles = []
     for t in raw.get("titles") or []:
         text = _s(t.get("text") if isinstance(t, dict) else t)
         if text and text.lower() not in [x["text"].lower() for x in titles]:
             isd = isinstance(t, dict)
             titles.append({"text": text,
-                           "perspective": (_s(t.get("perspective"))[:40]
-                                           if isd else ""),
+                           "segment": (_s(t.get("segment")
+                                          or t.get("perspective"))[:60]
+                                       if isd else ""),
                            "why": (_s(t.get("why"))[:WHY_MAX] if isd else "")})
     plan["titles"] = titles[:TITLES_KEEP]
     title = _s(raw.get("title"))
@@ -250,7 +274,7 @@ def awkward_title(title: str, keyword: str = "") -> str:
 def variety_faults(plan: dict) -> list[str]:
     """Ten titles must not be one title reworded: no more than OPENING_MAX
     of them may start with the same first words, and the options must come
-    from several perspectives."""
+    from several segments of the script."""
     f = []
     opens: dict[str, int] = {}
     for t in plan["titles"]:
@@ -264,14 +288,19 @@ def variety_faults(plan: dict) -> list[str]:
                  "vary the opening and the sentence shape (the keyword may "
                  "sit anywhere in the first "
                  f"{TITLE_GOOD} characters)")
-    persp = {t.get("perspective", "").lower() for t in plan["titles"]
-             if t.get("perspective")}
-    # plans made before the formula/perspective step have neither: leave them
-    if plan["titles"] and plan.get("formula") and \
-            len(persp) < MIN_PERSPECTIVES:
-        f.append(f"the options use {len(persp)} perspective(s); use at least "
-                 f"{MIN_PERSPECTIVES} different ones (the formula stays, the "
-                 "angle changes)")
+    segs = {t.get("segment", "").lower() for t in plan["titles"]
+            if t.get("segment")}
+    # plans made before the segment step have none: leave them alone
+    if plan["titles"] and plan.get("formula"):
+        if len(plan.get("segments") or []) < MIN_DRAFT_SEGMENTS:
+            f.append(f"divide the whole script into segments and draft "
+                     f"titles for each: got {len(plan.get('segments') or [])}"
+                     f", need at least {MIN_DRAFT_SEGMENTS} (aim for "
+                     f"{SEGMENTS})")
+        if len(segs) < MIN_SEGMENTS:
+            f.append(f"the top options come from {len(segs)} segment(s); "
+                     f"take them from at least {MIN_SEGMENTS} different "
+                     "segments")
     return f
 
 
@@ -440,15 +469,18 @@ def context(cfg, pid: int) -> dict:
 
 _RULES = f"""Rules for the plan:
 - Titles are the most important part. The goal is to REPLICATE the source video. Work in this order:
-  1. FORMULA: read the source title and the original script and write down the title formula that made it work - its skeleton in a line, e.g. "[blunt truth] ([Why] [topic] is the [superlative] [thing] you're [avoiding])" or "[Number] + [things] + [no longer worth it] + [year]". Keep the formula's parts, and the source's number and year if it has them.
-  2. PERSPECTIVES: write titles that keep that formula but change the content perspective a little. Cover at least {MIN_PERSPECTIVES} different perspectives from, for example: the direct clone (same angle), a hard truth / confrontation, "I tried / I quit" personal experiment, what smart or rich people do differently, a hidden cost or leak, a mistake to stop making, a numbered list, a before-vs-after contrast, an urgency or timing angle. Pick perspectives the original script can truly deliver.
-  3. Titles are SIMILAR to the source's in pattern, topic and promise - never identical to it.
-  4. Every title is ONE short phrase (about 45-65 characters), not divided into segments: no colon, no dash, no brackets, no "X, and Y" second half. Study how the best titles are built: "12 Things That Are No Longer Worth Your Money in 2026", "12 Things the Middle Class Can No Longer Afford in 2026", "12 Things Smart People Stopped Buying in 2026" - one clause, a clear topic and a stake, and nothing more.
-  5. A title is a TEASER, never the story. It names the topic and what is at stake, and it leaves the answer, the reason, the mechanism and the fix for the video. If the title could stand as a one-line summary of the video, it gives too much away: rewrite it. Never put the conclusion ("...is the smart money move"), the cause, the numbers inside the video or the solution in the title. Bad: "Your Kids Don't Want It, and Downsizing Your Stuff Is the Smart Money Move" (problem + answer + verdict). Good: "Why Nobody Wants Your Furniture Anymore" or "7 Things in Your Home That Are Quietly Losing You Money" (the viewer must watch to learn the rest).
+  0. READ the WHOLE original script first.
+  1. FORMULA: read the source title and the script and write down the title formula that made it work - its skeleton in a line, e.g. "[blunt truth] ([Why] [topic] is the [superlative] [thing] you're [avoiding])" or "[Number] + [things] + [no longer worth it] + [year]". Keep the formula's parts, and the source's number and year if it has them.
+  2. SEGMENTS: divide the script into {SEGMENTS} segments - the distinct themes, claims, costs, tensions or viewpoints it covers (each a different content perspective on the same video, taken from THIS script, not from a generic list). Name each segment in 2-5 words.
+  3. DRAFT: for EACH segment write about {PER_SEGMENT} titles that keep the formula and the script's topic, changing only that segment's perspective.
+  4. SELECT: from all {DRAFT_TITLES} drafts take the BEST {TITLES_KEEP} and rank them. The top {TITLES_KEEP} must come from at least {MIN_SEGMENTS} different segments.
+  Titles are SIMILAR to the source's in pattern, topic and promise - never identical to it.
+  Every title is ONE short phrase (about 45-65 characters), never split into two parts: no colon, no dash, no brackets, no "X, and Y" second half. Study how the best titles are built: "12 Things That Are No Longer Worth Your Money in 2026", "12 Things the Middle Class Can No Longer Afford in 2026", "12 Things Smart People Stopped Buying in 2026" - one clause, a clear topic and a stake, and nothing more.
+  A title is a TEASER, never the story. It names the topic and what is at stake, and it leaves the answer, the reason, the mechanism and the fix for the video. If the title could stand as a one-line summary of the video, it gives too much away: rewrite it. Never put the conclusion ("...is the smart money move"), the cause, the numbers inside the video or the solution in the title. Bad: "Your Kids Don't Want It, and Downsizing Your Stuff Is the Smart Money Move" (problem + answer + verdict). Good: "Why Nobody Wants Your Furniture Anymore" or "7 Things in Your Home That Are Quietly Losing You Money" (the viewer must watch to learn the rest).
 - Every title is at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD} - the keyword may sit anywhere in that stretch; it does NOT have to be the first words. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
   Bad (never write like this): "Japanese Home Habits Hacks Secrets Revealed Now", "Coin Jar Rule: Coin Jar Secret (You Do Without Knowing)", "Habits Home Japanese That Work". Test every title by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
   Only promise what the original script's topic can deliver. If a title promises a number of points ("7 reasons"), it may match or stay close to the source's number.
-- Draft about {DRAFT_TITLES} titles first (different patterns, all close to the source), then RANK them by how likely each is to win the click while staying true to the original, and keep the TOP {TITLES_KEEP} in rank order (rank 1 first), each with its "perspective" (2-4 words) and a "why" of ONE short line (under {WHY_MAX} characters).
+- Keep the top {TITLES_KEEP} in rank order (rank 1 first), each with its "segment" and a "why" of ONE short line (under {WHY_MAX} characters).
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
 - The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone). The thumbnails are designed in their own stage, so keep this short."""
 
@@ -496,14 +528,16 @@ THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 Reply with ONE JSON object and nothing else:
 {{"keyword": "the main search phrase (2-4 words)",
  "formula": "the source title's formula in one line",
- "titles": [{{"text": "...", "perspective": "2-4 words", "why": "one short line"}}, ... exactly {TITLES_KEEP} titles: the top {TITLES_KEEP} of the ~{DRAFT_TITLES} you drafted, ranked, rank 1 first, all similar to the source, none identical to it],
+ "segments": [{{"name": "2-5 words", "titles": ["...", "..."]}}, ... {SEGMENTS} segments of the script, about {PER_SEGMENT} drafted titles each],
+ "titles": [{{"text": "...", "segment": "name of its segment", "why": "one short line"}}, ... exactly {TITLES_KEEP} titles: the best {TITLES_KEEP} of ALL the drafted titles, ranked, rank 1 first, from at least {MIN_SEGMENTS} segments, all similar to the source, none identical to it],
  "title": "rank 1, copied exactly from the options",
  "promise": "...",
  "thumbnail": {{"layout": "character_host|character|host", "text": "2-4 words", "idea": "one line"}}}}"""
 
 
 def _plan_json(plan: dict) -> str:
-    return json.dumps({k: plan[k] for k in ("keyword", "formula", "titles",
+    return json.dumps({k: plan[k] for k in ("keyword", "formula", "segments",
+                                            "titles",
                                             "title",
                                             "promise", "thumbnail")},
                       ensure_ascii=False, indent=1)
@@ -528,7 +562,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or fewer than {MIN_PERSPECTIVES} real perspectives - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
+Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or drawn from fewer than {MIN_SEGMENTS} segments of the script, or the script was not really divided into segments - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}

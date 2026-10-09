@@ -123,8 +123,12 @@
     <h2>Title options</h2>
     {% if plan.formula %}<div class="muted" style="font-size:12px;margin:4px 0">Source title formula: {{ plan.formula }}</div>{% endif %}
     <ul class="titles">
-      {% for t in plan.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.perspective %} &middot; <b>{{ t.perspective }}</b>{% endif %}{% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}
+      {% for t in plan.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t.text }}">use</button>{{ t.text }} <span class="muted">({{ t.text|length }}){% if t.segment %} &middot; <b>{{ t.segment }}</b>{% endif %}{% if t.why %} &middot; {{ t.why }}{% endif %}</span></li>{% endfor %}
     </ul>
+    {% if plan.segments %}<details style="margin-top:10px"><summary class="muted" style="cursor:pointer">The script divided into {{ plan.segments|length }} segments, with the titles drafted for each</summary>
+      {% for g in plan.segments %}<div style="margin:8px 0 2px"><b>{{ loop.index }}. {{ g.name }}</b></div>
+      <ul class="titles">{% for t in g.titles %}<li><button type="button" class="ghost" onclick="document.getElementById('f-title').value=this.dataset.t" data-t="{{ t }}">use</button>{{ t }} <span class="muted">({{ t|length }})</span></li>{% endfor %}</ul>{% endfor %}
+    </details>{% endif %}
   </div>
   {% endif %}
 
