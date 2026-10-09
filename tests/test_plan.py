@@ -69,6 +69,12 @@ class PhrasingTests(unittest.TestCase):
                     "Coin jar habits that coin jar people do"):
             self.assertTrue(pp.awkward_title(bad), bad)
 
+    def test_parallel_phrasing_is_not_stuffing_but_keyword_repeats_are(self):
+        t = "Downsizing Your Stuff Is the Move Everyone Avoids and Everyone Needs"
+        self.assertEqual(pp.awkward_title(t, "downsizing your stuff"), "")
+        self.assertTrue(pp.awkward_title(
+            "Coin jar habits that coin jar people do", "coin jar"))
+
     def test_natural_titles_pass(self):
         for ok in ("Why Your Coin Jar Quietly Beats Your Savings Account",
                    "I Tried the Coin Jar Rule for 30 Days - Here's What Changed",

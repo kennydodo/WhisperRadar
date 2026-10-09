@@ -208,7 +208,7 @@ _DANGLING = set("the a an of to and or with for in on at by your my this "
 _SEP = re.compile(r"[:|]|\s[-\u2013\u2014]\s")
 
 
-def awkward_title(title: str) -> str:
+def awkward_title(title: str, keyword: str = "") -> str:
     """Why a title reads badly aloud ("" when it reads fine): the checks a
     person makes by ear - it must sound like something a human would say,
     not a keyword pile."""
@@ -229,7 +229,11 @@ def awkward_title(title: str) -> str:
     for w in words:
         if len(w) > 3 and w not in _STOP and not w.isdigit():
             seen[w] = seen.get(w, 0) + 1
-    again = [w for w, n in seen.items() if n > 1]
+    # natural parallel phrasing ("everyone avoids ... everyone needs") is
+    # fine; a repeated KEYWORD word (or any word 3 times) is stuffing
+    kw = set(_words(keyword))
+    again = [w for w, n in seen.items()
+             if n > 1 and (not kw or w in kw or n > 2)]
     if again:
         return f"repeats \"{again[0]}\" (keyword stuffing)"
     return ""
@@ -266,12 +270,13 @@ def variety_faults(plan: dict) -> list[str]:
 def phrasing_faults(plan: dict) -> list[str]:
     """The chosen title must read naturally; so must most of the options."""
     f = []
-    why = awkward_title(plan.get("title") or "")
+    why = awkward_title(plan.get("title") or "", plan.get("keyword", ""))
     if why:
         f.append(f"the chosen title reads awkwardly - it {why}: rewrite it "
                  "as one natural sentence a person would say, keeping the "
                  "keyword as a real phrase")
-    bad = [(t["text"], awkward_title(t["text"])) for t in plan["titles"]]
+    bad = [(t["text"], awkward_title(t["text"], plan.get("keyword", "")))
+           for t in plan["titles"]]
     bad = [(a, b) for a, b in bad if b]
     if len(bad) >= 3:
         f.append(f"{len(bad)} title options read awkwardly (for example "
