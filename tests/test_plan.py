@@ -77,7 +77,7 @@ class PhrasingTests(unittest.TestCase):
 
     def test_natural_titles_pass(self):
         for ok in ("Why Your Coin Jar Quietly Beats Your Savings Account",
-                   "I Tried the Coin Jar Rule for 30 Days - Here's What Changed",
+                   "I Tried the Coin Jar Rule for 30 Days",
                    "The Coin Jar Mistake That Costs You Hundreds"):
             self.assertEqual(pp.awkward_title(ok), "", ok)
 
@@ -146,6 +146,35 @@ class VarietyTests(unittest.TestCase):
         self.assertIn("FORMULA", pp._RULES)
         self.assertIn("PERSPECTIVES", pp._RULES)
         self.assertIn("does NOT have to be the first words", pp._RULES)
+
+
+class TeaserTests(unittest.TestCase):
+    def test_two_part_and_long_titles_are_flagged(self):
+        for bad in ("Your Kids Don't Want It, and Downsizing Your Stuff Is "
+                    "the Smart Money Move",
+                    "Nobody Wants Your Stuff: Downsizing Is the Move",
+                    "Downsizing Your Stuff Could Be One of Your Smartest "
+                    "Money Moves When Nobody Wants It Anyway Today",
+                    "12 Things That Used to Make Sense (But Don't in 2026)"):
+            self.assertTrue(pp.awkward_title(bad), bad)
+
+    def test_one_clause_teasers_pass(self):
+        for ok in ("12 Things That Are No Longer Worth Your Money in 2026",
+                   "12 Things the Middle Class Can No Longer Afford",
+                   "Why Nobody Wants Your Furniture Anymore",
+                   "7 Things in Your Home Quietly Losing You Money"):
+            self.assertEqual(pp.awkward_title(ok), "", ok)
+
+    def test_rules_and_judge_forbid_spoilers_and_segments(self):
+        self.assertIn("TEASER", pp._RULES)
+        self.assertIn("not divided into segments", pp._RULES)
+        ctx = {"channel": "C", "genre": "g", "brief": "B", "transcript": "T",
+               "source": None}
+        import unittest.mock as mock
+        with mock.patch("whisperradar.packaging._refs_text",
+                        return_value="(none)"):
+            j = pp.judge_prompt(ctx, pp.parse_plan(good()), [])
+        self.assertIn("give away the story", j)
 
 
 class VettedTitleTests(unittest.TestCase):

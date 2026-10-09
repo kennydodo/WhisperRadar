@@ -206,6 +206,9 @@ def originality_faults(plan: dict, source_title: str = "",
 _DANGLING = set("the a an of to and or with for in on at by your my this "
                 "that is are was were from as but if than".split())
 _SEP = re.compile(r"[:|]|\s[-\u2013\u2014]\s")
+# "Your kids don't want it, and downsizing is the smart move": two clauses
+_CLAUSES = re.compile(r",\s+(and|but|so|because|then|while|yet)\b|;", re.I)
+SHORT_MAX = 70
 
 
 def awkward_title(title: str, keyword: str = "") -> str:
@@ -220,8 +223,13 @@ def awkward_title(title: str, keyword: str = "") -> str:
         return "too long to read in one breath"
     if words[-1] in _DANGLING:
         return f"ends on a dangling \"{words[-1]}\""
-    if len(_SEP.findall(t)) > 1 or ("(" in t and ")" in t) or "[" in t:
-        return "has extra separators/brackets instead of one clean sentence"
+    if _SEP.search(t) or _CLAUSES.search(t) or "(" in t or "[" in t:
+        return ("is split into two parts (colon, dash, brackets or ', and "
+                "...') - a title is ONE phrase, not a headline plus a "
+                "second half")
+    if len(t) > SHORT_MAX:
+        return (f"is {len(t)} characters - a title is short enough to read "
+                f"at a glance (about {SHORT_MAX} at most)")
     shout = [w for w in re.findall(r"[A-Za-z']{3,}", t) if w.isupper()]
     if len(shout) > 1:
         return "shouts in ALL CAPS"
@@ -435,6 +443,8 @@ _RULES = f"""Rules for the plan:
   1. FORMULA: read the source title and the original script and write down the title formula that made it work - its skeleton in a line, e.g. "[blunt truth] ([Why] [topic] is the [superlative] [thing] you're [avoiding])" or "[Number] + [things] + [no longer worth it] + [year]". Keep the formula's parts, and the source's number and year if it has them.
   2. PERSPECTIVES: write titles that keep that formula but change the content perspective a little. Cover at least {MIN_PERSPECTIVES} different perspectives from, for example: the direct clone (same angle), a hard truth / confrontation, "I tried / I quit" personal experiment, what smart or rich people do differently, a hidden cost or leak, a mistake to stop making, a numbered list, a before-vs-after contrast, an urgency or timing angle. Pick perspectives the original script can truly deliver.
   3. Titles are SIMILAR to the source's in pattern, topic and promise - never identical to it.
+  4. Every title is ONE short phrase (about 45-65 characters), not divided into segments: no colon, no dash, no brackets, no "X, and Y" second half. Study how the best titles are built: "12 Things That Are No Longer Worth Your Money in 2026", "12 Things the Middle Class Can No Longer Afford in 2026", "12 Things Smart People Stopped Buying in 2026" - one clause, a clear topic and a stake, and nothing more.
+  5. A title is a TEASER, never the story. It names the topic and what is at stake, and it leaves the answer, the reason, the mechanism and the fix for the video. If the title could stand as a one-line summary of the video, it gives too much away: rewrite it. Never put the conclusion ("...is the smart money move"), the cause, the numbers inside the video or the solution in the title. Bad: "Your Kids Don't Want It, and Downsizing Your Stuff Is the Smart Money Move" (problem + answer + verdict). Good: "Why Nobody Wants Your Furniture Anymore" or "7 Things in Your Home That Are Quietly Losing You Money" (the viewer must watch to learn the rest).
 - Every title is at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD} - the keyword may sit anywhere in that stretch; it does NOT have to be the first words. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
   Bad (never write like this): "Japanese Home Habits Hacks Secrets Revealed Now", "Coin Jar Rule: Coin Jar Secret (You Do Without Knowing)", "Habits Home Japanese That Work". Test every title by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
   Only promise what the original script's topic can deliver. If a title promises a number of points ("7 reasons"), it may match or stay close to the source's number.
@@ -518,7 +528,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or fewer than {MIN_PERSPECTIVES} real perspectives - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
+Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or fewer than {MIN_PERSPECTIVES} real perspectives - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
