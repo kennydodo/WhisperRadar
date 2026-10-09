@@ -135,6 +135,10 @@ class LookTests(unittest.TestCase):
         self.assertIn(b"Style", r.data)
         r = client.get("/watched")
         self.assertIn(b"/watched/UCrival/look", r.data)
+        # research / watched-channel work has its own job slot
+        j = client.get("/research/job").get_json()
+        self.assertFalse(j["running"])
+        self.assertFalse(client.get("/studio/job").get_json()["running"])
         r = client.post("/watched/UCrival/look/run", data={"site": "nope"})
         self.assertEqual(r.status_code, 302)
         self.assertIn("error=", r.headers["Location"])

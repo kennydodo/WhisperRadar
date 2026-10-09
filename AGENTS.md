@@ -1662,3 +1662,6 @@ Qwen sometimes creates the chat (it shows in the sidebar) while the watched page
 ## Style & bible: coverage
 Up to 20 frames from up to 8 videos (default 12 frames); videos are the most viewed but near-duplicate titles are skipped; each video's frames start early (intro) and are shifted per video; the first 3 thumbnails are added as `t01.jpg`... A free-text "hint" on the page goes into the prompt. The prompt asks for hex codes inline and for every kind of recurring subject (or an explicit "no recurring character"). Not done: splitting into two messages when a site rejects that many attachments - lower the frame count if the upload fails.
 Attachment cap: Claude refused 21 images ("at most 20 attachments"). `channel_look.MAX_ATTACH = 18` is the total (frames + thumbnails), so frames are limited to 15 on the page.
+
+## Job slots
+Four kinds of slot: one per OWN channel (`sjob`, studio production jobs), the dashboard `job` (backfill, view counts, downloads), `scheduler_job` (scheduled auto-run) and `research_job` (research topics grouping and the watched channel "style & bible"; `/research/job` is its status). Research no longer waits for a production's job. Caution: two jobs that use the SAME web chat site at once share one browser profile and will collide - only run one LLM job per site.

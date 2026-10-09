@@ -347,7 +347,7 @@
     if (!box) return;
     var log = document.getElementById('log');
     function tick() {
-      fetch('/studio/job').then(function (r) { return r.json(); }).then(function (j) {
+      fetch('/research/job').then(function (r) { return r.json(); }).then(function (j) {
         if (log) log.textContent = (j.log || []).slice(-12).join('\n');
         if (!j.running) { location.href = location.pathname + '?tab=topics'; return; }
         setTimeout(tick, 3000);
