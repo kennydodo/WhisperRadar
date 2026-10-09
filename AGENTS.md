@@ -1655,3 +1655,6 @@ Qwen sometimes creates the chat (it shows in the sidebar) while the watched page
 
 ## One production = one chat per LLM
 `plan.run_plan` now adopts the production's saved chats (`webstages.adopt_chats`, same file the script/shotlist stages use) and `plan_job` saves them afterwards, so packaging plan -> script -> shotlist continue in the same chat of each LLM. A chat that cannot be reopened falls back to a new one (`_send_in`). `webchat.REUSE_CHAT` (Qwen) only applies within one job.
+
+## Remembered LLM + settings
+`_webchat_extra.html` saves every writer/judge/model/level/toggle select (incl. zai_*, deepseek_*) to localStorage on change/submit under a per-form key (ids stripped from the action) plus a global `wrwc:last`; the global one wins on load, so the last picks show in every run form and production.
