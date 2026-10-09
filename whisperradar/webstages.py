@@ -618,7 +618,9 @@ def _script_followup(script: str, words: int | None = None,
         "under the SAME rules and reply in exactly the SAME JSON format as "
         "before. First check whether each point you raised earlier is now "
         "addressed, then check that nothing got worse. Source material and "
-        "rules are unchanged (use the ones from earlier in this chat).\n\n"
+        "rules are unchanged (use the ones from earlier in this chat), "
+        "including: the script must never mention the thumbnail, cover, "
+        "title or packaging - fail it and quote the sentence if it does.\n\n"
         "The revised script:\n\n" + script)
 
 

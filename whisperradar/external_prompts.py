@@ -338,7 +338,11 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"5-gram overlap at most {float(eff['script_max_overlap']):.0%} "
            f"(above {float(eff['script_hard_overlap']):.0%} is a hard "
            f"rejection however well it reads); length {lo}-{hi} words "
-           f"(target {target}); ends on a complete sentence.{measured}\n"
+           f"(target {target}); ends on a complete sentence; it is spoken "
+           f"narration only - it never mentions or alludes to the "
+           f"thumbnail, cover, video title or packaging.{measured}\n"
+           f"If the script mentions any of those, FAIL it, quote each "
+           f"sentence in weak_spans and write in feedback: remove it.\n"
            f"Score the writing honestly on its own merits - do not raise or "
            f"lower a score to fit the bar. After the scores, state PASS or "
            f"FAIL separately and list which bar items failed.")
