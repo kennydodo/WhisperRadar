@@ -21,11 +21,12 @@ from typing import Callable
 
 from . import db
 
-MAX_FRAMES = 20
+MAX_ATTACH = 16                # images per message (Claude refuses > 20)
+THUMBS = 3                     # thumbnails of the first videos, as extras
+MAX_FRAMES = MAX_ATTACH - THUMBS
 MIN_FRAMES = 5
 DEFAULT_FRAMES = 12
 MAX_VIDEOS = 8
-THUMBS = 3                     # thumbnails of the first videos, as extras
 EXCERPT_CHARS = 700
 STYLE_MARK = "=== STYLE GUIDE ==="
 BIBLE_MARK = "=== BIBLE ==="
@@ -278,9 +279,11 @@ def run(cfg, channel_id: str, site: str, transport, log, n_frames=DEFAULT_FRAMES
     frames = collect_frames(videos, n_frames, frames_dir, log, download, grab)
     if thumbs is not None:
         try:
-            frames += thumbs(videos, frames_dir, log)
+            frames += thumbs(videos, frames_dir, log)[:max(
+                0, MAX_ATTACH - len(frames))]
         except Exception as e:  # noqa: BLE001
             log(f"thumbnails skipped ({str(e)[:80]})")
+    frames = frames[:MAX_ATTACH]
     if len(frames) < 3:
         raise RuntimeError(f"Only {len(frames)} frame(s) could be taken - "
                            "check that yt-dlp and ffmpeg work")

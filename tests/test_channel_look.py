@@ -111,6 +111,16 @@ class LookTests(unittest.TestCase):
         self.assertTrue(names <= {"wr.db", "channel_look", "wr.db-wal",
                                   "wr.db-shm", "wr.db-journal"}, names)
 
+    def test_total_attachments_are_capped(self):
+        tr = FakeTransport()
+        channel_look.run(
+            self.cfg, "UCrival", "chatgpt", tr, lambda m: None, n_frames=50,
+            download=lambda url, d: (d / "x.mp4", 600), grab=self._grab,
+            thumbs=lambda vids, dest, log: [
+                {"file": f"t{i}.jpg", "video": "v", "title": "t"}
+                for i in range(3)])
+        self.assertLessEqual(len(tr.calls[0][2]), channel_look.MAX_ATTACH)
+
     def test_too_few_frames_fails(self):
         with self.assertRaises(RuntimeError):
             channel_look.run(
