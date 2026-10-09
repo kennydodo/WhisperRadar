@@ -474,11 +474,11 @@ def context(cfg, pid: int) -> dict:
 _RULES = f"""Rules for the plan:
 - Titles are the most important part. The goal is to REPLICATE the source video. Work in this order:
   0. READ the WHOLE original script first.
-  1. FORMULA: read the source title and the script and write down the title formula that made it work - its skeleton in one line, with the variable parts in brackets, e.g. "[Number] [things] [that stopped working] in [year]", "[Blunt truth] ([Why] [topic] is the [superlative] [thing] you're [avoiding])" or "I [did the thing] for [time]" (examples only: derive the formula from THIS source, whatever its subject). Keep the formula's parts, and the source's number and year if it has them.
+  1. FORMULA: read the script and the niche's winning titles and decide the title formula that fits this video - its skeleton in one line, with the variable parts in brackets, e.g. "[Number] [things] [that stopped working] in [year]", "[Blunt truth] ([Why] [topic] is the [superlative] [thing] you're [avoiding])" or "I [did the thing] for [time]" (examples only: derive the formula from THIS video, whatever its subject). If the winning titles share a number or a year, use it the same way. Also decide the MAIN KEYWORD yourself: the 2-4 word phrase people would search for to find this video, taken from the script.
   2. SEGMENTS: divide the video into {SEGMENTS} segments by CORE VALUE. A segment is one reason a viewer would care - the core benefit, emotion or curiosity the video serves (for example: fear of missing out, relief, belonging, status, hope, surprise, curiosity about how it works, a mistake to avoid, the "insider" feeling, nostalgia, a challenge to a belief). They are different ways to sell the video's ONE big promise. They are NOT a list of the script's facts, figures, costs, claims, steps, examples or conclusions, and they work for any subject (finance, cooking, animals, history, gaming, health...). Read the script to find what the video is really worth to the viewer, then name each segment in 2-4 words by that value.
   3. DRAFT: for EACH segment write about {PER_SEGMENT} titles that keep the formula and the topic, changing only the core value they sell. A title may use the topic and the keyword; it must NOT use the script's specifics (its figures, item names, mechanisms, costs, claims or conclusions).
   4. SELECT: from the drafts of EACH segment take its top {PICKS_PER_SEGMENT} titles (more only if a segment has extra strong ones) - every segment must be represented by at least {PICKS_PER_SEGMENT}. Then rank ALL the picks best first; rank 1 is the chosen title.
-  Titles are SIMILAR to the source's in pattern, topic and promise - never identical to it.
+  Titles are SIMILAR to what the original video would be called - same topic, same promise, the patterns of the niche's winning titles.
   Every title is ONE short phrase (about 45-65 characters), never split into two parts: no colon, no dash, no brackets, no "X, and Y" second half. One clause, a clear topic and a stake, and nothing more. The source and the best titles in this niche show the shape; copy their structure, not their words.
   A title is a TEASER, never the story. It names the topic and the value or stake for the viewer, and it leaves the answer, the reason, the mechanism, the numbers and the fix for the video. If the title could stand as a one-line summary of the video, it gives too much away: rewrite it. Never put the conclusion, the cause, a specific claim or the solution in the title. Bad: "[Problem], and [Topic] Is the [Verdict]" (problem + answer + verdict in one title). Good: a title that raises the question and makes the viewer need the video, e.g. "Why Nobody Wants Your [Thing] Anymore" or "[N] Things About [Topic] That Quietly Change Everything".
 - Every title is at most {TITLE_MAX} characters, with the main keyword and the promise inside the first {TITLE_GOOD} - the keyword may sit anywhere in that stretch; it does NOT have to be the first words. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. The keyword is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
@@ -500,28 +500,33 @@ def _source_text(ctx: dict) -> str:
             f", {views}{mult})")
 
 
+def _refs_without_source(ctx: dict) -> str:
+    """The niche's winning titles for the prompts, minus the source video's
+    own title (the writer decides its titles and keywords from the script,
+    never from the original title)."""
+    from .packaging import _refs_text
+    src = _norm_title((ctx.get("source") or {}).get("title") or "")
+    refs = [(t, m) for t, m in ctx.get("refs") or []
+            if not src or _norm_title(t) != src]
+    return _refs_text({**ctx, "refs": refs})
+
+
 def _original_script(ctx: dict) -> str:
     t = (ctx.get("transcript") or "").strip()
     return t or "(not available - rely on the source title and the brief)"
 
 
 def writer_prompt(ctx: dict) -> str:
-    from .packaging import _refs_text
     past = "\n".join(f"- {t}" for t in ctx["past_titles"]) or "(none yet)"
-    return f"""You are a YouTube packaging strategist. I want to replicate this video. Provide titles similar to this one, but the content perspective may change a little. Titles matter most.
+    return f"""You are a YouTube packaging strategist. I want to replicate this video. Provide titles similar to this one, but the content perspective may change a little. Titles matter most. You decide the titles and the main keyword yourself, from the script.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
-WORKING TITLE: {ctx['title']}
-SOURCE VIDEO (the one we are replicating - it already proved the topic works): {_source_text(ctx)}
 
-THE ORIGINAL SCRIPT (read it: this is what the titles must be true to):
+THE ORIGINAL SCRIPT (the video we are replicating - it already proved the topic works; read it all: this is what the titles must be true to):
 {_original_script(ctx)}
 
-BRIEF (topic and KEYWORDS your titles must be built from):
-{ctx.get('brief') or '(not available)'}
-
 TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns and phrasing):
-{_refs_text(ctx)}
+{_refs_without_source(ctx)}
 
 THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 {past}
@@ -530,7 +535,7 @@ THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 {_RULES}
 
 Reply with ONE JSON object and nothing else:
-{{"keyword": "the main search phrase (2-4 words)",
+{{"keyword": "the main search phrase (2-4 words) that YOU chose from the script",
  "formula": "the source title's formula in one line",
  "segments": [{{"name": "2-5 words", "titles": ["...", "..."]}}, ... {SEGMENTS} segments of the script, about {PER_SEGMENT} drafted titles each],
  "titles": [{{"text": "...", "segment": "its segment's exact name", "why": "one short line"}}, ... the top {PICKS_PER_SEGMENT} (or more) of EACH segment, ranked, rank 1 first, all similar to the source, none identical to it],
@@ -549,15 +554,12 @@ def _plan_json(plan: dict) -> str:
 
 def judge_prompt(ctx: dict, plan: dict, faults: list[str],
                  min_score: float = MIN_SCORE) -> str:
-    from .packaging import _refs_text
     return f"""You are a strict YouTube growth reviewer. Judge this packaging plan BEFORE the video is written.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
-SOURCE VIDEO: {_source_text(ctx)}
 THE ORIGINAL SCRIPT (excerpt): {_original_script(ctx)[:6000]}
-BRIEF (topic and KEYWORDS): {ctx.get('brief') or '(not available)'}
 COMPARABLE TITLES THAT PERFORMED WELL IN THIS NICHE:
-{_refs_text(ctx)}
+{_refs_without_source(ctx)}
 
 THE PLAN:
 {_plan_json(plan)}
@@ -566,7 +568,7 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Similarity is part of the job: the titles must replicate the source - the same topic, keyword, promise and title patterns, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise, or if the chosen title or an option is word-for-word the source's title. Quote the weak title and give a closer rewrite in "fixes". Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or some segment has fewer than {PICKS_PER_SEGMENT} titles among the options, or the segments are not core values (they list the script's facts, costs, figures or claims instead) or a title uses the script's specifics instead of the topic and the value it sells, or the script was not really divided into segments - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the titles are built on the brief's keywords and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
+Similarity is part of the job: the titles must replicate the video the script comes from - the same topic, promise and the title patterns of the niche, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise. Quote the weak title and give a closer rewrite in "fixes". Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or some segment has fewer than {PICKS_PER_SEGMENT} titles among the options, or the segments are not core values (they list the script's facts, costs, figures or claims instead) or a title uses the script's specifics instead of the topic and the value it sells, or the script was not really divided into segments - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced in. Titles need the keyword AND a natural sentence; one without the other fails. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the keyword is a phrase people really search for, taken from the script, the titles are built on it and sound like natural spoken English; a real curiosity gap that is not clickbait, the keyword early, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first (check the ranking is sensible: the strongest, most natural title is first). Name the exact text that is weak.
 
 Reply with ONE JSON object and nothing else:
 {{"score": 7.5, "pass": false, "faults": ["specific problem"], "fixes": ["specific rewrite"]}}

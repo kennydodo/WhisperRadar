@@ -29,9 +29,10 @@ class PlanSeesTheOriginalScript(Base):
                               "titles": [], "promise": "p", "hook": "h",
                               "thumbnail": {"text": "x"}})
         for text in (pp.writer_prompt(ctx), pp.judge_prompt(ctx, plan, [])):
-            self.assertIn("rare coins", text)
-            # titles replicate the source, so the plan stage reads its script
+            # titles replicate the source, so the plan stage reads its script;
+            # the writer picks the keywords itself, so no brief goes in
             self.assertIn(SOURCE[:80], text)
+            self.assertNotIn("KEYWORDS: coin jar", text)
 
     def test_missing_brief_is_asked_from_the_judge_chat(self):
         (self.pdir / "research_notes.json").unlink()

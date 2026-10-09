@@ -309,6 +309,16 @@ class ProdTests(Base):
         html = c.get(f"/studio/{self.pid}/thumbnails").get_data(as_text=True)
         self.assertIn("inspiration/hit.jpg", html)
 
+class SourceTitleStaysOutTests(unittest.TestCase):
+    def test_refs_never_include_the_source_title(self):
+        ctx = {"source": {"title": "I Found The Secret Lab"},
+               "refs": [("I found the secret lab!", 9.0),
+                        ("Other winning title", 7.0)]}
+        text = pp._refs_without_source(ctx)
+        self.assertIn("Other winning title", text)
+        self.assertNotIn("secret lab", text.lower())
+
+
 class ReplicateTests(unittest.TestCase):
     SRC = "I Found The Secret Lab Where Animals Learn To Talk"
 
@@ -363,6 +373,13 @@ class ReplicateTests(unittest.TestCase):
             w = pp.writer_prompt(ctx)
             j = pp.judge_prompt(ctx, pp.parse_plan(good()), [])
         self.assertIn("replicate this video", w.lower())
+        # the writer decides the title and the keyword from the script alone
+        for text in (w, j):
+            self.assertNotIn(self.SRC, text)
+            self.assertNotIn("WORKING TITLE", text)
+            self.assertNotIn("BRIEF", text)
+            self.assertNotIn("SOURCE VIDEO", text)
+        self.assertIn("keyword yourself", w.replace("MAIN KEYWORD yourself","keyword yourself"))
         self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", w)
         self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", j)
         self.assertNotIn('"hook"', w)
