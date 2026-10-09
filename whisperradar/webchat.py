@@ -1306,9 +1306,34 @@ def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
         page.wait_for_timeout(1000)
 
 
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+# Chats like ChatGPT show an attached IMAGE as a thumbnail with no file name
+# anywhere in the page text, so the name check below can never succeed for
+# images. Count the visible thumbnails instead.
+_THUMB_COUNT_JS = """() => [...document.querySelectorAll('img')].filter(i => {
+  const r = i.getBoundingClientRect();
+  return r.width >= 40 && r.height >= 40 && i.offsetParent !== null;
+}).length"""
+
+
+def _is_image(name: str) -> bool:
+    return str(name).lower().endswith(IMAGE_EXTS)
+
+
+def _thumb_count(page) -> int:
+    try:
+        return int(page.evaluate(_THUMB_COUNT_JS))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _name_counts(page, files) -> dict:
     body = page.evaluate("()=>document.body.innerText") or ""
-    return {Path(str(f)).name: body.count(Path(str(f)).name) for f in files}
+    counts = {Path(str(f)).name: body.count(Path(str(f)).name) for f in files}
+    if files and all(_is_image(n) for n in counts):
+        counts["__thumbs__"] = _thumb_count(page)
+    return counts
 
 
 def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
@@ -1316,13 +1341,20 @@ def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
     """Wait until every NEW attachment shows in the chat. In a chat that
     already mentions narration.txt / shotlist.json the bare name is on the
     page from the start, so a file only counts once its name appears MORE
-    often than before the upload (else the send goes out without it)."""
+    often than before the upload (else the send goes out without it).
+
+    When every file is an image, the name may never appear (thumbnails only),
+    so that many NEW visible thumbnails count as uploaded too."""
     names = [Path(str(f)).name for f in files]
     seen = seen or {}
+    all_images = bool(names) and all(_is_image(n) for n in names)
     t0 = clock()
     while True:
         body = page.evaluate("()=>document.body.innerText") or ""
-        if all(body.count(n) > seen.get(n, 0) for n in names):
+        by_name = all(body.count(n) > seen.get(n, 0) for n in names)
+        by_thumbs = (all_images and "__thumbs__" in seen
+                     and _thumb_count(page) - seen["__thumbs__"] >= len(names))
+        if by_name or by_thumbs:
             page.wait_for_timeout(int(settle * 1000))   # let the upload finish
             return
         if clock() - t0 > limit:

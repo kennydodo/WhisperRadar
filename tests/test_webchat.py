@@ -746,6 +746,50 @@ class UploadCountTests(unittest.TestCase):
         self.assertGreaterEqual(page.ticks, 5)
 
 
+class ImageUploadTests(unittest.TestCase):
+    """ChatGPT shows attached images as thumbnails: no file name in the text."""
+
+    def _page(self, clk, thumbs_after):
+        class P:
+            def __init__(self):
+                self.thumbs = 2            # logo / avatar already on the page
+                self.ticks = 0
+
+            def evaluate(self, js, arg=None):
+                if js is wc._THUMB_COUNT_JS:
+                    return self.thumbs
+                return "New chat"          # no file names anywhere
+
+            def wait_for_timeout(self, ms):
+                clk.t += ms / 1000.0
+                self.ticks += 1
+                if self.ticks == 4:
+                    self.thumbs += thumbs_after
+        return P()
+
+    def test_new_thumbnails_count_as_uploaded_images(self):
+        clk = Clock()
+        files = ["/tmp/f01.jpg", "/tmp/f02.jpg", "/tmp/t01.jpg"]
+        page = self._page(clk, 3)
+        seen = wc._name_counts(page, files)
+        wc._wait_for_uploads(page, files, clk, lambda m: None, seen=seen)
+        self.assertEqual(page.thumbs, 5)
+
+    def test_missing_thumbnails_still_time_out(self):
+        clk = Clock()
+        files = ["/tmp/f01.jpg", "/tmp/f02.jpg"]
+        page = self._page(clk, 0)
+        seen = wc._name_counts(page, files)
+        with self.assertRaises(wc.WebChatError):
+            wc._wait_for_uploads(page, files, clk, lambda m: None, seen=seen,
+                                 limit=10)
+
+    def test_non_image_files_do_not_use_the_thumbnail_rule(self):
+        page = self._page(Clock(), 0)
+        self.assertNotIn("__thumbs__",
+                         wc._name_counts(page, ["/tmp/narration.txt"]))
+
+
 class PeakHoursTests(unittest.TestCase):
     def test_peak_hours_popup_is_closed_and_the_model_kept(self):
         clk = Clock()
