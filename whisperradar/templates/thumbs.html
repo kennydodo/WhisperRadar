@@ -151,6 +151,7 @@
       {% if c.final_url %}<img class="big" src="{{ c.final_url }}" alt="">
       {% elif c.art_url %}<img class="big" src="{{ c.art_url }}" alt="">
       {% else %}<div class="ph">no picture yet</div>{% endif %}
+      {% if c.final and c.metrics and c.metrics.warnings %}<div class="muted" style="font-size:12px;margin-top:4px" title="local check at phone size: contrast {{ c.metrics.contrast }}, colour {{ c.metrics.saturation }}, brightness {{ c.metrics.brightness }}">&#9888; {{ c.metrics.warnings|join(', ') }}</div>{% endif %}
       <div style="margin-top:8px"><span class="chip">{{ layouts[c.layout] }}</span>
         {% if data.chosen == c.id %}<span class="badge ok">chosen</span>{% endif %}
         {% if c.idea %}<span class="muted" style="font-size:12px"> &middot; {{ c.idea }}</span>{% endif %}</div>

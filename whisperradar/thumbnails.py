@@ -283,6 +283,8 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
+ATTENTION DEVICES: reward an emphasis device (ellipse/arrow/underline) that fits the idea and points at the real focal object; mark one that is on the wrong thing, covers the words, or clutters the picture as a fault. Concepts with "none" are fine when the picture already has one clear focal point.
+
 Score 1-10 how likely the BEST of these is to win the click at phone size next to the title, and that the set offers real variety. Name the exact concept (by position, 1-based) and text that is weak.
 
 Reply with ONE JSON object and nothing else:
@@ -817,6 +819,30 @@ def compose(art_path, concept: dict, out_path) -> Path:
     return out
 
 
+def phone_metrics(path) -> dict:
+    """Cheap, local read of how a finished thumbnail holds up at phone size
+    (about 170 px wide): contrast, colour punch and brightness, plus a list
+    of plain-language warnings. No model, no network."""
+    from PIL import Image, ImageStat
+    im = Image.open(path).convert("RGB").resize((170, 96))
+    grey = ImageStat.Stat(im.convert("L"))
+    contrast = float(grey.stddev[0])
+    bright = float(grey.mean[0])
+    hsv = ImageStat.Stat(im.convert("HSV"))
+    sat = float(hsv.mean[1])
+    warnings = []
+    if contrast < 40:
+        warnings.append("flat at phone size (low contrast)")
+    if sat < 60:
+        warnings.append("washed out (low colour punch)")
+    if bright < 55:
+        warnings.append("very dark")
+    elif bright > 215:
+        warnings.append("very bright")
+    return {"contrast": round(contrast, 1), "saturation": round(sat, 1),
+            "brightness": round(bright, 1), "warnings": warnings}
+
+
 def compose_all(pdir) -> list[str]:
     """Re-compose every concept that has art. Returns the ids composed."""
     pdir = Path(pdir)
@@ -830,6 +856,10 @@ def compose_all(pdir) -> list[str]:
         out = thumbs_dir(pdir) / f"{c['id']}.jpg"
         compose(art, c, out)
         c["final"] = f"{THUMB_DIR}/{out.name}"
+        try:
+            c["metrics"] = phone_metrics(out)
+        except Exception:  # noqa: BLE001 - a metric never blocks composing
+            c.pop("metrics", None)
         done.append(c["id"])
     save_thumbs(pdir, data)
     contact_sheet(pdir)

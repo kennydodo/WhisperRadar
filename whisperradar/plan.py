@@ -69,6 +69,23 @@ def _s(value) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def _norm_title(text) -> str:
+    return re.sub(r"[^\w]+", " ", str(text or "").lower()).strip()
+
+
+def candidate_title(titles: list, title: str) -> str:
+    """The exact candidate string that `title` matches (ignoring case and
+    punctuation), or ""."""
+    want = _norm_title(title)
+    if not want:
+        return ""
+    for t in titles or []:
+        text = t.get("text") if isinstance(t, dict) else t
+        if _norm_title(text) == want:
+            return str(text)
+    return ""
+
+
 def parse_plan(raw) -> dict:
     """Normalise the writer's JSON. Missing parts stay empty."""
     plan = empty_plan()
@@ -83,8 +100,12 @@ def parse_plan(raw) -> dict:
                            "why": _s(t.get("why")) if isinstance(t, dict)
                            else ""})
     plan["titles"] = titles[:12]
-    plan["title"] = _s(raw.get("title")) or (titles[0]["text"] if titles
-                                             else "")
+    title = _s(raw.get("title"))
+    # a title that is a candidate in all but punctuation/case becomes the
+    # candidate's exact string; anything else stays as written (and is a
+    # fault, see local_faults)
+    cand = candidate_title(titles, title)
+    plan["title"] = cand or title or (titles[0]["text"] if titles else "")
     plan["promise"] = _s(raw.get("promise"))
     plan["hook"] = _s(raw.get("hook"))
     th = raw.get("thumbnail") if isinstance(raw.get("thumbnail"), dict) else {}
@@ -105,6 +126,9 @@ def local_faults(plan: dict) -> list[str]:
     if len(title) > TITLE_MAX:
         f.append(f"title is {len(title)} characters; YouTube allows "
                  f"{TITLE_MAX}")
+    if plan["titles"] and not candidate_title(plan["titles"], title):
+        f.append("the chosen title is not one of the title options - pick "
+                 "one of the options exactly")
     kw = plan["keyword"].lower()
     if not kw:
         f.append("no main keyword")
@@ -467,7 +491,12 @@ def apply_plan(cfg, pid: int, title: str | None = None) -> dict:
     pdir = studio.prod_dir(cfg, pid)
     plan = load_plan(pdir)
     if title:
-        plan["title"] = _s(title)
+        plan["title"] = (candidate_title(plan["titles"], _s(title))
+                         or _s(title))
+    elif plan["titles"] and not candidate_title(plan["titles"],
+                                                plan["title"]):
+        raise ValueError("The plan's title is not one of its vetted title "
+                         "options - pick one before applying")
     if not plan["title"]:
         raise ValueError("The plan has no title")
     conn = db.connect(cfg.db_path)

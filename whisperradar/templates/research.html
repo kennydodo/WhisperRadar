@@ -252,7 +252,7 @@
       {% endif %}
       <label>sort
         <select name="sort">
-          {% for k, lbl in [('multiplier','multiplier'),('views','views'),('vpd','views / day'),('momentum','momentum (now / day)'),('recent','newest'),('title','title A-Z'),('channel','channel A-Z')] %}<option value="{{ k }}" {{ 'selected' if f.sort == k else '' }}>{{ lbl }}</option>{% endfor %}
+          {% for k, lbl in [('multiplier','multiplier'),('views','views'),('vpd','views / day'),('momentum','momentum (now / day)'),('vph','views / hour'),('breakout','breaking out now'),('recent','newest'),('title','title A-Z'),('channel','channel A-Z')] %}<option value="{{ k }}" {{ 'selected' if f.sort == k else '' }}>{{ lbl }}</option>{% endfor %}
         </select></label>
       <label>shorts
         <select name="shorts">
@@ -265,6 +265,9 @@
         <select name="per">{% for n in [25, 50, 100, 200] %}<option value="{{ n }}" {{ 'selected' if f.per == n else '' }}>{{ n }}</option>{% endfor %}</select></label>
       <button type="submit">Filter</button>
     </form>
+    {% if chips %}<div class="note" style="margin-top:6px">search like a niche:
+      {% for c in chips %}<a class="chip" href="?{{ rqs(q=c, page=1) }}">{{ c }}</a> {% endfor %}
+      {% if f.q %}<a href="?{{ rqs(q='', page=1) }}">clear</a>{% endif %}</div>{% endif %}
     <div class="note">
       {{ matched }} match{{ '' if matched == 1 else 'es' }}{% if pages > 1 %} (page {{ page }} of {{ pages }}){% endif %}
       &middot; {{ scored }} of {{ total_videos }} videos could be scored
@@ -289,7 +292,7 @@
     {% for r in rows %}
       <tr>
         <td><a href="{{ r.url }}" target="_blank" rel="noopener"><img class="th" loading="lazy" src="{{ r.thumb }}" alt=""></a></td>
-        <td><div class="title"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a></div>
+        <td><div class="title"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a>{% if r.breakout %} <span class="mult m10" title="recent, well above its channel's norm and not slowing down">&#128293; breaking out</span>{% endif %}</div>
             <div class="muted" style="font-size:12px">{{ r.channel_name }}{% if r.duration %} &middot; {{ (r.duration // 60)|int }}:{{ '%02d' % (r.duration % 60)|int }}{% endif %}</div></td>
         <td class="num"><span class="mult {{ 'm10' if r.multiplier >= 10 else ('m5' if r.multiplier >= 5 else 'm3') }}"
               title="views / {{ fmt_views(r.baseline) }} ({{ r.baseline_how }})">{{ '%.1f' % r.multiplier }}x</span></td>

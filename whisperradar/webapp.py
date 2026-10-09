@@ -34,6 +34,7 @@ from flask import (
 )
 
 from . import external_prompts
+from . import niche_chips
 from . import packaging
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
@@ -847,7 +848,7 @@ def create_app(cfg) -> Flask:
             scored=len(items), with_views=len(rows), total_videos=total_videos,
             undated=undated, channels=channels, genres=genres, own=own,
             page=page, pages=pages, per=per, rqs=rqs, sort_link=sort_link,
-            arrow=arrow,
+            arrow=arrow, chips=niche_chips.for_genre(genre),
             reverse=reverse,
             selected_own=selected_own, fmt_views=outliers.fmt_views,
             fmt_age=outliers.fmt_age, with_momentum=with_momentum,
@@ -4554,7 +4555,13 @@ def create_app(cfg) -> Flask:
         plan["status"] = "ready" if not faults else "draft"
         packplan.save_plan(pdir, plan)
         if form.get("apply") and plan["title"]:
-            packplan.apply_plan(cfg, pid)
+            # a title typed on the page is the person's own choice, so it
+            # is passed explicitly (the vetted-candidate rule is for the
+            # writer's pick)
+            try:
+                packplan.apply_plan(cfg, pid, title=plan["title"])
+            except ValueError as exc:
+                return _plan_back(pid, msg=str(exc))
             return _plan_back(pid, msg="Saved - the title is now this "
                                        "production's title, and the script "
                                        "will be written to this plan")

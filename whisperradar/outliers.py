@@ -89,6 +89,30 @@ def trend(now_per_day, lifetime_per_day) -> str:
         "cooling" if ratio <= COOLING else "")
 
 
+BREAKOUT_MAX_AGE_DAYS = 14
+BREAKOUT_MIN_MULTIPLIER = 3.0
+
+
+def views_per_hour(views, age_days, now_per_day=None) -> float | None:
+    """Current pace in views/hour: the snapshot pace when we have one,
+    otherwise the lifetime average (views over age, at least 1 hour)."""
+    if now_per_day is not None:
+        return now_per_day / 24.0
+    if views is None or age_days is None:
+        return None
+    return views / max(age_days * 24.0, 1.0)
+
+
+def is_breakout(multiplier, age_days, trend_label="") -> bool:
+    """A recent video that already beats its channel by a wide margin and is
+    not slowing down - "breaking out now"."""
+    if age_days is None or age_days > BREAKOUT_MAX_AGE_DAYS:
+        return False
+    if (multiplier or 0) < BREAKOUT_MIN_MULTIPLIER:
+        return False
+    return trend_label != "cooling"
+
+
 def build(rows: Iterable, now: _dt.datetime | None = None, window: int = WINDOW,
           min_baseline: int = MIN_BASELINE, snapshots: dict | None = None
           ) -> list[dict]:
@@ -135,6 +159,9 @@ def build(rows: Iterable, now: _dt.datetime | None = None, window: int = WINDOW,
             "age_days": age,
             "vpd": vpd,
             "momentum": now_pd, "trend": trend(now_pd, vpd),
+            "vph": views_per_hour(it["views"], age, now_pd),
+            "breakout": is_breakout(it["views"] / base, age,
+                                    trend(now_pd, vpd)),
             "is_short": bool(dur is not None and dur <= SHORT_SECONDS),
             "thumb": f"https://i.ytimg.com/vi/{it['video_id']}/mqdefault.jpg",
         })
@@ -170,6 +197,10 @@ def filter_sort(items: list[dict], *, min_multiplier: float = 3.0,
         keep.sort(key=lambda i: i["views"], reverse=True)
     elif sort == "vpd":
         keep.sort(key=lambda i: (i["vpd"] is None, -(i["vpd"] or 0)))
+    elif sort == "vph":
+        keep.sort(key=lambda i: (i["vph"] is None, -(i["vph"] or 0)))
+    elif sort == "breakout":
+        keep.sort(key=lambda i: (not i["breakout"], -(i["vph"] or 0)))
     elif sort == "momentum":
         keep.sort(key=lambda i: (i["momentum"] is None, -(i["momentum"] or 0)))
     elif sort == "recent":
@@ -183,7 +214,7 @@ def filter_sort(items: list[dict], *, min_multiplier: float = 3.0,
         keep.sort(key=lambda i: i["multiplier"], reverse=True)
     if reverse:
         # rows without a value (no date, no momentum) stay at the end
-        blank = {"vpd": "vpd", "momentum": "momentum",
+        blank = {"vpd": "vpd", "vph": "vph", "momentum": "momentum",
                  "recent": "age_days"}.get(sort)
         if blank:
             have = [i for i in keep if i[blank] is not None]

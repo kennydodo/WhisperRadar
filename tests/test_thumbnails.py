@@ -117,6 +117,31 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(Image.open(out).size, (1280, 720))
 
 
+class PhoneMetricsTests(unittest.TestCase):
+    def test_flat_grey_warns_and_punchy_image_does_not(self):
+        import tempfile
+        from PIL import Image, ImageDraw
+        with tempfile.TemporaryDirectory() as d:
+            flat = Path(d) / "flat.jpg"
+            Image.new("RGB", (640, 360), (120, 120, 120)).save(flat)
+            w = th.phone_metrics(flat)["warnings"]
+            self.assertTrue(any("flat" in x for x in w))
+            self.assertTrue(any("washed" in x for x in w))
+            punchy = Path(d) / "punchy.jpg"
+            im = Image.new("RGB", (640, 360), (230, 30, 30))
+            ImageDraw.Draw(im).rectangle((0, 0, 320, 360), fill=(250, 220, 0))
+            ImageDraw.Draw(im).ellipse((380, 80, 600, 300), fill=(10, 20, 120))
+            im.save(punchy)
+            self.assertEqual(th.phone_metrics(punchy)["warnings"], [])
+
+
+class JudgeEmphasisTests(unittest.TestCase):
+    def test_judge_prompt_covers_attention_devices(self):
+        ctx = {"channel": "c", "genre": "g", "kit_title": "t", "script": "s"}
+        self.assertIn("ATTENTION DEVICES",
+                      th.judge_prompt(ctx, [], []))
+
+
 class EmphasisTests(unittest.TestCase):
     def setUp(self):
         import tempfile

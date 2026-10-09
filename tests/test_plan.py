@@ -53,6 +53,20 @@ class PureTests(unittest.TestCase):
         self.assertIn("WAIT, WHAT?", block)
 
 
+class VettedTitleTests(unittest.TestCase):
+    def test_free_form_title_is_a_fault(self):
+        plan = pp.parse_plan(good(
+            title="The coin jar secret 0 (You Do Without Knowing)",
+            keyword="coin jar"))
+        self.assertTrue(any("not one of the title options" in x
+                            for x in pp.local_faults(plan)))
+
+    def test_near_match_snaps_to_the_candidate(self):
+        plan = pp.parse_plan(good(title="the coin jar SECRET 0!"))
+        self.assertEqual(plan["title"], "The coin jar secret 0")
+        self.assertEqual(pp.local_faults(plan), [])
+
+
 class ProdTests(Base):
     def verdict(self, score):
         return json.dumps({"score": score, "pass": score >= 8,
@@ -79,6 +93,14 @@ class ProdTests(Base):
         self.assertEqual(db.get_production(conn, self.pid)["title"],
                          "The coin jar secret 0")
         conn.close()
+
+    def test_apply_refuses_an_unvetted_title(self):
+        pp.save_plan(self.pdir, pp.parse_plan(good(title="Made up title")))
+        with self.assertRaises(ValueError):
+            pp.apply_plan(self.cfg, self.pid)
+        pp.apply_plan(self.cfg, self.pid, title="the coin jar secret 3")
+        self.assertEqual(pp.load_plan(self.pdir)["title"],
+                         "The coin jar secret 3")
 
     def test_pages(self):
         c = create_app(self.cfg).test_client()

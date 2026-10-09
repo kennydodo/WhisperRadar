@@ -75,6 +75,29 @@ class ScoreTests(unittest.TestCase):
         self.assertAlmostEqual(hit["age_days"], 10.0)
         self.assertAlmostEqual(hit["vpd"], 1000.0)
 
+    def test_views_per_hour_and_breakout(self):
+        rows = self._channel() + [row("new", 9000, days_ago=2),
+                                  row("old", 9000, days_ago=100)]
+        by = {i["video_id"]: i for i in outliers.build(rows, NOW)}
+        self.assertAlmostEqual(by["new"]["vph"], 9000 / 48.0)
+        self.assertTrue(by["new"]["breakout"])
+        self.assertFalse(by["old"]["breakout"])
+        snaps = {"new": [(NOW - dt.timedelta(days=2), 4000), (NOW, 9000)]}
+        got = {i["video_id"]: i for i in outliers.build(rows, NOW,
+                                                         snapshots=snaps)}
+        self.assertAlmostEqual(got["new"]["vph"], got["new"]["momentum"] / 24)
+
+    def test_sort_by_vph_and_breakout(self):
+        rows = self._channel() + [row("a", 9000, days_ago=2),
+                                  row("b", 12000, days_ago=60)]
+        items = outliers.build(rows, NOW)
+        got = [i["video_id"] for i in outliers.filter_sort(
+            items, sort="vph")[0]]
+        self.assertEqual(got[0], "a")
+        got = [i["video_id"] for i in outliers.filter_sort(
+            items, sort="breakout")[0]]
+        self.assertEqual(got[0], "a")
+
     def test_shorts_are_flagged_by_duration(self):
         rows = self._channel() + [row("s", 9000, dur=45), row("l", 9000, dur=600),
                                   row("u", 9000, dur=None)]
@@ -115,6 +138,17 @@ class FilterTests(unittest.TestCase):
     def test_limit_reports_the_full_match_count(self):
         shown, matched = outliers.filter_sort(self.items, limit=1)
         self.assertEqual((len(shown), matched), (1, 3))
+
+
+class NicheChipTests(unittest.TestCase):
+    def test_genre_chips_then_generic_without_repeats(self):
+        from whisperradar import niche_chips
+        chips = niche_chips.for_genre("Finance", limit=50)
+        self.assertIn("passive income", chips)
+        self.assertIn("mistakes", chips)
+        self.assertEqual(len(chips), len(set(chips)))
+        self.assertEqual(niche_chips.for_genre("", limit=3),
+                         niche_chips.GENERIC[:3])
 
 
 class FormatTests(unittest.TestCase):
