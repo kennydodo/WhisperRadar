@@ -214,8 +214,8 @@ SPEC: list[dict] = [
         "help": "The chat site that WRITES script, shotlist, packaging plan "
                 "and thumbnail concepts when the transport is webchat. Sites "
                 "you added under Web chat LLMs are listed too. Its model and "
-                "thinking level are the ones you used last in any web chat "
-                "run form.",
+                "thinking level are chosen beside it and saved with the "
+                "settings.",
     },
     {
         "key": "autorun_judge", "type": "choice", "default": "deepseek",

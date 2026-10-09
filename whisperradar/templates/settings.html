@@ -525,5 +525,7 @@
   })();
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
+<script>window.WR_SERVER_OPTS = {{ autorun_options|tojson }};</script>
+{% include "_webchat_extra.html" %}
 </body>
 </html>

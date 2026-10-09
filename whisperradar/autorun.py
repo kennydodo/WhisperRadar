@@ -535,7 +535,8 @@ def _webchat_pair(cfg) -> tuple[str, str, dict | None]:
     conn = _connect(cfg)
     try:
         st = settings.load(conn)
-        raw = db.get_setting(conn, "webchat_last_options")
+        raw = (db.get_setting(conn, "autorun_webchat_options")
+               or db.get_setting(conn, "webchat_last_options"))
     finally:
         conn.close()
     writer = st.get("autorun_writer") or "zai"
