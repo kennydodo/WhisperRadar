@@ -1668,3 +1668,5 @@ Four kinds of slot: one per OWN channel (`sjob`, studio production jobs), the da
 
 ## Script must not mention the thumbnail
 `plan.plan_block` (appended to the script writer AND judge prompts) used to say "Thumbnail says: ... pay this off early", so scripts started to talk about the thumbnail. It now gives the cover idea without the word, and states the rule that narration never mentions thumbnail/cover/title/packaging. `plan.meta_mentions` is a code check in `webstages.run_script`: a mention fails the round and goes back to the writer as feedback.
+
+Correction: the script stage gets ONLY the packaging plan's title and main keyword (`plan.plan_block`). Promise, hook and thumbnail idea are for the thumbnails and publish kit after the merge and must never go into script prompts.

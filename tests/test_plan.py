@@ -49,8 +49,13 @@ class PureTests(unittest.TestCase):
     def test_plan_block(self):
         self.assertEqual(pp.plan_block(pp.empty_plan()), "")
         block = pp.plan_block(pp.parse_plan(good()))
-        self.assertIn("Promise to the viewer", block)
-        self.assertIn("WAIT, WHAT?", block)
+        self.assertIn("Title:", block)
+        self.assertIn("Main keyword:", block)
+        # only the title and keyword reach the script; the rest is for the
+        # thumbnails and the publish kit
+        self.assertNotIn("WAIT, WHAT?", block)
+        self.assertNotIn("Promise", block)
+        self.assertNotIn("hook", block.lower().replace("never", ""))
 
 
 class ProdTests(Base):
@@ -64,12 +69,16 @@ class ProdTests(Base):
         self.assertEqual(plan["status"], "ready")
         from whisperradar import external_prompts as ep
         text = ep.script_writer_prompt(self.cfg, self.pid)
-        self.assertIn("PACKAGING PLAN", text)
-        self.assertIn("You will know why the jar always fills up.", text)
+        self.assertIn("VIDEO TITLE AND KEYWORD", text)
+        self.assertIn("The coin jar secret 0", text)
+        # the promise, hook and thumbnail idea never reach the script
+        self.assertNotIn("You will know why the jar always fills up.", text)
+        self.assertNotIn("Start with the jar overflowing.", text)
+        self.assertNotIn("WAIT, WHAT?", text)
 
     def test_no_plan_leaves_the_prompt_alone(self):
         from whisperradar import external_prompts as ep
-        self.assertNotIn("PACKAGING PLAN",
+        self.assertNotIn("VIDEO TITLE AND KEYWORD",
                          ep.script_writer_prompt(self.cfg, self.pid))
 
     def test_apply_sets_the_production_title(self):
@@ -138,7 +147,8 @@ class MetaMentionTests(unittest.TestCase):
 
     def test_block_forbids_mentioning_the_cover(self):
         from whisperradar import plan
-        block = plan.plan_block({"title": "T", "promise": "P", "hook": "",
+        block = plan.plan_block({"title": "T", "keyword": "k", "promise": "P",
+                                 "hook": "H",
                                  "thumbnail": {"text": "WAKE UP"}})
         self.assertIn("NEVER", block)
-        self.assertNotIn("Thumbnail says", block)
+        self.assertNotIn("WAKE UP", block)
