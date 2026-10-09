@@ -680,6 +680,31 @@ _BUSY_JS = """(args) => {
 
 # z.ai's "Currently in peak hours - switch to GLM-5.3-Flash" pop-up. It is
 # dismissed with Cancel / Close ONLY: the "Switch" button changes the model.
+_LIMIT_JS = r"""() => {
+  const re = /(chat|conversation) (is )?paused|paused until|usage (limit|resets)|reached (the |your )?(free |daily |usage |message )?limit|limit (reached|resets)/i;
+  const replies = [...document.querySelectorAll(%s)];
+  for (const e of document.querySelectorAll('div,p,span,li,[role=alert]')) {
+    if (e.children.length > 3) continue;
+    const t = (e.innerText || '').trim();
+    if (!t || t.length > 220 || !re.test(t)) continue;
+    if (replies.some(r => r.contains(e))) continue;
+    if (e.closest('[data-message-author-role=user]')) continue;
+    const r = e.getBoundingClientRect(); if (!r.width || !r.height) continue;
+    return t; }
+  return ''; }"""
+
+
+def _limit_banner(page, site: Site) -> str:
+    """A "Chat paused until usage resets at 2:37 PM" style notice (free plan
+    limit, e.g. after ChatGPT drew an image). Unlike `_busy` this ignores the
+    'already on the page' marks: the notice is usually there BEFORE the send
+    that then silently does nothing."""
+    try:
+        return str(page.evaluate(_LIMIT_JS % json.dumps(site.reply)) or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 _AGE_JS = r"""() => {
   const vis = e => { const r = e.getBoundingClientRect();
                      return r.width > 0 && r.height > 0; };
@@ -992,6 +1017,9 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 continue
             if peak:
                 raise ModelBusy(f"{site.name} says: \"{peak['text'][:140]}\"")
+            lim = _limit_banner(page, site)
+            if lim:
+                raise ModelBusy(f"{site.name} says: \"{lim[:140]}\"")
             try:
                 sig = {"box_chars": page.evaluate(_TA_LEN_JS, site.box),
                        "generating": bool(page.evaluate(site.generating_js)),
@@ -1059,6 +1087,9 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 except Exception:  # noqa: BLE001
                     pass
             elif clock() - t0 > start_wait:
+                lim = _limit_banner(page, site)
+                if lim:
+                    raise ModelBusy(f"{site.name} says: \"{lim[:140]}\"")
                 tail = " ".join(str(page.evaluate(_PAGE_TAIL_JS)
                                     or "").split())[-240:]
                 raise WebChatTimeout(

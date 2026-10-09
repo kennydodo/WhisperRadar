@@ -50,6 +50,10 @@ DEFAULT_OPTIONS = {"zai": {"thinking": "Low", "model": "flash"},
                    "deepseek": {"deepthink": True, "search": False}}
 
 
+NO_IMAGES_NOTE = ("\n\n(Reply with text only - do not create, draw or generate "
+                  "any images.)")
+
+
 class WebTransport:
     def __init__(self, chat: "webchat.WebChat", log: Callable[[str], None],
                  options: dict | None = None):
@@ -60,6 +64,10 @@ class WebTransport:
 
     def ask(self, site: str, prompt: str, files=(), new_chat: bool = True,
             ready=None):
+        if site not in webchat.BUILTIN_KEYS and (prompt or "").strip():
+            # ChatGPT draws an image when a prompt talks about thumbnails and
+            # then runs into the free plan's image limit
+            prompt = prompt.rstrip() + NO_IMAGES_NOTE
         return self.chat.ask(site, prompt, list(files), new_chat=new_chat,
                              options=self.options.get(site), ready=ready,
                              log=self.log)
