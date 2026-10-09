@@ -22,8 +22,7 @@ def register(app, cfg, sjob) -> None:
         ch = _channel(key)
         if ch is None:
             return redirect("/watched?error=Unknown+channel")
-        sites = [{"key": s["key"], "name": s["name"]}
-                 for s in webchat.custom_sites_ui()]
+        sites = list(webchat.custom_sites_ui())
         return render_template(
             "look.html", ch=ch, sites=sites,
             look=channel_look.load(cfg, ch["channel_id"]),
@@ -69,11 +68,21 @@ def register(app, cfg, sjob) -> None:
         except ValueError:
             frames = channel_look.DEFAULT_FRAMES
         hint = (request.form.get("hint") or "").strip()[:600]
+        options = {}
+        for s in webchat.custom_sites_ui():
+            k = s["key"]
+            options[k] = {
+                "model": (request.form.get(f"wc_{k}_model") or "").strip()
+                or None,
+                "level": (request.form.get(f"wc_{k}_level") or "").strip()
+                or None,
+                "toggles": {t["id"]: request.form.get(f"wc_{k}_{t['id']}")
+                            == "on" for t in s.get("toggles") or []}}
         _job = sjob._real()
         cid = ch["channel_id"]
 
         def worker():
-            with webstages.web_transport(cfg, sjob.log.append) as transport:
+            with webstages.web_transport(cfg, sjob.log.append, options) as transport:
                 transport.set_stop(lambda: _job.cancel)
                 channel_look.run(cfg, cid, site, transport, sjob.log.append,
                                  n_frames=frames, hint=hint)

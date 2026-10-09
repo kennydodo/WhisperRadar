@@ -22,7 +22,7 @@
     var l = document.createElement('label'); l.appendChild(document.createTextNode(text + ' '));
     l.appendChild(el); return l;
   }
-  document.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (s) {
+  document.querySelectorAll('select[name=writer], select[name=judge], select[name=autorun_writer], select[name=autorun_judge]').forEach(function (s) {
     SITES.forEach(function (site) {
       if (![].some.call(s.options, function (o) { return o.value === site.key; })) {
         s.add(new Option(site.name, site.key));
@@ -30,7 +30,7 @@
     });
   });
   var forms = new Set();
-  document.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (s) {
+  document.querySelectorAll('select[name=writer], select[name=judge], select[name=autorun_writer], select[name=autorun_judge]').forEach(function (s) {
     var form = s.closest('form');
     if (!form || forms.has(form)) return;
     forms.add(form);
@@ -84,17 +84,64 @@
       if (anchor) form.insertBefore(row, anchor);
       else form.appendChild(row);
     }
-    function sync() {
-      var chosen = {};
-      form.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (x) { chosen[x.value] = 1; });
-      Object.keys(BUILTIN).forEach(function (key) {
-        BUILTIN[key].forEach(function (n) {
+    // Each role (Writer, Judge) shows ITS site's settings on the same line,
+    // right after the role's own dropdown; the settings of a site that is not
+    // chosen are hidden. (If both roles pick the same site, its settings sit
+    // after the Writer.)
+    function controlsOf(site) {
+      var els = [];
+      var span = form.querySelector('span[data-site="' + site + '"]');
+      if (BUILTIN[site]) {
+        BUILTIN[site].forEach(function (n) {
           var el = form.querySelector('select[name=' + n + ']');
-          if (el) (el.closest('label') || el).style.display = chosen[key] ? '' : 'none';
+          if (!el) return;
+          var holder = el.closest('span[data-site]') || el.closest('label') || el;
+          if (els.indexOf(holder) < 0) els.push(holder);
+        });
+      } else if (span) {
+        els.push(span);
+      }
+      return els;
+    }
+    function show(el, on) {
+      el.style.display = on ? (el.matches('span[data-site]') ? 'inline-flex' : '') : 'none';
+    }
+    function sync() {
+      var sites = Object.keys(BUILTIN).concat(SITES.map(function (x) { return x.key; }));
+      var placed = {};
+      form.querySelectorAll('select[name=writer], select[name=judge], select[name=autorun_writer], select[name=autorun_judge]').forEach(function (sel) {
+        var site = sel.value;
+        if (placed[site]) return;
+        placed[site] = true;
+        var prev = sel.closest('label') || sel;
+        if (prev === sel && !(sel.parentNode.dataset && sel.parentNode.dataset.wrw)) {
+          var wrap = document.createElement('div');
+          wrap.dataset.wrw = '1';
+          wrap.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+          sel.parentNode.insertBefore(wrap, sel);
+          wrap.appendChild(sel);
+          // settings page: the field spans the whole row so the chat and its
+          // settings fit on one line; the labels sit above their dropdowns
+          wrap.style.alignItems = 'flex-end';
+          sel.style.width = 'auto'; sel.style.minWidth = '150px';
+          if (wrap.parentNode) wrap.parentNode.style.gridColumn = '1 / -1';
+          wrap.dataset.settingsRole = '1';
+        }
+        controlsOf(site).forEach(function (c) {
+          if (prev.parentNode) prev.parentNode.insertBefore(c, prev.nextSibling);
+          show(c, true);
+          if (sel.parentNode && sel.parentNode.dataset.settingsRole) {
+            c.querySelectorAll('label').forEach(function (l) {
+              l.style.cssText = 'display:inline-flex;flex-direction:column;font-size:12px;margin:0';
+            });
+            if (c.matches('label')) c.style.cssText = 'display:inline-flex;flex-direction:column;font-size:12px;margin:0';
+          }
+          prev = c;
         });
       });
-      form.querySelectorAll('[data-site]').forEach(function (g) {
-        g.style.display = chosen[g.dataset.site] ? 'inline-flex' : 'none';
+      sites.forEach(function (site) {
+        if (placed[site]) return;
+        controlsOf(site).forEach(function (c) { show(c, false); });
       });
     }
     // The run reloads (or redirects back to) this page, which would put the
@@ -107,9 +154,10 @@
     var KEY = 'wrwc:' + (form.getAttribute('action') || location.pathname).replace(/\d+/g, '#');
     var LAST = 'wrwc:last';
     var watched = function () {
-      return form.querySelectorAll('select[name=writer], select[name=judge], select[name^=wc_], select[name^=zai_], select[name^=deepseek_]');
+      return form.querySelectorAll('select[name=writer], select[name=judge], select[name=autorun_writer], select[name=autorun_judge], select[name^=wc_], select[name^=zai_], select[name^=deepseek_]');
     };
     function saveSel() {
+      if (form.querySelector('select[name=autorun_writer]')) return;
       try {
         var o = {}, g = {};
         try { g = JSON.parse(localStorage.getItem(LAST) || '{}') || {}; } catch (e) {}
@@ -130,8 +178,31 @@
         });
       } catch (e) {}
     }
-    restoreSel();
-    form.querySelectorAll('select[name=writer], select[name=judge]').forEach(function (x) {
+    var isSettings = !!form.querySelector('select[name=autorun_writer]');
+    function applyServer(o) {
+      function set(n, v) {
+        var el = form.querySelector('select[name=' + CSS.escape(n) + ']');
+        if (el && v !== undefined && v !== null &&
+            [].some.call(el.options, function (op) { return op.value === String(v); }))
+          el.value = String(v);
+      }
+      if (o.zai) { set('zai_model', o.zai.model); set('zai_thinking', o.zai.thinking); }
+      if (o.deepseek) {
+        set('deepseek_deepthink', o.deepseek.deepthink === false ? 'off' : 'on');
+        set('deepseek_search', o.deepseek.search ? 'on' : 'off');
+      }
+      SITES.forEach(function (site) {
+        var c = o[site.key]; if (!c) return;
+        set('wc_' + site.key + '_model', c.model || '');
+        set('wc_' + site.key + '_level', c.level || '');
+        Object.keys(c.toggles || {}).forEach(function (t) {
+          set('wc_' + site.key + '_' + t, c.toggles[t] ? 'on' : 'off');
+        });
+      });
+    }
+    if (isSettings) { try { applyServer(window.WR_SERVER_OPTS || {}); } catch (e) {} }
+    else restoreSel();
+    form.querySelectorAll('select[name=writer], select[name=judge], select[name=autorun_writer], select[name=autorun_judge]').forEach(function (x) {
       x.addEventListener('change', sync);
       x.addEventListener('change', saveSel);
     });

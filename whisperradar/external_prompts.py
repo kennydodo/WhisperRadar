@@ -329,16 +329,35 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                       "script with the SOURCE FACTS. ", text)
         extra = [{"name": SCRIPT_FILE, "about": "the script to judge - "
                   "attach your own script file"}]
+    st = (studio.structure_copy(script, source) if (script and source.strip())
+          else None)
+    struct_txt = ("" if not st else
+                  f" Story order vs the source: {st['matched']:.0%} of the "
+                  f"script's sentences echo a source sentence and "
+                  f"{st['order']:.0%} of those follow the source's order"
+                  f"{' - TOO CLOSE, fail it' if st['flag'] else ''}.")
     measured = ("" if own_script else
                 f" Measured by software, do not re-estimate: overlap above; "
                 f"length {words} words; ending "
-                f"{'LOOKS CUT OFF' if cut else 'is complete'}.")
+                f"{'LOOKS CUT OFF' if cut else 'is complete'}."
+                + struct_txt)
     bar = (f"\n\nTHE CHANNEL'S BAR: the script passes only if ALL hold - "
            f"overall score at least {_bar(eff['script_min_rating'])}; "
            f"5-gram overlap at most {float(eff['script_max_overlap']):.0%} "
            f"(above {float(eff['script_hard_overlap']):.0%} is a hard "
            f"rejection however well it reads); length {lo}-{hi} words "
-           f"(target {target}); ends on a complete sentence.{measured}\n"
+           f"(target {target}); ends on a complete sentence; it is spoken "
+           f"narration only - it never mentions or alludes to the "
+           f"thumbnail, cover, video title or packaging.{measured}\n"
+           f"Judge it BEAT BY BEAT against the facts and the source: list "
+           f"the script's beats in order and say whether each one only "
+           f"re-tells the source's matching beat in the same position. A "
+           f"script that follows the source's sequence of beats - even in "
+           f"new words - fails 'originality'; say which beats to move, "
+           f"merge, cut or open differently (new opening, new order of "
+           f"reveals, new ending), never just reword them.\n"
+           f"If the script mentions any of those, FAIL it, quote each "
+           f"sentence in weak_spans and write in feedback: remove it.\n"
            f"Score the writing honestly on its own merits - do not raise or "
            f"lower a score to fit the bar. After the scores, state PASS or "
            f"FAIL separately and list which bar items failed.")

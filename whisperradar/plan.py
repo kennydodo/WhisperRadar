@@ -157,21 +157,32 @@ def local_faults(plan: dict) -> list[str]:
 
 def plan_block(plan: dict) -> str:
     """The text appended to the script prompts, or "" when there is no
-    usable plan."""
-    if not plan.get("title") or not plan.get("promise"):
+    usable plan. ONLY the title and the main keyword go to the production:
+    the promise, hook and thumbnail idea are for the thumbnails and the
+    publish kit made after the video is merged, never for the script."""
+    if not plan.get("title"):
         return ""
-    th = plan["thumbnail"]
-    lines = ["PACKAGING PLAN (the video is sold with this - the script must "
-             "deliver it, never promise less or more):",
-             f"- Title: {plan['title']}",
-             f"- Promise to the viewer: {plan['promise']}"]
-    if plan.get("hook"):
-        lines.append(f"- Opening hook (the first lines should do this): "
-                     f"{plan['hook']}")
-    if th.get("text"):
-        lines.append(f"- Thumbnail says: \"{th['text']}\" - the script must "
-                     "pay this off early, in the first minute")
+    lines = ["VIDEO TITLE AND KEYWORD (what the video is about - the "
+             "script must deliver what this title says, never less or more):",
+             f"- Title: {plan['title']}"]
+    if plan.get("keyword"):
+        lines.append(f"- Main keyword: {plan['keyword']} - use it naturally "
+                     "where it fits, never forced")
+    lines.append("- RULE: the script is spoken narration only. It must NEVER "
+                 "mention or allude to the thumbnail, the cover, the title, "
+                 "the packaging, or this note. A judge must list every such "
+                 "mention as a failure and the writer must remove it.")
     return "\n".join(lines)
+
+
+_META_RE = re.compile(
+    r"\b(thumbnails?|thumb|cover image|video title|packaging plan)\b", re.I)
+
+
+def meta_mentions(script: str) -> list[str]:
+    """Words in a spoken script that talk about the video's packaging (the
+    thumbnail, the title...): they must not be in narration."""
+    return sorted({m.group(1).lower() for m in _META_RE.finditer(script or "")})
 
 
 def with_plan(cfg, prod, direction: str) -> str:

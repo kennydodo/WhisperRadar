@@ -1418,6 +1418,13 @@ def create_app(cfg) -> Flask:
             values = settings.load(conn)
             override_counts = {k: len(db.channels_overriding(conn, k))
                                for k in db.APPLY_ALL_FIELDS}
+            try:
+                autorun_options = json.loads(
+                    db.get_setting(conn, "autorun_webchat_options")
+                    or db.get_setting(conn, "webchat_last_options")
+                    or "{}")
+            except ValueError:
+                autorun_options = {}
         finally:
             conn.close()
         return render_template(
@@ -1428,6 +1435,9 @@ def create_app(cfg) -> Flask:
             providers=[p["name"] for p in studio.providers(cfg)],
             providers_nested=studio.providers_nested(cfg),
             webchat_sites=_webchat_sites_saved(),
+            autorun_options=autorun_options,
+            site_choices=[(k, getattr(v, "name", k))
+                          for k, v in webchat.SITES.items()],
             scheduler=sched.status(),
             services=services.MANAGER.status_cached(cfg),
             flowbatch_ready=studio.flowbatch_ready(cfg),
@@ -1463,6 +1473,10 @@ def create_app(cfg) -> Flask:
             # arrives as "0"; the LAST value of a key is the real one
             form = {k: request.form.getlist(k)[-1] for k in request.form}
             _, warnings = settings.save(conn, form)
+            if "autorun_writer" in form:
+                # the writer's / judge's own settings sit beside them
+                db.set_setting(conn, "autorun_webchat_options", json.dumps(
+                    _chat_options(request.form, remember=False)))
             # "apply to all channels": make every channel inherit the value
             applied = []
             wanted = request.form.getlist("apply_all")
@@ -4252,7 +4266,7 @@ def create_app(cfg) -> Flask:
 
     # ---- publish kit (packaging.py): title, description, chapters ----------
 
-    def _chat_options(form):
+    def _chat_options(form, remember: bool = True):
         """The z.ai / DeepSeek settings a web-chat form posts."""
         level = (form.get("zai_thinking") or "Low").strip()
         model = (form.get("zai_model") or "flash").strip()
@@ -4266,7 +4280,7 @@ def create_app(cfg) -> Flask:
                     "toggles": {t["id"]: form.get(f"wc_{key}_{t['id']}")
                                 == "on" for t in site.get("toggles") or []}}
             custom[key] = opts
-        return {
+        opts_all = {
             **custom,
             "zai": {"thinking": level if level in ("Low", "High", "Max")
                     else "Low",
@@ -4277,6 +4291,20 @@ def create_app(cfg) -> Flask:
                               or "on") != "off",
                 "search": (form.get("deepseek_search")
                            or "off") == "on"}}
+        # remember them: Auto Run runs with the settings used last
+        if not remember:
+            return opts_all
+        try:
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            try:
+                db.set_setting(conn, "webchat_last_options",
+                               json.dumps(opts_all))
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001 - remembering is a convenience
+            pass
+        return opts_all
 
     def _kit_page_data(pid):
         from . import packaging

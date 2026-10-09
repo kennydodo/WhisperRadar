@@ -91,5 +91,55 @@ class PlanThumbsRoutingTests(Base):
         cj.assert_called_once()
 
 
+class WebchatPairTests(Base):
+    def test_pair_comes_from_settings_and_last_options(self):
+        import json
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        db.set_setting(conn, "webchat_last_options",
+                       json.dumps({"zai": {"model": "5.3"}}))
+        conn.close()
+        w, j, o = autorun._webchat_pair(self.cfg)
+        self.assertEqual((w, j), ("zai", "deepseek"))     # the defaults
+        self.assertEqual(o["zai"]["model"], "5.3")
+        conn = db.connect(self.cfg.db_path)
+        settings.save(conn, {"autorun_writer": "deepseek",
+                             "autorun_judge": "zai"})
+        conn.close()
+        w, j, _o = autorun._webchat_pair(self.cfg)
+        self.assertEqual((w, j), ("deepseek", "zai"))
+
+    def test_unknown_site_falls_back(self):
+        conn = db.connect(self.cfg.db_path)
+        db.set_setting(conn, "autorun_writer", "gone")
+        conn.close()
+        self.assertEqual(autorun._webchat_pair(self.cfg)[0], "zai")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class AutorunOptionsTests(Base):
+    def test_settings_save_keeps_writer_judge_and_their_options(self):
+        import json
+        from whisperradar.webapp import create_app
+        c = create_app(self.cfg).test_client()
+        r = c.post("/settings/save", data={
+            "autorun_writer": "deepseek", "autorun_judge": "zai",
+            "zai_model": "5.3", "zai_thinking": "High",
+            "deepseek_deepthink": "off", "deepseek_search": "on"})
+        self.assertIn(r.status_code, (200, 302))
+        conn = db.connect(self.cfg.db_path)
+        opts = json.loads(db.get_setting(conn, "autorun_webchat_options"))
+        st = settings.load(conn)
+        conn.close()
+        self.assertEqual((st["autorun_writer"], st["autorun_judge"]),
+                         ("deepseek", "zai"))
+        self.assertEqual(opts["zai"], {"thinking": "High", "model": "5.3"})
+        self.assertEqual(opts["deepseek"], {"deepthink": False,
+                                            "search": True})
+        w, j, o = autorun._webchat_pair(self.cfg)
+        self.assertEqual(o["zai"]["model"], "5.3")
+        html = c.get("/settings").get_data(as_text=True)
+        self.assertIn('"model": "5.3"', html)       # handed to the page

@@ -273,7 +273,9 @@ def run(cfg, channel_id: str, site: str, transport, log, n_frames=DEFAULT_FRAMES
         raise RuntimeError("This channel has no videos stored yet - run "
                            "'backfill' on it first")
     d = look_dir(cfg, cid)
-    frames_dir = d / "frames"
+    # a refresh collects into a scratch folder: the saved frames, style guide
+    # and bible are replaced together only when the new run succeeded
+    frames_dir = d / "frames.new"
     if frames_dir.exists():
         shutil.rmtree(frames_dir, ignore_errors=True)
     frames = collect_frames(videos, n_frames, frames_dir, log, download, grab)
@@ -294,6 +296,10 @@ def run(cfg, channel_id: str, site: str, transport, log, n_frames=DEFAULT_FRAMES
     if not style:
         raise RuntimeError("The chat answered with nothing usable")
     d.mkdir(parents=True, exist_ok=True)
+    final = d / "frames"
+    if final.exists():
+        shutil.rmtree(final, ignore_errors=True)
+    frames_dir.rename(final)
     (d / "style.md").write_text(style + "\n", encoding="utf-8")
     (d / "bible.md").write_text((bible or "") + "\n", encoding="utf-8")
     meta = {"channel": name, "site": site, "frames": len(frames),

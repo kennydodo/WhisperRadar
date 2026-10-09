@@ -1665,3 +1665,18 @@ Attachment cap: Claude refused 21 images ("at most 20 attachments"). `channel_lo
 
 ## Job slots
 Four kinds of slot: one per OWN channel (`sjob`, studio production jobs), the dashboard `job` (backfill, view counts, downloads), `scheduler_job` (scheduled auto-run) and `research_job` (research topics grouping and the watched channel "style & bible"; `/research/job` is its status). Research no longer waits for a production's job. Caution: two jobs that use the SAME web chat site at once share one browser profile and will collide - only run one LLM job per site.
+
+## Script must not mention the thumbnail
+`plan.plan_block` (appended to the script writer AND judge prompts) used to say "Thumbnail says: ... pay this off early", so scripts started to talk about the thumbnail. It now gives the cover idea without the word, and states the rule that narration never mentions thumbnail/cover/title/packaging. `plan.meta_mentions` is a code check in `webstages.run_script`: a mention fails the round and goes back to the writer as feedback.
+
+Correction: the script stage gets ONLY the packaging plan's title and main keyword (`plan.plan_block`). Promise, hook and thumbnail idea are for the thumbnails and publish kit after the merge and must never go into script prompts.
+
+## Structure-copy check (script)
+`studio.structure_copy(script, source)`: per script sentence the best-matching source sentence (Dice on content words >= 0.45); `matched` = share of sentences that echo the source, `order` = longest-increasing-run share of those matches. Flag when >= 5 pairs, matched >= 50% and order >= 75% (constants `STRUCT_*`). It catches a paraphrase that keeps the original's sentence-by-sentence order, which the 5-gram overlap misses. Used in `webstages.run_script` (logs "structure vs source ...") and in `autorun` script attempts; a flag fails the draft with feedback to choose its own structure. Thresholds are untuned guesses - read the logged numbers on real scripts before changing them.
+The script judge is also told to judge BEAT BY BEAT against the facts/source, and gets the measured structure numbers (first prompt via `script_judge_prompt`, later rounds via `_script_followup(struct=...)`), so its tips are about moving/merging/cutting beats, not rewording.
+
+## Auto Run web-chat writer/judge
+Settings > Auto Run: `autorun_writer` / `autorun_judge` (any chat site, built-in or added; `sites: True` choice, validated against `webchat.SITES`). `autorun._webchat_pair(cfg)` returns (writer, judge, options) for script/shotlist/plan/thumbnails in the webchat transport; options = the model/level settings of the LAST web chat run form (`_chat_options` stores them in db setting `webchat_last_options`). Previously "zai"/"deepseek" were hard-coded.
+Style & bible refresh: a run collects frames into `frames.new` and replaces frames + style.md + bible.md together only on success; a failed refresh leaves the previous result untouched.
+Web chat run forms: `_webchat_extra.html` moves each role's settings (model/level/switches) right after that role's own dropdown (same line). The style & bible page (`look.html`) does the same for its single "Web chat" dropdown (paid sites show Model), remembers it, and `look_routes` passes the posted options to `web_transport`.
+Settings > Auto Run: `_webchat_extra.html` is included on the settings page too; the writer/judge dropdowns get their site's model/level/switch controls beside them (full-width field). Saved by `settings_save` into db setting `autorun_webchat_options` (via `_chat_options(remember=False)`) and applied from `window.WR_SERVER_OPTS`; `autorun._webchat_pair` prefers it over the last-used `webchat_last_options`.

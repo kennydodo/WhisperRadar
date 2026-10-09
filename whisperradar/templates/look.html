@@ -45,6 +45,28 @@
     <form class="row" method="post" action="/watched/{{ ch['channel_id'] }}/look/run">
       <label>Web chat (must read images)
         <select name="site">{% for s in sites %}<option value="{{ s.key }}">{{ s.name }}</option>{% endfor %}</select></label>
+      {% for s in sites %}
+      <span class="siteopts" data-site="{{ s.key }}" style="display:none; gap:8px; align-items:center">
+        {% if s.paid and s.models %}
+        <label>Model
+          <select name="wc_{{ s.key }}_model" title="{{ s.name }} model for this run">
+            <option value="">as the site has it</option>
+            {% for m in s.models %}<option value="{{ m.id }}">{{ m.label }}</option>{% endfor %}
+          </select></label>
+        {% endif %}
+        {% if s.levels %}
+        <label>{{ s.level_label or 'Level' }}
+          <select name="wc_{{ s.key }}_level">
+            <option value="">as the site has it</option>
+            {% for m in s.levels %}<option value="{{ m.id }}">{{ m.label }}</option>{% endfor %}
+          </select></label>
+        {% endif %}
+        {% for t in s.toggles or [] %}
+        <label>{{ t.label }}
+          <select name="wc_{{ s.key }}_{{ t.id }}"><option value="off">Off</option><option value="on">On</option></select></label>
+        {% endfor %}
+      </span>
+      {% endfor %}
       <label>Frames
         <input type="number" name="frames" value="{{ default_frames }}"
                min="{{ min_frames }}" max="{{ max_frames }}" style="width:70px"></label>
@@ -83,22 +105,42 @@
 </div>
 <script>
 (function () {
-  // remember the last web chat picked here (and the frame count)
+  // the chosen chat's own settings sit right after it on the same line; the
+  // last picks (chat, its settings, frames) are remembered in this browser
   var K = 'wrwc:look';
   var site = document.querySelector('select[name=site]');
   var fr = document.querySelector('input[name=frames]');
   if (!site) return;
+  var extras = function () { return document.querySelectorAll('select[name^=wc_]'); };
   try {
     var o = JSON.parse(localStorage.getItem(K) || '{}') || {};
     if (o.site && [].some.call(site.options, function (op) { return op.value === o.site; }))
       site.value = o.site;
     if (o.frames && fr) fr.value = o.frames;
+    extras().forEach(function (x) {
+      if (o[x.name] !== undefined && [].some.call(x.options, function (op) { return op.value === o[x.name]; }))
+        x.value = o[x.name];
+    });
   } catch (e) {}
-  function save() {
-    try { localStorage.setItem(K, JSON.stringify({site: site.value, frames: fr && fr.value})); } catch (e) {}
+  function place() {
+    var anchor = site.closest('label');
+    document.querySelectorAll('span.siteopts').forEach(function (sp) {
+      var on = sp.dataset.site === site.value;
+      sp.style.display = on ? 'inline-flex' : 'none';
+      if (on && anchor) anchor.parentNode.insertBefore(sp, anchor.nextSibling);
+    });
   }
-  site.addEventListener('change', save);
+  function save() {
+    try {
+      var o = {site: site.value, frames: fr && fr.value};
+      extras().forEach(function (x) { o[x.name] = x.value; });
+      localStorage.setItem(K, JSON.stringify(o));
+    } catch (e) {}
+  }
+  place();
+  site.addEventListener('change', function () { place(); save(); });
   if (fr) fr.addEventListener('change', save);
+  extras().forEach(function (x) { x.addEventListener('change', save); });
   site.form.addEventListener('submit', save);
 })();
 (function () {

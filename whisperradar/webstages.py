@@ -435,11 +435,14 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         overlap = studio.overlap_ratio(script, source) if source.strip() else 0.0
         log(f"round {rnd}: draft of {words} words (target {target}), "
             f"overlap {overlap:.1%} - asking {judge} to judge it")
+        struct0 = (studio.structure_copy(script, source) if source.strip()
+                   else None)
         for attempt in (1, 2):      # a judge reply with no score is asked again
             if judge_open:
                 raw = _send(transport, judge,
                             lambda f: _script_followup(script, words, target, overlap,
-                                                       studio.script_looks_truncated(script)), log,
+                                                       studio.script_looks_truncated(script),
+                                                       struct0), log,
                             new_chat=False, ready=_is_json_verdict)
             else:
                 raw = _send(transport, judge,
@@ -469,6 +472,28 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             words, target, overlap, score, min_rating, max_overlap,
             hard_overlap, err)
         cut = studio.script_looks_truncated(script)
+        struct = (studio.structure_copy(script, source) if source.strip()
+                  else {"flag": False})
+        if source.strip():
+            log(f"round {rnd}: structure vs source - "
+                f"{struct.get('matched', 0):.0%} of sentences echo the "
+                f"source, order {struct.get('order', 0):.0%}"
+                + (" - TOO CLOSE" if struct["flag"] else ""))
+        if struct["flag"]:
+            passed = False
+            reasons.append(studio.structure_reason(struct))
+            judged["feedback"].append(studio.structure_reason(struct))
+        from . import plan as _plan
+        meta = _plan.meta_mentions(script)
+        if meta:
+            passed = False
+            reasons.append("the script mentions the video's packaging ("
+                           + ", ".join(meta) + ") - remove every mention; "
+                           "narration never refers to the thumbnail or title")
+            judged["feedback"].append(
+                "Remove every mention of the " + "/".join(meta)
+                + ": the script is spoken narration and must never refer to "
+                "the thumbnail, cover or title.")
         if cut:
             passed = False
             reasons.append("the script looks cut off")
@@ -587,7 +612,7 @@ def _keep_attempts(cfg, pid: int, attempts: list[dict]) -> None:
 
 def _script_followup(script: str, words: int | None = None,
                      target: int | None = None, overlap: float | None = None,
-                     cut: bool = False) -> str:
+                     cut: bool = False, struct: dict | None = None) -> str:
     measured = ""
     if words is not None and target:
         lo, hi = ep._length_window(target)
@@ -601,13 +626,23 @@ def _script_followup(script: str, words: int | None = None,
                     + f"; ending {'LOOKS CUT OFF' if cut else 'is complete'}"
                     f". A script outside the length window fails the bar "
                     f"however well it reads - list it among the failed "
-                    f"items.\n\n")
+                    f"items.\n"
+                    + (f"Story order vs the source (measured): "
+                       f"{struct['matched']:.0%} of the script's sentences "
+                       f"echo a source sentence, {struct['order']:.0%} of "
+                       f"those in the source's order"
+                       f"{' - TOO CLOSE, fail it' if struct['flag'] else ''}"
+                       f". Judge beat by beat whether the story order is "
+                       f"the writer's own.\n" if struct else "")
+                    + "\n")
     return measured + (
         "The writer revised the script after your review. Judge it again "
         "under the SAME rules and reply in exactly the SAME JSON format as "
         "before. First check whether each point you raised earlier is now "
         "addressed, then check that nothing got worse. Source material and "
-        "rules are unchanged (use the ones from earlier in this chat).\n\n"
+        "rules are unchanged (use the ones from earlier in this chat), "
+        "including: the script must never mention the thumbnail, cover, "
+        "title or packaging - fail it and quote the sentence if it does.\n\n"
         "The revised script:\n\n" + script)
 
 

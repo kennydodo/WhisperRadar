@@ -111,6 +111,29 @@ class LookTests(unittest.TestCase):
         self.assertTrue(names <= {"wr.db", "channel_look", "wr.db-wal",
                                   "wr.db-shm", "wr.db-journal"}, names)
 
+    def test_page_shows_the_chat_models_on_the_same_line(self):
+        from whisperradar import webchat
+        client = create_app(self.cfg).test_client()   # loads saved sites
+        site = {"key": "paidchat", "name": "Paid Chat", "paid": True,
+                "url": "https://example.com/", "box": "textarea",
+                "reply": ".r", "models": [{"id": "m1", "label": "Model One"}],
+                "levels": [{"id": "hi", "label": "High"}],
+                "level_label": "Thinking", "toggles": []}
+        defs, _ = webchat.sanitize_sites([site])
+        keys = webchat.set_custom_sites(defs)
+        webchat._UI["paidchat"] = {k: defs[0][k] for k in (
+            "key", "name", "models", "levels", "level_label", "toggles",
+            "paid")}
+        try:
+            r = client.get("/watched/UCrival/look")
+            html = r.get_data(as_text=True)
+            self.assertIn('name="wc_paidchat_model"', html)
+            self.assertIn("Model One", html)
+            self.assertIn('name="wc_paidchat_level"', html)
+        finally:
+            webchat.set_custom_sites([])
+            webchat._UI.clear()
+
     def test_total_attachments_are_capped(self):
         tr = FakeTransport()
         channel_look.run(
@@ -120,6 +143,28 @@ class LookTests(unittest.TestCase):
                 {"file": f"t{i}.jpg", "video": "v", "title": "t"}
                 for i in range(3)])
         self.assertLessEqual(len(tr.calls[0][2]), channel_look.MAX_ATTACH)
+
+    def test_failed_refresh_keeps_the_saved_result(self):
+        kw = dict(download=lambda url, d: (d / "x.mp4", 600),
+                  grab=self._grab, thumbs=None)
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=6, **kw)
+        first = channel_look.load(self.cfg, "UCrival")
+
+        class Boom:
+            def ask(self, *a, **k):
+                raise RuntimeError("chat failed")
+        with self.assertRaises(RuntimeError):
+            channel_look.run(self.cfg, "UCrival", "chatgpt", Boom(),
+                             lambda m: None, n_frames=6, **kw)
+        again = channel_look.load(self.cfg, "UCrival")
+        self.assertEqual(again["style"], first["style"])
+        self.assertEqual(again["files"], first["files"])
+        # a successful refresh replaces everything
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=5, **kw)
+        self.assertEqual(len(channel_look.load(self.cfg, "UCrival")["files"]),
+                         5)
 
     def test_too_few_frames_fails(self):
         with self.assertRaises(RuntimeError):
