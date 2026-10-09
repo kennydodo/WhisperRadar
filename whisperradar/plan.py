@@ -316,7 +316,8 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
             empty += 1
             if empty >= 3:
                 raise ws.StageFailed(f"{writer} did not return a plan")
-            log(f"{writer}: no usable plan - asking again")
+            log(f"{writer}: no usable plan - asking again (it said: "
+                f"{' '.join(str(reply).split())[:200]!r})")
             reply = transport.ask(
                 writer, "Your reply had no usable JSON plan. Reply with the "
                 "complete plan as ONE JSON object in the format given, and "

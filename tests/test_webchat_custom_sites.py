@@ -15,6 +15,7 @@ from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
 
 SITE = {"name": "My Chat", "url": "https://chat.example/", "box": "textarea",
+        "paid": True,
         "reply": ".ai", "send": "#go", "generating": "#stop",
         "login_part": "login", "sent_part": "/c/",
         "models": [{"label": "Big", "open": "#m", "item": "Big model"},
@@ -105,6 +106,12 @@ class DefinitionTests(Base):
         self.assertFalse([a for a in page.calls
                           if isinstance(a, str)
                           or (isinstance(a, dict) and "open" in a)])
+
+    def test_a_free_account_never_picks_a_model(self):
+        webchat.set_custom_sites([dict(SITE, paid=False)])
+        page = FakePage()
+        webchat.SITES["my-chat"].prepare(page, model="small")
+        self.assertNotIn("Small model", [a for a in page.calls if a])
 
     def test_unfindable_picker_is_reported_not_fatal(self):
         webchat.set_custom_sites([SITE])

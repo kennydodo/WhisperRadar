@@ -41,7 +41,7 @@
       grp.style.cssText = 'display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap';
       var tag = document.createElement('span'); tag.className = 'muted';
       tag.style.fontSize = '12px'; tag.textContent = site.name + ':'; grp.appendChild(tag);
-      if ((site.models || []).length) {
+      if (site.paid && (site.models || []).length) {
         grp.appendChild(field('Model', sel('wc_' + site.key + '_model',
           [['', "as the site has it"]].concat(site.models.map(function (m) { return [m.id, m.label]; })),
           site.name + ' model for this run')));

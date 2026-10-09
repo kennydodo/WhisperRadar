@@ -436,7 +436,8 @@ def _generic_prepare(spec: dict):
             except Exception as exc:  # noqa: BLE001
                 notes.append(f"{what}: {exc}"[:80])
 
-        pick("models", model, "model")
+        if spec.get("paid"):               # free accounts have no choice
+            pick("models", model, "model")
         pick("levels", level, spec.get("level_label") or "level")
         for tg in spec.get("toggles") or []:
             want = bool((toggles or {}).get(tg["id"], False))
@@ -556,7 +557,8 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
                  "sent_part": str(d.get("sent_part") or "").strip(),
                  "stream": str(d.get("stream") or "").strip(),
                  "level_label": str(d.get("level_label") or "").strip()
-                 or "Level"}
+                 or "Level",
+                 "paid": bool(d.get("paid"))}
         if not clean["url"].startswith(("http://", "https://")):
             problems.append(f"{name}: needs a web address starting with "
                             f"https://")
@@ -640,7 +642,7 @@ def load_custom_sites(conn) -> list[str]:
     for d in defs:
         _UI[d["key"]] = {k: d[k] for k in
                          ("key", "name", "models", "levels", "level_label",
-                          "toggles")}
+                          "toggles", "paid")}
     return keys
 
 CONTINUE_LABELS = ("continue generating", "continue", "weiter")
@@ -678,6 +680,41 @@ _BUSY_JS = """(args) => {
 
 # z.ai's "Currently in peak hours - switch to GLM-5.3-Flash" pop-up. It is
 # dismissed with Cancel / Close ONLY: the "Switch" button changes the model.
+_AGE_JS = r"""() => {
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
+  const b = [...document.querySelectorAll('button')].filter(vis)
+    .find(x => /^continue$/i.test((x.innerText || '').trim()));
+  if (!b) return '';
+  let c = b, ok = false;
+  for (let i = 0; i < 6 && c.parentElement; i++) {
+    c = c.parentElement;
+    if (/confirm your age|year were you born|date of birth/i.test(c.innerText || '')) { ok = true; break; }
+  }
+  if (!ok) return '';
+  // only confirm what the page already shows (a year is filled in); never
+  // pick a birth year on the user's behalf
+  if (!/\b(19|20)\d{2}\b/.test(c.innerText || '')) return 'needs-year';
+  b.click(); return 'clicked'; }"""
+
+
+def _dismiss_age(page, log) -> bool:
+    """Qwen asks "Confirm your age to continue" again and again and blocks the
+    send behind it: press Continue when a year is already filled in."""
+    try:
+        res = page.evaluate(_AGE_JS)
+    except Exception:  # noqa: BLE001
+        return False
+    if res == "clicked":
+        log("age confirmation pop-up: pressed Continue (the year was already filled in)")
+        page.wait_for_timeout(800)
+        return True
+    if res == "needs-year":
+        log("an age confirmation pop-up needs a birth year - choose it once "
+            "in the sign-in window")
+    return False
+
+
 _PEAK_JS = """(args) => {
   const re=new RegExp(args.re,'i');
   for (const d of document.querySelectorAll(
@@ -843,7 +880,7 @@ def retry_when_busy(call, log, sleep=time.sleep, should_stop=None,
 
 # ---- one conversation -----------------------------------------------------------
 
-def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
+def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         timeout: float = 900, settle: float = 6.0, poll: float = 2.0,
         continue_max: int = 8, start_wait: float = 90.0,
         new_chat: bool = True, options: Optional[dict] = None,
@@ -912,6 +949,7 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
         # ten seconds to be accepted, and a second click on a send button that has
         # turned into a stop button would cancel the answer.
         peak = None
+        _dismiss_age(page, log)
         for attempt in (1, 2, 3):
             how = _press_send(page, site, log)
             if not how:
@@ -919,8 +957,12 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
                     f"{site.name}: could not find the send button - "
                     + _composer_report(page, site))
             took = False
+            age_cleared = False
             for _ in range(30):
                 page.wait_for_timeout(1000)
+                if _dismiss_age(page, log):
+                    age_cleared = True       # the pop-up ate the send: redo it
+                    break
                 pk = _peak_dialog(page)
                 if pk:
                     peak = pk
@@ -938,9 +980,22 @@ def ask(page, site: Site, prompt: str, files: Sequence[str] = (),
                     break
             if took:
                 break
+            if age_cleared:
+                continue
             if peak:
                 raise ModelBusy(f"{site.name} says: \"{peak['text'][:140]}\"")
-            log(f"{site.name}: the send did not register (try {attempt}/3)")
+            try:
+                sig = {"box_chars": page.evaluate(_TA_LEN_JS, site.box),
+                       "generating": bool(page.evaluate(site.generating_js)),
+                       "new_address": bool(page.evaluate(site.sent_js)),
+                       "messages": page.evaluate(_MSG_COUNT_JS),
+                       "replies": page.evaluate(
+                           _STATE_JS, {"reply": site.reply})["count"],
+                       "replies_before": before}
+            except Exception:  # noqa: BLE001
+                sig = {}
+            log(f"{site.name}: the send did not register (try {attempt}/3) "
+                f"{sig}")
 
     t0 = clock()
     last_text, stable_since, continues = "", clock(), 0
@@ -1092,6 +1147,37 @@ def _composer_report(page, site: Site) -> str:
         names = []
     return ("buttons near the box: " + "; ".join(names)) if names \
         else "no buttons near the box"
+
+
+_DIAG_ROOT: Optional[Path] = None
+
+
+def _save_last(page, site: Site, outcome: str) -> None:
+    """Keep what the page looked like when a run ended (screenshot + the page
+    text + how it ended) in <profile root>/diag/<site>/last-run.*, so a reply
+    that was not picked up can be understood afterwards."""
+    if _DIAG_ROOT is None:
+        return
+    try:
+        d = _DIAG_ROOT / "diag" / site.key
+        d.mkdir(parents=True, exist_ok=True)
+        body = page.evaluate("() => (document.body.innerText || '')") or ""
+        (d / "last-run.txt").write_text(
+            f"outcome: {outcome}\nurl: {page.url}\n\n{str(body)[-30000:]}",
+            encoding="utf-8")
+        page.screenshot(path=str(d / "last-run.png"))
+    except Exception:  # noqa: BLE001 - diagnostics must never break a run
+        pass
+
+
+def ask(page, site: Site, *args, **kw) -> str:
+    try:
+        text = _ask_inner(page, site, *args, **kw)
+    except BaseException as exc:
+        _save_last(page, site, f"{type(exc).__name__}: {str(exc)[:300]}")
+        raise
+    _save_last(page, site, f"ok, {len(text)} characters")
+    return text
 
 
 def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
@@ -1370,6 +1456,8 @@ class WebChat:
     def __init__(self, profile_root, headless: bool = False,
                  channel: str | None = None):
         self.profile_root = Path(profile_root)
+        global _DIAG_ROOT
+        _DIAG_ROOT = self.profile_root
         self.headless = headless
         self.channel = channel          # e.g. "chrome" / "msedge", or None
         self._pw = None
