@@ -1616,6 +1616,7 @@ a new reply (count up, generating, or text different from the text before the se
 - WhisperRadar today calls it as an external CLI from the merge stage (`studio.prepare_project_folder` writes `imgtovideo.json`; `merge_command`).
 - Decide first: (a) port only what the merge stage needs (timing + motion + ffmpeg filtergraph + sound effects) to a Python module `whisperradar/video_render.py`, keeping the CLI as fallback behind a setting; or (b) keep the C# engine and just bundle/auto-build the CLI. Port the 242 tests' key cases (frame-exact timing coverage, motion rects, crossfades, SFX placement) as Python tests before switching the default.
 - Premiere/CapCut exports and the WPF editor are likely out of scope for the first cut.
+- **Decision (Kehinde, 2026-10-10):** option (a). Convert ImgToVideo to Python and live inside WhisperRadar (`whisperradar/video_render.py` or a small package). The original C# project stays in its own repo untouched (and remains the reference/fallback). Port the key test cases as Python tests before switching the default.
 
 ## Web chat LLMs you add yourself (Settings > Web chat LLMs)
 - z.ai and DeepSeek are built in (`webchat.ZAI/DEEPSEEK`). Others are added in Settings > Web chat LLMs with just a **name and chat address**; saved as JSON in the `webchat_sites` setting. Saving a NEW site opens its sign-in Chrome (`webchat.start_chrome`, background thread, own debugging port 9230+); the Sign in button reopens it; Test asks it for "OK".
@@ -1773,3 +1774,7 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 - Title options: at most 3 may open with the same first word (`FIRST_WORD_MAX`), besides the 3-word opening rule.
 
 - The refs job sets `nameAssets`: FlowBatch renames each generated tile to its ref name in Flow, so `prepare` reports it reused instead of uploading a duplicate (best effort; a failed rename falls back to the upload).
+
+## Design note: editable per-channel prompts
+Not implemented. See docs/design-editable-prompts.md (plan/script writers and judges,
+defaults in code, per-channel overrides, locked envelope, copy between channels).
