@@ -611,8 +611,9 @@ def context(cfg, pid: int) -> dict:
             p3 = db.get_production(conn, pid)
         finally:
             conn.close()
-        ctx["direction"] = db.stage_extra(p3, "plan")
-        ctx["judge_direction"] = db.stage_extra(p3, "plan_judge")
+        from . import handover
+        ctx["direction"] = handover.instruction(cfg, p3, "plan")
+        ctx["judge_direction"] = handover.instruction(cfg, p3, "plan_judge")
     except Exception:  # noqa: BLE001
         ctx["direction"] = ctx["judge_direction"] = ""
     ctx["niche"] = None

@@ -39,6 +39,7 @@
   <div class="panel">
     <h2>{{ t['name'] }} {% if t['builtin'] %}<span class="badge">built in</span>{% endif %}</h2>
     <div class="muted">{{ t['help'] or '' }}</div>
+    {% for k, v in (t.get('instructions') or {}).items() %}<div class="muted"><b>{{ k|replace('_',' - ') }}:</b> {{ v }}</div>{% endfor %}
     <div style="margin-top:6px">
       Scrub notes of anything from the original: <b>{{ 'yes' if t['scrub'] else 'no' }}</b> &middot;
       Tell the judge to keep the original out: <b>{{ 'yes' if t['guard'] else 'no' }}</b><br>
@@ -88,6 +89,11 @@
         {% endfor %}
       </p>
       {% endfor %}
+      <p class="muted">Further instructions (optional). They are added to whatever the production's own boxes say.</p>
+      <p><b>Plan - writer</b><br><textarea name="ins_plan" rows="2" style="width:100%"></textarea></p>
+      <p><b>Plan - judge</b> (what to look for or ignore)<br><textarea name="ins_plan_judge" rows="2" style="width:100%"></textarea></p>
+      <p><b>Script - writer</b><br><textarea name="ins_script" rows="2" style="width:100%"></textarea></p>
+      <p><b>Script - judge</b> (what to look for or ignore)<br><textarea name="ins_script_judge" rows="2" style="width:100%"></textarea></p>
       <button type="submit">Save template</button>
     </form>
   </div>

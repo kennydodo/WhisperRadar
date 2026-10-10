@@ -669,9 +669,9 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             cfg, prod["title"], prod["genre"], existing_text, facts,
             style_guide, judge, temperature=eff["script_judge_temperature"],
             original=source_text, scrub=hand["scrub"], guard=hand["guard"],
-            judge_direction=db.stage_extra(prod, "script_judge"),
+            judge_direction=handover.instruction(cfg, prod, "script_judge"),
             extra_direction=packplan.with_plan(cfg, prod,
-                                         db.stage_extra(prod, "script")))
+                                         handover.instruction(cfg, prod, "script")))
         existing_passed, _why, _tl, _ts = _script_gate(
             existing_words, target_words, existing_overlap,
             existing_rating["score"], min_rating, max_overlap, hard_overlap,
@@ -709,7 +709,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
             extra_direction=packplan.with_plan(cfg, prod,
-                                         db.stage_extra(prod, "script")))
+                                         handover.instruction(cfg, prod, "script")))
         text = studio.llm_generate(
             cfg, prompt, provider=provider,
             max_tokens=studio.script_max_tokens(target_words))
@@ -747,11 +747,11 @@ def _run_script(cfg, pid: int, provider: str | None = None,
                                     facts, style_guide, judge,
                                     original=source_text,
                                     scrub=hand["scrub"], guard=hand["guard"],
-            judge_direction=db.stage_extra(prod, "script_judge"),
+            judge_direction=handover.instruction(cfg, prod, "script_judge"),
                                     earlier=(previous or {}).get("must_fix"),
                                     temperature=eff["script_judge_temperature"],
                                     extra_direction=packplan.with_plan(cfg, prod,
-                                         db.stage_extra(prod, "script")))
+                                         handover.instruction(cfg, prod, "script")))
         score = rating["score"]
         passed, why, too_long, too_short = _script_gate(
             words, target_words, overlap, score, min_rating, max_overlap,

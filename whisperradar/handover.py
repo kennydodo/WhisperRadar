@@ -55,7 +55,17 @@ def _clean(tid: str, raw: dict) -> dict | None:
     return {"id": tid, "name": name, "builtin": False,
             "scrub": bool(raw.get("scrub", True)),
             "guard": bool(raw.get("guard", True)),
-            "parts": parts, "help": str(raw.get("help") or "")}
+            "parts": parts, "help": str(raw.get("help") or ""),
+            "instructions": _clean_instructions(raw.get("instructions"))}
+
+
+INSTRUCTION_KEYS = ("plan", "plan_judge", "script", "script_judge")
+
+
+def _clean_instructions(raw) -> dict:
+    raw = raw if isinstance(raw, dict) else {}
+    return {k: str(raw.get(k) or "").strip() for k in INSTRUCTION_KEYS
+            if str(raw.get(k) or "").strip()}
 
 
 def user_templates(path) -> dict:
@@ -83,7 +93,8 @@ def all_templates(cfg) -> dict:
 
 
 def save_user_template(cfg, name: str, scrub: bool, guard: bool,
-                       parts: list, help_text: str = "") -> str:
+                       parts: list, help_text: str = "",
+                       instructions: dict | None = None) -> str:
     """Add or replace a user template; returns its id."""
     tid = slug(name)
     if not tid:
@@ -98,7 +109,8 @@ def save_user_template(cfg, name: str, scrub: bool, guard: bool,
         data = {}
     data[tid] = {"name": name.strip(), "scrub": bool(scrub), "guard": bool(guard),
                  "parts": [p for p in parts if p in ALL_PARTS],
-                 "help": help_text}
+                 "help": help_text,
+                 "instructions": _clean_instructions(instructions)}
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return tid
 
@@ -133,6 +145,16 @@ def get(cfg, tid: str | None) -> dict:
 
 def for_production(cfg, prod, stage: str) -> dict:
     return get(cfg, choice_for(prod, stage))
+
+
+def instruction(cfg, prod, key: str) -> str:
+    """The extra direction for plan / plan_judge / script / script_judge: the
+    hand-over template's text for that stage first, then the production's own."""
+    from . import db
+    stage = "plan" if key.startswith("plan") else "script"
+    mine = (db.stage_extra(prod, key) or "").strip()
+    theirs = (for_production(cfg, prod, stage).get("instructions") or {}).get(key, "")
+    return "\n\n".join(t for t in (theirs, mine) if t)
 
 
 def for_pid(cfg, pid: int, stage: str) -> dict:

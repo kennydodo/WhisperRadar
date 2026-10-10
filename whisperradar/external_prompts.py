@@ -242,7 +242,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
         extra_direction=packplan.with_plan(cfg, prod,
-                                         db.stage_extra(prod, "script")))
+                                         handover.instruction(cfg, prod, "script")))
     lo, hi = _length_window(int(target_words))
     bar = (f"\n\nQUALITY BAR - a script is only accepted when ALL of these "
            f"hold:\n"
@@ -300,12 +300,12 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
         _title(ctx, title), prod["genre"], script, facts,
         _STYLE_TOKEN if (files is not None and style) else style, overlap,
         extra_direction=packplan.with_plan(cfg, prod,
-                                         db.stage_extra(prod, "script")),
+                                         handover.instruction(cfg, prod, "script")),
         original=(_ORIG_TOKEN if (files is not None and source.strip())
                   else source),
         niche_block=studio.judge_niche_block(cfg, prod["genre"]),
         guard=guard,
-        judge_direction=db.stage_extra(prod, "script_judge"))
+        judge_direction=handover.instruction(cfg, prod, "script_judge"))
     if files is not None:
         text = _swap_blocks(
             text, out_files,

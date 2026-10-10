@@ -31,7 +31,9 @@ def register(app, cfg) -> None:
                 cfg, name, scrub=bool(request.form.get("scrub")),
                 guard=bool(request.form.get("guard")),
                 parts=request.form.getlist("parts"),
-                help_text=(request.form.get("help") or "").strip())
+                help_text=(request.form.get("help") or "").strip(),
+                instructions={k: request.form.get("ins_" + k)
+                              for k in handover.INSTRUCTION_KEYS})
         except ValueError as exc:
             return redirect("/handover?error=" + quote(str(exc)))
         return redirect("/handover?msg=" + quote(f"Saved template {name}"))

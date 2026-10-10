@@ -226,3 +226,22 @@ class Instructions(Base):
         full = handover.preview(handover.BUILTIN["full"])
         self.assertEqual(full["script"]["dropped"], 0)
         self.assertNotIn("ONLY", full["judge_clause"])
+
+
+class TemplateInstructions(unittest.TestCase):
+    def test_template_text_comes_before_production_text(self):
+        import tempfile, json
+        from types import SimpleNamespace
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            cfg = SimpleNamespace(db_path=str(Path(d) / "x.db"))
+            tid = handover.save_user_template(
+                cfg, "Strict", True, True, ["must_fix"],
+                instructions={"script_judge": "ignore pacing", "plan": ""})
+            self.assertEqual(handover.get(cfg, tid)["instructions"],
+                             {"script_judge": "ignore pacing"})
+            prod = {"handover": json.dumps({"script": tid}),
+                    "stage_extras": json.dumps({"script_judge": "check hook"})}
+            self.assertEqual(handover.instruction(cfg, prod, "script_judge"),
+                             "ignore pacing\n\ncheck hook")
+            self.assertEqual(handover.instruction(cfg, prod, "plan"), "")
