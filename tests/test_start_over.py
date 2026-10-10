@@ -124,6 +124,14 @@ class StartOverTests(unittest.TestCase):
         self.assertEqual(prod["stage"], "style")
         self.assertFalse(prod["warning"])
 
+    def test_script_reset_forgets_the_saved_chats(self):
+        (self.pdir / "webchat_chats.json").write_text("{}", encoding="utf-8")
+        self._post("script")
+        self.assertFalse((self.pdir / "webchat_chats.json").exists())
+        (self.pdir / "webchat_chats.json").write_text("{}", encoding="utf-8")
+        self._post("shots")
+        self.assertTrue((self.pdir / "webchat_chats.json").exists())
+
     def test_script_reset_keeps_manual_notes(self):
         (self.pdir / "research_notes.md").write_text("mine", encoding="utf-8")
         (self.pdir / "research_notes.json").write_text(

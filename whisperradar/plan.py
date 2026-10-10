@@ -164,6 +164,7 @@ _STOP = set("a an the and or of to in on at for with is are was were be "
             "how why what who this that it its you your i my we our from by "
             "as not no vs".split())
 TITLE_SIM_MAX = 0.5    # share of the title's new words also in the source's
+KEYWORD_COPY_MAX = 0.75   # a keyword this much the original title is re-asked
 HOOK_RUN = 4           # words in a row the hook may share with the source
 
 
@@ -929,13 +930,30 @@ def _ask_package(ctx: dict, ask) -> dict:
     """Analyst step: `ask(prompt) -> raw reply`; up to 3 tries."""
     from . import studio
     prompt = analyst_prompt(ctx)
+    src = ((ctx.get("source") or {}).get("title") or "")
+    fallback, copied = None, False
     for _ in range(3):
         pkg = parse_package(studio._parse_json_object(ask(prompt)))
         if package_ok(pkg):
+            kw = pkg["keyword"]
+            content = [w for w in _words(kw) if w not in _STOP]
+            if (src and not copied and len(content) >= 3 and
+                    title_similarity(kw, src) >= KEYWORD_COPY_MAX):
+                # the keyword is the original title's own wording: ask once
+                # for the searchable topic in different words
+                fallback, copied = pkg, True
+                prompt = analyst_prompt(ctx) + (
+                    "\n\nYour \"keyword\" repeats the wording of the "
+                    "video's own title. Give the 2-4 word phrase a viewer "
+                    "would SEARCH for this topic in DIFFERENT words from the "
+                    "title, and reply with the one JSON object again.")
+                continue
             return pkg
         prompt = analyst_prompt(ctx) + ("\n\nYour last reply had no usable "
                                         "JSON. Reply with the one JSON object "
                                         "only.")
+    if fallback:
+        return fallback
     raise RuntimeError("the analyst did not return a usable description of "
                        "the video")
 
@@ -958,6 +976,11 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
     # already has (a chat that cannot be reopened is replaced by a new one)
     kept = (ws.adopt_chats(cfg, pid, transport, {writer, judge}, log)
             if same_chats else set())
+    if writer != judge:
+        # the title writer must start BLANK: an old chat of this production
+        # may hold the original script (earlier planner runs showed it), and
+        # the writer would then title from the script, not from the package
+        kept = kept - {writer}
     judge_cont = judge in kept
     if not ctx["brief"] and ctx["transcript"]:
         ctx["brief"], built = ws.ensure_brief(cfg, pid, transport, judge, log,

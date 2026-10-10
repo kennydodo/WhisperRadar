@@ -568,3 +568,28 @@ class WeakPruneTests(unittest.TestCase):
         for ok in ("8 reasons clutter costs you", "12 reasons clutter costs you"):
             self.assertFalse(any("same count" in f for f in
                                  pp.scope_faults(plan(ok), src)), ok)
+
+
+class KeywordCopyTests(unittest.TestCase):
+    def test_keyword_that_repeats_the_title_is_asked_again(self):
+        ctx = {"channel": "", "genre": "x", "transcript": "t",
+               "source": {"title": "POV: Your Investments Start Making More "
+                                   "Than Your Salary"}}
+        a = dict(PACKAGE, keyword="investments more than salary")
+        b = dict(PACKAGE, keyword="passive income freedom")
+        replies = [json.dumps(a), json.dumps(b)]
+        calls = []
+
+        def ask(prompt):
+            calls.append(prompt)
+            return replies.pop(0)
+        out = pp._ask_package(ctx, ask)
+        self.assertEqual(out["keyword"], "passive income freedom")
+        self.assertIn("DIFFERENT words", calls[1])
+
+    def test_still_copied_after_one_retry_is_accepted(self):
+        ctx = {"channel": "", "genre": "x", "transcript": "t",
+               "source": {"title": "Your Investments More Than Salary"}}
+        a = json.dumps(dict(PACKAGE, keyword="investments more than salary"))
+        out = pp._ask_package(ctx, lambda p: a)
+        self.assertEqual(out["keyword"], "investments more than salary")

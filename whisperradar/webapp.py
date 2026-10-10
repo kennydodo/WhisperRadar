@@ -3064,6 +3064,12 @@ def create_app(cfg) -> Flask:
                 if from_stage == "plan":
                     removed += _reset_plan(conn, pid, pdir)
                 if "script" in reset:
+                    # old chats may hold the original script or old scores:
+                    # every LLM starts the next run in a fresh chat
+                    cf = pdir / "webchat_chats.json"
+                    if cf.exists():
+                        cf.unlink()
+                        removed.append("webchat_chats.json")
                     # the generated keyword brief and any "script gate failed"
                     # warning belong to the script stage's scoring
                     removed += _reset_script_scores(conn, pid, pdir)
