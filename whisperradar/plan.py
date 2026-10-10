@@ -25,6 +25,7 @@ PER_SEGMENT = 5
 ALTERNATES = 2           # titles the judge keeps next to its pick
 WHY_MAX = 160            # a reason is one short line, not an essay
 OPENING_WORDS = 3        # titles sharing these first words ...
+FIRST_WORD_MAX = 3       # options that may start with the very same word
 OPENING_MAX = 2          # ... may appear at most this many times
 TRANSCRIPT_MAX = 24000   # characters of the original script the writer sees
 MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
@@ -301,6 +302,16 @@ def variety_faults(plan: dict) -> list[str]:
         key = " ".join(_words(t["text"])[:OPENING_WORDS])
         if key:
             opens[key] = opens.get(key, 0) + 1
+    first: dict[str, int] = {}
+    for t in plan["titles"]:
+        w = (_words(t["text"]) or [""])[0]
+        if w:
+            first[w] = first.get(w, 0) + 1
+    top = max(first.items(), key=lambda kv: kv[1], default=("", 0))
+    if len(plan["titles"]) >= 6 and top[1] > FIRST_WORD_MAX:
+        f.append(f"{top[1]} title options start with \"{top[0]}\": no more "
+                 f"than {FIRST_WORD_MAX} may open with the same word - vary "
+                 "how they start")
     worst = max(opens.items(), key=lambda kv: kv[1], default=("", 0))
     if worst[1] > OPENING_MAX:
         f.append(f"{worst[1]} title options start with \"{worst[0]}\": no "
@@ -649,7 +660,7 @@ _RULES = f"""Rules for the plan:
 - Decide the title formula that fits this niche from its winning titles (its skeleton in one line, e.g. "[Blunt truth] ([Why] [topic] is [what you avoid])" or "I [did the thing] for [time]"; examples only - derive it from the niche's winners). If the winners share a number or a year, use it the same way.
 - Every title is ONE short phrase (about 45-65 characters), never split into two parts: no colon, no dash, no brackets, no "X, and Y" second half. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. Never a keyword pile, a repeated word, or unnatural word order. No ALL CAPS shouting, at most one emoji. Test every title by reading it aloud.
 - A title is a TEASER, never the story: it names the topic and the value or stake for the viewer and leaves the answer, the reason, the mechanism, the numbers and the fix for the video. Never put the conclusion, the cause, a specific claim or the solution in the title.
-- The keyword is the topic you anchor on; it does NOT have to be in every title, and may sit anywhere. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. Every title is at most {TITLE_MAX} characters.
+- The keyword is the topic you anchor on; it does NOT have to be in every title, and may sit anywhere. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words and no more than {FIRST_WORD_MAX} with the same first word. Every title is at most {TITLE_MAX} characters.
 - Give every option its OWN core value and name it first in \"why\" (\"Hidden cost fear - ...\"): at most {ANGLE_MAX} options per value. At most {HEDGE_MAX} options may hedge with may / might / could: a hook states a stake or asks a real question. Do not build most options on one repeated word or phrase.
 - Do NOT use a numbered list as a title ("4 Ways to...", "3 Hidden Costs of...") unless the brief says numbers are allowed and gives the counts; then use ONLY those counts.
 - Only promise what the video's overview can deliver.

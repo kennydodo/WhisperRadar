@@ -554,3 +554,13 @@ class WeakPruneTests(unittest.TestCase):
         every = [t["text"] for t in p2["titles"][1:]]
         out2 = pp.apply_pick(p2, {"weak": every}, "")
         self.assertGreaterEqual(len(out2["titles"]), pp.MIN_TITLES)
+
+
+class FirstWordTests(unittest.TestCase):
+    def test_too_many_options_with_the_same_first_word(self):
+        ts = [{"text": f"Why {w} matters more", "why": f"angle {i} - x"}
+              for i, w in enumerate(["jars", "coins", "habits", "money",
+                                     "time", "rooms"])]
+        p = pp.parse_plan({"keyword": "k", "title": ts[0]["text"],
+                           "titles": ts})
+        self.assertTrue(any("same word" in f for f in pp.variety_faults(p)))
