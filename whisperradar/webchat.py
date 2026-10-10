@@ -1860,6 +1860,18 @@ class WebChat:
         res = read_slider(page)
         if not res["stops"] and _DIAG_ROOT is not None:
             try:                       # what the popover looks like, for me
+                d = _DIAG_ROOT / "diag" / key
+                d.mkdir(parents=True, exist_ok=True)
+                names = page.evaluate(
+                    "() => [...document.querySelectorAll("
+                    "'button,[role=button],[role=combobox],[aria-haspopup]')]"
+                    ".filter(e => e.getBoundingClientRect().width > 0)"
+                    ".map(e => [e.tagName, e.getAttribute('aria-label') || '',"
+                    " (e.innerText || '').trim().slice(0, 60),"
+                    " e.getAttribute('aria-haspopup') || ''].join(' | '))")
+                (d / "buttons.txt").write_text(
+                    f"url: {page.url}\n" + "\n".join(names), encoding="utf-8")
+                page.screenshot(path=str(d / "start-page.png"))
                 btn = _effort_button(page)
                 if btn is not None:
                     btn.click()
