@@ -50,17 +50,18 @@ class PlanSeesTheOriginalScript(Base):
 
 
 class PlanNumbers(unittest.TestCase):
-    def test_same_list_number_fails_other_passes(self):
+    def test_numbered_titles_are_never_allowed(self):
         def plan(title):
             return pp.parse_plan({"keyword": "coin jar", "title": title,
                                   "titles": [{"text": title, "why": "x"}] * 6,
                                   "promise": "p",
                                   "thumbnail": {"text": "WOW"}})
         src = "10 Coin Jar Mistakes That Cost You Money"
-        same = pp.scope_faults(plan("Ten coin jar errors to avoid"), src)
-        self.assertTrue(any("same count" in f for f in same))
-        other = pp.scope_faults(plan("12 coin jar errors to avoid"), src)
-        self.assertFalse(any("same count" in f for f in other))
+        for t in ("Ten coin jar errors to avoid", "12 coin jar errors to avoid"):
+            self.assertTrue(pp.scope_faults(plan(t), src), t)
+        self.assertEqual(pp.scope_faults(plan("What your coin jar hides"), src),
+                         [])
+        self.assertIn("never", pp._numbers_text({"source": {"title": src}}))
         self.assertEqual(pp.list_numbers("In 1943 there were 12 reasons"), {12})
 
 

@@ -111,5 +111,26 @@ class BriefTests(unittest.TestCase):
         self.assertTrue(studio.brief_faults({"summary": "", "keywords": []}))
 
 
+class PremiseBriefTests(unittest.TestCase):
+    def test_a_story_style_brief_is_a_fault(self):
+        b = studio.parse_brief("BRIEF: A story that follows a worker who then "
+                               "slowly reaches freedom.\nKEYWORDS: a, b, c, "
+                               "d, e, f")
+        self.assertTrue(any("tells a story" in f
+                            for f in studio.brief_faults(b)))
+
+    def test_a_premise_brief_passes(self):
+        b = studio.parse_brief("BRIEF: Can boring investing outgrow a "
+                               "paycheck? Many assume income decides "
+                               "freedom; this overturns it.\nKEYWORDS: a, b, "
+                               "c, d, e, f")
+        self.assertEqual(studio.brief_faults(b), [])
+
+    def test_prompt_asks_for_a_premise_not_a_summary(self):
+        text = studio.notes_prompt("T", "finance", "some transcript")
+        self.assertIn("PREMISE", text)
+        self.assertIn("NO story", text)
+
+
 if __name__ == "__main__":
     unittest.main()

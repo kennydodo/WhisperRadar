@@ -407,35 +407,18 @@ def allowed_counts(n: int) -> list[int]:
 
 
 def scope_faults(plan: dict, source_title: str = "") -> list[str]:
-    """A title covers the WHOLE video. "4 Hidden Costs of ..." promises one
-    list of parts - one slice of the script. A count is allowed ONLY when the
-    source video is itself a list of N points: then the count must be within
-    ~20% of N and must differ from N."""
-    src = list_count(source_title)
+    """A title covers the WHOLE video and never carries a count: "4 Hidden
+    Costs of ..." promises one list of parts - a slice of the script - and the
+    script writer decides on its own how many points to make."""
     titles = [t["text"] for t in plan["titles"]]
     if plan.get("title") and plan["title"] not in titles:
         titles.append(plan["title"])
-    counted = [(t, list_count(t)) for t in titles if list_count(t)]
-    f = []
-    if not src:
-        if counted:
-            f.append(f"{len(counted)} title(s) are a numbered list of parts "
-                     f"(for example \"{counted[0][0]}\"): a list of ways, "
-                     "reasons or costs is one slice of the script, not the "
-                     "whole video - rewrite each as a title for the overall "
-                     "subject, with no count")
-        return f
-    ok = allowed_counts(src)
-    same = [t for t, n in counted if n == src]
-    off = [t for t, n in counted if n != src and n not in ok]
-    if same:
-        f.append(f"{len(same)} title(s) use the same count as the original "
-                 f"list (for example \"{same[0]}\"): use a different number, "
-                 f"one of {', '.join(map(str, ok))}")
-    if off:
-        f.append(f"{len(off)} title(s) use a count outside the allowed "
-                 f"{', '.join(map(str, ok))} (for example \"{off[0]}\")")
-    return f
+    counted = [t for t in titles if list_count(t)]
+    if not counted:
+        return []
+    return [f"{len(counted)} title(s) are a numbered list of parts (for "
+            f"example \"{counted[0]}\"): no title may carry a count - "
+            "rewrite each as a title for the overall subject"]
 
 
 def specific_faults(plan: dict, transcript: str, package_text: str,
@@ -544,11 +527,6 @@ def plan_block(plan: dict) -> str:
     if plan.get("keyword"):
         lines.append(f"- Main keyword: {plan['keyword']} - use it naturally "
                      "where it fits, never forced")
-    n = list_count(plan["title"])
-    if n:
-        lines.append(f"- The title promises exactly {n} points: the script "
-                     f"must have exactly {n} distinct points, clearly "
-                     "separated, no more and no fewer.")
     lines.append("- RULE: the script is spoken narration only. It must NEVER "
                  "mention or allude to the thumbnail, the cover, the title, "
                  "the packaging, or this note. A judge must list every such "
@@ -752,14 +730,9 @@ def _package_text(pkg: dict) -> str:
 
 
 def _numbers_text(ctx: dict) -> str:
-    src = (ctx.get("source") or {}).get("title") or ""
-    n = list_count(src)
-    if not n:
-        return "NUMBERED TITLES: not allowed - no title may be a numbered list."
-    return ("NUMBERED TITLES: allowed, because this niche's proven video is a "
-            f"list. If a title uses a count, it must be one of "
-            f"{', '.join(map(str, allowed_counts(n)))}; titles without a count "
-            "are fine too.")
+    return ("NUMBERED TITLES: never. No title may contain a count of parts "
+            "(\"7 reasons\", \"Three ways\"); the script writer decides "
+            "on its own how many points to make.")
 
 
 # ---- step 2: the titler never sees the script or the original title ---------

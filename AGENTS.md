@@ -1763,3 +1763,7 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 ## Blind titler: fresh chat, no copied keyword
 - Production 32's plan leaked the original script's scene (break room, coffee, badge, truck) into the thumbnail idea and titles: the title writer's chat was CONTINUED from an earlier planner run that had shown it the script. The plan run now always starts the title writer in a NEW chat (when writer != judge), and any Start over that includes the script stage deletes `webchat_chats.json` so every LLM starts fresh.
 - The analyst's keyword is re-asked once when it repeats the original title's wording (>= 3 content words, >= 75% of them in the title; `KEYWORD_COPY_MAX`).
+
+## No numbers in planning; premise-only script brief
+- Titles never carry a count, whatever the original is (`scope_faults`, `_numbers_text`); the script writer decides how many points to make. `plan_block` no longer asks for an exact number of points. (`allowed_counts`/`list_numbers` remain as helpers only.)
+- The script brief is a PREMISE (the question the video answers, the false assumption it overturns, the feeling it leaves) plus keywords - no story, scene or sequence of events. `brief_faults` rejects event-sequence wording (follows / then / eventually ...) and the brief is rebuilt.

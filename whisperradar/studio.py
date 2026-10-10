@@ -3766,7 +3766,7 @@ def notes_prompt(title: str, genre: str, source_text: str,
     return f"""You prepare a brief for a {genre} YouTube channel. Below is a transcript of an existing video titled "{title}". Another writer will make a NEW video on the same topic and must NOT be able to copy this one.
 
 Write:
-BRIEF: at most {BRIEF_WORDS} words saying what the video is about, naturally containing as many of its important search keywords as fit. Topic and angle only.
+BRIEF: at most {BRIEF_WORDS} words, written as a PREMISE, not a summary: the one question the whole video answers, what viewers wrongly assume before watching that it overturns, and the feeling it leaves them with - naturally containing as many of its important search keywords as fit. Write NO story: no person, no scene, no sequence of events (never "follows ...", "then ...", "eventually ..."), nothing the writer could retell. The writer invents its own story.
 KEYWORDS: 8-15 keywords or short phrases (comma separated) a viewer would search for and that the new script must use.
 
 Rules:
@@ -3808,6 +3808,13 @@ def brief_faults(brief: dict, source_text: str = "") -> list[str]:
         f.append("no BRIEF line")
     elif n > BRIEF_WORDS:
         f.append(f"the BRIEF is {n} words; at most {BRIEF_WORDS}")
+    seq = re.search(r"\b(follows|then|eventually|finally|slowly reaches|"
+                    r"begins with|starts with|ends with|until)\b",
+                    brief["summary"], re.I)
+    if seq:
+        f.append("the BRIEF tells a story (\"" + seq.group(0) + "\"): state "
+                 "the premise - the question, the false assumption, the "
+                 "payoff - with no sequence of events")
     if len(brief["keywords"]) < 5:
         f.append("give 8-15 KEYWORDS")
     if source_text:

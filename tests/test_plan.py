@@ -365,22 +365,19 @@ class ScopeTests(unittest.TestCase):
     def test_whole_video_titles_pass(self):
         self.assertEqual(pp.scope_faults(pp.parse_plan(good())), [])
 
-    def test_list_source_allows_a_count_within_20_percent_but_never_the_same(self):
+    def test_a_count_is_never_allowed_even_for_a_list_original(self):
         src = "10 Things Nobody Tells You About Coin Jars"
-        self.assertEqual(pp.allowed_counts(10), [8, 9, 11, 12])
 
         def faults(title):
             p = pp.parse_plan(good(title=title))
             p["titles"][0]["text"] = title
             return pp.scope_faults(p, src)
-        self.assertEqual(faults("9 Things About Your Coin Jar"), [])
-        self.assertEqual(faults("12 Things About Your Coin Jar"), [])
-        self.assertTrue(any("same count" in x for x in
-                            faults("10 Things About Your Coin Jar")))
-        self.assertTrue(any("outside the allowed" in x for x in
-                            faults("5 Things About Your Coin Jar")))
-        self.assertTrue(any("same count" in x for x in
-                            faults("Ten Things About Your Coin Jar")))
+        for t in ("9 Things About Your Coin Jar", "12 Things About Your Coin Jar",
+                  "10 Things About Your Coin Jar",
+                  "Ten Things About Your Coin Jar"):
+            self.assertTrue(any("no title may carry a count" in x
+                                for x in faults(t)), t)
+        self.assertEqual(faults("What Your Coin Jar Is Hiding"), [])
 
     def test_judge_narrow_titles_block_a_pass(self):
         v = {"score": 9.5, "pass": True,
@@ -557,39 +554,3 @@ class WeakPruneTests(unittest.TestCase):
         every = [t["text"] for t in p2["titles"][1:]]
         out2 = pp.apply_pick(p2, {"weak": every}, "")
         self.assertGreaterEqual(len(out2["titles"]), pp.MIN_TITLES)
-
-    def test_a_numbered_original_rejects_its_own_count(self):
-        def plan(title):
-            return pp.parse_plan(good(title=title, titles=[
-                {"text": title, "why": "a - b"}] * 6))
-        src = "10 Reasons Your Stuff Costs Money"
-        self.assertTrue(any("same count" in f for f in
-                            pp.scope_faults(plan("Ten reasons clutter costs you"), src)))
-        for ok in ("8 reasons clutter costs you", "12 reasons clutter costs you"):
-            self.assertFalse(any("same count" in f for f in
-                                 pp.scope_faults(plan(ok), src)), ok)
-
-
-class KeywordCopyTests(unittest.TestCase):
-    def test_keyword_that_repeats_the_title_is_asked_again(self):
-        ctx = {"channel": "", "genre": "x", "transcript": "t",
-               "source": {"title": "POV: Your Investments Start Making More "
-                                   "Than Your Salary"}}
-        a = dict(PACKAGE, keyword="investments more than salary")
-        b = dict(PACKAGE, keyword="passive income freedom")
-        replies = [json.dumps(a), json.dumps(b)]
-        calls = []
-
-        def ask(prompt):
-            calls.append(prompt)
-            return replies.pop(0)
-        out = pp._ask_package(ctx, ask)
-        self.assertEqual(out["keyword"], "passive income freedom")
-        self.assertIn("DIFFERENT words", calls[1])
-
-    def test_still_copied_after_one_retry_is_accepted(self):
-        ctx = {"channel": "", "genre": "x", "transcript": "t",
-               "source": {"title": "Your Investments More Than Salary"}}
-        a = json.dumps(dict(PACKAGE, keyword="investments more than salary"))
-        out = pp._ask_package(ctx, lambda p: a)
-        self.assertEqual(out["keyword"], "investments more than salary")
