@@ -543,3 +543,28 @@ class SpreadTests(unittest.TestCase):
         out = pp.apply_pick(p, v, "")
         self.assertEqual(out["titles"][0]["text"], v["closest"])
         self.assertEqual(out["titles"][1]["text"], v["best"])
+
+
+class WeakPruneTests(unittest.TestCase):
+    def test_weak_options_are_dropped_but_never_the_pick_or_below_minimum(self):
+        p = pp.parse_plan(good())
+        weak = [p["titles"][5]["text"], p["titles"][6]["text"]]
+        out = pp.apply_pick(p, {"closest": weak[0], "weak": weak}, "")
+        texts = [t["text"] for t in out["titles"]]
+        self.assertIn(weak[0], texts)          # the pick stays
+        self.assertNotIn(weak[1], texts)
+        p2 = pp.parse_plan(good())
+        every = [t["text"] for t in p2["titles"][1:]]
+        out2 = pp.apply_pick(p2, {"weak": every}, "")
+        self.assertGreaterEqual(len(out2["titles"]), pp.MIN_TITLES)
+
+    def test_a_numbered_original_rejects_its_own_count(self):
+        def plan(title):
+            return pp.parse_plan(good(title=title, titles=[
+                {"text": title, "why": "a - b"}] * 6))
+        src = "10 Reasons Your Stuff Costs Money"
+        self.assertTrue(any("same count" in f for f in
+                            pp.scope_faults(plan("Ten reasons clutter costs you"), src)))
+        for ok in ("8 reasons clutter costs you", "12 reasons clutter costs you"):
+            self.assertFalse(any("same count" in f for f in
+                                 pp.scope_faults(plan(ok), src)), ok)

@@ -1753,3 +1753,5 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 ## Niche playbooks
 - A niche with no playbook gets the GENERIC one (angles that sell in any niche); finance keeps its own. Your own playbooks: `niche_playbooks.json` next to the database, `{"key": {"name", "match": [...], "values": [...], "voice", "avoid"}}` - they win over the built-ins. The "Extra core values" setting (`niche_values`, ';'-separated) adds angles to every niche.
 - `measure` now reports the formula mix of the niche's winners (question, why-explanation, number list, first person, blunt truth...), shown to the titler once the sample is big enough (>= 6 titles, 3 channels). Learning from your published titles already exists (`learning.context_text`).
+
+- The plan judge also lists "weak" options (not failures, just the limpest hooks); `apply_pick` drops them (never the pick, never below MIN_TITLES). A numbered original rejects its own count (tested for 10 -> 8/12 ok).

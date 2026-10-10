@@ -823,12 +823,12 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 {_RULES}
 
 You do three things.
-1. AUDIT every title, one by one, for scope: "if any single section of the script were deleted, is this title still completely true, and does it describe the WHOLE video?" A title built on ONE point, item, example, cost, audience, relationship, number or list from the script FAILS. Put the exact text of every failing title in "narrow". Also FAIL spoilers (the title gives away the problem AND its answer, the verdict, the reason or the fix), two-part titles (colon, dash, brackets, ", and ..."), titles longer than about 65 characters, titles that read awkwardly aloud (unnatural word order, keyword pile, repeated words), options that are one title reworded, and titles that drift to a different topic or promise than the original video. A numbered title is fine ONLY when the numbers note above allows it.
+1. AUDIT every title, one by one, for scope: "if any single section of the script were deleted, is this title still completely true, and does it describe the WHOLE video?" A title built on ONE point, item, example, cost, audience, relationship, number or list from the script FAILS. Put the exact text of every failing title in "narrow". Separately, list in "weak" the options that are not failures but are the weakest hooks (unnatural to say aloud, hide the topic, generic or limp): they will be dropped from the options. Also FAIL spoilers (the title gives away the problem AND its answer, the verdict, the reason or the fix), two-part titles (colon, dash, brackets, ", and ..."), titles longer than about 65 characters, titles that read awkwardly aloud (unnatural word order, keyword pile, repeated words), options that are one title reworded, and titles that drift to a different topic or promise than the original video. A numbered title is fine ONLY when the numbers note above allows it.
 2. PICK. Choose the option whose meaning, promise and pattern are CLOSEST to the original video's title: the one a viewer of the original would recognise as the same video. Compare meaning and pattern, not shared words. Only pick among options that are strong hooks (specific stake, natural, not hedged with may/might/could, not a bland generic phrasing); if the closest is weak, take the closest strong one. Copy it exactly into "closest", the next {ALTERNATES} closest into "alternates", and the single STRONGEST hook of all into "best" (it may be the same). NEVER reveal the original title, the pick or the alternates in "faults" or "fixes" - those are sent to the title writer, who must not learn them.
 3. SCORE 1-10 how likely this packaging is to get the video clicked and found AND be true to the whole video. In "faults" and "fixes" say what is wrong and what KIND of change is needed; never quote the original title or script and never offer a rewrite that borrows from them. Name the exact option text that is weak.
 
 Reply with ONE JSON object and nothing else:
-{{"score": 7.5, "pass": false, "narrow": ["exact title that fails the scope audit"], "closest": "exact option text", "best": "exact option text", "alternates": ["exact option text", "exact option text"], "faults": ["specific problem"], "fixes": ["specific change"]}}
+{{"score": 7.5, "pass": false, "narrow": ["exact title that fails the scope audit"], "weak": ["exact option text"], "closest": "exact option text", "best": "exact option text", "alternates": ["exact option text", "exact option text"], "faults": ["specific problem"], "fixes": ["specific change"]}}
 "pass" is true only when the score is {min_score:g} or higher and nothing is left to fix."""
 
 
@@ -847,7 +847,8 @@ def safe_verdict(verdict: dict, plan: dict, source_title: str,
     note that carries anything of the original title or script."""
     from . import studio
     v = {k: val for k, val in (verdict or {}).items()
-         if k not in ("closest", "alternates", "best", "pick", "narrow")}
+         if k not in ("closest", "alternates", "best", "pick", "narrow",
+                     "weak")}
     own = _plan_json(plan) + "\n" + package_text
     for k in ("faults", "fixes"):
         items = v.get(k)
@@ -893,6 +894,14 @@ def apply_pick(plan: dict, verdict: dict, source_title: str = "") -> dict:
         plan["titles"] = lead + [t for t in titles if t not in lead]
         plan["title"] = first[0]["text"]
         plan["picked_by"] = "judge"
+    weak = {_norm_title(w) for w in (v.get("weak") if isinstance(
+        v.get("weak"), list) else [])}
+    if weak:
+        keep = [t for t in plan["titles"]
+                if _norm_title(t["text"]) not in weak
+                or t["text"] == plan["title"]]
+        if len(keep) >= MIN_TITLES:        # never prune below the minimum
+            plan["titles"] = keep
     return plan
 
 
