@@ -2933,6 +2933,9 @@ def create_app(cfg) -> Flask:
             source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
+            instructions={k: db.stage_extra(prod, k)
+                          for k in ("plan", "plan_judge", "script",
+                                    "script_judge")},
             handover_templates=list(handover.all_templates(cfg).values()),
             handover_choice={s: (handover.choice_for(prod, s)
                                  or handover.DEFAULT_ID)

@@ -44,6 +44,24 @@
       Tell the judge to keep the original out: <b>{{ 'yes' if t['guard'] else 'no' }}</b><br>
       Passes: {% for stage, plist in parts.items() %}{% for key, label in plist %}{% if key in t['parts'] %}{{ label }} ({{ stage }}); {% endif %}{% endfor %}{% endfor %}
     </div>
+    {% set pv = previews[t['id']] %}
+    <details style="margin-top:8px">
+      <summary>See what the judge is told and what the writer receives</summary>
+      <p class="muted" style="margin:8px 0 2px">Sample judge notes (the original's name in the sample: <i>{{ sample_source }}</i>)</p>
+      <pre>{% for k, v in sample.items() %}{{ k }}:
+{% for x in v %}  - {{ x }}
+{% endfor %}{% endfor %}</pre>
+      <p class="muted" style="margin:8px 0 2px"><b>Script judge is told:</b></p>
+      <pre>{{ pv['judge_clause'] }}</pre>
+      <p class="muted" style="margin:8px 0 2px"><b>Script writer receives:</b>
+        {% if pv['script']['dropped'] %}({{ pv['script']['dropped'] }} note(s) dropped by the scrub){% endif %}</p>
+      <pre>{% for k in ('must_fix', 'feedback', 'weak_spans') %}{{ k }}:
+{% for x in pv['script'][k] %}  - {{ x }}
+{% else %}  (nothing)
+{% endfor %}{% endfor %}</pre>
+      <p class="muted" style="margin:8px 0 2px"><b>Plan title writer receives</b> (the judge's pick and alternatives never do):</p>
+      <pre>{{ pv['plan'] | tojson(indent=1) }}</pre>
+    </details>
     {% if not t['builtin'] %}
     <form method="post" action="/handover/delete/{{ t['id'] }}" style="margin-top:8px"
           onsubmit="return confirm('Delete this template? Productions using it fall back to Style only.')">

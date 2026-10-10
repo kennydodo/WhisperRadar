@@ -1139,6 +1139,25 @@
       {% endfor %}
       <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save</button>
     </form>
+    <h2 style="margin:16px 0 4px">Your instructions &mdash; plan and script</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:6px">
+      <b>Writer</b>: extra direction the writer follows. <b>Judge</b>: what the judge should look for
+      and what it should ignore (in addition to its own rules). Used the next time that stage runs.
+      The script writer box is the same direction as on the Script stage.
+    </div>
+    <form method="post" action="/studio/{{ prod['id'] }}/instructions">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
+        <label>Plan &mdash; writer
+          <textarea name="plan" style="min-height:70px" placeholder="e.g. titles in a calm, curious tone; avoid hype words">{{ instructions['plan'] }}</textarea></label>
+        <label>Plan &mdash; judge
+          <textarea name="plan_judge" style="min-height:70px" placeholder="e.g. look for titles that promise something the video does not deliver; ignore small wording differences">{{ instructions['plan_judge'] }}</textarea></label>
+        <label>Script &mdash; writer
+          <textarea name="script" style="min-height:70px" placeholder="Same as the direction on the Script stage">{{ instructions['script'] }}</textarea></label>
+        <label>Script &mdash; judge
+          <textarea name="script_judge" style="min-height:70px" placeholder="e.g. look for a strong cold open and a clear ending; do not penalise invented story details">{{ instructions['script_judge'] }}</textarea></label>
+      </div>
+      <div class="actions"><button type="submit" class="secondary">Save instructions</button></div>
+    </form>
   </div>
 
   <div class="panel">

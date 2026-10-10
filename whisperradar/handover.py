@@ -198,3 +198,51 @@ def plan_verdict(tpl: dict, verdict: dict, own_text: str, original: str) -> dict
                 v[k], _gone = studio.scrub_for_writer(
                     [str(x) for x in items], own_text, original)
     return v
+
+
+# ------------------------------------------------------------------ preview
+SAMPLE_SOURCE = ("Dennis Hartwell started Hartwell Logistics in 1998, sold it, "
+                 "and ended the video on a quiet harbour at sunrise.")
+SAMPLE_SCRIPT = "Maya opened the old jar and counted the coins slowly."
+SAMPLE_NOTES = {
+    "must_fix": ["The 4% figure in the third paragraph is wrong: it is 3%."],
+    "feedback": ["The hook is slow - open with a sharper question.",
+                 "Open like Dennis Hartwell does, with the sale of Hartwell Logistics.",
+                 "End on a quiet harbour at sunrise, as the original does."],
+    "weak_spans": ["Maya opened the old jar and counted the coins slowly."],
+}
+
+
+def judge_clause(guard: bool) -> str:
+    """The sentence the script judge is given about its notes (read from the
+    real prompt, so this page can never drift from what is sent)."""
+    from . import studio
+    text = studio.rating_prompt("T", "general", SAMPLE_SCRIPT, "brief", "style",
+                                0.0, original=SAMPLE_SOURCE, guard=guard)
+    at = text.find("forwarded to the writer")
+    if at == -1:
+        return ""
+    return _paragraph(text, text.rfind("\n", 0, at) + 1)
+
+
+def _paragraph(text: str, start: int) -> str:
+    end = text.find("\n- ", start + 3)
+    end2 = text.find("\n\n", start)
+    ends = [e for e in (end, end2) if e != -1]
+    return text[start:min(ends) if ends else len(text)].strip()
+
+
+def preview(tpl: dict) -> dict:
+    """What a template does with a sample verdict: the judge's instruction and
+    what reaches the writer in each stage."""
+    must, fb, weak, dropped = script_notes(
+        tpl, SAMPLE_NOTES["must_fix"], SAMPLE_NOTES["feedback"],
+        SAMPLE_NOTES["weak_spans"], SAMPLE_SCRIPT, SAMPLE_SOURCE)
+    plan_in = {"faults": ["Title 2 repeats Hartwell Logistics wording."],
+               "fixes": ["Name the real subject, not a person."],
+               "score": 6.5, "closest": "x", "alternates": ["y"], "pick": "x"}
+    plan_out = plan_verdict(tpl, plan_in, "the plan text", SAMPLE_SOURCE)
+    return {"judge_clause": judge_clause(bool(tpl.get("guard", True))),
+            "script": {"must_fix": must, "feedback": fb, "weak_spans": weak,
+                       "dropped": dropped},
+            "plan": plan_out}

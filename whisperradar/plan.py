@@ -604,6 +604,17 @@ def context(cfg, pid: int) -> dict:
     except Exception:  # noqa: BLE001
         transcript = ""
     ctx["source"] = src
+    # the creator's own instructions for this production (writer / judge)
+    try:
+        conn = db.connect(cfg.db_path)
+        try:
+            p3 = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        ctx["direction"] = db.stage_extra(p3, "plan")
+        ctx["judge_direction"] = db.stage_extra(p3, "plan_judge")
+    except Exception:  # noqa: BLE001
+        ctx["direction"] = ctx["judge_direction"] = ""
     ctx["niche"] = None
     try:
         from . import niche_profile
@@ -748,7 +759,25 @@ def _numbers_text(ctx: dict) -> str:
 
 # ---- step 2: the titler never sees the script or the original title ---------
 
+def _writer_direction(ctx: dict) -> str:
+    text = (ctx.get("direction") or "").strip()
+    return ("\n\nCREATOR'S ADDITIONAL DIRECTION FOR YOU (follow it, together "
+            "with the rules above):\n" + text + "\n") if text else ""
+
+
+def _judge_direction(ctx: dict) -> str:
+    text = (ctx.get("judge_direction") or "").strip()
+    return ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - what to look for and "
+            "what to ignore. Apply them in addition to the rules; the code-"
+            "checked rules and the reply format stay as they are:\n"
+            + text + "\n\n") if text else ""
+
+
 def writer_prompt(ctx: dict) -> str:
+    return _writer_prompt_base(ctx) + _writer_direction(ctx)
+
+
+def _writer_prompt_base(ctx: dict) -> str:
     past = "\n".join(f"- {t}" for t in ctx["past_titles"]) or "(none yet)"
     pkg = ctx.get("package") or {}
     return f"""You are a YouTube packaging strategist. A video is about to be made; design how it will be sold. Titles matter most. You do not have the script - work from this description of the whole video.
@@ -785,6 +814,14 @@ def _plan_json(plan: dict) -> str:
 
 def judge_prompt(ctx: dict, plan: dict, faults: list[str],
                  min_score: float = MIN_SCORE) -> str:
+    base = _judge_prompt_base(ctx, plan, faults, min_score)
+    block = _judge_direction(ctx)
+    return (base.replace("Reply with ONE JSON object", block
+                         + "Reply with ONE JSON object", 1) if block else base)
+
+
+def _judge_prompt_base(ctx: dict, plan: dict, faults: list[str],
+                       min_score: float = MIN_SCORE) -> str:
     pkg = ctx.get("package") or {}
     return f"""You are a strict YouTube growth reviewer. Judge this packaging plan BEFORE the video is written. The title writer never saw the script or the original title: it worked only from the description below.
 

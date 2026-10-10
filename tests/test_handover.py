@@ -170,3 +170,59 @@ class Routes(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Instructions(Base):
+    def setUp(self):
+        super().setUp()
+        self.client = create_app(self.cfg).test_client()
+
+    def _prod(self):
+        conn = db.connect(self.cfg.db_path)
+        prod = db.get_production(conn, self.pid)
+        conn.close()
+        return prod
+
+    def test_save_four_instructions_and_keep_others(self):
+        self.client.post(f"/studio/{self.pid}/instructions", data={
+            "plan": "calm tone", "plan_judge": "check promise",
+            "script": "short", "script_judge": "ignore story names"})
+        prod = self._prod()
+        self.assertEqual(db.stage_extra(prod, "plan"), "calm tone")
+        self.assertEqual(db.stage_extra(prod, "plan_judge"), "check promise")
+        self.assertEqual(db.stage_extra(prod, "script"), "short")
+        self.assertEqual(db.stage_extra(prod, "script_judge"), "ignore story names")
+        self.client.post(f"/studio/{self.pid}/instructions", data={"plan": ""})
+        prod = self._prod()
+        self.assertEqual(db.stage_extra(prod, "plan"), "")
+        self.assertEqual(db.stage_extra(prod, "script_judge"), "ignore story names")
+        page = self.client.get(f"/studio/{self.pid}")
+        self.assertIn(b"ignore story names", page.data)
+
+    def test_plan_prompts_carry_the_instructions(self):
+        ctx = {"direction": "use a calm tone", "judge_direction": "flag clickbait"}
+        self.assertIn("use a calm tone", pp._writer_direction(ctx))
+        self.assertIn("flag clickbait", pp._judge_direction(ctx))
+        self.assertEqual(pp._writer_direction({}), "")
+        self.assertEqual(pp._judge_direction({"judge_direction": "  "}), "")
+
+    def test_script_judge_prompt_carries_the_instruction_before_the_reply_format(self):
+        text = studio.rating_prompt("T", "general", SCRIPT, "brief", "style", 0.0,
+                                    original=SOURCE,
+                                    judge_direction="look for a cold open")
+        self.assertIn("look for a cold open", text)
+        self.assertLess(text.index("look for a cold open"),
+                        text.index("Reply with ONLY a JSON object"))
+        self.assertNotIn("INSTRUCTIONS FOR YOU, THE JUDGE", studio.rating_prompt(
+            "T", "general", SCRIPT, "brief", "style", 0.0, original=SOURCE))
+
+    def test_handover_page_previews(self):
+        page = self.client.get("/handover")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"what the writer receives", page.data)
+        pv = handover.preview(handover.BUILTIN["style"])
+        self.assertEqual(pv["script"]["dropped"], 2)
+        self.assertIn("ONLY", pv["judge_clause"])
+        full = handover.preview(handover.BUILTIN["full"])
+        self.assertEqual(full["script"]["dropped"], 0)
+        self.assertNotIn("ONLY", full["judge_clause"])

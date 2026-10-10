@@ -9,11 +9,17 @@ from flask import redirect, render_template, request
 from . import db, handover
 
 
+INSTRUCTION_KEYS = ("plan", "plan_judge", "script", "script_judge")
+
+
 def register(app, cfg) -> None:
     @app.get("/handover")
     def handover_page():
         return render_template(
             "handover.html", templates=list(handover.all_templates(cfg).values()),
+            previews={t["id"]: handover.preview(t)
+                      for t in handover.all_templates(cfg).values()},
+            sample=handover.SAMPLE_NOTES, sample_source=handover.SAMPLE_SOURCE,
             parts=handover.PARTS, msg=request.args.get("msg"),
             error=request.args.get("error"))
 
@@ -34,6 +40,29 @@ def register(app, cfg) -> None:
     def handover_delete(tid):
         ok = handover.delete_user_template(cfg, tid)
         return redirect("/handover?msg=" + quote("Deleted" if ok else "Not found"))
+
+    @app.post("/studio/<int:pid>/instructions")
+    def instructions_save(pid):
+        """Your own instructions: the plan / script WRITER's extra direction
+        and what the plan / script JUDGE should look for or ignore. Stored in
+        the production's stage_extras (keys plan, plan_judge, script,
+        script_judge); a field that is not sent is left alone."""
+        conn = db.connect(cfg.db_path)
+        try:
+            db.init_db(conn)
+            prod = db.get_production(conn, pid)
+            try:
+                data = json.loads(prod["stage_extras"] or "{}")
+            except (ValueError, TypeError):
+                data = {}
+            data = data if isinstance(data, dict) else {}
+            for key in INSTRUCTION_KEYS:
+                if key in request.form:
+                    data[key] = (request.form.get(key) or "").strip()
+            db.update_production(conn, pid, stage_extras=json.dumps(data))
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=" + quote("Instructions saved"))
 
     @app.post("/studio/<int:pid>/handover")
     def handover_choose(pid):

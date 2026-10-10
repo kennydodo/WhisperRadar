@@ -3370,7 +3370,7 @@ def judge_niche_block(cfg, genre: str) -> str:
     return npf.judge_block(npf.playbook_for(genre, user) or npf.GENERIC)
 
 
-def rating_prompt(title: str, genre: str, script: str, source: str,
+def _rating_prompt_base(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "",
                   niche_block: str = "", earlier: list | None = None,
@@ -3483,6 +3483,21 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
     )
 
 
+def rating_prompt(*args, judge_direction: str = "", **kwargs) -> str:
+    """The script judge's prompt. `judge_direction` = the creator's own
+    instructions to the judge (what to look for / ignore)."""
+    text = _rating_prompt_base(*args, **kwargs)
+    note = (judge_direction or "").strip()
+    if not note:
+        return text
+    block = ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - what to look for "
+             "and what to ignore. Apply them in addition to the rules above; "
+             "the JSON reply format stays as it is:\n" + note + "\n\n")
+    marker = "Reply with ONLY a JSON object"
+    return (text.replace(marker, block + marker, 1) if marker in text
+            else text + "\n\n" + block)
+
+
 def _parse_json_object(text: str) -> dict:
     """Extract a judge's JSON verdict from its reply. Uses the same
     balanced-brace, string-aware scan as the shotlist planner's
@@ -3507,7 +3522,8 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
                 style_guide: str, provider: str | None,
                 temperature: float = 1.0, extra_direction: str = "",
                 original: str = "", earlier: list | None = None,
-                scrub: bool = True, guard: bool = True) -> dict:
+                scrub: bool = True, guard: bool = True,
+                judge_direction: str = "") -> dict:
     """`scrub`/`guard` come from the production's hand-over template
     (handover.py): scrub = drop judge notes that carry details of the original,
     guard = tell the judge to keep the original out of its notes.
@@ -3521,7 +3537,8 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap,
                            extra_direction=extra_direction, original=original,
                            niche_block=judge_niche_block(cfg, genre),
-                           earlier=earlier, guard=guard)
+                           earlier=earlier, guard=guard,
+                           judge_direction=judge_direction)
     try:
         # 900 was a flat guess (see 9aafa69) sized for a bare score - it never
         # accounted for the 7-field criteria object plus feedback[] plus
