@@ -22,17 +22,18 @@ class PlanSeesTheOriginalScript(Base):
         super().setUp()
         autorun.save_brief(self.pdir, BRIEF, SOURCE)
 
-    def test_plan_prompts_carry_brief_and_the_original_script(self):
+    def test_only_the_analyst_and_judge_read_the_script(self):
         ctx = pp.context(self.cfg, self.pid)
+        ctx["package"] = {"overview": "What hides in an old coin jar.",
+                          "premise": "p", "keyword": "coin jar",
+                          "values": ["curiosity"]}
         self.assertIn("rare coins", ctx["brief"])
         plan = pp.parse_plan({"keyword": "coin jar", "title": "t",
-                              "titles": [], "promise": "p", "hook": "h",
+                              "titles": [], "promise": "p",
                               "thumbnail": {"text": "x"}})
-        for text in (pp.writer_prompt(ctx), pp.judge_prompt(ctx, plan, [])):
-            # titles replicate the source, so the plan stage reads its script;
-            # the writer picks the keywords itself, so no brief goes in
-            self.assertIn(SOURCE[:80], text)
-            self.assertNotIn("KEYWORDS: coin jar", text)
+        self.assertNotIn(SOURCE[:80], pp.writer_prompt(ctx))   # blind titler
+        self.assertIn(SOURCE[:80], pp.analyst_prompt(ctx))
+        self.assertIn(SOURCE[:80], pp.judge_prompt(ctx, plan, []))
 
     def test_missing_brief_is_asked_from_the_judge_chat(self):
         (self.pdir / "research_notes.json").unlink()
@@ -49,15 +50,17 @@ class PlanSeesTheOriginalScript(Base):
 
 
 class PlanNumbers(unittest.TestCase):
-    def test_same_list_number_is_allowed_now(self):
+    def test_same_list_number_fails_other_passes(self):
         def plan(title):
             return pp.parse_plan({"keyword": "coin jar", "title": title,
                                   "titles": [{"text": title, "why": "x"}] * 6,
-                                  "promise": "p", "hook": "h",
+                                  "promise": "p",
                                   "thumbnail": {"text": "WOW"}})
         src = "10 Coin Jar Mistakes That Cost You Money"
-        same = pp.originality_faults(plan("Ten coin jar errors to avoid"), src)
-        self.assertEqual(same, [])
+        same = pp.scope_faults(plan("Ten coin jar errors to avoid"), src)
+        self.assertTrue(any("same count" in f for f in same))
+        other = pp.scope_faults(plan("12 coin jar errors to avoid"), src)
+        self.assertFalse(any("same count" in f for f in other))
         self.assertEqual(pp.list_numbers("In 1943 there were 12 reasons"), {12})
 
 

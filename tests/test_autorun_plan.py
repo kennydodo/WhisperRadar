@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tests.test_external_prompts import Base  # noqa: E402
-from tests.test_plan import good  # noqa: E402
+from tests.test_plan import PACKAGE, good  # noqa: E402
 from whisperradar import autorun, db, plan as pp, settings, studio  # noqa: E402
 
 
@@ -26,6 +26,8 @@ class FakeLLM:
 
     def __call__(self, cfg, prompt, timeout=1800, provider=None,
                  max_tokens=None, temperature=1.0):
+        if prompt.startswith("You analyse a YouTube video"):
+            return json.dumps(PACKAGE)
         self.calls.append((provider, prompt))
         r = self.replies.pop(0)
         if isinstance(r, Exception):

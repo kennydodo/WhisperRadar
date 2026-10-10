@@ -29,6 +29,12 @@ def good(**over):
     return p
 
 
+PACKAGE = {"overview": "A calm look at what hides in an old coin jar.",
+           "premise": "A person finds an old jar and learns to check it.",
+           "keyword": "coin jar",
+           "values": ["curiosity", "a mistake to avoid", "relief"]}
+
+
 class PureTests(unittest.TestCase):
     def test_good_plan_has_no_faults(self):
         self.assertEqual(pp.local_faults(pp.parse_plan(good())), [])
@@ -101,7 +107,7 @@ class PhrasingTests(unittest.TestCase):
 
     def test_prompts_ask_for_natural_phrasing(self):
         self.assertIn("reads like a real sentence", pp._RULES)
-        self.assertIn("NEVER stuffed", pp._RULES)
+        self.assertIn("keyword pile", pp._RULES)
 
 
 class VarietyTests(unittest.TestCase):
@@ -124,25 +130,11 @@ class VarietyTests(unittest.TestCase):
         faults = pp.local_faults(pp.parse_plan(good()))
         self.assertFalse([f for f in faults if "start with" in f])
 
-    def test_every_segment_needs_its_top_two(self):
-        opens = ("The Why How Inside Stop Your Nobody Every Before After "
-                 "Only Soon").split()
-        segs = [{"name": f"seg {k}", "titles": [f"a{k}", f"b{k}"]}
-                for k in range(6)]
-        titles = [{"text": f"{w} coin jar secret {i}",
-                   "segment": f"seg {i % 6}"} for i, w in enumerate(opens)]
-        plan = pp.parse_plan(good(formula="[f]", segments=segs,
-                                  titles=titles))
-        plan["title"] = plan["titles"][0]["text"]
-        self.assertEqual([f for f in pp.local_faults(plan)
-                          if "segment" in f], [])        # 12 picks, 2 each
-        plan["titles"][11]["segment"] = "seg 0"          # seg 5 loses a pick
-        faults = pp.local_faults(plan)
-        self.assertTrue(any("every segment needs its top 2" in f
-                            and "seg 5" in f for f in faults))
-        plan["segments"] = plan["segments"][:3]
-        self.assertTrue(any("divide the whole script" in f
-                            for f in pp.local_faults(plan)))
+    def test_segments_are_no_longer_required(self):
+        plan = pp.parse_plan(good())
+        self.assertEqual(plan["segments"], [])
+        self.assertFalse([f for f in pp.local_faults(plan)
+                          if "segment" in f])
 
     def test_parse_segments_drops_junk_and_caps(self):
         segs = pp.parse_segments([
@@ -161,11 +153,12 @@ class VarietyTests(unittest.TestCase):
         plan = pp.parse_plan(good(titles=[{"text": "A coin jar", "why": "x" * 400}]))
         self.assertLessEqual(len(plan["titles"][0]["why"]), pp.WHY_MAX)
 
-    def test_prompt_asks_for_formula_and_perspectives(self):
-        self.assertIn("FORMULA", pp._RULES)
-        self.assertIn("SEGMENTS", pp._RULES)
-        self.assertIn("READ the WHOLE original script", pp._RULES)
+    def test_prompt_asks_for_formula_and_core_value_angles(self):
+        self.assertIn("title formula", pp._RULES)
+        self.assertIn("CORE VALUES", pp._RULES)
+        self.assertIn("WHOLE video", pp._RULES)
         self.assertIn("does NOT have to be in every title", pp._RULES)
+        self.assertNotIn("SEGMENTS", pp._RULES)
 
 
 class TeaserTests(unittest.TestCase):
@@ -185,16 +178,16 @@ class TeaserTests(unittest.TestCase):
                    "7 Things in Your Home Quietly Losing You Money"):
             self.assertEqual(pp.awkward_title(ok), "", ok)
 
-    def test_rules_and_judge_forbid_spoilers_and_segments(self):
+    def test_rules_and_judge_forbid_spoilers(self):
         self.assertIn("TEASER", pp._RULES)
         self.assertIn("never split into two parts", pp._RULES)
         ctx = {"channel": "C", "genre": "g", "brief": "B", "transcript": "T",
-               "source": None}
+               "source": None, "package": {}}
         import unittest.mock as mock
         with mock.patch("whisperradar.packaging._refs_text",
                         return_value="(none)"):
             j = pp.judge_prompt(ctx, pp.parse_plan(good()), [])
-        self.assertIn("give away the story", j)
+        self.assertIn("gives away", j)
 
 
 class VettedTitleTests(unittest.TestCase):
@@ -217,7 +210,8 @@ class ProdTests(Base):
                            "faults": [], "fixes": []})
 
     def test_loop_saves_and_script_prompt_carries_the_plan(self):
-        t = Fake(zai=[json.dumps(good())], deepseek=[self.verdict(9)])
+        t = Fake(zai=[json.dumps(good())],
+                 deepseek=[json.dumps(PACKAGE), self.verdict(9)])
         plan = pp.run_plan(self.cfg, self.pid, t, log=lambda m: None)
         self.assertEqual(plan["status"], "ready")
         from whisperradar import external_prompts as ep
@@ -228,6 +222,42 @@ class ProdTests(Base):
         self.assertNotIn("You will know why the jar always fills up.", text)
         self.assertNotIn("Start with the jar overflowing.", text)
         self.assertNotIn("WAIT, WHAT?", text)
+
+    def test_run_plan_is_blind_and_the_judges_pick_becomes_the_title(self):
+        from tests.test_external_prompts import SOURCE
+        # the production's source video: a title the writer must never see
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        conn.execute("INSERT INTO channels (channel_id, name, genre, active) "
+                     "VALUES ('c1','Src','finance',1)")
+        conn.execute("INSERT INTO videos (video_id, channel_id, title, url, "
+                     "view_count) VALUES ('v1','c1','Why Nobody Wants Your "
+                     "Old Coin Jar Anymore','u',1000)")
+        conn.execute("UPDATE productions SET source_video_id='v1' WHERE id=?",
+                     (self.pid,))
+        conn.commit()
+        conn.close()
+        titles = good()
+        pick = titles["titles"][5]["text"]
+        verdict = json.dumps({"score": 9, "pass": True, "closest": pick,
+                              "alternates": [titles["titles"][2]["text"]],
+                              "faults": [], "fixes": []})
+        t = Fake(zai=[json.dumps(titles)],
+                 deepseek=[json.dumps(PACKAGE), verdict])
+        plan = pp.run_plan(self.cfg, self.pid, t, log=lambda m: None)
+        zai = " ".join(c["prompt"] for c in t.calls if c["site"] == "zai")
+        self.assertNotIn(SOURCE[:60], zai)
+        self.assertNotIn("Why Nobody Wants Your Old Coin Jar", zai)
+        self.assertIn("what hides in an old coin jar", zai.lower().replace(
+            "a calm look at ", ""))
+        ds = [c["prompt"] for c in t.calls if c["site"] == "deepseek"]
+        self.assertIn(SOURCE[:60], ds[0])            # the analyst read the script
+        self.assertIn("Why Nobody Wants Your Old Coin Jar", ds[1])
+        self.assertEqual(plan["title"], pick)        # the judge's pick wins
+        self.assertEqual(plan["keyword"], "coin jar")
+        self.assertEqual(plan["overview"], PACKAGE["overview"])
+        saved = pp.load_plan(self.pdir)
+        self.assertEqual(saved["title"], pick)
 
     def test_no_plan_leaves_the_prompt_alone(self):
         from whisperradar import external_prompts as ep
@@ -331,29 +361,22 @@ class ScopeTests(unittest.TestCase):
     def test_whole_video_titles_pass(self):
         self.assertEqual(pp.scope_faults(pp.parse_plan(good())), [])
 
-    def test_list_source_allows_a_count_within_20_percent(self):
+    def test_list_source_allows_a_count_within_20_percent_but_never_the_same(self):
         src = "10 Things Nobody Tells You About Coin Jars"
-        pts = [f"point {i}" for i in range(9)]
-        p = pp.parse_plan(good(title="9 Things About Your Coin Jar", points=pts))
-        p["titles"][0]["text"] = p["title"]
-        self.assertEqual(pp.scope_faults(p, src), [])
-        # exactly 10 is fine too, 5 and 15 are not
-        for bad in ("5 Things About Your Coin Jar", "15 Things About Your Coin Jar"):
-            q = pp.parse_plan(good(title=bad, points=pts))
-            q["titles"][0]["text"] = q["title"]
-            self.assertTrue(any("outside 8-12" in x for x in pp.scope_faults(q, src)))
-        self.assertEqual(pp.count_range(10), (8, 12))
+        self.assertEqual(pp.allowed_counts(10), [8, 9, 11, 12])
 
-    def test_list_source_forces_the_points(self):
-        src = "10 Things Nobody Tells You About Coin Jars"
-        p = pp.parse_plan(good(title="9 Things About Your Coin Jar"))
-        p["titles"][0]["text"] = p["title"]
-        f = pp.scope_faults(p, src)
-        self.assertTrue(any("list the points" in x for x in f))
-        p["points"] = ["a"] * 12
-        self.assertTrue(any("must match" in x for x in pp.scope_faults(p, src)))
-        p["points"] = ["a"] * 9
-        self.assertEqual(pp.scope_faults(p, src), [])
+        def faults(title):
+            p = pp.parse_plan(good(title=title))
+            p["titles"][0]["text"] = title
+            return pp.scope_faults(p, src)
+        self.assertEqual(faults("9 Things About Your Coin Jar"), [])
+        self.assertEqual(faults("12 Things About Your Coin Jar"), [])
+        self.assertTrue(any("same count" in x for x in
+                            faults("10 Things About Your Coin Jar")))
+        self.assertTrue(any("outside the allowed" in x for x in
+                            faults("5 Things About Your Coin Jar")))
+        self.assertTrue(any("same count" in x for x in
+                            faults("Ten Things About Your Coin Jar")))
 
     def test_judge_narrow_titles_block_a_pass(self):
         v = {"score": 9.5, "pass": True,
@@ -364,9 +387,10 @@ class ScopeTests(unittest.TestCase):
 
     def test_judge_audits_every_title(self):
         prompt = pp.judge_prompt({"channel": "c", "genre": "g", "transcript": "x",
-                                  "refs": []}, pp.parse_plan(good()), [])
+                                  "refs": [], "package": {}},
+                                 pp.parse_plan(good()), [])
         self.assertIn('"narrow"', prompt)
-        self.assertIn("EVERY title", prompt)
+        self.assertIn("AUDIT every title", prompt)
 
 
 class ReplicateTests(unittest.TestCase):
@@ -375,69 +399,102 @@ class ReplicateTests(unittest.TestCase):
     def plan(self, **o):
         return pp.parse_plan(good(**o))
 
-    def test_only_a_word_for_word_copy_is_rejected(self):
+    def test_copies_of_the_source_title_are_rejected_close_topics_are_not(self):
         p = self.plan(title=self.SRC, keyword="secret lab")
-        faults = pp.local_faults(p, self.SRC)
-        self.assertTrue(any("identical to the source" in f for f in faults))
+        f = pp.local_faults(p, self.SRC)
+        self.assertTrue(any("copy too many words" in x for x in f))
         close = self.plan(title="Inside the Secret Lab Where Animals "
                                 "Learn to Talk", keyword="secret lab")
-        self.assertFalse([f for f in pp.local_faults(close, self.SRC)
-                          if "source" in f])
-
-    def test_same_number_and_shared_words_are_fine_now(self):
-        p = self.plan(title="7 Secret Lab Rules Animals Follow",
-                      keyword="secret lab", points=["p"] * 7)
-        self.assertFalse([f for f in pp.local_faults(
-            p, "7 Secret Lab Rules Animals Break") if "source" in f])
+        self.assertTrue(any("copy too many words" in x
+                            for x in pp.local_faults(close, self.SRC)))
+        fresh = self.plan(title="Inside the secret lab that taught a fox to speak",
+                          keyword="secret lab")
+        self.assertFalse([x for x in pp.local_faults(fresh, self.SRC)
+                          if "copy too many" in x])
+        self.assertTrue(pp.too_close(self.SRC, self.SRC))
+        self.assertFalse(pp.too_close("A fox that learned to speak", self.SRC,
+                                      "secret lab"))
 
     def test_an_option_equal_to_the_source_fails(self):
         titles = [{"text": self.SRC}] + [{"text": f"Secret lab idea {i} for you"}
                                          for i in range(11)]
         p = self.plan(titles=titles, title="Secret lab idea 1 for you",
                       keyword="secret lab")
-        self.assertTrue(any("options is identical" in f
+        self.assertTrue(any("copy too many words" in f
                             for f in pp.local_faults(p, self.SRC)))
 
     def test_hook_is_no_longer_required(self):
         p = self.plan(hook="")
         self.assertEqual(pp.local_faults(p), [])
 
-    def test_needs_twelve_titles_and_caps_at_twenty_four(self):
+    def test_needs_ten_titles_and_caps_at_twenty(self):
         few = self.plan(titles=[{"text": f"Coin jar secret idea {i}"}
                                 for i in range(5)])
-        self.assertTrue(any("at least 12 title options" in f
+        self.assertTrue(any("at least 10 title options" in f
                             for f in pp.local_faults(few)))
         many = self.plan(titles=[{"text": f"Coin jar secret idea {i}"}
                                  for i in range(30)])
-        self.assertEqual(len(many["titles"]), 24)
+        self.assertEqual(len(many["titles"]), 20)
 
-    def test_writer_and_judge_get_the_original_script_and_the_ask(self):
-        ctx = {"channel": "C", "genre": "g", "channel_about": "", "title": "W",
-               "past_titles": [], "learned": "", "brief": "B",
-               "transcript": "THE FULL ORIGINAL SCRIPT TEXT",
-               "source": {"title": self.SRC, "channel_name": "X",
-                          "views": 10, "multiplier": 5.0}}
+    def _ctx(self):
+        return {"channel": "C", "genre": "g", "channel_about": "", "title": "W",
+                "past_titles": [], "learned": "", "brief": "B",
+                "transcript": "THE FULL ORIGINAL SCRIPT TEXT",
+                "package": PACKAGE,
+                "source": {"title": self.SRC, "channel_name": "X",
+                           "views": 10, "multiplier": 5.0}}
+
+    def test_titler_never_sees_the_script_or_the_original_title(self):
         import unittest.mock as mock
+        ctx = self._ctx()
         with mock.patch("whisperradar.packaging._refs_text",
                         return_value="(none)"):
             w = pp.writer_prompt(ctx)
             j = pp.judge_prompt(ctx, pp.parse_plan(good()), [])
-        self.assertIn("replicate this video", w.lower())
-        # the writer decides the title and the keyword from the script alone
-        for text in (w, j):
+        a = pp.analyst_prompt(ctx)
+        for text in (w,):
+            self.assertNotIn("THE FULL ORIGINAL SCRIPT TEXT", text)
             self.assertNotIn(self.SRC, text)
-            self.assertNotIn("WORKING TITLE", text)
-            self.assertNotIn("BRIEF", text)
             self.assertNotIn("SOURCE VIDEO", text)
-        self.assertIn("keyword yourself", w.replace("MAIN KEYWORD yourself","keyword yourself"))
-        self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", w)
+        self.assertIn("what hides in an old coin jar", w)
+        self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", a)
+        self.assertIn("Do NOT write any titles", a)
         self.assertIn("THE FULL ORIGINAL SCRIPT TEXT", j)
-        self.assertNotIn('"hook"', w)
-        self.assertIn("top 2", w)
-        self.assertIn("ranked", w)
-        self.assertIn("EACH segment", w)
+        self.assertIn(self.SRC, j)
+        self.assertIn('"closest"', j)
+        self.assertIn("NEVER reveal the original title", j)
 
-class MetaMentionTests(unittest.TestCase):
+    def test_apply_pick_makes_the_closest_title_ours(self):
+        p = self.plan()
+        names = [t["text"] for t in p["titles"]]
+        pp.apply_pick(p, {"closest": names[4], "alternates": [names[2], "zz"]})
+        self.assertEqual(p["title"], names[4])
+        self.assertEqual([t["text"] for t in p["titles"][:3]],
+                         [names[4], names[2], names[0]])
+        self.assertEqual(p["picked_by"], "judge")
+        # a pick that copies the original's wording is ignored
+        q = self.plan(titles=[{"text": self.SRC}] + [
+            {"text": f"Fresh secret idea {i}"} for i in range(11)],
+            title="Fresh secret idea 1", keyword="secret lab")
+        pp.apply_pick(q, {"closest": self.SRC}, self.SRC)
+        self.assertEqual(q["title"], "Fresh secret idea 1")
+
+    def test_verdict_back_to_the_writer_hides_the_pick_and_the_original(self):
+        v = {"score": 6, "closest": "X", "alternates": ["Y"], "narrow": ["Z"],
+             "faults": ["Match the original: I Found The Secret Lab is better",
+                        "Title 3 reads awkwardly"],
+             "fixes": ["Try 'Where Animals Learn To Talk' instead", "Shorten it"]}
+        sv = pp.safe_verdict(v, self.plan(), self.SRC,
+                             "In the Secret Lab the animals learn to talk",
+                             "overview")
+        self.assertNotIn("closest", sv)
+        self.assertNotIn("alternates", sv)
+        text = json.dumps(sv)
+        self.assertNotIn("Secret Lab", text)
+        self.assertIn("awkwardly", text)
+
+
+class MetaMentionRuleOfThumbTests(unittest.TestCase):
     def test_rule_of_thumb_is_not_a_thumbnail_mention(self):
         self.assertEqual(pp.meta_mentions("A good rule of thumb for savings."), [])
         self.assertEqual(pp.meta_mentions("Do not give a thumbs up."), [])

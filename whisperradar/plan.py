@@ -16,16 +16,16 @@ from typing import Callable
 PLAN_FILE = "packaging_plan.json"
 TITLE_MAX = 100
 TITLE_GOOD = 60
-PICKS_PER_SEGMENT = 2    # the best titles kept from EACH segment (at least)
-MIN_TITLES = 12          # 6 segments x 2
-TITLES_KEEP = 24         # cap: up to 3 per segment of 8
-SEGMENTS = 8             # the script is divided into this many segments
-PER_SEGMENT = 5          # titles drafted for each segment
-DRAFT_TITLES = SEGMENTS * PER_SEGMENT
+PICKS_PER_SEGMENT = 2    # (old plans) the best titles kept from each segment
+MIN_TITLES = 10          # options the titler must give
+TITLES_KEEP = 20         # cap on the options kept
+TITLES_ASK = 14          # options the titler is asked for
+SEGMENTS = 8             # (old plans only: segments are no longer asked for)
+PER_SEGMENT = 5
+ALTERNATES = 2           # titles the judge keeps next to its pick
 WHY_MAX = 160            # a reason is one short line, not an essay
 OPENING_WORDS = 3        # titles sharing these first words ...
 OPENING_MAX = 2          # ... may appear at most this many times
-MIN_DRAFT_SEGMENTS = 6   # segments the writer must have drafted
 TRANSCRIPT_MAX = 24000   # characters of the original script the writer sees
 MIN_SCORE = 8.0   # fallback when no setting is reachable (tests, direct calls)
 
@@ -47,7 +47,8 @@ LAYOUTS = ("character_host", "character", "host")
 
 
 def empty_plan() -> dict:
-    return {"keyword": "", "overview": "", "formula": "", "segments": [], "titles": [],
+    return {"keyword": "", "overview": "", "premise": "", "values": [],
+            "formula": "", "segments": [], "titles": [],
             "points": [], "title": "",
             "promise": "", "hook": "", "thumbnail": {"layout": "character", "text": "",
                                       "idea": ""},
@@ -123,6 +124,9 @@ def parse_plan(raw) -> dict:
     plan["keyword"] = _s(raw.get("keyword"))
     plan["overview"] = _s(raw.get("overview"))[:400]
     plan["formula"] = _s(raw.get("formula"))[:300]
+    plan["premise"] = _s(raw.get("premise"))[:600]
+    vals = raw.get("values")
+    plan["values"] = [x for x in (_s(v)[:60] for v in (vals if isinstance(vals, list) else [])) if x][:10]
     plan["segments"] = parse_segments(raw.get("segments"))
     titles = []
     for t in raw.get("titles") or []:
@@ -214,21 +218,33 @@ def list_numbers(title: str) -> set[int]:
 
 def originality_faults(plan: dict, source_title: str = "",
                        transcript: str = "") -> list[str]:
-    """We are replicating the source video, so titles should be SIMILAR to
-    it. The one thing rejected is the source's own title, word for word -
-    that is a duplicate, not a replica."""
+    """Titles must be SIMILAR in meaning and pattern to the source video's, not
+    its wording: a title identical to it, or sharing too many of its content
+    words (beyond the keyword), is a copy. Messages never quote the source -
+    they go back to a writer that must not know it."""
     f = []
-    title = plan.get("title") or ""
-    if source_title and title:
-        norm = " ".join(_words(source_title))
-        if " ".join(_words(title)) == norm:
-            f.append("the chosen title is identical to the source video's "
-                     "title: keep its pattern and keywords but change the "
-                     "wording or the angle a little")
-        elif any(" ".join(_words(t["text"])) == norm for t in plan["titles"]):
-            f.append("one of the title options is identical to the source "
-                     "video's title: replace it with a close variation")
+    if not source_title:
+        return f
+    norm = " ".join(_words(source_title))
+    kw = plan.get("keyword", "")
+    texts = [plan.get("title") or ""] + [t["text"] for t in plan["titles"]]
+    copies = {x for x in texts if x and (
+        " ".join(_words(x)) == norm
+        or title_similarity(x, source_title, kw) > TITLE_SIM_MAX)}
+    if copies:
+        f.append(f"{len(copies)} title(s) copy too many words of an existing "
+                 f"video's title (for example \"{sorted(copies)[0]}\"): keep "
+                 "the topic and the promise but say it in clearly different "
+                 "words")
     return f
+
+
+def too_close(title: str, source_title: str, keyword: str = "") -> bool:
+    """True when `title` is a copy of the source title (see above)."""
+    if not source_title:
+        return False
+    return (" ".join(_words(title)) == " ".join(_words(source_title))
+            or title_similarity(title, source_title, keyword) > TITLE_SIM_MAX)
 
 
 _DANGLING = set("the a an of to and or with for in on at by your my this "
@@ -276,9 +292,8 @@ def awkward_title(title: str, keyword: str = "") -> str:
 
 
 def variety_faults(plan: dict) -> list[str]:
-    """Ten titles must not be one title reworded: no more than OPENING_MAX
-    of them may start with the same first words, and the options must come
-    from several segments of the script."""
+    """The options must not be one title reworded: no more than OPENING_MAX
+    of them may start with the same first words."""
     f = []
     opens: dict[str, int] = {}
     for t in plan["titles"]:
@@ -292,23 +307,6 @@ def variety_faults(plan: dict) -> list[str]:
                  "vary the opening and the sentence shape (the keyword may "
                  "sit anywhere in the first "
                  f"{TITLE_GOOD} characters)")
-    # plans made before the segment step have none: leave them alone
-    if plan["titles"] and plan.get("formula"):
-        if len(plan.get("segments") or []) < MIN_DRAFT_SEGMENTS:
-            f.append(f"divide the whole script into segments and draft "
-                     f"titles for each: got {len(plan.get('segments') or [])}"
-                     f", need at least {MIN_DRAFT_SEGMENTS} (aim for "
-                     f"{SEGMENTS})")
-        picks: dict[str, int] = {}
-        for t in plan["titles"]:
-            k = _norm_title(t.get("segment", ""))
-            picks[k] = picks.get(k, 0) + 1
-        thin = [g["name"] for g in plan.get("segments") or []
-                if picks.get(_norm_title(g["name"]), 0) < PICKS_PER_SEGMENT]
-        if thin:
-            f.append(f"every segment needs its top {PICKS_PER_SEGMENT} titles "
-                     f"in the options (copy the segment name exactly); "
-                     f"short: {', '.join(thin[:4])}")
     return f
 
 
@@ -334,7 +332,8 @@ _LISTICLE = re.compile(
     r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
     r"(?:\w+\s+){0,2}?(ways?|reasons?|costs?|things?|signs?|steps?|tips?|"
     r"mistakes?|secrets?|rules?|truths?|lessons?|habits?|hacks?|ideas?|"
-    r"benefits?|problems?|risks?|questions?|myths?|types?|tricks?)\b", re.I)
+    r"benefits?|problems?|risks?|questions?|myths?|types?|tricks?|errors?|"
+    r"facts?|lies|warnings?|dangers?|killers?|strategies|moves?|rules?)\b", re.I)
 
 
 _NUMWORDS = {w: i for i, w in enumerate(
@@ -353,18 +352,18 @@ def list_count(title: str) -> int:
     return int(w) if w.isdigit() else _NUMWORDS.get(w, 0)
 
 
-def count_range(n: int) -> tuple[int, int]:
-    """The counts a replica of an N-point list may use: about 20% either
-    way (10 -> 8..12), never the exact copy required."""
+def allowed_counts(n: int) -> list[int]:
+    """The counts a replica of an N-point list may use: about 20% either way
+    (10 -> 8, 9, 11, 12) but NEVER the same count as the original."""
     d = max(1, round(n * 0.2))
-    return max(2, n - d), n + d
+    return [c for c in range(max(2, n - d), n + d + 1) if c != n]
 
 
 def scope_faults(plan: dict, source_title: str = "") -> list[str]:
     """A title covers the WHOLE video. "4 Hidden Costs of ..." promises one
-    list of parts - one slice of the script. A count is allowed ONLY when
-    the source video is itself a list of N points: then the count must be
-    within ~20% of N, and the plan must LIST that many points."""
+    list of parts - one slice of the script. A count is allowed ONLY when the
+    source video is itself a list of N points: then the count must be within
+    ~20% of N and must differ from N."""
     src = list_count(source_title)
     titles = [t["text"] for t in plan["titles"]]
     if plan.get("title") and plan["title"] not in titles:
@@ -379,22 +378,45 @@ def scope_faults(plan: dict, source_title: str = "") -> list[str]:
                      "whole video - rewrite each as a title for the overall "
                      "subject, with no count")
         return f
-    lo, hi = count_range(src)
-    off = [t for t, n in counted if not lo <= n <= hi]
+    ok = allowed_counts(src)
+    same = [t for t, n in counted if n == src]
+    off = [t for t, n in counted if n != src and n not in ok]
+    if same:
+        f.append(f"{len(same)} title(s) use the same count as the original "
+                 f"list (for example \"{same[0]}\"): use a different number, "
+                 f"one of {', '.join(map(str, ok))}")
     if off:
-        f.append(f"{len(off)} title(s) use a count outside {lo}-{hi} (for "
-                 f"example \"{off[0]}\"): the source is a list of {src}, so "
-                 f"a numbered title must stay between {lo} and {hi}")
-    pts = plan.get("points") or []
-    if not lo <= len(pts) <= hi:
-        f.append(f"the source is a list of {src} points: list the points "
-                 f"the video will cover in \"points\" ({lo} to {hi} of "
-                 f"them, got {len(pts)}), each one a short line")
-    chosen = list_count(plan.get("title") or "")
-    if chosen and pts and chosen != len(pts):
-        f.append(f"the chosen title says {chosen} but \"points\" lists "
-                 f"{len(pts)}: they must match")
+        f.append(f"{len(off)} title(s) use a count outside the allowed "
+                 f"{', '.join(map(str, ok))} (for example \"{off[0]}\")")
     return f
+
+
+def specific_faults(plan: dict, transcript: str, package_text: str,
+                    refs_text: str = "") -> list[str]:
+    """Titles must come from the whole story, not from the script's own
+    specifics: a figure, or a name that appears in the script but is not in
+    the overview package or the niche's titles, means a title was built on
+    one detail."""
+    if not transcript:
+        return []
+    allowed = set(_words(package_text)) | set(_words(refs_text))
+    names = {m.group(1).lower() for m in re.finditer(
+        r"(?<![.!?\n]\s)(?<!^)\b([A-Z][a-z]{3,})\b", transcript)}
+    nums = set(re.findall(r"\d[\d,.]*", transcript))
+    bad = []
+    for t in plan["titles"]:
+        words = _words(t["text"])
+        hit = [w for w in words if w in names and w not in allowed
+               and w not in _STOP]
+        figs = [n for n in re.findall(r"\d[\d,.]*", t["text"])
+                if n in nums and n not in allowed and list_count(t["text"]) == 0]
+        if hit or figs:
+            bad.append((t["text"], (hit or figs)[0]))
+    if not bad:
+        return []
+    return [f"{len(bad)} title(s) use a name or figure taken from the script "
+            f"(for example \"{bad[0][0]}\" uses \"{bad[0][1]}\"): titles sell "
+            "the whole story, never one detail of it"]
 
 
 def narrow_faults(verdict: dict) -> list[str]:
@@ -433,6 +455,9 @@ def local_faults(plan: dict, source_title: str = "",
     f += phrasing_faults(plan)
     f += variety_faults(plan)
     f += scope_faults(plan, source_title)
+    f += specific_faults(plan, transcript, plan.get("overview", "") + " "
+                         + plan.get("premise", "") + " " + plan.get("keyword", "")
+                         + " " + " ".join(plan.get("values") or []))
     if len(title) > TITLE_MAX:
         f.append(f"title is {len(title)} characters; YouTube allows "
                  f"{TITLE_MAX}")
@@ -578,21 +603,14 @@ def context(cfg, pid: int) -> dict:
 
 
 _RULES = f"""Rules for the plan:
-- Titles are the most important part. The goal is to REPLICATE the source video. Work in this order:
-  0. READ the WHOLE original script first.
-  1. OVERVIEW: write ONE sentence saying what the WHOLE video is about and promises - its overall subject, not any single part of it. Every title must be true to this overview as a whole.
-  1b. FORMULA: read the script and the niche's winning titles and decide the title formula that fits this video - its skeleton in one line, with the variable parts in brackets, e.g. "[Number] [things] [that stopped working] in [year]", "[Blunt truth] ([Why] [topic] is the [superlative] [thing] you're [avoiding])" or "I [did the thing] for [time]" (examples only: derive the formula from THIS video, whatever its subject). If the winning titles share a number or a year, use it the same way. Also decide the MAIN KEYWORD yourself: the 2-4 word phrase people would search for to find this video, taken from the script.
-  2. SEGMENTS: divide the video into {SEGMENTS} segments by CORE VALUE. A segment is one reason a viewer would care about the WHOLE video - the core benefit, emotion or curiosity the video serves (for example: fear of missing out, relief, belonging, status, hope, surprise, curiosity about how it works, a mistake to avoid, the "insider" feeling, nostalgia, a challenge to a belief). They are different ways to sell the video's ONE big promise. They are NOT a list of the script's facts, figures, costs, claims, steps, examples or conclusions, and they work for any subject (finance, cooking, animals, history, gaming, health...). Read the script to find what the video is really worth to the viewer, then name each segment in 2-4 words by that value.
-  3. DRAFT: for EACH segment write about {PER_SEGMENT} titles that keep the formula and the topic, changing only the core value they sell. A title may use the topic and the keyword; it must NOT use the script's specifics (its figures, item names, mechanisms, costs, claims or conclusions).
-  4. SELECT: from the drafts of EACH segment take its top {PICKS_PER_SEGMENT} titles (more only if a segment has extra strong ones) - every segment must be represented by at least {PICKS_PER_SEGMENT}. Then rank ALL the picks best first; rank 1 is the chosen title.
-  Titles are SIMILAR to what the original video would be called - same topic, same promise, the patterns of the niche's winning titles.
-  Every title is ONE short phrase (about 45-65 characters), never split into two parts: no colon, no dash, no brackets, no "X, and Y" second half. One clause, a clear topic and a stake, and nothing more. The source and the best titles in this niche show the shape; copy their structure, not their words.
-  A title represents the WHOLE video. The script is an overview of a subject; no single point makes the video. Never build a title on one item, example, object, cost, number, audience, scene or sub-topic from the script that is only part of the story. Name the overall subject (or the keyword) and the core value for the viewer. Test: delete any one section of the script - the title must still be completely true. If it describes only one part, widen it to the overall subject. Do NOT use a numbered list as a title ("4 Ways to...", "3 Hidden Costs of...") - a list of parts is one slice, not the story - EXCEPT when the original script itself is a list of N points (a "10 things" video). Then numbered titles are allowed, the count must be between 0.8N and 1.2N (10 -> 8 to 12; it need not equal N), and you must LIST the points in "points" (the same number as the chosen title says), taken from the script's own points. Every option, not just the chosen one, must cover the whole video.
-  A title is a TEASER, never the story. It names the topic and the value or stake for the viewer, and it leaves the answer, the reason, the mechanism, the numbers and the fix for the video. If the title could stand as a one-line summary of the video, it gives too much away: rewrite it. Never put the conclusion, the cause, a specific claim or the solution in the title. Bad: "[Problem], and [Topic] Is the [Verdict]" (problem + answer + verdict in one title). Good: a title that raises the question and makes the viewer need the video, e.g. "Why Nobody Wants Your [Thing] Anymore" or "What Nobody Tells You About [Topic]".
-- Every title is at most {TITLE_MAX} characters, and the promise inside the first {TITLE_GOOD}. The keyword does NOT have to be in every title - many titles should not contain it; it is the topic you anchor on, so titles can use other natural words for the same subject. When it does appear it may sit anywhere and need not be the first words. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. When the keyword is used it is part of the sentence (a phrase people actually search for, kept in its natural word order) - it is NEVER stuffed in, repeated, split up or bolted on with colons, dashes or brackets. No ALL CAPS shouting, at most one emoji, at most one ":" or "-".
-  Bad (never write like this): a keyword pile ("[Topic] Hacks Secrets Revealed Now"), the keyword repeated or bolted on with a colon or brackets, or unnatural word order ("Habits Home Japanese That Work"). Test every title by reading it aloud: if it sounds like a machine or a keyword list, rewrite it.
-  Only promise what the original script's topic can deliver.
-- List the picks in rank order (rank 1 first), each with its "segment" (the segment name copied exactly) and a "why" of ONE short line (under {WHY_MAX} characters).
+- Titles are the most important part. Every title sells the WHOLE video - the overview - never one point, item, example, cost, number, audience, scene or sub-topic of it. Test: delete any one section of the video and the title must still be completely true. You are not given the script on purpose: write from the overview, the premise and the core values only.
+- Use the CORE VALUES as angles: each title sells the SAME whole story through one value (fear of missing out, relief, status, hope, curiosity about how it works, a mistake to avoid, an insider feeling, a challenge to a belief...). Vary the angle from title to title.
+- Decide the title formula that fits this niche from its winning titles (its skeleton in one line, e.g. "[Blunt truth] ([Why] [topic] is [what you avoid])" or "I [did the thing] for [time]"; examples only - derive it from the niche's winners). If the winners share a number or a year, use it the same way.
+- Every title is ONE short phrase (about 45-65 characters), never split into two parts: no colon, no dash, no brackets, no "X, and Y" second half. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. Never a keyword pile, a repeated word, or unnatural word order. No ALL CAPS shouting, at most one emoji. Test every title by reading it aloud.
+- A title is a TEASER, never the story: it names the topic and the value or stake for the viewer and leaves the answer, the reason, the mechanism, the numbers and the fix for the video. Never put the conclusion, the cause, a specific claim or the solution in the title.
+- The keyword is the topic you anchor on; it does NOT have to be in every title, and may sit anywhere. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. Every title is at most {TITLE_MAX} characters.
+- Do NOT use a numbered list as a title ("4 Ways to...", "3 Hidden Costs of...") unless the brief says numbers are allowed and gives the counts; then use ONLY those counts.
+- Only promise what the video's overview can deliver.
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
 - The thumbnail idea is one line plus at most {THUMB_WORDS} catchy words that ADD to the title (never repeat it), and a layout: "character_host" (the character and the human host together), "character" (the character alone) or "host" (the host alone). The thumbnails are designed in their own stage, so keep this short."""
 
@@ -610,8 +628,7 @@ def _source_text(ctx: dict) -> str:
 
 def _refs_without_source(ctx: dict) -> str:
     """The niche's winning titles for the prompts, minus the source video's
-    own title (the writer decides its titles and keywords from the script,
-    never from the original title)."""
+    own title (the titler never sees the original title)."""
     from .packaging import _refs_text
     src = _norm_title((ctx.get("source") or {}).get("title") or "")
     refs = [(t, m) for t, m in ctx.get("refs") or []
@@ -626,19 +643,74 @@ def _niche_text(ctx: dict) -> str:
 
 def _original_script(ctx: dict) -> str:
     t = (ctx.get("transcript") or "").strip()
-    return t or "(not available - rely on the source title and the brief)"
+    return t or "(not available - rely on the source title)"
 
+
+# ---- step 1: the analyst reads the script, never writes titles --------------
+
+def analyst_prompt(ctx: dict) -> str:
+    return f"""You analyse a YouTube video for a packaging team. Read the whole script below and describe the WHOLE story. Do NOT write any titles.
+
+CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
+
+THE SCRIPT:
+{_original_script(ctx)}
+
+Reply with ONE JSON object and nothing else:
+{{"overview": "ONE sentence: what the WHOLE video is about and promises - its overall subject, not any single part",
+ "premise": "two sentences: the kind of situation, the central tension and the payoff for the viewer. No names of people or companies, no figures, no list of the script's items or examples",
+ "keyword": "the 2-4 word phrase people would search for to find this video, taken from the script",
+ "values": ["5-8 core values the video sells, each 2-4 words (the core benefit, emotion or curiosity it serves: relief, fear of missing out, status, a mistake to avoid, an insider edge...). Not facts, costs, claims or steps of the script"]}}"""
+
+
+def parse_package(raw) -> dict:
+    out = {"overview": "", "premise": "", "keyword": "", "values": []}
+    if not isinstance(raw, dict):
+        return out
+    out["overview"] = _s(raw.get("overview"))[:400]
+    out["premise"] = _s(raw.get("premise"))[:600]
+    out["keyword"] = _s(raw.get("keyword"))[:80]
+    v = raw.get("values")
+    out["values"] = [x for x in (_s(a)[:60] for a in (v if isinstance(v, list)
+                                                      else [])) if x][:10]
+    return out
+
+
+def package_ok(pkg: dict) -> bool:
+    return bool(pkg.get("overview") and pkg.get("keyword") and pkg.get("values"))
+
+
+def _package_text(pkg: dict) -> str:
+    return (f"OVERVIEW OF THE WHOLE VIDEO: {pkg.get('overview', '')}\n"
+            f"PREMISE: {pkg.get('premise', '')}\n"
+            f"MAIN KEYWORD: {pkg.get('keyword', '')}\n"
+            f"CORE VALUES (angles): {'; '.join(pkg.get('values') or [])}")
+
+
+def _numbers_text(ctx: dict) -> str:
+    src = (ctx.get("source") or {}).get("title") or ""
+    n = list_count(src)
+    if not n:
+        return "NUMBERED TITLES: not allowed - no title may be a numbered list."
+    return ("NUMBERED TITLES: allowed, because this niche's proven video is a "
+            f"list. If a title uses a count, it must be one of "
+            f"{', '.join(map(str, allowed_counts(n)))}; titles without a count "
+            "are fine too.")
+
+
+# ---- step 2: the titler never sees the script or the original title ---------
 
 def writer_prompt(ctx: dict) -> str:
     past = "\n".join(f"- {t}" for t in ctx["past_titles"]) or "(none yet)"
-    return f"""You are a YouTube packaging strategist. I want to replicate this video. Provide titles similar to this one, but the content perspective may change a little. Titles matter most. You decide the titles and the main keyword yourself, from the script.
+    pkg = ctx.get("package") or {}
+    return f"""You are a YouTube packaging strategist. A video is about to be made; design how it will be sold. Titles matter most. You do not have the script - work from this description of the whole video.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
 
-THE ORIGINAL SCRIPT (the video we are replicating - it already proved the topic works; read it all: this is what the titles must be true to):
-{_original_script(ctx)}
+{_package_text(pkg)}
+{_numbers_text(ctx)}
 
-TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns and phrasing):
+TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns and phrasing, do not copy):
 {_refs_without_source(ctx)}
 {_niche_text(ctx)}
 
@@ -649,31 +721,33 @@ THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 {_RULES}
 
 Reply with ONE JSON object and nothing else:
-{{"keyword": "the main search phrase (2-4 words) that YOU chose from the script",
- "overview": "one sentence: what the WHOLE video is about",
- "formula": "the title formula you decided on, in one line",
- "segments": [{{"name": "2-5 words", "titles": ["...", "..."]}}, ... {SEGMENTS} segments of the script, about {PER_SEGMENT} drafted titles each],
- "titles": [{{"text": "...", "segment": "its segment's exact name", "why": "one short line"}}, ... the top {PICKS_PER_SEGMENT} (or more) of EACH segment, then ranked across ALL segments together, rank 1 first (the first 10 must be the 10 best of the whole video), all similar to the source, none identical to it],
- "points": ["ONLY if the source is a list of N points and you use a count in a title: one short line per point the video will cover, between 0.8N and 1.2N of them (10 -> 8 to 12; not necessarily 10); otherwise leave empty"],
- "title": "rank 1, copied exactly from the options",
+{{"formula": "the title formula you decided on, in one line",
+ "titles": [{{"text": "...", "why": "one short line: the value it sells"}}, ... {TITLES_ASK} different titles, each selling the whole video through a different angle],
  "promise": "...",
  "thumbnail": {{"layout": "character_host|character|host", "text": "2-4 words", "idea": "one line"}}}}"""
 
 
 def _plan_json(plan: dict) -> str:
-    return json.dumps({k: plan[k] for k in ("keyword", "overview", "formula", "segments",
-                                            "titles", "points",
-                                            "title",
-                                            "promise", "thumbnail")},
+    return json.dumps({k: plan[k] for k in ("formula", "titles", "promise",
+                                            "thumbnail")},
                       ensure_ascii=False, indent=1)
 
 
+# ---- step 3: the judge knows the original; it audits and picks --------------
+
 def judge_prompt(ctx: dict, plan: dict, faults: list[str],
                  min_score: float = MIN_SCORE) -> str:
-    return f"""You are a strict YouTube growth reviewer. Judge this packaging plan BEFORE the video is written.
+    pkg = ctx.get("package") or {}
+    return f"""You are a strict YouTube growth reviewer. Judge this packaging plan BEFORE the video is written. The title writer never saw the script or the original title: it worked only from the description below.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
+THE ORIGINAL VIDEO (the one we replicate): {_source_text(ctx)}
 THE ORIGINAL SCRIPT (excerpt): {_original_script(ctx)[:6000]}
+
+WHAT THE TITLE WRITER WAS GIVEN:
+{_package_text(pkg)}
+{_numbers_text(ctx)}
+
 COMPARABLE TITLES THAT PERFORMED WELL IN THIS NICHE:
 {_refs_without_source(ctx)}
 {_niche_text(ctx)}
@@ -685,19 +759,39 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 {_RULES}
 
-Similarity is part of the job: the titles must replicate the video the script comes from - the same topic, promise and the title patterns of the niche, with only a slight change of content perspective. FAIL the plan if the titles drift to a different topic or promise. Quote the weak title and give a closer rewrite in "fixes". Scope is part of the job and you audit EVERY title, one by one: read the plan's "overview", then for each of the {TITLES_KEEP} options ask "if any single section of the script were deleted, is this title still completely true, and does it describe the whole video?". A title built on ONE point, item, example, cost, audience, relationship, number or list from the script (furniture, rent, retirement, kids, "4 ways to...", "3 hidden costs of...") FAILS that audit, even if it sounds good. (A numbered title is fine ONLY when the script is itself a list; then check that "points" really lists the script's points, in a count between 0.8N and 1.2N, matching the number in the chosen title - if the points are missing, invented or do not match the script, FAIL and say so.) Put the exact text of EVERY title that fails in "narrow" (empty list only if all pass); any entry in "narrow" means the plan does not pass. Spoilers are part of the job: FAIL the plan if the chosen title or several options give away the story - the problem AND its answer, the verdict, the reason or the fix - or are split into two parts (colon, dash, brackets, \", and ...\"), or run past about 65 characters. A good title is one short phrase that makes the viewer need the video. Variety is part of the job: FAIL the plan if the options are one title reworded - many opening with the same words, one sentence shape, or some segment has fewer than {PICKS_PER_SEGMENT} titles among the options, or the segments are not core values (they list the script's facts, costs, figures or claims instead) or a title uses the script's specifics instead of the topic and the value it sells, or the script was not really divided into segments - or if the formula does not match the source's. Phrasing is part of the job: FAIL the plan if the chosen title or several options read awkwardly aloud - unnatural word order, keyword pile, repeated words, odd grammar, or a keyword forced into a title that reads better without it. A title does not have to contain the keyword; it has to be natural. Quote the awkward title and show the natural rewrite in "fixes". Score 1-10 how likely this packaging is to get the video clicked and found AND be deliverable from the brief's topic. Check: the keyword is a phrase people really search for, taken from the script, the titles stay on that topic (without needing to repeat it) and sound like natural spoken English; a real curiosity gap that is not clickbait, a promise the original script can keep, exactly {TITLES_KEEP} titles, ranked best first ACROSS ALL segments (the first 10 options are the 10 best titles of the whole plan, shown on top). Name the exact text that is weak.
+You do three things.
+1. AUDIT every title, one by one, for scope: "if any single section of the script were deleted, is this title still completely true, and does it describe the WHOLE video?" A title built on ONE point, item, example, cost, audience, relationship, number or list from the script FAILS. Put the exact text of every failing title in "narrow". Also FAIL spoilers (the title gives away the problem AND its answer, the verdict, the reason or the fix), two-part titles (colon, dash, brackets, ", and ..."), titles longer than about 65 characters, titles that read awkwardly aloud (unnatural word order, keyword pile, repeated words), options that are one title reworded, and titles that drift to a different topic or promise than the original video. A numbered title is fine ONLY when the numbers note above allows it.
+2. PICK. Choose the option whose meaning, promise and pattern are CLOSEST to the original video's title: the one a viewer of the original would recognise as the same video. Compare meaning and pattern, not shared words. Copy it exactly into "closest", and the next {ALTERNATES} closest into "alternates". NEVER reveal the original title, the pick or the alternates in "faults" or "fixes" - those are sent to the title writer, who must not learn them.
+3. SCORE 1-10 how likely this packaging is to get the video clicked and found AND be true to the whole video. In "faults" and "fixes" say what is wrong and what KIND of change is needed; never quote the original title or script and never offer a rewrite that borrows from them. Name the exact option text that is weak.
 
 Reply with ONE JSON object and nothing else:
-{{"score": 7.5, "pass": false, "narrow": ["exact title that covers only one point"], "faults": ["specific problem"], "fixes": ["specific rewrite"]}}
+{{"score": 7.5, "pass": false, "narrow": ["exact title that fails the scope audit"], "closest": "exact option text", "alternates": ["exact option text", "exact option text"], "faults": ["specific problem"], "fixes": ["specific change"]}}
 "pass" is true only when the score is {min_score:g} or higher and nothing is left to fix."""
 
 
 def judge_followup(plan: dict, faults: list[str]) -> str:
     return ("The strategist revised the plan after your review. Judge it "
             "again under the SAME rules and reply in exactly the SAME JSON "
-            "format. First check each point you raised, then that nothing "
-            f"else got worse.\n\nRULE CHECKS STILL FAILING: {faults or 'none'}"
+            "format, including a fresh \"closest\" and \"alternates\". First "
+            "check each point you raised, then that nothing else got worse."
+            f"\n\nRULE CHECKS STILL FAILING: {faults or 'none'}"
             "\n\n" + _plan_json(plan))
+
+
+def safe_verdict(verdict: dict, plan: dict, source_title: str,
+                 transcript: str, package_text: str) -> dict:
+    """What may go back to the title writer: no pick, no alternates, and no
+    note that carries anything of the original title or script."""
+    from . import studio
+    v = {k: val for k, val in (verdict or {}).items()
+         if k not in ("closest", "alternates", "pick", "narrow")}
+    own = _plan_json(plan) + "\n" + package_text
+    for k in ("faults", "fixes"):
+        items = v.get(k)
+        if isinstance(items, list):
+            v[k], _gone = studio.scrub_for_writer(
+                [str(x) for x in items], own, f"{source_title}\n{transcript}")
+    return v
 
 
 def writer_feedback(verdict: dict, faults: list[str]) -> str:
@@ -709,6 +803,52 @@ def writer_feedback(verdict: dict, faults: list[str]) -> str:
             + "\n\nChange ONLY what is named; keep the rest as it was. "
               "Return the COMPLETE plan again as one JSON object in the "
               "same format, and nothing else.")
+
+
+def apply_pick(plan: dict, verdict: dict, source_title: str = "") -> dict:
+    """The judge's pick becomes the title (the next ones follow it as the
+    alternatives), unless it is too close to the original title in wording.
+    The rest keep their order."""
+    titles = plan["titles"]
+    by = {_norm_title(t["text"]): t for t in titles}
+
+    def pool(names):
+        out = []
+        for n in names if isinstance(names, list) else [names]:
+            t = by.get(_norm_title(n))
+            if t and t not in out and not too_close(
+                    t["text"], source_title, plan.get("keyword", "")):
+                out.append(t)
+        return out
+    v = verdict or {}
+    first = pool(v.get("closest"))
+    lead = first + [t for t in pool(v.get("alternates")) if t not in first]
+    if first:
+        plan["titles"] = lead + [t for t in titles if t not in lead]
+        plan["title"] = first[0]["text"]
+        plan["picked_by"] = "judge"
+    return plan
+
+
+def _ask_package(ctx: dict, ask) -> dict:
+    """Analyst step: `ask(prompt) -> raw reply`; up to 3 tries."""
+    from . import studio
+    prompt = analyst_prompt(ctx)
+    for _ in range(3):
+        pkg = parse_package(studio._parse_json_object(ask(prompt)))
+        if package_ok(pkg):
+            return pkg
+        prompt = analyst_prompt(ctx) + ("\n\nYour last reply had no usable "
+                                        "JSON. Reply with the one JSON object "
+                                        "only.")
+    raise RuntimeError("the analyst did not return a usable description of "
+                       "the video")
+
+
+def _adopt_package(plan: dict, pkg: dict) -> None:
+    """The analyst's description is the plan's description and keyword."""
+    plan["overview"], plan["premise"] = pkg["overview"], pkg["premise"]
+    plan["values"], plan["keyword"] = pkg["values"], pkg["keyword"]
 
 
 def run_plan(cfg, pid: int, transport, writer: str = "zai",
@@ -728,12 +868,32 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
         ctx["brief"], built = ws.ensure_brief(cfg, pid, transport, judge, log,
                                               judge_cont)
         judge_cont = judge_cont or built
+    if writer == judge:
+        log("warning: the writer and the judge are the same chat - the title "
+            "writer would see the script. Use two different LLMs.")
+    # step 1: the judge's chat (it may see the script) describes the WHOLE
+    # video; the title writer gets only that description
+    state = {"cont": judge_cont}
+
+    def ask_pkg(prompt: str) -> str:
+        raw, state["cont"] = ws._send_in(transport, judge, lambda f: prompt,
+                                         log, state["cont"],
+                                         ready=ws._has_json)
+        return raw
+    log(f"{judge}: describing the whole video (overview, premise, keyword, "
+        f"core values)")
+    ctx["package"] = _ask_package(ctx, ask_pkg)
+    judge_cont = state["cont"] or True
+    log(f"keyword: {ctx['package']['keyword']}")
+    # step 2: the title writer never sees the script or the original title
     reply, _w = ws._send_in(transport, writer, lambda f: writer_prompt(ctx),
                             log, writer in kept, ready=ws._has_json)
+    src_title, transcript = _origin(ctx)
     best, judge_open, rnd, empty = None, False, 0, 0
     while True:
         rnd += 1
         plan = parse_plan(studio._parse_json_object(reply))
+        _adopt_package(plan, ctx["package"])
         if not plan["title"]:
             empty += 1
             if empty >= 3:
@@ -779,15 +939,19 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
                                          else "not accepted"))
         rank = (not faults, score or 0.0)
         if best is None or rank > best[0]:
-            best = (rank, plan)
+            best = (rank, plan, verdict)
         if passed or should_stop():
             if not passed:
                 log("stopped by you")
             break
         reply = transport.ask(writer, writer_feedback(
-            verdict or {"faults": ["no verdict"]}, faults), (),
-            new_chat=False, ready=ws._has_json)
-    plan = best[1]
+            safe_verdict(verdict or {"faults": ["no verdict"]}, plan,
+                         src_title, transcript, _package_text(ctx["package"])),
+            faults), (), new_chat=False, ready=ws._has_json)
+    plan = apply_pick(best[1], best[2], src_title)
+    if plan.get("picked_by"):
+        log(f"{judge} picked the closest title to the original: "
+            f"\"{plan['title'][:70]}\"")
     old = load_plan(ctx["pdir"])
     plan["applied"] = bool(old.get("applied")) and old.get("title") == plan["title"]
     save_plan(ctx["pdir"], plan)
@@ -829,13 +993,18 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
         ctx["brief"] = autorun._research_notes(
             cfg, ctx["pdir"], ctx["title"], ctx["genre"], full,
             judge or writer)
+    ctx["package"] = _ask_package(ctx, lambda pr: studio.llm_generate(
+        cfg, pr, provider=judge or writer, temperature=0.3))
+    log(f"keyword: {ctx['package']['keyword']}")
     base = writer_prompt(ctx)
+    src_title, transcript = _origin(ctx)
     best, prompt, rnd = None, base, 0
     while rnd < max_rounds:
         rnd += 1
         raw = studio.llm_generate(cfg, prompt, provider=writer,
                                   temperature=0.8)
         plan = parse_plan(studio._parse_json_object(raw))
+        _adopt_package(plan, ctx["package"])
         if not plan["title"]:
             log(f"round {rnd}: no usable plan in the reply")
             prompt = base + ("\n\nYour last reply had no usable JSON plan. "
@@ -869,16 +1038,18 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
             + ("accepted" if passed else "not accepted"))
         rank = (not faults, score or 0.0)
         if best is None or rank > best[0]:
-            best = (rank, plan)
+            best = (rank, plan, verdict)
         if passed or should_stop():
             break
         prompt = (base + "\n\nYOUR PREVIOUS ATTEMPT:\n" + _plan_json(plan)
                   + "\n\n" + writer_feedback(
-                      verdict or {"faults": faults or ["no verdict"]},
-                      faults))
+                      safe_verdict(verdict or {"faults": faults
+                                               or ["no verdict"]}, plan,
+                                   src_title, transcript,
+                                   _package_text(ctx["package"])), faults))
     if best is None:
         raise RuntimeError("the LLM returned no usable packaging plan")
-    plan = best[1]
+    plan = apply_pick(best[1], best[2], src_title)
     save_plan(ctx["pdir"], plan)
     log("packaging plan saved" + ("" if plan["status"] == "ready"
                                   else " as a draft"))

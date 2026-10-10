@@ -1739,3 +1739,9 @@ reach the writer first (`_script_feedback`, scrubbed of original details), and t
 follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 (no browsing) is logged, not blocking. `plan.meta_mentions` no longer matches bare
 "thumb" ("rule of thumb" looped production 33).
+
+## Planner: analyst -> blind titler -> judge's pick
+- The JUDGE LLM's chat reads the original script and returns a package (overview, premise, keyword, core values). The WRITER LLM never sees the script or the original title and writes titles from the package only (whole story, values as angles, not each point as a topic).
+- Count rule: a numbered title may not use the original's count N (`allowed_counts`: 10 -> 8, 9, 11, 12). Title similarity check (`TITLE_SIM_MAX`) is back; `specific_faults` flags names/figures from the script.
+- The judge audits scope, then picks the option closest to the original (`closest`, `alternates`) without revealing it; `safe_verdict` strips the pick before the writer sees feedback and `apply_pick` makes it the title. Segments and the points requirement are gone.
+- Writer and judge must be different LLMs/chats for the blindness to hold.
