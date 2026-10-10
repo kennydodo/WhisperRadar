@@ -15,7 +15,7 @@ from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
 
 SCRIPT = "Maya opened the old jar and counted the coins slowly."
-SOURCE = "Dennis Hartwell started Hartwell Logistics in 1998 and sold it."
+SOURCE = "Zed Exampleton started Example Freight Co in 1998 and sold it."
 
 
 class Base(unittest.TestCase):
@@ -67,7 +67,7 @@ class TemplateStore(Base):
 
 
 class ScriptNotes(unittest.TestCase):
-    NOTE = "Open like Dennis Hartwell does, with the sale of Hartwell Logistics."
+    NOTE = "Open like Zed Exampleton does, with the sale of Example Freight Co."
 
     def test_style_scrubs_original_details(self):
         must, fb, weak, gone = handover.script_notes(
@@ -96,27 +96,27 @@ class ScriptNotes(unittest.TestCase):
 
 
 class PlanVerdict(unittest.TestCase):
-    V = {"faults": ["Title copies Hartwell Logistics wording"], "fixes": ["shorter"],
+    V = {"faults": ["Title copies Example Freight Co wording"], "fixes": ["shorter"],
          "score": 7, "closest": 2, "alternates": [1], "pick": "x", "weak": [3],
          "best": 1, "narrow": [2]}
 
     def test_selection_never_passes(self):
         for t in handover.BUILTIN.values():
-            out = handover.plan_verdict(t, self.V, "own plan text", "Hartwell Logistics sale")
+            out = handover.plan_verdict(t, self.V, "own plan text", "Example Freight Co sale")
             for k in handover.SELECTION_KEYS:
                 self.assertNotIn(k, out)
 
     def test_full_keeps_notes_unscrubbed_style_scrubs(self):
-        full = handover.plan_verdict(handover.BUILTIN["full"], self.V, "own plan", "Hartwell Logistics")
+        full = handover.plan_verdict(handover.BUILTIN["full"], self.V, "own plan", "Example Freight Co")
         self.assertEqual(full["faults"], self.V["faults"])
         self.assertEqual(full["score"], 7)
-        style = handover.plan_verdict(handover.BUILTIN["style"], self.V, "own plan", "Hartwell Logistics")
+        style = handover.plan_verdict(handover.BUILTIN["style"], self.V, "own plan", "Example Freight Co")
         self.assertEqual(style["faults"], [])
 
     def test_safe_verdict_uses_template(self):
         plan = {"formula": "f", "titles": ["T"], "promise": "p", "thumbnail": {}}
-        a = pp.safe_verdict(self.V, plan, "Hartwell Logistics", "", "pkg")
-        b = pp.safe_verdict(self.V, plan, "Hartwell Logistics", "", "pkg",
+        a = pp.safe_verdict(self.V, plan, "Example Freight Co", "", "pkg")
+        b = pp.safe_verdict(self.V, plan, "Example Freight Co", "", "pkg",
                             handover.BUILTIN["full"])
         self.assertEqual(a["faults"], [])
         self.assertEqual(b["faults"], self.V["faults"])

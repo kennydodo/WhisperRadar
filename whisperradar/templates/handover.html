@@ -47,12 +47,13 @@
     {% set pv = previews[t['id']] %}
     <details style="margin-top:8px">
       <summary>See what the judge is told and what the writer receives</summary>
-      <p class="muted" style="margin:8px 0 2px">Sample judge notes (the original's name in the sample: <i>{{ sample_source }}</i>)</p>
+      <p class="muted" style="margin:8px 0 2px"><b>Example only</b> - invented text, not from any production. Sample judge notes
+        (the invented "original" says: <i>{{ sample_source }}</i>)</p>
       <pre>{% for k, v in sample.items() %}{{ k }}:
 {% for x in v %}  - {{ x }}
 {% endfor %}{% endfor %}</pre>
-      <p class="muted" style="margin:8px 0 2px"><b>Script judge is told:</b></p>
-      <pre>{{ pv['judge_clause'] }}</pre>
+      <p class="muted" style="margin:8px 0 2px"><b>Script judge is told:</b> {{ pv['judge_summary'] }}
+        <details style="display:inline"><summary class="muted">full wording</summary><pre>{{ pv['judge_clause'] }}</pre></details></p>
       <p class="muted" style="margin:8px 0 2px"><b>Script writer receives:</b>
         {% if pv['script']['dropped'] %}({{ pv['script']['dropped'] }} note(s) dropped by the scrub){% endif %}</p>
       <pre>{% for k in ('must_fix', 'feedback', 'weak_spans') %}{{ k }}:

@@ -201,15 +201,23 @@ def plan_verdict(tpl: dict, verdict: dict, own_text: str, original: str) -> dict
 
 
 # ------------------------------------------------------------------ preview
-SAMPLE_SOURCE = ("Dennis Hartwell started Hartwell Logistics in 1998, sold it, "
+# EXAMPLE TEXT ONLY, invented for the /handover preview - never from a production
+SAMPLE_SOURCE = ("Zed Exampleton founded Example Freight Co in 1998, sold it, "
                  "and ended the video on a quiet harbour at sunrise.")
 SAMPLE_SCRIPT = "Maya opened the old jar and counted the coins slowly."
 SAMPLE_NOTES = {
     "must_fix": ["The 4% figure in the third paragraph is wrong: it is 3%."],
     "feedback": ["The hook is slow - open with a sharper question.",
-                 "Open like Dennis Hartwell does, with the sale of Hartwell Logistics.",
+                 "Open like Zed Exampleton does, with the sale of Example Freight Co.",
                  "End on a quiet harbour at sunrise, as the original does."],
     "weak_spans": ["Maya opened the old jar and counted the coins slowly."],
+}
+
+
+JUDGE_SUMMARY = {
+    True: "Describe the problem and the kind of change only. Never name, "
+          "quote or point to anything from the original.",
+    False: "May refer to the original when explaining what to change.",
 }
 
 
@@ -238,11 +246,13 @@ def preview(tpl: dict) -> dict:
     must, fb, weak, dropped = script_notes(
         tpl, SAMPLE_NOTES["must_fix"], SAMPLE_NOTES["feedback"],
         SAMPLE_NOTES["weak_spans"], SAMPLE_SCRIPT, SAMPLE_SOURCE)
-    plan_in = {"faults": ["Title 2 repeats Hartwell Logistics wording."],
+    plan_in = {"faults": ["Title 2 repeats Example Freight Co wording."],
                "fixes": ["Name the real subject, not a person."],
                "score": 6.5, "closest": "x", "alternates": ["y"], "pick": "x"}
     plan_out = plan_verdict(tpl, plan_in, "the plan text", SAMPLE_SOURCE)
-    return {"judge_clause": judge_clause(bool(tpl.get("guard", True))),
+    guard = bool(tpl.get("guard", True))
+    return {"judge_clause": judge_clause(guard),
+            "judge_summary": JUDGE_SUMMARY[guard],
             "script": {"must_fix": must, "feedback": fb, "weak_spans": weak,
                        "dropped": dropped},
             "plan": plan_out}
