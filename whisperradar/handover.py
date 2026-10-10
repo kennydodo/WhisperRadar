@@ -56,6 +56,7 @@ def _clean(tid: str, raw: dict) -> dict | None:
             "scrub": bool(raw.get("scrub", True)),
             "guard": bool(raw.get("guard", True)),
             "mask_names": bool(raw.get("mask_names", False)),
+            "channels": _clean_channels(raw.get("channels")),
             "parts": parts, "help": str(raw.get("help") or ""),
             "instructions": _clean_instructions(raw.get("instructions"))}
 
@@ -67,6 +68,18 @@ def _clean_instructions(raw) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     return {k: str(raw.get(k) or "").strip() for k in INSTRUCTION_KEYS
             if str(raw.get(k) or "").strip()}
+
+
+def _clean_channels(raw) -> list:
+    out = []
+    for x in (raw if isinstance(raw, list) else []):
+        try:
+            n = int(x)
+        except (TypeError, ValueError):
+            continue
+        if n not in out:
+            out.append(n)
+    return out
 
 
 def user_templates(path) -> dict:
@@ -96,7 +109,8 @@ def all_templates(cfg) -> dict:
 def save_user_template(cfg, name: str, scrub: bool, guard: bool,
                        parts: list, help_text: str = "",
                        instructions: dict | None = None,
-                       mask_names: bool = False) -> str:
+                       mask_names: bool = False,
+                       channels: list | None = None) -> str:
     """Add or replace a user template; returns its id."""
     tid = slug(name)
     if not tid:
@@ -111,6 +125,7 @@ def save_user_template(cfg, name: str, scrub: bool, guard: bool,
         data = {}
     data[tid] = {"name": name.strip(), "scrub": bool(scrub), "guard": bool(guard),
                  "mask_names": bool(mask_names),
+                 "channels": _clean_channels(channels),
                  "parts": [p for p in parts if p in ALL_PARTS],
                  "help": help_text,
                  "instructions": _clean_instructions(instructions)}
@@ -133,6 +148,20 @@ def rename_user_template(cfg, tid: str, new_name: str) -> bool:
     if not isinstance(data, dict) or tid not in data:
         return False
     data[tid]["name"] = new_name
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return True
+
+
+def set_template_channels(cfg, tid: str, channels: list) -> bool:
+    """Limit a template of yours to these own-channel ids (empty = every channel)."""
+    path = template_path(cfg)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict) or tid not in data:
+        return False
+    data[tid]["channels"] = _clean_channels(channels)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return True
 
@@ -165,8 +194,66 @@ def get(cfg, tid: str | None) -> dict:
     return tpls.get(tid or DEFAULT_ID) or tpls[DEFAULT_ID]
 
 
+def available_for(cfg, own_channel_id) -> list:
+    """Templates a channel may use: built-ins, templates with no channel list,
+    and templates that list this channel. No channel = the unrestricted ones."""
+    try:
+        cid = int(own_channel_id) if own_channel_id not in (None, "") else None
+    except (TypeError, ValueError):
+        cid = None
+    return [t for t in all_templates(cfg).values()
+            if t["builtin"] or not t.get("channels") or cid in t["channels"]]
+
+
+def channel_defaults(cfg, own_channel_id) -> dict:
+    """{"plan": id, "script": id} the channel set as its default ({} = none)."""
+    from . import db
+    if own_channel_id in (None, ""):
+        return {}
+    conn = db.connect(cfg.db_path)
+    try:
+        row = db.get_own_channel(conn, own_channel_id)
+    finally:
+        conn.close()
+    try:
+        data = json.loads((row["handover_default"] if row else None) or "{}")
+    except (KeyError, IndexError, TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def set_channel_default(cfg, own_channel_id: int, plan: str, script: str) -> None:
+    from . import db
+    known = {t["id"] for t in available_for(cfg, own_channel_id)}
+    chosen = {st: tid for st, tid in (("plan", plan), ("script", script))
+              if tid and tid in known and tid != DEFAULT_ID}
+    conn = db.connect(cfg.db_path)
+    try:
+        db.update_own_channel(conn, int(own_channel_id),
+                              handover_default=json.dumps(chosen) if chosen else None)
+    finally:
+        conn.close()
+
+
+def effective_id(cfg, prod, stage: str) -> tuple:
+    """(template id, source) - the production's own pick, else its channel's
+    default (only while the template is still available to that channel),
+    else Style only. source is 'production', 'channel' or 'default'."""
+    own = choice_for(prod, stage)
+    if own and own in all_templates(cfg):
+        return own, "production"
+    try:
+        cid = prod["own_channel_id"] if prod is not None else None
+    except (KeyError, IndexError):
+        cid = None
+    tid = channel_defaults(cfg, cid).get(stage)
+    if tid and tid in {t["id"] for t in available_for(cfg, cid)}:
+        return tid, "channel"
+    return DEFAULT_ID, "default"
+
+
 def for_production(cfg, prod, stage: str) -> dict:
-    return get(cfg, choice_for(prod, stage))
+    return get(cfg, effective_id(cfg, prod, stage)[0])
 
 
 def instruction(cfg, prod, key: str) -> str:

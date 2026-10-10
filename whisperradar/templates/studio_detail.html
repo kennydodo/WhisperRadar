@@ -1134,7 +1134,7 @@
           <option value="{{ t['id'] }}" {{ 'selected' if handover_choice[st] == t['id'] else '' }}
                   title="{{ t['help'] }}">{{ t['name'] }}</option>
           {% endfor %}
-        </select>
+        </select>{% if handover_from_channel[st] %} <span class="muted" style="font-size:11px">channel default</span>{% endif %}
       </label>
       {% endfor %}
       <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save</button>

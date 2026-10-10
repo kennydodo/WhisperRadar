@@ -35,6 +35,29 @@
   {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
 
+  {% if own_channels %}
+  <div class="panel">
+    <h2>Channel defaults</h2>
+    <p class="muted">A production that has not picked its own template uses its channel's default.
+      Only templates available to that channel are offered.</p>
+    {% for c in own_channels %}
+    <form method="post" action="/handover/channel-default/{{ c['id'] }}" style="margin:6px 0">
+      <b style="display:inline-block; min-width:160px">{{ c['name'] }}</b>
+      {% for st in ('plan', 'script') %}
+      <label class="chk">{{ st|capitalize }}
+        <select name="{{ st }}" style="width:auto">
+          {% for t in c['options'] %}
+          <option value="{{ t['id'] }}" {{ 'selected' if (c['default'].get(st) or 'style') == t['id'] else '' }}>{{ t['name'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+      <button class="ghost" type="submit">Save</button>
+    </form>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% for t in templates %}
   <div class="panel">
     <h2>{{ t['name'] }} {% if t['builtin'] %}<span class="badge">built in</span>{% endif %}</h2>
@@ -65,6 +88,16 @@
       <pre>{{ pv['plan'] | tojson(indent=1) }}</pre>
     </details>
     {% if not t['builtin'] %}
+    {% if own_channels %}
+    <form method="post" action="/handover/channels/{{ t['id'] }}" style="margin-top:8px">
+      <span class="muted">Available in:</span>
+      {% for c in own_channels %}
+      <label class="chk"><input type="checkbox" name="channels" value="{{ c['id'] }}" {{ 'checked' if c['id'] in t['channels'] }}> {{ c['name'] }}</label>
+      {% endfor %}
+      <span class="muted">(none ticked = every channel)</span>
+      <button class="ghost" type="submit">Save</button>
+    </form>
+    {% endif %}
     <form method="post" action="/handover/rename/{{ t['id'] }}" style="margin-top:8px">
       <input type="text" name="name" value="{{ t['name'] }}" required>
       <button class="ghost" type="submit">Rename</button>
@@ -87,6 +120,13 @@
         <label class="chk"><input type="checkbox" name="guard" checked> Tell the judge to keep the original out of its notes (script)</label>
         <label class="chk"><input type="checkbox" name="mask_names"> Replace names from the original with [name] (use instead of scrub to keep the points)</label>
       </p>
+      {% if own_channels %}
+      <p><b>Available in:</b>
+        {% for c in own_channels %}
+        <label class="chk"><input type="checkbox" name="channels" value="{{ c['id'] }}"> {{ c['name'] }}</label>
+        {% endfor %}
+        <span class="muted">(none ticked = every channel)</span></p>
+      {% endif %}
       {% for stage, plist in parts.items() %}
       <p><b>{{ stage|capitalize }} stage passes:</b>
         {% for key, label in plist %}

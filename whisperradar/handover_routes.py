@@ -15,10 +15,24 @@ INSTRUCTION_KEYS = ("plan", "plan_judge", "script", "script_judge")
 def register(app, cfg) -> None:
     @app.get("/handover")
     def handover_page():
+        conn = db.connect(cfg.db_path)
+        try:
+            db.init_db(conn)
+            chans = [{"id": c["id"], "name": c["name"]}
+                     for c in db.list_own_channels(conn)]
+        finally:
+            conn.close()
+        names = {c["id"]: c["name"] for c in chans}
+        for c in chans:
+            c["default"] = handover.channel_defaults(cfg, c["id"])
+            c["options"] = handover.available_for(cfg, c["id"])
+        tpls = list(handover.all_templates(cfg).values())
+        for t in tpls:
+            t["channel_names"] = [names.get(i, f"#{i} (gone)")
+                                  for i in t.get("channels") or []]
         return render_template(
-            "handover.html", templates=list(handover.all_templates(cfg).values()),
-            previews={t["id"]: handover.preview(t)
-                      for t in handover.all_templates(cfg).values()},
+            "handover.html", templates=tpls, own_channels=chans,
+            previews={t["id"]: handover.preview(t) for t in tpls},
             sample=handover.SAMPLE_NOTES, sample_source=handover.SAMPLE_SOURCE,
             parts=handover.PARTS, msg=request.args.get("msg"),
             error=request.args.get("error"))
@@ -31,6 +45,7 @@ def register(app, cfg) -> None:
                 cfg, name, scrub=bool(request.form.get("scrub")),
                 guard=bool(request.form.get("guard")),
                 mask_names=bool(request.form.get("mask_names")),
+                channels=request.form.getlist("channels"),
                 parts=request.form.getlist("parts"),
                 help_text=(request.form.get("help") or "").strip(),
                 instructions={k: request.form.get("ins_" + k)
@@ -38,6 +53,17 @@ def register(app, cfg) -> None:
         except ValueError as exc:
             return redirect("/handover?error=" + quote(str(exc)))
         return redirect("/handover?msg=" + quote(f"Saved template {name}"))
+
+    @app.post("/handover/channels/<tid>")
+    def handover_channels(tid):
+        ok = handover.set_template_channels(cfg, tid, request.form.getlist("channels"))
+        return redirect("/handover?msg=" + quote("Channels saved" if ok else "Not found"))
+
+    @app.post("/handover/channel-default/<int:cid>")
+    def handover_channel_default(cid):
+        handover.set_channel_default(cfg, cid, request.form.get("plan") or "",
+                                     request.form.get("script") or "")
+        return redirect("/handover?msg=" + quote("Channel default saved"))
 
     @app.post("/handover/rename/<tid>")
     def handover_rename(tid):
@@ -78,10 +104,24 @@ def register(app, cfg) -> None:
     @app.post("/studio/<int:pid>/handover")
     def handover_choose(pid):
         known = handover.all_templates(cfg)
+        conn = db.connect(cfg.db_path)
+        try:
+            db.init_db(conn)
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        try:
+            cid = prod["own_channel_id"]
+        except (KeyError, IndexError, TypeError):
+            cid = None
+        inherit = handover.channel_defaults(cfg, cid)
+        offered = {t["id"] for t in handover.available_for(cfg, cid)}
         chosen = {}
         for stage in handover.STAGES:
             tid = (request.form.get(stage) or "").strip()
-            if tid and tid in known and tid != handover.DEFAULT_ID:
+            base = inherit.get(stage) if inherit.get(stage) in offered \
+                else handover.DEFAULT_ID
+            if tid and tid in known and tid != base:
                 chosen[stage] = tid
         conn = db.connect(cfg.db_path)
         try:

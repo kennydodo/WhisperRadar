@@ -148,6 +148,32 @@ class Routes(Base):
         self.client.post("/handover/delete/mine")
         self.assertNotIn("mine", handover.all_templates(self.cfg))
 
+    def test_channel_routes_and_pages(self):
+        conn = db.connect(self.cfg.db_path)
+        cid = db.create_own_channel(conn, "Chan1")
+        db.update_production(conn, self.pid, own_channel_id=cid)
+        conn.close()
+        self.client.post("/handover/save", data={
+            "name": "Scoped", "parts": ["feedback"], "channels": [str(cid)]})
+        self.assertEqual(handover.get(self.cfg, "scoped")["channels"], [cid])
+        self.client.post(f"/handover/channel-default/{cid}",
+                         data={"plan": "style", "script": "scoped"})
+        self.assertEqual(handover.channel_defaults(self.cfg, cid),
+                         {"script": "scoped"})
+        page = self.client.get("/handover")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Channel defaults", page.data)
+        studio_page = self.client.get(f"/studio/{self.pid}")
+        self.assertEqual(studio_page.status_code, 200)
+        self.assertIn(b"channel default", studio_page.data)
+        # saving the production form unchanged keeps inheriting
+        self.client.post(f"/studio/{self.pid}/handover",
+                         data={"plan": "style", "script": "scoped"})
+        conn = db.connect(self.cfg.db_path)
+        prod = db.get_production(conn, self.pid)
+        conn.close()
+        self.assertFalse(prod["handover"])
+
     def test_choose_for_production(self):
         r = self.client.post(f"/studio/{self.pid}/handover",
                              data={"plan": "style", "script": "full"})
@@ -297,3 +323,66 @@ class Rename(unittest.TestCase):
             with self.assertRaises(ValueError):
                 handover.rename_user_template(cfg, tid, "Style")
             self.assertFalse(handover.rename_user_template(cfg, "nope", "X"))
+
+
+class ChannelScope(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from types import SimpleNamespace
+        from pathlib import Path
+        from whisperradar import db
+        self.d = tempfile.TemporaryDirectory()
+        self.cfg = SimpleNamespace(db_path=Path(self.d.name) / "x.db")
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        self.a = db.create_own_channel(conn, "A")
+        self.b = db.create_own_channel(conn, "B")
+        pid = db.create_production(conn, "t")
+        db.update_production(conn, pid, own_channel_id=self.a)
+        self.prod = db.get_production(conn, pid)
+        conn.close()
+        self.db = db
+
+    def tearDown(self):
+        self.d.cleanup()
+
+    def test_scoped_template_only_offered_to_its_channel(self):
+        tid = handover.save_user_template(self.cfg, "Only A", True, True, [],
+                                          channels=[self.a])
+        free = handover.save_user_template(self.cfg, "Everywhere", True, True, [])
+        ids_a = {t["id"] for t in handover.available_for(self.cfg, self.a)}
+        ids_b = {t["id"] for t in handover.available_for(self.cfg, self.b)}
+        ids_none = {t["id"] for t in handover.available_for(self.cfg, None)}
+        self.assertIn(tid, ids_a)
+        self.assertNotIn(tid, ids_b)
+        self.assertNotIn(tid, ids_none)
+        for ids in (ids_a, ids_b, ids_none):
+            self.assertIn(free, ids)
+            self.assertIn("style", ids)
+            self.assertIn("full", ids)
+
+    def test_channel_default_used_until_production_picks(self):
+        tid = handover.save_user_template(self.cfg, "Only A", False, False, [],
+                                          channels=[self.a])
+        handover.set_channel_default(self.cfg, self.a, "", tid)
+        self.assertEqual(handover.effective_id(self.cfg, self.prod, "script"),
+                         (tid, "channel"))
+        self.assertEqual(handover.effective_id(self.cfg, self.prod, "plan"),
+                         ("style", "default"))
+        mine = {"handover": '{"script": "style"}', "own_channel_id": self.a}
+        self.assertEqual(handover.effective_id(self.cfg, mine, "script"),
+                         ("style", "production"))
+
+    def test_default_ignored_when_template_no_longer_offered(self):
+        tid = handover.save_user_template(self.cfg, "Only A", False, False, [],
+                                          channels=[self.a])
+        handover.set_channel_default(self.cfg, self.a, "", tid)
+        handover.set_template_channels(self.cfg, tid, [self.b])
+        self.assertEqual(handover.effective_id(self.cfg, self.prod, "script")[0],
+                         "style")
+
+    def test_cannot_set_unavailable_default(self):
+        tid = handover.save_user_template(self.cfg, "Only A", False, False, [],
+                                          channels=[self.a])
+        handover.set_channel_default(self.cfg, self.b, "", tid)
+        self.assertEqual(handover.channel_defaults(self.cfg, self.b), {})

@@ -74,6 +74,26 @@ def _back(request, msg: str | None = None, error: str | None = None,
     return redirect(base + ("?" + "&".join(parts) if parts else ""))
 
 
+def _handover_options(cfg, prod) -> list:
+    """Templates the production's channel may pick from; a template already
+    chosen stays listed (marked) even if the channel no longer offers it."""
+    try:
+        cid = prod["own_channel_id"]
+    except (KeyError, IndexError):
+        cid = None
+    opts = handover.available_for(cfg, cid)
+    have = {t["id"] for t in opts}
+    allt = handover.all_templates(cfg)
+    for st in handover.STAGES:
+        tid = handover.choice_for(prod, st)
+        if tid and tid in allt and tid not in have:
+            t = dict(allt[tid])
+            t["name"] += " (not offered to this channel)"
+            opts.append(t)
+            have.add(tid)
+    return opts
+
+
 def _studio_url(pid, msg: str | None = None, error: str | None = None):
     """Redirect back to the production page preserving the ?stage= being viewed.
 
@@ -2936,10 +2956,11 @@ def create_app(cfg) -> Flask:
             instructions={k: db.stage_extra(prod, k)
                           for k in ("plan", "plan_judge", "script",
                                     "script_judge")},
-            handover_templates=list(handover.all_templates(cfg).values()),
-            handover_choice={s: (handover.choice_for(prod, s)
-                                 or handover.DEFAULT_ID)
+            handover_templates=_handover_options(cfg, prod),
+            handover_choice={s: handover.effective_id(cfg, prod, s)[0]
                              for s in handover.STAGES},
+            handover_from_channel={s: handover.effective_id(cfg, prod, s)[1]
+                                   == "channel" for s in handover.STAGES},
             stage_labels=stage_labels, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob._real(),
             prod_voice=prod["voice"] or eff["voice"],
