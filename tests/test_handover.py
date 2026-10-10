@@ -163,10 +163,11 @@ class Routes(Base):
         page = self.client.get("/handover")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"Channel defaults", page.data)
-        studio_page = self.client.get(f"/studio/{self.pid}")
+        studio_page = self.client.get(f"/studio/{self.pid}/plan")
         self.assertEqual(studio_page.status_code, 200)
-        self.assertIn(b"channel default", studio_page.data)
-        # saving the production form unchanged keeps inheriting
+        self.assertNotIn(b"channel default</span>", studio_page.data)  # plan stage not set
+        # saving the production form unchanged keeps inheriting; a form that
+        # only has one stage leaves the other stage's pick alone
         self.client.post(f"/studio/{self.pid}/handover",
                          data={"plan": "style", "script": "scoped"})
         conn = db.connect(self.cfg.db_path)
@@ -182,9 +183,18 @@ class Routes(Base):
         prod = db.get_production(conn, self.pid)
         conn.close()
         self.assertEqual(json.loads(prod["handover"]), {"script": "full"})
-        page = self.client.get(f"/studio/{self.pid}")
+        page = self.client.get(f"/studio/{self.pid}/plan")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"What the judge passes to the writer", page.data)
+        self.assertIn(b'name="plan_judge"', page.data)
+        self.assertNotIn(b'name="script_judge"', page.data)
+        # the production page shows it on the script stage only
+        conn = db.connect(self.cfg.db_path)
+        stage = db.get_production(conn, self.pid)["stage"]
+        conn.close()
+        main = self.client.get(f"/studio/{self.pid}")
+        self.assertEqual(b"What the judge passes to the writer" in main.data,
+                         stage == "script")
 
     def test_unknown_template_is_ignored(self):
         self.client.post(f"/studio/{self.pid}/handover", data={"script": "zzz"})
@@ -222,6 +232,9 @@ class Instructions(Base):
         prod = self._prod()
         self.assertEqual(db.stage_extra(prod, "plan"), "")
         self.assertEqual(db.stage_extra(prod, "script_judge"), "ignore story names")
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, stage="script")
+        conn.close()
         page = self.client.get(f"/studio/{self.pid}")
         self.assertIn(b"ignore story names", page.data)
 
@@ -386,3 +399,24 @@ class ChannelScope(unittest.TestCase):
                                           channels=[self.a])
         handover.set_channel_default(self.cfg, self.b, "", tid)
         self.assertEqual(handover.channel_defaults(self.cfg, self.b), {})
+
+
+class PanelPlacement(Routes):
+    def test_single_stage_form_keeps_other_stage(self):
+        self.client.post(f"/studio/{self.pid}/handover",
+                         data={"plan": "full", "script": "full"})
+        self.client.post(f"/studio/{self.pid}/handover",
+                         data={"plan": "style", "back": f"/studio/{self.pid}/plan"})
+        conn = db.connect(self.cfg.db_path)
+        prod = db.get_production(conn, self.pid)
+        conn.close()
+        self.assertEqual(json.loads(prod["handover"]), {"script": "full"})
+
+    def test_script_stage_shows_panel(self):
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, stage="script")
+        conn.close()
+        page = self.client.get(f"/studio/{self.pid}")
+        self.assertIn(b"What the judge passes to the writer", page.data)
+        self.assertIn(b'name="script_judge"', page.data)
+        self.assertNotIn(b'name="plan_judge"', page.data)

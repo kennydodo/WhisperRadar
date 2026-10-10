@@ -12,6 +12,15 @@ from . import db, handover
 INSTRUCTION_KEYS = ("plan", "plan_judge", "script", "script_judge")
 
 
+def _back(pid: int, msg: str) -> str:
+    """Back to the page the form was on (the production or its plan page)."""
+    where = request.form.get("back") or ""
+    base = f"/studio/{pid}"
+    if where not in (base, base + "/plan"):
+        where = base
+    return where + "?msg=" + quote(msg)
+
+
 def register(app, cfg) -> None:
     @app.get("/handover")
     def handover_page():
@@ -99,7 +108,7 @@ def register(app, cfg) -> None:
             db.update_production(conn, pid, stage_extras=json.dumps(data))
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=" + quote("Instructions saved"))
+        return redirect(_back(pid, "Instructions saved"))
 
     @app.post("/studio/<int:pid>/handover")
     def handover_choose(pid):
@@ -116,8 +125,15 @@ def register(app, cfg) -> None:
             cid = None
         inherit = handover.channel_defaults(cfg, cid)
         offered = {t["id"] for t in handover.available_for(cfg, cid)}
-        chosen = {}
+        try:
+            chosen = json.loads(prod["handover"] or "{}")
+            chosen = chosen if isinstance(chosen, dict) else {}
+        except (KeyError, IndexError, TypeError, ValueError):
+            chosen = {}
         for stage in handover.STAGES:
+            if stage not in request.form:
+                continue
+            chosen.pop(stage, None)
             tid = (request.form.get(stage) or "").strip()
             base = inherit.get(stage) if inherit.get(stage) in offered \
                 else handover.DEFAULT_ID
@@ -130,4 +146,4 @@ def register(app, cfg) -> None:
                                  if chosen else None)
         finally:
             conn.close()
-        return redirect(f"/studio/{pid}?msg=" + quote("Hand-over templates saved"))
+        return redirect(_back(pid, "Hand-over template saved"))

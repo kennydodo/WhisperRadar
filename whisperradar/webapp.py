@@ -94,6 +94,17 @@ def _handover_options(cfg, prod) -> list:
     return opts
 
 
+def _handover_ctx(cfg, prod) -> dict:
+    return dict(
+        instructions={k: db.stage_extra(prod, k)
+                      for k in ("plan", "plan_judge", "script", "script_judge")},
+        handover_templates=_handover_options(cfg, prod),
+        handover_choice={s: handover.effective_id(cfg, prod, s)[0]
+                         for s in handover.STAGES},
+        handover_from_channel={s: handover.effective_id(cfg, prod, s)[1]
+                               == "channel" for s in handover.STAGES})
+
+
 def _studio_url(pid, msg: str | None = None, error: str | None = None):
     """Redirect back to the production page preserving the ?stage= being viewed.
 
@@ -4739,7 +4750,7 @@ def create_app(cfg) -> Flask:
         return render_template(
             "plan.html", prod=prod, plan=plan, job=sjob._real(),
             faults=packplan.faults_for(cfg, pid, plan) if plan["title"] else [],
-            layouts=thumbnails.LAYOUTS,
+            layouts=thumbnails.LAYOUTS, **_handover_ctx(cfg, prod),
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.get("/studio/<int:pid>/shorts")
