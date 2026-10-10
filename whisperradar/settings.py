@@ -175,6 +175,15 @@ SPEC: list[dict] = [
                 "anything you are building by hand is left alone.",
     },
     {
+        "key": "niche_values", "type": "str", "default": "",
+        "label": "Extra core values for the plan titles",
+        "help": "Your own angles the plan's title writer may sell, added to "
+                "every niche's list. Separate them with ';' (for example: "
+                "quiet status; an old-school habit that still works). For a "
+                "whole niche of your own, put a niche_playbooks.json next "
+                "to the database (see AGENTS.md).",
+    },
+    {
         "key": "autorun_plan", "type": "bool", "default": True,
         "label": "Plan the packaging before the script (Auto Run)",
         "help": "Auto Run first writes a packaging plan - SEO title, promise, "
@@ -588,7 +597,8 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
-        "autorun_plan", "autorun_thumbnails", "autorun_transport",
+        "autorun_plan", "niche_values", "autorun_thumbnails",
+        "autorun_transport",
         "autorun_writer", "autorun_judge",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),

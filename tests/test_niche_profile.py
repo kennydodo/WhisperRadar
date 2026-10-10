@@ -57,8 +57,34 @@ class PromptTests(unittest.TestCase):
         block = np_.prompt_block(np_.build(items, "Personal Finance"))
         self.assertNotIn("pov: you", block)   # only 2 channels
 
-    def test_no_playbook_no_block_for_unknown_niche(self):
-        self.assertEqual(np_.prompt_block(np_.build([], "Human & Animal")), "")
+    def test_unknown_niche_gets_the_generic_playbook(self):
+        block = np_.prompt_block(np_.build([], "Human & Animal"))
+        self.assertIn("General audience", block)
+        self.assertIn("ANGLES", block)
+
+    def test_extra_values_and_user_playbook(self):
+        import json, tempfile, os
+        extra = np_.extra_values("quiet status; an old habit\nrelief")
+        self.assertEqual(extra, ["quiet status", "an old habit", "relief"])
+        d = tempfile.mkdtemp()
+        f = os.path.join(d, "p.json")
+        open(f, "w").write(json.dumps({"cats": {
+            "name": "Cat care", "match": ["cat", "pet"],
+            "values": ["a mistake vets see daily"], "voice": "warm"},
+            "bad": {"values": []}}))
+        user = np_.user_playbooks(f)
+        self.assertEqual(list(user), ["cats"])
+        prof = np_.build([], "Pets and cats", user=user, extra=["relief"])
+        self.assertEqual(prof["playbook"]["name"], "Cat care")
+        self.assertIn("relief", prof["playbook"]["values"])
+        self.assertEqual(np_.user_playbooks(os.path.join(d, "none")), {})
+
+    def test_formula_mix(self):
+        mix = np_.formula_mix(["Why money works", "Why jars fill",
+                               "How much do you own?", "Is it worth it?",
+                               "Plain thing"])
+        self.assertEqual(dict(mix)["'why ...' explanation"], 40)
+        self.assertEqual(dict(mix)["a question"], 40)
 
 
 if __name__ == "__main__":

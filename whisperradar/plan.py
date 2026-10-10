@@ -632,10 +632,20 @@ def context(cfg, pid: int) -> dict:
         # (possibly "general") genre of the channel the video is made for
         genre = ((src or {}).get("genre") or prod2["genre"]
                  or ctx.get("genre") or "")
+        from . import settings as _settings
+        conn = db.connect(cfg.db_path)
+        try:
+            extra = niche_profile.extra_values(
+                _settings.load(conn).get("niche_values") or "")
+        finally:
+            conn.close()
         prof = niche_profile.build(
             outliers.build(rows), genre, (src or {}).get("channel_id") or "",
             (src or {}).get("channel_name") or "",
-            (src or {}).get("title") or "")
+            (src or {}).get("title") or "",
+            user=niche_profile.user_playbooks(
+                Path(cfg.db_path).parent / niche_profile.PLAYBOOK_FILE),
+            extra=extra)
         ctx["niche"] = prof
         if prof["refs"]:
             ctx["refs"] = prof["refs"]

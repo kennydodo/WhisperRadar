@@ -1749,3 +1749,7 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 - Planner spread/hedge rules: `spread_faults` (at most 3 hedged titles with may/might/could, at most 2 per angle taken from the start of each `why`, no content word in >60% of titles). The judge also returns `best` (strongest hook) next to `closest`; `closest` must be a strong hook. After the pick changes the title, the thumbnail idea is rewritten for the picked title (`thumbnail_prompt`, `adopt_thumbnail`).
 
 - Start over now has a "plan" option (clears packaging_plan.json and publish_kit.json, restores the original title if the plan was applied, then resets every stage). Any script reset also removes the generated keyword brief (manual notes stay) and the script-gate warning; shotlist reset already clears its review/best-ever.
+
+## Niche playbooks
+- A niche with no playbook gets the GENERIC one (angles that sell in any niche); finance keeps its own. Your own playbooks: `niche_playbooks.json` next to the database, `{"key": {"name", "match": [...], "values": [...], "voice", "avoid"}}` - they win over the built-ins. The "Extra core values" setting (`niche_values`, ';'-separated) adds angles to every niche.
+- `measure` now reports the formula mix of the niche's winners (question, why-explanation, number list, first person, blunt truth...), shown to the titler once the sample is big enough (>= 6 titles, 3 channels). Learning from your published titles already exists (`learning.context_text`).
