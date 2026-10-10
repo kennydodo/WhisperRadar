@@ -80,6 +80,8 @@ class FakePage:
             text, _g = self.frame
             return {"count": 1 if (self.sent and text) else 0, "text": text,
                     "url": self.url}
+        if js is wc._CANDIDATES_JS:
+            return getattr(self, "cands", None)
         if js is wc._CONTINUE_JS:
             if self.continue_frames and self.frame[0]:
                 self.clicked_continue += 1
@@ -205,6 +207,17 @@ class AskTests(unittest.TestCase):
         frames = [("word " * n, True) for n in range(1, 200)] + [("done", False)]
         out, _ = run(wc.ZAI, frames)
         self.assertEqual(out, "done")
+
+    def test_reply_found_in_another_block_when_the_last_one_is_a_fragment(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("json Copy label", False)] * 80)
+        page.cands = ['{"shots": [{"file": "S01.png", "prompt": "a long prompt '
+                      'about something"}]}', "short label"]
+        logs = []
+        out = wc.ask(page, wc.ZAI, "hello", clock=clk, log=logs.append,
+                     ready=lambda t: t.startswith("{"))
+        self.assertTrue(out.startswith('{"shots"'))
+        self.assertTrue(any("another block" in m for m in logs))
 
     def test_empty_prompt_rejected(self):
         with self.assertRaises(wc.WebChatError):

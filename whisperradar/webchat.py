@@ -960,6 +960,18 @@ _STATE_JS = """(args) => {
   return {count:els.length, text:last?last.innerText:'',
           url:location.href}; }"""
 
+# Texts of the page's reply-like blocks and code blocks, last ones first. Used
+# when the LAST matching element is only a fragment of the reply (Claude puts a
+# long JSON answer in a code block: the last "markdown"-class element was a 24
+# character label next to it, so the real reply was never read).
+_CANDIDATES_JS = """(sel) => {
+  const seen = new Set(), out = [];
+  for (const e of document.querySelectorAll(sel + ', pre')) {
+    const t = (e.innerText || '').trim();
+    if (t.length > 40 && !seen.has(t)) { seen.add(t); out.push(t); }
+  }
+  return out.slice(-12).reverse(); }"""
+
 _CAPTURE_JS = """() => {
   if (window.__wr_hooked) return;
   window.__wr_hooked = true; window.__wr_cap = [];
@@ -1223,6 +1235,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
     active = clock()                       # last sign of life
     beat = clock()
     stuck_logged = False
+    cand_at = clock()
     while True:
         page.wait_for_timeout(int(poll * 1000))
         if stop is not None and stop():
@@ -1331,6 +1344,20 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 and clock() - stable_since < ready_wait
                 and not ready(clean_reply(last_text))):
             done_waiting = False           # settled, but not a full answer yet
+        if (ready is not None and started and not gen and not done_waiting
+                and clock() - stable_since >= 20
+                and clock() - cand_at >= 30):
+            cand_at = clock()              # the reply may sit in another block
+            try:
+                cands = page.evaluate(_CANDIDATES_JS, site.reply) or []
+            except Exception:  # noqa: BLE001
+                cands = []
+            for cand in cands:
+                got = clean_reply(cand)
+                if got and ready(got):
+                    log(f"{site.name}: the reply was in another block of the "
+                        f"page ({len(got)} chars) - using it")
+                    return got
         if done_waiting:
             clicked = (page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
                        if continues < continue_max else "")
