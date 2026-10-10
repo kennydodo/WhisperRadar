@@ -408,6 +408,26 @@ _TOGGLE_JS = """(a) => {
   e.click(); return 'clicked'; }"""
 
 
+def _note_rows(key, cand, one) -> None:
+    """Keep what each picker candidate showed when opened, in
+    diag/<site>/detect-rows.txt, so a menu that was not accepted can be read."""
+    if _DIAG_ROOT is None:
+        return
+    try:
+        d = _DIAG_ROOT / "diag" / key
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / "detect-rows.txt"
+        if cand is None:
+            f.write_text("", encoding="utf-8")
+            return
+        with f.open("a", encoding="utf-8") as fh:
+            fh.write(f"candidate {cand.get('current')!r} ({cand.get('open')}): "
+                     f"rows={(one or {}).get('all')} accepted="
+                     f"{(one or {}).get('items')}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ---- sliders (ChatGPT's "Thinking effort": Instant / Thinking / ...) -------
 # The level is a slider in a small popover, not a menu. It is read and set
 # with the keyboard (Home, then ArrowRight n times) - the way any ARIA slider
@@ -1197,6 +1217,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         links_before = []
     followed = False
     active = clock()                       # last sign of life
+    beat = clock()
     while True:
         page.wait_for_timeout(int(poll * 1000))
         if stop is not None and stop():
@@ -1207,6 +1228,11 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         st = page.evaluate(_STATE_JS, {"reply": site.reply})
         text = st["text"] or ""
         gen = bool(page.evaluate(site.generating_js))
+        if started and clock() - beat >= 60:
+            beat = clock()                 # a silent wait can now be read
+            log(f"{site.name}: still waiting - generating={gen}, reply "
+                f"{len(clean_reply(text))} chars, unchanged for "
+                f"{int(clock() - stable_since)}s")
         if not gen and not clean_reply(text):
             pk = _peak_dialog(page)
             if pk:
@@ -1811,6 +1837,7 @@ class WebChat:
         return ctx.pages[0] if ctx.pages else ctx.new_page()
 
     def detect_models(self, key: str) -> dict:
+        _note_rows(key, None, None)            # start a fresh rows file
         """Open the site and read its model picker: {open, current, items}.
         `items` is empty when no model menu could be found. Candidate buttons
         are tried one by one from here, each on a clean page and with a REAL
@@ -1834,6 +1861,7 @@ class WebChat:
                                          "current": c.get("current")})
                 except Exception:  # noqa: BLE001
                     one = {"items": []}
+                _note_rows(key, c, one)
                 if one.get("items"):
                     return {"open": c.get("open"), "current": c.get("current"),
                             "items": one["items"]}
