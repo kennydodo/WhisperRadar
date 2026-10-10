@@ -416,8 +416,12 @@ def _script_feedback(words: int, target: int, reasons: list[str],
     if truncated:
         lines.append("The draft looks cut off - it must end on a complete "
                      "sentence.")
+    if judged.get("must_fix"):
+        lines.append("MANDATORY corrections (the script cannot be accepted "
+                     "until each is fixed):")
+        lines += [f"- {m}" for m in judged["must_fix"]]
     if judged.get("feedback"):
-        lines.append("Editor's feedback:")
+        lines.append("Editor's feedback (optional polish - keep what works):")
         lines += [f"- {f}" for f in judged["feedback"]]
     if judged.get("weak_spans"):
         lines.append("Passages the editor flagged as weak:")
@@ -505,6 +509,11 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             if gone:
                 log(f"dropped {gone} judge note(s) in {k} that carried "
                     f"details of the original")
+        must, unver = studio.verdict_blockers(verdict)
+        judged["must_fix"], _gone = studio.scrub_for_writer(
+            must, script, source, allow=brief_text)
+        if unver:
+            log(f"{judge} left {unver} claim(s) unverified")
         err = None if score is not None else (
             "no usable score in the judge's reply: "
             + " ".join(str(raw or "").split())[:120])
@@ -523,6 +532,10 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             passed = False
             reasons.append(studio.structure_reason(struct))
             judged["feedback"].append(studio.structure_reason(struct))
+        if judged.get("must_fix"):
+            passed = False
+            reasons.append(f"{len(judged['must_fix'])} factual correction(s) "
+                           f"required by the judge")
         from . import plan as _plan
         meta = _plan.meta_mentions(script)
         if meta:
@@ -553,6 +566,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                          "criteria": verdict.get("criteria") or {},
                          "feedback": judged["feedback"],
                          "weak_spans": judged["weak_spans"],
+                         "must_fix": judged.get("must_fix") or [],
                          "error": err})
         _keep_attempts(cfg, pid, attempts)
         if passed:
@@ -679,7 +693,11 @@ def _script_followup(script: str, words: int | None = None,
         "The writer revised the script after your review. Judge it again "
         "under the SAME rules and reply in exactly the SAME JSON format as "
         "before. First check whether each point you raised earlier is now "
-        "addressed, then check that nothing got worse. Source material and "
+        "addressed, then run a FRESH audit of the COMPLETE revised script "
+        "(every material claim, calculation and the reasoning behind the "
+        "numbers - do not carry the earlier approval forward), and check "
+        "that nothing got worse. Fill \"claims\" and \"must_fix\" again. "
+        "Source material and "
         "rules are unchanged (use the ones from earlier in this chat), "
         "including: the script must never mention the thumbnail, cover, "
         "title or packaging - fail it and quote the sentence if it does.\n\n"

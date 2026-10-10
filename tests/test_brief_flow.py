@@ -90,6 +90,43 @@ class JudgeSeesOriginalWriterDoesNot(Base):
         self.assertNotIn("Hargrove", back)
         self.assertIn("open sharper", back)
 
+class FactualBlockersTests(Base):
+    def test_blockers_from_must_fix_and_wrong_claims(self):
+        must, unver = studio.verdict_blockers({
+            "must_fix": ["'saves $500' -> the math gives $300 -> fix it"],
+            "claims": [{"claim": "APY is 8%", "status": "wrong",
+                        "correction": "typical is 4%"},
+                       {"claim": "x", "status": "unverified"},
+                       {"claim": "y", "status": "verified"}]})
+        self.assertEqual(len(must), 2)
+        self.assertEqual(unver, 1)
+        self.assertEqual(studio.verdict_blockers({}), ([], 0))
+
+    def test_judge_prompt_demands_audit_and_blocks_on_errors(self):
+        text = ep.script_judge_prompt(self.cfg, self.pid, "A script.")
+        for needle in ("AUDIT FIRST, SCORE SECOND", "unverified",
+                       "FACTUAL ERRORS BLOCK APPROVAL", "must_fix",
+                       "REASONING BEHIND THE NUMBERS"):
+            self.assertIn(needle, text)
+
+    def test_script_with_must_fix_cannot_pass_even_at_9_6(self):
+        v1 = json.dumps({"score": 9.6, "criteria": {}, "feedback": [],
+                         "weak_spans": [],
+                         "must_fix": ["The savings add up to $300, not $500"]})
+        v2 = json.dumps({"score": 9.2, "criteria": {}, "feedback": [],
+                         "weak_spans": [], "must_fix": []})
+        t = Fake(zai=[words(100, "a"), words(100, "b")], deepseek=[v1, v2])
+        with mock.patch.object(ep, "_target_words", return_value=100):
+            out = ws.run_script(self.cfg, self.pid, t, "zai", "deepseek",
+                                rounds=3, log=lambda m: None)
+        self.assertTrue(out.startswith("b0"))        # round 1 was not accepted
+        back = [c["prompt"] for c in t.calls if c["site"] == "zai"][1]
+        self.assertIn("MANDATORY corrections", back)
+        self.assertIn("$300, not $500", back)
+        follow = [c["prompt"] for c in t.calls if c["site"] == "deepseek"][1]
+        self.assertIn("FRESH audit", follow)
+
+
 class WebSearchAlwaysOn(unittest.TestCase):
     def test_search_toggles_are_forced_on(self):
         from whisperradar import webchat

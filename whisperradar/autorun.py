@@ -751,6 +751,10 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         passed, why, too_long, too_short = _script_gate(
             words, target_words, overlap, score, min_rating, max_overlap,
             hard_overlap, rating.get("error"))
+        if rating.get("must_fix"):
+            passed = False
+            why = list(why) + [f"{len(rating['must_fix'])} factual correction(s) "
+                               f"required by the judge"]
         struct = studio.structure_copy(text, source_text)
         if struct["flag"]:
             passed = False
@@ -773,7 +777,8 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             break
         _log_line(log_attempt + " - rejected (" + "; ".join(why) + ")")
         safe_fb = studio.scrub_for_writer(
-            rating["feedback"] or rating["weak_spans"], text, source_text,
+            list(rating.get("must_fix") or [])
+            + (rating["feedback"] or rating["weak_spans"]), text, source_text,
             allow=facts or "")[0]
         previous = {"overlap": overlap, "runs": runs,
                     "feedback": safe_fb,

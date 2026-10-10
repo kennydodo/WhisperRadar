@@ -3333,6 +3333,28 @@ def scrub_for_writer(items, script: str, source: str, n: int = 4,
     return kept, dropped
 
 
+def verdict_blockers(reply: dict) -> tuple[list[str], int]:
+    """(mandatory corrections, number of claims left unverified) from a judge
+    verdict: everything in `must_fix` plus each claim marked wrong. Anything
+    here means the script cannot pass, whatever the score."""
+    out = [str(x).strip() for x in (reply.get("must_fix") or [])
+           if str(x).strip()]
+    unverified = 0
+    for c in reply.get("claims") or []:
+        if not isinstance(c, dict):
+            continue
+        status = str(c.get("status") or "").strip().lower()
+        if status == "wrong":
+            fix = str(c.get("correction") or "").strip()
+            line = f'{str(c.get("claim") or "").strip()} - wrong' + (
+                f": {fix}" if fix else "")
+            if line not in out:
+                out.append(line)
+        elif status == "unverified":
+            unverified += 1
+    return out, unverified
+
+
 def rating_prompt(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "") -> str:
@@ -3365,12 +3387,34 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"Measured 5-gram overlap with the original: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
         f"HOW TO JUDGE:\n"
-        f"- The writer researched the topic itself and never saw the "
-        f"ORIGINAL. Verify the script's real-world claims yourself (use your "
-        f"web search if you have it): penalise claims that are false, "
-        f"unverifiable or invented (numbers, laws, studies, quotes). Story "
-        f"details the script invents (characters, companies, places) are "
-        f"fine and must NOT be penalised as unsupported.\n"
+        f"- AUDIT FIRST, SCORE SECOND. Before scoring, audit every material "
+        f"claim in the script: each statistic, figure, calculation, law, "
+        f"study, date and cause-and-effect statement. The writer researched "
+        f"the topic itself and never saw the ORIGINAL, so verify the claims "
+        f"yourself (use your web search if you have it). List each important "
+        f"claim in \"claims\" with the exact claim, its status "
+        f"(\"verified\", \"wrong\" or \"unverified\"), the support you "
+        f"found, and the correction. If you cannot browse or cannot find "
+        f"support, the status is \"unverified\" - never write that all "
+        f"claims check out without evidence.\n"
+        f"- CHECK THE REASONING BEHIND THE NUMBERS, not only the arithmetic: "
+        f"does the character actually take the action that produces the "
+        f"savings or result; is an allocated or fixed cost confused with an "
+        f"avoidable expense; is a purchase cost, payment or saving counted "
+        f"twice; do investment projections state the contribution timing, "
+        f"the return assumption and what is excluded; does anything "
+        f"contradict something said earlier in the script?\n"
+        f"- FACTUAL ERRORS BLOCK APPROVAL: a strong hook and good pacing "
+        f"never compensate for wrong arithmetic, a misleading financial claim "
+        f"or a contradiction. Put every such error in \"must_fix\". A script "
+        f"with anything in \"must_fix\" or any claim marked \"wrong\" "
+        f"cannot pass and the score must reflect it; never say PASS while "
+        f"asking for a necessary factual correction. Invented story details "
+        f"(characters, companies, places) are fine and are NOT errors.\n"
+        f"- Every \"must_fix\" and \"feedback\" entry is usable by the "
+        f"writer as written: the passage of the SCRIPT, why it is wrong, "
+        f"and what must change. Keep mandatory corrections (must_fix) apart "
+        f"from optional polish (feedback) so the writer keeps what works.\n"
         f"- Use the ORIGINAL only to check TONE, STYLE, HOOK, FLOW and ENDING: "
         f"does the script's voice, pacing and energy match it, is the hook as "
         f"strong and of a comparable kind, does the flow build the same way, "
@@ -3400,7 +3444,9 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f'{{"score": <1-10 overall, one decimal>, '
         f'"criteria": {{"hook": <n>, "originality": <n>, "accuracy": <n>, '
         f'"structure": <n>, "pacing": <n>, "style_fit": <n>, "ending": <n>}}, '
-        f'"feedback": ["<specific, actionable fix, free of anything from the original>", ...], '
+        f'"claims": [{{"claim": "<exact claim>", "status": "verified|wrong|unverified", "support": "<what you found>", "correction": "<fix or empty>"}}, ...], '
+        f'"must_fix": ["<mandatory factual/reasoning correction: passage -> why wrong -> what to change>", ...], '
+        f'"feedback": ["<optional improvement, free of anything from the original>", ...], '
         f'"weak_spans": ["<a passage of the SCRIPT that reads weak>", ...]}}'
     )
 
@@ -3463,7 +3509,9 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
                                                   dict) else {}
     feedback = [str(f) for f in (reply.get("feedback") or []) if str(f).strip()]
     weak = [str(s) for s in (reply.get("weak_spans") or []) if str(s).strip()]
+    must, unverified = verdict_blockers(reply)
     if original:     # nothing of the original may reach the writer
+        must, _g0 = scrub_for_writer(must, script, original, allow=source)
         feedback, _g1 = scrub_for_writer(feedback, script, original, allow=source)
         weak, _g2 = scrub_for_writer(weak, script, original, allow=source)
     # A reply that parses to no score (prose, an empty answer, a different JSON
@@ -3475,7 +3523,8 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
         error = ("the judge reply had no usable score" +
                  (f": {snippet}" if snippet else " (empty reply)"))
     return {"score": score, "criteria": criteria, "feedback": feedback,
-            "weak_spans": weak, "error": error}
+            "weak_spans": weak, "error": error, "must_fix": must,
+            "unverified": unverified}
 
 
 def judge_provider(cfg, writer: str | None, preferred: str | None) -> str | None:

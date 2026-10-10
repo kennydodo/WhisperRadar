@@ -1727,3 +1727,15 @@ search/browse/web to ON in `_generic_prepare`; `_deepseek_prepare` always turns
 Search on; `_zai_prepare` tries a "Web Search" control (best effort, only that
 exact label). The Search selects were removed from the forms. ChatGPT and Claude
 search on their own when they need to.
+
+## Script judge: audit first, factual errors block approval
+`studio.rating_prompt` makes the judge audit every material claim BEFORE scoring and
+return `claims` (claim / verified|wrong|unverified / support / correction) and
+`must_fix` (mandatory corrections: passage -> why wrong -> what to change), apart
+from optional `feedback`. `studio.verdict_blockers` turns `must_fix` plus "wrong"
+claims into blockers: `autorun` and `webstages.run_script` fail the round whatever
+the score (production 33 got 9.6 with a misleading calculation). Mandatory fixes
+reach the writer first (`_script_feedback`, scrubbed of original details), and the
+follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
+(no browsing) is logged, not blocking. `plan.meta_mentions` no longer matches bare
+"thumb" ("rule of thumb" looped production 33).

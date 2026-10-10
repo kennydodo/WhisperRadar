@@ -359,6 +359,10 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"no names, companies, places, figures, events or quotes. Describe "
            f"the problem and the kind of change needed; if names or "
            f"scenario are reused, say 'invent your own', never what to use.\n"
+           f"A script with anything in \"must_fix\" (or a claim marked "
+           f"\"wrong\") FAILS whatever its score: never state PASS while "
+           f"asking for a necessary factual correction, and never claim "
+           f"verification you did not do - mark such claims \"unverified\".\n"
            f"Score the writing honestly on its own merits - do not raise or "
            f"lower a score to fit the bar. After the scores, state PASS or "
            f"FAIL separately and list which bar items failed.")
