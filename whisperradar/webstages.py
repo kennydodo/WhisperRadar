@@ -27,7 +27,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from . import autorun, db, external_prompts as ep, studio, webchat
+from . import autorun, db, external_prompts as ep, handover, studio, webchat
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
@@ -452,6 +452,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     soft = rounds is None
     if soft:
         rounds = SOFT_ROUNDS
+    hand = handover.for_production(cfg, ctx["prod"], "script")
+    log(f"hand-over template for the script: {hand['name']}")
 
     def long_enough(text: str) -> bool:        # not just "Thinking..." / a stub
         return _wc(text) >= 0.5 * target
@@ -507,16 +509,15 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                          if str(x).strip()],
             "weak_spans": [str(x) for x in (verdict.get("weak_spans") or [])
                            if str(x).strip()]}
-        # the judge must never hand original-script details to the writer
-        for k in ("feedback", "weak_spans"):
-            judged[k], gone = studio.scrub_for_writer(judged[k], script,
-                                                      source, allow=brief_text)
-            if gone:
-                log(f"dropped {gone} judge note(s) in {k} that carried "
-                    f"details of the original")
+        # what reaches the writer follows the production's hand-over template
         must, unver = studio.verdict_blockers(verdict)
-        judged["must_fix"], _gone = studio.scrub_for_writer(
-            must, script, source, allow=brief_text)
+        (judged["must_fix"], judged["feedback"], judged["weak_spans"],
+         gone) = handover.script_notes(hand, must, judged["feedback"],
+                                       judged["weak_spans"], script, source,
+                                       allow=brief_text)
+        if gone:
+            log(f"dropped {gone} judge note(s) that carried details of the "
+                f"original")
         if unver:
             log(f"{judge} left {unver} claim(s) unverified")
         err = None if score is not None else (
