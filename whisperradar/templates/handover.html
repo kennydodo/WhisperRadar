@@ -81,6 +81,7 @@
       <p>
         <label class="chk"><input type="checkbox" name="scrub" checked> Scrub notes of anything from the original</label>
         <label class="chk"><input type="checkbox" name="guard" checked> Tell the judge to keep the original out of its notes (script)</label>
+        <label class="chk"><input type="checkbox" name="mask_names"> Replace names from the original with [name] (use instead of scrub to keep the points)</label>
       </p>
       {% for stage, plist in parts.items() %}
       <p><b>{{ stage|capitalize }} stage passes:</b>

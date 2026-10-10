@@ -30,6 +30,7 @@ def register(app, cfg) -> None:
             handover.save_user_template(
                 cfg, name, scrub=bool(request.form.get("scrub")),
                 guard=bool(request.form.get("guard")),
+                mask_names=bool(request.form.get("mask_names")),
                 parts=request.form.getlist("parts"),
                 help_text=(request.form.get("help") or "").strip(),
                 instructions={k: request.form.get("ins_" + k)

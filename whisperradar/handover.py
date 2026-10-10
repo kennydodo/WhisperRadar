@@ -55,6 +55,7 @@ def _clean(tid: str, raw: dict) -> dict | None:
     return {"id": tid, "name": name, "builtin": False,
             "scrub": bool(raw.get("scrub", True)),
             "guard": bool(raw.get("guard", True)),
+            "mask_names": bool(raw.get("mask_names", False)),
             "parts": parts, "help": str(raw.get("help") or ""),
             "instructions": _clean_instructions(raw.get("instructions"))}
 
@@ -94,7 +95,8 @@ def all_templates(cfg) -> dict:
 
 def save_user_template(cfg, name: str, scrub: bool, guard: bool,
                        parts: list, help_text: str = "",
-                       instructions: dict | None = None) -> str:
+                       instructions: dict | None = None,
+                       mask_names: bool = False) -> str:
     """Add or replace a user template; returns its id."""
     tid = slug(name)
     if not tid:
@@ -108,6 +110,7 @@ def save_user_template(cfg, name: str, scrub: bool, guard: bool,
     except (OSError, ValueError):
         data = {}
     data[tid] = {"name": name.strip(), "scrub": bool(scrub), "guard": bool(guard),
+                 "mask_names": bool(mask_names),
                  "parts": [p for p in parts if p in ALL_PARTS],
                  "help": help_text,
                  "instructions": _clean_instructions(instructions)}
@@ -154,7 +157,13 @@ def instruction(cfg, prod, key: str) -> str:
     stage = "plan" if key.startswith("plan") else "script"
     mine = (db.stage_extra(prod, key) or "").strip()
     theirs = (for_production(cfg, prod, stage).get("instructions") or {}).get(key, "")
-    return "\n\n".join(t for t in (theirs, mine) if t)
+    if theirs and mine:
+        return (f"Template instructions:\n{theirs}\n\n"
+                f"This production's own instructions:\n{mine}\n\n"
+                "If the two disagree on a point, follow this production's own "
+                "instructions on that point only. Keep every other template "
+                "instruction.")
+    return theirs or mine
 
 
 def for_pid(cfg, pid: int, stage: str) -> dict:
@@ -165,6 +174,29 @@ def for_pid(cfg, pid: int, stage: str) -> dict:
     finally:
         if conn is not None:
             conn.close()
+
+
+# ------------------------------------------------------------ name masking
+def mask_names(items, script: str, source: str, allow: str = "") -> list:
+    """Replace every name the original uses (a capitalised word in mid-sentence)
+    that the script under review does not already use with "[name]". The rest
+    of each note is kept, so the point still reaches the writer."""
+    from . import studio
+    skip = studio._NAME_SKIP
+    src = source or ""
+    lower_src = set(re.findall(r"\b[a-z][a-z']+\b", src))
+    names = {m.group(1) for m in re.finditer(
+        r"(?<![.!?\n]\s)(?<!^)\b([A-Z][a-z]{2,})\b", src)}
+    names = {w for w in names if w.lower() not in skip and w.lower() not in lower_src}
+    own = f"{script or ''} {allow or ''}"
+    names = {w for w in names if not re.search(r"\b" + re.escape(w) + r"\b", own)}
+    out = []
+    for it in items or []:
+        text = str(it)
+        for w in sorted(names, key=len, reverse=True):
+            text = re.sub(r"\b" + re.escape(w) + r"\b(?:'s)?", "[name]", text)
+        out.append(re.sub(r"(?:\[name\]\s*){2,}", "[name] ", text).strip())
+    return out
 
 
 # ------------------------------------------------------------ script stage
@@ -183,6 +215,10 @@ def script_notes(tpl: dict, must: list, feedback: list, weak: list,
         feedback, g1 = studio.scrub_for_writer(feedback, script, source, allow=allow)
         weak, g2 = studio.scrub_for_writer(weak, script, source, allow=allow)
         dropped = g0 + g1 + g2
+    elif tpl.get("mask_names") and source:
+        must = mask_names(must, script, source, allow)
+        feedback = mask_names(feedback, script, source, allow)
+        weak = mask_names(weak, script, source, allow)
     return must, feedback, weak, dropped
 
 
@@ -219,6 +255,11 @@ def plan_verdict(tpl: dict, verdict: dict, own_text: str, original: str) -> dict
             if isinstance(items, list):
                 v[k], _gone = studio.scrub_for_writer(
                     [str(x) for x in items], own_text, original)
+    elif tpl.get("mask_names") and original:
+        for k in ("faults", "fixes"):
+            items = v.get(k)
+            if isinstance(items, list):
+                v[k] = mask_names(items, own_text, original)
     return v
 
 

@@ -242,6 +242,43 @@ class TemplateInstructions(unittest.TestCase):
                              {"script_judge": "ignore pacing"})
             prod = {"handover": json.dumps({"script": tid}),
                     "stage_extras": json.dumps({"script_judge": "check hook"})}
-            self.assertEqual(handover.instruction(cfg, prod, "script_judge"),
-                             "ignore pacing\n\ncheck hook")
+            out = handover.instruction(cfg, prod, "script_judge")
+            self.assertIn("ignore pacing", out)
+            self.assertIn("check hook", out)
+            self.assertLess(out.index("ignore pacing"), out.index("check hook"))
             self.assertEqual(handover.instruction(cfg, prod, "plan"), "")
+
+
+class MaskNames(unittest.TestCase):
+    SRC = "The story opens. Then Zed Exampleton sold Example Freight Co. Open the safe."
+
+    def test_names_masked_points_kept(self):
+        out = handover.mask_names(
+            ["Open with the sale of Example Freight Co by Zed Exampleton."],
+            "Maya counted coins.", self.SRC)
+        self.assertEqual(len(out), 1)
+        self.assertNotIn("Exampleton", out[0])
+        self.assertNotIn("Freight", out[0])
+        self.assertIn("[name]", out[0])
+        self.assertTrue(out[0].startswith("Open with the sale"))
+
+    def test_script_notes_uses_mask(self):
+        tpl = {"parts": ["feedback"], "scrub": False, "mask_names": True}
+        _m, fb, _w, dropped = handover.script_notes(
+            tpl, [], ["Zed Exampleton should open it."], [], "Maya.", self.SRC)
+        self.assertEqual(dropped, 0)
+        self.assertNotIn("Exampleton", fb[0])
+
+    def test_precedence_wording(self):
+        import tempfile, json
+        from types import SimpleNamespace
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            cfg = SimpleNamespace(db_path=str(Path(d) / "x.db"))
+            tid = handover.save_user_template(cfg, "T", False, False, [],
+                                              instructions={"script": "A"})
+            prod = {"handover": json.dumps({"script": tid}),
+                    "stage_extras": json.dumps({"script": "B"})}
+            out = handover.instruction(cfg, prod, "script")
+            self.assertIn("follow this production's own", out)
+            self.assertLess(out.index("A"), out.index("B"))
