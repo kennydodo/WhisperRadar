@@ -1417,6 +1417,36 @@ def create_app(cfg) -> Flask:
             f"A browser window is opening for {webchat.SITES[key].name}: "
             "sign in there and close it when you are done"))
 
+    def _detect_slider_and_save(key, chat, log):
+        """No model menu: some paid sites (ChatGPT) choose the model with an
+        effort slider. Read its stops and keep them as the site's levels."""
+        try:
+            res = chat.detect_slider(key)
+        except Exception as exc:  # noqa: BLE001
+            log(f"could not read an effort slider: {exc}"[:200])
+            return
+        stops = [str(x) for x in res.get("stops") or []]
+        if len(stops) < 2 or len(set(stops)) < 2:
+            log("no effort slider found either"
+                + (f" ({res.get('why')})" if res.get("why") else ""))
+            return
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            saved = json.loads(db.get_setting(conn, "webchat_sites") or "[]")
+            for d in saved:
+                if d.get("key") == key:
+                    d["level_label"] = "Thinking effort"
+                    d["levels"] = [{"label": t, "slider": i}
+                                   for i, t in enumerate(stops)]
+            db.set_setting(conn, "webchat_sites", json.dumps(saved))
+            webchat.load_custom_sites(conn)
+        finally:
+            conn.close()
+        log(f"found an effort slider with {len(stops)} stop(s): "
+            + ", ".join(stops)
+            + (f" (now: {res.get('current')})" if res.get("current") else ""))
+
     def _detect_models_and_save(key, chat, log):
         """Read the model menu of a site and keep it in the site's saved
         definition. Returns the model labels found (empty = none found)."""
@@ -1429,6 +1459,7 @@ def create_app(cfg) -> Flask:
         if not items:
             log("no model menu found on that page - the site's own model "
                 "will be used")
+            _detect_slider_and_save(key, chat, log)
             return []
         conn = db.connect(cfg.db_path)
         db.init_db(conn)

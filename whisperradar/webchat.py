@@ -408,6 +408,107 @@ _TOGGLE_JS = """(a) => {
   e.click(); return 'clicked'; }"""
 
 
+# ---- sliders (ChatGPT's "Thinking effort": Instant / Thinking / ...) -------
+# The level is a slider in a small popover, not a menu. It is read and set
+# with the keyboard (Home, then ArrowRight n times) - the way any ARIA slider
+# works - and the popover's own heading tells which stop it is on.
+_SLIDER_SEL = "[role=slider], input[type=range]"
+_SLIDER_LABEL_JS = """el => { let p = el;
+  for (let i = 0; i < 6 && p; i++) { p = p.parentElement;
+    const t = ((p && p.innerText) || '').trim();
+    if (t) return t.split('\\n')[0].trim(); }
+  return ''; }"""
+
+
+def _first_visible(loc):
+    try:
+        for i in range(loc.count()):
+            if loc.nth(i).is_visible():
+                return loc.nth(i)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _effort_button(page):
+    """The pill that opens the effort popover ("Thinking effort", or the
+    current level's name once one is chosen)."""
+    for name in (re.compile(r"effort", re.I),
+                 re.compile(r"^(instant|thinking|pro)\b", re.I)):
+        b = _first_visible(page.get_by_role("button", name=name))
+        if b is not None:
+            return b
+    return None
+
+
+def _open_slider(page):
+    btn = _effort_button(page)
+    if btn is None:
+        return None, "no effort button on the page"
+    btn.click()
+    page.wait_for_timeout(600)
+    sl = _first_visible(page.locator(_SLIDER_SEL))
+    if sl is None:
+        return None, "the effort popover has no slider"
+    return sl, ""
+
+
+def _close_popover(page):
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def read_slider(page) -> dict:
+    """{stops: [label, ...], current: label, why} for the effort slider."""
+    sl, why = _open_slider(page)
+    if sl is None:
+        _close_popover(page)
+        return {"stops": [], "current": "", "why": why}
+    try:
+        now = sl.evaluate(_SLIDER_LABEL_JS)
+        vmin = sl.get_attribute("aria-valuemin") or sl.get_attribute("min") or "0"
+        vmax = sl.get_attribute("aria-valuemax") or sl.get_attribute("max")
+        n = int(float(vmax) - float(vmin)) + 1 if vmax else 8
+        n = max(1, min(n, 8))
+        sl.focus()
+        page.keyboard.press("Home")
+        page.wait_for_timeout(250)
+        stops = []
+        for _ in range(n):
+            label = sl.evaluate(_SLIDER_LABEL_JS)
+            if not vmax and stops and label == stops[-1]:
+                break
+            stops.append(label)
+            page.keyboard.press("ArrowRight")
+            page.wait_for_timeout(250)
+        return {"stops": stops, "current": now, "why": ""}
+    except Exception as exc:  # noqa: BLE001
+        return {"stops": [], "current": "", "why": f"{type(exc).__name__}: {exc}"[:120]}
+    finally:
+        _close_popover(page)
+
+
+def set_slider(page, index: int, label: str = "") -> str:
+    """Move the effort slider to stop `index`; returns the label it shows."""
+    sl, why = _open_slider(page)
+    if sl is None:
+        _close_popover(page)
+        raise RuntimeError(why)
+    try:
+        sl.focus()
+        page.keyboard.press("Home")
+        for _ in range(max(0, int(index))):
+            page.keyboard.press("ArrowRight")
+            page.wait_for_timeout(120)
+        page.wait_for_timeout(250)
+        return sl.evaluate(_SLIDER_LABEL_JS)
+    finally:
+        _close_popover(page)
+
+
 def _by_id(items, wanted):
     """The entry the run asked for; nothing asked = leave the site as it is."""
     if not wanted:
@@ -427,6 +528,15 @@ def _generic_prepare(spec: dict):
 
         def pick(group, wanted, what):
             item = _by_id(spec.get(group), wanted)
+            if item and item.get("slider") is not None:
+                try:
+                    shown = set_slider(page, int(item["slider"]), item["label"])
+                    ok = shown.strip().lower() == item["label"].strip().lower()
+                    notes.append(f"{what} {item['label']}"
+                                 + ("" if ok else f" (page shows '{shown}')"))
+                except Exception as exc:  # noqa: BLE001
+                    notes.append(f"{what}: {exc}"[:80])
+                return
             if not item or not item.get("item"):
                 return
             try:
@@ -610,6 +720,11 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
                 for f in ("open", "item", "text", "current"):
                     if str(it.get(f) or "").strip():
                         row[f] = str(it[f]).strip()
+                if it.get("slider") is not None:
+                    try:
+                        row["slider"] = max(0, int(it["slider"]))
+                    except (TypeError, ValueError):
+                        pass
                 res.append(row)
             return res
 
@@ -1735,6 +1850,32 @@ class WebChat:
             if cands:
                 break                          # candidates existed; no retry
         return {"open": "", "current": "", "items": []}
+
+    def detect_slider(self, key: str) -> dict:
+        """Read the effort slider of the site's page: {stops, current, why}."""
+        page, site = self._page(key), SITES[key]
+        _goto(page, site.url)
+        _wait_for_box(page, site, time.monotonic)
+        page.wait_for_timeout(2000)
+        res = read_slider(page)
+        if not res["stops"] and _DIAG_ROOT is not None:
+            try:                       # what the popover looks like, for me
+                btn = _effort_button(page)
+                if btn is not None:
+                    btn.click()
+                    page.wait_for_timeout(600)
+                    html = page.evaluate(
+                        "() => [...document.querySelectorAll("
+                        "'[role=dialog],[role=menu],[data-radix-popper-content-wrapper],"
+                        "[class*=popover]')].map(e => e.outerHTML).join('\\n\\n')")
+                    d = _DIAG_ROOT / "diag" / key
+                    d.mkdir(parents=True, exist_ok=True)
+                    (d / "effort-popover.html").write_text(
+                        str(html)[:60000], encoding="utf-8")
+                    _close_popover(page)
+            except Exception:  # noqa: BLE001
+                pass
+        return res
 
     def adopt(self, key: str, url: str) -> None:
         """Continue an earlier chat: the next `new_chat=False` ask opens `url`."""

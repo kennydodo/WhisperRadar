@@ -1792,3 +1792,6 @@ defaults in code, per-channel overrides, locked envelope, copy between channels)
 
 ## Hand-over templates per channel
 A user template may list own-channel ids (`channels`); empty = every channel. A production's dropdown offers built-ins, unrestricted templates and ones listing its channel. Each own channel can have a default template per stage (`own_channels.handover_default`, set on `/handover` > Channel defaults); `handover.effective_id` = production's own pick, else the channel default (only while still offered), else Style only. The production form stores a pick only when it differs from the inherited one.
+
+## Effort slider (ChatGPT paid, 2026-10-10)
+ChatGPT's paid model choice is a "Thinking effort" pill that opens a popover with a slider (Instant / ...), not a menu. `webchat.read_slider` / `set_slider` drive it with the keyboard (Home, then ArrowRight n times; the popover heading is the stop's label). "Find models" falls back to it when no model menu is found (`_detect_slider_and_save`) and saves the stops as the site's `levels` with `slider: <index>`; `_generic_prepare.pick` sets them (no Paid flag needed). If it finds no slider it writes `diag/<site>/effort-popover.html`. Verified only against a mock page (tests/test_webchat_slider.py, skipped without a browser) - not against the real ChatGPT.
