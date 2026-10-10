@@ -496,6 +496,11 @@ def plan_block(plan: dict) -> str:
     if plan.get("keyword"):
         lines.append(f"- Main keyword: {plan['keyword']} - use it naturally "
                      "where it fits, never forced")
+    n = list_count(plan["title"])
+    if n:
+        lines.append(f"- The title promises exactly {n} points: the script "
+                     f"must have exactly {n} distinct points, clearly "
+                     "separated, no more and no fewer.")
     lines.append("- RULE: the script is spoken narration only. It must NEVER "
                  "mention or allude to the thumbnail, the cover, the title, "
                  "the packaging, or this note. A judge must list every such "
