@@ -87,5 +87,27 @@ class PromptTests(unittest.TestCase):
         self.assertEqual(dict(mix)["a question"], 40)
 
 
+
+class JudgeNicheTests(unittest.TestCase):
+    def test_judge_block_has_strictness_and_checks(self):
+        b = np_.judge_block(np_.playbook_for("Personal Finance"))
+        self.assertIn("Personal finance", b)
+        self.assertIn("NOT blockers", b)
+        self.assertIn("counted twice", b)
+        g = np_.judge_block(None)
+        self.assertIn("General audience", g)
+
+    def test_user_strictness_is_honoured(self):
+        import json, os, tempfile
+        f = os.path.join(tempfile.mkdtemp(), "p.json")
+        open(f, "w").write(json.dumps({"hist": {
+            "name": "History", "match": ["history"], "values": ["x"],
+            "strictness": "strict", "checks": ["is the date right"]}}))
+        pb = np_.playbook_for("History facts", np_.user_playbooks(f))
+        b = np_.judge_block(pb)
+        self.assertIn("any claim or number", b)
+        self.assertIn("is the date right", b)
+
+
 if __name__ == "__main__":
     unittest.main()

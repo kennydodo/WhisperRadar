@@ -3355,9 +3355,22 @@ def verdict_blockers(reply: dict) -> tuple[list[str], int]:
     return out, unverified
 
 
+def judge_niche_block(cfg, genre: str) -> str:
+    """How strict the script judge is for this channel's niche."""
+    from pathlib import Path
+    from . import niche_profile as npf
+    try:
+        user = npf.user_playbooks(
+            Path(cfg.db_path).parent / npf.PLAYBOOK_FILE)
+    except Exception:  # noqa: BLE001
+        user = {}
+    return npf.judge_block(npf.playbook_for(genre, user) or npf.GENERIC)
+
+
 def rating_prompt(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
-                  extra_direction: str = "", original: str = "") -> str:
+                  extra_direction: str = "", original: str = "",
+                  niche_block: str = "", earlier: list | None = None) -> str:
     """`source` is the writer's BRIEF (topic + keywords); `original` is the
     existing video's script, shown to the judge ONLY to compare tone, style,
     hook, flow and ending - never for facts, points or names."""
@@ -3381,8 +3394,10 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
             f"differs from the title or the ORIGINAL's own structure or "
             f"count. Invented facts are still penalised.\n\n")
     return (
-        f"You are a ruthless YouTube script editor for the channel genre "
-        f"'{genre}'. Score this script for the video \"{title}\".\n\n"
+        f"You are a demanding but fair YouTube script editor for the channel "
+        f"genre '{genre}'. Score this script for the video \"{title}\". "
+        f"The bar is a script a viewer enjoys and is not misled by - not a "
+        f"fact-check audit.\n\n"
         f"Score each criterion 1-10:\n{rubric}\n\n"
         f"Measured 5-gram overlap with the original: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
@@ -3397,20 +3412,25 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"found, and the correction. If you cannot browse or cannot find "
         f"support, the status is \"unverified\" - never write that all "
         f"claims check out without evidence.\n"
-        f"- CHECK THE REASONING BEHIND THE NUMBERS, not only the arithmetic: "
-        f"does the character actually take the action that produces the "
-        f"savings or result; is an allocated or fixed cost confused with an "
-        f"avoidable expense; is a purchase cost, payment or saving counted "
-        f"twice; do investment projections state the contribution timing, "
-        f"the return assumption and what is excluded; does anything "
-        f"contradict something said earlier in the script?\n"
-        f"- FACTUAL ERRORS BLOCK APPROVAL: a strong hook and good pacing "
-        f"never compensate for wrong arithmetic, a misleading financial claim "
-        f"or a contradiction. Put every such error in \"must_fix\". A script "
-        f"with anything in \"must_fix\" or any claim marked \"wrong\" "
-        f"cannot pass and the score must reflect it; never say PASS while "
-        f"asking for a necessary factual correction. Invented story details "
-        f"(characters, companies, places) are fine and are NOT errors.\n"
+        f"- KEEP THE REPLY SHORT so it is never cut off: list at most 8 of the "
+        f"most important claims, each \"support\" and \"correction\" under "
+        f"20 words, and finish the JSON.\n"
+        f"- {niche_block or 'Judge claims with entertainment-grade accuracy.'}\n"
+        f"- SEVERITY. \"must_fix\" is ONLY for a real error that would "
+        f"mislead the viewer or contradict the script (a wrong figure that "
+        f"changes the conclusion, double counting, a false claim stated as "
+        f"fact). Maximum 3 items, the most serious first. Anything smaller "
+        f"- rounding, simplification, an unstated assumption, a possible "
+        f"nitpick - goes in \"feedback\" and never blocks. A script with "
+        f"anything in \"must_fix\" or a claim marked \"wrong\" cannot "
+        f"pass; one without them is judged on the writing. Invented story "
+        f"details (characters, companies, places) are fine and are NOT "
+        f"errors.\n"
+        + (f"- EARLIER ROUNDS already raised: {'; '.join(str(x) for x in earlier)[:1500]}. "
+           f"Check whether each is fixed. Raise a NEW must_fix only for a "
+           f"material error you would have flagged in round 1; new polish "
+           f"goes in feedback.\n" if earlier else "")
+        +
         f"- Every \"must_fix\" and \"feedback\" entry is usable by the "
         f"writer as written: the passage of the SCRIPT, why it is wrong, "
         f"and what must change. Keep mandatory corrections (must_fix) apart "
@@ -3474,7 +3494,7 @@ def _parse_json_object(text: str) -> dict:
 def rate_script(cfg, title: str, genre: str, script: str, source: str,
                 style_guide: str, provider: str | None,
                 temperature: float = 1.0, extra_direction: str = "",
-                original: str = "") -> dict:
+                original: str = "", earlier: list | None = None) -> dict:
     """LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
     Never raises: a judge failure must not lose a usable draft.
 
@@ -3483,7 +3503,9 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     between attempts, the judge scoring it should not."""
     overlap = overlap_ratio(script, original or source)
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap,
-                           extra_direction=extra_direction, original=original)
+                           extra_direction=extra_direction, original=original,
+                           niche_block=judge_niche_block(cfg, genre),
+                           earlier=earlier)
     try:
         # 900 was a flat guess (see 9aafa69) sized for a bare score - it never
         # accounted for the 7-field criteria object plus feedback[] plus

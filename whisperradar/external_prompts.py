@@ -301,7 +301,8 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
         extra_direction=packplan.with_plan(cfg, prod,
                                          db.stage_extra(prod, "script")),
         original=(_ORIG_TOKEN if (files is not None and source.strip())
-                  else source))
+                  else source),
+        niche_block=studio.judge_niche_block(cfg, prod["genre"]))
     if files is not None:
         text = _swap_blocks(
             text, out_files,

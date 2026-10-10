@@ -1755,3 +1755,7 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 - `measure` now reports the formula mix of the niche's winners (question, why-explanation, number list, first person, blunt truth...), shown to the titler once the sample is big enough (>= 6 titles, 3 channels). Learning from your published titles already exists (`learning.context_text`).
 
 - The plan judge also lists "weak" options (not failures, just the limpest hooks); `apply_pick` drops them (never the pick, never below MIN_TITLES). A numbered original rejects its own count (tested for 10 -> 8/12 ok).
+
+## Niche-aware script judge
+- `rating_prompt(..., niche_block=, earlier=)`: the judge is "demanding but fair"; `niche_profile.judge_block(playbook)` says how strict this niche is (`strictness`: strict | balanced | light, per playbook, set in niche_playbooks.json) and which reasoning `checks` matter. `must_fix` is only for errors that mislead the viewer or contradict the script (max 3); rounding/simplification/unstated assumptions are feedback. Retries pass the earlier must_fix (`earlier`) so new nitpicks don't block. The reply must be short (<= 8 claims, < 20 words each) so web chats don't cut the JSON.
+- Default `script_min_rating` is 8.5. The web-chat script loop has a soft cap (`SOFT_ROUNDS` = 6): it then accepts the best draft with no must_fix, sound length/ending, no copying and a score within `SOFT_MARGIN` (1.0) of the bar. An explicit `rounds=` still means a hard cap.

@@ -35,6 +35,8 @@ INLINE_MAX_CHARS = 60000
 # None = no limit: the loop runs until the judge passes the work (or you stop
 # it). Only an explicit `rounds=` caps it.
 MAX_ROUNDS = None
+SOFT_ROUNDS = 6          # an uncapped loop stops here and takes the best
+SOFT_MARGIN = 1.0        # ... if it has no blocker and is within this of the bar
 MAX_CONTINUES = 8
 _CHROME_LINES = {"json", "copy", "download", "copy code", "code"}
 
@@ -447,6 +449,9 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     min_rating = float(eff["script_min_rating"])
     max_overlap = float(eff["script_max_overlap"])
     hard_overlap = float(eff["script_hard_overlap"])
+    soft = rounds is None
+    if soft:
+        rounds = SOFT_ROUNDS
 
     def long_enough(text: str) -> bool:        # not just "Thinking..." / a stub
         return _wc(text) >= 0.5 * target
@@ -567,6 +572,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                          "feedback": judged["feedback"],
                          "weak_spans": judged["weak_spans"],
                          "must_fix": judged.get("must_fix") or [],
+                         "struct": bool(struct.get("flag")),
                          "error": err})
         _keep_attempts(cfg, pid, attempts)
         if passed:
@@ -586,6 +592,24 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     best = max(attempts, key=lambda a: (not a["too_short"],
                                         not a["too_long"], not a["cut"],
                                         a["score"]))
+    if soft and attempts and not should_stop():
+        # the round cap was reached: a draft with no mandatory fix, a sound
+        # length and ending, no copying and a score near the bar is taken
+        ok = [a for a in attempts
+              if not a["must_fix"] and not a["cut"] and not a["too_long"]
+              and not a["too_short"] and not a.get("struct")
+              and a["overlap"] <= hard_overlap and a["score"]
+              and a["score"] >= min_rating - SOFT_MARGIN]
+        if ok:
+            pick = max(ok, key=lambda a: a["score"])
+            save_script(cfg, pid, pick["script"],
+                        f"web chat {writer}/{judge}: best of {rounds} "
+                        f"rounds, score {pick['score']} (bar "
+                        f"{min_rating:g}), no mandatory fixes",
+                        advance=True)
+            log(f"round cap reached: took the best draft (score "
+                f"{pick['score']}, no mandatory fixes); next stage unlocked")
+            return pick["script"]
     save_script(cfg, pid, best["script"],
                 f"web chat {writer}/{judge}: NOT accepted after {rounds} "
                 f"rounds ({'; '.join(best['reasons'])})", advance=False)
@@ -693,10 +717,12 @@ def _script_followup(script: str, words: int | None = None,
         "The writer revised the script after your review. Judge it again "
         "under the SAME rules and reply in exactly the SAME JSON format as "
         "before. First check whether each point you raised earlier is now "
-        "addressed, then run a FRESH audit of the COMPLETE revised script "
-        "(every material claim, calculation and the reasoning behind the "
-        "numbers - do not carry the earlier approval forward), and check "
-        "that nothing got worse. Fill \"claims\" and \"must_fix\" again. "
+        "addressed, then re-read the COMPLETE revised script for material "
+        "errors (do not carry the earlier approval forward blindly). Keep "
+        "the same severity rules: a NEW must_fix only for a real error that "
+        "would mislead the viewer or contradict the script, at most 3 in "
+        "total; new polish goes in feedback and never blocks. Fill "
+        "\"claims\" and \"must_fix\" again. "
         "Source material and "
         "rules are unchanged (use the ones from earlier in this chat), "
         "including: the script must never mention the thumbnail, cover, "

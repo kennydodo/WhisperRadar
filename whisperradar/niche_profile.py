@@ -44,6 +44,16 @@ PLAYBOOKS = {
                  "figures promised as results, named stocks or funds, and "
                  "anything that reads as personal financial advice.",
         "match": ("finance", "invest", "money", "wealth"),
+        "strictness": "balanced",
+        "checks": [
+            "does the character actually take the action that produces the "
+            "saving or result",
+            "is a fixed or allocated cost confused with an avoidable one",
+            "is a cost, payment or saving counted twice",
+            "do projections say the timing, the return assumed and what is "
+            "left out (a clearly illustrative example needs no more)",
+            "does anything contradict something said earlier",
+        ],
     },
 }
 
@@ -66,6 +76,28 @@ GENERIC = {
     "avoid": "clickbait promises the video cannot keep, shouting, and "
              "claims presented as guaranteed.",
     "match": (),
+    "strictness": "balanced",
+    "checks": [
+        "does anything contradict something said earlier",
+        "is a real-world claim stated as certain that is plainly false",
+        "does a number or calculation not add up",
+    ],
+}
+
+STRICTNESS = {
+    "strict": "This niche can hurt viewers when wrong: any claim or number "
+              "a viewer might act on that is false or misleading blocks "
+              "approval. Rounding and plainly illustrative examples are "
+              "still fine.",
+    "balanced": "Entertainment-grade accuracy, not an audit. Only an error "
+                "that would MISLEAD the viewer or contradict the script "
+                "itself blocks approval. Rounding, simplification, rules of "
+                "thumb, illustrative or hypothetical figures, and "
+                "assumptions that are not spelled out are NOT blockers: put "
+                "them in optional feedback.",
+    "light": "Story-first niche: only an outright false real-world fact "
+             "stated as certain, or a self-contradiction, blocks approval. "
+             "Everything else is optional feedback.",
 }
 
 PLAYBOOK_FILE = "niche_playbooks.json"   # next to the database; yours
@@ -98,6 +130,11 @@ def user_playbooks(path) -> dict:
         if vals and match:
             out[k] = {"name": str(v.get("name") or k), "values": vals,
                       "voice": str(v.get("voice") or GENERIC["voice"]),
+                      "strictness": (str(v.get("strictness")).lower()
+                                     if str(v.get("strictness")).lower()
+                                     in STRICTNESS else "balanced"),
+                      "checks": [str(x) for x in v.get("checks") or []
+                                 if str(x).strip()] or GENERIC["checks"],
                       "avoid": str(v.get("avoid") or GENERIC["avoid"]),
                       "match": tuple(match), "user": True}
     return out
@@ -261,4 +298,16 @@ def prompt_block(profile: dict | None) -> str:
                          f"{st['n']} titles, {profile['channels']} channel(s)): "
                          + "; ".join(bits) + ". Match the voice and the "
                          "ideas; the shape and length rules still apply.")
+    return "\n".join(lines)
+
+
+def judge_block(pb: dict | None) -> str:
+    """The script judge's niche section: how factual this niche must be and
+    which reasoning checks matter here."""
+    pb = pb or GENERIC
+    lines = [f"NICHE: {pb.get('name', 'General audience')}. "
+             + STRICTNESS.get(pb.get("strictness"), STRICTNESS["balanced"])]
+    checks = pb.get("checks") or GENERIC["checks"]
+    lines.append("Reasoning checks that matter in this niche: "
+                 + "; ".join(checks) + ".")
     return "\n".join(lines)

@@ -325,7 +325,7 @@ SPEC: list[dict] = [
                 "one-image-per-cue is a fault.",
     },
     {
-        "key": "script_min_rating", "type": "float", "default": 9.0,
+        "key": "script_min_rating", "type": "float", "default": 8.5,
         "min": 1.0, "max": 10.0,
         "label": "Script: minimum rating",
         "help": "The script stage rates each draft 1-10 by rubric and only "

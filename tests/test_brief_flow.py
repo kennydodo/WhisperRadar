@@ -108,8 +108,8 @@ class FactualBlockersTests(Base):
     def test_judge_prompt_demands_audit_and_blocks_on_errors(self):
         text = ep.script_judge_prompt(self.cfg, self.pid, "A script.")
         for needle in ("AUDIT FIRST, SCORE SECOND", "unverified",
-                       "FACTUAL ERRORS BLOCK APPROVAL", "must_fix",
-                       "REASONING BEHIND THE NUMBERS"):
+                       "SEVERITY", "must_fix", "Maximum 3 items",
+                       "Reasoning checks that matter in this niche"):
             self.assertIn(needle, text)
 
     def test_script_with_must_fix_cannot_pass_even_at_9_6(self):
@@ -127,7 +127,8 @@ class FactualBlockersTests(Base):
         self.assertIn("MANDATORY corrections", back)
         self.assertIn("$300, not $500", back)
         follow = [c["prompt"] for c in t.calls if c["site"] == "deepseek"][1]
-        self.assertIn("FRESH audit", follow)
+        self.assertIn("same severity rules", follow)
+        self.assertIn("at most 3", follow)
 
 
 class WebSearchAlwaysOn(unittest.TestCase):

@@ -744,6 +744,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
                                     facts, style_guide, judge,
                                     original=source_text,
+                                    earlier=(previous or {}).get("must_fix"),
                                     temperature=eff["script_judge_temperature"],
                                     extra_direction=packplan.with_plan(cfg, prod,
                                          db.stage_extra(prod, "script")))
@@ -781,6 +782,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             + (rating["feedback"] or rating["weak_spans"]), text, source_text,
             allow=facts or "")[0]
         previous = {"overlap": overlap, "runs": runs,
+                    "must_fix": list(rating.get("must_fix") or []),
                     "feedback": safe_fb,
                     "too_long": too_long, "too_short": too_short}
 
