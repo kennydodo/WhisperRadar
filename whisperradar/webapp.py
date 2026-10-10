@@ -34,6 +34,7 @@ from flask import (
 )
 
 from . import external_prompts
+from . import handover
 from . import demand as demand_mod
 from . import niche_chips
 from . import niche as niche_mod
@@ -2932,6 +2933,10 @@ def create_app(cfg) -> Flask:
             source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
+            handover_templates=list(handover.all_templates(cfg).values()),
+            handover_choice={s: (handover.choice_for(prod, s)
+                                 or handover.DEFAULT_ID)
+                             for s in handover.STAGES},
             stage_labels=stage_labels, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob._real(),
             prod_voice=prod["voice"] or eff["voice"],
@@ -4828,5 +4833,7 @@ def create_app(cfg) -> Flask:
                      daemon=True).start()
     from . import look_routes
     look_routes.register(app, cfg, research_job)
+    from . import handover_routes
+    handover_routes.register(app, cfg)
 
     return app

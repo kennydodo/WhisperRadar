@@ -827,20 +827,16 @@ def judge_followup(plan: dict, faults: list[str]) -> str:
 
 
 def safe_verdict(verdict: dict, plan: dict, source_title: str,
-                 transcript: str, package_text: str) -> dict:
-    """What may go back to the title writer: no pick, no alternates, and no
-    note that carries anything of the original title or script."""
-    from . import studio
-    v = {k: val for k, val in (verdict or {}).items()
-         if k not in ("closest", "alternates", "best", "pick", "narrow",
-                     "weak")}
+                 transcript: str, package_text: str, hand: dict | None = None
+                 ) -> dict:
+    """What may go back to the title writer: never the judge's selection (pick,
+    alternates ...); the notes follow the production's hand-over template
+    (handover.py) - by default no note that carries anything of the original
+    title or script."""
+    from . import handover
     own = _plan_json(plan) + "\n" + package_text
-    for k in ("faults", "fixes"):
-        items = v.get(k)
-        if isinstance(items, list):
-            v[k], _gone = studio.scrub_for_writer(
-                [str(x) for x in items], own, f"{source_title}\n{transcript}")
-    return v
+    return handover.plan_verdict(hand or handover.BUILTIN[handover.DEFAULT_ID],
+                                 verdict, own, f"{source_title}\n{transcript}")
 
 
 def writer_feedback(verdict: dict, faults: list[str]) -> str:
@@ -954,6 +950,8 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
              min_score: float = MIN_SCORE, same_chats: bool = True) -> dict:
     from . import studio, webstages as ws
     ctx = context(cfg, pid)
+    from . import handover
+    hand = handover.for_pid(cfg, pid, "plan")
     log(f"packaging plan for \"{ctx['title'][:70]}\" "
         f"({len(ctx['refs'])} reference title(s))")
     # one production = one chat per LLM: continue the chats the production
@@ -1048,7 +1046,8 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
             break
         reply = transport.ask(writer, writer_feedback(
             safe_verdict(verdict or {"faults": ["no verdict"]}, plan,
-                         src_title, transcript, _package_text(ctx["package"])),
+                         src_title, transcript, _package_text(ctx["package"]),
+                         hand),
             faults), (), new_chat=False, ready=ws._has_json)
     chosen = best[1]["title"]
     plan = apply_pick(best[1], best[2], src_title)
@@ -1094,8 +1093,9 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
     providers (what auto-run uses - no browser). Stateless calls, so each
     revision is sent with the previous attempt and the verdict. With no judge
     available a plan with no rule faults is accepted (score stays empty)."""
-    from . import studio
+    from . import handover, studio
     ctx = context(cfg, pid)
+    hand = handover.for_pid(cfg, pid, "plan")
     log(f"packaging plan for \"{ctx['title'][:70]}\" "
         f"({len(ctx['refs'])} reference title(s))")
     if not ctx["brief"] and ctx["transcript"]:
@@ -1157,7 +1157,8 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
                       safe_verdict(verdict or {"faults": faults
                                                or ["no verdict"]}, plan,
                                    src_title, transcript,
-                                   _package_text(ctx["package"])), faults))
+                                   _package_text(ctx["package"]), hand),
+                      faults))
     if best is None:
         raise RuntimeError("the LLM returned no usable packaging plan")
     chosen = best[1]["title"]

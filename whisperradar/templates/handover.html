@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Hand-over templates</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+          --muted:#8b93a3; --accent:#4f8cff; --green:#3fb96f; --red:#e05c5c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 2px; } h2 { font-size:16px; margin:0 0 8px; }
+  .sub, .muted { color:var(--muted); }
+  .panel { background:var(--panel); border:1px solid var(--border);
+           border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  a { color:var(--accent); text-decoration:none; }
+  input[type=text], textarea { background:#0f1115; color:var(--text); border:1px solid var(--border);
+                  border-radius:6px; padding:6px 8px; width:100%; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px;
+           padding:7px 14px; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--text); }
+  .msg { color:var(--green); } .err { color:var(--red); }
+  .badge { font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px; color:var(--muted); }
+  label.chk { display:inline-block; margin-right:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p><a href="/studio">&larr; Studio</a></p>
+  <h1>Hand-over templates</h1>
+  <p class="sub">What the judge passes to the writer. Pick one per stage on each production.
+    <b>Style only</b> and <b>Full feedback</b> are built in; add your own below.</p>
+  {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+  {% for t in templates %}
+  <div class="panel">
+    <h2>{{ t['name'] }} {% if t['builtin'] %}<span class="badge">built in</span>{% endif %}</h2>
+    <div class="muted">{{ t['help'] or '' }}</div>
+    <div style="margin-top:6px">
+      Scrub notes of anything from the original: <b>{{ 'yes' if t['scrub'] else 'no' }}</b> &middot;
+      Tell the judge to keep the original out: <b>{{ 'yes' if t['guard'] else 'no' }}</b><br>
+      Passes: {% for stage, plist in parts.items() %}{% for key, label in plist %}{% if key in t['parts'] %}{{ label }} ({{ stage }}); {% endif %}{% endfor %}{% endfor %}
+    </div>
+    {% if not t['builtin'] %}
+    <form method="post" action="/handover/delete/{{ t['id'] }}" style="margin-top:8px"
+          onsubmit="return confirm('Delete this template? Productions using it fall back to Style only.')">
+      <button class="ghost" type="submit">Delete</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <div class="panel">
+    <h2>Add or replace a template</h2>
+    <form method="post" action="/handover/save">
+      <p><input type="text" name="name" placeholder="Template name" required></p>
+      <p><input type="text" name="help" placeholder="Short description (optional)"></p>
+      <p>
+        <label class="chk"><input type="checkbox" name="scrub" checked> Scrub notes of anything from the original</label>
+        <label class="chk"><input type="checkbox" name="guard" checked> Tell the judge to keep the original out of its notes (script)</label>
+      </p>
+      {% for stage, plist in parts.items() %}
+      <p><b>{{ stage|capitalize }} stage passes:</b>
+        {% for key, label in plist %}
+        <label class="chk"><input type="checkbox" name="parts" value="{{ key }}" checked> {{ label }}</label>
+        {% endfor %}
+      </p>
+      {% endfor %}
+      <button type="submit">Save template</button>
+    </form>
+  </div>
+</div>
+</body>
+</html>

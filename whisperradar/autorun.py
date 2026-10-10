@@ -24,7 +24,7 @@ from collections import Counter
 
 from pathlib import Path
 
-from . import ai33, briefs, db, services, settings, studio, transcribe
+from . import ai33, briefs, db, handover, services, settings, studio, transcribe
 from . import plan as packplan
 from .cli import format_duration
 
@@ -659,6 +659,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
     # JSON-parsing bug used to cause on nearly every real call), "best" fell
     # through to "lowest overlap wins", a tiebreak with no relationship to
     # writing quality at all.
+    hand = handover.for_production(cfg, prod, "script")
     baseline = None
     if script_path.exists():
         existing_text = script_path.read_text(encoding="utf-8")
@@ -667,7 +668,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         existing_rating = studio.rate_script(
             cfg, prod["title"], prod["genre"], existing_text, facts,
             style_guide, judge, temperature=eff["script_judge_temperature"],
-            original=source_text,
+            original=source_text, scrub=hand["scrub"], guard=hand["guard"],
             extra_direction=packplan.with_plan(cfg, prod,
                                          db.stage_extra(prod, "script")))
         existing_passed, _why, _tl, _ts = _script_gate(
@@ -744,6 +745,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         rating = studio.rate_script(cfg, prod["title"], prod["genre"], text,
                                     facts, style_guide, judge,
                                     original=source_text,
+                                    scrub=hand["scrub"], guard=hand["guard"],
                                     earlier=(previous or {}).get("must_fix"),
                                     temperature=eff["script_judge_temperature"],
                                     extra_direction=packplan.with_plan(cfg, prod,
@@ -777,10 +779,8 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             _log_line(log_attempt + " - accepted")
             break
         _log_line(log_attempt + " - rejected (" + "; ".join(why) + ")")
-        safe_fb = studio.scrub_for_writer(
-            list(rating.get("must_fix") or [])
-            + (rating["feedback"] or rating["weak_spans"]), text, source_text,
-            allow=facts or "")[0]
+        safe_fb = handover.retry_notes(hand, rating, text, source_text,
+                                       allow=facts or "")
         previous = {"overlap": overlap, "runs": runs,
                     "must_fix": list(rating.get("must_fix") or []),
                     "feedback": safe_fb,

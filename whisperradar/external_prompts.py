@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import re
 
-from . import autorun, briefs, db, studio
+from . import autorun, briefs, db, handover, studio
 from . import plan as packplan
 
 
@@ -279,6 +279,7 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
     own_script = not script
     ctx = _context(cfg, pid)
     eff, prod = ctx["eff"], ctx["prod"]
+    guard = handover.for_production(cfg, prod, "script")["guard"]
     style = (style_guide if style_guide is not None
              else _writing_style(ctx)).strip()
     source = autorun._source_transcript_text(cfg, pid)
@@ -302,7 +303,8 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                                          db.stage_extra(prod, "script")),
         original=(_ORIG_TOKEN if (files is not None and source.strip())
                   else source),
-        niche_block=studio.judge_niche_block(cfg, prod["genre"]))
+        niche_block=studio.judge_niche_block(cfg, prod["genre"]),
+        guard=guard)
     if files is not None:
         text = _swap_blocks(
             text, out_files,
@@ -355,11 +357,15 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"original's facts or points.\n"
            f"If the script mentions any of those, FAIL it, quote each "
            f"sentence in weak_spans and write in feedback: remove it.\n"
-           f"Your feedback and weak_spans are forwarded to the writer, who has "
-           f"never seen the original. Put NOTHING from the original in them: "
-           f"no names, companies, places, figures, events or quotes. Describe "
-           f"the problem and the kind of change needed; if names or "
-           f"scenario are reused, say 'invent your own', never what to use.\n"
+           + (f"Your feedback and weak_spans are forwarded to the writer, who has "
+              f"never seen the original. Put NOTHING from the original in them: "
+              f"no names, companies, places, figures, events or quotes. Describe "
+              f"the problem and the kind of change needed; if names or "
+              f"scenario are reused, say 'invent your own', never what to use.\n"
+              if guard else
+              f"Your feedback and weak_spans are forwarded to the writer, who "
+              f"has never seen the original. You may refer to the original to "
+              f"explain what to change.\n") +
            f"A script with anything in \"must_fix\" (or a claim marked "
            f"\"wrong\") FAILS whatever its score: never state PASS while "
            f"asking for a necessary factual correction, and never claim "

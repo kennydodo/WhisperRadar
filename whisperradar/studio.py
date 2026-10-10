@@ -3373,8 +3373,11 @@ def judge_niche_block(cfg, genre: str) -> str:
 def rating_prompt(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "",
-                  niche_block: str = "", earlier: list | None = None) -> str:
-    """`source` is the writer's BRIEF (topic + keywords); `original` is the
+                  niche_block: str = "", earlier: list | None = None,
+                  guard: bool = True) -> str:
+    """`guard` False = the hand-over template lets the judge speak about the
+    original to the writer (see handover.py).
+    `source` is the writer's BRIEF (topic + keywords); `original` is the
     existing video's script, shown to the judge ONLY to compare tone, style,
     hook, flow and ending - never for facts, points or names."""
     rubric = "\n".join(f"- {name}: {desc}" for name, desc in RATING_RUBRIC)
@@ -3448,6 +3451,7 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"echoes its opening or ending wording, fail originality.\n"
         f"- Check the KEYWORDS from the BRIEF are used naturally; list any "
         f"that are missing in feedback.\n"
+        + (
         f"- Your feedback and weak_spans are forwarded to the writer, who has "
         f"NEVER seen the ORIGINAL. They may contain ONLY: advice about tone, "
         f"style, pacing, hook strength or ending strength in your own words "
@@ -3456,6 +3460,11 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"from the ORIGINAL: no sentence, phrase, name, company, place, "
         f"figure, event, opening or ending, and never 'do what the original "
         f"does'. Never tell the writer to match the original's facts.\n"
+          if guard else
+          f"- Your feedback and weak_spans are forwarded to the writer, who "
+          f"has never seen the ORIGINAL. You may refer to it to explain what "
+          f"to change.\n")
+        +
         f"{names_note}\n\n"
         f"BRIEF AND KEYWORDS GIVEN TO THE WRITER:\n{brief or '(none)'}\n\n"
         f"ORIGINAL (for tone, style, hook, flow and ending ONLY):\n"
@@ -3497,8 +3506,12 @@ def _parse_json_object(text: str) -> dict:
 def rate_script(cfg, title: str, genre: str, script: str, source: str,
                 style_guide: str, provider: str | None,
                 temperature: float = 1.0, extra_direction: str = "",
-                original: str = "", earlier: list | None = None) -> dict:
-    """LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
+                original: str = "", earlier: list | None = None,
+                scrub: bool = True, guard: bool = True) -> dict:
+    """`scrub`/`guard` come from the production's hand-over template
+    (handover.py): scrub = drop judge notes that carry details of the original,
+    guard = tell the judge to keep the original out of its notes.
+    LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
     Never raises: a judge failure must not lose a usable draft.
 
     `temperature` defaults to 1.0 (matching every other LLM call) but the
@@ -3508,7 +3521,7 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap,
                            extra_direction=extra_direction, original=original,
                            niche_block=judge_niche_block(cfg, genre),
-                           earlier=earlier)
+                           earlier=earlier, guard=guard)
     try:
         # 900 was a flat guess (see 9aafa69) sized for a bare score - it never
         # accounted for the 7-field criteria object plus feedback[] plus
@@ -3535,7 +3548,7 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     feedback = [str(f) for f in (reply.get("feedback") or []) if str(f).strip()]
     weak = [str(s) for s in (reply.get("weak_spans") or []) if str(s).strip()]
     must, unverified = verdict_blockers(reply)
-    if original:     # nothing of the original may reach the writer
+    if original and scrub:     # nothing of the original may reach the writer
         must, _g0 = scrub_for_writer(must, script, original, allow=source)
         feedback, _g1 = scrub_for_writer(feedback, script, original, allow=source)
         weak, _g2 = scrub_for_writer(weak, script, original, allow=source)

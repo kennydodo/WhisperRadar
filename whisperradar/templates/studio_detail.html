@@ -1120,6 +1120,28 @@
   </div>
 
   <div class="panel">
+    <h2 style="margin-top:0">What the judge passes to the writer</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:6px">
+      Per stage. <b>Style only</b> is the safe default: notes are scrubbed of anything from the
+      original. <b>Full feedback</b> passes everything as the judge wrote it (details of the
+      original can reach the writer). <a href="/handover">Manage templates</a>.
+    </div>
+    <form class="row" method="post" action="/studio/{{ prod['id'] }}/handover">
+      {% for st, label in (('plan', 'Plan'), ('script', 'Script')) %}
+      <label>{{ label }}
+        <select name="{{ st }}">
+          {% for t in handover_templates %}
+          <option value="{{ t['id'] }}" {{ 'selected' if handover_choice[st] == t['id'] else '' }}
+                  title="{{ t['help'] }}">{{ t['name'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+      <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save</button>
+    </form>
+  </div>
+
+  <div class="panel">
     <h2 style="margin-top:0">Additional direction for the LLM &mdash; {{ STAGE_DISPLAY.get(stage, stage) }} stage</h2>
     {% if stage in ("style", "script", "shots") %}
     <div class="muted" style="font-size:12px; margin-bottom:6px">Injected into the LLM prompt on this stage only. Every stage keeps its own direction - what you write here does not affect the other stages.</div>

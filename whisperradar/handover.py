@@ -1,0 +1,200 @@
+"""Hand-over templates: what the judge passes to the writer, per production and stage.
+
+A template says (a) which parts of the judge's verdict go to the writer, (b) whether
+the code scrubs notes that carry details of the original (names, quotes), and (c)
+whether the judge is told to keep the original out of its notes.
+
+Built-ins:
+  style - the current behaviour: every part, scrubbed, judge told to keep the original out.
+  full  - how it used to be: every part as the judge wrote it, no scrub, no such warning.
+Your own templates live in handover_templates.json next to the database.
+A production picks one per stage (productions.handover = {"plan": id, "script": id});
+nothing picked = "style".
+"""
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+TEMPLATE_FILE = "handover_templates.json"
+DEFAULT_ID = "style"
+STAGES = ("plan", "script")
+PARTS = {
+    "script": (("must_fix", "Must-fix corrections"),
+               ("feedback", "Feedback (optional polish)"),
+               ("weak_spans", "Weak passages")),
+    "plan": (("faults", "Faults"), ("fixes", "Fixes"),
+             ("other", "Any other verdict notes")),
+}
+ALL_PARTS = tuple(p for s in PARTS.values() for p, _ in s)
+
+BUILTIN = {
+    "style": {"id": "style", "name": "Style only (current)", "builtin": True,
+              "scrub": True, "guard": True, "parts": list(ALL_PARTS),
+              "help": "Notes are scrubbed of anything from the original; the "
+                      "judge is told to describe the problem, never the original."},
+    "full": {"id": "full", "name": "Full feedback (as it used to be)",
+             "builtin": True, "scrub": False, "guard": False,
+             "parts": list(ALL_PARTS),
+             "help": "Everything the judge writes goes to the writer as written, "
+                     "including details of the original (names, hook, ending). "
+                     "Expect copied names and story beats."},
+}
+
+
+def template_path(cfg) -> Path:
+    return Path(cfg.db_path).parent / TEMPLATE_FILE
+
+
+def _clean(tid: str, raw: dict) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    name = str(raw.get("name") or tid).strip()
+    parts = [p for p in (raw.get("parts") or []) if p in ALL_PARTS]
+    return {"id": tid, "name": name, "builtin": False,
+            "scrub": bool(raw.get("scrub", True)),
+            "guard": bool(raw.get("guard", True)),
+            "parts": parts, "help": str(raw.get("help") or "")}
+
+
+def user_templates(path) -> dict:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    out = {}
+    for k, v in (data.items() if isinstance(data, dict) else []):
+        key = slug(k)
+        t = _clean(key, v)
+        if key and key not in BUILTIN and t:
+            out[key] = t
+    return out
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", str(text).lower()).strip("-")[:40]
+
+
+def all_templates(cfg) -> dict:
+    out = {k: dict(v) for k, v in BUILTIN.items()}
+    out.update(user_templates(template_path(cfg)))
+    return out
+
+
+def save_user_template(cfg, name: str, scrub: bool, guard: bool,
+                       parts: list, help_text: str = "") -> str:
+    """Add or replace a user template; returns its id."""
+    tid = slug(name)
+    if not tid:
+        raise ValueError("give the template a name")
+    if tid in BUILTIN:
+        raise ValueError("that name is taken by a built-in template")
+    path = template_path(cfg)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data = data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        data = {}
+    data[tid] = {"name": name.strip(), "scrub": bool(scrub), "guard": bool(guard),
+                 "parts": [p for p in parts if p in ALL_PARTS],
+                 "help": help_text}
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return tid
+
+
+def delete_user_template(cfg, tid: str) -> bool:
+    path = template_path(cfg)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict) or tid not in data:
+        return False
+    del data[tid]
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return True
+
+
+def choice_for(prod, stage: str) -> str:
+    """The template id a production picked for a stage ('' = default)."""
+    try:
+        raw = prod["handover"] if prod is not None else None
+        data = json.loads(raw or "{}")
+    except (KeyError, IndexError, TypeError, ValueError):
+        return ""
+    return str(data.get(stage) or "") if isinstance(data, dict) else ""
+
+
+def get(cfg, tid: str | None) -> dict:
+    tpls = all_templates(cfg)
+    return tpls.get(tid or DEFAULT_ID) or tpls[DEFAULT_ID]
+
+
+def for_production(cfg, prod, stage: str) -> dict:
+    return get(cfg, choice_for(prod, stage))
+
+
+def for_pid(cfg, pid: int, stage: str) -> dict:
+    from . import db
+    conn = db.connect(cfg.db_path) if hasattr(db, "connect") else None
+    try:
+        return for_production(cfg, db.get_production(conn, pid), stage)
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ------------------------------------------------------------ script stage
+def script_notes(tpl: dict, must: list, feedback: list, weak: list,
+                 script: str, source: str, allow: str = "") -> tuple:
+    """-> (must, feedback, weak, dropped): the parts the template passes,
+    scrubbed when it says so. A part the template leaves out comes back empty."""
+    from . import studio
+    parts = set(tpl.get("parts") or [])
+    must = list(must or []) if "must_fix" in parts else []
+    feedback = list(feedback or []) if "feedback" in parts else []
+    weak = list(weak or []) if "weak_spans" in parts else []
+    dropped = 0
+    if tpl.get("scrub", True) and source:
+        must, g0 = studio.scrub_for_writer(must, script, source, allow=allow)
+        feedback, g1 = studio.scrub_for_writer(feedback, script, source, allow=allow)
+        weak, g2 = studio.scrub_for_writer(weak, script, source, allow=allow)
+        dropped = g0 + g1 + g2
+    return must, feedback, weak, dropped
+
+
+def retry_notes(tpl: dict, rating: dict, script: str, source: str,
+                allow: str = "") -> list:
+    """The API route's notes for the next attempt (must-fix first, then the
+    feedback, else the weak passages - as the retry always did)."""
+    must, feedback, weak, _ = script_notes(
+        tpl, rating.get("must_fix"), rating.get("feedback"),
+        rating.get("weak_spans"), script, source, allow)
+    return must + (feedback or weak)
+
+
+# -------------------------------------------------------------- plan stage
+SELECTION_KEYS = ("closest", "alternates", "best", "pick", "narrow", "weak")
+
+
+def plan_verdict(tpl: dict, verdict: dict, own_text: str, original: str) -> dict:
+    """What goes back to the title writer. The judge's selection (closest,
+    alternates, best, pick, narrow, weak) never does; the template decides
+    which notes pass and whether they are scrubbed."""
+    from . import studio
+    parts = set(tpl.get("parts") or [])
+    v = {}
+    for k, val in (verdict or {}).items():
+        if k in SELECTION_KEYS:
+            continue
+        group = k if k in ("faults", "fixes") else "other"
+        if group in parts:
+            v[k] = val
+    if tpl.get("scrub", True):
+        for k in ("faults", "fixes"):
+            items = v.get(k)
+            if isinstance(items, list):
+                v[k], _gone = studio.scrub_for_writer(
+                    [str(x) for x in items], own_text, original)
+    return v

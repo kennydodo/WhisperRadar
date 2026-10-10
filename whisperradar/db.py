@@ -230,6 +230,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN voice TEXT")
     if "own_channel_id" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN own_channel_id INTEGER")
+    if "handover" not in cols:
+        # JSON {"plan": template id, "script": template id}: what the judge
+        # passes to the writer (handover.py); NULL = the default template
+        conn.execute("ALTER TABLE productions ADD COLUMN handover TEXT")
     _migrate_own_channels(conn)
     for column, decl in (("flow_project_url", "TEXT"),
                          ("run_window_start", "TEXT"),
@@ -873,7 +877,8 @@ _PROD_FIELDS = {"youtube_video_id", "title", "genre", "stage", "status", "notes"
                 "stage_extras", "stage_providers", "render_mode", "voice",
                 "own_channel_id", "warning", "flow_project_url",
                 "flow_project_id", "autorun", "last_attempt_at",
-                "style_override", "bible_override", "published_at"}
+                "style_override", "bible_override", "published_at",
+                "handover"}
 
 
 def stage_extra(prod, stage: str) -> str:
