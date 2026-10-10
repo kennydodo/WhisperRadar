@@ -1091,10 +1091,14 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         clock: Callable[[], float] = time.monotonic,
         log: Callable[[str], None] = lambda m: None,
         max_total: float = 4 * 3600, resume: bool = False,
-        stop: Optional[Callable[[], bool]] = None) -> str:
+        stop: Optional[Callable[[], bool]] = None,
+        gen_stuck: float = 240.0) -> str:
     """`timeout` is a STALL limit: seconds with no new text and no sign of
     thinking/writing. A reply that keeps going is waited for (up to
-    `max_total`). `resume=True` sends nothing: it collects the answer of the
+    `max_total`). `gen_stuck`: a page that still says "generating" while a
+    reply that already has text has not changed for this many seconds is taken
+    as finished (0 = never) - a stop-button selector that stays true must not
+    hang the run. `resume=True` sends nothing: it collects the answer of the
     chat that is already open (after a reload or a stall).
     Send `prompt` (+ `files`, local paths) and return the finished reply.
     A NEW chat by default; `new_chat=False` answers inside the chat that is
@@ -1218,6 +1222,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
     followed = False
     active = clock()                       # last sign of life
     beat = clock()
+    stuck_logged = False
     while True:
         page.wait_for_timeout(int(poll * 1000))
         if stop is not None and stop():
@@ -1311,7 +1316,14 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
             active = clock()
         if gen:
             active = clock()               # still thinking / writing
-        done_waiting = (started and not gen
+        stuck = bool(gen_stuck and gen and clean_reply(last_text)
+                     and clock() - stable_since >= gen_stuck)
+        if stuck and not stuck_logged:
+            stuck_logged = True
+            log(f"{site.name}: the page still says it is generating but the "
+                f"reply has not changed for {int(gen_stuck)}s - taking it as "
+                f"finished")
+        done_waiting = (started and (not gen or stuck)
                         and clock() - stable_since >= settle)
         if done_waiting and not clean_reply(last_text):
             done_waiting = False           # only "Thinking..." so far

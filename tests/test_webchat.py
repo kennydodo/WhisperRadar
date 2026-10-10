@@ -191,8 +191,20 @@ class AskTests(unittest.TestCase):
 
     def test_overall_timeout_keeps_the_partial_reply(self):
         with self.assertRaises(wc.WebChatTimeout) as cm:
-            run(wc.ZAI, [("still going", True)] * 500, timeout=30)
+            run(wc.ZAI, [("still going", True)] * 500, timeout=30,
+                gen_stuck=0)
         self.assertEqual(cm.exception.partial, "still going")
+
+    def test_a_stuck_generating_flag_does_not_hang_the_run(self):
+        logs = []
+        out, _ = run(wc.ZAI, [("the whole reply", True)] * 400, log=logs.append)
+        self.assertEqual(out, "the whole reply")
+        self.assertTrue(any("taking it as finished" in m for m in logs))
+
+    def test_a_reply_that_is_still_growing_is_not_cut_off(self):
+        frames = [("word " * n, True) for n in range(1, 200)] + [("done", False)]
+        out, _ = run(wc.ZAI, frames)
+        self.assertEqual(out, "done")
 
     def test_empty_prompt_rejected(self):
         with self.assertRaises(wc.WebChatError):
