@@ -118,6 +118,25 @@ def save_user_template(cfg, name: str, scrub: bool, guard: bool,
     return tid
 
 
+def rename_user_template(cfg, tid: str, new_name: str) -> bool:
+    """Change only the display name; the id (what productions point at) stays."""
+    new_name = (new_name or "").strip()
+    if not new_name:
+        raise ValueError("give the template a name")
+    if slug(new_name) in BUILTIN:
+        raise ValueError("that name is taken by a built-in template")
+    path = template_path(cfg)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict) or tid not in data:
+        return False
+    data[tid]["name"] = new_name
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return True
+
+
 def delete_user_template(cfg, tid: str) -> bool:
     path = template_path(cfg)
     try:

@@ -39,6 +39,14 @@ def register(app, cfg) -> None:
             return redirect("/handover?error=" + quote(str(exc)))
         return redirect("/handover?msg=" + quote(f"Saved template {name}"))
 
+    @app.post("/handover/rename/<tid>")
+    def handover_rename(tid):
+        try:
+            ok = handover.rename_user_template(cfg, tid, request.form.get("name") or "")
+        except ValueError as exc:
+            return redirect("/handover?error=" + quote(str(exc)))
+        return redirect("/handover?msg=" + quote("Renamed" if ok else "Not found"))
+
     @app.post("/handover/delete/<tid>")
     def handover_delete(tid):
         ok = handover.delete_user_template(cfg, tid)

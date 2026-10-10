@@ -282,3 +282,18 @@ class MaskNames(unittest.TestCase):
             out = handover.instruction(cfg, prod, "script")
             self.assertIn("follow this production's own", out)
             self.assertLess(out.index("A"), out.index("B"))
+
+
+class Rename(unittest.TestCase):
+    def test_rename_keeps_id(self):
+        import tempfile
+        from types import SimpleNamespace
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as d:
+            cfg = SimpleNamespace(db_path=str(Path(d) / "x.db"))
+            tid = handover.save_user_template(cfg, "Old", True, True, [])
+            self.assertTrue(handover.rename_user_template(cfg, tid, "New name"))
+            self.assertEqual(handover.get(cfg, tid)["name"], "New name")
+            with self.assertRaises(ValueError):
+                handover.rename_user_template(cfg, tid, "Style")
+            self.assertFalse(handover.rename_user_template(cfg, "nope", "X"))

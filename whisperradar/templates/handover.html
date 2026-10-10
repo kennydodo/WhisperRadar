@@ -65,6 +65,10 @@
       <pre>{{ pv['plan'] | tojson(indent=1) }}</pre>
     </details>
     {% if not t['builtin'] %}
+    <form method="post" action="/handover/rename/{{ t['id'] }}" style="margin-top:8px">
+      <input type="text" name="name" value="{{ t['name'] }}" required>
+      <button class="ghost" type="submit">Rename</button>
+    </form>
     <form method="post" action="/handover/delete/{{ t['id'] }}" style="margin-top:8px"
           onsubmit="return confirm('Delete this template? Productions using it fall back to Style only.')">
       <button class="ghost" type="submit">Delete</button>
