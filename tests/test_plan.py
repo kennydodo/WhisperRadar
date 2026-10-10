@@ -437,6 +437,14 @@ class ReplicateTests(unittest.TestCase):
         self.assertIn("ranked", w)
         self.assertIn("EACH segment", w)
 
+class MetaMentionTests(unittest.TestCase):
+    def test_rule_of_thumb_is_not_a_thumbnail_mention(self):
+        self.assertEqual(pp.meta_mentions("A good rule of thumb for savings."), [])
+        self.assertEqual(pp.meta_mentions("Do not give a thumbs up."), [])
+        self.assertEqual(pp.meta_mentions("Look at the thumbnail."), ["thumbnail"])
+        self.assertEqual(pp.meta_mentions("the video title says it"),
+                         ["video title"])
+
 
 if __name__ == "__main__":
     unittest.main()

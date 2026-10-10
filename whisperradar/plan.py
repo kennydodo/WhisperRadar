@@ -479,7 +479,8 @@ def plan_block(plan: dict) -> str:
 
 
 _META_RE = re.compile(
-    r"\b(thumbnails?|thumb|cover image|video title|packaging plan)\b", re.I)
+    r"\b(thumbnails?|thumb[- ]?nails?|cover image|video title|packaging plan)\b",
+    re.I)       # not bare "thumb": "rule of thumb" is ordinary narration
 
 
 def meta_mentions(script: str) -> list[str]:
