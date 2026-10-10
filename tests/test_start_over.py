@@ -97,6 +97,40 @@ class StartOverTests(unittest.TestCase):
                 self.assertIn("msg=", resp.headers["Location"], stage)
                 wr_tmp.cleanup(tmp)
 
+    def test_start_over_from_the_plan_clears_plan_scores_and_title(self):
+        import json as _j
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, title="Applied title",
+                             warning="script gate failed: x")
+        conn.commit()
+        conn.close()
+        (self.pdir / "packaging_plan.json").write_text(_j.dumps(
+            {"title": "Applied title", "applied": True, "score": 8,
+             "source_title": "Original title"}), encoding="utf-8")
+        (self.pdir / "publish_kit.json").write_text("{}", encoding="utf-8")
+        (self.pdir / "research_notes.md").write_text("brief", encoding="utf-8")
+        (self.pdir / "research_notes.json").write_text(
+            '{"kind":"brief"}', encoding="utf-8")
+        resp = self._post("plan")
+        self.assertIn("msg=", resp.headers["Location"])
+        for name in ("packaging_plan.json", "publish_kit.json",
+                     "research_notes.md", "script.md", "shotlist.json"):
+            self.assertFalse((self.pdir / name).exists(), name)
+        self.assertTrue((self.pdir / "audio.mp3").exists())
+        conn = db.connect(self.cfg.db_path)
+        prod = db.get_production(conn, self.pid)
+        conn.close()
+        self.assertEqual(prod["title"], "Original title")
+        self.assertEqual(prod["stage"], "style")
+        self.assertFalse(prod["warning"])
+
+    def test_script_reset_keeps_manual_notes(self):
+        (self.pdir / "research_notes.md").write_text("mine", encoding="utf-8")
+        (self.pdir / "research_notes.json").write_text(
+            '{"manual": true}', encoding="utf-8")
+        self._post("script")
+        self.assertTrue((self.pdir / "research_notes.md").exists())
+
     def test_reset_from_refs_keeps_audio_srt_shots(self):
         self._post("refs")
         self.assertTrue((self.pdir / "audio.mp3").exists())

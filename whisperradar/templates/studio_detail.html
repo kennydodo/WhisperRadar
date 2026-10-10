@@ -248,11 +248,16 @@
     <div style="background:var(--panel); border:1px solid var(--border); border-radius:10px; max-width:560px; width:94%; padding:18px 20px">
       <h2 style="margin-top:0">Start over</h2>
       <div class="muted" style="font-size:13px; margin-bottom:10px">Resets progress from the chosen stage onward: the generated files and the step history of those stages are deleted, and auto-run will execute them again. Inputs are kept: source transcript, bible, refs, named versions, notes. Pick any already-reached stage - one step back, or all the way to the beginning.</div>
+      <label style="display:block; margin:8px 0; color:var(--text)">
+        <input type="radio" name="resetfrom" value="plan">
+        From the <b>plan</b> (the very beginning)
+        &mdash; deletes the packaging plan and its scores, puts the original title back, clears the publish kit, then everything after it
+      </label>
       {% for s in RESETTABLE %}
       {% if loop.index0 <= reached_idx %}
       <label style="display:block; margin:8px 0; color:var(--text)">
         <input type="radio" name="resetfrom" value="{{ s }}" {{ 'checked' if loop.index0 == reached_idx else '' }}>
-        {% if loop.index0 == 0 %}From the <b>beginning</b> ({{ STAGE_DISPLAY.get(s, s) }}){% elif loop.index0 == reached_idx %}From <b>{{ STAGE_DISPLAY.get(s, s) }}</b> (redo the current stage){% else %}From the <b>{{ STAGE_DISPLAY.get(s, s) }}</b> stage{% endif %}
+        {% if loop.index0 == 0 %}From the <b>{{ STAGE_DISPLAY.get(s, s) }}</b> stage (after the plan){% elif loop.index0 == reached_idx %}From <b>{{ STAGE_DISPLAY.get(s, s) }}</b> (redo the current stage){% else %}From the <b>{{ STAGE_DISPLAY.get(s, s) }}</b> stage{% endif %}
         &mdash; {{ RESET_BLURB.get(s, 'regenerates this stage and everything after it') }}
       </label>
       {% endif %}
@@ -280,7 +285,7 @@
       const radios = document.getElementsByName('resetfrom');
       const box = document.getElementById('resetaudiobox');
       const label = document.getElementById('resetaudiolabel');
-      const STAGE_ORDER = {{ RESETTABLE | tojson }};
+      const STAGE_ORDER = ['plan'].concat({{ RESETTABLE | tojson }});
       function sync() {
         let picked = [...radios].find((r) => r.checked);
         if (!picked && radios.length) {   // never leave the modal without a choice
@@ -305,7 +310,7 @@
       document.getElementById('resetaudiofield').value =
         document.getElementById('resetaudiobox').checked ? '1' : '0';
       closeResetModal();
-      const stageName = STAGE_LABEL[from] || from;
+      const stageName = from === 'plan' ? 'the plan' : (STAGE_LABEL[from] || from);
       const msg = 'Start over from ' + stageName + '? ' + label + ' This cannot be undone.';
       if (!(await wrConfirm(msg))) return;
       const forms = document.querySelectorAll('form[action*="/start-over"]');

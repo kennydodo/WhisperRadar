@@ -1747,3 +1747,5 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 - Writer and judge must be different LLMs/chats for the blindness to hold.
 
 - Planner spread/hedge rules: `spread_faults` (at most 3 hedged titles with may/might/could, at most 2 per angle taken from the start of each `why`, no content word in >60% of titles). The judge also returns `best` (strongest hook) next to `closest`; `closest` must be a strong hook. After the pick changes the title, the thumbnail idea is rewritten for the picked title (`thumbnail_prompt`, `adopt_thumbnail`).
+
+- Start over now has a "plan" option (clears packaging_plan.json and publish_kit.json, restores the original title if the plan was applied, then resets every stage). Any script reset also removes the generated keyword brief (manual notes stay) and the script-gate warning; shotlist reset already clears its review/best-ever.

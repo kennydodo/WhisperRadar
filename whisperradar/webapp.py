@@ -2990,6 +2990,41 @@ def create_app(cfg) -> Flask:
                 f"Production deleted - files kept at {pdir} "
                 "(folder was not created by WhisperRadar)"))
 
+    def _reset_plan(conn, pid: int, pdir: Path) -> list:
+        """Start over from the plan: the packaging plan (titles, score,
+        verdict) and the publish kit made from it go, and a title the plan
+        applied is put back to the original one."""
+        from . import plan as planmod
+        gone = []
+        old = planmod.load_plan(pdir)
+        if old.get("applied") and old.get("source_title"):
+            db.update_production(conn, pid, title=old["source_title"])
+            gone.append("title restored")
+        for name in (planmod.PLAN_FILE, "publish_kit.json"):
+            f = pdir / name
+            if f.exists():
+                f.unlink()
+                gone.append(name)
+        return gone
+
+    def _reset_script_scores(conn, pid: int, pdir: Path) -> list:
+        gone = []
+        notes = pdir / "research_notes.md"
+        meta = pdir / "research_notes.json"
+        manual = False
+        try:
+            manual = bool(json.loads(meta.read_text(encoding="utf-8"))
+                          .get("manual"))
+        except (OSError, ValueError, AttributeError):
+            pass
+        if not manual:
+            for f in (notes, meta):
+                if f.exists():
+                    f.unlink()
+                    gone.append(f.name)
+        db.update_production(conn, pid, warning="")
+        return gone
+
     @app.post("/studio/<int:pid>/start-over")
     def studio_start_over(pid):
         """Start over: reset progress from a chosen stage onward - deletes
@@ -3003,7 +3038,10 @@ def create_app(cfg) -> Flask:
         # excluded (nothing generated there to clear); the caller
         # (studio_detail.html's modal) only ever offers stages the
         # production has actually reached, but this is re-checked here too.
-        if from_stage not in db.STAGES or from_stage == "review":
+        # "plan" is the packaging plan that comes before every stage: starting
+        # over from it clears the plan and then everything else
+        if from_stage != "plan" and (from_stage not in db.STAGES
+                                     or from_stage == "review"):
             return _studio_url(pid, error="Unknown start-over scope")
         with_audio = request.form.get("with_audio") == "1"
         conn = db.connect(cfg.db_path)
@@ -3015,13 +3053,20 @@ def create_app(cfg) -> Flask:
             # (a new style/script does not invalidate existing narration) -
             # unless the reset target IS "audio" itself (it's the thing being
             # redone) or the user explicitly opted in via with_audio.
-            reset = [s for s in db.STAGES[db.STAGES.index(from_stage):]
+            first = "style" if from_stage == "plan" else from_stage
+            reset = [s for s in db.STAGES[db.STAGES.index(first):]
                      if s != "audio" or from_stage == "audio" or with_audio]
             with sjob._lock:
                 if sjob.running:  # re-check under the lock (check-then-act)
                     return _studio_url(pid, error="A job is already running")
                 pdir = studio.prod_dir(cfg, pid)
                 removed = []
+                if from_stage == "plan":
+                    removed += _reset_plan(conn, pid, pdir)
+                if "script" in reset:
+                    # the generated keyword brief and any "script gate failed"
+                    # warning belong to the script stage's scoring
+                    removed += _reset_script_scores(conn, pid, pdir)
                 for stage in reset:
                     for name in RESET_FILES.get(stage, []):
                         f = pdir / name
@@ -3083,8 +3128,9 @@ def create_app(cfg) -> Flask:
                             shutil.rmtree(out_dir, ignore_errors=True)
                             removed.append("out/")
                 db.delete_steps(conn, pid, reset)
-                db.update_production(conn, pid, stage=from_stage,
-                                     status="active")
+                db.update_production(
+                    conn, pid, stage="style" if from_stage == "plan"
+                    else from_stage, status="active")
         finally:
             conn.close()
         detail = ", ".join(removed) if removed else "nothing on disk"
