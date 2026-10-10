@@ -420,3 +420,18 @@ class PanelPlacement(Routes):
         self.assertIn(b"What the judge passes to the writer", page.data)
         self.assertIn(b'name="script_judge"', page.data)
         self.assertNotIn(b'name="plan_judge"', page.data)
+
+
+class ChannelsPage(Routes):
+    def test_channel_card_section_saves_default(self):
+        conn = db.connect(self.cfg.db_path)
+        cid = db.create_own_channel(conn, "Chan1")
+        conn.close()
+        page = self.client.get("/my-channels")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"save hand-over templates", page.data)
+        r = self.client.post("/my-channels/handover", data={
+            "id": str(cid), "handover_plan": "style", "handover_script": "full"})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(handover.channel_defaults(self.cfg, cid), {"script": "full"})
+        self.assertIn(b'href="/handover">Hand-over', self.client.get("/studio").data)

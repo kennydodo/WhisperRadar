@@ -78,6 +78,7 @@
   <a href="/finished">Finished</a>
   <a href="/my-channels" class="active">My Channels</a>
   <a href="/settings">Settings</a>
+  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   <h1>My Channels</h1>
@@ -572,6 +573,28 @@
                           <div style="margin-top:12px">
                 <button type="submit" formaction="/my-channels/brief"
                         title="Saves only the planning-brief settings above; the rest of this form is left as it is">save planning brief</button>
+              </div>
+            </details>
+            <details class="grp" id="edit-{{ ch['id'] }}-handover">
+              <summary>Hand-over templates <span class="muted">what the judge passes to the writer</span></summary>
+              <div class="muted" style="font-size:12px; margin:10px 0 6px">
+                Default for this channel's productions. A production can still pick its own.
+                Templates are made on <a href="/handover">Hand-over</a>.
+              </div>
+              <div class="inline">
+                {% for st in ('plan', 'script') %}
+                <label>{{ st|capitalize }}
+                  <select name="handover_{{ st }}">
+                    {% for t in handover_options[ch['id']] %}
+                    <option value="{{ t['id'] }}" {{ 'selected' if (handover_defaults[ch['id']].get(st) or 'style') == t['id'] else '' }}>{{ t['name'] }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                {% endfor %}
+              </div>
+              <div style="margin-top:12px">
+                <button type="submit" formaction="/my-channels/handover"
+                        title="Saves only the hand-over templates; the rest of this form is left as it is">save hand-over templates</button>
               </div>
             </details>
             <details class="grp" id="edit-{{ ch['id'] }}-autorun">

@@ -1776,6 +1776,10 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            handover_options={c["id"]: handover.available_for(cfg, c["id"])
+                              for c in own_channels},
+            handover_defaults={c["id"]: handover.channel_defaults(cfg, c["id"])
+                               for c in own_channels},
             watched_channels=watched_channels, watched_by_oc=watched_by_oc,
             renderly_url=cfg.renderly_url, genres=genres,
             source_genres=source_genres,
@@ -1967,6 +1971,18 @@ def create_app(cfg) -> Flask:
             fields["brief_presentation"] = (
                 (form.get("brief_presentation") or "").strip() or None)
         return fields, None
+
+    @app.post("/my-channels/handover")
+    def my_channels_handover():
+        """Save only the channel's default hand-over templates."""
+        oc_id = _own_channel_id()
+        if not oc_id:
+            return redirect("/my-channels?error=Unknown+channel")
+        handover.set_channel_default(cfg, oc_id,
+                                     request.form.get("handover_plan") or "",
+                                     request.form.get("handover_script") or "")
+        return redirect("/my-channels?msg=" + quote("Hand-over templates saved")
+                        + f"#edit-{oc_id}-handover")
 
     @app.post("/my-channels/brief")
     def my_channels_brief():
