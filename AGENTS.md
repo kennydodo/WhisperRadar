@@ -1616,6 +1616,7 @@ a new reply (count up, generating, or text different from the text before the se
 - WhisperRadar today calls it as an external CLI from the merge stage (`studio.prepare_project_folder` writes `imgtovideo.json`; `merge_command`).
 - Decide first: (a) port only what the merge stage needs (timing + motion + ffmpeg filtergraph + sound effects) to a Python module `whisperradar/video_render.py`, keeping the CLI as fallback behind a setting; or (b) keep the C# engine and just bundle/auto-build the CLI. Port the 242 tests' key cases (frame-exact timing coverage, motion rects, crossfades, SFX placement) as Python tests before switching the default.
 - Premiere/CapCut exports and the WPF editor are likely out of scope for the first cut.
+- **Decision (Kehinde, 2026-10-10):** option (a). Convert ImgToVideo to Python and live inside WhisperRadar (`whisperradar/video_render.py` or a small package). The original C# project stays in its own repo untouched (and remains the reference/fallback). Port the key test cases as Python tests before switching the default.
 
 ## Web chat LLMs you add yourself (Settings > Web chat LLMs)
 - z.ai and DeepSeek are built in (`webchat.ZAI/DEEPSEEK`). Others are added in Settings > Web chat LLMs with just a **name and chat address**; saved as JSON in the `webchat_sites` setting. Saving a NEW site opens its sign-in Chrome (`webchat.start_chrome`, background thread, own debugging port 9230+); the Sign in button reopens it; Test asks it for "OK".
@@ -1773,3 +1774,15 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 - Title options: at most 3 may open with the same first word (`FIRST_WORD_MAX`), besides the 3-word opening rule.
 
 - The refs job sets `nameAssets`: FlowBatch renames each generated tile to its ref name in Flow, so `prepare` reports it reused instead of uploading a duplicate (best effort; a failed rename falls back to the upload).
+
+## Design note: editable per-channel prompts
+Not implemented. See docs/design-editable-prompts.md (plan/script writers and judges,
+defaults in code, per-channel overrides, locked envelope, copy between channels).
+
+## ImgToVideo in Python (`whisperradar/video/`, branch `video-render`, 2026-10-10)
+- Port of the C# ImgToVideo core. Modules mirror the C# names: models/options/timeline_json/manifest (data), parsing (SRT, filenames, scenes.json), scene_inference, imaging, shotlist/missing_shotlist/export_batch, timing_engine, motion_engine, edit_planner, manifest_planner, overrides, project_loader, build_report, `plan.plan_project(folder)` (= C# `plan`), and the ffmpeg side: render_plan, render_service, ffmpeg_runner, encoder_probe, tool_locator, ffprobe, reveal_paths/reveal_images, sound_effects, `render_project.render_final(folder, preview)` (= C# `render-final`).
+- Setting: `studio.video_engine: python|csharp` in config.yaml (`cfg.studio_video_engine`, default **csharp**). With `python`, `studio.run_merge_render` plans and renders the preview in Python and `run_imagegen` writes `out/image-batch.json` in Python. Premiere/CapCut exports (`export-premiere/-capcut`) still call the C# CLI (not ported).
+- Parity: golden C#-built timelines/build-reports/visual manifests in `tests/fixtures/video/{fees,animals,more_to_live}` (inputs + C# output). Python reproduces them (message decimal commas in the older goldens are normalized in the test). A real render of "TEST TO MORE TO LIVE" matched the C# preview frame for frame (SSIM ~0.97 flat, encoder differences only); the C# preview in that folder predates the 2026-10-06 transition-timing fix, so frames inside transitions differ by design.
+- Tests: tests/test_video_{models,shotlist,planning,golden,render,wiring}.py (run each with a timeout; the render tests use the real ffmpeg).
+- Not ported: Premiere/CapCut export, WPF editor, ImageGen, DiagnosticsGrouper, `strip-srt` (trivial: `parsing.to_compact_narration`).
+- Known gaps/quirks: no dotnet on the dev VM, so parity was checked against saved C# output, not a live diff; hardware-encoder probing and a full-length final render are unverified here (VM has no GPU, ~2 cores). Segment reuse (`reuse_unchanged_segments`) is optional in `render_final`.

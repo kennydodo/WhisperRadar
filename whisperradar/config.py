@@ -78,6 +78,11 @@ class Config:
             (studio.get("ai33_voice_source") or "").strip().lower() or None)
         self.studio_imagegen_command = studio.get("imagegen_command") or None
         self.studio_merge_command = studio.get("merge_command") or None
+        # Which implementation builds the merge preview / export-batch:
+        # "csharp" (ImgToVideo.Cli, the reference) or "python" (whisperradar.video,
+        # the in-repo port). The NLE exports (Premiere/CapCut) always use the C# CLI.
+        self.studio_video_engine = (
+            (studio.get("video_engine") or "csharp").strip().lower())
         self.studio_script_words = studio.get("script_words") or None
         self.renderly_url = (studio.get("renderly_url") or
                              "http://127.0.0.1:8022").rstrip("/")

@@ -873,9 +873,16 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
     # Best-effort: a failure here (e.g. no shotlist yet) surfaces the same
     # way it always did, from the ImageGen call right below, so it is not
     # worth a special error path of its own.
-    cli = _imgtovideo_cli(cfg)
-    if cli:
-        _run_imgtovideo_cli(cli, ["export-batch", str(pid_dir)])
+    if _python_video(cfg):
+        from .video import export_batch as _eb
+        try:
+            _eb.export_batch(str(pid_dir))
+        except FileNotFoundError:
+            pass  # no shotlist yet: ImageGen below reports it as before
+    else:
+        cli = _imgtovideo_cli(cfg)
+        if cli:
+            _run_imgtovideo_cli(cli, ["export-batch", str(pid_dir)])
     if channel is None:
         channel = ensure_renderly_channel(cfg)
     if upscale is None:
@@ -2266,6 +2273,25 @@ def sanitize_shotlist(pid_dir: Path) -> int:
     return removed
 
 
+def _python_video(cfg) -> bool:
+    """True when the in-repo Python port (whisperradar.video) replaces the
+    ImgToVideo C# CLI for the preview render and export-batch."""
+    return getattr(cfg, "studio_video_engine", "csharp") == "python"
+
+
+def _python_preview(pid_dir: Path) -> None:
+    """Plan + render out/preview.mp4 with whisperradar.video."""
+    from .video import plan as _plan, render_project as _rp
+    planned = _plan.plan_project(str(pid_dir))
+    if not planned.success:
+        errs = [i.message for i in planned.issues if i.severity == "Error"]
+        errs += list(planned.config_errors or [])
+        raise RuntimeError("planning failed: " + "; ".join(errs)[:600])
+    ok, _out, errors = _rp.render_final(str(pid_dir), preview=True)
+    if not ok:
+        raise RuntimeError("render failed: " + "; ".join(errors)[-600:])
+
+
 def _imgtovideo_cli(cfg) -> Path | None:
     repo = cfg.imgtovideo_repo
     cli = Path(repo, "src", "ImgToVideo.Cli") if repo else None
@@ -2308,7 +2334,10 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
     sanitize_shotlist(pid_dir)
 
     # 1. fast preview draft - the reviewable cut
-    _run_imgtovideo_cli(cli, ["render-final", str(pid_dir), "--preview"])
+    if _python_video(cfg):
+        _python_preview(pid_dir)
+    else:
+        _run_imgtovideo_cli(cli, ["render-final", str(pid_dir), "--preview"])
     preview = find_preview(pid_dir)
     if not preview:
         raise RuntimeError("preview build finished but no preview.mp4 found")

@@ -74,7 +74,8 @@ def render_final(project_folder: str, preview: bool,
                  srt_path: Optional[str] = None,
                  issue_sink: Optional[Callable[[m.ValidationIssue], None]] = None,
                  cancel_event: Optional[threading.Event] = None,
-                 max_parallelism: int = 2) -> Tuple[bool, str, List[str]]:
+                 max_parallelism: int = 2,
+                 reuse_unchanged_segments: bool = False) -> Tuple[bool, str, List[str]]:
     """Render out/timeline.json. Returns (success, output_path, errors).
 
     preview=True -> out/preview.mp4; else out/final/final.mp4 (+ captions.srt copied beside it).
@@ -107,13 +108,15 @@ def render_final(project_folder: str, preview: bool,
         if preview:
             plan = build(timeline, images, options, os.path.join(out_dir, "render"),
                          os.path.join(out_dir, "preview.mp4"))
-            result = service.render(plan, max_parallelism, progress, cancel_event)
+            result = service.render(plan, max_parallelism, progress, cancel_event,
+                                    reuse_unchanged_segments)
         else:
             ro = final_render_options(options)
             final_dir = os.path.join(out_dir, "final")
             plan = build(timeline, images, ro, os.path.join(final_dir, "render"),
                          os.path.join(final_dir, "final.mp4"))
-            result = service.render(plan, max_parallelism, progress, cancel_event)
+            result = service.render(plan, max_parallelism, progress, cancel_event,
+                                    reuse_unchanged_segments)
             if result.success and srt_path:
                 shutil.copyfile(srt_path, os.path.join(final_dir, "captions.srt"))
     except RuntimeError as e:
