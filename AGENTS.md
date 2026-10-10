@@ -1771,3 +1771,5 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 - Start over from the plan puts the production title back to its SOURCE VIDEO's title (`plan.original_title`), not to the previous plan's; `apply_plan` records that same original as `source_title`.
 
 - Title options: at most 3 may open with the same first word (`FIRST_WORD_MAX`), besides the 3-word opening rule.
+
+- The refs job sets `nameAssets`: FlowBatch renames each generated tile to its ref name in Flow, so `prepare` reports it reused instead of uploading a duplicate (best effort; a failed rename falls back to the upload).

@@ -215,6 +215,8 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
                 cfg, pdir, 1, {"CH_MAYA": {"prompt": "a woman"}})
             job = json.loads(job_path.read_text(encoding="utf-8"))
             self.assertEqual(Path(job["outputsDir"]), pdir / "refs")
+            # generated tiles are named after their refs in Flow
+            self.assertTrue(job["nameAssets"])
 
     def test_no_flow_refs_folder_in_the_code(self):
         self.assertNotIn("flow_refs", (ROOT / "whisperradar" / "studio.py")

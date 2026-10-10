@@ -1127,6 +1127,9 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
         "name": f"wr-{pid}-refs",
         "outputsDir": str(pdir / "refs"),
         "refMode": "reuse",
+        # FlowBatch renames each generated tile after its ref, so the later
+        # prepare finds it in the gallery by name instead of uploading a copy
+        "nameAssets": True,
         "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
                      "outputs": 1, "refMode": "reuse"},
         "images": [{"file": f"{name}.png", "prompt": r["prompt"]}
