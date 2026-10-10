@@ -2997,9 +2997,17 @@ def create_app(cfg) -> Flask:
         from . import plan as planmod
         gone = []
         old = planmod.load_plan(pdir)
-        if old.get("applied") and old.get("source_title"):
-            db.update_production(conn, pid, title=old["source_title"])
-            gone.append("title restored")
+        # the title goes back to what the production started with: its source
+        # video's title (the current one may be a plan's, even an older plan
+        # whose record is gone), else what the plan recorded
+        back = planmod.original_title(conn, pid)
+        prod = db.get_production(conn, pid)
+        if prod and not prod["source_video_id"]:
+            back = old.get("source_title") or (
+                prod["title"] if not old.get("applied") else back)
+        if back and prod and prod["title"] != back:
+            db.update_production(conn, pid, title=back)
+            gone.append(f"title restored to \"{back[:60]}\"")
         for name in (planmod.PLAN_FILE, "publish_kit.json"):
             f = pdir / name
             if f.exists():

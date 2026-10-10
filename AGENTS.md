@@ -1767,3 +1767,5 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 ## No numbers in planning; premise-only script brief
 - Titles never carry a count, whatever the original is (`scope_faults`, `_numbers_text`); the script writer decides how many points to make. `plan_block` no longer asks for an exact number of points. (`allowed_counts`/`list_numbers` remain as helpers only.)
 - The script brief is a PREMISE (the question the video answers, the false assumption it overturns, the feeling it leaves) plus keywords - no story, scene or sequence of events. `brief_faults` rejects event-sequence wording (follows / then / eventually ...) and the brief is rebuilt.
+
+- Start over from the plan puts the production title back to its SOURCE VIDEO's title (`plan.original_title`), not to the previous plan's; `apply_plan` records that same original as `source_title`.

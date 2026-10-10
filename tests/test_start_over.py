@@ -124,6 +124,23 @@ class StartOverTests(unittest.TestCase):
         self.assertEqual(prod["stage"], "style")
         self.assertFalse(prod["warning"])
 
+    def test_start_over_from_the_plan_restores_the_source_video_title(self):
+        conn = db.connect(self.cfg.db_path)
+        conn.execute("INSERT INTO channels (channel_id, name, genre, active) "
+                     "VALUES ('c1','Src','finance',1)")
+        conn.execute("INSERT INTO videos (video_id, channel_id, title, url, "
+                     "view_count) VALUES ('v1','c1','The Original Title','u',5)")
+        db.update_production(conn, self.pid, source_video_id="v1",
+                             title="An older plan's title")
+        conn.commit()
+        conn.close()
+        # no plan file at all (an older run's record is gone)
+        self._post("plan")
+        conn = db.connect(self.cfg.db_path)
+        title = db.get_production(conn, self.pid)["title"]
+        conn.close()
+        self.assertEqual(title, "The Original Title")
+
     def test_script_reset_forgets_the_saved_chats(self):
         (self.pdir / "webchat_chats.json").write_text("{}", encoding="utf-8")
         self._post("script")

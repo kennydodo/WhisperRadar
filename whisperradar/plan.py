@@ -1165,6 +1165,20 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
     return plan
 
 
+def original_title(conn, pid: int) -> str:
+    """The title the production started with: its source video's title when
+    it has one (the production title may already be an earlier plan's), else
+    the production's current title."""
+    from . import db
+    prod = db.get_production(conn, pid)
+    vid = (prod["source_video_id"] if prod else "") or ""
+    if vid:
+        row = db.get_video(conn, vid)
+        if row and row["title"]:
+            return row["title"]
+    return (prod["title"] if prod else "") or ""
+
+
 def apply_plan(cfg, pid: int, title: str | None = None) -> dict:
     """Make the plan the production's: its (or the given) title becomes the
     production title, and the publish kit starts from it."""
@@ -1184,7 +1198,7 @@ def apply_plan(cfg, pid: int, title: str | None = None) -> dict:
     db.init_db(conn)
     try:
         if not plan.get("source_title"):
-            plan["source_title"] = db.get_production(conn, pid)["title"]
+            plan["source_title"] = original_title(conn, pid)
         db.update_production(conn, pid, title=plan["title"][:TITLE_MAX])
     finally:
         conn.close()
