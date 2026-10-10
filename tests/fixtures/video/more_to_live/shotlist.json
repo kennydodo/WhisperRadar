@@ -1,0 +1,302 @@
+{
+  "style": "Soft hand-drawn anime-style illustration, gentle Japanese animated film background. Clean thin dark-brown line art, smooth flat cel shading, soft gradients. Muted pastel color palette: sage green, warm beige, cream, pale wood tones, soft sky blue, dusty pink accents. Low contrast, slightly desaturated, warm cream and ivory tint, as if lit by soft morning daylight through paper shoji screens. Gentle diffused lighting, no harsh shadows, no dramatic highlights. Detailed calm backgrounds with wooden furniture, tatami, shelves, neat soft edges. Background people blurred and faded. Characters have simple natural proportions, small calm features, dark eyes, subtle blush, quiet composed expressions. Peaceful cozy slice-of-life mood. 16:9 wide composition with main subject off-center. No text, watermark, logos, photorealism, 3D render, heavy outlines, or saturated colors.",
+  "refs": {
+    "CH_REIKO": "refs/CH_REIKO.png",
+    "CH_REN": "refs/CH_REN.png",
+    "CH_GRANDFATHER": "refs/CH_GRANDFATHER.png",
+    "BG_TRAIN_CARRIAGE": "refs/BG_TRAIN_CARRIAGE.png",
+    "BG_TEA_SHOP": "refs/BG_TEA_SHOP.png",
+    "BG_DESK_STUDY": "refs/BG_DESK_STUDY.png",
+    "OBJ_CALLIGRAPHY_MANUAL": "refs/OBJ_CALLIGRAPHY_MANUAL.png",
+    "OBJ_WOODEN_TIMER": "refs/OBJ_WOODEN_TIMER.png"
+  },
+  "refPrompts": {
+    "CH_REN": "A young Japanese man in his early twenties, short dark brown hair neatly combed, wearing a dark navy coat over a warm beige sweater. Gentle, introspective expression with calm dark eyes.",
+    "CH_GRANDFATHER": "An elderly Japanese man in his late seventies, short silver-grey hair, kind wrinkled face, small round spectacles, calm posture, wearing a dark sage-green aproned kimono over traditional clothes.",
+    "BG_TRAIN_CARRIAGE": "Interior of a quiet modern Japanese train carriage, soft cream walls, warm wooden handrails, patterned plush seating, rainy glass window overlooking blurry city roofs.",
+    "BG_TEA_SHOP": "A traditional Japanese tea shop interior in Yanaka, dark polished cedar counter, wooden shelves filled with ceramic tea canisters, soft paper lanterns, quiet ambient warmth.",
+    "BG_DESK_STUDY": "A quiet home study room in Tokyo, light wood desk, orderly books, paper shoji window casting soft light, peaceful atmospheric indoor view.",
+    "OBJ_CALLIGRAPHY_MANUAL": "A heavy, thick leather-bound traditional Japanese calligraphy book resting flat on a wooden surface, ornate dark cover, slightly aged pages.",
+    "OBJ_WOODEN_TIMER": "A small handcrafted wooden hourglass timer with smooth pale wood ends and fine golden-brown sand settling inside clear glass."
+  },
+  "shots": [
+    {
+      "cues": "1-3",
+      "asset": "S01_01_SCN_ZI.png",
+      "scene": "S01",
+      "motion": "ZI"
+    },
+    {
+      "cues": "4-7",
+      "asset": "S01_02_SCN_ZO.png",
+      "scene": "S01",
+      "motion": "ZO"
+    },
+    {
+      "cues": "8-9",
+      "asset": "S01_03_CU_ZO.png",
+      "scene": "S01",
+      "motion": "ZO"
+    },
+    {
+      "cues": "10-12",
+      "asset": "S02_01_SCN_ZI.png",
+      "scene": "S02",
+      "motion": "ZI",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "13-16",
+      "asset": "S02_02_SCN_ZO.png",
+      "scene": "S02",
+      "motion": "ZO"
+    },
+    {
+      "cues": "17-19",
+      "asset": "S02_03_CU_ZI.png",
+      "scene": "S02",
+      "motion": "ZI"
+    },
+    {
+      "cues": "20-22",
+      "asset": "S02_04_SCN_PD.png",
+      "scene": "S02",
+      "motion": "PD"
+    },
+    {
+      "cues": "23-25",
+      "asset": "S02_05_HYB_ZO.png",
+      "scene": "S02",
+      "motion": "ZO"
+    },
+    {
+      "cues": "26-28",
+      "asset": "S03_01_SCN_ZI.png",
+      "scene": "S03",
+      "motion": "ZI",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "29-31",
+      "asset": "S03_02_INF_ZO.png",
+      "scene": "S03",
+      "motion": "ZO"
+    },
+    {
+      "cues": "32-34",
+      "asset": "S03_03_SCN_ZI.png",
+      "scene": "S03",
+      "motion": "ZI"
+    },
+    {
+      "cues": "35-36",
+      "asset": "S04_01_CU_ZI.png",
+      "scene": "S04",
+      "motion": "ZI",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "37-40",
+      "asset": "S04_02_CU_ZO.png",
+      "scene": "S04",
+      "motion": "ZO"
+    },
+    {
+      "cues": "41-43",
+      "asset": "S04_03_CU_ZI.png",
+      "scene": "S04",
+      "motion": "ZI"
+    },
+    {
+      "cues": "44-45",
+      "asset": "S04_04_CU_PU.png",
+      "scene": "S04",
+      "motion": "PU"
+    },
+    {
+      "cues": "46-48",
+      "asset": "S04_05_CU_ST.png",
+      "scene": "S04",
+      "motion": "ST"
+    },
+    {
+      "cues": "49-52",
+      "asset": "S04_06_CU_ZI.png",
+      "scene": "S04",
+      "motion": "ZI"
+    },
+    {
+      "cues": "53-55",
+      "asset": "S05_01_CU_ZO.png",
+      "scene": "S05",
+      "motion": "ZO",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "56-58",
+      "asset": "S05_02_CU_ST.png",
+      "scene": "S05",
+      "motion": "ST"
+    },
+    {
+      "cues": "59-63",
+      "asset": "S05_03_SCN_ZO.png",
+      "scene": "S05",
+      "motion": "ZO"
+    }
+  ],
+  "images": [
+    {
+      "file": "S01_01_SCN_ZI.png",
+      "prompt": "Looking through a rain-splattered train glass window from outside at night, soft rain drops glistening against blurred streaks of warm pink and golden neon city lights across Tokyo buildings in the distance.",
+      "refs": [
+        "BG_TRAIN_CARRIAGE"
+      ]
+    },
+    {
+      "file": "S01_02_SCN_ZO.png",
+      "prompt": "Wide interior view of a quiet, warm train carriage with light wood paneling and soft lighting. Ren sits quietly by the window softly turning a page in his notebook, while another passenger, Reiko, sits calmly a few rows away in a cream cardigan softly reading.",
+      "refs": [
+        "CH_REN",
+        "CH_REIKO",
+        "BG_TRAIN_CARRIAGE"
+      ]
+    },
+    {
+      "file": "S01_03_CU_ZO.png",
+      "prompt": "Side profile close-up of Ren leaning his forehead gently against the cool train window pane, eyes softly closed, calm contemplative expression, rainy window glass with faint neon reflections.",
+      "refs": [
+        "CH_REN",
+        "BG_TRAIN_CARRIAGE"
+      ]
+    },
+    {
+      "file": "S02_01_SCN_ZI.png",
+      "prompt": "Cozy traditional Japanese tea shop interior in Yanaka. Dark cedar wooden counters, rows of ceramic tea tins on shelves, warm paper lantern lights casting a soft glow across tatami floor.",
+      "refs": [
+        "BG_TEA_SHOP"
+      ]
+    },
+    {
+      "file": "S02_02_SCN_ZO.png",
+      "prompt": "Ren's grandfather standing composed behind a dark cedar tea counter, carefully using a slender wooden scoop to measure dried tea leaves into a small pottery vessel with unhurried grace.",
+      "refs": [
+        "CH_GRANDFATHER",
+        "BG_TEA_SHOP"
+      ]
+    },
+    {
+      "file": "S02_03_CU_ZI.png",
+      "prompt": "Close-up of the grandfather's weathered, gentle hands carefully pouring hot water from an iron kettle into a dark clay teapot, delicate steam rising gently into warm ambient light.",
+      "refs": [
+        "CH_GRANDFATHER"
+      ]
+    },
+    {
+      "file": "S02_04_SCN_PD.png",
+      "prompt": "The grandfather standing behind the dark cedar counter, carefully pouring steaming water from an iron kettle into a dark clay teapot with a calm, reassuring smile, soft ambient daylight.",
+      "refs": [
+        "CH_GRANDFATHER",
+        "BG_TEA_SHOP"
+      ]
+    },
+    {
+      "file": "S02_05_HYB_ZO.png",
+      "prompt": "A warm visual representation of progress: a simple stone stepping path winding through a quiet Japanese garden, with gentle light highlighting a single small step forward amidst morning mist.",
+      "refs": [
+        "BG_TEA_SHOP"
+      ]
+    },
+    {
+      "file": "S03_01_SCN_ZI.png",
+      "prompt": "Overhead close-up shot of Ren's hands opening a clean lined notebook resting on the small wooden tray table inside the train carriage.",
+      "refs": [
+        "CH_REN",
+        "BG_TRAIN_CARRIAGE"
+      ]
+    },
+    {
+      "file": "S03_02_INF_ZO.png",
+      "prompt": "A clean conceptual visual balance chart: on the left side, stacked heavy scrolls, ink inkstones, and complex kanji character charts representing overwhelming study volume; on the right side, a single simple clean line.",
+      "refs": [
+        "CH_REN"
+      ]
+    },
+    {
+      "file": "S03_03_SCN_ZI.png",
+      "prompt": "A quiet desk inside a home room, soft shoji window light illuminating a heavy leather-bound calligraphy manual sitting unopened and untouched next to unused inkstones.",
+      "refs": [
+        "BG_DESK_STUDY",
+        "OBJ_CALLIGRAPHY_MANUAL"
+      ]
+    },
+    {
+      "file": "S04_01_CU_ZI.png",
+      "prompt": "Close-up of Ren's hand reaching into his dark coat pocket, pulling out a small wooden hourglass timer.",
+      "refs": [
+        "CH_REN",
+        "OBJ_WOODEN_TIMER"
+      ]
+    },
+    {
+      "file": "S04_02_CU_ZO.png",
+      "prompt": "Close-up shot of the small wooden hourglass timer standing upright on the small wooden train tray table, fine golden sand beginning to flow down through the clear glass tube.",
+      "refs": [
+        "OBJ_WOODEN_TIMER",
+        "BG_TRAIN_CARRIAGE"
+      ]
+    },
+    {
+      "file": "S04_03_CU_ZI.png",
+      "prompt": "Close-up of Ren's fingers unclipping the cap from a black brush pen, held gently over the blank white notebook page.",
+      "refs": [
+        "CH_REN"
+      ]
+    },
+    {
+      "file": "S04_04_CU_PU.png",
+      "prompt": "Extreme close-up of the fine tip of the black brush pen pressing against smooth white paper, leaving a single clean, dark vertical ink line—a tate-bo stroke.",
+      "refs": [
+        "CH_REN"
+      ]
+    },
+    {
+      "file": "S04_05_CU_ST.png",
+      "prompt": "Close-up shot of Ren's face in quiet focus, eyes attentively looking down at his paper, shoulders relaxed, breathing calmly in the quiet train light.",
+      "refs": [
+        "CH_REN",
+        "BG_TRAIN_CARRIAGE"
+      ]
+    },
+    {
+      "file": "S04_06_CU_ZI.png",
+      "prompt": "High angle close-up of the notebook page as Ren draws a second and third clean vertical ink line side by side, dark ink steady on the ivory paper.",
+      "refs": [
+        "CH_REN"
+      ]
+    },
+    {
+      "file": "S05_01_CU_ZO.png",
+      "prompt": "Macro close-up of the small wooden hourglass timer as the last few grains of golden sand fall softly into the bottom glass bulb.",
+      "refs": [
+        "OBJ_WOODEN_TIMER"
+      ]
+    },
+    {
+      "file": "S05_02_CU_ST.png",
+      "prompt": "Overhead view of the opened notebook lying on the tray table, displaying six neat vertical black ink lines drawn cleanly down the center of the page, next to the capped brush pen.",
+      "refs": [
+        "CH_REN",
+        "BG_TRAIN_CARRIAGE"
+      ]
+    },
+    {
+      "file": "S05_03_SCN_ZO.png",
+      "prompt": "Wide shot of Ren sitting calmly by the train window as the train pulls into Yanaka Station platform, soft station lights blurring outside, Ren holding his notebook with a subtle, peaceful smile.",
+      "refs": [
+        "CH_REN",
+        "BG_TRAIN_CARRIAGE"
+      ]
+    }
+  ]
+}

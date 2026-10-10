@@ -1,0 +1,564 @@
+{
+  "style": "Warm 2D editorial cartoon illustration for an adult personal-finance show. Recurring main character Ray: a friendly man in his late 30s, short dark hair, light stubble, warm medium skin tone, slightly rounded adult build; signature wardrobe: mustard-yellow crew-neck sweater over a white shirt collar, dark navy trousers, brown loafers. Keep his face, hair, proportions and wardrobe identical in every image. Clean dark charcoal outlines, smooth simplified shapes, flat base colours, restrained broad cel shadows, clearly illustrated. Palette: warm cream, soft beige, muted navy, dusty teal, warm wood brown, natural green; terracotta only sparingly for caution. Believable adult anatomy and natural hands. Everyday recognisable settings with four to eight supporting elements; Ray is always the most prominent figure. Simple directional light; night interiors use warm practical lamps with dark night-blue exterior windows. Compose for fast readability and leave clean overlay space at the top of the frame. No photorealism, 3D rendering, anime, stick limbs, glossy plastic, excessive luxury decoration, crowded composition or logos. No generated text anywhere except simple unbranded graphics on smartphone screens.",
+  "refs": {
+    "CH_RAY": "refs/CH_RAY.png",
+    "CH_NINA": "refs/CH_NINA.png",
+    "CH_MARCUS": "refs/CH_MARCUS.png",
+    "CH_ADVISOR": "refs/CH_ADVISOR.png"
+  },
+  "refPrompts": {
+    "CH_RAY": "Character reference for Ray, the show's host: a friendly man in his late 30s, short dark hair, light stubble, warm medium skin tone, dark brown eyes, slightly rounded adult build, natural adult hands. Calm approachable expression. Front-facing bust and full-body view, standing relaxed, arms at his sides. Wardrobe: mustard-yellow crew-neck sweater over a white shirt collar, dark navy trousers, brown loafers. Plain cream studio background, even soft light, no props, no text.",
+    "CH_NINA": "Character reference for Nina, one of two example savers: a woman aged 30, warm light-brown skin, black hair in a low bun, rectangular glasses, calm neutral expression. Wardrobe: dusty-teal blouse, beige trousers, white sneakers. Front and full-body view on a plain cream background, no props, no text.",
+    "CH_MARCUS": "Character reference for Marcus, the second example saver: a man aged 30, light skin with freckles, curly auburn hair, round face, cheerful expression. Wardrobe: natural-green button shirt with sleeves rolled up, soft beige chinos, brown sneakers. Front and full-body view on a plain cream background, no props, no text.",
+    "CH_ADVISOR": "Character reference for Dana, a financial advisor: a woman in her 50s, deep-brown skin, short silver-grey hair, warm confident expression. Wardrobe: muted-navy blazer over a cream blouse, simple pendant necklace. Front and half-body view on a plain cream background, no props, no text."
+  },
+  "shots": [
+    {
+      "cues": "1-3",
+      "asset": "S01_01_SCN_ZI.png",
+      "scene": "S01",
+      "motion": "ZI"
+    },
+    {
+      "cues": "4-6",
+      "asset": "S01_02_SCN_PU.png",
+      "scene": "S01",
+      "motion": "PU"
+    },
+    {
+      "cues": "7-9",
+      "asset": "S01_03_CU_ST.png",
+      "scene": "S01",
+      "motion": "ST"
+    },
+    {
+      "cues": "10-13",
+      "asset": "S01_04_CU_ZI.png",
+      "scene": "S01",
+      "motion": "ZI"
+    },
+    {
+      "cues": "14-15",
+      "asset": "S02_01_CU_ZO.png",
+      "scene": "S02",
+      "motion": "ZO",
+      "transition": "CROSSFADE",
+      "sfx": "pop"
+    },
+    {
+      "cues": "16-19",
+      "asset": "S02_02_SCN_ZI.png",
+      "scene": "S02",
+      "motion": "ZI"
+    },
+    {
+      "cues": "20-22",
+      "asset": "S02_03_SCN_PU.png",
+      "scene": "S02",
+      "motion": "PU"
+    },
+    {
+      "cues": "23-28",
+      "asset": "S02_04_SCN_PD.png",
+      "scene": "S02",
+      "motion": "PD"
+    },
+    {
+      "cues": "29-32",
+      "asset": "S03_01_CU_ZI.png",
+      "scene": "S03",
+      "motion": "ZI"
+    },
+    {
+      "cues": "33-35",
+      "asset": "S04_01_SCN_ZI.png",
+      "scene": "S04",
+      "motion": "ZI"
+    },
+    {
+      "cues": "36-37",
+      "asset": "S04_02_SCN_ST.png",
+      "scene": "S04",
+      "motion": "ST"
+    },
+    {
+      "cues": "38-42",
+      "asset": "S04_03_CMP_ZO.png",
+      "scene": "S04",
+      "motion": "ZO"
+    },
+    {
+      "cues": "43-46",
+      "asset": "S04_04_CU_ZI.png",
+      "scene": "S04",
+      "motion": "ZI"
+    },
+    {
+      "cues": "47-49",
+      "asset": "S05_01_SCN_ZO.png",
+      "scene": "S05",
+      "motion": "ZO",
+      "transition": "DIP"
+    },
+    {
+      "cues": "50-54",
+      "asset": "S05_02_SCN_ZI.png",
+      "scene": "S05",
+      "motion": "ZI"
+    },
+    {
+      "cues": "55-56",
+      "asset": "S05_03_CU_ST.png",
+      "scene": "S05",
+      "motion": "ST"
+    },
+    {
+      "cues": "57-60",
+      "asset": "S05_04_CU_ZI.png",
+      "scene": "S05",
+      "motion": "ZI"
+    },
+    {
+      "cues": "61-63",
+      "asset": "S05_05_CMP_ZO.png",
+      "scene": "S05",
+      "motion": "ZO"
+    },
+    {
+      "cues": "64-69",
+      "asset": "S05_06_SCN_ZI.png",
+      "scene": "S05",
+      "motion": "ZI"
+    },
+    {
+      "cues": "70-74",
+      "asset": "S05_07_SCN_PD.png",
+      "scene": "S05",
+      "motion": "PD"
+    },
+    {
+      "cues": "75-77",
+      "asset": "S05_08_CU_ZI.png",
+      "scene": "S05",
+      "motion": "ZI"
+    },
+    {
+      "cues": "78-81",
+      "asset": "S06_01_SCN_PU.png",
+      "scene": "S06",
+      "motion": "PU"
+    },
+    {
+      "cues": "82-87",
+      "asset": "S06_02_SCN_PD.png",
+      "scene": "S06",
+      "motion": "PD"
+    },
+    {
+      "cues": "88-90",
+      "asset": "S06_03_CU_ZI.png",
+      "scene": "S06",
+      "motion": "ZI"
+    },
+    {
+      "cues": "91-94",
+      "asset": "S06_04_CMP_ZO.png",
+      "scene": "S06",
+      "motion": "ZO"
+    },
+    {
+      "cues": "95-99",
+      "asset": "S06_05_SCN_ZI.png",
+      "scene": "S06",
+      "motion": "ZI"
+    },
+    {
+      "cues": "100-104",
+      "asset": "S07_01_SCN_ZO.png",
+      "scene": "S07",
+      "motion": "ZO",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "105-106",
+      "asset": "S07_02_SCN_PU.png",
+      "scene": "S07",
+      "motion": "PU"
+    },
+    {
+      "cues": "107-108",
+      "asset": "S07_03_SCN_ZI.png",
+      "scene": "S07",
+      "motion": "ZI"
+    },
+    {
+      "cues": "109-111",
+      "asset": "S07_04_SCN_ST.png",
+      "scene": "S07",
+      "motion": "ST"
+    },
+    {
+      "cues": "112-114",
+      "asset": "S07_05_SCN_PD.png",
+      "scene": "S07",
+      "motion": "PD"
+    },
+    {
+      "cues": "115-119",
+      "asset": "S07_06_SCN_ZO.png",
+      "scene": "S07",
+      "motion": "ZO"
+    },
+    {
+      "cues": "120-124",
+      "asset": "S08_01_SCN_ZI.png",
+      "scene": "S08",
+      "motion": "ZI"
+    },
+    {
+      "cues": "125-130",
+      "asset": "S08_02_SCN_ZO.png",
+      "scene": "S08",
+      "motion": "ZO"
+    },
+    {
+      "cues": "131-137",
+      "asset": "S09_01_SCN_PU.png",
+      "scene": "S09",
+      "motion": "PU"
+    },
+    {
+      "cues": "138-140",
+      "asset": "S09_02_SCN_ZO.png",
+      "scene": "S09",
+      "motion": "ZO"
+    },
+    {
+      "cues": "141-144",
+      "asset": "S10_01_SCN_PD.png",
+      "scene": "S10",
+      "motion": "PD",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "145-147",
+      "asset": "S10_02_CU_ZO.png",
+      "scene": "S10",
+      "motion": "ZO"
+    },
+    {
+      "cues": "148-153",
+      "asset": "S11_01_CU_ZI.png",
+      "scene": "S11",
+      "motion": "ZI"
+    },
+    {
+      "cues": "154-156",
+      "asset": "S11_02_CU_ZI.png",
+      "scene": "S11",
+      "motion": "ZI"
+    },
+    {
+      "cues": "157-160",
+      "asset": "S11_03_CU_ZO.png",
+      "scene": "S11",
+      "motion": "ZO"
+    }
+  ],
+  "images": [
+    {
+      "file": "S01_01_SCN_ZI.png",
+      "prompt": "Interior of a small neighbourhood cafe, mid-afternoon, daylight from a side window. Ray sits at the near end of a wooden table, open palm gestured toward two friends seated across: Nina and Marcus, both clearly 30 years old. Before each of them stands one identical glass jar, and at the same moment each drops a single coin into their own jar, their hands mirrored. Two matching mugs and a small plate of biscuits sit between them. Camera at table height, the two jars and their owners centred, Ray completing the triangle.",
+      "refs": [
+        "CH_RAY",
+        "CH_NINA",
+        "CH_MARCUS"
+      ]
+    },
+    {
+      "file": "S01_02_SCN_PU.png",
+      "prompt": "The same cafe corner twenty years later: Nina and Marcus seated where they sat, now with grey streaks at their temples. Above Nina's place a coin stack towers to her shoulder; above Marcus only a shallow handful of coins. Ray stands between the two places, eyes wide, brows high, one hand pressed on top of his head. Afternoon window light. The camera tilts up from the small pile to the towering one.",
+      "refs": [
+        "CH_RAY",
+        "CH_NINA",
+        "CH_MARCUS"
+      ]
+    },
+    {
+      "file": "S01_03_CU_ST.png",
+      "prompt": "Overhead-angled close view of the cafe table: two identical pay envelopes lie side by side, and beside them two identical plain fund booklets, each pair exactly matching. Ray leans over the table between the pairs, both palms flat on the wood, presenting the matching sets, face eager, eyebrows up. Even window light across the table.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S01_04_CU_ZI.png",
+      "prompt": "Ray's living-room desk in the evening, one desk lamp on, night window behind. Ray hunches over a paper account statement, a large magnifying glass in his right hand hovering above one thin line near the bottom of the page, brow furrowed, mouth pulled to one side. A pen, a coffee mug and a pair of reading glasses sit around the paper. The camera pushes in toward the magnifying glass and the tiny line it covers.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S02_01_CU_ZO.png",
+      "prompt": "Close on Ray's raised right hand holding up a large coin with a clean bite-shaped chunk missing from its edge; behind it his face with one brow raised high and lips pressed flat, a lamp and plain wall behind him. The camera pulls out from the bitten coin to include his puzzled face.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S02_02_SCN_ZI.png",
+      "prompt": "Ray's back garden in morning light. Three plants grow in a row in a tilled bed: left, a small green sprout pushing up a single coin like a seed leaf; centre, a knee-high sapling with a few coin-leaves; right, a waist-high plant carrying more coin-leaves. Ray kneels beside the row pointing along it from small to large, smiling. A watering can and trowel lie on the grass. The camera pushes along the row of plants.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S02_03_SCN_PU.png",
+      "prompt": "The same back garden, a full-grown coin tree: sturdy trunk, round canopy whose leaves are coins, a few loose coins on the grass beneath. Ray stands at its base with both arms spread wide, head tipped back, mouth open in delight. The camera tilts up from Ray and the trunk into the coin canopy.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S02_04_SCN_PD.png",
+      "prompt": "A long snowy hillside on a clear winter day. At the top of the slope a tiny snowball; at the bottom, near the foreground, an enormous boulder-sized snowball with a wide rolled track behind it. Ray stands halfway down beside the track, hands in pockets, looking down at the giant ball. The camera tilts down the hill from the tiny top snowball to the huge one.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S03_01_CU_ZI.png",
+      "prompt": "Close on the flank of the enormous snowball: a ragged dark hole punched into its side, a thin trail of dropped snow lumps curving away behind it. Ray crouches next to the hole leaning in to peer inside, brows drawn together, mouth small with concern, one gloved hand resting on the snow. The camera pushes toward the hole.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S04_01_SCN_ZI.png",
+      "prompt": "Ray's kitchen table in daylight. A neat stack of banknotes bound with a plain paper band stands beside stacked coin rolls, a closed notebook and a pencil. Ray stands at the table, both hands flat on the wood either side of the banknote stack, looking down at it with a steady, business-like expression. A kettle and two chairs in the background. The camera pushes in on the money and his hands.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S04_02_SCN_ST.png",
+      "prompt": "Ray's living room in lamplight. A coin stack built of large coin discs stands chest-high beside the sofa; a small hourglass rests on the side table next to it. Ray stands beside the stack, hands on hips, chin lifted, a satisfied closed-mouth smile. Lamplight falls from the left.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S04_03_CMP_ZO.png",
+      "prompt": "The same living room seen wider: two coin stacks of identical disc width stand side by side on the floor. The left stack towers well above Ray's head. The right stack, built of the same discs, reaches only about half that height, its top level with Ray's chest — the entire upper half of the right stack is simply absent, an empty column of wall showing where its missing half should have reached, so the one-stack-tall gap between the two tops is the loudest thing in the frame. Ray stands between and slightly behind the two stacks, hand on chin, comparing them with narrowed eyes, head turned from the tall one down to the short one. The hourglass remains on the side table. The camera pulls out to frame Ray and both stacks fully, the missing upper half of the right stack dead centre.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S04_04_CU_ZI.png",
+      "prompt": "Close on the chest-high coin stack: nearly half of it has snapped off and lies tilted on the floor beside the base, the broken faces of both pieces visible, the remaining stump and the fallen chunk together showing how much height was lost. Ray kneels holding the broken-off chunk in both hands at chest height, eyes wide, brows high, mouth open in shock. The camera pushes in on the broken piece and his face.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S05_01_SCN_ZO.png",
+      "prompt": "A narrow hallway in Ray's home at dusk. Four closed wooden doors stand in an even row along one wall, each with a simple round knob. Ray stands at the near end holding a flashlight, its beam aimed down the row of doors, head turned toward camera with a questioning raised brow. A coat rack and a small rug. The camera pulls back down the hallway to reveal all four doors.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S05_02_SCN_ZI.png",
+      "prompt": "Ray's desk in daylight. An open fund booklet lies flat, its pages showing simple unbranded chart graphics. Beside it a glass jar filled with coins, a small metal ladle resting inside having just lifted one coin clear of the rest. Ray sits reading the booklet, index finger on the page, eyes narrowed in concentration. A desk lamp and a pen complete the desk. The camera pushes in toward the jar and the lifting ladle.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S05_03_CU_ST.png",
+      "prompt": "Two glass jars of coins side by side on the desk, seen straight on. Above the left jar a tiny teaspoon holds one small coin; above the right jar a large ladle holds a heaping scoop of coins. Ray stands behind the jars, head tilted, lips pressed flat in a sceptical look, eyes moving between them. Even window light from the side.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S05_04_CU_ZI.png",
+      "prompt": "Ray stands in his living room holding his smartphone in his right hand; its lit screen shows a plain unbranded investing app, a small line chart above a row of coin icons. A single coin slides out of the phone's lower edge into a small slot in the case, caught mid-slide. Ray's brows are drawn together, mouth turned down at one corner. The camera pushes toward the phone and the escaping coin.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S05_05_CMP_ZO.png",
+      "prompt": "Two smartphones propped side by side on Ray's desk, screens lit: the left screen shows a single coin above a simple grid of calendar squares; the right screen shows a round pie with one slice separated and lifting away. Ray leans over the desk between them, looking from one screen to the other, hand on chin. The camera pulls out from the two screens to include his leaning figure.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S05_06_SCN_ZI.png",
+      "prompt": "A tidy advisory office in daytime. Ray sits in the client chair with a coin tower built on the desk before him. Opposite, the advisor reaches across with two fingers and lifts a single coin off the very top of his tower, the coin caught mid-lift. On the wall behind hangs a calendar grid with every square filled. Ray watches the lifted coin, brows raised uncertainly, shoulders slightly sunk. The camera pushes in toward the lifting hand and the coin.",
+      "refs": [
+        "CH_RAY",
+        "CH_ADVISOR"
+      ]
+    },
+    {
+      "file": "S05_07_SCN_PD.png",
+      "prompt": "A small currency-exchange kiosk on a daytime street. Ray stands at the window handing a banknote through with his right hand, his open left palm waiting below the counter ledge. Behind the glass hang two small boards, one with an up arrow, one with a down arrow; a shallow tray of coins slides toward his palm holding visibly fewer coins than the note deserves. The camera tilts down from the two arrow boards to the coins arriving in his palm, his eyes following them down, mouth flat with disappointment.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S05_08_CU_ZI.png",
+      "prompt": "Close on Ray's desk: a crumpled paper statement smoothed flat, its surface scattered with tiny faint marks hiding in different corners, no single clear line anywhere among them. Ray bends low over it, squinting hard, one hand rubbing his temple, the other flattening a curling corner. The desk lamp rakes light across the paper from the left. The camera pushes in on the scattered marks.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S06_01_SCN_PU.png",
+      "prompt": "Ray's kitchen table at night: a pendant lamp pools light on the tabletop where a smartphone lies face up, an open notepad with a pen across it, and a mug of tea; the window behind shows night. Ray pulls out his chair and rolls up his right sleeve, jaw set, eyes fixed on the phone, a determined small frown. The camera tilts up from the tabletop arrangement to his face.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S06_02_SCN_PD.png",
+      "prompt": "Ray seated at the night table. In his right hand he holds the smartphone, its lit screen showing a plain account page: a column of rows, each row ending with a small coin icon, one row softly highlighted. His left hand copies small tick marks into the notepad. His eyes move between screen and pad, lips pressed in concentration. The camera tilts down from his focused face to the phone screen and the growing tick list.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S06_03_CU_ZI.png",
+      "prompt": "Close on the tabletop: at the left edge of the notepad stands a short column of four small coins; a simple drawn arrow points from them to a single larger coin sitting alone to the right. Ray's thumb presses a pocket calculator beside them, his face leaning into the top of the frame, eyes on the calculator. The camera pushes toward the arrow and the single larger coin.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S06_04_CMP_ZO.png",
+      "prompt": "Ray seated at the table holding one thin plain fund booklet in his left hand and one thick glossy-finish booklet in his right, both raised side by side at eye level. His gaze flicks between them, one brow raised, mouth pushed to the side in a weighing-up look. The smartphone and notepad rest closed beside him under the lamp; night window behind. The camera pulls out from the two booklets to include his comparing face.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S06_05_SCN_ZI.png",
+      "prompt": "The same table: Ray's right hand slides the thick glossy booklet across the tabletop into a half-open drawer, while his left hand presses the thin plain booklet flat on the wood, keeping it. He gives a single decisive nod, mouth set in a firm, satisfied line. The camera pushes in on the kept booklet and his nodding face.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S07_01_SCN_ZO.png",
+      "prompt": "A long wooden table in Ray's living room in daylight. Four identical glass jars stand in an even row, and beside each jar lies a single coin, the four setups matching exactly. Ray stands at the near end placing the fourth jar down with both hands, checking the row with a careful sideways glance. A folded paper and pencil rest at the table's corner. The camera pulls back along the row to show all four jars.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S07_02_SCN_PU.png",
+      "prompt": "The first jar at the left end of the table now holds a coin stack towering well above Ray's head, built of layered coin discs; beside it lie the small monthly coins that fed it. Ray stands next to it pointing up at the stack with an approving smile, head tipped back. The camera tilts up the full height of the stack from the tabletop to its top.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S07_03_SCN_ZI.png",
+      "prompt": "The second jar in the row, its coin stack reaching only to Ray's chin, clearly shorter than the first. Ray stands in front of it holding his flat hand level with the stack's top, measuring it against himself, lips pursed. The first towering stack stands out of focus behind. The camera pushes in on the second stack and his measuring hand.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S07_04_SCN_ST.png",
+      "prompt": "The third jar, its stack barely reaching Ray's chest. Ray crouches beside it at eye level with the stack's top, forearms on his knees, studying it with a tight, unimpressed mouth. The taller stacks recede down the table behind him. Even daylight across the table.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S07_05_SCN_PD.png",
+      "prompt": "The fourth jar at the far end of the table, its stack only ankle-high beside the jar. Ray kneels holding the small handful of coins that make up its height in his cupped palm, staring down at them, brows knotted, corners of his mouth pulled down. The camera tilts down from the short stack to the tiny pile in his palm.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S07_06_SCN_ZO.png",
+      "prompt": "Wide view of the whole table: the four jars in a row, their coin stacks stepping down dramatically — the first towering several times higher than Ray himself, each next stack clearly shorter than the last, until the fourth is barely a hand's width tall on the tabletop, a crumb beside a tower, so the drop from the first stack to the fourth swallows all the middle differences and reads as a vast, almost unfair chasm spanning the whole row. Ray stands at the right end, one arm stretched out level, spanning the full distance from the first jar to the last as if measuring the gulf between them, head turning along the row, mouth open mid-explanation. The camera pulls out to take in the full row and his spanning gesture, the enormous height gap between the two end stacks the centre of the frame, the fourth stack tiny at the very edge of his fingertips.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S08_01_SCN_ZI.png",
+      "prompt": "Ray's desk on a grey rainy day, the window behind streaked with running drops, trees bending outside. Ray sits holding his phone, its screen showing a simple line chart sagging downward with a small down arrow. His free hand hovers tense above the phone, fingers curled, brows pinched, mouth tight. The advisor stands at his shoulder with one calming hand resting on it, her expression steady and reassuring. The camera pushes in on the hovering hand and the calming one.",
+      "refs": [
+        "CH_RAY",
+        "CH_ADVISOR"
+      ]
+    },
+    {
+      "file": "S08_02_SCN_ZO.png",
+      "prompt": "The advisor's office desk in daylight. On the desktop between them stand three objects in a row: a small model house, a jar half filled with coins, and a plain folder tied with a ribbon. The advisor presents the row with an open palm; Ray sits opposite nodding, posture relaxed, a small easy smile. The camera pulls out to include both figures and the three objects.",
+      "refs": [
+        "CH_RAY",
+        "CH_ADVISOR"
+      ]
+    },
+    {
+      "file": "S09_01_SCN_PU.png",
+      "prompt": "Ray stands at his large living-room window in daylight, a mug held in both hands, watching a storm outside: trees bent sideways, rain driving past the glass. His feet are planted, shoulders settled, face calm with a flat, patient mouth. Inside, the room is still, a sofa and a potted plant. The camera tilts up from his still figure to the wild grey sky beyond the glass.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S09_02_SCN_ZO.png",
+      "prompt": "Ray's desk in bright afternoon light. His right hand sets a thick glossy fund box down into an out-tray while his left hand holds up a thin plain booklet at eye level. He looks at the thin booklet with a small resolute smile and a firm nod. The desk is otherwise clear except a pen and the phone lying face down. The camera pulls out from his hands to include him at the desk.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S10_01_SCN_PD.png",
+      "prompt": "The back-garden coin tree again: its canopy now visibly thinned with several coin-leaves missing, and one coin drops through the air beneath it, caught mid-fall. Ray stands below with both hands raised and cupped, catching the falling coin against his chest, mouth turned down, brows tilted up in a wistful look. A few lost coins lie on the grass. The camera tilts down from the thinned canopy to his open hands.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S10_02_CU_ZO.png",
+      "prompt": "Close on the tabletop: four coins lie in a neat row, each with a bite-shaped chunk missing from its edge. Ray's hand reaches along the row, fingertip tapping the last coin, head bowed over them, lips firm. The camera pulls out from the four coins to include his bowed head and tapping hand.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S11_01_CU_ZI.png",
+      "prompt": "A windowsill in evening light: the great snowball, now smaller and slightly melted, sits in a shallow saucer, the ragged hole open in its side, a thin line of meltwater dripping from the hole into the saucer. Ray stands close behind the window glass with one hand flat on it, watching, brows tilted up, mouth small and sad. The camera pushes toward the dripping hole.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S11_02_CU_ZI.png",
+      "prompt": "Ray's desk at night under the lamp, night window behind. Seen from the side, Ray's thumb taps the smartphone where a plain unbranded account app opens, its glow lighting the lower half of his face; his eyes lock on the screen, jaw set, brows level and determined. The notepad and pen wait beside the phone. The camera pushes in on the lit screen and his focused face.",
+      "refs": [
+        "CH_RAY"
+      ]
+    },
+    {
+      "file": "S11_03_CU_ZO.png",
+      "prompt": "Close on Ray holding the phone loosely in one hand at chest height, no longer looking at the screen: his eyes lifted toward the window with a soft, settled smile, shoulders dropped and easy. The lamp glows behind him, the window beyond showing night. The camera pulls out from his relaxed face to a wider view of him at the desk.",
+      "refs": [
+        "CH_RAY"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,822 @@
+{
+  "schema_version": 1,
+  "project": "How investment fees eat compound growth",
+  "settings": {
+    "fps": 30,
+    "width": 2560,
+    "height": 1440,
+    "auto_motion_enabled": true,
+    "easing": "Ease in out",
+    "timing": {
+      "floor_image_seconds": 2,
+      "min_image_seconds": 2.5,
+      "preferred_image_seconds": 5,
+      "max_image_seconds": 8
+    },
+    "transitions": {
+      "enabled": true,
+      "kind": "Crossfade",
+      "scene_boundary_kind": "Dip to black",
+      "alignment": "Late",
+      "duration_frames": 15
+    }
+  },
+  "inventory": {
+    "scene_count": 11,
+    "clip_count": 41,
+    "audio_file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\audio\\narration.mp3"
+  },
+  "timeline": {
+    "total_frames": 8432,
+    "scenes": [
+      {
+        "id": "S01",
+        "start_frame": 0,
+        "end_frame": 560,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_01_SCN_ZI.png",
+            "start_frame": 0,
+            "duration_frames": 178,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_02_SCN_PU.png",
+            "start_frame": 178,
+            "duration_frames": 132,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_03_CU_ST.png",
+            "start_frame": 310,
+            "duration_frames": 117,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_04_CU_ZI.png",
+            "start_frame": 427,
+            "duration_frames": 133,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S02",
+        "start_frame": 560,
+        "end_frame": 1306,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_01_CU_ZO.png",
+            "start_frame": 560,
+            "duration_frames": 111,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_02_SCN_ZI.png",
+            "start_frame": 671,
+            "duration_frames": 194,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_03_SCN_PU.png",
+            "start_frame": 865,
+            "duration_frames": 134,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_04_SCN_PD.png",
+            "start_frame": 999,
+            "duration_frames": 307,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S03",
+        "start_frame": 1306,
+        "end_frame": 1514,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S03_01_CU_ZI.png",
+            "start_frame": 1306,
+            "duration_frames": 208,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          }
+        ]
+      },
+      {
+        "id": "S04",
+        "start_frame": 1514,
+        "end_frame": 2278,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_01_SCN_ZI.png",
+            "start_frame": 1514,
+            "duration_frames": 188,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_02_SCN_ST.png",
+            "start_frame": 1702,
+            "duration_frames": 121,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_03_CMP_ZO.png",
+            "start_frame": 1823,
+            "duration_frames": 288,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_04_CU_ZI.png",
+            "start_frame": 2111,
+            "duration_frames": 167,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S05",
+        "start_frame": 2278,
+        "end_frame": 3987,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_01_SCN_ZO.png",
+            "start_frame": 2278,
+            "duration_frames": 113,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_02_SCN_ZI.png",
+            "start_frame": 2391,
+            "duration_frames": 300,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_03_CU_ST.png",
+            "start_frame": 2691,
+            "duration_frames": 140,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_04_CU_ZI.png",
+            "start_frame": 2831,
+            "duration_frames": 218,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_05_CMP_ZO.png",
+            "start_frame": 3049,
+            "duration_frames": 163,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_06_SCN_ZI.png",
+            "start_frame": 3212,
+            "duration_frames": 344,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_07_SCN_PD.png",
+            "start_frame": 3556,
+            "duration_frames": 295,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_08_CU_ZI.png",
+            "start_frame": 3851,
+            "duration_frames": 136,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S06",
+        "start_frame": 3987,
+        "end_frame": 5020,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_01_SCN_PU.png",
+            "start_frame": 3987,
+            "duration_frames": 146,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_02_SCN_PD.png",
+            "start_frame": 4133,
+            "duration_frames": 238,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_03_CU_ZI.png",
+            "start_frame": 4371,
+            "duration_frames": 128,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_04_CMP_ZO.png",
+            "start_frame": 4499,
+            "duration_frames": 259,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_05_SCN_ZI.png",
+            "start_frame": 4758,
+            "duration_frames": 262,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S07",
+        "start_frame": 5020,
+        "end_frame": 6356,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_01_SCN_ZO.png",
+            "start_frame": 5020,
+            "duration_frames": 344,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_02_SCN_PU.png",
+            "start_frame": 5364,
+            "duration_frames": 157,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_03_SCN_ZI.png",
+            "start_frame": 5521,
+            "duration_frames": 121,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_04_SCN_ST.png",
+            "start_frame": 5642,
+            "duration_frames": 188,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_05_SCN_PD.png",
+            "start_frame": 5830,
+            "duration_frames": 207,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_06_SCN_ZO.png",
+            "start_frame": 6037,
+            "duration_frames": 319,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S08",
+        "start_frame": 6356,
+        "end_frame": 6891,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S08_01_SCN_ZI.png",
+            "start_frame": 6356,
+            "duration_frames": 219,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S08_02_SCN_ZO.png",
+            "start_frame": 6575,
+            "duration_frames": 316,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S09",
+        "start_frame": 6891,
+        "end_frame": 7407,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S09_01_SCN_PU.png",
+            "start_frame": 6891,
+            "duration_frames": 308,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Linear",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S09_02_SCN_ZO.png",
+            "start_frame": 7199,
+            "duration_frames": 208,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S10",
+        "start_frame": 7407,
+        "end_frame": 7792,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S10_01_SCN_PD.png",
+            "start_frame": 7407,
+            "duration_frames": 196,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S10_02_CU_ZO.png",
+            "start_frame": 7603,
+            "duration_frames": 189,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S11",
+        "start_frame": 7792,
+        "end_frame": 8432,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S11_01_CU_ZI.png",
+            "start_frame": 7792,
+            "duration_frames": 334,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S11_02_CU_ZI.png",
+            "start_frame": 8126,
+            "duration_frames": 152,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S11_03_CU_ZO.png",
+            "start_frame": 8278,
+            "duration_frames": 154,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "Info",
+      "code": "SHOTLIST_PRECEDENCE",
+      "message": "shotlist.json takes precedence \u2014 visual_manifest.json was regenerated from it (edit the shotlist, not the manifest)."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,5s before shot \u0022shot-002\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,53s before shot \u0022shot-003\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,57s before shot \u0022shot-004\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,43s before shot \u0022shot-005\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,63s before shot \u0022shot-006\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,8s before shot \u0022shot-009\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,73s before shot \u0022shot-010\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,7s before shot \u0022shot-014\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,57s before shot \u0022shot-015\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,53s before shot \u0022shot-019\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,5s before shot \u0022shot-021\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,73s before shot \u0022shot-022\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,87s before shot \u0022shot-023\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,63s before shot \u0022shot-025\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,47s before shot \u0022shot-027\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,57s before shot \u0022shot-028\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,63s before shot \u0022shot-031\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,4s before shot \u0022shot-032\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,6s before shot \u0022shot-034\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,5s before shot \u0022shot-038\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,5s before shot \u0022shot-039\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,53s before shot \u0022shot-040\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0,67s before shot \u0022shot-041\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Warning",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Manifest timeline ends -16 frames off the audio duration (281,07s); the last shot was extended to match."
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-001\u0022 (S01) \u00B7 cues 1-3 \u00B7 0:00.000 \u2192 0:05.933 (5,9 s) \u00B7 \u0022Imagine two people, both 30 years old, both saving the same amount every single month.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-002\u0022 (S01) \u00B7 cues 4-6 \u00B7 0:05.933 \u2192 0:10.333 (4,4 s) \u00B7 \u002220 years later, one of them has tens of thousands more in the bank than the other.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-003\u0022 (S01) \u00B7 cues 7-9 \u00B7 0:10.333 \u2192 0:14.233 (3,9 s) \u00B7 \u0022They earn the same salary. They pick the same kind of investment.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-004\u0022 (S01) \u00B7 cues 10-13 \u00B7 0:14.233 \u2192 0:18.667 (4,4 s) \u00B7 \u0022So what happened? The answer is hiding in a number most people never look at.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-005\u0022 (S02) \u00B7 cues 14-15 \u00B7 0:18.667 \u2192 0:22.367 (3,7 s) \u00B7 \u0022Fees. Let\u0027s start with how money actually grows.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-006\u0022 (S02) \u00B7 cues 16-19 \u00B7 0:22.367 \u2192 0:28.833 (6,5 s) \u00B7 \u0022When you invest, your money earns a return. Next year, you earn a return on the money, and\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-007\u0022 (S02) \u00B7 cues 20-22 \u00B7 0:28.833 \u2192 0:33.300 (4,5 s) \u00B7 \u0022well. That is compound growth, and it is the most powerful force in personal\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-008\u0022 (S02) \u00B7 cues 23-28 \u00B7 0:33.300 \u2192 0:43.533 (10,2 s) \u00B7 \u0022finance. Picture a snowball rolling down a hill. At the top it is tiny, at the bottom it i\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-009\u0022 (S03) \u00B7 cues 29-32 \u00B7 0:43.533 \u2192 0:50.467 (6,9 s) \u00B7 \u0022Now picture a small hole in that snowball. Every roll a little bit falls out. That hole is\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-010\u0022 (S04) \u00B7 cues 33-35 \u00B7 0:50.467 \u2192 0:56.733 (6,3 s) \u00B7 \u0022Here is the simple example. You invest 10 ,000 euros. The market gives you 7 % a year,\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-011\u0022 (S04) \u00B7 cues 36-37 \u00B7 0:56.733 \u2192 1:00.767 (4,0 s) \u00B7 \u0022after 30 years with no fees you hold roughly 76\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-012\u0022 (S04) \u00B7 cues 38-42 \u00B7 1:00.767 \u2192 1:10.367 (9,6 s) \u00B7 \u0022,000. Now add a fee of 2 % a year. Your real growth is 5%, and after 30 years you hold abo\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-013\u0022 (S04) \u00B7 cues 43-46 \u00B7 1:10.367 \u2192 1:15.933 (5,6 s) \u00B7 \u0022nothing. It cost you more than 30 ,000. It took almost half of your final result.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-014\u0022 (S05) \u00B7 cues 47-49 \u00B7 1:15.933 \u2192 1:19.700 (3,8 s) \u00B7 \u0022So where do these fees hide? There are four places to check.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-015\u0022 (S05) \u00B7 cues 50-54 \u00B7 1:19.700 \u2192 1:29.700 (10,0 s) \u00B7 \u0022First, the fund fee. Funds charge a yearly percentage, often called the expense ratio or t\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-016\u0022 (S05) \u00B7 cues 55-56 \u00B7 1:29.700 \u2192 1:34.367 (4,7 s) \u00B7 \u0022.1%. Some actively managed funds charge 1 .5 % or\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-017\u0022 (S05) \u00B7 cues 57-60 \u00B7 1:34.367 \u2192 1:41.633 (7,3 s) \u00B7 \u0022more. Second, the platform fee. Your broker or app may charge to hold your investments, to\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-018\u0022 (S05) \u00B7 cues 61-63 \u00B7 1:41.633 \u2192 1:47.067 (5,4 s) \u00B7 \u0022both. Some take a flat monthly amount. Some take a slice of everything you own.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-019\u0022 (S05) \u00B7 cues 64-69 \u00B7 1:47.067 \u2192 1:58.533 (11,5 s) \u00B7 \u0022Third, the advice fee. If someone manages your money for you, they may charge a percentage\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-020\u0022 (S05) \u00B7 cues 70-74 \u00B7 1:58.533 \u2192 2:08.367 (9,8 s) \u00B7 \u0022falls. Fourth, the hidden costs. Currency conversion, the gap between the buying price and\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-021\u0022 (S05) \u00B7 cues 75-77 \u00B7 2:08.367 \u2192 2:12.900 (4,5 s) \u00B7 \u0022None of these appear as one clear line, which is exactly why they hurt.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-022\u0022 (S06) \u00B7 cues 78-81 \u00B7 2:12.900 \u2192 2:17.767 (4,9 s) \u00B7 \u0022Now let\u0027s make this practical. Here is a four -step check you can do tonight.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-023\u0022 (S06) \u00B7 cues 82-87 \u00B7 2:17.767 \u2192 2:25.700 (7,9 s) \u00B7 \u0022Step 1. Open your investment account and find the word cost, fee, or charges. Write down e\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-024\u0022 (S06) \u00B7 cues 88-90 \u00B7 2:25.700 \u2192 2:29.967 (4,3 s) \u00B7 \u00222. Add them together. This is your true yearly cost.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-025\u0022 (S06) \u00B7 cues 91-94 \u00B7 2:29.967 \u2192 2:38.600 (8,6 s) \u00B7 \u0022Step 3. Compare it with a simple low -cost index fund. If your total is above 1%, ask your\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-026\u0022 (S06) \u00B7 cues 95-99 \u00B7 2:38.600 \u2192 2:47.333 (8,7 s) \u00B7 \u0022getting. Step 4. Decide. Keep what is worth the price and move away from what is not. Let\u0027\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-027\u0022 (S07) \u00B7 cues 100-104 \u00B7 2:47.333 \u2192 2:58.800 (11,5 s) \u00B7 \u0022because numbers become clearer when they sit side -by -side. Take four investors who each \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-028\u0022 (S07) \u00B7 cues 105-106 \u00B7 2:58.800 \u2192 3:04.033 (5,2 s) \u00B7 \u0022The first pays 0 .2 % in total costs and ends with about \u20AC235\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-029\u0022 (S07) \u00B7 cues 107-108 \u00B7 3:04.033 \u2192 3:08.067 (4,0 s) \u00B7 \u0022,000. The second pays 1 % and ends with about \u20AC200\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-030\u0022 (S07) \u00B7 cues 109-111 \u00B7 3:08.067 \u2192 3:14.333 (6,3 s) \u00B7 \u0022,000. The third pays 2 % and ends with about \u20AC166 ,000.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-031\u0022 (S07) \u00B7 cues 112-114 \u00B7 3:14.333 \u2192 3:21.233 (6,9 s) \u00B7 \u0022The fourth pays 3 % and ends with about \u20AC139 ,000. Same effort, same market,\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-032\u0022 (S07) \u00B7 cues 115-119 \u00B7 3:21.233 \u2192 3:31.867 (10,6 s) \u00B7 \u0022same discipline. The only difference is the price tag, and it adds up to nearly \u20AC100 ,000 \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-033\u0022 (S08) \u00B7 cues 120-124 \u00B7 3:31.867 \u2192 3:39.167 (7,3 s) \u00B7 \u0022advice? No. A good advisor can stop you from selling in a panic, which can be worth far mo\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-034\u0022 (S08) \u00B7 cues 125-130 \u00B7 3:39.167 \u2192 3:49.700 (10,5 s) \u00B7 \u0022A good plan can help you with taxes, with retirement, with a house. The question is simply\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-035\u0022 (S09) \u00B7 cues 131-137 \u00B7 3:49.700 \u2192 3:59.967 (10,3 s) \u00B7 \u0022lesson. Fees are one of the few things in investing you can control. You cannot predict th\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-036\u0022 (S09) \u00B7 cues 138-140 \u00B7 3:59.967 \u2192 4:06.900 (6,9 s) \u00B7 \u0022you can choose a cheaper fund this afternoon, and that choice keeps working for you every \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-037\u0022 (S10) \u00B7 cues 141-144 \u00B7 4:06.900 \u2192 4:13.433 (6,5 s) \u00B7 \u0022recap. Money grows by compounding. Fees shrink that growth, quietly, year after year.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-038\u0022 (S10) \u00B7 cues 145-147 \u00B7 4:13.433 \u2192 4:19.733 (6,3 s) \u00B7 \u0022Check the fund fee, the platform fee, the advice fee, and the hidden costs. Add them up, c\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-039\u0022 (S11) \u00B7 cues 148-153 \u00B7 4:19.733 \u2192 4:30.867 (11,1 s) \u00B7 \u0022decide. And here is the part worth remembering. Time is the one ingredient you cannot buy \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-040\u0022 (S11) \u00B7 cues 154-156 \u00B7 4:30.867 \u2192 4:35.933 (5,1 s) \u00B7 \u0022So tonight, before you do anything else, open your account and read the numbers.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-041\u0022 (S11) \u00B7 cues 157-160 \u00B7 4:35.933 \u2192 4:41.067 (5,1 s) \u00B7 \u0022It takes 10 minutes. It might be the best 10 minutes your future self ever receives.\u0022"
+    }
+  ],
+  "coverage": {
+    "duration_seconds": 281.06666666666666,
+    "shot_count": 41,
+    "asset_count": 41,
+    "unique_assets_used": 41,
+    "average_seconds_per_source_change": 7.026666666666666,
+    "longest_same_source_seconds": 11.466666666666667,
+    "longest_shot_seconds": 11.466666666666667,
+    "missing_assets": [],
+    "unused_assets": []
+  }
+}

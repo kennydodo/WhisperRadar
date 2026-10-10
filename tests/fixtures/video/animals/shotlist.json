@@ -1,0 +1,743 @@
+{
+  "style": "Flat 2D vector explainer style, minimalist hand-drawn: thick, slightly imperfect black outlines, uniform weight; solid-color fills only, no shading, gradients or textures. Clean, warm, playful educational tone. Humans: perfect white circle heads, two dot eyes, no nose, curved-line mouth, thin single-stroke stick limbs, rounded sock-shaped hands and feet, loose brown scribble hair; emotion only via mouth and eyebrow angles, floating sweat drops, question marks or motion lines. Modern people wear plain clothing. Animals are never stick figures: proportional, semi-realistic flat-cartoon anatomy with full body volume, bent joints, curved spine, small heads, accurate ears, tails, hooves and paws; running adds curved speed streaks and foot-level dust puffs. Scenes wide and mostly empty: flat ground and sky divided by a thin horizon, sparse scribble grass, rounded bushes; props as simple flat silhouettes. Infographics: white background, pictograms, arrows, dotted lines, checks and crosses, matching line weight. Settings: DAY pale blue sky, sandy tan ground; DUSK pale blue sky with dusty pink horizon band, warm tan ground; LAB clinical off-white/grey walls, grey tile floor, simple tables and shelving, even overhead light. Recurring characters must match their reference images exactly. No readable words, letters, numbers or signage anywhere; communicate only through pictograms, arrows, quantity, grouping and visual metaphor.",
+  "refs": {
+    "CH_CROW": "refs/CH_CROW.png",
+    "CH_OCTOPUS": "refs/CH_OCTOPUS.png",
+    "CH_ELEPHANT": "refs/CH_ELEPHANT.png",
+    "CH_PIG": "refs/CH_PIG.png"
+  },
+  "refPrompts": {
+    "CH_CROW": "The story's recurring crow: a proportional bird with full body volume, curved back, rounded chest, slim dark legs, straight medium black beak, solid black feather fill with a slightly ragged throat, one small round alert eye with a tiny white highlight dot; side view standing, head high, clever and watchful. Same individual reappears perched, in flight and handling tools.",
+    "CH_OCTOPUS": "The story's recurring octopus: large rounded mantle head, one big eye with a horizontal bar-shaped pupil, eight long muscular arms with tapered curling tips and a row of small suction dots underneath, smooth solid red-brown body fill; able to compress its body thin; side view drifting with two arms curled forward.",
+    "CH_ELEPHANT": "The story's recurring adult female elephant, the matriarch: solid grey-blue fill, large fan-shaped ears, short white curved tusks, long trunk with a gentle S curve, small calm eye with lid line, columnar legs with rounded toenails, slightly larger than her herd-mates; side view, trunk relaxed.",
+    "CH_PIG": "The story's recurring domestic pig: plump rounded pink body, upturned disc snout with two nostril dots, small folded ears, thin curled tail, short legs with simple rounded trotters, bright clever dot eyes; side view, standing square, alert and friendly."
+  },
+  "shots": [
+    {
+      "cues": "1-3",
+      "asset": "S01_01_SCN_ZI.png",
+      "scene": "S01",
+      "motion": "ZI"
+    },
+    {
+      "cues": "4-6",
+      "asset": "S01_02_HYB_ZO.png",
+      "scene": "S01",
+      "motion": "ZO"
+    },
+    {
+      "cues": "7-8",
+      "asset": "S02_01_SCN_ZI.png",
+      "scene": "S02",
+      "motion": "ZI"
+    },
+    {
+      "cues": "9-13",
+      "asset": "S02_02_SCN_ZO.png",
+      "scene": "S02",
+      "motion": "ZO"
+    },
+    {
+      "cues": "14-15",
+      "asset": "S03_01_SCN_PU.png",
+      "scene": "S03",
+      "motion": "PU",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "16-19",
+      "asset": "S03_02_SCN_PD.png",
+      "scene": "S03",
+      "motion": "PD"
+    },
+    {
+      "cues": "20-22",
+      "asset": "S03_03_PROC_ZI.png",
+      "scene": "S03",
+      "motion": "ZI"
+    },
+    {
+      "cues": "23-24",
+      "asset": "S03_04_SCN_PD.png",
+      "scene": "S03",
+      "motion": "PD"
+    },
+    {
+      "cues": "25-27",
+      "asset": "S03_05_SCN_ZO.png",
+      "scene": "S03",
+      "motion": "ZO"
+    },
+    {
+      "cues": "28-29",
+      "asset": "S03_06_CU_ZI.png",
+      "scene": "S03",
+      "motion": "ZI"
+    },
+    {
+      "cues": "30-33",
+      "asset": "S03_07_SCN_ZO.png",
+      "scene": "S03",
+      "motion": "ZO"
+    },
+    {
+      "cues": "34-38",
+      "asset": "S04_01_INF_ZI.png",
+      "scene": "S04",
+      "motion": "ZI",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "39-40",
+      "asset": "S04_02_HYB_ZI.png",
+      "scene": "S04",
+      "motion": "ZI"
+    },
+    {
+      "cues": "41-42",
+      "asset": "S04_03_INF_ST.png",
+      "scene": "S04",
+      "motion": "ST",
+      "reveal": [
+        41,
+        42
+      ],
+      "sfx": [
+        "pop",
+        "pop"
+      ]
+    },
+    {
+      "cues": "43",
+      "asset": "S04_04_SCN_ZI.png",
+      "scene": "S04",
+      "motion": "ZI"
+    },
+    {
+      "cues": "44-48",
+      "asset": "S04_05_SCN_PU.png",
+      "scene": "S04",
+      "motion": "PU"
+    },
+    {
+      "cues": "49-51",
+      "asset": "S04_07_SCN_PD.png",
+      "scene": "S04",
+      "motion": "PD"
+    },
+    {
+      "cues": "52-56",
+      "asset": "S04_08_CMP_ZO.png",
+      "scene": "S04",
+      "motion": "ZO"
+    },
+    {
+      "cues": "57-58",
+      "asset": "S05_01_HYB_ZI.png",
+      "scene": "S05",
+      "motion": "ZI",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "59-60",
+      "asset": "S05_02_SCN_ZO.png",
+      "scene": "S05",
+      "motion": "ZO"
+    },
+    {
+      "cues": "61-63",
+      "asset": "S05_03_HYB_PD.png",
+      "scene": "S05",
+      "motion": "PD"
+    },
+    {
+      "cues": "64-67",
+      "asset": "S05_04_SCN_PU.png",
+      "scene": "S05",
+      "motion": "PU"
+    },
+    {
+      "cues": "68-71",
+      "asset": "S05_05_SCN_PD.png",
+      "scene": "S05",
+      "motion": "PD"
+    },
+    {
+      "cues": "72-76",
+      "asset": "S05_06_SCN_ZI.png",
+      "scene": "S05",
+      "motion": "ZI"
+    },
+    {
+      "cues": "77-78",
+      "asset": "S06_01_SCN_ZO.png",
+      "scene": "S06",
+      "motion": "ZO",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "79-80",
+      "asset": "S06_02_SCN_ST.png",
+      "scene": "S06",
+      "motion": "ST",
+      "reveal": [
+        79,
+        80
+      ],
+      "sfx": [
+        "pop",
+        "pop"
+      ]
+    },
+    {
+      "cues": "81-82",
+      "asset": "S06_04_SCN_ZI.png",
+      "scene": "S06",
+      "motion": "ZI"
+    },
+    {
+      "cues": "83-84",
+      "asset": "S06_05_HYB_ZI.png",
+      "scene": "S06",
+      "motion": "ZI"
+    },
+    {
+      "cues": "85-87",
+      "asset": "S06_06_SCN_ZO.png",
+      "scene": "S06",
+      "motion": "ZO"
+    },
+    {
+      "cues": "88-90",
+      "asset": "S06_07_CMP_ZI.png",
+      "scene": "S06",
+      "motion": "ZI"
+    },
+    {
+      "cues": "91-95",
+      "asset": "S07_01_SCN_ZO.png",
+      "scene": "S07",
+      "motion": "ZO"
+    },
+    {
+      "cues": "96-98",
+      "asset": "S07_02_INF_ZI.png",
+      "scene": "S07",
+      "motion": "ZI"
+    },
+    {
+      "cues": "99-101",
+      "asset": "S07_03_SCN_ZI.png",
+      "scene": "S07",
+      "motion": "ZI"
+    },
+    {
+      "cues": "102-105",
+      "asset": "S07_04_INF_ZO.png",
+      "scene": "S07",
+      "motion": "ZO"
+    },
+    {
+      "cues": "106-108",
+      "asset": "S07_05_HYB_PU.png",
+      "scene": "S07",
+      "motion": "PU"
+    },
+    {
+      "cues": "109-112",
+      "asset": "S07_06_SCN_ZO.png",
+      "scene": "S07",
+      "motion": "ZO"
+    },
+    {
+      "cues": "113-114",
+      "asset": "S08_01_SCN_ZI.png",
+      "scene": "S08",
+      "motion": "ZI"
+    },
+    {
+      "cues": "115-118",
+      "asset": "S08_02_INF_ZO.png",
+      "scene": "S08",
+      "motion": "ZO"
+    },
+    {
+      "cues": "119-121",
+      "asset": "S08_03_CMP_ST.png",
+      "scene": "S08",
+      "motion": "ST",
+      "reveal": [
+        119,
+        120
+      ],
+      "sfx": [
+        "pop",
+        "pop"
+      ]
+    },
+    {
+      "cues": "122-123",
+      "asset": "S08_04_CMP_ZI.png",
+      "scene": "S08",
+      "motion": "ZI"
+    },
+    {
+      "cues": "124-126",
+      "asset": "S08_05_OVR_ZO.png",
+      "scene": "S08",
+      "motion": "ZO"
+    },
+    {
+      "cues": "127",
+      "asset": "S09_03_SCN_ZI.png",
+      "scene": "S09",
+      "motion": "ZI",
+      "transition": "DIP_WHITE"
+    },
+    {
+      "cues": "128-129",
+      "asset": "S09_04_CMP_ST.png",
+      "scene": "S09",
+      "motion": "ST",
+      "reveal": [
+        128,
+        129
+      ],
+      "sfx": [
+        "pop",
+        "pop"
+      ]
+    },
+    {
+      "cues": "130-131",
+      "asset": "S09_05_CMP_ZI.png",
+      "scene": "S09",
+      "motion": "ZI"
+    },
+    {
+      "cues": "132-136",
+      "asset": "S09_02_INF_ZI.png",
+      "scene": "S09",
+      "motion": "ZI"
+    },
+    {
+      "cues": "137-139",
+      "asset": "S10_01_CMP_ZO.png",
+      "scene": "S10",
+      "motion": "ZO",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "140-145",
+      "asset": "S10_02_SCN_ZI.png",
+      "scene": "S10",
+      "motion": "ZI"
+    },
+    {
+      "cues": "146-151",
+      "asset": "S10_03_SCN_ZO.png",
+      "scene": "S10",
+      "motion": "ZO"
+    },
+    {
+      "cues": "152-153",
+      "asset": "S11_04_SCN_ZI.png",
+      "scene": "S11",
+      "motion": "ZI",
+      "transition": "CROSSFADE"
+    },
+    {
+      "cues": "154-156",
+      "asset": "S11_05_HYB_ZI.png",
+      "scene": "S11",
+      "motion": "ZI"
+    },
+    {
+      "cues": "157-159",
+      "asset": "S11_01_CMP_ST.png",
+      "scene": "S11",
+      "motion": "ST",
+      "reveal": [
+        157,
+        158
+      ],
+      "sfx": [
+        "pop",
+        "pop"
+      ]
+    },
+    {
+      "cues": "160-164",
+      "asset": "S11_02_SCN_ZO.png",
+      "scene": "S11",
+      "motion": "ZO"
+    },
+    {
+      "cues": "165-169",
+      "asset": "S11_03_SCN_PU.png",
+      "scene": "S11",
+      "motion": "PU"
+    }
+  ],
+  "images": [
+    {
+      "file": "S01_01_SCN_ZI.png",
+      "prompt": "A single modern human stands small on open sandy ground just left of centre, head tilted slightly up, mouth a confident small curve; above the head a large thought bubble holding one brain pictogram with short ray strokes around it. One grass tuft at the left edge, thin low horizon, generous empty sky. DAY setting, even daylight from upper left; head and bubble on the centre line for the slow push-in."
+    },
+    {
+      "file": "S01_02_HYB_ZO.png",
+      "prompt": "A scientist in a plain lab coat stands at the right, binoculars raised toward a small crow perched on a rounded bush at the left; on the ground between them lies a large stone tablet carved with a brain pictogram, split by a jagged crack with two corner fragments tipped away; the scientist leans toward the bird with curious raised eyebrows. Sparse grass, low horizon. DAY setting, even daylight from upper right; composed tight on the cracked tablet so the pull-out widens to the watching scene."
+    },
+    {
+      "file": "S02_01_SCN_ZI.png",
+      "prompt": "A scientist centred facing forward on open ground, both hands lifted to chest height with palms up, mouth a small open circle, eyebrows raised; three question-mark squiggles of different sizes float around the head. At the far left and right edges four vague grey animal silhouettes face inward: a small bird, a tentacled rounded shape, a large heavy shape, a round pig shape. DAY setting, even daylight; question marks on the centre line for the push-in."
+    },
+    {
+      "file": "S02_02_SCN_ZO.png",
+      "prompt": "Four animals gathered in one open grassy scene around a small round pond: a crow perched on a rock at the left holding a bent twig in its beak, an octopus resting in the pond with two arms raised over the rim, a tall elephant at centre right, and a pig standing at the right; all calm, facing slightly toward the viewer. Sparse scribble grass, one rounded bush, low hills far back, thin horizon, empty sky above. DAY setting, even daylight from upper left; the group held in the middle band so the pull-out widens over all four.",
+      "refs": [
+        "CH_CROW",
+        "CH_OCTOPUS",
+        "CH_ELEPHANT",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S03_01_SCN_PU.png",
+      "prompt": "Tall composition built low to high: sandy ground with a few grass tufts at the bottom, one bare tree trunk rising through the middle, and the crow perched on a high bare branch at the top of frame in profile, head angled down, tail feathers visible; one rounded bush at the trunk base. DAY setting, even daylight from the left; the tilt-up climbs the trunk and lands on the crow.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S03_02_SCN_PD.png",
+      "prompt": "Tall composition built top to bottom in a simple lab room: the crow standing on a plain table at the upper third with a short straight wire lying flat in front of it; below, a tall narrow transparent tube in a stand running down the frame with a small food morsel resting at its closed bottom; plain shelving with two simple flasks on the back wall, grey floor. LAB setting, even overhead light; the tilt-down follows the tube from the crow's eye level to the food.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S03_03_PROC_ZI.png",
+      "prompt": "Two-panel process on a white background, panels side by side divided by a thin vertical rule, the crow drawn the same size in both: left, the crow gripping one end of a straight wire in its beak with the free end curling upward, two short curved motion arcs at the beak; right, the same crow pulling upward on the wire now bent into a full hook, the hook looped around a food morsel lifted clear of a narrow tube, two small upward motion lines beside the morsel. Even, shadowless lighting; the gap between panels on the centre line for the push-in."
+    },
+    {
+      "file": "S03_04_SCN_PD.png",
+      "prompt": "Tall composition built top to bottom: the crow perched on a low bare branch at the top in profile, releasing a round nut from its open beak; a dotted fall line drops past a thin grass strip at the road edge down to a grey two-lane road at the bottom, where a simple boxy car drives past below the falling nut; a cracked nut with small break-star marks lying on the asphalt at the right. DAY setting, even daylight from the left; the tilt-down follows the fall from the crow's branch to the road surface.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S03_05_SCN_ZO.png",
+      "prompt": "A city street corner: a traffic light on a tall pole stands at the upper centre with one glowing red lamp lit; below, two crows stand patiently on the sidewalk curb, both heads turned up toward the light; beyond the curb an empty road carries three cracked nut pieces, and a simple boxy car waits stopped at the far right edge; a lamp post and one rounded bush along the sidewalk. DAY setting, even daylight from the left; composed so the pull-out starts tight on the red lamp and widens to the waiting crows below.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S03_06_CU_ZI.png",
+      "prompt": "Close two-figure profile at head height: at the left the crow's head and upper chest in profile with a large round alert eye; at the right a human circle head in profile with a dot eye and a neutral mouth; their gazes meeting across a short gap, a thin dotted sight line connecting the two eyes; a branch surface under the crow. DAY setting, even daylight; both heads on the centre line so the push-in travels between them.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S03_07_SCN_ZO.png",
+      "prompt": "A human standing at the right with arms half-raised, slanted annoyed eyebrows and a small open mouth; three crows around them: two on the ground at the lower left with beaks wide open and short scold dashes aimed at the human, and a third crow perched just behind the pair with its beak open toward the two callers and tiny dash marks between beaks, passing the warning on. Open sandy ground, one rounded bush at the far left. DAY setting, even daylight; composed tight on the calling crow so the pull-out reveals the whole mobbing scene.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S04_01_INF_ZI.png",
+      "prompt": "White-background infographic: a large octopus in side view at centre left with a small brain outline in its head and a dense scatter of small dots running the full length of all eight arms, only a few dots in the head; at the right a standing dog silhouette in profile with a similar-sized loose dot cloud inside its chest and head; a short horizontal double-headed arrow between the two at matching height; dotted rectangular border around the diagram. Even, shadowless lighting; the arm dots on the centre line for the push-in."
+    },
+    {
+      "file": "S04_02_HYB_ZI.png",
+      "prompt": "An octopus resting on a sandy sea floor, five arms anchoring the body while one long arm stretches to the left and curls around a spiral shell; three tiny tick marks and two small spark shapes dotted along that reaching arm; above the arm's tip a small fork of two dotted arrows branching in different directions. Thin ground line, open water above, even flat light from directly above; the reaching arm on the centre line for the push-in.",
+      "refs": [
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S04_03_INF_ST.png",
+      "prompt": "Two separate items in a row, left to right, each centred in its own equal half of the frame with a wide empty gap at the vertical centre line and nothing crossing it: left, a cluster of three equal heart shapes joined at their tops by short vessel lines, drawn as one compact icon; right, a single branching network of blood vessels drawn in blue, spreading from one thick trunk into fine branches, with a small droplet pictogram floating above it. Identical plain white background behind both halves, both icons at the same scale sitting on the same invisible baseline, even shadowless lighting across both halves; no object, line or shadow crosses the centre line."
+    },
+    {
+      "file": "S04_04_SCN_ZI.png",
+      "prompt": "A glass jar with a screw lid lying on its side on a plain aquarium floor, the octopus inside the jar with two arms reaching out through the open mouth to grip the lid rim and two arms braced against the glass, curved twist arcs around the lid, one large eye looking out through the glass; a few small pebbles at the jar base, plain grey wall behind. Even indoor light; the jar and lid on the centre line for the push-in.",
+      "refs": [
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S04_05_SCN_PU.png",
+      "prompt": "Tall composition built bottom to top: at the bottom, the octopus mid-squeeze through a narrow vertical gap between two fixed rock slabs, its body compressed into a thin ribbon, three front arms already through and curling on the far side, a small plain coin-shaped circle beside the gap for scale; above, a dotted trail line runs up across a plain floor; at the top, a neighbouring rectangular tank on a simple stand with its lid ajar, two small fish shapes and a sprinkle of food on its floor; a pale wedge of moonlight from a high slit window, plain grey walls and simple shelving. The tilt-up climbs from the squeeze to the neighbouring tank.",
+      "refs": [
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S04_07_SCN_PD.png",
+      "prompt": "Tall composition built top to bottom: open water in the upper half, then a sandy sea floor in the lower half with one large rounded rock; the octopus settled flat against the rock's side, its body covered in blotches matching the rock and sand so its outline nearly vanishes; two short curved speed arcs beside it marking the instant change. Even underwater light from directly above; the tilt-down settles onto the camouflaged body.",
+      "refs": [
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S04_08_CMP_ZO.png",
+      "prompt": "Split comparison on a white background, equal halves divided by a thin vertical rule: left, a human circle head in profile with a large round-pupil eye and three small solid dots (red, yellow, blue) fanned before the eye; right, the octopus head in profile with a large eye showing a horizontal bar-shaped pupil and the same three dots drawn as empty grey circles before it, plus a dotted question-mark squiggle above its head. Both heads the same height and scale; even, shadowless lighting; composed tight on the two eyes so the pull-out reveals both halves.",
+      "refs": [
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S05_01_HYB_ZI.png",
+      "prompt": "An elephant in full side view standing on open savanna ground, head toward the right; inside its skull a large outlined brain shape filling most of the head; behind it two faint grey land-animal silhouettes, one long-necked and one horned, each with a much smaller brain outline floating above. Sparse grass, one low hill on the horizon. DAY setting, even daylight from the left; the head near centre right for the push-in.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S05_02_SCN_ZO.png",
+      "prompt": "A line of four elephants walking left to right across open savanna, the leader at the front slightly larger with a worn shorter tusk and trunk held high, three followers stepping behind; sparse scribble grass, one low hill far right, thin horizon. DAY setting, even daylight from the left; the line held in the middle band so the pull-out widens the march.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S05_03_HYB_PD.png",
+      "prompt": "Tall composition built top to bottom: the matriarch elephant standing in profile on the lower half, head toward the right; a large thought-bubble cloud in the upper half holding a waterhole pictogram of a blue puddle with two reed strokes, plus a smaller faded bubble fragment holding a jagged danger shape; behind her a long dotted trail line loops back across the ground to a tiny faded waterhole mark at the horizon. Sparse grass. DAY setting, even daylight from the left; the tilt-down follows from the memory cloud to the distant trail.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S05_04_SCN_PU.png",
+      "prompt": "Tall composition built low to high: two elephants face to face at centre, trunks entwined in a loop at chest height; at their feet three concentric curved ripple arcs spread outward across the bare ground toward the frame edges, marking a low rumble travelling through the earth; both eyes calm. Sparse grass. DAY setting, even daylight from the left; ripples at the bottom, entwined trunks in the upper third so the tilt-up rises from the ground sound to the greeting.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S05_05_SCN_PD.png",
+      "prompt": "Tall composition built top to bottom: three elephants standing in a quiet half-circle around pale ribs and a skull lying on open ground; the nearest elephant's trunk lowered so its tip rests gently on the skull, all three heads carried low, ears drooping, mouth lines turned down; long empty sky behind with a dusty pink horizon band. DUSK setting, even low light from the horizon; bowed heads in the upper half, bones in the lower half so the tilt-down settles on the mourning.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S05_06_SCN_ZI.png",
+      "prompt": "A plain clinical room with grey floor: a tall simple mirror on short legs at the right, the elephant facing it in three-quarter view at the left, its matching reflection inside the frame; a small white dot painted on the elephant's forehead and its trunk curling upward to touch that dot on its own head while the reflection repeats the gesture; a small check pictogram floating between mirror and ceiling. Even indoor light; the trunk-and-dot at centre for the push-in.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S06_01_SCN_ZO.png",
+      "prompt": "Two figures facing each other on open ground: at the left a modern human with both eyebrows raised high, mouth a small open circle, palms turned up in surprise; at the right the pig standing square, looking back with bright dot eyes and a calm mouth curve; one question-mark squiggle floating between them at head height. Thin horizon, one grass tuft. DAY setting, even daylight from the left; composed so the pull-out takes in both figures and the space between them.",
+      "refs": [
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S06_02_SCN_ST.png",
+      "prompt": "Two separate items in a row, left to right, each centred in its own equal half of the frame with a wide empty gap at the vertical centre line and nothing crossing it: left, the pig standing on a thin grey floor line, head lifted and ears pricked toward a human figure at the slice's left edge whose open mouth sends three short rounded call arcs toward the pig, the pig's mouth curved up in answer; right, a simple rectangular hedge maze drawn as a flat puzzle panel standing upright on the same floor line, thick walls, a dotted route line entering at the bottom and winding to a small round food circle at the centre. Identical plain white background behind both halves, the same floor line running through both at the same height, both items at similar scale, even shadowless lighting; no object, line or shadow crosses the centre line.",
+      "refs": [
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S06_04_SCN_ZI.png",
+      "prompt": "The pig in profile at a small joystick box on a low stand, nudging the lever with its snout, two curved motion arcs at the lever; in front of the pig a simple screen on a low stand showing one plain dot moving toward a ring target, a short dotted line connecting dot and ring; the pig's mouth curved up, ears forward. Plain indoor floor and wall. Even indoor light; pig and screen together on the centre line for the push-in.",
+      "refs": [
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S06_05_HYB_ZI.png",
+      "prompt": "A plain room corner: the pig standing at the left in profile before a tall mirror angled at the right, its reflection inside the frame; a low barrier wall behind the pig with a small round food circle hidden on the far side, out of the pig's direct sight; a dotted sight line runs from the pig's eye into the mirror, then a second dotted line from the mirror out to the hidden food, bending around the barrier. Even indoor light; mirror and pig near centre for the push-in.",
+      "refs": [
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S06_06_SCN_ZO.png",
+      "prompt": "Two pigs on open grassy ground: the left pig standing tall, head up, mouth open with three rounded sound arcs leaving it; the right pig in a playful bow with front legs folded low and rear up, tail curled high, ears turned toward the caller; a grass tuft and a short wooden fence segment at the right edge. DAY setting, even daylight from the left; composed tight on the calling pig's sound arcs so the pull-out reveals the play-bowing friend.",
+      "refs": [
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S06_07_CMP_ZI.png",
+      "prompt": "Split comparison on a white background, equal halves divided by a thin vertical rule: left, the pig lying slumped with legs folded, eyes half-closed as short lid lines and a flat mouth, a small cross pictogram floating above; right, the same pig sitting upright with bright open dot eyes, mouth curved up, a small check pictogram and a tiny lightbulb shape floating above. Same scale both halves; even, shadowless lighting; the upright pig on the centre line for the push-in.",
+      "refs": [
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S07_01_SCN_ZO.png",
+      "prompt": "The four animals standing together in one evenly spaced line on open sandy ground, left to right: the crow on a low rock with a small bent twig tool floating above it, the octopus filling a shallow round pool of water with a small square puzzle box floating above it, the elephant at centre with a small waterhole-and-dotted-trail cloud above it, and the pig at the right with a small check-marked joystick box above it; all calm, facing forward. Sparse grass, one rounded bush, thin horizon, generous empty sky. DAY setting, even daylight from upper left; composed tight on the line so the pull-out widens over all four.",
+      "refs": [
+        "CH_CROW",
+        "CH_OCTOPUS",
+        "CH_ELEPHANT",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S07_02_INF_ZI.png",
+      "prompt": "White-background infographic: four plain rectangular podium blocks of equal height in a row across the centre, one question-mark squiggle floating above each podium and a short dotted line rising from each top; wide margins all around. Even, shadowless lighting; the middle podiums on the centre line for the push-in."
+    },
+    {
+      "file": "S07_03_SCN_ZI.png",
+      "prompt": "The crow perched on a small rock at centre, beak gripping a freshly bent twig hook, one wing lifted for balance; a lightbulb pictogram with short ray strokes floating above its head; a second straight unused twig lying at the rock's base. Open ground. DAY setting, even daylight from the left; crow and bulb on the centre line for the push-in.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S07_04_INF_ZO.png",
+      "prompt": "White-background diagram: an octopus seen from directly above at centre with all eight arms spread outward like wheel spokes, each arm carrying a line of small dots from base to a small circle at the tip; a compact brain shape at the body's centre hub with thin connector lines running down each arm; the eight arms evenly spaced and clearly countable. Even, shadowless lighting; composed tight on the centre hub so the pull-out reveals the full spread."
+    },
+    {
+      "file": "S07_05_HYB_PU.png",
+      "prompt": "Tall composition built low to high: the elephant's head and shoulders in profile on the lower half facing right, eye calm; a large thought cloud filling the upper half holding three small pictograms in a row, a waterhole, a tiny walking-herd silhouette and a set of ribs; a short dotted line connecting cloud to head. DAY sky behind, even daylight from the left; the tilt-up rises from the head into the memory cloud.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S07_06_SCN_ZO.png",
+      "prompt": "The pig mid-hop above open ground at centre, front knees bent, ears up, mouth a wide open happy curve, two small motion arcs under its feet; ahead of it a short dotted path with three small signposts each bearing a check pictogram, the nearest freshly marked. DAY setting, even daylight from the left; composed tight on the hopping pig so the pull-out takes in the checked path.",
+      "refs": [
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S08_01_SCN_ZI.png",
+      "prompt": "A scientist standing at centre in a plain clinical room, one hand raised palm-out at chest height in a pausing gesture, the other hand's fingertips resting at the chin, eyebrows slanted in thought, mouth a short level line; two small floating dots near the head like settling thoughts; plain shelving with two simple flasks on the back wall. LAB setting, even overhead light; the centred figure on the centre line for the push-in."
+    },
+    {
+      "file": "S08_02_INF_ZO.png",
+      "prompt": "White-background infographic: at the left one human brain outline alone; at the centre a small crossed-equals pictogram of two short parallel strokes with a slash; at the right a loose cluster of five brain outlines each a different shape, one spiral, one twig-branching, one web-like, one long and coiled, one star-rayed, all clearly varied. Even, shadowless lighting; composed tight on the single left brain so the pull-out reveals the whole varied cluster."
+    },
+    {
+      "file": "S08_03_CMP_ST.png",
+      "prompt": "Two separate items in a row, left to right, each centred in its own equal half of the frame with a wide empty gap at the vertical centre line and nothing crossing it: left, the crow standing before a small square puzzle box, holding a thin twig tool in its beak and inserting it into a side slot, a short dotted arrow from twig to slot; right, the octopus behind an identical square puzzle box, one arm reaching over the top and another turning a round lid on the box's side, curved twist arcs at the lid. Identical plain white background behind both halves, both boxes the same size on the same thin baseline, both animals the same visual height, even shadowless lighting; no object, line or shadow crosses the centre line.",
+      "refs": [
+        "CH_CROW",
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S08_04_CMP_ZI.png",
+      "prompt": "Split comparison, equal halves divided by a thin vertical rule: left, the elephant's head in profile with a very large thought cloud packed edge to edge with many small overlapping pictograms, waterholes, a dotted trail, a tiny herd, ribs and a storm-cloud shape; right, a human circle head in profile with a much smaller thought cloud holding only two tiny pictograms. The two clouds at clearly different scales, both heads the same height; even, shadowless lighting; the elephant's cloud on the centre line for the push-in.",
+      "refs": [
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S08_05_OVR_ZO.png",
+      "prompt": "Four equal quadrants divided by a thin cross through the centre, each a self-contained home scene: top left, the crow in a bare tree against open sky; top right, the octopus on sea-floor sand beside one rounded rock; bottom left, the elephant on open savanna with a low hill; bottom right, the pig on grass beside a short wooden fence; each animal centred in its quadrant, ground lines stopping at the quadrant borders. Even, shadowless lighting; composed tight on the four squares so the pull-out settles the grid.",
+      "refs": [
+        "CH_CROW",
+        "CH_OCTOPUS",
+        "CH_ELEPHANT",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S09_03_SCN_ZI.png",
+      "prompt": "A human kneeling on open sandy ground at the left, one knee down, body turned toward the right, one hand extended low with the open palm facing up in a gentle offering gesture; facing the hand a small gathered group: the crow on the ground, the octopus resting in a shallow round water dish, and the pig standing just behind them; at the far right the elephant stands taller than the rest with its head lowered gently toward the group. Sparse grass, thin horizon. DAY setting, even daylight from the left; the offered hand and the group on the centre line for the push-in.",
+      "refs": [
+        "CH_ELEPHANT",
+        "CH_OCTOPUS",
+        "CH_CROW",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S09_04_CMP_ST.png",
+      "prompt": "Two separate items in a row, left to right, each centred in its own equal half of the frame with a wide empty gap at the vertical centre line and nothing crossing it: left, the octopus holding a small square puzzle box steady with two lower arms while a third arm places a round peg into a matching hole, a small check pictogram floating above; right, the elephant standing with head bowed low, ears drooping, trunk tip resting on a small skull on the ground, a small heart pictogram floating above. Identical plain white background behind both halves, the same thin baseline under both animals, both at similar visual height, even shadowless lighting; no object, line or shadow crosses the centre line.",
+      "refs": [
+        "CH_OCTOPUS",
+        "CH_ELEPHANT"
+      ]
+    },
+    {
+      "file": "S09_05_CMP_ZI.png",
+      "prompt": "Split comparison, equal halves divided by a thin vertical rule: left, the four animals rendered as small grey souvenir figurines in a neat row on a shallow shelf, a small cross pictogram floating above them; right, the same four animals full-size and full-colour standing in the same order on open ground, a small check pictogram floating above them. The same left-to-right order in both halves, the same ground line running through both; even, shadowless lighting; the full-size group on the centre line for the push-in.",
+      "refs": [
+        "CH_ELEPHANT",
+        "CH_OCTOPUS",
+        "CH_CROW",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S09_02_INF_ZI.png",
+      "prompt": "White-background infographic: a large outlined shield hovering at upper centre over a row of four small animal pictograms, a bird, an octopus, an elephant and a pig, each under the shield's rim with a small check pictogram beneath; at the right a human figure pushing the shield's lower edge with both hands, a short fat arrow behind the shield pointing forward; wide margins. Even, shadowless lighting; the shield on the centre line for the push-in."
+    },
+    {
+      "file": "S10_01_CMP_ZO.png",
+      "prompt": "Split comparison, equal halves divided by a thin vertical rule: left, a simple laboratory drawn as a plain box building with one door and two window squares, a small cross pictogram floating above it; right, a small park with two rounded trees and a simple bench, a small check pictogram floating above it; the same ground line running through both halves. DAY setting, even daylight; composed tight on the two pictograms so the pull-out reveals both halves side by side."
+    },
+    {
+      "file": "S10_02_SCN_ZI.png",
+      "prompt": "A park scene: a human standing still at the left with hands clasped behind its back, leaning slightly forward; the crow on the ground at the right in profile, head tilted strongly sideways, one dot eye fixed on the human, one foot lifted mid-step; a rounded tree and a simple bench behind, scribble grass. DAY setting, even daylight from the left; the crow's tilted head just right of centre for the push-in.",
+      "refs": [
+        "CH_CROW"
+      ]
+    },
+    {
+      "file": "S10_03_SCN_ZO.png",
+      "prompt": "An aquarium tank seen from the front: the octopus on the far side with its mantle pressed close to the glass and one arm spread beside it, its large eye exactly level with a human head on the near side seen in three-quarter back view; a thin dotted gaze line connecting the two eyes through the glass; a dotted question-mark squiggle above the octopus; two faint plant silhouettes in the water; plain clinical room around the tank. Even dim indoor light; composed tight on the eye so the pull-out includes the human at the glass.",
+      "refs": [
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S11_04_SCN_ZI.png",
+      "prompt": "The four animals arranged in a loose line receding to the right across open sandy ground: the crow perched on a low rock nearest the viewer just right of centre in profile, beak holding a small bent twig tool; behind it at steadily smaller scale the octopus resting in a shallow round pool, the elephant standing tall, and the pig at the far right; sparse grass, thin horizon, generous empty sky. DAY setting, even daylight from the left; the crow on the centre line for the push-in.",
+      "refs": [
+        "CH_CROW",
+        "CH_OCTOPUS",
+        "CH_ELEPHANT",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S11_05_HYB_ZI.png",
+      "prompt": "The octopus at centre on a sandy sea floor facing a small square puzzle box, two front arms inserting a round peg into the box's side while the remaining arms fan outward and curl; above the mantle a compact brain shape at the body's centre with thin dotted lines running outward down all eight arms to their curling tips; a small check pictogram floating above the box. Even underwater light from directly above; the brain hub and box on the centre line for the push-in.",
+      "refs": [
+        "CH_OCTOPUS"
+      ]
+    },
+    {
+      "file": "S11_01_CMP_ST.png",
+      "prompt": "Two separate items in a row, left to right, each centred in its own equal half of the frame with a wide empty gap at the vertical centre line and nothing crossing it: left, the elephant standing tall and calm with a small waterhole pictogram and a dotted looping trail line floating above its head; right, the pig sitting up beside a small joystick box with a small check pictogram above the box and one small rounded call arc at its open mouth as if answering to its name. Identical plain white background behind both halves, the same thin baseline under both animals, both at similar visual height, even shadowless lighting; no object, line or shadow crosses the centre line.",
+      "refs": [
+        "CH_ELEPHANT",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S11_02_SCN_ZO.png",
+      "prompt": "A wide dusk savanna panorama: the four animals spaced far apart across the middle distance, left to right, the crow on a rock, the octopus in a small round pond, the elephant at centre, the pig near the right; a single human standing small at the far right edge seen from behind, looking out across them; long empty sky with a dusty pink horizon band, sparse grass. DUSK setting, even low light; composed tight on the elephant and pond so the pull-out takes in the whole land and the watching figure.",
+      "refs": [
+        "CH_CROW",
+        "CH_OCTOPUS",
+        "CH_ELEPHANT",
+        "CH_PIG"
+      ]
+    },
+    {
+      "file": "S11_03_SCN_PU.png",
+      "prompt": "Tall composition built low to high: a house wall with one simple square window at the left, a short wooden fence running right across the lower half; the crow perched on the fence rail at the upper third, head turned toward the window side, a small four-point spark pictogram above its head; a grass tuft at the fence base. DAY setting, even morning daylight from the left; the tilt-up lands on the crow and the spark.",
+      "refs": [
+        "CH_CROW"
+      ]
+    }
+  ]
+}

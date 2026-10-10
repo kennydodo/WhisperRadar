@@ -1,0 +1,1980 @@
+{
+  "schema_version": 3,
+  "project_name": "shotlist",
+  "resolution": {
+    "width": 2560,
+    "height": 1440
+  },
+  "fps": 30,
+  "audio": {
+    "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\audio\\narration.mp3",
+    "duration_frames": 7975
+  },
+  "scenes": [
+    {
+      "id": "S01",
+      "start_frame": 0,
+      "end_frame": 299,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S01_01_SCN_ZI.png",
+          "scene_id": "S01",
+          "shot_id": "shot-001",
+          "start_frame": 0,
+          "duration_frames": 128,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S01_02_HYB_ZO.png",
+          "scene_id": "S01",
+          "shot_id": "shot-002",
+          "start_frame": 128,
+          "duration_frames": 171,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "start_frame": 299,
+      "end_frame": 734,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S02_01_SCN_ZI.png",
+          "scene_id": "S02",
+          "shot_id": "shot-003",
+          "start_frame": 299,
+          "duration_frames": 127,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S02_02_SCN_ZO.png",
+          "scene_id": "S02",
+          "shot_id": "shot-004",
+          "start_frame": 426,
+          "duration_frames": 308,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "start_frame": 734,
+      "end_frame": 1752,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_01_SCN_PU.png",
+          "scene_id": "S03",
+          "shot_id": "shot-005",
+          "start_frame": 734,
+          "duration_frames": 129,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_02_SCN_PD.png",
+          "scene_id": "S03",
+          "shot_id": "shot-006",
+          "start_frame": 863,
+          "duration_frames": 165,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_03_PROC_ZI.png",
+          "scene_id": "S03",
+          "shot_id": "shot-007",
+          "start_frame": 1028,
+          "duration_frames": 166,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_04_SCN_PD.png",
+          "scene_id": "S03",
+          "shot_id": "shot-008",
+          "start_frame": 1194,
+          "duration_frames": 97,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_05_SCN_ZO.png",
+          "scene_id": "S03",
+          "shot_id": "shot-009",
+          "start_frame": 1291,
+          "duration_frames": 156,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_06_CU_ZI.png",
+          "scene_id": "S03",
+          "shot_id": "shot-010",
+          "start_frame": 1447,
+          "duration_frames": 135,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_07_SCN_ZO.png",
+          "scene_id": "S03",
+          "shot_id": "shot-011",
+          "start_frame": 1582,
+          "duration_frames": 170,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S04",
+      "start_frame": 1752,
+      "end_frame": 2906,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_01_INF_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-012",
+          "start_frame": 1752,
+          "duration_frames": 245,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_02_HYB_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-013",
+          "start_frame": 1997,
+          "duration_frames": 90,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S04_03_INF_ST_reveal1of2.png",
+          "scene_id": "S04",
+          "shot_id": "shot-014",
+          "start_frame": 2087,
+          "duration_frames": 47,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 1,
+            "base_shot_id": "shot-014",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_03_INF_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_03_INF_ST.png",
+          "scene_id": "S04",
+          "shot_id": "shot-014.2",
+          "start_frame": 2134,
+          "duration_frames": 65,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 8
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 2,
+            "base_shot_id": "shot-014",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_03_INF_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_04_SCN_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-015",
+          "start_frame": 2199,
+          "duration_frames": 99,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_05_SCN_PU.png",
+          "scene_id": "S04",
+          "shot_id": "shot-016",
+          "start_frame": 2298,
+          "duration_frames": 226,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_07_SCN_PD.png",
+          "scene_id": "S04",
+          "shot_id": "shot-017",
+          "start_frame": 2524,
+          "duration_frames": 166,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_08_CMP_ZO.png",
+          "scene_id": "S04",
+          "shot_id": "shot-018",
+          "start_frame": 2690,
+          "duration_frames": 216,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "start_frame": 2906,
+      "end_frame": 3928,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_01_HYB_ZI.png",
+          "scene_id": "S05",
+          "shot_id": "shot-019",
+          "start_frame": 2906,
+          "duration_frames": 150,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_02_SCN_ZO.png",
+          "scene_id": "S05",
+          "shot_id": "shot-020",
+          "start_frame": 3056,
+          "duration_frames": 105,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_03_HYB_PD.png",
+          "scene_id": "S05",
+          "shot_id": "shot-021",
+          "start_frame": 3161,
+          "duration_frames": 182,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_04_SCN_PU.png",
+          "scene_id": "S05",
+          "shot_id": "shot-022",
+          "start_frame": 3343,
+          "duration_frames": 191,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_05_SCN_PD.png",
+          "scene_id": "S05",
+          "shot_id": "shot-023",
+          "start_frame": 3534,
+          "duration_frames": 208,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_06_SCN_ZI.png",
+          "scene_id": "S05",
+          "shot_id": "shot-024",
+          "start_frame": 3742,
+          "duration_frames": 186,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S06",
+      "start_frame": 3928,
+      "end_frame": 4730,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_01_SCN_ZO.png",
+          "scene_id": "S06",
+          "shot_id": "shot-025",
+          "start_frame": 3928,
+          "duration_frames": 99,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S06_02_SCN_ST_reveal1of2.png",
+          "scene_id": "S06",
+          "shot_id": "shot-026",
+          "start_frame": 4027,
+          "duration_frames": 54,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 1,
+            "base_shot_id": "shot-026",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_02_SCN_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_02_SCN_ST.png",
+          "scene_id": "S06",
+          "shot_id": "shot-026.2",
+          "start_frame": 4081,
+          "duration_frames": 66,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 8
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 2,
+            "base_shot_id": "shot-026",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_02_SCN_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_04_SCN_ZI.png",
+          "scene_id": "S06",
+          "shot_id": "shot-027",
+          "start_frame": 4147,
+          "duration_frames": 107,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_05_HYB_ZI.png",
+          "scene_id": "S06",
+          "shot_id": "shot-028",
+          "start_frame": 4254,
+          "duration_frames": 166,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_06_SCN_ZO.png",
+          "scene_id": "S06",
+          "shot_id": "shot-029",
+          "start_frame": 4420,
+          "duration_frames": 207,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_07_CMP_ZI.png",
+          "scene_id": "S06",
+          "shot_id": "shot-030",
+          "start_frame": 4627,
+          "duration_frames": 103,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S07",
+      "start_frame": 4730,
+      "end_frame": 5653,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_01_SCN_ZO.png",
+          "scene_id": "S07",
+          "shot_id": "shot-031",
+          "start_frame": 4730,
+          "duration_frames": 218,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_02_INF_ZI.png",
+          "scene_id": "S07",
+          "shot_id": "shot-032",
+          "start_frame": 4948,
+          "duration_frames": 96,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_03_SCN_ZI.png",
+          "scene_id": "S07",
+          "shot_id": "shot-033",
+          "start_frame": 5044,
+          "duration_frames": 139,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_04_INF_ZO.png",
+          "scene_id": "S07",
+          "shot_id": "shot-034",
+          "start_frame": 5183,
+          "duration_frames": 180,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_05_HYB_PU.png",
+          "scene_id": "S07",
+          "shot_id": "shot-035",
+          "start_frame": 5363,
+          "duration_frames": 140,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_06_SCN_ZO.png",
+          "scene_id": "S07",
+          "shot_id": "shot-036",
+          "start_frame": 5503,
+          "duration_frames": 150,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S08",
+      "start_frame": 5653,
+      "end_frame": 6285,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_01_SCN_ZI.png",
+          "scene_id": "S08",
+          "shot_id": "shot-037",
+          "start_frame": 5653,
+          "duration_frames": 82,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_02_INF_ZO.png",
+          "scene_id": "S08",
+          "shot_id": "shot-038",
+          "start_frame": 5735,
+          "duration_frames": 161,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S08_03_CMP_ST_reveal1of2.png",
+          "scene_id": "S08",
+          "shot_id": "shot-039",
+          "start_frame": 5896,
+          "duration_frames": 51,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 1,
+            "base_shot_id": "shot-039",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_03_CMP_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_03_CMP_ST.png",
+          "scene_id": "S08",
+          "shot_id": "shot-039.2",
+          "start_frame": 5947,
+          "duration_frames": 68,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 8
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 2,
+            "base_shot_id": "shot-039",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_03_CMP_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_04_CMP_ZI.png",
+          "scene_id": "S08",
+          "shot_id": "shot-040",
+          "start_frame": 6015,
+          "duration_frames": 148,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_05_OVR_ZO.png",
+          "scene_id": "S08",
+          "shot_id": "shot-041",
+          "start_frame": 6163,
+          "duration_frames": 122,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S09",
+      "start_frame": 6285,
+      "end_frame": 6826,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_03_SCN_ZI.png",
+          "scene_id": "S09",
+          "shot_id": "shot-042",
+          "start_frame": 6285,
+          "duration_frames": 50,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S09_04_CMP_ST_reveal1of2.png",
+          "scene_id": "S09",
+          "shot_id": "shot-043",
+          "start_frame": 6335,
+          "duration_frames": 68,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_white",
+            "duration_frames": 15
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 1,
+            "base_shot_id": "shot-043",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_04_CMP_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_04_CMP_ST.png",
+          "scene_id": "S09",
+          "shot_id": "shot-043.2",
+          "start_frame": 6403,
+          "duration_frames": 88,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 8
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 2,
+            "base_shot_id": "shot-043",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_04_CMP_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_05_CMP_ZI.png",
+          "scene_id": "S09",
+          "shot_id": "shot-044",
+          "start_frame": 6491,
+          "duration_frames": 53,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_02_INF_ZI.png",
+          "scene_id": "S09",
+          "shot_id": "shot-045",
+          "start_frame": 6544,
+          "duration_frames": 282,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "start_frame": 6826,
+      "end_frame": 7305,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S10_01_CMP_ZO.png",
+          "scene_id": "S10",
+          "shot_id": "shot-046",
+          "start_frame": 6826,
+          "duration_frames": 100,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S10_02_SCN_ZI.png",
+          "scene_id": "S10",
+          "shot_id": "shot-047",
+          "start_frame": 6926,
+          "duration_frames": 207,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S10_03_SCN_ZO.png",
+          "scene_id": "S10",
+          "shot_id": "shot-048",
+          "start_frame": 7133,
+          "duration_frames": 172,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "start_frame": 7305,
+      "end_frame": 7975,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_04_SCN_ZI.png",
+          "scene_id": "S11",
+          "shot_id": "shot-049",
+          "start_frame": 7305,
+          "duration_frames": 62,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_05_HYB_ZI.png",
+          "scene_id": "S11",
+          "shot_id": "shot-050",
+          "start_frame": 7367,
+          "duration_frames": 130,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S11_01_CMP_ST_reveal1of2.png",
+          "scene_id": "S11",
+          "shot_id": "shot-051",
+          "start_frame": 7497,
+          "duration_frames": 30,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 1,
+            "base_shot_id": "shot-051",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_01_CMP_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_01_CMP_ST.png",
+          "scene_id": "S11",
+          "shot_id": "shot-051.2",
+          "start_frame": 7527,
+          "duration_frames": 74,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 8
+          },
+          "reveal": {
+            "layout": "row",
+            "count": 2,
+            "visible": 2,
+            "base_shot_id": "shot-051",
+            "source_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_01_CMP_ST.png",
+            "sources": [],
+            "is_stack": false
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_02_SCN_ZO.png",
+          "scene_id": "S11",
+          "shot_id": "shot-052",
+          "start_frame": 7601,
+          "duration_frames": 206,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_03_SCN_PU.png",
+          "scene_id": "S11",
+          "shot_id": "shot-053",
+          "start_frame": 7807,
+          "duration_frames": 168,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    }
+  ],
+  "sounds": [
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 2087,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 2134,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 4027,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 4081,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 5896,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 5947,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 6335,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 6403,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 7497,
+      "duration_frames": 0
+    },
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 7527,
+      "duration_frames": 0
+    }
+  ]
+}
