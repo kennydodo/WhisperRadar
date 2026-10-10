@@ -1745,3 +1745,5 @@ follow-up prompt demands a FRESH audit of the whole revised script. "unverified"
 - Count rule: a numbered title may not use the original's count N (`allowed_counts`: 10 -> 8, 9, 11, 12). Title similarity check (`TITLE_SIM_MAX`) is back; `specific_faults` flags names/figures from the script.
 - The judge audits scope, then picks the option closest to the original (`closest`, `alternates`) without revealing it; `safe_verdict` strips the pick before the writer sees feedback and `apply_pick` makes it the title. Segments and the points requirement are gone.
 - Writer and judge must be different LLMs/chats for the blindness to hold.
+
+- Planner spread/hedge rules: `spread_faults` (at most 3 hedged titles with may/might/could, at most 2 per angle taken from the start of each `why`, no content word in >60% of titles). The judge also returns `best` (strongest hook) next to `closest`; `closest` must be a strong hook. After the pick changes the title, the thumbnail idea is rewritten for the picked title (`thumbnail_prompt`, `adopt_thumbnail`).

@@ -15,11 +15,15 @@ from whisperradar.webapp import create_app  # noqa: E402
 
 def good(**over):
     p = {"keyword": "coin jar",
-         "titles": [{"text": f"{w} coin jar secret {i}", "why": "x"}
-                    for i, w in enumerate(
+         "titles": [{"text": f"{w} coin jar {n} {i}",
+                     "why": f"angle {i % 6} - sells it"}
+                    for i, (w, n) in enumerate(zip(
                         ["The", "Why", "How", "The", "Stop", "Your",
                          "Nobody", "Every", "Before", "After", "Inside",
-                         "Only"])],
+                         "Only"],
+                        ["secret", "secret", "habit", "trick", "mistake",
+                         "story", "reason", "lesson", "habit", "truth",
+                         "puzzle", "claim"]))],
          "title": "The coin jar secret 0",
          "promise": "You will know why the jar always fills up.",
          "hook": "Start with the jar overflowing.",
@@ -276,9 +280,9 @@ class ProdTests(Base):
         pp.save_plan(self.pdir, pp.parse_plan(good(title="Made up title")))
         with self.assertRaises(ValueError):
             pp.apply_plan(self.cfg, self.pid)
-        pp.apply_plan(self.cfg, self.pid, title="the coin jar secret 3")
+        pp.apply_plan(self.cfg, self.pid, title="the coin jar trick 3")
         self.assertEqual(pp.load_plan(self.pdir)["title"],
-                         "The coin jar secret 3")
+                         "The coin jar trick 3")
 
     def test_page_groups_the_picks_under_their_segments(self):
         opens = "The Why How Inside Stop Your Nobody Every Before After Only Soon".split()
@@ -521,3 +525,21 @@ class MetaMentionTests(unittest.TestCase):
                                  "thumbnail": {"text": "WAKE UP"}})
         self.assertIn("NEVER", block)
         self.assertNotIn("WAKE UP", block)
+
+
+class SpreadTests(unittest.TestCase):
+    def test_hedging_and_repeated_angles_are_faults(self):
+        ts = [{"text": f"Your stuff may cost you {w}", "why": "Hidden cost fear - x"}
+              for w in ("a lot", "more", "much", "time", "peace")]
+        p = pp.parse_plan({"keyword": "stuff", "title": ts[0]["text"],
+                           "titles": ts})
+        f = pp.spread_faults(p)
+        self.assertTrue(any("hedge" in x for x in f))
+        self.assertTrue(any("same angle" in x for x in f))
+
+    def test_apply_pick_puts_best_after_closest(self):
+        p = pp.parse_plan(good())
+        v = {"closest": p["titles"][4]["text"], "best": p["titles"][7]["text"]}
+        out = pp.apply_pick(p, v, "")
+        self.assertEqual(out["titles"][0]["text"], v["closest"])
+        self.assertEqual(out["titles"][1]["text"], v["best"])

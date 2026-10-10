@@ -310,6 +310,52 @@ def variety_faults(plan: dict) -> list[str]:
     return f
 
 
+_HEDGE = {"may", "might", "could", "maybe", "perhaps", "possibly"}
+HEDGE_MAX = 3          # options allowed to hedge ("may cost", "could be")
+ANGLE_MAX = 2          # options allowed to sell the same angle
+WORD_SHARE_MAX = 0.6   # one content word may sit in this share of the options
+
+
+def angle_of(why: str) -> str:
+    return re.split(r"\s+[-\u2013\u2014:]\s*", (why or "").strip().lower(),
+                    maxsplit=1)[0].strip()
+
+
+def spread_faults(plan: dict) -> list[str]:
+    """Options must differ in ANGLE and wording, and must not all hedge."""
+    f = []
+    ts = plan["titles"]
+    if len(ts) < 4:
+        return f
+    hedged = [t for t in ts if _HEDGE & set(_words(t["text"]))]
+    if len(hedged) > HEDGE_MAX:
+        f.append(f"{len(hedged)} title options hedge with may / might / "
+                 f"could: no more than {HEDGE_MAX} may - a hook states a "
+                 "stake or asks a real question, it does not shrug")
+    angles: dict[str, int] = {}
+    for t in ts:
+        a = angle_of(t.get("why", ""))
+        if a:
+            angles[a] = angles.get(a, 0) + 1
+    worst = max(angles.items(), key=lambda kv: kv[1], default=("", 0))
+    if worst[1] > ANGLE_MAX:
+        f.append(f"{worst[1]} title options sell the same angle "
+                 f"(\"{worst[0]}\"): use a different core value for each "
+                 f"option, at most {ANGLE_MAX} per angle")
+    kw = set(_words(plan.get("keyword", "")))
+    count: dict[str, int] = {}
+    for t in ts:
+        for w in set(_words(t["text"])):
+            if w not in _STOP and w not in kw and len(w) > 2:
+                count[w] = count.get(w, 0) + 1
+    w, n = max(count.items(), key=lambda kv: kv[1], default=("", 0))
+    if n > WORD_SHARE_MAX * len(ts):
+        f.append(f"\"{w}\" is in {n} of {len(ts)} title options: they read "
+                 "as one title reworded - vary the wording and the "
+                 "promise, not just the sentence shape")
+    return f
+
+
 def phrasing_faults(plan: dict) -> list[str]:
     """The chosen title must read naturally; so must most of the options."""
     f = []
@@ -454,6 +500,7 @@ def local_faults(plan: dict, source_title: str = "",
     f += originality_faults(plan, source_title, transcript)
     f += phrasing_faults(plan)
     f += variety_faults(plan)
+    f += spread_faults(plan)
     f += scope_faults(plan, source_title)
     f += specific_faults(plan, transcript, plan.get("overview", "") + " "
                          + plan.get("premise", "") + " " + plan.get("keyword", "")
@@ -614,6 +661,7 @@ _RULES = f"""Rules for the plan:
 - Every title is ONE short phrase (about 45-65 characters), never split into two parts: no colon, no dash, no brackets, no "X, and Y" second half. It reads like a real sentence a person would say out loud: natural grammar, ordinary everyday words, one clear idea. Never a keyword pile, a repeated word, or unnatural word order. No ALL CAPS shouting, at most one emoji. Test every title by reading it aloud.
 - A title is a TEASER, never the story: it names the topic and the value or stake for the viewer and leaves the answer, the reason, the mechanism, the numbers and the fix for the video. Never put the conclusion, the cause, a specific claim or the solution in the title.
 - The keyword is the topic you anchor on; it does NOT have to be in every title, and may sit anywhere. Vary how titles open: no more than {OPENING_MAX} of them may start with the same first {OPENING_WORDS} words. Every title is at most {TITLE_MAX} characters.
+- Give every option its OWN core value and name it first in \"why\" (\"Hidden cost fear - ...\"): at most {ANGLE_MAX} options per value. At most {HEDGE_MAX} options may hedge with may / might / could: a hook states a stake or asks a real question. Do not build most options on one repeated word or phrase.
 - Do NOT use a numbered list as a title ("4 Ways to...", "3 Hidden Costs of...") unless the brief says numbers are allowed and gives the counts; then use ONLY those counts.
 - Only promise what the video's overview can deliver.
 - The promise is what the viewer will KNOW or FEEL after watching, in one or two plain sentences. The script is written to it.
@@ -766,11 +814,11 @@ RULE CHECKS ALREADY FAILING (code-checked): {faults or 'none'}
 
 You do three things.
 1. AUDIT every title, one by one, for scope: "if any single section of the script were deleted, is this title still completely true, and does it describe the WHOLE video?" A title built on ONE point, item, example, cost, audience, relationship, number or list from the script FAILS. Put the exact text of every failing title in "narrow". Also FAIL spoilers (the title gives away the problem AND its answer, the verdict, the reason or the fix), two-part titles (colon, dash, brackets, ", and ..."), titles longer than about 65 characters, titles that read awkwardly aloud (unnatural word order, keyword pile, repeated words), options that are one title reworded, and titles that drift to a different topic or promise than the original video. A numbered title is fine ONLY when the numbers note above allows it.
-2. PICK. Choose the option whose meaning, promise and pattern are CLOSEST to the original video's title: the one a viewer of the original would recognise as the same video. Compare meaning and pattern, not shared words. Copy it exactly into "closest", and the next {ALTERNATES} closest into "alternates". NEVER reveal the original title, the pick or the alternates in "faults" or "fixes" - those are sent to the title writer, who must not learn them.
+2. PICK. Choose the option whose meaning, promise and pattern are CLOSEST to the original video's title: the one a viewer of the original would recognise as the same video. Compare meaning and pattern, not shared words. Only pick among options that are strong hooks (specific stake, natural, not hedged with may/might/could, not a bland generic phrasing); if the closest is weak, take the closest strong one. Copy it exactly into "closest", the next {ALTERNATES} closest into "alternates", and the single STRONGEST hook of all into "best" (it may be the same). NEVER reveal the original title, the pick or the alternates in "faults" or "fixes" - those are sent to the title writer, who must not learn them.
 3. SCORE 1-10 how likely this packaging is to get the video clicked and found AND be true to the whole video. In "faults" and "fixes" say what is wrong and what KIND of change is needed; never quote the original title or script and never offer a rewrite that borrows from them. Name the exact option text that is weak.
 
 Reply with ONE JSON object and nothing else:
-{{"score": 7.5, "pass": false, "narrow": ["exact title that fails the scope audit"], "closest": "exact option text", "alternates": ["exact option text", "exact option text"], "faults": ["specific problem"], "fixes": ["specific change"]}}
+{{"score": 7.5, "pass": false, "narrow": ["exact title that fails the scope audit"], "closest": "exact option text", "best": "exact option text", "alternates": ["exact option text", "exact option text"], "faults": ["specific problem"], "fixes": ["specific change"]}}
 "pass" is true only when the score is {min_score:g} or higher and nothing is left to fix."""
 
 
@@ -789,7 +837,7 @@ def safe_verdict(verdict: dict, plan: dict, source_title: str,
     note that carries anything of the original title or script."""
     from . import studio
     v = {k: val for k, val in (verdict or {}).items()
-         if k not in ("closest", "alternates", "pick", "narrow")}
+         if k not in ("closest", "alternates", "best", "pick", "narrow")}
     own = _plan_json(plan) + "\n" + package_text
     for k in ("faults", "fixes"):
         items = v.get(k)
@@ -827,12 +875,35 @@ def apply_pick(plan: dict, verdict: dict, source_title: str = "") -> dict:
         return out
     v = verdict or {}
     first = pool(v.get("closest"))
-    lead = first + [t for t in pool(v.get("alternates")) if t not in first]
+    lead = list(first)
+    for t in pool(v.get("best")) + pool(v.get("alternates")):
+        if t not in lead:
+            lead.append(t)
     if first:
         plan["titles"] = lead + [t for t in titles if t not in lead]
         plan["title"] = first[0]["text"]
         plan["picked_by"] = "judge"
     return plan
+
+
+def thumbnail_prompt(ctx: dict, plan: dict) -> str:
+    return f"""Design the thumbnail for this YouTube video. The title is already decided; the thumbnail must sell the SAME promise as the title and the whole video, never one narrow point of it.
+
+CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}
+TITLE: {plan['title']}
+{_package_text(ctx.get('package') or {})}
+PROMISE: {plan.get('promise', '')}
+
+Reply with ONE JSON object and nothing else:
+{{"layout": "character_host|character|host", "text": "2-4 catchy words that ADD to the title and never repeat it", "idea": "one line"}}"""
+
+
+def adopt_thumbnail(plan: dict, raw: dict) -> bool:
+    th = parse_plan({"title": plan["title"], "thumbnail": raw})["thumbnail"]
+    if th.get("text") and th.get("idea"):
+        plan["thumbnail"] = th
+        return True
+    return False
 
 
 def _ask_package(ctx: dict, ask) -> dict:
@@ -953,10 +1024,19 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
             safe_verdict(verdict or {"faults": ["no verdict"]}, plan,
                          src_title, transcript, _package_text(ctx["package"])),
             faults), (), new_chat=False, ready=ws._has_json)
+    chosen = best[1]["title"]
     plan = apply_pick(best[1], best[2], src_title)
     if plan.get("picked_by"):
         log(f"{judge} picked the closest title to the original: "
             f"\"{plan['title'][:70]}\"")
+    if plan["title"] != chosen:
+        try:
+            raw = transport.ask(writer, thumbnail_prompt(ctx, plan), (),
+                                new_chat=False, ready=ws._has_json)
+            if adopt_thumbnail(plan, studio._parse_json_object(raw)):
+                log("thumbnail idea rewritten for the picked title")
+        except Exception as e:      # keep the earlier idea
+            log(f"thumbnail rewrite skipped: {e}")
     old = load_plan(ctx["pdir"])
     plan["applied"] = bool(old.get("applied")) and old.get("title") == plan["title"]
     save_plan(ctx["pdir"], plan)
@@ -1054,7 +1134,16 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
                                    _package_text(ctx["package"])), faults))
     if best is None:
         raise RuntimeError("the LLM returned no usable packaging plan")
+    chosen = best[1]["title"]
     plan = apply_pick(best[1], best[2], src_title)
+    if plan["title"] != chosen:
+        try:
+            raw = studio.llm_generate(cfg, thumbnail_prompt(ctx, plan),
+                                      provider=writer)
+            if adopt_thumbnail(plan, studio._parse_json_object(raw)):
+                log("thumbnail idea rewritten for the picked title")
+        except Exception as e:
+            log(f"thumbnail rewrite skipped: {e}")
     save_plan(ctx["pdir"], plan)
     log("packaging plan saved" + ("" if plan["status"] == "ready"
                                   else " as a draft"))
