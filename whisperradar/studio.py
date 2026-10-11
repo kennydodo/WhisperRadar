@@ -15,6 +15,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -865,7 +866,8 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
     Raises RenderlyQuotaExhausted (rather than plain RuntimeError) when the
     tool stopped early on a quota/billing wall (exit 3) - see that class."""
     repo = cfg.imgtovideo_repo
-    if not repo or not Path(repo, "src", "ImgToVideo.ImageGen").exists():
+    if not _python_video(cfg) and (
+            not repo or not Path(repo, "src", "ImgToVideo.ImageGen").exists()):
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
     # Refresh out\image-batch.json first: ImgToVideo.ImageGen reads its
     # per-shot "aspect" field (21:9 for PL/PR - see export-batch) to request
@@ -893,10 +895,17 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
     # 2 or 4, so tier 0 (off: keep the native 1K render) omits the flag.
     scale = renderly_upscale(upscale if upscale is not None
                              else cfg.renderly_upscale)
-    cmd = [
-        "dotnet", "run", "--project",
-        str(Path(repo, "src", "ImgToVideo.ImageGen")),
-        "-c", "Release", "--",
+    if _python_video(cfg):
+        # the in-repo port, run as its own process so the kill switch and the
+        # exit codes (3 = quota) work exactly as with the C# tool
+        cmd = [sys.executable, "-m", "whisperradar.video.imagegen"]
+        run_kwargs = {"cwd": str(Path(__file__).resolve().parent.parent)}
+        log.info("images: Renderly generation by the PYTHON video engine")
+    else:
+        cmd = ["dotnet", "run", "--project",
+               str(Path(repo, "src", "ImgToVideo.ImageGen")), "-c", "Release", "--"]
+        run_kwargs = {}
+    cmd += [
         str(pid_dir),
         "--renderly", cfg.renderly_url,
         "--channel", str(channel),
@@ -906,7 +915,7 @@ def run_imagegen(cfg, pid_dir: Path, channel=None, upscale=None,
         cmd += ["--upscale", str(scale)]
     if motion_filter:
         cmd += ["--motion-filter", ",".join(motion_filter)]
-    result = _run_tracked(cmd, "Renderly API (ImageGen)", timeout=7200)
+    result = _run_tracked(cmd, "Renderly API (ImageGen)", timeout=7200, **run_kwargs)
     img_dir = pid_dir / "images"
     new = [p.name for p in img_dir.iterdir() if p.name not in before] \
         if img_dir.exists() else []
