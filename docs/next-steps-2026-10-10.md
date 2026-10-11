@@ -24,3 +24,7 @@
 Idea (Kehinde): a selectable template deciding what the judge passes to the writer: "as it used to be"
 (old behaviour), "as it is now" (current: style/tone advice + keywords only, no original details),
 "custom", and user-added templates. Design discussion happens before implementation.
+
+## Update 2026-10-11
+- `video-render` now contains master up to b8bc730 (one conflict, AGENTS.md: both sections kept). Video tests (models, shotlist, planning, golden, render, wiring) and the hand-over / web chat suites pass on the merged branch.
+- Still for Kehinde: step 1 (real production merge with `studio.video_engine: python`, compare preview, encoder auto-detect, full-length render). After that, merging `video-render` into master is a plain fast merge of this branch.
