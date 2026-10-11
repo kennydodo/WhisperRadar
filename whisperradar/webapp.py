@@ -31,6 +31,7 @@ from flask import (
     render_template,
     request,
     send_file,
+    session,
 )
 
 from . import external_prompts
@@ -43,6 +44,7 @@ from . import growth as growth_mod
 from . import trending as trending_mod
 from . import timing as timing_mod
 from . import packaging
+from . import gpt_packaging
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
 from . import youtube_api
@@ -2561,6 +2563,7 @@ def create_app(cfg) -> Flask:
                 "row": p,
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
+                "gpt_job": gpt_packaging.latest(cfg, p["id"]),
             })
         due_results = len(results_mod.due(conn))
         conn.close()
@@ -2590,6 +2593,81 @@ def create_app(cfg) -> Flask:
             scope_name=(None if scope is None
                         else own_by_id.get(scope) or "No channel"),
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/gpt-pro/generate")
+    def studio_gpt_pro_generate(pid):
+        try:
+            job = gpt_packaging.queue(cfg, pid)
+            return redirect("/finished?msg=" + quote(
+                "GPT Pro job " + job["status"] +
+                ". Codex picks up queued jobs on its scheduled check."))
+        except (ValueError, OSError) as exc:
+            return redirect("/finished?error=" + quote(str(exc)))
+
+    def _gpt_worker_only(require_header=True):
+        try:
+            local = ipaddress.ip_address(request.remote_addr or "").is_loopback
+        except ValueError:
+            local = False
+        if not local or any(request.headers.get(h) for h in remote.PROXY_HEADERS):
+            abort(403)
+        if require_header and request.headers.get("X-WhisperRadar-Agent") != "codex-packaging":
+            abort(403)
+
+    @app.route("/gpt-pro/worker", methods=["GET", "POST"])
+    def gpt_pro_worker():
+        _gpt_worker_only(require_header=False)
+        saved = session.get("gpt_packaging_claim") or {}
+        job, result, error = None, None, ""
+        try:
+            if saved:
+                job = gpt_packaging.worker_job(cfg, saved.get("id"), saved.get("token"))
+            if request.method == "POST":
+                action = request.form.get("action")
+                if action == "claim" and not job:
+                    job = gpt_packaging.claim(cfg)
+                elif action == "complete" and job:
+                    result = gpt_packaging.complete(cfg, job["id"], job["claim_token"],
+                        json.loads(request.form.get("result") or "{}"))
+                    job = None
+                elif action == "fail" and job:
+                    gpt_packaging.fail(cfg, job["id"], job["claim_token"],
+                        request.form.get("error") or "Codex could not finish this job")
+                    job = None
+            if job:
+                session["gpt_packaging_claim"] = {"id": job["id"], "token": job["claim_token"]}
+            else:
+                session.pop("gpt_packaging_claim", None)
+        except (ValueError, OSError) as exc:
+            error = str(exc)
+        return render_template("gpt_worker.html", job=job, result=result, error=error,
+            context_json=json.dumps(job["context"], ensure_ascii=False, indent=2) if job else "")
+
+    @app.post("/gpt-pro/jobs/claim")
+    def gpt_pro_claim():
+        _gpt_worker_only()
+        return jsonify(job=gpt_packaging.claim(cfg))
+
+    @app.post("/gpt-pro/jobs/<jid>/complete")
+    def gpt_pro_complete(jid):
+        _gpt_worker_only()
+        body = request.get_json(silent=True) or {}
+        try:
+            saved = gpt_packaging.complete(cfg, jid, body.get("claim_token"), body.get("result"))
+            return jsonify(result=saved)
+        except (ValueError, OSError) as exc:
+            return jsonify(error=str(exc)), 400
+
+    @app.post("/gpt-pro/jobs/<jid>/fail")
+    def gpt_pro_fail(jid):
+        _gpt_worker_only()
+        body = request.get_json(silent=True) or {}
+        try:
+            job = gpt_packaging.fail(cfg, jid, body.get("claim_token"),
+                                     body.get("error") or "Codex generation did not finish")
+            return jsonify(job=job)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
 
     @app.post("/studio/<int:pid>/publish")
     def studio_publish(pid):
@@ -4683,6 +4761,8 @@ def create_app(cfg) -> Flask:
         data = thumbnails.load_thumbs(pdir)
         form = request.form
         for c in data["concepts"]:
+            if c.get("precomposed"):
+                continue
             i = c["id"]
             if f"text_{i}" in form:
                 c["text"] = thumbnails.clean_text(form.get(f"text_{i}"))

@@ -188,6 +188,8 @@ def parse_kit(raw: dict) -> dict:
 
 def assemble_description(kit: dict, chapters: list[dict]) -> str:
     """The text to paste into YouTube: body, chapters, hashtags."""
+    if kit.get("description_complete"):
+        return kit.get("description", "").strip()
     parts = [kit.get("description", "").strip()]
     titles = kit.get("chapter_titles") or []
     if chapters:

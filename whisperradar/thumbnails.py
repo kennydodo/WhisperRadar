@@ -908,6 +908,10 @@ def compose_all(pdir) -> list[str]:
     data = load_thumbs(pdir)
     done = []
     for c in data["concepts"]:
+        if c.get("precomposed"):
+            if c.get("final") and (pdir / c["final"]).is_file():
+                done.append(c["id"])
+            continue  # GPT artwork already includes its headline.
         art = pdir / c["art_file"] if c.get("art_file") else None
         if not art or not art.is_file():
             c["final"] = ""

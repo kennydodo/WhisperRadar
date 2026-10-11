@@ -1,0 +1,284 @@
+"""Local queue for Codex-generated, finished packaging (no paid API calls).
+
+The dashboard queues work. A scheduled Codex task claims one job and uses its
+own image tool, then hands back generated paths and text via the local API.
+Only the dashboard writes into production folders. A claim is never silently
+repeated: abandoned work expires as failed and can be explicitly retried.
+"""
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import hmac
+import io
+import json
+import os
+import secrets
+import shutil
+import threading
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
+
+from . import autorun, db, packaging, studio, thumbnails
+
+_LOCK = threading.RLock()
+LEASE_SECONDS = 7200
+
+
+def _now():
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+@contextmanager
+def _connect(cfg):
+    conn = db.connect(cfg.db_path)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                            "AND name='gpt_packaging_jobs'").fetchone():
+            conn.execute("""CREATE TABLE IF NOT EXISTS gpt_packaging_jobs (
+        id TEXT PRIMARY KEY, production_id INTEGER NOT NULL,
+        status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        claim_token TEXT NOT NULL DEFAULT '', fingerprint TEXT NOT NULL DEFAULT '',
+        error TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '{}')""")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS gpt_packaging_active "
+                 "ON gpt_packaging_jobs(production_id) "
+                 "WHERE status IN ('queued','running')")
+            conn.commit()
+        with conn:
+            yield conn
+    finally:
+        conn.close()
+
+
+def _public(row):
+    if not row:
+        return None
+    return {k: row[k] for k in ("id", "production_id", "status", "created_at",
+                                "updated_at", "error")}
+
+
+def _expire(conn):
+    cutoff = (dt.datetime.now(dt.timezone.utc)
+              - dt.timedelta(seconds=LEASE_SECONDS)).isoformat(timespec="seconds")
+    conn.execute("UPDATE gpt_packaging_jobs SET status='failed',error=?,updated_at=? "
+                 "WHERE status='running' AND updated_at<?",
+                 ("The Codex worker did not finish. Retry generation to start again.",
+                  _now(), cutoff))
+
+
+def latest(cfg, pid):
+    with _LOCK, _connect(cfg) as conn:
+        _expire(conn)
+        return _public(conn.execute("SELECT * FROM gpt_packaging_jobs "
+                       "WHERE production_id=? ORDER BY rowid DESC LIMIT 1",
+                       (pid,)).fetchone())
+
+
+def queue(cfg, pid):
+    with _LOCK, _connect(cfg) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        prod = db.get_production(conn, pid)
+        if not prod:
+            raise ValueError("Unknown production")
+        if prod["status"] not in ("ready", "published"):
+            raise ValueError("Finish and approve this production first")
+        pdir = studio.prod_dir(cfg, pid)
+        if not (pdir / "script.md").is_file():
+            raise ValueError("The final script is missing")
+        _expire(conn)
+        active = conn.execute("SELECT * FROM gpt_packaging_jobs WHERE "
+                              "production_id=? AND status IN ('queued','running')",
+                              (pid,)).fetchone()
+        if active:
+            return _public(active)
+        jid, now = uuid.uuid4().hex, _now()
+        conn.execute("INSERT INTO gpt_packaging_jobs "
+                     "(id,production_id,status,created_at,updated_at) "
+                     "VALUES (?,?,'queued',?,?)", (jid, pid, now, now))
+        return _public(conn.execute("SELECT * FROM gpt_packaging_jobs WHERE id=?",
+                                   (jid,)).fetchone())
+
+
+def _read(pdir, name):
+    path = pdir / name
+    return path.read_text(encoding="utf-8-sig") if path.is_file() else ""
+
+
+def context(cfg, pid):
+    with _connect(cfg) as conn:
+        prod = db.get_production(conn, pid)
+        if not prod or prod["status"] not in ("ready", "published"):
+            raise ValueError("Production is no longer finished")
+        pdir = studio.prod_dir(cfg, pid)
+        own = db.get_own_channel(conn, prod["own_channel_id"]) if prod["own_channel_id"] else None
+        style, style_src, bible, bible_src = autorun.style_bible(cfg, conn, prod, pdir)
+        ref_dirs = [pdir / "refs"]
+        if own and own["refs_dir"]:
+            ref_dirs.append(Path(own["refs_dir"]))
+        refs = sorted({str(p.resolve()) for folder in ref_dirs if folder.is_dir()
+                       for p in folder.iterdir()
+                       if p.is_file() and p.suffix.lower() in studio.IMAGE_EXTS})
+        images = sorted((pdir / "images").glob("*.png"))
+        sample = [str(images[i].resolve()) for i in sorted(set(
+            [0, len(images) // 2, len(images) - 1]))] if images else []
+        _cues, chapters = packaging.load_chapters(pdir)
+        payload = {"production_id": pid, "production_title": prod["title"],
+                   "channel": own["name"] if own else "", "source_folder": str(pdir),
+                   "script": _read(pdir, "script.md"),
+                   "subtitles": _read(pdir, "subtitles.srt"),
+                   "visual_style": style, "style_source": style_src,
+                   "bible": bible, "bible_source": bible_src,
+                   "references": refs, "sample_images": sample,
+                   "chapters": chapters,
+                   "existing_kit": packaging.load_kit(pdir)}
+        if not payload["script"].strip():
+            raise ValueError("The final script is missing or empty")
+        digest = {k: payload[k] for k in ("production_title", "source_folder",
+                                         "script", "subtitles", "visual_style", "bible")}
+        payload["fingerprint"] = hashlib.sha256(json.dumps(
+            digest, sort_keys=True).encode()).hexdigest()
+        return payload
+
+
+def claim(cfg):
+    with _LOCK, _connect(cfg) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        _expire(conn)
+        # Serialize image-tool jobs even if two scheduled runs overlap.
+        if conn.execute("SELECT 1 FROM gpt_packaging_jobs WHERE status='running'").fetchone():
+            return None
+        while True:
+            row = conn.execute("SELECT * FROM gpt_packaging_jobs WHERE status='queued' "
+                               "ORDER BY rowid LIMIT 1").fetchone()
+            if not row:
+                return None
+            try:
+                ctx = context(cfg, row["production_id"])
+            except (ValueError, OSError) as exc:
+                conn.execute("UPDATE gpt_packaging_jobs SET status='failed',error=?,updated_at=? "
+                             "WHERE id=?", (str(exc), _now(), row["id"]))
+                continue
+            token = secrets.token_urlsafe(32)
+            conn.execute("UPDATE gpt_packaging_jobs SET status='running',claim_token=?,"
+                         "fingerprint=?,updated_at=? WHERE id=?",
+                         (token, ctx["fingerprint"], _now(), row["id"]))
+            return {"id": row["id"], "claim_token": token, "context": ctx}
+
+
+def _authorized(conn, jid, token):
+    row = conn.execute("SELECT * FROM gpt_packaging_jobs WHERE id=?", (jid,)).fetchone()
+    if not row or not row["claim_token"] or not hmac.compare_digest(
+            row["claim_token"], str(token or "")):
+        raise ValueError("Invalid job claim")
+    return row
+
+
+def fail(cfg, jid, token, error):
+    with _LOCK, _connect(cfg) as conn:
+        row = _authorized(conn, jid, token)
+        if row["status"] == "running":
+            conn.execute("UPDATE gpt_packaging_jobs SET status='failed',error=?,updated_at=? "
+                         "WHERE id=?", (str(error)[:1000], _now(), jid))
+        return _public(conn.execute("SELECT * FROM gpt_packaging_jobs WHERE id=?", (jid,)).fetchone())
+
+
+def worker_job(cfg, jid, token):
+    """Resume the claim held by the local browser session, without requeueing."""
+    with _LOCK, _connect(cfg) as conn:
+        _expire(conn)
+        row = _authorized(conn, jid, token)
+        if row["status"] != "running":
+            return None
+        return {"id": jid, "claim_token": token,
+                "context": context(cfg, row["production_id"])}
+
+
+def _generated_image(path):
+    """A local worker may hand back only files from Codex's generated images."""
+    root = (Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+            / "generated_images").resolve()
+    src = Path(path).resolve()
+    if not src.is_relative_to(root) or not src.is_file():
+        raise ValueError("Thumbnail path must be a Codex-generated image")
+    from PIL import Image, ImageOps
+    with Image.open(src) as image:
+        if not 1.72 <= image.width / image.height <= 1.83:
+            raise ValueError("Each thumbnail must be landscape 16:9")
+        image = ImageOps.fit(image.convert("RGB"), (1280, 720),
+                             method=Image.Resampling.LANCZOS)
+        for quality in (92, 85, 78, 70):
+            stream = io.BytesIO()
+            image.save(stream, "JPEG", quality=quality, optimize=True)
+            if len(stream.getvalue()) < thumbnails.MAX_BYTES:
+                return stream.getvalue()
+    raise ValueError("Thumbnail is too large")
+
+
+def complete(cfg, jid, token, result):
+    with _LOCK, _connect(cfg) as conn:
+        row = _authorized(conn, jid, token)
+        if row["status"] == "complete":
+            return json.loads(row["result"])
+        if row["status"] != "running":
+            raise ValueError("This job is no longer running")
+        ctx = context(cfg, row["production_id"])
+        if row["fingerprint"] != ctx["fingerprint"]:
+            raise ValueError("Script, style or Bible changed. Retry with the current production.")
+        if not isinstance(result, dict):
+            raise ValueError("A packaging result is required")
+        kit = packaging.parse_kit(result)
+        if not kit["title"] or len(kit["title"]) > 100:
+            raise ValueError("A title of 1-100 characters is required")
+        if not 200 <= len(kit["description"]) <= 4500:
+            raise ValueError("The description must contain 200-4500 characters")
+        items = result.get("thumbnails")
+        if not isinstance(items, list) or len(items) != 3:
+            raise ValueError("Exactly three finished thumbnails are required")
+        prepared = []
+        for it in items:
+            if not isinstance(it, dict) or not str(it.get("text") or "").strip():
+                raise ValueError("Each thumbnail needs its headline")
+            prepared.append(_generated_image(it.get("path") or ""))
+        pdir = Path(ctx["source_folder"])
+        # Unique output paths and backups preserve older images/user edits.
+        folder = thumbnails.thumbs_dir(pdir) / "jobs" / jid
+        folder.mkdir(parents=True, exist_ok=True)
+        for previous in (pdir / packaging.KIT_FILE,
+                         thumbnails.thumbs_dir(pdir) / thumbnails.THUMBS_FILE,
+                         pdir / "description.txt", pdir / "title.txt"):
+            backup = folder / ("previous-" + previous.name)
+            if previous.exists() and not backup.exists():
+                shutil.copy2(previous, backup)
+        concepts = []
+        for i, (it, data) in enumerate(zip(items, prepared), 1):
+            name = f"gpt-{jid[:8]}-{i}.jpg"
+            dst = thumbnails.thumbs_dir(pdir) / name
+            dst.write_bytes(data)
+            concepts.append({"id": f"gpt_{jid[:8]}_{i}", "layout": "character",
+                "text": str(it["text"]).strip(), "text_pos": "top",
+                "text_color": "#FFD400", "accent": "#FFD400",
+                "emphasis": "none", "focal": "auto", "art_prompt": str(it.get("prompt") or ""),
+                "idea": str(it.get("idea") or ""), "art_file": "",
+                "final": f"thumbnails/{name}", "precomposed": True})
+        kit.update(status="ready", provider="codex", description_complete=True,
+                   notes=str(result.get("notes") or ""))
+        # Description is complete text from the worker; keep hashtags/chapters
+        # in the body so the kit does not add them a second time.
+        kit["hashtags"], kit["chapter_titles"] = [], []
+        packaging.save_kit(pdir, kit)
+        (pdir / "title.txt").write_text(kit["title"] + "\n", encoding="utf-8")
+        (pdir / "description.txt").write_text(kit["description"] + "\n", encoding="utf-8")
+        thumbnails.save_thumbs(pdir, {"concepts": concepts, "chosen": None,
+            "status": "ready", "score": None, "provider": "codex",
+            "recommended": result.get("recommended_thumbnail", 1)})
+        thumbnails.contact_sheet(pdir)
+        (folder / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2),
+                                            encoding="utf-8")
+        saved = {"production_id": row["production_id"], "title": kit["title"],
+                 "description_file": str(pdir / "description.txt"),
+                 "title_file": str(pdir / "title.txt"),
+                 "thumbnails": [str(pdir / c["final"]) for c in concepts]}
+        conn.execute("UPDATE gpt_packaging_jobs SET status='complete',result=?,"
+                     "updated_at=?,error='' WHERE id=?", (json.dumps(saved), _now(), jid))
+        return saved
