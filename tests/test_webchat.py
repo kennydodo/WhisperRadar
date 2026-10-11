@@ -151,6 +151,33 @@ class AskTests(unittest.TestCase):
         self.assertEqual(page.clicked_continue, 1)
         self.assertEqual(out, '{"a": [1,2]}')
 
+    def test_reply_split_into_paragraph_blocks_is_read_whole(self):
+        # Qwen puts each paragraph in its own matching element: the LAST one
+        # is only the closing paragraph. The whole reply is the page text
+        # after our prompt.
+        clk = Clock()
+        whole = "\n".join(f"Paragraph {i} of the script." for i in range(80))
+
+        class Split(FakePage):
+            def evaluate(self, js, arg=None):
+                if js is wc._AFTER_PROMPT_JS:
+                    return ("\nCopy\nEdit\n" + whole +
+                            "\nThinking\nAI-generated content may not be accurate.")
+                return super().evaluate(js, arg)
+
+        page = Split(clk, wc.ZAI, [("Paragraph 79 of the script.", False)] * 40)
+        out = wc.ask(page, wc.ZAI, "Write the script now, plain text only please",
+                     clock=clk, ready=lambda t: len(t.split()) > 200)
+        self.assertEqual(out, whole)
+
+    def test_after_prompt_strips_buttons_and_footer(self):
+        class P:
+            def evaluate(self, js, arg=None):
+                return "\nCopy\nEdit\nThe reply.\nSecond line.\nRegenerate\nThinking\n"
+        self.assertEqual(wc.after_prompt(P(), "some prompt text here"),
+                         "The reply.\nSecond line.")
+        self.assertEqual(wc.after_prompt(P(), ""), "")
+
     def test_continue_is_capped(self):
         clk = Clock()
         page = FakePage(clk, wc.DEEPSEEK, [("x", False)] * 8,
