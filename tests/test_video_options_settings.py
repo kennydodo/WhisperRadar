@@ -108,5 +108,19 @@ class Routes(Base):
         c.close()
 
 
+class Sounds(Base):
+    def test_all_sounds_listed_and_playable(self):
+        import shutil
+        client = create_app(self.cfg).test_client()
+        page = client.get("/video-options").data
+        for name in (b"whoosh", b"ding", b"swipe", b"pop_marimba"):
+            self.assertIn(b"playSfx('" + name, page)
+        self.assertEqual(client.get("/video-options/sfx/nope.wav").status_code, 404)
+        if shutil.which("ffmpeg"):
+            r = client.get("/video-options/sfx/whoosh.wav")
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.data.startswith(b"RIFF"))
+
+
 if __name__ == "__main__":
     unittest.main()

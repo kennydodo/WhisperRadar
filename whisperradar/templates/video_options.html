@@ -25,6 +25,9 @@
          align-items:center; padding:5px 0; border-top:1px solid var(--border); }
   .row:first-of-type { border-top:0; }
   .help { font-size:12px; color:var(--muted); }
+  .snd { display:grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap:6px 14px; }
+  .snd div { display:flex; align-items:center; gap:8px; }
+  .snd button { padding:2px 10px; }
 </style>
 </head>
 <body>
@@ -73,6 +76,7 @@
             <option value="">inherit ({{ base }})</option>
             {% for c in s.choices %}<option value="{{ c }}" {% if cur == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
           </select>
+          {% if s.path == 'sound.default_pop' %}<button type="button" style="margin-top:4px" onclick="var v=this.previousElementSibling.value||'{{ base }}'; playSfx(v, this)">&#9654; play</button>{% endif %}
           {% else %}
           {% set shown = (cur|join(', ') if cur is iterable and cur is not string else cur) if cur is not none else '' %}
           {% set ph = (base|join(', ') if base is iterable and base is not string else base) %}
@@ -84,8 +88,34 @@
       {% endfor %}
     </div>
     {% endfor %}
+    <div class="panel">
+      <h2>Sound effects you can use</h2>
+      <p class="muted" style="margin-top:0">Every built-in sound. Press &#9654; to hear it
+      (made with ffmpeg the first time). Use a name on a channel's "sound effect" (My Channels)
+      or let the plan name it on a shot. Your own files go in a production's <b>sfx</b> folder
+      (.wav .mp3 .m4a .ogg .flac) and are used by file name. The "Default pop sound" above is
+      what the name <b>pop</b> plays.</p>
+      <div class="snd">
+        {% for n in sounds %}
+        <div><button type="button" onclick="playSfx('{{ n.name }}', this)">&#9654;</button>
+          <span><b>{{ n.name }}</b> <span class="help">{{ n.note }}</span></span></div>
+        {% endfor %}
+      </div>
+      <p class="err" id="sfxerr"></p>
+    </div>
     <button type="submit">Save{% if scope %} for this channel{% else %} globally{% endif %}</button>
   </form>
 </div>
+<script>
+var _a = null;
+function playSfx(name, btn) {
+  var err = document.getElementById('sfxerr'); err.textContent = '';
+  if (_a) { _a.pause(); }
+  fetch('/video-options/sfx/' + encodeURIComponent(name) + '.wav')
+    .then(function (r) { if (!r.ok) { return r.text().then(function (t) { throw new Error(t); }); } return r.blob(); })
+    .then(function (b) { _a = new Audio(URL.createObjectURL(b)); return _a.play(); })
+    .catch(function (e) { err.textContent = name + ': ' + e.message; });
+}
+</script>
 </body>
 </html>
