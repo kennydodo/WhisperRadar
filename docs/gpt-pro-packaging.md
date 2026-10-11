@@ -2,7 +2,7 @@
 
 The Finished page and Thumbnails page have a **Generate with GPT Pro** button.
 It queues only the clicked, finished production. A scheduled Codex task checks
-the local worker page every five minutes, reads the final script and resolved
+the local worker page once an hour, reads the final script and resolved
 channel/production style and Bible, inspects references, and generates three
 finished thumbnails using Codex's built-in image tool. It returns a recommended
 title and a complete YouTube description. The button label is not a model ID
@@ -26,7 +26,7 @@ were. This does not upload anything to YouTube or modify the final video/export.
 ## Worker connection
 
 The active Codex chat heartbeat is `whisperradar-gpt-pro-packaging`, scheduled
-every five minutes. Manage it in Codex Automations. Empty checks stay quiet.
+once an hour. Manage it in Codex Scheduled. Use Run now on this task to process queued jobs immediately. Empty checks stay quiet.
 
 The browser worker lives at `http://127.0.0.1:8540/gpt-pro/worker`. It is restricted
 to direct loopback requests. A browser session holds its claim token. Claiming
@@ -41,7 +41,7 @@ Bible and production folder are fingerprinted at claim time; changed inputs
 invalidate the result rather than silently publishing stale packaging.
 
 WhisperRadar and the Codex desktop app must be available on this same computer
-when the worker runs. Queue pickup can take up to five minutes, plus generation
+when the worker runs. Queue pickup can take up to one hour, plus generation
 time. No FlowBatch, Renderly or API fallback is used for this route. If the
 built-in image tool is unavailable, the worker reports a failed job.
 
