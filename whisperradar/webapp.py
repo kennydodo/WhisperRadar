@@ -1234,6 +1234,52 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
 
+    @app.get("/watched/export")
+    def watched_export():
+        """The watched-channel list as a JSON download (to load on another
+        machine with /watched/import). Only the list moves, not the videos."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        rows = [{"name": c["name"], "channel_id": c["channel_id"],
+                 "kind": c["kind"], "genre": c["genre"],
+                 "active": int(c["active"])} for c in db.list_channels(conn)]
+        conn.close()
+        buf = io.BytesIO(json.dumps(rows, indent=1,
+                                    ensure_ascii=False).encode("utf-8"))
+        return send_file(buf, mimetype="application/json", as_attachment=True,
+                         download_name="watched_channels.json")
+
+    @app.post("/watched/import")
+    def watched_import():
+        """Add the channels of a watched_channels.json; ones already watched
+        (same channel id) are left exactly as they are."""
+        f = request.files.get("watched_file")
+        try:
+            rows = json.loads(f.read().decode("utf-8-sig")) if f else None
+            if not isinstance(rows, list):
+                raise ValueError("expected a list of channels")
+        except Exception as exc:  # noqa: BLE001
+            return redirect("/watched?error=" + quote(
+                f"Could not read that file: {exc}"))
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        added = 0
+        for r in rows:
+            if not isinstance(r, dict) or not r.get("channel_id"):
+                continue
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO channels (name, channel_id, kind, "
+                "genre, active) VALUES (?,?,?,?,?)",
+                (str(r.get("name") or r["channel_id"]), str(r["channel_id"]),
+                 str(r.get("kind") or "primary"),
+                 str(r.get("genre") or "general"), int(r.get("active", 1))))
+            added += cur.rowcount
+        conn.commit()
+        conn.close()
+        return redirect("/watched?msg=" + quote(
+            f"Imported {added} new channel(s); {len(rows) - added} "
+            f"were already here or skipped"))
+
     def _add_channel_back(msg=None, error=None):
         """Return to wherever the add form lives. The Watched page and the
         Research discovered list both post here; the form's hidden `return`

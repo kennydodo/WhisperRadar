@@ -140,6 +140,17 @@ class AskTests(unittest.TestCase):
         self.assertEqual(page.clicked_continue, 1)
         self.assertEqual(out, "first half second half")
 
+    def test_continue_clicked_while_a_json_step_is_incomplete(self):
+        # a cut-off JSON reply never counts as finished, so the Continue
+        # button must be pressed BEFORE the ready check, not after it
+        clk = Clock()
+        page = FakePage(clk, wc.DEEPSEEK, [('{"a": [1,', False)] * 8,
+                        continue_frames=[[('{"a": [1,2]}', False)] * 8])
+        out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk,
+                     ready=lambda t: t.strip().endswith("}"))
+        self.assertEqual(page.clicked_continue, 1)
+        self.assertEqual(out, '{"a": [1,2]}')
+
     def test_continue_is_capped(self):
         clk = Clock()
         page = FakePage(clk, wc.DEEPSEEK, [("x", False)] * 8,

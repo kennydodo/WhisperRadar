@@ -1004,6 +1004,10 @@ _TA_LEN_JS = """(sel) => { const list=[...document.querySelectorAll(sel)];
   if (t.isContentEditable) return (t.textContent||'').length;
   return (t.value || '').length; }"""
 _MSG_COUNT_JS = "() => document.querySelectorAll('.ds-message').length"
+_BUTTONS_JS = """() => [...document.querySelectorAll('button,[role=button],.ds-button')]
+  .filter(b => b.offsetParent !== null)
+  .map(b => (b.innerText || b.getAttribute('aria-label') || '').trim().slice(0, 40))
+  .filter(Boolean).slice(-12)"""
 _PAGE_LEN_JS = "() => (document.body.innerText||'').length"
 _PAGE_TAIL_JS = "() => (document.body.innerText||'').trim().slice(-300)"
 
@@ -1248,6 +1252,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
     active = clock()                       # last sign of life
     beat = clock()
     stuck_logged = False
+    buttons_logged = False
     cand_at = clock()
     page_len = -1                          # page text size, to see thinking
     grew_at = clock()
@@ -1383,6 +1388,25 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                     log(f"{site.name}: the reply was in another block of the "
                         f"page ({len(got)} chars) - using it")
                     return got
+        if (started and not gen and not done_waiting and clean_reply(last_text)
+                and continues < continue_max
+                and clock() - stable_since >= settle):
+            # the reply stopped part-way and is not a full answer yet (a JSON
+            # step): a "Continue" button is how the site offers the rest
+            clicked = page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
+            if clicked:
+                continues += 1
+                log(f"{site.name}: clicked '{clicked}' ({continues})")
+                stable_since = clock()
+                continue
+            if not buttons_logged and clock() - stable_since >= 90:
+                buttons_logged = True
+                try:
+                    names = page.evaluate(_BUTTONS_JS) or []
+                    log(f"{site.name}: the reply has been still for 90 s and "
+                        f"is not complete; visible buttons: {names}")
+                except Exception:  # noqa: BLE001
+                    pass
         if done_waiting:
             clicked = (page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
                        if continues < continue_max else "")

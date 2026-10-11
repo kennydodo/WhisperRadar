@@ -90,6 +90,13 @@
       </select>
       <button type="submit">Add channel</button>
     </form>
+    <form class="inline" method="post" action="/watched/import" enctype="multipart/form-data"
+          style="margin-top:12px; gap:8px; align-items:center">
+      <span class="muted" style="font-size:12px"><b>Copy to another machine</b> (the list only):</span>
+      <a class="btn ghost" href="/watched/export">download list</a>
+      <input type="file" name="watched_file" accept=".json,application/json" required>
+      <button type="submit">Import list</button>
+    </form>
   </div>
 
   <div class="search">
