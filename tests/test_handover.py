@@ -252,6 +252,16 @@ class ReorderPoints(unittest.TestCase):
                                                "a script", "src")
         self.assertEqual(fb, self.PTS)
 
+class PlanDirectionRepeated(unittest.TestCase):
+    def test_typed_plan_instructions_in_every_message(self):
+        from whisperradar import plan
+        ctx = {"direction": "Use odd numbers in titles.",
+               "judge_direction": "List the faults in reverse order."}
+        self.assertIn("reverse order", plan.judge_followup({"formula": "f", "titles": [], "promise": "p", "thumbnail": {}}, [], ctx))
+        self.assertIn("odd numbers", plan.writer_feedback({"faults": []}, [], ctx))
+        self.assertNotIn("CREATOR'S", plan.writer_feedback({"faults": []}, []))
+        self.assertIn("ORDER", plan.judge_prompt.__globals__["_judge_direction"](ctx))
+
 
 if __name__ == "__main__":
     unittest.main()

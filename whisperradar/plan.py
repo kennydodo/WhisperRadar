@@ -768,10 +768,20 @@ def _writer_direction(ctx: dict) -> str:
 
 def _judge_direction(ctx: dict) -> str:
     text = (ctx.get("judge_direction") or "").strip()
-    return ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - what to look for and "
-            "what to ignore. Apply them in addition to the rules; the code-"
-            "checked rules and the reply format stay as they are:\n"
+    return ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - follow them to the "
+            "letter. They take priority over the defaults on WHAT your notes "
+            "say, how they are WORDED and the ORDER you list them in (the "
+            "writer receives them in that order). The code-checked rules and "
+            "the JSON field names stay as they are:\n"
             + text + "\n\n") if text else ""
+
+
+def _repeat_direction(ctx: dict | None, key: str, who: str) -> str:
+    """The creator's typed instructions again, for every later message of the
+    loop, so a long chat does not drift away from them."""
+    text = ((ctx or {}).get(key) or "").strip()
+    return (f"\n\nCREATOR'S INSTRUCTIONS FOR {who} (still in force - follow "
+            f"them to the letter):\n{text}" if text else "")
 
 
 def writer_prompt(ctx: dict) -> str:
@@ -855,13 +865,14 @@ Reply with ONE JSON object and nothing else:
 "pass" is true only when the score is {min_score:g} or higher and nothing is left to fix."""
 
 
-def judge_followup(plan: dict, faults: list[str]) -> str:
+def judge_followup(plan: dict, faults: list[str], ctx: dict | None = None) -> str:
     return ("The strategist revised the plan after your review. Judge it "
             "again under the SAME rules and reply in exactly the SAME JSON "
             "format, including a fresh \"closest\" and \"alternates\". First "
             "check each point you raised, then that nothing else got worse."
             f"\n\nRULE CHECKS STILL FAILING: {faults or 'none'}"
-            "\n\n" + _plan_json(plan))
+            + _repeat_direction(ctx, "judge_direction", "YOU, THE JUDGE")
+            + "\n\n" + _plan_json(plan))
 
 
 def safe_verdict(verdict: dict, plan: dict, source_title: str,
@@ -877,7 +888,8 @@ def safe_verdict(verdict: dict, plan: dict, source_title: str,
                                  verdict, own, f"{source_title}\n{transcript}")
 
 
-def writer_feedback(verdict: dict, faults: list[str]) -> str:
+def writer_feedback(verdict: dict, faults: list[str],
+                    ctx: dict | None = None) -> str:
     return ("The reviewer found problems with your plan.\n"
             + (f"Rule checks run by code (fix these too): "
                f"{'; '.join(faults)}\n" if faults else "")
@@ -885,7 +897,8 @@ def writer_feedback(verdict: dict, faults: list[str]) -> str:
             + json.dumps(verdict, ensure_ascii=False, indent=1)
             + "\n\nChange ONLY what is named; keep the rest as it was. "
               "Return the COMPLETE plan again as one JSON object in the "
-              "same format, and nothing else.")
+              "same format, and nothing else."
+            + _repeat_direction(ctx, "direction", "YOU, THE WRITER"))
 
 
 def apply_pick(plan: dict, verdict: dict, source_title: str = "") -> dict:
@@ -1050,7 +1063,7 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
         for attempt in (1, 2):
             if judge_open:
                 raw = ws._send(transport, judge,
-                               lambda f: judge_followup(plan, faults), log,
+                               lambda f: judge_followup(plan, faults, ctx), log,
                                new_chat=False, ready=ws._is_json_verdict)
             else:
                 raw, judge_cont = ws._send_in(
@@ -1086,7 +1099,7 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
             safe_verdict(verdict or {"faults": ["no verdict"]}, plan,
                          src_title, transcript, _package_text(ctx["package"]),
                          hand),
-            faults), (), new_chat=False, ready=ws._has_json)
+            faults, ctx), (), new_chat=False, ready=ws._has_json)
     chosen = best[1]["title"]
     plan = apply_pick(best[1], best[2], src_title)
     if plan.get("picked_by"):
