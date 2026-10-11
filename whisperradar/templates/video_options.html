@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Video options</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+          --muted:#8b93a3; --accent:#4f8cff; --green:#3fb96f; --red:#e05c5c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font:14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width:900px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 2px; } h2 { font-size:16px; margin:0 0 8px; }
+  .muted { color:var(--muted); }
+  .panel { background:var(--panel); border:1px solid var(--border);
+           border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  a { color:var(--accent); text-decoration:none; }
+  input[type=text], select { background:#0f1115; color:var(--text); border:1px solid var(--border);
+                  border-radius:6px; padding:6px 8px; width:100%; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px;
+           padding:7px 14px; cursor:pointer; }
+  .msg { color:var(--green); } .err { color:var(--red); }
+  .row { display:grid; grid-template-columns: 220px 200px 1fr; gap:10px;
+         align-items:center; padding:5px 0; border-top:1px solid var(--border); }
+  .row:first-of-type { border-top:0; }
+  .help { font-size:12px; color:var(--muted); }
+  .snd { display:grid; grid-template-columns: repeat(auto-fill,minmax(260px,1fr)); gap:6px 14px; }
+  .snd div { display:flex; align-items:center; gap:8px; }
+  .snd button { padding:2px 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p><a href="/settings">&larr; Settings</a></p>
+  <h1>Video options</h1>
+  <p class="muted">Every ImgToVideo option. A blank field inherits: a channel falls back to
+  the global value, the global value to the program default (shown in grey). The
+  render resolution is set on Settings. Changes reach a production when its folder
+  is prepared (the merge stage); a value edited by hand in that production's
+  <span class="muted">imgtovideo.json</span> is never overwritten.</p>
+  {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+  <form method="get" class="panel">
+    <label>Applies to
+      <select name="channel" onchange="this.form.submit()">
+        <option value="">Everything (global)</option>
+        {% for c in own_channels %}
+        <option value="{{ c.id }}" {% if scope == c.id|string %}selected{% endif %}>Channel: {{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  <form method="post" action="/video-options/save">
+    <input type="hidden" name="channel" value="{{ scope }}">
+    {% for g in groups %}
+    <div class="panel">
+      <h2>{{ g.title }}</h2>
+      {% for s in g['items'] %}
+      {% set name = 'v::' ~ s.path %}
+      {% set cur = values.get(s.path) %}
+      {% set base = inherited[s.path] %}
+      <div class="row">
+        <div>{{ s.label }}</div>
+        <div>
+          {% if s.kind == 'bool' %}
+          <select name="{{ name }}">
+            <option value="">inherit ({{ 'yes' if base else 'no' }})</option>
+            <option value="yes" {% if cur is sameas true %}selected{% endif %}>yes</option>
+            <option value="no" {% if cur is sameas false %}selected{% endif %}>no</option>
+          </select>
+          {% elif s.kind == 'choice' %}
+          <select name="{{ name }}">
+            <option value="">inherit ({{ base }})</option>
+            {% for c in s.choices %}<option value="{{ c }}" {% if cur == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+          </select>
+          {% if s.path == 'sound.default_pop' %}<button type="button" style="margin-top:4px" onclick="var v=this.previousElementSibling.value||'{{ base }}'; playSfx(v, this)">&#9654; play</button>{% endif %}
+          {% else %}
+          {% set shown = (cur|join(', ') if cur is iterable and cur is not string else cur) if cur is not none else '' %}
+          {% set ph = (base|join(', ') if base is iterable and base is not string else base) %}
+          <input type="text" name="{{ name }}" value="{{ shown }}" placeholder="{{ ph }}">
+          {% endif %}
+        </div>
+        <div class="help">{{ s.help }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <div class="panel">
+      <h2>Sound effects you can use</h2>
+      <p class="muted" style="margin-top:0">Every built-in sound. Press &#9654; to hear it
+      (made with ffmpeg the first time). Use a name on a channel's "sound effect" (My Channels)
+      or let the plan name it on a shot. Your own files go in a production's <b>sfx</b> folder
+      (.wav .mp3 .m4a .ogg .flac) and are used by file name. The "Default pop sound" above is
+      what the name <b>pop</b> plays.</p>
+      <div class="snd">
+        {% for n in sounds %}
+        <div><button type="button" onclick="playSfx('{{ n.name }}', this)">&#9654;</button>
+          <span><b>{{ n.name }}</b> <span class="help">{{ n.note }}</span></span></div>
+        {% endfor %}
+      </div>
+      <p class="err" id="sfxerr"></p>
+    </div>
+    <button type="submit">Save{% if scope %} for this channel{% else %} globally{% endif %}</button>
+  </form>
+</div>
+<script>
+var _a = null;
+function playSfx(name, btn) {
+  var err = document.getElementById('sfxerr'); err.textContent = '';
+  if (_a) { _a.pause(); }
+  fetch('/video-options/sfx/' + encodeURIComponent(name) + '.wav')
+    .then(function (r) { if (!r.ok) { return r.text().then(function (t) { throw new Error(t); }); } return r.blob(); })
+    .then(function (b) { _a = new Audio(URL.createObjectURL(b)); return _a.play(); })
+    .catch(function (e) { err.textContent = name + ': ' + e.message; });
+}
+</script>
+</body>
+</html>

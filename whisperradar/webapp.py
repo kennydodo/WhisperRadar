@@ -5059,5 +5059,7 @@ def create_app(cfg) -> Flask:
     look_routes.register(app, cfg, research_job)
     from . import handover_routes
     handover_routes.register(app, cfg)
+    from . import video_routes
+    video_routes.register(app, cfg)
 
     return app

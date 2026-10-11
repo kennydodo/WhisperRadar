@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "output": {
+    "width": 2560,
+    "height": 1440,
+    "fps": 30
+  },
+  "timing": {
+    "min_image_seconds": 2.5,
+    "preferred_image_seconds": 5,
+    "max_image_seconds": 8,
+    "floor_image_seconds": 2,
+    "warn_hold_seconds": 30
+  },
+  "motion": {
+    "auto_motion_enabled": true,
+    "easing": "ease_in_out",
+    "push_in_start_percent": 100,
+    "push_in_end_percent": 106,
+    "zoom_out_start_percent": 107,
+    "zoom_out_end_percent": 100,
+    "pan_max_travel_percent": 4,
+    "static_every_min_shots": 4,
+    "static_every_max_shots": 6,
+    "motion_duration_ms": 0,
+    "long_pan_linear_threshold_seconds": 10
+  },
+  "transitions": {
+    "enabled": true,
+    "kind": "crossfade",
+    "scene_boundary_kind": "fade_black",
+    "alignment": "late",
+    "duration_seconds": 0.5,
+    "reveal_fade_seconds": 0.25
+  },
+  "naming": {
+    "scene_prefix": "S",
+    "number_padding": 2,
+    "separator": "_",
+    "motion_codes_enabled": true,
+    "type_codes_enabled": true,
+    "image_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp"
+    ]
+  },
+  "render": {
+    "preview_width": 960,
+    "preview_height": 540,
+    "preview_preset": "veryfast",
+    "preview_crf": 28,
+    "preview_bframes": 0,
+    "final_preset": "medium",
+    "final_crf": 18,
+    "final_bframes": 3,
+    "supersample_target_width": 12288,
+    "encoder": "auto",
+    "ffmpeg_path": "ffmpeg",
+    "ffprobe_path": "ffprobe"
+  },
+  "scene_inference": {
+    "sentence_gap_seconds": 0.8,
+    "terminal_punctuation_gap_seconds": 0.4
+  },
+  "shotlist": {
+    "master_prompt_max_chars": 1500,
+    "prompt_max_chars": 2400
+  },
+  "sound": {
+    "default_pop": "pop_snap"
+  },
+  "planner": "v2"
+}

@@ -1,0 +1,1326 @@
+{
+  "schema_version": 3,
+  "project_name": "shotlist",
+  "resolution": {
+    "width": 2560,
+    "height": 1440
+  },
+  "fps": 30,
+  "audio": {
+    "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\audio\\narration.mp3",
+    "duration_frames": 8432
+  },
+  "scenes": [
+    {
+      "id": "S01",
+      "start_frame": 0,
+      "end_frame": 560,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_01_SCN_ZI.png",
+          "scene_id": "S01",
+          "shot_id": "shot-001",
+          "start_frame": 0,
+          "duration_frames": 178,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_02_SCN_PU.png",
+          "scene_id": "S01",
+          "shot_id": "shot-002",
+          "start_frame": 178,
+          "duration_frames": 132,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_03_CU_ST.png",
+          "scene_id": "S01",
+          "shot_id": "shot-003",
+          "start_frame": 310,
+          "duration_frames": 117,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S01_04_CU_ZI.png",
+          "scene_id": "S01",
+          "shot_id": "shot-004",
+          "start_frame": 427,
+          "duration_frames": 133,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "start_frame": 560,
+      "end_frame": 1306,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_01_CU_ZO.png",
+          "scene_id": "S02",
+          "shot_id": "shot-005",
+          "start_frame": 560,
+          "duration_frames": 111,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_02_SCN_ZI.png",
+          "scene_id": "S02",
+          "shot_id": "shot-006",
+          "start_frame": 671,
+          "duration_frames": 194,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_03_SCN_PU.png",
+          "scene_id": "S02",
+          "shot_id": "shot-007",
+          "start_frame": 865,
+          "duration_frames": 134,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S02_04_SCN_PD.png",
+          "scene_id": "S02",
+          "shot_id": "shot-008",
+          "start_frame": 999,
+          "duration_frames": 307,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "start_frame": 1306,
+      "end_frame": 1514,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S03_01_CU_ZI.png",
+          "scene_id": "S03",
+          "shot_id": "shot-009",
+          "start_frame": 1306,
+          "duration_frames": 208,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S04",
+      "start_frame": 1514,
+      "end_frame": 2278,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_01_SCN_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-010",
+          "start_frame": 1514,
+          "duration_frames": 188,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_02_SCN_ST.png",
+          "scene_id": "S04",
+          "shot_id": "shot-011",
+          "start_frame": 1702,
+          "duration_frames": 121,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_03_CMP_ZO.png",
+          "scene_id": "S04",
+          "shot_id": "shot-012",
+          "start_frame": 1823,
+          "duration_frames": 288,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S04_04_CU_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-013",
+          "start_frame": 2111,
+          "duration_frames": 167,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "start_frame": 2278,
+      "end_frame": 3987,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_01_SCN_ZO.png",
+          "scene_id": "S05",
+          "shot_id": "shot-014",
+          "start_frame": 2278,
+          "duration_frames": 113,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_02_SCN_ZI.png",
+          "scene_id": "S05",
+          "shot_id": "shot-015",
+          "start_frame": 2391,
+          "duration_frames": 300,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2752,
+            "height": 1536,
+            "right": 2752,
+            "bottom": 1536
+          },
+          "end_viewport": {
+            "x": 77.88679245283015,
+            "y": 43.471698113207594,
+            "width": 2596.2264150943397,
+            "height": 1449.0566037735848,
+            "right": 2674.1132075471696,
+            "bottom": 1492.5283018867924
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_03_CU_ST.png",
+          "scene_id": "S05",
+          "shot_id": "shot-016",
+          "start_frame": 2691,
+          "duration_frames": 140,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_04_CU_ZI.png",
+          "scene_id": "S05",
+          "shot_id": "shot-017",
+          "start_frame": 2831,
+          "duration_frames": 218,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_05_CMP_ZO.png",
+          "scene_id": "S05",
+          "shot_id": "shot-018",
+          "start_frame": 3049,
+          "duration_frames": 163,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_06_SCN_ZI.png",
+          "scene_id": "S05",
+          "shot_id": "shot-019",
+          "start_frame": 3212,
+          "duration_frames": 344,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_07_SCN_PD.png",
+          "scene_id": "S05",
+          "shot_id": "shot-020",
+          "start_frame": 3556,
+          "duration_frames": 295,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S05_08_CU_ZI.png",
+          "scene_id": "S05",
+          "shot_id": "shot-021",
+          "start_frame": 3851,
+          "duration_frames": 136,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S06",
+      "start_frame": 3987,
+      "end_frame": 5020,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_01_SCN_PU.png",
+          "scene_id": "S06",
+          "shot_id": "shot-022",
+          "start_frame": 3987,
+          "duration_frames": 146,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 896,
+            "width": 2048,
+            "height": 1152,
+            "right": 2048,
+            "bottom": 2048
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2048,
+            "height": 1152,
+            "right": 2048,
+            "bottom": 1152
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_02_SCN_PD.png",
+          "scene_id": "S06",
+          "shot_id": "shot-023",
+          "start_frame": 4133,
+          "duration_frames": 238,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_03_CU_ZI.png",
+          "scene_id": "S06",
+          "shot_id": "shot-024",
+          "start_frame": 4371,
+          "duration_frames": 128,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_04_CMP_ZO.png",
+          "scene_id": "S06",
+          "shot_id": "shot-025",
+          "start_frame": 4499,
+          "duration_frames": 259,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S06_05_SCN_ZI.png",
+          "scene_id": "S06",
+          "shot_id": "shot-026",
+          "start_frame": 4758,
+          "duration_frames": 262,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S07",
+      "start_frame": 5020,
+      "end_frame": 6356,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_01_SCN_ZO.png",
+          "scene_id": "S07",
+          "shot_id": "shot-027",
+          "start_frame": 5020,
+          "duration_frames": 344,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_02_SCN_PU.png",
+          "scene_id": "S07",
+          "shot_id": "shot-028",
+          "start_frame": 5364,
+          "duration_frames": 157,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_03_SCN_ZI.png",
+          "scene_id": "S07",
+          "shot_id": "shot-029",
+          "start_frame": 5521,
+          "duration_frames": 121,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_04_SCN_ST.png",
+          "scene_id": "S07",
+          "shot_id": "shot-030",
+          "start_frame": 5642,
+          "duration_frames": 188,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_05_SCN_PD.png",
+          "scene_id": "S07",
+          "shot_id": "shot-031",
+          "start_frame": 5830,
+          "duration_frames": 207,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S07_06_SCN_ZO.png",
+          "scene_id": "S07",
+          "shot_id": "shot-032",
+          "start_frame": 6037,
+          "duration_frames": 319,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S08",
+      "start_frame": 6356,
+      "end_frame": 6891,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S08_01_SCN_ZI.png",
+          "scene_id": "S08",
+          "shot_id": "shot-033",
+          "start_frame": 6356,
+          "duration_frames": 219,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S08_02_SCN_ZO.png",
+          "scene_id": "S08",
+          "shot_id": "shot-034",
+          "start_frame": 6575,
+          "duration_frames": 316,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S09",
+      "start_frame": 6891,
+      "end_frame": 7407,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S09_01_SCN_PU.png",
+          "scene_id": "S09",
+          "shot_id": "shot-035",
+          "start_frame": 6891,
+          "duration_frames": 308,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "linear",
+          "start_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S09_02_SCN_ZO.png",
+          "scene_id": "S09",
+          "shot_id": "shot-036",
+          "start_frame": 7199,
+          "duration_frames": 208,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S10",
+      "start_frame": 7407,
+      "end_frame": 7792,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S10_01_SCN_PD.png",
+          "scene_id": "S10",
+          "shot_id": "shot-037",
+          "start_frame": 7407,
+          "duration_frames": 196,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1120,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S10_02_CU_ZO.png",
+          "scene_id": "S10",
+          "shot_id": "shot-038",
+          "start_frame": 7603,
+          "duration_frames": 189,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S11",
+      "start_frame": 7792,
+      "end_frame": 8432,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S11_01_CU_ZI.png",
+          "scene_id": "S11",
+          "shot_id": "shot-039",
+          "start_frame": 7792,
+          "duration_frames": 334,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S11_02_CU_ZI.png",
+          "scene_id": "S11",
+          "shot_id": "shot-040",
+          "start_frame": 8126,
+          "duration_frames": 152,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\How investment fees eat compound growth\\images\\S11_03_CU_ZO.png",
+          "scene_id": "S11",
+          "shot_id": "shot-041",
+          "start_frame": 8278,
+          "duration_frames": 154,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    }
+  ],
+  "sounds": [
+    {
+      "name": "pop",
+      "file_path": "",
+      "start_frame": 560,
+      "duration_frames": 0
+    }
+  ]
+}

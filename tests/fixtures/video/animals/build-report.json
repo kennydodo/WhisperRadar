@@ -1,0 +1,1040 @@
+{
+  "schema_version": 1,
+  "project": "4_animals_four_minds_that_surprise_scientists",
+  "settings": {
+    "fps": 30,
+    "width": 2560,
+    "height": 1440,
+    "auto_motion_enabled": true,
+    "easing": "Ease in out",
+    "timing": {
+      "floor_image_seconds": 2,
+      "min_image_seconds": 2.5,
+      "preferred_image_seconds": 5,
+      "max_image_seconds": 8
+    },
+    "transitions": {
+      "enabled": true,
+      "kind": "Crossfade",
+      "scene_boundary_kind": "Dip to black",
+      "alignment": "Late",
+      "duration_frames": 15
+    }
+  },
+  "inventory": {
+    "scene_count": 11,
+    "clip_count": 58,
+    "audio_file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\audio\\narration.mp3"
+  },
+  "timeline": {
+    "total_frames": 7975,
+    "scenes": [
+      {
+        "id": "S01",
+        "start_frame": 0,
+        "end_frame": 299,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S01_01_SCN_ZI.png",
+            "start_frame": 0,
+            "duration_frames": 128,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S01_02_HYB_ZO.png",
+            "start_frame": 128,
+            "duration_frames": 171,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S02",
+        "start_frame": 299,
+        "end_frame": 734,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S02_01_SCN_ZI.png",
+            "start_frame": 299,
+            "duration_frames": 127,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S02_02_SCN_ZO.png",
+            "start_frame": 426,
+            "duration_frames": 308,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S03",
+        "start_frame": 734,
+        "end_frame": 1752,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_01_SCN_PU.png",
+            "start_frame": 734,
+            "duration_frames": 129,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_02_SCN_PD.png",
+            "start_frame": 863,
+            "duration_frames": 165,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_03_PROC_ZI.png",
+            "start_frame": 1028,
+            "duration_frames": 166,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_04_SCN_PD.png",
+            "start_frame": 1194,
+            "duration_frames": 97,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_05_SCN_ZO.png",
+            "start_frame": 1291,
+            "duration_frames": 156,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_06_CU_ZI.png",
+            "start_frame": 1447,
+            "duration_frames": 135,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S03_07_SCN_ZO.png",
+            "start_frame": 1582,
+            "duration_frames": 170,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S04",
+        "start_frame": 1752,
+        "end_frame": 2906,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_01_INF_ZI.png",
+            "start_frame": 1752,
+            "duration_frames": 245,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_02_HYB_ZI.png",
+            "start_frame": 1997,
+            "duration_frames": 90,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S04_03_INF_ST_reveal1of2.png",
+            "start_frame": 2087,
+            "duration_frames": 47,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_03_INF_ST.png",
+            "start_frame": 2134,
+            "duration_frames": 65,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_04_SCN_ZI.png",
+            "start_frame": 2199,
+            "duration_frames": 99,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_05_SCN_PU.png",
+            "start_frame": 2298,
+            "duration_frames": 226,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_07_SCN_PD.png",
+            "start_frame": 2524,
+            "duration_frames": 166,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S04_08_CMP_ZO.png",
+            "start_frame": 2690,
+            "duration_frames": 216,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S05",
+        "start_frame": 2906,
+        "end_frame": 3928,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_01_HYB_ZI.png",
+            "start_frame": 2906,
+            "duration_frames": 150,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_02_SCN_ZO.png",
+            "start_frame": 3056,
+            "duration_frames": 105,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_03_HYB_PD.png",
+            "start_frame": 3161,
+            "duration_frames": 182,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_04_SCN_PU.png",
+            "start_frame": 3343,
+            "duration_frames": 191,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_05_SCN_PD.png",
+            "start_frame": 3534,
+            "duration_frames": 208,
+            "motion": "PD",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S05_06_SCN_ZI.png",
+            "start_frame": 3742,
+            "duration_frames": 186,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S06",
+        "start_frame": 3928,
+        "end_frame": 4730,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_01_SCN_ZO.png",
+            "start_frame": 3928,
+            "duration_frames": 99,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S06_02_SCN_ST_reveal1of2.png",
+            "start_frame": 4027,
+            "duration_frames": 54,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_02_SCN_ST.png",
+            "start_frame": 4081,
+            "duration_frames": 66,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_04_SCN_ZI.png",
+            "start_frame": 4147,
+            "duration_frames": 107,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_05_HYB_ZI.png",
+            "start_frame": 4254,
+            "duration_frames": 166,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_06_SCN_ZO.png",
+            "start_frame": 4420,
+            "duration_frames": 207,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S06_07_CMP_ZI.png",
+            "start_frame": 4627,
+            "duration_frames": 103,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S07",
+        "start_frame": 4730,
+        "end_frame": 5653,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_01_SCN_ZO.png",
+            "start_frame": 4730,
+            "duration_frames": 218,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_02_INF_ZI.png",
+            "start_frame": 4948,
+            "duration_frames": 96,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_03_SCN_ZI.png",
+            "start_frame": 5044,
+            "duration_frames": 139,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_04_INF_ZO.png",
+            "start_frame": 5183,
+            "duration_frames": 180,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_05_HYB_PU.png",
+            "start_frame": 5363,
+            "duration_frames": 140,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S07_06_SCN_ZO.png",
+            "start_frame": 5503,
+            "duration_frames": 150,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S08",
+        "start_frame": 5653,
+        "end_frame": 6285,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_01_SCN_ZI.png",
+            "start_frame": 5653,
+            "duration_frames": 82,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_02_INF_ZO.png",
+            "start_frame": 5735,
+            "duration_frames": 161,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S08_03_CMP_ST_reveal1of2.png",
+            "start_frame": 5896,
+            "duration_frames": 51,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_03_CMP_ST.png",
+            "start_frame": 5947,
+            "duration_frames": 68,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_04_CMP_ZI.png",
+            "start_frame": 6015,
+            "duration_frames": 148,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S08_05_OVR_ZO.png",
+            "start_frame": 6163,
+            "duration_frames": 122,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S09",
+        "start_frame": 6285,
+        "end_frame": 6826,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_03_SCN_ZI.png",
+            "start_frame": 6285,
+            "duration_frames": 50,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S09_04_CMP_ST_reveal1of2.png",
+            "start_frame": 6335,
+            "duration_frames": 68,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to white"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_04_CMP_ST.png",
+            "start_frame": 6403,
+            "duration_frames": 88,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_05_CMP_ZI.png",
+            "start_frame": 6491,
+            "duration_frames": 53,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S09_02_INF_ZI.png",
+            "start_frame": 6544,
+            "duration_frames": 282,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S10",
+        "start_frame": 6826,
+        "end_frame": 7305,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S10_01_CMP_ZO.png",
+            "start_frame": 6826,
+            "duration_frames": 100,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S10_02_SCN_ZI.png",
+            "start_frame": 6926,
+            "duration_frames": 207,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S10_03_SCN_ZO.png",
+            "start_frame": 7133,
+            "duration_frames": 172,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      },
+      {
+        "id": "S11",
+        "start_frame": 7305,
+        "end_frame": 7975,
+        "clips": [
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_04_SCN_ZI.png",
+            "start_frame": 7305,
+            "duration_frames": 62,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Dip to black"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_05_HYB_ZI.png",
+            "start_frame": 7367,
+            "duration_frames": 130,
+            "motion": "ZI",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\out\\reveal\\S11_01_CMP_ST_reveal1of2.png",
+            "start_frame": 7497,
+            "duration_frames": 30,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_01_CMP_ST.png",
+            "start_frame": 7527,
+            "duration_frames": 74,
+            "motion": "ST",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_02_SCN_ZO.png",
+            "start_frame": 7601,
+            "duration_frames": 206,
+            "motion": "ZO",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          },
+          {
+            "file": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\images\\S11_03_SCN_PU.png",
+            "start_frame": 7807,
+            "duration_frames": 168,
+            "motion": "PU",
+            "motion_source": "ExplicitCode",
+            "easing": "Ease in out",
+            "transition_in": "Crossfade"
+          }
+        ]
+      }
+    ]
+  },
+  "issues": [
+    {
+      "severity": "Info",
+      "code": "SHOTLIST_PRECEDENCE",
+      "message": "shotlist.json takes precedence \u2014 visual_manifest.json was regenerated from it (edit the shotlist, not the manifest)."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.37s before shot \u0022shot-002\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.9s before shot \u0022shot-003\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.37s before shot \u0022shot-004\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.73s before shot \u0022shot-005\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.63s before shot \u0022shot-008\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.37s before shot \u0022shot-010\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.53s before shot \u0022shot-013\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.2s before shot \u0022shot-018\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.23s before shot \u0022shot-025\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.57s before shot \u0022shot-033\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.73s before shot \u0022shot-034\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.93s before shot \u0022shot-035\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.6s before shot \u0022shot-036\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.7s before shot \u0022shot-037\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.6s before shot \u0022shot-039\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.53s before shot \u0022shot-040\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.83s before shot \u0022shot-042\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.5s before shot \u0022shot-045\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.77s before shot \u0022shot-046\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.43s before shot \u0022shot-047\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.33s before shot \u0022shot-048\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.53s before shot \u0022shot-051\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.43s before shot \u0022shot-052\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Info",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Narration pause of 0.53s before shot \u0022shot-053\u0022 is held by the previous shot."
+    },
+    {
+      "severity": "Warning",
+      "code": "MANIFEST_TIMING_FIXED",
+      "message": "Manifest timeline ends -14 frames off the audio duration (265.83s); the last shot was extended to match."
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-001\u0022 (S01) \u00B7 cues 1-3 \u00B7 0:00.000 \u2192 0:04.267 (4.3 s) \u00B7 \u0022For a long time, people believed that clever thinking belonged to humans alone.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-002\u0022 (S01) \u00B7 cues 4-6 \u00B7 0:04.267 \u2192 0:09.967 (5.7 s) \u00B7 \u0022Then scientists started watching animals more carefully, and the old idea began to fall ap\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-003\u0022 (S02) \u00B7 cues 7-8 \u00B7 0:09.967 \u2192 0:14.200 (4.2 s) \u00B7 \u0022Today, we will meet four animals whose minds keep surprising the people who study them,\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-004\u0022 (S02) \u00B7 cues 9-13 \u00B7 0:14.200 \u2192 0:24.467 (10.3 s) \u00B7 \u0022a bird that makes tools, a sea creature with no bones and an astonishing brain, a giant th\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-005\u0022 (S03) \u00B7 cues 14-15 \u00B7 0:24.467 \u2192 0:28.767 (4.3 s) \u00B7 \u0022Let\u0027s begin with the crow. In a famous experiment, a new Caledonian crow\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-006\u0022 (S03) \u00B7 cues 16-19 \u00B7 0:28.767 \u2192 0:34.267 (5.5 s) \u00B7 \u0022named Betty was given a short piece of straight wire and a piece of food in a tube that wa\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-007\u0022 (S03) \u00B7 cues 20-22 \u00B7 0:34.267 \u2192 0:39.800 (5.5 s) \u00B7 \u0022reach. Without any training, she bent the wire into a hook with her beak and pulled the fo\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-008\u0022 (S03) \u00B7 cues 23-24 \u00B7 0:39.800 \u2192 0:43.033 (3.2 s) \u00B7 \u0022Crows also drop nuts onto roads and wait for cars to crack them\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-009\u0022 (S03) \u00B7 cues 25-27 \u00B7 0:43.033 \u2192 0:48.233 (5.2 s) \u00B7 \u0022open. In some cities, they have learned to wait for the traffic light to turn red before c\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-010\u0022 (S03) \u00B7 cues 28-29 \u00B7 0:48.233 \u2192 0:52.733 (4.5 s) \u00B7 \u0022and they seem to recognize human faces. Researchers have found that crows can\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-011\u0022 (S03) \u00B7 cues 30-33 \u00B7 0:52.733 \u2192 0:58.400 (5.7 s) \u00B7 \u0022remember a person who threatened them and can even teach their friends to scold that perso\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-012\u0022 (S04) \u00B7 cues 34-38 \u00B7 0:58.400 \u2192 1:06.567 (8.2 s) \u00B7 \u0022octopus. An octopus has about 500 million nerve cells, roughly like a dog, and most of the\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-013\u0022 (S04) \u00B7 cues 39-40 \u00B7 1:06.567 \u2192 1:09.567 (3.0 s) \u00B7 \u0022Each arm can taste, touch, and make small decisions on its\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-014\u0022 (S04) \u00B7 cues 41-42 \u00B7 1:09.567 \u2192 1:13.300 (3.7 s) \u00B7 \u0022own. It has three hearts and blue blood, and it is a master escape\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-015\u0022 (S04) \u00B7 cues 43 \u00B7 1:13.300 \u2192 1:16.600 (3.3 s) \u00B7 \u0022artist. Octopuses in aquariums have unscrewed jar lids\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-016\u0022 (S04) \u00B7 cues 44-48 \u00B7 1:16.600 \u2192 1:24.133 (7.5 s) \u00B7 \u0022from the inside, slipped through gaps no wider than a coin, and sneaked out of their tanks\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-017\u0022 (S04) \u00B7 cues 49-51 \u00B7 1:24.133 \u2192 1:29.667 (5.5 s) \u00B7 \u0022They also change color and texture in less than a second to match a rock or a patch of san\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-018\u0022 (S04) \u00B7 cues 52-56 \u00B7 1:29.667 \u2192 1:36.867 (7.2 s) \u00B7 \u0022even though scientists believe octopuses cannot see color the way we do. How they pull tha\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-019\u0022 (S05) \u00B7 cues 57-58 \u00B7 1:36.867 \u2192 1:41.867 (5.0 s) \u00B7 \u0022elephant. Elephants have the largest brain of any land animal, and they use it for memory \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-020\u0022 (S05) \u00B7 cues 59-60 \u00B7 1:41.867 \u2192 1:45.367 (3.5 s) \u00B7 \u0022emotion. An older female, called the matriarch, leads each\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-021\u0022 (S05) \u00B7 cues 61-63 \u00B7 1:45.367 \u2192 1:51.433 (6.1 s) \u00B7 \u0022herd. She remembers where the waterholes are, even those not visited for many years, and s\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-022\u0022 (S05) \u00B7 cues 64-67 \u00B7 1:51.433 \u2192 1:57.800 (6.4 s) \u00B7 \u0022ago. Elephants greet one another with touch and low rumbling sounds that travel for miles \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-023\u0022 (S05) \u00B7 cues 68-71 \u00B7 1:57.800 \u2192 2:04.733 (6.9 s) \u00B7 \u0022mourn. Herds have been seen standing quietly beside a fallen member, gently touching the b\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-024\u0022 (S05) \u00B7 cues 72-76 \u00B7 2:04.733 \u2192 2:10.933 (6.2 s) \u00B7 \u0022again. They are one of the few animals that pass the mirror test, which means they appear \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-025\u0022 (S06) \u00B7 cues 77-78 \u00B7 2:10.933 \u2192 2:14.233 (3.3 s) \u00B7 \u0022And fourth, the pig. Many people would not guess this\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-026\u0022 (S06) \u00B7 cues 79-80 \u00B7 2:14.233 \u2192 2:18.233 (4.0 s) \u00B7 \u0022one. Pigs can learn their names, can find their way through simple mazes, and in\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-027\u0022 (S06) \u00B7 cues 81-82 \u00B7 2:18.233 \u2192 2:21.800 (3.6 s) \u00B7 \u0022some studies they learn to play a video game by moving a joystick with their\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-028\u0022 (S06) \u00B7 cues 83-84 \u00B7 2:21.800 \u2192 2:27.333 (5.5 s) \u00B7 \u0022snouts. They can also use a mirror to find hidden food, which shows they understand what a\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-029\u0022 (S06) \u00B7 cues 85-87 \u00B7 2:27.333 \u2192 2:34.233 (6.9 s) \u00B7 \u0022is. Pigs are also social and playful, and they recognize each other by voice. If you grew \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-030\u0022 (S06) \u00B7 cues 88-90 \u00B7 2:34.233 \u2192 2:37.667 (3.4 s) \u00B7 \u0022simple, the research says otherwise. So we have four\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-031\u0022 (S07) \u00B7 cues 91-95 \u00B7 2:37.667 \u2192 2:44.933 (7.3 s) \u00B7 \u0022minds. The crow is a toolmaker, the octopus is an escape artist, the elephant is a keeper \u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-032\u0022 (S07) \u00B7 cues 96-98 \u00B7 2:44.933 \u2192 2:48.133 (3.2 s) \u00B7 \u0022learner. Let me line them up by what makes each of them special.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-033\u0022 (S07) \u00B7 cues 99-101 \u00B7 2:48.133 \u2192 2:52.767 (4.6 s) \u00B7 \u0022The crow\u0027s superpower is invention. It looks at a problem and builds a solution.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-034\u0022 (S07) \u00B7 cues 102-105 \u00B7 2:52.767 \u2192 2:58.767 (6.0 s) \u00B7 \u0022The octopus\u0027s superpower is flexibility. Its body and its brain are spread across eight ar\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-035\u0022 (S07) \u00B7 cues 106-108 \u00B7 2:58.767 \u2192 3:03.433 (4.7 s) \u00B7 \u0022The elephant\u0027s superpower is memory. It carries a whole community\u0027s history in its head.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-036\u0022 (S07) \u00B7 cues 109-112 \u00B7 3:03.433 \u2192 3:08.433 (5.0 s) \u00B7 \u0022The pig\u0027s superpower is learning. It picks up new rules quickly, and it enjoys the game.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-037\u0022 (S08) \u00B7 cues 113-114 \u00B7 3:08.433 \u2192 3:11.167 (2.7 s) \u00B7 \u0022Now, a thoughtful point. Scientists are careful\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-038\u0022 (S08) \u00B7 cues 115-118 \u00B7 3:11.167 \u2192 3:16.533 (5.4 s) \u00B7 \u0022here. They do not say that animals think exactly like us. They say that intelligence comes\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-039\u0022 (S08) \u00B7 cues 119-121 \u00B7 3:16.533 \u2192 3:20.500 (4.0 s) \u00B7 \u0022A crow solves a puzzle in a way that is different from the way an octopus does.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-040\u0022 (S08) \u00B7 cues 122-123 \u00B7 3:20.500 \u2192 3:25.433 (4.9 s) \u00B7 \u0022An elephant remembers in a way no human can match. Each mind evolved to solve the problems\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-041\u0022 (S08) \u00B7 cues 124-126 \u00B7 3:25.433 \u2192 3:29.500 (4.1 s) \u00B7 \u0022of its own life, and each is impressive when you meet it on its own terms.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-042\u0022 (S09) \u00B7 cues 127 \u00B7 3:29.500 \u2192 3:31.167 (1.7 s) \u00B7 \u0022It also changes how we should treat these\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-043\u0022 (S09) \u00B7 cues 128-129 \u00B7 3:31.167 \u2192 3:36.367 (5.2 s) \u00B7 \u0022animals. When you know that an octopus can learn and an elephant can grieve, it becomes ha\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-044\u0022 (S09) \u00B7 cues 130-131 \u00B7 3:36.367 \u2192 3:38.133 (1.8 s) \u00B7 \u0022to treat them as simple things.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-045\u0022 (S09) \u00B7 cues 132-136 \u00B7 3:38.133 \u2192 3:47.533 (9.4 s) \u00B7 \u0022Many countries have introduced rules to protect animals that show signs of feeling and und\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-046\u0022 (S10) \u00B7 cues 137-139 \u00B7 3:47.533 \u2192 3:50.867 (3.3 s) \u00B7 \u0022If you would like to see this yourself, you do not need a laboratory.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-047\u0022 (S10) \u00B7 cues 140-145 \u00B7 3:50.867 \u2192 3:57.767 (6.9 s) \u00B7 \u0022Next time you pass a crow in a park, stop for a minute and watch. See how it tilts its hea\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-048\u0022 (S10) \u00B7 cues 146-151 \u00B7 3:57.767 \u2192 4:03.500 (5.7 s) \u00B7 \u0022Visit an aquarium and look into the eye of an octopus. Notice how it looks back, and how i\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-049\u0022 (S11) \u00B7 cues 152-153 \u00B7 4:03.500 \u2192 4:05.567 (2.1 s) \u00B7 \u0022Let\u0027s recap. Crows invent\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-050\u0022 (S11) \u00B7 cues 154-156 \u00B7 4:05.567 \u2192 4:09.900 (4.3 s) \u00B7 \u0022tools. Octopuses solve puzzles with a brain spread across eight arms.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-051\u0022 (S11) \u00B7 cues 157-159 \u00B7 4:09.900 \u2192 4:13.367 (3.5 s) \u00B7 \u0022Elephants remember and mourn. Pigs learn names and games.\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-052\u0022 (S11) \u00B7 cues 160-164 \u00B7 4:13.367 \u2192 4:20.233 (6.9 s) \u00B7 \u0022Four very different animals, and one big lesson. We have been sharing this planet with min\u2026\u0022"
+    },
+    {
+      "severity": "Info",
+      "code": "SHOT_TIMING",
+      "message": "Shot \u0022shot-053\u0022 (S11) \u00B7 cues 165-169 \u00B7 4:20.233 \u2192 4:25.833 (5.6 s) \u00B7 \u0022And maybe that is the most exciting part. The next surprise might be sitting on a fence ri\u2026\u0022"
+    }
+  ],
+  "coverage": {
+    "duration_seconds": 265.8333333333333,
+    "shot_count": 53,
+    "asset_count": 53,
+    "unique_assets_used": 53,
+    "average_seconds_per_source_change": 5.112179487179487,
+    "longest_same_source_seconds": 10.266666666666667,
+    "longest_shot_seconds": 10.266666666666667,
+    "missing_assets": [],
+    "unused_assets": []
+  }
+}

@@ -280,7 +280,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("watched_channels", "TEXT"),
                          # hand-over template per stage: JSON {"plan": id,
                          # "script": id}; NULL = Style only (handover.py)
-                         ("handover_default", "TEXT")):
+                         ("handover_default", "TEXT"),
+                         # ImgToVideo option overrides: flat JSON
+                         # {"motion.easing": ...}; NULL = inherit the global ones
+                         ("video_options", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
@@ -1071,7 +1074,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 
 _OWN_CHANNEL_FIELDS = {
     "name", "description", "genre", "youtube_handle", "active",
-    "handover_default",
+    "handover_default", "video_options",
     "default_voice", "default_engine", "default_render_mode",
     "default_upscale", "bible_dir", "refs_dir", "style", "bible",
     "flow_project_url",
