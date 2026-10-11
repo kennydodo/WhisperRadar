@@ -1004,6 +1004,7 @@ _TA_LEN_JS = """(sel) => { const list=[...document.querySelectorAll(sel)];
   if (t.isContentEditable) return (t.textContent||'').length;
   return (t.value || '').length; }"""
 _MSG_COUNT_JS = "() => document.querySelectorAll('.ds-message').length"
+_PAGE_LEN_JS = "() => (document.body.innerText||'').length"
 _PAGE_TAIL_JS = "() => (document.body.innerText||'').trim().slice(-300)"
 
 _STATUS_LINE = re.compile(
@@ -1141,8 +1142,20 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
 
         if files:
             seen = _name_counts(page, files)
-            page.set_input_files(site.files, [str(f) for f in files])
-            _wait_for_uploads(page, files, clock, log, seen=seen)
+            try:
+                page.set_input_files(site.files, [str(f) for f in files])
+                _wait_for_uploads(page, files, clock, log, seen=seen)
+            except Exception as exc:  # noqa: BLE001
+                if len(files) < 2 or "single file" not in str(exc):
+                    raise
+                # ChatGPT's file input takes ONE file per call: attach them
+                # one after the other and wait for each to show up
+                log(f"{site.name}: the file input takes one file at a time - "
+                    f"attaching {len(files)} files one by one")
+                for f in files:
+                    one = _name_counts(page, [f])
+                    page.set_input_files(site.files, [str(f)])
+                    _wait_for_uploads(page, [f], clock, log, seen=one)
 
         n = page.evaluate(_PASTE_JS, {"box": site.box, "text": prompt})
         # a textarea turns \r\n into \n, so compare with the normalised text and
@@ -1236,6 +1249,8 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
     beat = clock()
     stuck_logged = False
     cand_at = clock()
+    page_len = -1                          # page text size, to see thinking
+    grew_at = clock()
     while True:
         page.wait_for_timeout(int(poll * 1000))
         if stop is not None and stop():
@@ -1313,9 +1328,19 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 except Exception as exc:  # noqa: BLE001
                     log(f"{site.name}: could not open the new chat ({exc})")
                     followed = True
+            try:
+                n_len = int(page.evaluate(_PAGE_LEN_JS) or 0)
+            except Exception:  # noqa: BLE001
+                n_len = page_len
+            if page_len >= 0 and n_len != page_len and clock() - t0 > 10:
+                # the page text keeps changing (DeepSeek's DeepThink writes its
+                # chain of thought before any reply element exists): the model
+                # is working, so the start wait begins again
+                grew_at = clock()
+            page_len = n_len
             if started:
                 pass
-            elif clock() - t0 > start_wait:
+            elif clock() - max(t0, grew_at) > start_wait:
                 lim = _limit_banner(page, site)
                 if lim:
                     raise ModelBusy(f"{site.name} says: \"{lim[:140]}\"")

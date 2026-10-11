@@ -154,6 +154,42 @@ class AskTests(unittest.TestCase):
         self.assertEqual(page.files, ["/tmp/narration.txt",
                                       "/tmp/shotlist.txt"])
 
+    def test_single_file_input_gets_the_files_one_by_one(self):
+        clk = Clock()
+        calls = []
+
+        class OneAtATime(FakePage):
+            def set_input_files(self, sel, paths):
+                if len(paths) > 1:
+                    raise Exception("Error: Non-multiple file input can only "
+                                    "accept single file")
+                calls.append(list(paths))
+                self.files = (self.files or []) + list(paths)
+
+        page = OneAtATime(clk, wc.ZAI, [("ok", False)] * 12)
+        out = wc.ask(page, wc.ZAI, "p", ["/tmp/narration.txt", "/tmp/shotlist.txt"],
+                     clock=clk)
+        self.assertEqual(calls, [["/tmp/narration.txt"], ["/tmp/shotlist.txt"]])
+        self.assertEqual(out, "ok")
+
+    def test_growing_page_text_counts_as_working(self):
+        # DeepThink writes its chain of thought before any reply element
+        # exists: a page whose text keeps growing must not hit the start wait
+        clk = Clock()
+        n = {"v": 0}
+
+        class Thinking(FakePage):
+            def evaluate(self, js, arg=None):
+                if js is wc._PAGE_LEN_JS:
+                    n["v"] += 50
+                    return n["v"] if self.sent and clk.t < 400 else n["v"]
+                return super().evaluate(js, arg)
+
+        script = [("", False)] * 250 + [("done", False)] * 12
+        page = Thinking(clk, wc.DEEPSEEK, script)
+        out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk, start_wait=90.0)
+        self.assertEqual(out, "done")
+
     def test_missing_attachment_chip_fails(self):
         clk = Clock()
 
