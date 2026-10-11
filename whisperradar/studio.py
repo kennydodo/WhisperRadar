@@ -5016,8 +5016,10 @@ def shotlist_pacing(data: dict, cues: list[dict],
     if prof.st_max_hold is not None:
         st_long = [(h, a) for h, a in st if h > prof.st_max_hold]
         if st_long:
-            faults.append(f"ST shots hold longer than {prof.st_max_hold:.0f}s: "
-                          + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
+            faults.append(f"ST shots hold longer than {prof.st_max_hold:g}s: "
+                          + ", ".join(f"{a} ({h:.1f}s)" for h, a in st_long[:4])
+                          + f" - shorten each to at most {prof.st_max_hold:g}s "
+                          f"(split it, or give it a motion code)")
     if prof.code_max_share is not None:
         for code in sorted({m for _h, m, _a, _f, _l in holds
                             if m and m != "REVEAL"}):

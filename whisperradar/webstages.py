@@ -850,6 +850,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     judge_cont = judge in kept  # ...and may start in the previous stage's
     best = None                     # (badness, data, problem): the plan to keep
     rnd = 0
+    prev_text, same_run = None, 0   # the writer handing back the SAME plan
     while True:
         rnd += 1
         text = json.dumps(data, ensure_ascii=False, indent=1)
@@ -920,6 +921,14 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             break
         if should_stop():
             log("stopped by you")
+            break
+        # the writer returning the same plan again and again cannot fix what
+        # is still flagged: stop instead of looping for hours
+        same_run = same_run + 1 if text == prev_text else 0
+        prev_text = text
+        if same_run >= 2:
+            log(f"{writer} sent back the same plan {same_run + 1} rounds in a "
+                f"row - stopping; still flagged: {last_problem}")
             break
         if not hard and weak:
             asked = [w["asset"] for w in weak]
