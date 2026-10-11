@@ -411,7 +411,8 @@ def _length_delta(words: int, target: int) -> str:
 
 
 def _script_feedback(words: int, target: int, reasons: list[str],
-                     judged: dict, truncated: bool) -> str:
+                     judged: dict, truncated: bool,
+                     direction: str = "") -> str:
     lo, hi = ep._length_window(target)
     lines = [f"The editor did NOT accept this draft. Why: "
              f"{'; '.join(reasons) or 'see below'}."]
@@ -434,7 +435,8 @@ def _script_feedback(words: int, target: int, reasons: list[str],
         f"It must be {lo}-{hi} words (target {target}); count before you "
         f"reply. Keep working in the brief's keywords; the story, research "
         f"and wording stay your own. Same reply format as before: the finished script "
-        f"as plain text only, no notes before or after it.")
+        f"as plain text only, no notes before or after it."
+        + _creator_block(direction, "YOU, THE WRITER"))
     return "\n".join(lines)
 
 
@@ -454,6 +456,11 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         rounds = SOFT_ROUNDS
     hand = handover.for_production(cfg, ctx["prod"], "script")
     log(f"hand-over template for the script: {hand['name']}")
+    writer_dir = handover.instruction(cfg, ctx["prod"], "script")
+    judge_dir = handover.instruction(cfg, ctx["prod"], "script_judge")
+    if writer_dir or judge_dir:
+        log(f"instructions in force - writer: {len(writer_dir)} chars, "
+            f"judge: {len(judge_dir)} chars (repeated every round)")
 
     def long_enough(text: str) -> bool:        # not just "Thinking..." / a stub
         return _wc(text) >= 0.5 * target
@@ -486,7 +493,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                 raw = _send(transport, judge,
                             lambda f: _script_followup(script, words, target, overlap,
                                                        studio.script_looks_truncated(script),
-                                                       struct0), log,
+                                                       struct0, judge_dir), log,
                             new_chat=False, ready=_is_json_verdict)
             else:
                 raw = _send(transport, judge,
@@ -588,7 +595,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             log("stopped by you")
             break
         reply = transport.ask(
-            writer, _script_feedback(words, target, reasons, judged, cut), (),
+            writer, _script_feedback(words, target, reasons, judged, cut,
+                                 writer_dir), (),
             new_chat=False, ready=long_enough)
     best = max(attempts, key=lambda a: (not a["too_short"],
                                         not a["too_long"], not a["cut"],
@@ -689,9 +697,20 @@ def _keep_attempts(cfg, pid: int, attempts: list[dict]) -> None:
         pass
 
 
+def _creator_block(text: str, who: str) -> str:
+    """The creator's typed instructions, repeated in every later message so a
+    long chat does not drift away from them."""
+    text = (text or "").strip()
+    return (f"\n\nCREATOR'S INSTRUCTIONS FOR {who} (still in force - follow "
+            f"them to the letter, they win over the defaults on what you "
+            f"write, how it is worded and the order of your points):\n"
+            f"{text}" if text else "")
+
+
 def _script_followup(script: str, words: int | None = None,
                      target: int | None = None, overlap: float | None = None,
-                     cut: bool = False, struct: dict | None = None) -> str:
+                     cut: bool = False, struct: dict | None = None,
+                     direction: str = "") -> str:
     measured = ""
     if words is not None and target:
         lo, hi = ep._length_window(target)
@@ -727,7 +746,8 @@ def _script_followup(script: str, words: int | None = None,
         "Source material and "
         "rules are unchanged (use the ones from earlier in this chat), "
         "including: the script must never mention the thumbnail, cover, "
-        "title or packaging - fail it and quote the sentence if it does.\n\n"
+        "title or packaging - fail it and quote the sentence if it does."
+        + _creator_block(direction, "YOU, THE JUDGE") + "\n\n"
         "The revised script:\n\n" + script)
 
 

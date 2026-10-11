@@ -3490,9 +3490,12 @@ def rating_prompt(*args, judge_direction: str = "", **kwargs) -> str:
     note = (judge_direction or "").strip()
     if not note:
         return text
-    block = ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - what to look for "
-             "and what to ignore. Apply them in addition to the rules above; "
-             "the JSON reply format stays as it is:\n" + note + "\n\n")
+    block = ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - follow them to the "
+             "letter. They take priority over the defaults above about WHAT "
+             "your notes say, how they are WORDED and the ORDER you list them "
+             "in (the writer receives each list exactly in the order you "
+             "write it). Only the JSON field names and structure stay as "
+             "specified below:\n" + note + "\n\n")
     marker = "Reply with ONLY a JSON object"
     return (text.replace(marker, block + marker, 1) if marker in text
             else text + "\n\n" + block)
