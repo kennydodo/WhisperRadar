@@ -283,24 +283,52 @@ def for_pid(cfg, pid: int, stage: str) -> dict:
 
 
 # ------------------------------------------------------------ name masking
-def mask_names(items, script: str, source: str, allow: str = "") -> list:
-    """Replace every name the original uses (a capitalised word in mid-sentence)
-    that the script under review does not already use with "[name]". The rest
-    of each note is kept, so the point still reaches the writer."""
-    from . import studio
-    skip = studio._NAME_SKIP
+_OPENERS = frozenset("""however meanwhile suddenly finally then there this that when while
+after before later once but and now today still even instead because since
+although though perhaps maybe sometimes eventually soon here what why how every
+each some many most other another those these they their with without from
+into over under about between during through also only just yet since until
+unless whether either neither both such same very more less much first second
+third next last again never always often already almost really actually
+""".split())
+
+
+def source_names(source: str, skip=frozenset()) -> set:
+    """The names the original uses: capitalised words that never appear in
+    lower case. A word seen only at the START of sentences counts too once it
+    recurs (narration often opens sentences with a character's name), unless
+    it is a plain sentence opener."""
     src = source or ""
-    lower_src = set(re.findall(r"\b[a-z][a-z']+\b", src))
-    names = {m.group(1) for m in re.finditer(
-        r"(?<![.!?\n]\s)(?<!^)\b([A-Z][a-z]{2,})\b", src)}
-    names = {w for w in names if w.lower() not in skip and w.lower() not in lower_src}
+    lower = set(re.findall(r"\b[a-z][a-z']+\b", src))
+    mid, start = {}, {}
+    for m in re.finditer(r"\b([A-Z][a-z]{2,})\b", src):
+        w = m.group(1)
+        before = src[max(0, m.start() - 3):m.start()]
+        if m.start() == 0 or re.search(r"[.!?\n]\s*$", before) or before[-1:] in "\"\u201c(":
+            start[w] = start.get(w, 0) + 1
+        else:
+            mid[w] = mid.get(w, 0) + 1
+    names = set(mid)
+    names |= {w for w, n in start.items() if n >= 3 and w.lower() not in _OPENERS
+              and not w.lower().endswith("ly")}
+    return {w for w in names if w.lower() not in skip and w.lower() not in lower}
+
+
+def mask_names(items, script: str, source: str, allow: str = "") -> list:
+    """Replace every name the original uses (see source_names) that the script
+    under review does not already use with "[name]", in any letter case. The
+    rest of each note is kept, so the point still reaches the writer."""
+    from . import studio
+    names = source_names(source, studio._NAME_SKIP)
     own = f"{script or ''} {allow or ''}"
-    names = {w for w in names if not re.search(r"\b" + re.escape(w) + r"\b", own)}
+    names = {w for w in names if not re.search(
+        r"\b" + re.escape(w) + r"\b", own, re.I)}
     out = []
     for it in items or []:
         text = str(it)
         for w in sorted(names, key=len, reverse=True):
-            text = re.sub(r"\b" + re.escape(w) + r"\b(?:'s)?", "[name]", text)
+            text = re.sub(r"\b" + re.escape(w) + r"\b(?:['\u2019]s)?", "[name]",
+                          text, flags=re.I)
         out.append(re.sub(r"(?:\[name\]\s*){2,}", "[name] ", text).strip())
     return out
 

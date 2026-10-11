@@ -204,6 +204,29 @@ class Routes(Base):
         self.assertIsNone(prod["handover"])
 
 
+class MaskNamesWider(unittest.TestCase):
+    SRC = ("Marcus Hale started late. Marcus sold Acme Corp to Globex "
+           "Industries. Marcus was furious. However, Acme grew. Then Acme fell.")
+
+    def test_sentence_start_and_lowercase_names_are_masked(self):
+        out = handover.mask_names(
+            ["marcus should open; ACME's fall; However the rival won"],
+            "Priya Nair built Initech.", self.SRC)
+        self.assertEqual(out, ["[name] should open; [name] fall; "
+                               "However the rival won"])
+
+    def test_plain_sentence_openers_are_not_names(self):
+        names = handover.source_names(self.SRC)
+        self.assertNotIn("However", names)
+        self.assertNotIn("Then", names)
+        self.assertIn("Marcus", names)
+
+    def test_names_the_script_uses_stay(self):
+        out = handover.mask_names(["Marcus and Acme"], "Marcus runs it.",
+                                  self.SRC)
+        self.assertEqual(out, ["Marcus and [name]"])
+
+
 if __name__ == "__main__":
     unittest.main()
 
