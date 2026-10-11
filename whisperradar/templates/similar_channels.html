@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Find similar channels — WhisperRadar</title>
+<style>body{background:#0f1115;color:#e6e9ef;font:15px/1.5 system-ui;margin:0}main{max-width:950px;margin:30px auto;padding:16px}a{color:#80adff}.panel{background:#171a21;border:1px solid #262b36;border-radius:10px;padding:18px;margin:16px 0}input,button{padding:9px;border-radius:6px;border:1px solid #565d6b}input{width:60%;background:#0f1115;color:#e6e9ef}button{background:#4f8cff;color:white;cursor:pointer}.muted{color:#a0a8b8}.error{color:#ff9898}h1{font-size:25px}h2{font-size:19px}</style></head>
+<body><main><a href="/watched">← Watched Channels</a> · <a href="/research?tab=channels">Research</a>
+<h1>Find similar channels</h1><p>Starting from <strong>{{ channel.name }}</strong>.</p>
+<div class="panel"><p>The suggested topic comes from this channel's stored video titles. Edit it to focus the search.</p>
+<form method="post"><label for="query">Search topic</label><br><input id="query" name="q" value="{{ query }}" required maxlength="200"> <button>Find similar channels</button></form>
+<p class="muted">Uses the configured YouTube API key and its search quota. Results exclude channels you already watch. Matches reflect topics, not a verified match of visual style.</p>
+<a href="{{ youtube_search }}" target="_blank" rel="noopener">Search this topic on YouTube</a>
+{% if error %}<p class="error" role="alert">{{ error }}</p><p>Set your YouTube API key in Research → Channels, or use the YouTube search link above.</p>{% endif %}
+<details><summary>Titles used to suggest this topic</summary><ul>{% for title in titles %}<li>{{ title }}</li>{% else %}<li>No stored video titles yet. Enter a topic for this channel.</li>{% endfor %}</ul></details></div>
+{% for c in matches %}<section class="panel"><h2><a href="https://www.youtube.com/channel/{{ c.channel_id }}" target="_blank" rel="noopener">{{ c.name }}</a></h2>
+<p class="muted">{{ c.subscribers if c.subscribers is not none else 'Hidden' }} subscribers · {{ c.videos }} videos</p>
+<p>{{ c.about }}</p><p>Shared topic words: {{ c.shared|join(', ') or 'Found by the topic search; review the examples below.' }}</p>
+<ul>{% for v in c.sample[:3] %}<li><a href="https://www.youtube.com/watch?v={{ v.video_id }}" target="_blank" rel="noopener">{{ v.title }}</a></li>{% endfor %}</ul>
+<form action="/channels/add" method="post"><input type="hidden" name="url" value="{{ c.channel_id }}"><input type="hidden" name="name" value="{{ c.name }}"><input type="hidden" name="kind" value="similar"><input type="hidden" name="genre" value="{{ channel.genre }}"><input type="hidden" name="return" value="{{ return_url }}"><button>Watch this channel</button></form></section>
+{% else %}{% if searched %}<p>No new channels found. Try a broader topic.</p>{% else %}<p>Click Find similar channels to search for new channels.</p>{% endif %}{% endfor %}
+</main></body></html>

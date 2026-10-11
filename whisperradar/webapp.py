@@ -405,6 +405,8 @@ def format_views(value) -> str:
 
 def create_app(cfg) -> Flask:
     app = Flask(__name__)
+    from . import channel_discovery
+    channel_discovery.register(app, cfg)
     remote.install(app, cfg)    # password gate for anything not local (phone access)
     app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024 * 1024  # 1 GB uploads
     app.config["TEMPLATES_AUTO_RELOAD"] = True  # local app: pick up edits live

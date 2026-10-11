@@ -116,7 +116,7 @@
       <tr><th>Name</th><th>Channel ID</th><th>Kind</th><th>Genre</th><th>State</th><th></th></tr>
       {% for ch in channels %}
       <tr data-search="{{ (ch['name'] ~ ' ' ~ ch['genre'])|lower }}">
-        <td>{{ ch["name"] }}</td>
+        <td>{{ ch["name"] }}<br><a href="/watched/{{ ch['channel_id'] }}/similar">Find similar channels</a></td>
         <td class="mono muted">{{ ch["channel_id"] }}</td>
         <td>{{ ch["kind"] }}</td>
         <td class="muted">{{ ch["genre"] }}</td>
