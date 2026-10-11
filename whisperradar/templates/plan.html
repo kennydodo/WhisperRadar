@@ -76,6 +76,7 @@
   <a href="/finished">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
+  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   <p class="muted" style="margin:0 0 6px"><a href="/studio/{{ prod['id'] }}">&larr; back to the production</a></p>
@@ -84,6 +85,8 @@
   {% if prod['source_video_id'] %}<div class="panel" style="display:flex;gap:12px;align-items:center"><img src="https://i.ytimg.com/vi/{{ prod['source_video_id'] }}/mqdefault.jpg" alt="" style="width:160px;border-radius:6px"><div><div class="muted" style="font-size:12px">based on</div><a href="https://youtu.be/{{ prod['source_video_id'] }}" target="_blank" rel="noopener">its thumbnail &amp; video</a></div></div>{% endif %}
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+
+  {% set hshow = ["plan"] %}{% include "_handover_panel.html" %}
 
   <div class="panel">
     <h2>Generate</h2>

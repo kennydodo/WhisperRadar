@@ -31,9 +31,11 @@ from flask import (
     render_template,
     request,
     send_file,
+    session,
 )
 
 from . import external_prompts
+from . import handover
 from . import demand as demand_mod
 from . import niche_chips
 from . import niche as niche_mod
@@ -42,6 +44,7 @@ from . import growth as growth_mod
 from . import trending as trending_mod
 from . import timing as timing_mod
 from . import packaging
+from . import gpt_packaging
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
 from . import youtube_api
@@ -71,6 +74,37 @@ def _back(request, msg: str | None = None, error: str | None = None,
     if error:
         parts.append(f"error={quote(error)}")
     return redirect(base + ("?" + "&".join(parts) if parts else ""))
+
+
+def _handover_options(cfg, prod) -> list:
+    """Templates the production's channel may pick from; a template already
+    chosen stays listed (marked) even if the channel no longer offers it."""
+    try:
+        cid = prod["own_channel_id"]
+    except (KeyError, IndexError):
+        cid = None
+    opts = handover.available_for(cfg, cid)
+    have = {t["id"] for t in opts}
+    allt = handover.all_templates(cfg)
+    for st in handover.STAGES:
+        tid = handover.choice_for(prod, st)
+        if tid and tid in allt and tid not in have:
+            t = dict(allt[tid])
+            t["name"] += " (not offered to this channel)"
+            opts.append(t)
+            have.add(tid)
+    return opts
+
+
+def _handover_ctx(cfg, prod) -> dict:
+    return dict(
+        instructions={k: db.stage_extra(prod, k)
+                      for k in ("plan", "plan_judge", "script", "script_judge")},
+        handover_templates=_handover_options(cfg, prod),
+        handover_choice={s: handover.effective_id(cfg, prod, s)[0]
+                         for s in handover.STAGES},
+        handover_from_channel={s: handover.effective_id(cfg, prod, s)[1]
+                               == "channel" for s in handover.STAGES})
 
 
 def _studio_url(pid, msg: str | None = None, error: str | None = None):
@@ -1202,6 +1236,52 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
 
+    @app.get("/watched/export")
+    def watched_export():
+        """The watched-channel list as a JSON download (to load on another
+        machine with /watched/import). Only the list moves, not the videos."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        rows = [{"name": c["name"], "channel_id": c["channel_id"],
+                 "kind": c["kind"], "genre": c["genre"],
+                 "active": int(c["active"])} for c in db.list_channels(conn)]
+        conn.close()
+        buf = io.BytesIO(json.dumps(rows, indent=1,
+                                    ensure_ascii=False).encode("utf-8"))
+        return send_file(buf, mimetype="application/json", as_attachment=True,
+                         download_name="watched_channels.json")
+
+    @app.post("/watched/import")
+    def watched_import():
+        """Add the channels of a watched_channels.json; ones already watched
+        (same channel id) are left exactly as they are."""
+        f = request.files.get("watched_file")
+        try:
+            rows = json.loads(f.read().decode("utf-8-sig")) if f else None
+            if not isinstance(rows, list):
+                raise ValueError("expected a list of channels")
+        except Exception as exc:  # noqa: BLE001
+            return redirect("/watched?error=" + quote(
+                f"Could not read that file: {exc}"))
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        added = 0
+        for r in rows:
+            if not isinstance(r, dict) or not r.get("channel_id"):
+                continue
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO channels (name, channel_id, kind, "
+                "genre, active) VALUES (?,?,?,?,?)",
+                (str(r.get("name") or r["channel_id"]), str(r["channel_id"]),
+                 str(r.get("kind") or "primary"),
+                 str(r.get("genre") or "general"), int(r.get("active", 1))))
+            added += cur.rowcount
+        conn.commit()
+        conn.close()
+        return redirect("/watched?msg=" + quote(
+            f"Imported {added} new channel(s); {len(rows) - added} "
+            f"were already here or skipped"))
+
     def _add_channel_back(msg=None, error=None):
         """Return to wherever the add form lives. The Watched page and the
         Research discovered list both post here; the form's hidden `return`
@@ -1385,6 +1465,36 @@ def create_app(cfg) -> Flask:
             f"A browser window is opening for {webchat.SITES[key].name}: "
             "sign in there and close it when you are done"))
 
+    def _detect_slider_and_save(key, chat, log):
+        """No model menu: some paid sites (ChatGPT) choose the model with an
+        effort slider. Read its stops and keep them as the site's levels."""
+        try:
+            res = chat.detect_slider(key)
+        except Exception as exc:  # noqa: BLE001
+            log(f"could not read an effort slider: {exc}"[:200])
+            return
+        stops = [str(x) for x in res.get("stops") or []]
+        if len(stops) < 2 or len(set(stops)) < 2:
+            log("no effort slider found either"
+                + (f" ({res.get('why')})" if res.get("why") else ""))
+            return
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            saved = json.loads(db.get_setting(conn, "webchat_sites") or "[]")
+            for d in saved:
+                if d.get("key") == key:
+                    d["level_label"] = "Thinking effort"
+                    d["levels"] = [{"label": t, "slider": i}
+                                   for i, t in enumerate(stops)]
+            db.set_setting(conn, "webchat_sites", json.dumps(saved))
+            webchat.load_custom_sites(conn)
+        finally:
+            conn.close()
+        log(f"found an effort slider with {len(stops)} stop(s): "
+            + ", ".join(stops)
+            + (f" (now: {res.get('current')})" if res.get("current") else ""))
+
     def _detect_models_and_save(key, chat, log):
         """Read the model menu of a site and keep it in the site's saved
         definition. Returns the model labels found (empty = none found)."""
@@ -1397,6 +1507,7 @@ def create_app(cfg) -> Flask:
         if not items:
             log("no model menu found on that page - the site's own model "
                 "will be used")
+            _detect_slider_and_save(key, chat, log)
             return []
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
@@ -1744,6 +1855,10 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            handover_options={c["id"]: handover.available_for(cfg, c["id"])
+                              for c in own_channels},
+            handover_defaults={c["id"]: handover.channel_defaults(cfg, c["id"])
+                               for c in own_channels},
             watched_channels=watched_channels, watched_by_oc=watched_by_oc,
             renderly_url=cfg.renderly_url, genres=genres,
             source_genres=source_genres,
@@ -1935,6 +2050,18 @@ def create_app(cfg) -> Flask:
             fields["brief_presentation"] = (
                 (form.get("brief_presentation") or "").strip() or None)
         return fields, None
+
+    @app.post("/my-channels/handover")
+    def my_channels_handover():
+        """Save only the channel's default hand-over templates."""
+        oc_id = _own_channel_id()
+        if not oc_id:
+            return redirect("/my-channels?error=Unknown+channel")
+        handover.set_channel_default(cfg, oc_id,
+                                     request.form.get("handover_plan") or "",
+                                     request.form.get("handover_script") or "")
+        return redirect("/my-channels?msg=" + quote("Hand-over templates saved")
+                        + f"#edit-{oc_id}-handover")
 
     @app.post("/my-channels/brief")
     def my_channels_brief():
@@ -2513,6 +2640,7 @@ def create_app(cfg) -> Flask:
                 "row": p,
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
+                "gpt_job": gpt_packaging.latest(cfg, p["id"]),
             })
         due_results = len(results_mod.due(conn))
         conn.close()
@@ -2542,6 +2670,81 @@ def create_app(cfg) -> Flask:
             scope_name=(None if scope is None
                         else own_by_id.get(scope) or "No channel"),
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/gpt-pro/generate")
+    def studio_gpt_pro_generate(pid):
+        try:
+            job = gpt_packaging.queue(cfg, pid)
+            return redirect("/finished?msg=" + quote(
+                "GPT Pro job " + job["status"] +
+                ". Codex picks up queued jobs on its scheduled check."))
+        except (ValueError, OSError) as exc:
+            return redirect("/finished?error=" + quote(str(exc)))
+
+    def _gpt_worker_only(require_header=True):
+        try:
+            local = ipaddress.ip_address(request.remote_addr or "").is_loopback
+        except ValueError:
+            local = False
+        if not local or any(request.headers.get(h) for h in remote.PROXY_HEADERS):
+            abort(403)
+        if require_header and request.headers.get("X-WhisperRadar-Agent") != "codex-packaging":
+            abort(403)
+
+    @app.route("/gpt-pro/worker", methods=["GET", "POST"])
+    def gpt_pro_worker():
+        _gpt_worker_only(require_header=False)
+        saved = session.get("gpt_packaging_claim") or {}
+        job, result, error = None, None, ""
+        try:
+            if saved:
+                job = gpt_packaging.worker_job(cfg, saved.get("id"), saved.get("token"))
+            if request.method == "POST":
+                action = request.form.get("action")
+                if action == "claim" and not job:
+                    job = gpt_packaging.claim(cfg)
+                elif action == "complete" and job:
+                    result = gpt_packaging.complete(cfg, job["id"], job["claim_token"],
+                        json.loads(request.form.get("result") or "{}"))
+                    job = None
+                elif action == "fail" and job:
+                    gpt_packaging.fail(cfg, job["id"], job["claim_token"],
+                        request.form.get("error") or "Codex could not finish this job")
+                    job = None
+            if job:
+                session["gpt_packaging_claim"] = {"id": job["id"], "token": job["claim_token"]}
+            else:
+                session.pop("gpt_packaging_claim", None)
+        except (ValueError, OSError) as exc:
+            error = str(exc)
+        return render_template("gpt_worker.html", job=job, result=result, error=error,
+            context_json=json.dumps(job["context"], ensure_ascii=False, indent=2) if job else "")
+
+    @app.post("/gpt-pro/jobs/claim")
+    def gpt_pro_claim():
+        _gpt_worker_only()
+        return jsonify(job=gpt_packaging.claim(cfg))
+
+    @app.post("/gpt-pro/jobs/<jid>/complete")
+    def gpt_pro_complete(jid):
+        _gpt_worker_only()
+        body = request.get_json(silent=True) or {}
+        try:
+            saved = gpt_packaging.complete(cfg, jid, body.get("claim_token"), body.get("result"))
+            return jsonify(result=saved)
+        except (ValueError, OSError) as exc:
+            return jsonify(error=str(exc)), 400
+
+    @app.post("/gpt-pro/jobs/<jid>/fail")
+    def gpt_pro_fail(jid):
+        _gpt_worker_only()
+        body = request.get_json(silent=True) or {}
+        try:
+            job = gpt_packaging.fail(cfg, jid, body.get("claim_token"),
+                                     body.get("error") or "Codex generation did not finish")
+            return jsonify(job=job)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
 
     @app.post("/studio/<int:pid>/publish")
     def studio_publish(pid):
@@ -2932,6 +3135,14 @@ def create_app(cfg) -> Flask:
             source_video=source_video, llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
+            instructions={k: db.stage_extra(prod, k)
+                          for k in ("plan", "plan_judge", "script",
+                                    "script_judge")},
+            handover_templates=_handover_options(cfg, prod),
+            handover_choice={s: handover.effective_id(cfg, prod, s)[0]
+                             for s in handover.STAGES},
+            handover_from_channel={s: handover.effective_id(cfg, prod, s)[1]
+                                   == "channel" for s in handover.STAGES},
             stage_labels=stage_labels, hooks=hooks,
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob._real(),
             prod_voice=prod["voice"] or eff["voice"],
@@ -4627,6 +4838,8 @@ def create_app(cfg) -> Flask:
         data = thumbnails.load_thumbs(pdir)
         form = request.form
         for c in data["concepts"]:
+            if c.get("precomposed"):
+                continue
             i = c["id"]
             if f"text_{i}" in form:
                 c["text"] = thumbnails.clean_text(form.get(f"text_{i}"))
@@ -4710,7 +4923,7 @@ def create_app(cfg) -> Flask:
         return render_template(
             "plan.html", prod=prod, plan=plan, job=sjob._real(),
             faults=packplan.faults_for(cfg, pid, plan) if plan["title"] else [],
-            layouts=thumbnails.LAYOUTS,
+            layouts=thumbnails.LAYOUTS, **_handover_ctx(cfg, prod),
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.get("/studio/<int:pid>/shorts")
@@ -4828,5 +5041,7 @@ def create_app(cfg) -> Flask:
                      daemon=True).start()
     from . import look_routes
     look_routes.register(app, cfg, research_job)
+    from . import handover_routes
+    handover_routes.register(app, cfg)
 
     return app

@@ -27,7 +27,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from . import autorun, db, external_prompts as ep, studio, webchat
+from . import autorun, db, external_prompts as ep, handover, studio, webchat
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
@@ -411,7 +411,8 @@ def _length_delta(words: int, target: int) -> str:
 
 
 def _script_feedback(words: int, target: int, reasons: list[str],
-                     judged: dict, truncated: bool) -> str:
+                     judged: dict, truncated: bool,
+                     direction: str = "") -> str:
     lo, hi = ep._length_window(target)
     lines = [f"The editor did NOT accept this draft. Why: "
              f"{'; '.join(reasons) or 'see below'}."]
@@ -434,7 +435,8 @@ def _script_feedback(words: int, target: int, reasons: list[str],
         f"It must be {lo}-{hi} words (target {target}); count before you "
         f"reply. Keep working in the brief's keywords; the story, research "
         f"and wording stay your own. Same reply format as before: the finished script "
-        f"as plain text only, no notes before or after it.")
+        f"as plain text only, no notes before or after it."
+        + _creator_block(direction, "YOU, THE WRITER"))
     return "\n".join(lines)
 
 
@@ -452,6 +454,13 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     soft = rounds is None
     if soft:
         rounds = SOFT_ROUNDS
+    hand = handover.for_production(cfg, ctx["prod"], "script")
+    log(f"hand-over template for the script: {hand['name']}")
+    writer_dir = handover.instruction(cfg, ctx["prod"], "script")
+    judge_dir = handover.instruction(cfg, ctx["prod"], "script_judge")
+    if writer_dir or judge_dir:
+        log(f"instructions in force - writer: {len(writer_dir)} chars, "
+            f"judge: {len(judge_dir)} chars (repeated every round)")
 
     def long_enough(text: str) -> bool:        # not just "Thinking..." / a stub
         return _wc(text) >= 0.5 * target
@@ -475,6 +484,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                 f"word(s): \"{script[:80]}\"). Nothing was sent to the "
                 f"judge.")
         overlap = studio.overlap_ratio(script, source) if source.strip() else 0.0
+        _dump(cfg, pid, f"script_draft_round{rnd}", script)
         log(f"round {rnd}: draft of {words} words (target {target}), "
             f"overlap {overlap:.1%} - asking {judge} to judge it")
         struct0 = (studio.structure_copy(script, source) if source.strip()
@@ -484,13 +494,14 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                 raw = _send(transport, judge,
                             lambda f: _script_followup(script, words, target, overlap,
                                                        studio.script_looks_truncated(script),
-                                                       struct0), log,
+                                                       struct0, judge_dir), log,
                             new_chat=False, ready=_is_json_verdict)
             else:
                 raw = _send(transport, judge,
                             lambda f: ep.script_judge_prompt(
                                 cfg, pid, script, title, None, None, None, f),
                             log, ready=_is_json_verdict)
+            _dump(cfg, pid, f"script_judge_reply_round{rnd}", raw)
             verdict = studio._parse_json_object(raw)
             if verdict:
                 judge_open = True
@@ -507,16 +518,21 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                          if str(x).strip()],
             "weak_spans": [str(x) for x in (verdict.get("weak_spans") or [])
                            if str(x).strip()]}
-        # the judge must never hand original-script details to the writer
-        for k in ("feedback", "weak_spans"):
-            judged[k], gone = studio.scrub_for_writer(judged[k], script,
-                                                      source, allow=brief_text)
-            if gone:
-                log(f"dropped {gone} judge note(s) in {k} that carried "
-                    f"details of the original")
+        # what reaches the writer follows the production's hand-over template
         must, unver = studio.verdict_blockers(verdict)
-        judged["must_fix"], _gone = studio.scrub_for_writer(
-            must, script, source, allow=brief_text)
+        (judged["must_fix"], judged["feedback"], judged["weak_spans"],
+         gone) = handover.script_notes(hand, must, judged["feedback"],
+                                       judged["weak_spans"], script, source,
+                                       allow=brief_text)
+        if gone:
+            log(f"dropped {gone} judge note(s) that carried details of the "
+                f"original")
+        sent = (judged["must_fix"] + judged["feedback"]
+                + judged["weak_spans"])
+        if sent:
+            log(f"round {rnd}: points for the writer, in this order: "
+                + " | ".join(f"{i}. {' '.join(n.split())[:60]}"
+                             for i, n in enumerate(sent, 1)))
         if unver:
             log(f"{judge} left {unver} claim(s) unverified")
         err = None if score is not None else (
@@ -586,8 +602,11 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         if should_stop():
             log("stopped by you")
             break
+        to_writer = _script_feedback(words, target, reasons, judged, cut,
+                                     writer_dir)
+        _dump(cfg, pid, f"script_to_writer_round{rnd}", to_writer)
         reply = transport.ask(
-            writer, _script_feedback(words, target, reasons, judged, cut), (),
+            writer, to_writer, (),
             new_chat=False, ready=long_enough)
     best = max(attempts, key=lambda a: (not a["too_short"],
                                         not a["too_long"], not a["cut"],
@@ -688,9 +707,20 @@ def _keep_attempts(cfg, pid: int, attempts: list[dict]) -> None:
         pass
 
 
+def _creator_block(text: str, who: str) -> str:
+    """The creator's typed instructions, repeated in every later message so a
+    long chat does not drift away from them."""
+    text = (text or "").strip()
+    return (f"\n\nCREATOR'S INSTRUCTIONS FOR {who} (still in force - follow "
+            f"them to the letter, they win over the defaults on what you "
+            f"write, how it is worded and the order of your points):\n"
+            f"{text}" if text else "")
+
+
 def _script_followup(script: str, words: int | None = None,
                      target: int | None = None, overlap: float | None = None,
-                     cut: bool = False, struct: dict | None = None) -> str:
+                     cut: bool = False, struct: dict | None = None,
+                     direction: str = "") -> str:
     measured = ""
     if words is not None and target:
         lo, hi = ep._length_window(target)
@@ -726,7 +756,8 @@ def _script_followup(script: str, words: int | None = None,
         "Source material and "
         "rules are unchanged (use the ones from earlier in this chat), "
         "including: the script must never mention the thumbnail, cover, "
-        "title or packaging - fail it and quote the sentence if it does.\n\n"
+        "title or packaging - fail it and quote the sentence if it does."
+        + _creator_block(direction, "YOU, THE JUDGE") + "\n\n"
         "The revised script:\n\n" + script)
 
 
@@ -849,6 +880,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     judge_cont = judge in kept  # ...and may start in the previous stage's
     best = None                     # (badness, data, problem): the plan to keep
     rnd = 0
+    prev_text, same_run = None, 0   # the writer handing back the SAME plan
     while True:
         rnd += 1
         text = json.dumps(data, ensure_ascii=False, indent=1)
@@ -919,6 +951,14 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             break
         if should_stop():
             log("stopped by you")
+            break
+        # the writer returning the same plan again and again cannot fix what
+        # is still flagged: stop instead of looping for hours
+        same_run = same_run + 1 if text == prev_text else 0
+        prev_text = text
+        if same_run >= 2:
+            log(f"{writer} sent back the same plan {same_run + 1} rounds in a "
+                f"row - stopping; still flagged: {last_problem}")
             break
         if not hard and weak:
             asked = [w["asset"] for w in weak]

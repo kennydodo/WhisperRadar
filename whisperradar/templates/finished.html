@@ -68,6 +68,7 @@
   <a href="/finished" class="active">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
+  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   <h1>Finished</h1>
@@ -125,6 +126,11 @@
             <br>{% if item.thumbs and item.thumbs.chosen %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge published" title="A thumbnail is chosen">thumbnail chosen</a>
             {% elif item.thumbs %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge genre" title="Concepts exist - pick one">{{ item.thumbs.count }} thumbnails</a>
             {% else %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="muted">no thumbnail</a>{% endif %}
+            <form method="post" action="/studio/{{ item.row['id'] }}/gpt-pro/generate" style="margin-top:6px">
+              <button type="submit" class="ghost" {% if item.gpt_job and item.gpt_job.status in ('queued', 'running') %}disabled{% endif %}>{{ 'Generating with GPT Pro' if item.gpt_job and item.gpt_job.status == 'running' else ('Queued for GPT Pro' if item.gpt_job and item.gpt_job.status == 'queued' else 'Generate with GPT Pro') }}</button>
+            </form>
+            {% if item.gpt_job %}<div class="muted" style="font-size:12px;margin-top:3px" title="{{ item.gpt_job.error or '' }}">GPT Pro: {{ item.gpt_job.status }}{% if item.gpt_job.error %}<br>{{ item.gpt_job.error }}{% endif %}</div>{% endif %}
+            {% if item.gpt_job and item.gpt_job.status == 'complete' %}<div style="font-size:12px"><a href="/studio/file/{{ item.row['id'] }}/title.txt" download>title</a> &middot; <a href="/studio/file/{{ item.row['id'] }}/description.txt" download>description</a></div>{% endif %}
           </td>
           <td class="actions">
             <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>
@@ -159,6 +165,7 @@
   </div>
 </div>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
+{% if items|selectattr('gpt_job')|selectattr('gpt_job.status', 'in', ['queued', 'running'])|list %}<script>setTimeout(function () { location.reload(); }, 15000);</script>{% endif %}
 {% if due_results %}<script>
   try { fetch('/finished/results/update', {method: 'POST', headers: {'X-Requested-With': 'fetch'}}); } catch (e) {}
 </script>{% endif %}

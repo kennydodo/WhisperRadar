@@ -359,6 +359,21 @@ class JudgeSameChatTests(unittest.TestCase):
         self.assertIn('{"shots": []}', ws._plan_followup('{"shots": []}', None))
         self.assertIn("SAME", ws._script_followup("hello"))
 
+    def test_typed_instructions_are_repeated_every_round(self):
+        # whatever the creator types must reach the judge and the writer in
+        # EVERY message, not only the first prompt
+        jd = "List the points in REVERSE order of the original."
+        wd = "Invent your own company names."
+        self.assertIn(jd, ws._script_followup("x", direction=jd))
+        self.assertIn("JUDGE", ws._script_followup("x", direction=jd))
+        fb = ws._script_feedback(900, 1000, ["too short"],
+                                 {"feedback": ["a"]}, False, wd)
+        self.assertIn(wd, fb)
+        self.assertIn("WRITER", fb)
+        self.assertNotIn("CREATOR'S INSTRUCTIONS",
+                         ws._script_feedback(900, 1000, [], {}, False))
+        self.assertNotIn("CREATOR'S INSTRUCTIONS", ws._script_followup("x"))
+
     def test_followup_states_measured_length(self):
         t = ws._script_followup("x", 1500, 1000, 0.02, False)
         self.assertIn("1500 words", t)

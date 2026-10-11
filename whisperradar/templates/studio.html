@@ -93,6 +93,7 @@
   <a href="/finished">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
+  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   <h1>Studio</h1>
@@ -485,6 +486,23 @@
     await fetch('/studio/produce', {method: 'POST'});
     location.reload();
   }
+</script>
+{% endif %}
+{% if job.running or also_running %}
+<script>
+  // a job is running: reload this list by itself when it ends or moves on to
+  // its next stage (nothing is typed on this page that a reload could lose)
+  (function () {
+    var lastStage = {{ (job.stage or '')|tojson }}, lastSeq = {{ job.seq }};
+    function tick() {
+      fetch('/studio/job').then(function (r) { return r.json(); }).then(function (j) {
+        if (!j.running || j.seq !== lastSeq ||
+            (j.pipeline && (j.stage || '') !== lastStage)) { location.reload(); return; }
+        setTimeout(tick, 3000);
+      }).catch(function () { setTimeout(tick, 5000); });
+    }
+    setTimeout(tick, 3000);
+  })();
 </script>
 {% endif %}
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>

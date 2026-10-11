@@ -80,6 +80,8 @@ class FakePage:
             text, _g = self.frame
             return {"count": 1 if (self.sent and text) else 0, "text": text,
                     "url": self.url}
+        if js is wc._CANDIDATES_JS:
+            return getattr(self, "cands", None)
         if js is wc._CONTINUE_JS:
             if self.continue_frames and self.frame[0]:
                 self.clicked_continue += 1
@@ -138,6 +140,44 @@ class AskTests(unittest.TestCase):
         self.assertEqual(page.clicked_continue, 1)
         self.assertEqual(out, "first half second half")
 
+    def test_continue_clicked_while_a_json_step_is_incomplete(self):
+        # a cut-off JSON reply never counts as finished, so the Continue
+        # button must be pressed BEFORE the ready check, not after it
+        clk = Clock()
+        page = FakePage(clk, wc.DEEPSEEK, [('{"a": [1,', False)] * 8,
+                        continue_frames=[[('{"a": [1,2]}', False)] * 8])
+        out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk,
+                     ready=lambda t: t.strip().endswith("}"))
+        self.assertEqual(page.clicked_continue, 1)
+        self.assertEqual(out, '{"a": [1,2]}')
+
+    def test_reply_split_into_paragraph_blocks_is_read_whole(self):
+        # Qwen puts each paragraph in its own matching element: the LAST one
+        # is only the closing paragraph. The whole reply is the page text
+        # after our prompt.
+        clk = Clock()
+        whole = "\n".join(f"Paragraph {i} of the script." for i in range(80))
+
+        class Split(FakePage):
+            def evaluate(self, js, arg=None):
+                if js is wc._AFTER_PROMPT_JS:
+                    return ("\nCopy\nEdit\n" + whole +
+                            "\nThinking\nAI-generated content may not be accurate.")
+                return super().evaluate(js, arg)
+
+        page = Split(clk, wc.ZAI, [("Paragraph 79 of the script.", False)] * 40)
+        out = wc.ask(page, wc.ZAI, "Write the script now, plain text only please",
+                     clock=clk, ready=lambda t: len(t.split()) > 200)
+        self.assertEqual(out, whole)
+
+    def test_after_prompt_strips_buttons_and_footer(self):
+        class P:
+            def evaluate(self, js, arg=None):
+                return "\nCopy\nEdit\nThe reply.\nSecond line.\nRegenerate\nThinking\n"
+        self.assertEqual(wc.after_prompt(P(), "some prompt text here"),
+                         "The reply.\nSecond line.")
+        self.assertEqual(wc.after_prompt(P(), ""), "")
+
     def test_continue_is_capped(self):
         clk = Clock()
         page = FakePage(clk, wc.DEEPSEEK, [("x", False)] * 8,
@@ -151,6 +191,42 @@ class AskTests(unittest.TestCase):
                          files=["/tmp/narration.txt", "/tmp/shotlist.txt"])
         self.assertEqual(page.files, ["/tmp/narration.txt",
                                       "/tmp/shotlist.txt"])
+
+    def test_single_file_input_gets_the_files_one_by_one(self):
+        clk = Clock()
+        calls = []
+
+        class OneAtATime(FakePage):
+            def set_input_files(self, sel, paths):
+                if len(paths) > 1:
+                    raise Exception("Error: Non-multiple file input can only "
+                                    "accept single file")
+                calls.append(list(paths))
+                self.files = (self.files or []) + list(paths)
+
+        page = OneAtATime(clk, wc.ZAI, [("ok", False)] * 12)
+        out = wc.ask(page, wc.ZAI, "p", ["/tmp/narration.txt", "/tmp/shotlist.txt"],
+                     clock=clk)
+        self.assertEqual(calls, [["/tmp/narration.txt"], ["/tmp/shotlist.txt"]])
+        self.assertEqual(out, "ok")
+
+    def test_growing_page_text_counts_as_working(self):
+        # DeepThink writes its chain of thought before any reply element
+        # exists: a page whose text keeps growing must not hit the start wait
+        clk = Clock()
+        n = {"v": 0}
+
+        class Thinking(FakePage):
+            def evaluate(self, js, arg=None):
+                if js is wc._PAGE_LEN_JS:
+                    n["v"] += 50
+                    return n["v"] if self.sent and clk.t < 400 else n["v"]
+                return super().evaluate(js, arg)
+
+        script = [("", False)] * 250 + [("done", False)] * 12
+        page = Thinking(clk, wc.DEEPSEEK, script)
+        out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk, start_wait=90.0)
+        self.assertEqual(out, "done")
 
     def test_missing_attachment_chip_fails(self):
         clk = Clock()
@@ -191,8 +267,31 @@ class AskTests(unittest.TestCase):
 
     def test_overall_timeout_keeps_the_partial_reply(self):
         with self.assertRaises(wc.WebChatTimeout) as cm:
-            run(wc.ZAI, [("still going", True)] * 500, timeout=30)
+            run(wc.ZAI, [("still going", True)] * 500, timeout=30,
+                gen_stuck=0)
         self.assertEqual(cm.exception.partial, "still going")
+
+    def test_a_stuck_generating_flag_does_not_hang_the_run(self):
+        logs = []
+        out, _ = run(wc.ZAI, [("the whole reply", True)] * 400, log=logs.append)
+        self.assertEqual(out, "the whole reply")
+        self.assertTrue(any("taking it as finished" in m for m in logs))
+
+    def test_a_reply_that_is_still_growing_is_not_cut_off(self):
+        frames = [("word " * n, True) for n in range(1, 200)] + [("done", False)]
+        out, _ = run(wc.ZAI, frames)
+        self.assertEqual(out, "done")
+
+    def test_reply_found_in_another_block_when_the_last_one_is_a_fragment(self):
+        clk = Clock()
+        page = FakePage(clk, wc.ZAI, [("json Copy label", False)] * 80)
+        page.cands = ['{"shots": [{"file": "S01.png", "prompt": "a long prompt '
+                      'about something"}]}', "short label"]
+        logs = []
+        out = wc.ask(page, wc.ZAI, "hello", clock=clk, log=logs.append,
+                     ready=lambda t: t.startswith("{"))
+        self.assertTrue(out.startswith('{"shots"'))
+        self.assertTrue(any("another block" in m for m in logs))
 
     def test_empty_prompt_rejected(self):
         with self.assertRaises(wc.WebChatError):

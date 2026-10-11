@@ -408,6 +408,127 @@ _TOGGLE_JS = """(a) => {
   e.click(); return 'clicked'; }"""
 
 
+def _note_rows(key, cand, one) -> None:
+    """Keep what each picker candidate showed when opened, in
+    diag/<site>/detect-rows.txt, so a menu that was not accepted can be read."""
+    if _DIAG_ROOT is None:
+        return
+    try:
+        d = _DIAG_ROOT / "diag" / key
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / "detect-rows.txt"
+        if cand is None:
+            f.write_text("", encoding="utf-8")
+            return
+        with f.open("a", encoding="utf-8") as fh:
+            fh.write(f"candidate {cand.get('current')!r} ({cand.get('open')}): "
+                     f"rows={(one or {}).get('all')} accepted="
+                     f"{(one or {}).get('items')}\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# ---- sliders (ChatGPT's "Thinking effort": Instant / Thinking / ...) -------
+# The level is a slider in a small popover, not a menu. It is read and set
+# with the keyboard (Home, then ArrowRight n times) - the way any ARIA slider
+# works - and the popover's own heading tells which stop it is on.
+_SLIDER_SEL = "[role=slider], input[type=range]"
+_SLIDER_LABEL_JS = """el => { let p = el;
+  for (let i = 0; i < 6 && p; i++) { p = p.parentElement;
+    const t = ((p && p.innerText) || '').trim();
+    if (t) return t.split('\\n')[0].trim(); }
+  return ''; }"""
+
+
+def _first_visible(loc):
+    try:
+        for i in range(loc.count()):
+            if loc.nth(i).is_visible():
+                return loc.nth(i)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _effort_button(page):
+    """The pill that opens the effort popover ("Thinking effort", or the
+    current level's name once one is chosen)."""
+    for name in (re.compile(r"effort", re.I),
+                 re.compile(r"^(instant|thinking|pro)\b", re.I)):
+        b = _first_visible(page.get_by_role("button", name=name))
+        if b is not None:
+            return b
+    return None
+
+
+def _open_slider(page):
+    btn = _effort_button(page)
+    if btn is None:
+        return None, "no effort button on the page"
+    btn.click()
+    page.wait_for_timeout(600)
+    sl = _first_visible(page.locator(_SLIDER_SEL))
+    if sl is None:
+        return None, "the effort popover has no slider"
+    return sl, ""
+
+
+def _close_popover(page):
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def read_slider(page) -> dict:
+    """{stops: [label, ...], current: label, why} for the effort slider."""
+    sl, why = _open_slider(page)
+    if sl is None:
+        _close_popover(page)
+        return {"stops": [], "current": "", "why": why}
+    try:
+        now = sl.evaluate(_SLIDER_LABEL_JS)
+        vmin = sl.get_attribute("aria-valuemin") or sl.get_attribute("min") or "0"
+        vmax = sl.get_attribute("aria-valuemax") or sl.get_attribute("max")
+        n = int(float(vmax) - float(vmin)) + 1 if vmax else 8
+        n = max(1, min(n, 8))
+        sl.focus()
+        page.keyboard.press("Home")
+        page.wait_for_timeout(250)
+        stops = []
+        for _ in range(n):
+            label = sl.evaluate(_SLIDER_LABEL_JS)
+            if not vmax and stops and label == stops[-1]:
+                break
+            stops.append(label)
+            page.keyboard.press("ArrowRight")
+            page.wait_for_timeout(250)
+        return {"stops": stops, "current": now, "why": ""}
+    except Exception as exc:  # noqa: BLE001
+        return {"stops": [], "current": "", "why": f"{type(exc).__name__}: {exc}"[:120]}
+    finally:
+        _close_popover(page)
+
+
+def set_slider(page, index: int, label: str = "") -> str:
+    """Move the effort slider to stop `index`; returns the label it shows."""
+    sl, why = _open_slider(page)
+    if sl is None:
+        _close_popover(page)
+        raise RuntimeError(why)
+    try:
+        sl.focus()
+        page.keyboard.press("Home")
+        for _ in range(max(0, int(index))):
+            page.keyboard.press("ArrowRight")
+            page.wait_for_timeout(120)
+        page.wait_for_timeout(250)
+        return sl.evaluate(_SLIDER_LABEL_JS)
+    finally:
+        _close_popover(page)
+
+
 def _by_id(items, wanted):
     """The entry the run asked for; nothing asked = leave the site as it is."""
     if not wanted:
@@ -427,6 +548,15 @@ def _generic_prepare(spec: dict):
 
         def pick(group, wanted, what):
             item = _by_id(spec.get(group), wanted)
+            if item and item.get("slider") is not None:
+                try:
+                    shown = set_slider(page, int(item["slider"]), item["label"])
+                    ok = shown.strip().lower() == item["label"].strip().lower()
+                    notes.append(f"{what} {item['label']}"
+                                 + ("" if ok else f" (page shows '{shown}')"))
+                except Exception as exc:  # noqa: BLE001
+                    notes.append(f"{what}: {exc}"[:80])
+                return
             if not item or not item.get("item"):
                 return
             try:
@@ -610,6 +740,11 @@ def sanitize_sites(raw) -> tuple[list[dict], list[str]]:
                 for f in ("open", "item", "text", "current"):
                     if str(it.get(f) or "").strip():
                         row[f] = str(it[f]).strip()
+                if it.get("slider") is not None:
+                    try:
+                        row["slider"] = max(0, int(it["slider"]))
+                    except (TypeError, ValueError):
+                        pass
                 res.append(row)
             return res
 
@@ -825,6 +960,59 @@ _STATE_JS = """(args) => {
   return {count:els.length, text:last?last.innerText:'',
           url:location.href}; }"""
 
+# Texts of the page's reply-like blocks and code blocks, last ones first. Used
+# when the LAST matching element is only a fragment of the reply (Claude puts a
+# long JSON answer in a code block: the last "markdown"-class element was a 24
+# character label next to it, so the real reply was never read).
+_CANDIDATES_JS = """(sel) => {
+  const seen = new Set(), out = [];
+  for (const e of document.querySelectorAll(sel + ', pre')) {
+    const t = (e.innerText || '').trim();
+    if (t.length > 40 && !seen.has(t)) { seen.add(t); out.push(t); }
+  }
+  return out.slice(-12).reverse(); }"""
+
+# The page text AFTER our own prompt: the whole reply, whichever elements the
+# site splits it into (Qwen puts every paragraph in its own "markdown" block, so
+# the last matching element was only the closing paragraph - 399 characters of a
+# 1,100-word script). `tail` = the last words of the prompt we sent.
+_AFTER_PROMPT_JS = """(tail) => {
+  const body = document.body.innerText || '';
+  const words = (tail || '').trim().split(/\\s+/).filter(Boolean).slice(-14);
+  if (words.length < 3) return '';
+  const esc = w => w.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+  let re;
+  try { re = new RegExp(words.map(esc).join('\\\\s+'), 'g'); } catch (e) { return ''; }
+  let end = -1, m;
+  while ((m = re.exec(body)) !== null) { end = m.index + m[0].length; }
+  return end < 0 ? '' : body.slice(end); }"""
+
+_UI_LINES = re.compile(
+    r"^(copy|edit|delete|regenerate|share|more actions|scroll down|select mode|"
+    r"voice input|send|good response|bad response|thinking|thought process|"
+    r"thinking completed|retry|like|dislike|read aloud|"
+    r"ai-generated content may not be accurate\.?|"
+    r"claude can make mistakes.*|chatgpt can make mistakes.*|"
+    r"content generated by ai.*)$", re.I)
+
+
+def after_prompt(page, prompt: str) -> str:
+    """The reply as the text that follows our prompt on the page, with the
+    site's buttons and footer lines taken off both ends."""
+    if not (prompt or "").strip():
+        return ""
+    try:
+        raw = page.evaluate(_AFTER_PROMPT_JS, prompt[-400:]) or ""
+    except Exception:  # noqa: BLE001
+        return ""
+    lines = [ln.rstrip() for ln in str(raw).splitlines()]
+    while lines and (not lines[0].strip() or _UI_LINES.match(lines[0].strip())):
+        lines.pop(0)
+    while lines and (not lines[-1].strip() or _UI_LINES.match(lines[-1].strip())):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
 _CAPTURE_JS = """() => {
   if (window.__wr_hooked) return;
   window.__wr_hooked = true; window.__wr_cap = [];
@@ -857,6 +1045,11 @@ _TA_LEN_JS = """(sel) => { const list=[...document.querySelectorAll(sel)];
   if (t.isContentEditable) return (t.textContent||'').length;
   return (t.value || '').length; }"""
 _MSG_COUNT_JS = "() => document.querySelectorAll('.ds-message').length"
+_BUTTONS_JS = """() => [...document.querySelectorAll('button,[role=button],.ds-button')]
+  .filter(b => b.offsetParent !== null)
+  .map(b => (b.innerText || b.getAttribute('aria-label') || '').trim().slice(0, 40))
+  .filter(Boolean).slice(-12)"""
+_PAGE_LEN_JS = "() => (document.body.innerText||'').length"
 _PAGE_TAIL_JS = "() => (document.body.innerText||'').trim().slice(-300)"
 
 _STATUS_LINE = re.compile(
@@ -956,10 +1149,14 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         clock: Callable[[], float] = time.monotonic,
         log: Callable[[str], None] = lambda m: None,
         max_total: float = 4 * 3600, resume: bool = False,
-        stop: Optional[Callable[[], bool]] = None) -> str:
+        stop: Optional[Callable[[], bool]] = None,
+        gen_stuck: float = 240.0) -> str:
     """`timeout` is a STALL limit: seconds with no new text and no sign of
     thinking/writing. A reply that keeps going is waited for (up to
-    `max_total`). `resume=True` sends nothing: it collects the answer of the
+    `max_total`). `gen_stuck`: a page that still says "generating" while a
+    reply that already has text has not changed for this many seconds is taken
+    as finished (0 = never) - a stop-button selector that stays true must not
+    hang the run. `resume=True` sends nothing: it collects the answer of the
     chat that is already open (after a reload or a stall).
     Send `prompt` (+ `files`, local paths) and return the finished reply.
     A NEW chat by default; `new_chat=False` answers inside the chat that is
@@ -990,8 +1187,20 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
 
         if files:
             seen = _name_counts(page, files)
-            page.set_input_files(site.files, [str(f) for f in files])
-            _wait_for_uploads(page, files, clock, log, seen=seen)
+            try:
+                page.set_input_files(site.files, [str(f) for f in files])
+                _wait_for_uploads(page, files, clock, log, seen=seen)
+            except Exception as exc:  # noqa: BLE001
+                if len(files) < 2 or "single file" not in str(exc):
+                    raise
+                # ChatGPT's file input takes ONE file per call: attach them
+                # one after the other and wait for each to show up
+                log(f"{site.name}: the file input takes one file at a time - "
+                    f"attaching {len(files)} files one by one")
+                for f in files:
+                    one = _name_counts(page, [f])
+                    page.set_input_files(site.files, [str(f)])
+                    _wait_for_uploads(page, [f], clock, log, seen=one)
 
         n = page.evaluate(_PASTE_JS, {"box": site.box, "text": prompt})
         # a textarea turns \r\n into \n, so compare with the normalised text and
@@ -1082,6 +1291,12 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         links_before = []
     followed = False
     active = clock()                       # last sign of life
+    beat = clock()
+    stuck_logged = False
+    buttons_logged = False
+    cand_at = clock()
+    page_len = -1                          # page text size, to see thinking
+    grew_at = clock()
     while True:
         page.wait_for_timeout(int(poll * 1000))
         if stop is not None and stop():
@@ -1092,6 +1307,11 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         st = page.evaluate(_STATE_JS, {"reply": site.reply})
         text = st["text"] or ""
         gen = bool(page.evaluate(site.generating_js))
+        if started and clock() - beat >= 60:
+            beat = clock()                 # a silent wait can now be read
+            log(f"{site.name}: still waiting - generating={gen}, reply "
+                f"{len(clean_reply(text))} chars, unchanged for "
+                f"{int(clock() - stable_since)}s")
         if not gen and not clean_reply(text):
             pk = _peak_dialog(page)
             if pk:
@@ -1154,9 +1374,19 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 except Exception as exc:  # noqa: BLE001
                     log(f"{site.name}: could not open the new chat ({exc})")
                     followed = True
+            try:
+                n_len = int(page.evaluate(_PAGE_LEN_JS) or 0)
+            except Exception:  # noqa: BLE001
+                n_len = page_len
+            if page_len >= 0 and n_len != page_len and clock() - t0 > 10:
+                # the page text keeps changing (DeepSeek's DeepThink writes its
+                # chain of thought before any reply element exists): the model
+                # is working, so the start wait begins again
+                grew_at = clock()
+            page_len = n_len
             if started:
                 pass
-            elif clock() - t0 > start_wait:
+            elif clock() - max(t0, grew_at) > start_wait:
                 lim = _limit_banner(page, site)
                 if lim:
                     raise ModelBusy(f"{site.name} says: \"{lim[:140]}\"")
@@ -1170,7 +1400,14 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
             active = clock()
         if gen:
             active = clock()               # still thinking / writing
-        done_waiting = (started and not gen
+        stuck = bool(gen_stuck and gen and clean_reply(last_text)
+                     and clock() - stable_since >= gen_stuck)
+        if stuck and not stuck_logged:
+            stuck_logged = True
+            log(f"{site.name}: the page still says it is generating but the "
+                f"reply has not changed for {int(gen_stuck)}s - taking it as "
+                f"finished")
+        done_waiting = (started and (not gen or stuck)
                         and clock() - stable_since >= settle)
         if done_waiting and not clean_reply(last_text):
             done_waiting = False           # only "Thinking..." so far
@@ -1178,6 +1415,42 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 and clock() - stable_since < ready_wait
                 and not ready(clean_reply(last_text))):
             done_waiting = False           # settled, but not a full answer yet
+        if (ready is not None and started and not gen and not done_waiting
+                and clock() - stable_since >= 20
+                and clock() - cand_at >= 30):
+            cand_at = clock()              # the reply may sit in another block
+            try:
+                cands = page.evaluate(_CANDIDATES_JS, site.reply) or []
+            except Exception:  # noqa: BLE001
+                cands = []
+            whole = after_prompt(page, prompt)
+            if whole:
+                cands = [whole] + list(cands)
+            for cand in cands:
+                got = clean_reply(cand)
+                if got and ready(got):
+                    log(f"{site.name}: the reply was in another block of the "
+                        f"page ({len(got)} chars) - using it")
+                    return got
+        if (started and not gen and not done_waiting and clean_reply(last_text)
+                and continues < continue_max
+                and clock() - stable_since >= settle):
+            # the reply stopped part-way and is not a full answer yet (a JSON
+            # step): a "Continue" button is how the site offers the rest
+            clicked = page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
+            if clicked:
+                continues += 1
+                log(f"{site.name}: clicked '{clicked}' ({continues})")
+                stable_since = clock()
+                continue
+            if not buttons_logged and clock() - stable_since >= 90:
+                buttons_logged = True
+                try:
+                    names = page.evaluate(_BUTTONS_JS) or []
+                    log(f"{site.name}: the reply has been still for 90 s and "
+                        f"is not complete; visible buttons: {names}")
+                except Exception:  # noqa: BLE001
+                    pass
         if done_waiting:
             clicked = (page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
                        if continues < continue_max else "")
@@ -1190,7 +1463,14 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
             if streamed:
                 return streamed
             if clean_reply(last_text):
-                return clean_reply(last_text)
+                got = clean_reply(last_text)
+                whole = clean_reply(after_prompt(page, prompt))
+                if len(whole) > 2 * len(got) + 200:
+                    log(f"{site.name}: the last reply block held only "
+                        f"{len(got)} chars of the {len(whole)} on the page - "
+                        f"using the whole reply")
+                    return whole
+                return got
             raise WebChatError(f"{site.name} returned an empty reply")
         if started and clock() - active > timeout:
             raise WebChatTimeout(
@@ -1696,6 +1976,7 @@ class WebChat:
         return ctx.pages[0] if ctx.pages else ctx.new_page()
 
     def detect_models(self, key: str) -> dict:
+        _note_rows(key, None, None)            # start a fresh rows file
         """Open the site and read its model picker: {open, current, items}.
         `items` is empty when no model menu could be found. Candidate buttons
         are tried one by one from here, each on a clean page and with a REAL
@@ -1719,6 +2000,7 @@ class WebChat:
                                          "current": c.get("current")})
                 except Exception:  # noqa: BLE001
                     one = {"items": []}
+                _note_rows(key, c, one)
                 if one.get("items"):
                     return {"open": c.get("open"), "current": c.get("current"),
                             "items": one["items"]}
@@ -1735,6 +2017,44 @@ class WebChat:
             if cands:
                 break                          # candidates existed; no retry
         return {"open": "", "current": "", "items": []}
+
+    def detect_slider(self, key: str) -> dict:
+        """Read the effort slider of the site's page: {stops, current, why}."""
+        page, site = self._page(key), SITES[key]
+        _goto(page, site.url)
+        _wait_for_box(page, site, time.monotonic)
+        page.wait_for_timeout(2000)
+        res = read_slider(page)
+        if not res["stops"] and _DIAG_ROOT is not None:
+            try:                       # what the popover looks like, for me
+                d = _DIAG_ROOT / "diag" / key
+                d.mkdir(parents=True, exist_ok=True)
+                names = page.evaluate(
+                    "() => [...document.querySelectorAll("
+                    "'button,[role=button],[role=combobox],[aria-haspopup]')]"
+                    ".filter(e => e.getBoundingClientRect().width > 0)"
+                    ".map(e => [e.tagName, e.getAttribute('aria-label') || '',"
+                    " (e.innerText || '').trim().slice(0, 60),"
+                    " e.getAttribute('aria-haspopup') || ''].join(' | '))")
+                (d / "buttons.txt").write_text(
+                    f"url: {page.url}\n" + "\n".join(names), encoding="utf-8")
+                page.screenshot(path=str(d / "start-page.png"))
+                btn = _effort_button(page)
+                if btn is not None:
+                    btn.click()
+                    page.wait_for_timeout(600)
+                    html = page.evaluate(
+                        "() => [...document.querySelectorAll("
+                        "'[role=dialog],[role=menu],[data-radix-popper-content-wrapper],"
+                        "[class*=popover]')].map(e => e.outerHTML).join('\\n\\n')")
+                    d = _DIAG_ROOT / "diag" / key
+                    d.mkdir(parents=True, exist_ok=True)
+                    (d / "effort-popover.html").write_text(
+                        str(html)[:60000], encoding="utf-8")
+                    _close_popover(page)
+            except Exception:  # noqa: BLE001
+                pass
+        return res
 
     def adopt(self, key: str, url: str) -> None:
         """Continue an earlier chat: the next `new_chat=False` ask opens `url`."""

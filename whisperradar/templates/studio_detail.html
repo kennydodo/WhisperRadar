@@ -107,6 +107,7 @@
   <a href="/finished">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
+  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   {% macro provider_select(stage) %}
@@ -1119,6 +1120,10 @@
     </form>
   </div>
 
+  {% if stage == "script" %}
+  {% set hshow = ["script"] %}{% include "_handover_panel.html" %}
+  {% endif %}
+
   <div class="panel">
     <h2 style="margin-top:0">Additional direction for the LLM &mdash; {{ STAGE_DISPLAY.get(stage, stage) }} stage</h2>
     {% if stage in ("style", "script", "shots") %}
@@ -1188,6 +1193,7 @@
 <script>
   let wasRunning = {{ 'true' if job.running else 'false' }};
   let lastSeq = {{ job.seq }};
+  let shownStage = {{ (job.stage or '')|tojson }};   // stage this page was drawn at
   // the stage buttons embed the LLM they will run ("Plan shotlist with X");
   // keep them honest the moment the dropdown changes
   document.addEventListener('change', function (e) {
@@ -1231,9 +1237,18 @@
       }
       if (s.running) {
         wasRunning = true;     // a job that began after this page loaded
+        // auto-run is ONE long job: show each finished stage as it happens
+        // (only when nothing typed on the page would be lost)
+        const ours = !s.pid || s.pid === {{ prod['id'] }};
+        if (ours && s.pipeline && (s.stage || '') !== shownStage) {
+          shownStage = s.stage || '';
+          const typed = [...userEdited].some((el) => document.contains(el) &&
+            el.type !== 'checkbox' && el.type !== 'radio' &&
+            el.value !== el.defaultValue);
+          if (!typed) { location.reload(); return; }
+        }
         if (bar) {
           bar.style.display = '';
-          const ours = !s.pid || s.pid === {{ prod['id'] }};
           bar.textContent = 'Working: ' + s.kind +
             (ours && s.stage ? ' - stage: ' + s.stage : '') +
             ' - this page updates when it finishes';

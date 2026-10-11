@@ -87,13 +87,22 @@
   <a href="/finished" class="active">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
+  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   <p class="muted" style="margin:0 0 6px"><a href="/finished">&larr; Finished</a> &middot; <a href="/studio/{{ prod['id'] }}/kit">publish kit</a> &middot; <a href="/studio/{{ prod['id'] }}">open the production</a></p>
   <h1>Thumbnails &mdash; {{ prod['title'] }}</h1>
+  {% if data.provider == 'codex' %}
+  <p class="sub">Three finished GPT thumbnails. Preview them below, download them, and choose your favourite.</p>
+  {% else %}
   <p class="sub">3&ndash;5 concepts: the character and the host together, the character alone, or the host alone &mdash; each with a few catchy words. A chat designs them, your image engine paints the picture, and the words are added sharp on top.</p>
+  {% endif %}
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+  <form method="post" action="/studio/{{ prod['id'] }}/gpt-pro/generate" style="margin-bottom:16px">
+    <button type="submit">Generate with GPT Pro</button>
+    <span class="muted" style="font-size:12px">Three finished thumbnails, a title and description from Codex.</span>
+  </form>
 
   <div class="panel">
     <h2>Inspiration</h2>
@@ -139,7 +148,7 @@
     <h2>Pictures
       {% if data.score %}<span class="badge ok" title="the judge's score">judge {{ data.score }}</span>{% endif %}
       <span class="badge {{ 'ok' if data.status == 'ready' else 'warn' }}">{{ data.status }}</span></h2>
-    {% if not job.running %}
+    {% if not job.running and data.provider != 'codex' %}
       <button type="submit" formaction="/studio/{{ prod['id'] }}/thumbnails/art">Make all pictures</button>
       <span class="muted" style="font-size:12px">&nbsp; uses this channel's image engine (FlowBatch or Renderly); ~{{ data.concepts|length }} generation(s)</span>
     {% endif %}
@@ -157,6 +166,9 @@
       <div style="margin-top:8px"><span class="chip">{{ layouts[c.layout] }}</span>
         {% if data.chosen == c.id %}<span class="badge ok">chosen</span>{% endif %}
         {% if c.idea %}<span class="muted" style="font-size:12px"> &middot; {{ c.idea }}</span>{% endif %}</div>
+      {% if c.precomposed %}
+      <p class="muted" style="font-size:12px">GPT artwork includes the words: <b>{{ c.text }}</b>. Use Generate with GPT Pro for a new set.</p>
+      {% else %}
       <label>Words (max 4)</label>
       <input type="text" name="text_{{ c.id }}" value="{{ c.text }}" maxlength="40">
       <div class="row">
@@ -170,16 +182,17 @@
       </div>
       <label>Picture prompt</label>
       <textarea name="prompt_{{ c.id }}">{{ c.art_prompt }}</textarea>
+      {% endif %}
       <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
-        {% if not job.running %}<button type="submit" class="ghost" name="ids" value="{{ c.id }}" formaction="/studio/{{ prod['id'] }}/thumbnails/art">{{ 'Redo picture' if c.art_file else 'Make picture' }}</button>{% endif %}
+        {% if not job.running and not c.precomposed %}<button type="submit" class="ghost" name="ids" value="{{ c.id }}" formaction="/studio/{{ prod['id'] }}/thumbnails/art">{{ 'Redo picture' if c.art_file else 'Make picture' }}</button>{% endif %}
         {% if c.final %}<button type="submit" name="id" value="{{ c.id }}" formaction="/studio/{{ prod['id'] }}/thumbnails/choose">{{ 'Unchoose' if data.chosen == c.id else 'Choose this one' }}</button>
         <a class="btn" style="background:transparent;border:1px solid var(--border);color:var(--muted)" href="{{ c.final_url }}" download="thumbnail-{{ c.id }}.jpg">download</a>{% endif %}
       </div>
     </div>
   {% endfor %}
   </div>
-  <div style="margin:14px 0"><button type="submit">Save changes and re-compose</button>
-    <span class="muted" style="font-size:12px">&nbsp; re-draws the words on every picture</span></div>
+  {% if data.provider != 'codex' %}<div style="margin:14px 0"><button type="submit">Save changes and re-compose</button>
+    <span class="muted" style="font-size:12px">&nbsp; re-draws the words on every picture</span></div>{% endif %}
   </form>
 
   {% if sheet_url %}

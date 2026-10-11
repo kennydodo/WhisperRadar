@@ -3399,11 +3399,14 @@ def judge_niche_block(cfg, genre: str) -> str:
     return npf.judge_block(npf.playbook_for(genre, user) or npf.GENERIC)
 
 
-def rating_prompt(title: str, genre: str, script: str, source: str,
+def _rating_prompt_base(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "",
-                  niche_block: str = "", earlier: list | None = None) -> str:
-    """`source` is the writer's BRIEF (topic + keywords); `original` is the
+                  niche_block: str = "", earlier: list | None = None,
+                  guard: bool = True) -> str:
+    """`guard` False = the hand-over template lets the judge speak about the
+    original to the writer (see handover.py).
+    `source` is the writer's BRIEF (topic + keywords); `original` is the
     existing video's script, shown to the judge ONLY to compare tone, style,
     hook, flow and ending - never for facts, points or names."""
     rubric = "\n".join(f"- {name}: {desc}" for name, desc in RATING_RUBRIC)
@@ -3477,6 +3480,7 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"echoes its opening or ending wording, fail originality.\n"
         f"- Check the KEYWORDS from the BRIEF are used naturally; list any "
         f"that are missing in feedback.\n"
+        + (
         f"- Your feedback and weak_spans are forwarded to the writer, who has "
         f"NEVER seen the ORIGINAL. They may contain ONLY: advice about tone, "
         f"style, pacing, hook strength or ending strength in your own words "
@@ -3485,6 +3489,11 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f"from the ORIGINAL: no sentence, phrase, name, company, place, "
         f"figure, event, opening or ending, and never 'do what the original "
         f"does'. Never tell the writer to match the original's facts.\n"
+          if guard else
+          f"- Your feedback and weak_spans are forwarded to the writer, who "
+          f"has never seen the ORIGINAL. You may refer to it to explain what "
+          f"to change.\n")
+        +
         f"{names_note}\n\n"
         f"BRIEF AND KEYWORDS GIVEN TO THE WRITER:\n{brief or '(none)'}\n\n"
         f"ORIGINAL (for tone, style, hook, flow and ending ONLY):\n"
@@ -3501,6 +3510,24 @@ def rating_prompt(title: str, genre: str, script: str, source: str,
         f'"feedback": ["<optional improvement, free of anything from the original>", ...], '
         f'"weak_spans": ["<a passage of the SCRIPT that reads weak>", ...]}}'
     )
+
+
+def rating_prompt(*args, judge_direction: str = "", **kwargs) -> str:
+    """The script judge's prompt. `judge_direction` = the creator's own
+    instructions to the judge (what to look for / ignore)."""
+    text = _rating_prompt_base(*args, **kwargs)
+    note = (judge_direction or "").strip()
+    if not note:
+        return text
+    block = ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - follow them to the "
+             "letter. They take priority over the defaults above about WHAT "
+             "your notes say, how they are WORDED and the ORDER you list them "
+             "in (the writer receives each list exactly in the order you "
+             "write it). Only the JSON field names and structure stay as "
+             "specified below:\n" + note + "\n\n")
+    marker = "Reply with ONLY a JSON object"
+    return (text.replace(marker, block + marker, 1) if marker in text
+            else text + "\n\n" + block)
 
 
 def _parse_json_object(text: str) -> dict:
@@ -3526,8 +3553,13 @@ def _parse_json_object(text: str) -> dict:
 def rate_script(cfg, title: str, genre: str, script: str, source: str,
                 style_guide: str, provider: str | None,
                 temperature: float = 1.0, extra_direction: str = "",
-                original: str = "", earlier: list | None = None) -> dict:
-    """LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
+                original: str = "", earlier: list | None = None,
+                scrub: bool = True, guard: bool = True,
+                judge_direction: str = "") -> dict:
+    """`scrub`/`guard` come from the production's hand-over template
+    (handover.py): scrub = drop judge notes that carry details of the original,
+    guard = tell the judge to keep the original out of its notes.
+    LLM-as-judge. Returns {score, criteria, feedback, weak_spans, error}.
     Never raises: a judge failure must not lose a usable draft.
 
     `temperature` defaults to 1.0 (matching every other LLM call) but the
@@ -3537,7 +3569,8 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     prompt = rating_prompt(title, genre, script, source, style_guide, overlap,
                            extra_direction=extra_direction, original=original,
                            niche_block=judge_niche_block(cfg, genre),
-                           earlier=earlier)
+                           earlier=earlier, guard=guard,
+                           judge_direction=judge_direction)
     try:
         # 900 was a flat guess (see 9aafa69) sized for a bare score - it never
         # accounted for the 7-field criteria object plus feedback[] plus
@@ -3564,7 +3597,7 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
     feedback = [str(f) for f in (reply.get("feedback") or []) if str(f).strip()]
     weak = [str(s) for s in (reply.get("weak_spans") or []) if str(s).strip()]
     must, unverified = verdict_blockers(reply)
-    if original:     # nothing of the original may reach the writer
+    if original and scrub:     # nothing of the original may reach the writer
         must, _g0 = scrub_for_writer(must, script, original, allow=source)
         feedback, _g1 = scrub_for_writer(feedback, script, original, allow=source)
         weak, _g2 = scrub_for_writer(weak, script, original, allow=source)
@@ -5015,8 +5048,10 @@ def shotlist_pacing(data: dict, cues: list[dict],
     if prof.st_max_hold is not None:
         st_long = [(h, a) for h, a in st if h > prof.st_max_hold]
         if st_long:
-            faults.append(f"ST shots hold longer than {prof.st_max_hold:.0f}s: "
-                          + ", ".join(f"{a} ({h:.0f}s)" for h, a in st_long[:4]))
+            faults.append(f"ST shots hold longer than {prof.st_max_hold:g}s: "
+                          + ", ".join(f"{a} ({h:.1f}s)" for h, a in st_long[:4])
+                          + f" - shorten each to at most {prof.st_max_hold:g}s "
+                          f"(split it, or give it a motion code)")
     if prof.code_max_share is not None:
         for code in sorted({m for _h, m, _a, _f, _l in holds
                             if m and m != "REVEAL"}):

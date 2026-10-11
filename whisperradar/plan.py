@@ -604,6 +604,18 @@ def context(cfg, pid: int) -> dict:
     except Exception:  # noqa: BLE001
         transcript = ""
     ctx["source"] = src
+    # the creator's own instructions for this production (writer / judge)
+    try:
+        conn = db.connect(cfg.db_path)
+        try:
+            p3 = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        from . import handover
+        ctx["direction"] = handover.instruction(cfg, p3, "plan")
+        ctx["judge_direction"] = handover.instruction(cfg, p3, "plan_judge")
+    except Exception:  # noqa: BLE001
+        ctx["direction"] = ctx["judge_direction"] = ""
     ctx["niche"] = None
     try:
         from . import niche_profile
@@ -748,7 +760,35 @@ def _numbers_text(ctx: dict) -> str:
 
 # ---- step 2: the titler never sees the script or the original title ---------
 
+def _writer_direction(ctx: dict) -> str:
+    text = (ctx.get("direction") or "").strip()
+    return ("\n\nCREATOR'S ADDITIONAL DIRECTION FOR YOU (follow it, together "
+            "with the rules above):\n" + text + "\n") if text else ""
+
+
+def _judge_direction(ctx: dict) -> str:
+    text = (ctx.get("judge_direction") or "").strip()
+    return ("CREATOR'S INSTRUCTIONS FOR YOU, THE JUDGE - follow them to the "
+            "letter. They take priority over the defaults on WHAT your notes "
+            "say, how they are WORDED and the ORDER you list them in (the "
+            "writer receives them in that order). The code-checked rules and "
+            "the JSON field names stay as they are:\n"
+            + text + "\n\n") if text else ""
+
+
+def _repeat_direction(ctx: dict | None, key: str, who: str) -> str:
+    """The creator's typed instructions again, for every later message of the
+    loop, so a long chat does not drift away from them."""
+    text = ((ctx or {}).get(key) or "").strip()
+    return (f"\n\nCREATOR'S INSTRUCTIONS FOR {who} (still in force - follow "
+            f"them to the letter):\n{text}" if text else "")
+
+
 def writer_prompt(ctx: dict) -> str:
+    return _writer_prompt_base(ctx) + _writer_direction(ctx)
+
+
+def _writer_prompt_base(ctx: dict) -> str:
     past = "\n".join(f"- {t}" for t in ctx["past_titles"]) or "(none yet)"
     pkg = ctx.get("package") or {}
     return f"""You are a YouTube packaging strategist. A video is about to be made; design how it will be sold. Titles matter most. You do not have the script - work from this description of the whole video.
@@ -785,6 +825,14 @@ def _plan_json(plan: dict) -> str:
 
 def judge_prompt(ctx: dict, plan: dict, faults: list[str],
                  min_score: float = MIN_SCORE) -> str:
+    base = _judge_prompt_base(ctx, plan, faults, min_score)
+    block = _judge_direction(ctx)
+    return (base.replace("Reply with ONE JSON object", block
+                         + "Reply with ONE JSON object", 1) if block else base)
+
+
+def _judge_prompt_base(ctx: dict, plan: dict, faults: list[str],
+                       min_score: float = MIN_SCORE) -> str:
     pkg = ctx.get("package") or {}
     return f"""You are a strict YouTube growth reviewer. Judge this packaging plan BEFORE the video is written. The title writer never saw the script or the original title: it worked only from the description below.
 
@@ -817,33 +865,31 @@ Reply with ONE JSON object and nothing else:
 "pass" is true only when the score is {min_score:g} or higher and nothing is left to fix."""
 
 
-def judge_followup(plan: dict, faults: list[str]) -> str:
+def judge_followup(plan: dict, faults: list[str], ctx: dict | None = None) -> str:
     return ("The strategist revised the plan after your review. Judge it "
             "again under the SAME rules and reply in exactly the SAME JSON "
             "format, including a fresh \"closest\" and \"alternates\". First "
             "check each point you raised, then that nothing else got worse."
             f"\n\nRULE CHECKS STILL FAILING: {faults or 'none'}"
-            "\n\n" + _plan_json(plan))
+            + _repeat_direction(ctx, "judge_direction", "YOU, THE JUDGE")
+            + "\n\n" + _plan_json(plan))
 
 
 def safe_verdict(verdict: dict, plan: dict, source_title: str,
-                 transcript: str, package_text: str) -> dict:
-    """What may go back to the title writer: no pick, no alternates, and no
-    note that carries anything of the original title or script."""
-    from . import studio
-    v = {k: val for k, val in (verdict or {}).items()
-         if k not in ("closest", "alternates", "best", "pick", "narrow",
-                     "weak")}
+                 transcript: str, package_text: str, hand: dict | None = None
+                 ) -> dict:
+    """What may go back to the title writer: never the judge's selection (pick,
+    alternates ...); the notes follow the production's hand-over template
+    (handover.py) - by default no note that carries anything of the original
+    title or script."""
+    from . import handover
     own = _plan_json(plan) + "\n" + package_text
-    for k in ("faults", "fixes"):
-        items = v.get(k)
-        if isinstance(items, list):
-            v[k], _gone = studio.scrub_for_writer(
-                [str(x) for x in items], own, f"{source_title}\n{transcript}")
-    return v
+    return handover.plan_verdict(hand or handover.BUILTIN[handover.DEFAULT_ID],
+                                 verdict, own, f"{source_title}\n{transcript}")
 
 
-def writer_feedback(verdict: dict, faults: list[str]) -> str:
+def writer_feedback(verdict: dict, faults: list[str],
+                    ctx: dict | None = None) -> str:
     return ("The reviewer found problems with your plan.\n"
             + (f"Rule checks run by code (fix these too): "
                f"{'; '.join(faults)}\n" if faults else "")
@@ -851,7 +897,8 @@ def writer_feedback(verdict: dict, faults: list[str]) -> str:
             + json.dumps(verdict, ensure_ascii=False, indent=1)
             + "\n\nChange ONLY what is named; keep the rest as it was. "
               "Return the COMPLETE plan again as one JSON object in the "
-              "same format, and nothing else.")
+              "same format, and nothing else."
+            + _repeat_direction(ctx, "direction", "YOU, THE WRITER"))
 
 
 def apply_pick(plan: dict, verdict: dict, source_title: str = "") -> dict:
@@ -954,6 +1001,8 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
              min_score: float = MIN_SCORE, same_chats: bool = True) -> dict:
     from . import studio, webstages as ws
     ctx = context(cfg, pid)
+    from . import handover
+    hand = handover.for_pid(cfg, pid, "plan")
     log(f"packaging plan for \"{ctx['title'][:70]}\" "
         f"({len(ctx['refs'])} reference title(s))")
     # one production = one chat per LLM: continue the chats the production
@@ -1014,7 +1063,7 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
         for attempt in (1, 2):
             if judge_open:
                 raw = ws._send(transport, judge,
-                               lambda f: judge_followup(plan, faults), log,
+                               lambda f: judge_followup(plan, faults, ctx), log,
                                new_chat=False, ready=ws._is_json_verdict)
             else:
                 raw, judge_cont = ws._send_in(
@@ -1048,8 +1097,9 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
             break
         reply = transport.ask(writer, writer_feedback(
             safe_verdict(verdict or {"faults": ["no verdict"]}, plan,
-                         src_title, transcript, _package_text(ctx["package"])),
-            faults), (), new_chat=False, ready=ws._has_json)
+                         src_title, transcript, _package_text(ctx["package"]),
+                         hand),
+            faults, ctx), (), new_chat=False, ready=ws._has_json)
     chosen = best[1]["title"]
     plan = apply_pick(best[1], best[2], src_title)
     if plan.get("picked_by"):
@@ -1094,8 +1144,9 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
     providers (what auto-run uses - no browser). Stateless calls, so each
     revision is sent with the previous attempt and the verdict. With no judge
     available a plan with no rule faults is accepted (score stays empty)."""
-    from . import studio
+    from . import handover, studio
     ctx = context(cfg, pid)
+    hand = handover.for_pid(cfg, pid, "plan")
     log(f"packaging plan for \"{ctx['title'][:70]}\" "
         f"({len(ctx['refs'])} reference title(s))")
     if not ctx["brief"] and ctx["transcript"]:
@@ -1157,7 +1208,8 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
                       safe_verdict(verdict or {"faults": faults
                                                or ["no verdict"]}, plan,
                                    src_title, transcript,
-                                   _package_text(ctx["package"])), faults))
+                                   _package_text(ctx["package"]), hand),
+                      faults))
     if best is None:
         raise RuntimeError("the LLM returned no usable packaging plan")
     chosen = best[1]["title"]
