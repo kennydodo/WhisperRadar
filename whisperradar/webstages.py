@@ -484,6 +484,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                 f"word(s): \"{script[:80]}\"). Nothing was sent to the "
                 f"judge.")
         overlap = studio.overlap_ratio(script, source) if source.strip() else 0.0
+        _dump(cfg, pid, f"script_draft_round{rnd}", script)
         log(f"round {rnd}: draft of {words} words (target {target}), "
             f"overlap {overlap:.1%} - asking {judge} to judge it")
         struct0 = (studio.structure_copy(script, source) if source.strip()
@@ -500,6 +501,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                             lambda f: ep.script_judge_prompt(
                                 cfg, pid, script, title, None, None, None, f),
                             log, ready=_is_json_verdict)
+            _dump(cfg, pid, f"script_judge_reply_round{rnd}", raw)
             verdict = studio._parse_json_object(raw)
             if verdict:
                 judge_open = True
@@ -525,6 +527,12 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         if gone:
             log(f"dropped {gone} judge note(s) that carried details of the "
                 f"original")
+        sent = (judged["must_fix"] + judged["feedback"]
+                + judged["weak_spans"])
+        if sent:
+            log(f"round {rnd}: points for the writer, in this order: "
+                + " | ".join(f"{i}. {' '.join(n.split())[:60]}"
+                             for i, n in enumerate(sent, 1)))
         if unver:
             log(f"{judge} left {unver} claim(s) unverified")
         err = None if score is not None else (
@@ -594,9 +602,11 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         if should_stop():
             log("stopped by you")
             break
+        to_writer = _script_feedback(words, target, reasons, judged, cut,
+                                     writer_dir)
+        _dump(cfg, pid, f"script_to_writer_round{rnd}", to_writer)
         reply = transport.ask(
-            writer, _script_feedback(words, target, reasons, judged, cut,
-                                 writer_dir), (),
+            writer, to_writer, (),
             new_chat=False, ready=long_enough)
     best = max(attempts, key=lambda a: (not a["too_short"],
                                         not a["too_long"], not a["cut"],
