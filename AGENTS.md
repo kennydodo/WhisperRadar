@@ -1803,3 +1803,7 @@ A user template may list own-channel ids (`channels`); empty = every channel. A 
 
 ## Effort slider (ChatGPT paid, 2026-10-10)
 ChatGPT's paid model choice is a "Thinking effort" pill that opens a popover with a slider (Instant / ...), not a menu. `webchat.read_slider` / `set_slider` drive it with the keyboard (Home, then ArrowRight n times; the popover heading is the stop's label). "Find models" falls back to it when no model menu is found (`_detect_slider_and_save`) and saves the stops as the site's `levels` with `slider: <index>`; `_generic_prepare.pick` sets them (no Paid flag needed). If it finds no slider it writes `diag/<site>/effort-popover.html`. Verified only against a mock page (tests/test_webchat_slider.py, skipped without a browser) - not against the real ChatGPT.
+
+## Video options (all ImgToVideo settings)
+- `whisperradar/video/settings_spec.py` builds the option spec from `ProjectOptions`; page `/video-options` (`video_routes.py`, `templates/video_options.html`) edits them globally (setting `video_options`) or per own channel (`own_channels.video_options`). Blank = inherit.
+- `studio.apply_video_options` (called from `prepare_project_folder`) merges the effective values into the production's `imgtovideo.json`; keys edited by hand are never overwritten (`imgtovideo.wr.json` records what we wrote). Output width/height stay with the Render resolution setting.

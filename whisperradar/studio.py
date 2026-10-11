@@ -2365,6 +2365,32 @@ RENDER_RESOLUTION_LABELS = {"1080p": "1920x1080 (Full HD)",
                             "flow-native": "1376x768 (Flow native)"}
 
 
+def apply_video_options(cfg, pid: int) -> None:
+    """Merge the Video options settings (global, then the production's own
+    channel) into imgtovideo.json. Never blocks a stage."""
+    try:
+        from . import db
+        from .video import settings_spec
+
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            row = db.get_production(conn, pid)
+            try:
+                oc = row["own_channel_id"] if row is not None else None
+            except (IndexError, KeyError):
+                oc = None
+            values = settings_spec.effective(conn, oc)
+        finally:
+            conn.close()
+        changed = settings_spec.apply_to_project(prod_dir(cfg, pid), values)
+        if changed:
+            log.info("video options written to imgtovideo.json: %s",
+                     ", ".join(changed))
+    except Exception as exc:  # noqa: BLE001 - never block a stage
+        log.debug("could not apply the video options: %s", exc)
+
+
 def apply_render_resolution(cfg, pid: int) -> None:
     """Write the production's effective render resolution into imgtovideo.json.
 
@@ -2460,6 +2486,7 @@ def prepare_project_folder(cfg, pid: int) -> Path:
             "schema_version": 1,
             "naming": {"image_extensions": [".png", ".jpg", ".jpeg", ".webp"]},
         }, indent=2), encoding="utf-8")
+    apply_video_options(cfg, pid)
     apply_render_resolution(cfg, pid)
     warning = image_size_warning(cfg, pid)
     if warning:
