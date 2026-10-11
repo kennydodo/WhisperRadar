@@ -1,0 +1,647 @@
+{
+  "schema_version": 3,
+  "project_name": "shotlist",
+  "resolution": {
+    "width": 1376,
+    "height": 768
+  },
+  "fps": 30,
+  "audio": {
+    "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\audio\\narration.mp3",
+    "duration_frames": 3981
+  },
+  "scenes": [
+    {
+      "id": "S01",
+      "start_frame": 0,
+      "end_frame": 570,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S01_01_SCN_ZI.png",
+          "scene_id": "S01",
+          "shot_id": "shot-001",
+          "start_frame": 0,
+          "duration_frames": 206,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S01_02_SCN_ZO.png",
+          "scene_id": "S01",
+          "shot_id": "shot-002",
+          "start_frame": 206,
+          "duration_frames": 240,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S01_03_CU_ZO.png",
+          "scene_id": "S01",
+          "shot_id": "shot-003",
+          "start_frame": 446,
+          "duration_frames": 124,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S02",
+      "start_frame": 570,
+      "end_frame": 1513,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S02_01_SCN_ZI.png",
+          "scene_id": "S02",
+          "shot_id": "shot-004",
+          "start_frame": 570,
+          "duration_frames": 169,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S02_02_SCN_ZO.png",
+          "scene_id": "S02",
+          "shot_id": "shot-005",
+          "start_frame": 739,
+          "duration_frames": 299,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S02_03_CU_ZI.png",
+          "scene_id": "S02",
+          "shot_id": "shot-006",
+          "start_frame": 1038,
+          "duration_frames": 155,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S02_04_SCN_PD.png",
+          "scene_id": "S02",
+          "shot_id": "shot-007",
+          "start_frame": 1193,
+          "duration_frames": 173,
+          "motion": "pan_down",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1428.8372093023256,
+            "right": 2560,
+            "bottom": 1428.8372093023256
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 1131.1627906976744,
+            "width": 2560,
+            "height": 1428.8372093023256,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S02_05_HYB_ZO.png",
+          "scene_id": "S02",
+          "shot_id": "shot-008",
+          "start_frame": 1366,
+          "duration_frames": 147,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S03",
+      "start_frame": 1513,
+      "end_frame": 2039,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S03_01_SCN_ZI.png",
+          "scene_id": "S03",
+          "shot_id": "shot-009",
+          "start_frame": 1513,
+          "duration_frames": 180,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S03_02_INF_ZO.png",
+          "scene_id": "S03",
+          "shot_id": "shot-010",
+          "start_frame": 1693,
+          "duration_frames": 166,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S03_03_SCN_ZI.png",
+          "scene_id": "S03",
+          "shot_id": "shot-011",
+          "start_frame": 1859,
+          "duration_frames": 180,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S04",
+      "start_frame": 2039,
+      "end_frame": 3241,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S04_01_CU_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-012",
+          "start_frame": 2039,
+          "duration_frames": 125,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S04_02_CU_ZO.png",
+          "scene_id": "S04",
+          "shot_id": "shot-013",
+          "start_frame": 2164,
+          "duration_frames": 154,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S04_03_CU_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-014",
+          "start_frame": 2318,
+          "duration_frames": 199,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S04_04_CU_PU.png",
+          "scene_id": "S04",
+          "shot_id": "shot-015",
+          "start_frame": 2517,
+          "duration_frames": 196,
+          "motion": "pan_up",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 1131.1627906976744,
+            "width": 2560,
+            "height": 1428.8372093023256,
+            "right": 2560,
+            "bottom": 2560
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1428.8372093023256,
+            "right": 2560,
+            "bottom": 1428.8372093023256
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S04_05_CU_ST.png",
+          "scene_id": "S04",
+          "shot_id": "shot-016",
+          "start_frame": 2713,
+          "duration_frames": 292,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S04_06_CU_ZI.png",
+          "scene_id": "S04",
+          "shot_id": "shot-017",
+          "start_frame": 3005,
+          "duration_frames": 236,
+          "motion": "zoom_in",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 72.4528301886794,
+            "y": 40.754716981132106,
+            "width": 2415.094339622641,
+            "height": 1358.4905660377358,
+            "right": 2487.5471698113206,
+            "bottom": 1399.245283018868
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    },
+    {
+      "id": "S05",
+      "start_frame": 3241,
+      "end_frame": 3981,
+      "clips": [
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S05_01_CU_ZO.png",
+          "scene_id": "S05",
+          "shot_id": "shot-018",
+          "start_frame": 3241,
+          "duration_frames": 249,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "fade_black",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S05_02_CU_ST.png",
+          "scene_id": "S05",
+          "shot_id": "shot-019",
+          "start_frame": 3490,
+          "duration_frames": 127,
+          "motion": "static",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        },
+        {
+          "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\TEST TO MORE TO LIVE\\images\\S05_03_SCN_ZO.png",
+          "scene_id": "S05",
+          "shot_id": "shot-020",
+          "start_frame": 3617,
+          "duration_frames": 364,
+          "motion": "zoom_out",
+          "motion_source": "explicit_code",
+          "easing": "ease_in_out",
+          "start_viewport": {
+            "x": 83.73831775700933,
+            "y": 47.10280373831779,
+            "width": 2392.5233644859813,
+            "height": 1345.7943925233644,
+            "right": 2476.261682242991,
+            "bottom": 1392.8971962616822
+          },
+          "end_viewport": {
+            "x": 0,
+            "y": 0,
+            "width": 2560,
+            "height": 1440,
+            "right": 2560,
+            "bottom": 1440
+          },
+          "transition": {
+            "kind": "crossfade",
+            "duration_frames": 15
+          }
+        }
+      ]
+    }
+  ],
+  "sounds": []
+}

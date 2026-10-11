@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "naming": {
+    "image_extensions": [
+      ".png",
+      ".jpg",
+      ".jpeg",
+      ".webp"
+    ]
+  },
+  "output": {
+    "width": 1376,
+    "height": 768
+  }
+}

@@ -3118,7 +3118,7 @@ def create_app(cfg) -> Flask:
             "tts": bool(cfg.studio_tts_command),
             "imagegen": bool(cfg.studio_imagegen_command),
             "merge": bool(cfg.studio_merge_command) or
-                     bool(cfg.imgtovideo_repo),
+                     bool(cfg.imgtovideo_repo) or studio._python_video(cfg),
         }
         page = render_template(
             "studio_detail.html", prod=prod, steps=steps, history=history,

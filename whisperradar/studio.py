@@ -2316,7 +2316,7 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
     {preview, target, project} - preview is the playable out\\preview.mp4,
     project is the exported XML/draft folder."""
     cli = _imgtovideo_cli(cfg)
-    if not cli:
+    if not cli and not _python_video(cfg):
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
     if target not in RENDER_TARGETS:
         target = RENDER_TARGETS[0]
@@ -2347,7 +2347,15 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
         raise RuntimeError("preview build finished but no preview.mp4 found")
 
     # 2. NLE project for the chosen target
-    _run_imgtovideo_cli(cli, [f"export-{target}", str(pid_dir)])
+    if _python_video(cfg):
+        from .video import nle_export
+        if target == "capcut":
+            nle_export.export_capcut(str(pid_dir))
+        else:
+            nle_export.export_premiere(str(pid_dir))
+        log.info("merge: %s export written by the PYTHON video engine", target)
+    else:
+        _run_imgtovideo_cli(cli, [f"export-{target}", str(pid_dir)])
     project = nle_project(pid_dir, target)
     if not project:
         raise RuntimeError(
