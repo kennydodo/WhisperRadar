@@ -2335,8 +2335,12 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
 
     # 1. fast preview draft - the reviewable cut
     if _python_video(cfg):
+        log.info("merge: preview built by the PYTHON video engine "
+                 "(studio.video_engine: python)")
         _python_preview(pid_dir)
     else:
+        log.info("merge: preview built by the C# ImgToVideo.Cli "
+                 "(studio.video_engine is not 'python')")
         _run_imgtovideo_cli(cli, ["render-final", str(pid_dir), "--preview"])
     preview = find_preview(pid_dir)
     if not preview:
