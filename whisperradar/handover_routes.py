@@ -54,6 +54,7 @@ def register(app, cfg) -> None:
                 cfg, name, scrub=bool(request.form.get("scrub")),
                 guard=bool(request.form.get("guard")),
                 mask_names=bool(request.form.get("mask_names")),
+                reorder=bool(request.form.get("reorder")),
                 channels=request.form.getlist("channels"),
                 parts=request.form.getlist("parts"),
                 help_text=(request.form.get("help") or "").strip(),

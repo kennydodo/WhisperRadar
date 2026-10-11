@@ -226,6 +226,32 @@ class MaskNamesWider(unittest.TestCase):
                                   self.SRC)
         self.assertEqual(out, ["Marcus and [name]"])
 
+class ReorderPoints(unittest.TestCase):
+    PTS = ["one", "two", "three", "four", "five"]
+
+    def test_order_always_changes_and_keeps_every_point(self):
+        for seed in ("a", "b", "c", "dd", "x" * 9):
+            out = handover.reorder_points(self.PTS, seed)
+            self.assertNotEqual(out, self.PTS)
+            self.assertEqual(sorted(out), sorted(self.PTS))
+        self.assertEqual(handover.reorder_points(["only"], "s"), ["only"])
+        self.assertEqual(handover.reorder_points(["a", "b"], "s"), ["b", "a"])
+
+    def test_same_seed_same_order(self):
+        self.assertEqual(handover.reorder_points(self.PTS, "k"),
+                         handover.reorder_points(self.PTS, "k"))
+
+    def test_template_flag_reorders_the_notes(self):
+        tpl = {"parts": ["feedback"], "scrub": False, "reorder": True}
+        _m, fb, _w, _d = handover.script_notes(tpl, [], self.PTS, [],
+                                               "a script", "src")
+        self.assertNotEqual(fb, self.PTS)
+        self.assertEqual(sorted(fb), sorted(self.PTS))
+        tpl["reorder"] = False
+        _m, fb, _w, _d = handover.script_notes(tpl, [], self.PTS, [],
+                                               "a script", "src")
+        self.assertEqual(fb, self.PTS)
+
 
 if __name__ == "__main__":
     unittest.main()

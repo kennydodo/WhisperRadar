@@ -56,6 +56,7 @@ def _clean(tid: str, raw: dict) -> dict | None:
             "scrub": bool(raw.get("scrub", True)),
             "guard": bool(raw.get("guard", True)),
             "mask_names": bool(raw.get("mask_names", False)),
+            "reorder": bool(raw.get("reorder", False)),
             "channels": _clean_channels(raw.get("channels")),
             "parts": parts, "help": str(raw.get("help") or ""),
             "instructions": _clean_instructions(raw.get("instructions"))}
@@ -110,7 +111,8 @@ def save_user_template(cfg, name: str, scrub: bool, guard: bool,
                        parts: list, help_text: str = "",
                        instructions: dict | None = None,
                        mask_names: bool = False,
-                       channels: list | None = None) -> str:
+                       channels: list | None = None,
+                       reorder: bool = False) -> str:
     """Add or replace a user template; returns its id."""
     tid = slug(name)
     if not tid:
@@ -125,6 +127,7 @@ def save_user_template(cfg, name: str, scrub: bool, guard: bool,
         data = {}
     data[tid] = {"name": name.strip(), "scrub": bool(scrub), "guard": bool(guard),
                  "mask_names": bool(mask_names),
+                 "reorder": bool(reorder),
                  "channels": _clean_channels(channels),
                  "parts": [p for p in parts if p in ALL_PARTS],
                  "help": help_text,
@@ -314,6 +317,23 @@ def source_names(source: str, skip=frozenset()) -> set:
     return {w for w in names if w.lower() not in skip and w.lower() not in lower}
 
 
+def reorder_points(items, seed: str = "") -> list:
+    """The same points in a different order (never the original one when
+    there are two or more), the same way for the same seed. The judge is also
+    asked to re-order, but a judge's JSON list tends to keep its natural
+    order, so the app guarantees it."""
+    import random
+    items = list(items or [])
+    if len(items) < 2:
+        return items
+    rng = random.Random(seed or "points")
+    out = items[:]
+    rng.shuffle(out)
+    if out == items:
+        out = items[1:] + items[:1]
+    return out
+
+
 def mask_names(items, script: str, source: str, allow: str = "") -> list:
     """Replace every name the original uses (see source_names) that the script
     under review does not already use with "[name]", in any letter case. The
@@ -353,6 +373,11 @@ def script_notes(tpl: dict, must: list, feedback: list, weak: list,
         must = mask_names(must, script, source, allow)
         feedback = mask_names(feedback, script, source, allow)
         weak = mask_names(weak, script, source, allow)
+    if tpl.get("reorder"):
+        seed = f"{len(script or '')}:{(script or '')[:80]}"
+        must = reorder_points(must, seed + "m")
+        feedback = reorder_points(feedback, seed + "f")
+        weak = reorder_points(weak, seed + "w")
     return must, feedback, weak, dropped
 
 
