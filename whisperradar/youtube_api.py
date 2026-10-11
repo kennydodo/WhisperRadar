@@ -355,6 +355,8 @@ def discover_channels(client: Client, query: str, watched: set[str],
             subs = (None if st.get("hiddenSubscriberCount")
                     else int(st.get("subscriberCount", 0) or 0))
             c.update({"subscribers": subs,
+                      "default_language": (item.get("snippet", {})
+                                           .get("defaultLanguage") or ""),
                       "videos": int(st.get("videoCount", 0) or 0),
                       "views": int(st.get("viewCount", 0) or 0),
                       "about": (item.get("snippet", {})

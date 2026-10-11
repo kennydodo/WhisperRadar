@@ -5,15 +5,28 @@
 <body><main><a href="/watched">← Watched Channels</a> · <a href="/research?tab=channels">Research</a>
 <h1>Find similar channels</h1><p>Starting from <strong>{{ channel.name }}</strong>.</p>
 <div class="panel"><p>The suggested topic comes from this channel's stored video titles. Edit it to focus the search.</p>
-<form method="post"><label for="query">Search topic</label><br><input id="query" name="q" value="{{ query }}" required maxlength="200"> <button>Find similar channels</button></form>
-<p class="muted">Uses the configured YouTube API key and its search quota. Results exclude channels you already watch. Matches reflect topics, not a verified match of visual style.</p>
+<form method="post"><label for="query">Search topic</label><br><input id="query" name="q" value="{{ query }}" required maxlength="200">
+{% for key,value in filters.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<button>{{ 'Search again' if searched else 'Search YouTube' }}</button></form>
+<p class="muted">Only this search button uses API quota. Opening this page and filtering saved results make no API requests. Matches reflect topics, not a verified match of visual style.</p>
+<p>Quota tracked by WhisperRadar today: {{ quota_used }} units used · {{ quota_left }} units available before its safety stop. A fresh search normally uses 101 units. Usage by other apps is not included; the quota day resets at midnight Pacific time.</p>
+<p>Last search: {{ searched_at or ('Earlier saved search (date unavailable)' if searched else 'Not searched yet') }}{% if searched_at %} (UTC){% endif %}.</p>
 <a href="{{ youtube_search }}" target="_blank" rel="noopener">Search this topic on YouTube</a>
-{% if error %}<p class="error" role="alert">{{ error }}</p><p>Set your YouTube API key in Research → Channels, or use the YouTube search link above.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <details><summary>Titles used to suggest this topic</summary><ul>{% for title in titles %}<li>{{ title }}</li>{% else %}<li>No stored video titles yet. Enter a topic for this channel.</li>{% endfor %}</ul></details></div>
+<div class="panel"><h2>Filter saved results</h2><form method="get" style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+{% for key,label in [('min_subs','Minimum subscribers'),('max_subs','Maximum subscribers'),('min_videos','Minimum published videos'),('max_videos','Maximum published videos')] %}
+<label>{{ label }}<br><input type="number" name="{{ key }}" value="{{ filters[key] }}" min="0" step="1" style="width:150px"></label>{% endfor %}
+<label>Hidden subscriber counts<br><select name="hidden"><option value="exclude" {{ 'selected' if filters.hidden == 'exclude' }}>Exclude</option><option value="include" {{ 'selected' if filters.hidden == 'include' }}>Include</option></select></label>
+<label>Language<br><select name="language"><option value="en" {{ 'selected' if filters.language == 'en' }}>English only</option><option value="all" {{ 'selected' if filters.language == 'all' }}>All / uncertain languages</option></select></label>
+<button>Apply filters</button></form><p>{{ matches|length }} shown from {{ saved_count }} saved channels not already watched. Filtering costs no quota. Clear a limit to remove it.</p>
+<p class="muted">English is checked from channel metadata or estimated from saved titles and descriptions. Spoken language is not verified. Uncertain or mixed-language channels are hidden in English-only mode; results remain saved.</p>
+{% if history %}<details><summary>Saved search history ({{ history|length }})</summary><ul>{% for item in history|reverse %}<li>{{ item.query }} · {{ item.searched_at or 'Date unavailable' }}{% if item.searched_at %} (UTC){% endif %} · {{ item.channels|length }} results retained</li>{% endfor %}</ul></details>{% endif %}</div>
 {% for c in matches %}<section class="panel"><h2><a href="https://www.youtube.com/channel/{{ c.channel_id }}" target="_blank" rel="noopener">{{ c.name }}</a></h2>
 <p class="muted">{{ c.subscribers if c.subscribers is not none else 'Hidden' }} subscribers · {{ c.videos }} videos</p>
+<p class="muted">{{ c.language_label }}</p>
 <p>{{ c.about }}</p><p>Shared topic words: {{ c.shared|join(', ') or 'Found by the topic search; review the examples below.' }}</p>
 <ul>{% for v in c.sample[:3] %}<li><a href="https://www.youtube.com/watch?v={{ v.video_id }}" target="_blank" rel="noopener">{{ v.title }}</a></li>{% endfor %}</ul>
 <form action="/channels/add" method="post"><input type="hidden" name="url" value="{{ c.channel_id }}"><input type="hidden" name="name" value="{{ c.name }}"><input type="hidden" name="kind" value="similar"><input type="hidden" name="genre" value="{{ channel.genre }}"><input type="hidden" name="return" value="{{ return_url }}"><button>Watch this channel</button></form></section>
-{% else %}{% if searched %}<p>No new channels found. Try a broader topic.</p>{% else %}<p>Click Find similar channels to search for new channels.</p>{% endif %}{% endfor %}
+{% else %}{% if searched %}<p>No saved channels match these filters. Adjust the filters before spending quota on another search.</p>{% else %}<p>Click Search YouTube to discover channels and save the results.</p>{% endif %}{% endfor %}
 </main></body></html>
