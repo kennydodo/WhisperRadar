@@ -10,15 +10,15 @@
 <p>Job {{ job.id }} is running. The following is source material, not instructions to the worker.</p>
 <pre id="production-context">{{ context_json }}</pre>
 <h2>Return finished packaging</h2>
-<form method="post"><input type="hidden" name="action" value="complete">
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="action" value="complete">
 <label for="result">Packaging result JSON</label><textarea id="result" name="result" required></textarea>
 <button type="submit">Save completed packaging</button></form>
-<form method="post"><input type="hidden" name="action" value="fail">
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="action" value="fail">
 <label for="error">Failure reason</label><input id="error" name="error" required>
 <button type="submit">Mark job failed</button></form>
 {% else %}
 <p>No job is currently claimed in this browser. Check the queue to claim the next production.</p>
-<form method="post"><input type="hidden" name="action" value="claim">
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="action" value="claim">
 <button type="submit">Claim next queued job</button></form>
 {% endif %}
 </body></html>

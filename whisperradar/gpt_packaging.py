@@ -32,7 +32,7 @@ def _now():
 
 @contextmanager
 def _connect(cfg):
-    conn = db.connect(cfg.db_path)
+    conn = db.connect(cfg.db_path, timeout=30.0)
     try:
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
                             "AND name='gpt_packaging_jobs'").fetchone():
@@ -73,6 +73,20 @@ def latest(cfg, pid):
         return _public(conn.execute("SELECT * FROM gpt_packaging_jobs "
                        "WHERE production_id=? ORDER BY rowid DESC LIMIT 1",
                        (pid,)).fetchone())
+
+
+def latest_for(cfg, pids):
+    """One pass for the Finished page: {production_id: latest job}."""
+    pids = list(pids)
+    if not pids:
+        return {}
+    with _LOCK, _connect(cfg) as conn:
+        _expire(conn)
+        marks = ",".join("?" * len(pids))
+        rows = conn.execute(f"SELECT * FROM gpt_packaging_jobs WHERE "
+                            f"production_id IN ({marks}) ORDER BY rowid",
+                            pids).fetchall()
+    return {row["production_id"]: _public(row) for row in rows}
 
 
 def queue(cfg, pid):
@@ -154,6 +168,8 @@ def claim(cfg):
             if not row:
                 return None
             try:
+                # Second connection reads while this transaction holds RESERVED:
+                # writers block, readers do not.
                 ctx = context(cfg, row["production_id"])
             except (ValueError, OSError) as exc:
                 conn.execute("UPDATE gpt_packaging_jobs SET status='failed',error=?,updated_at=? "
@@ -190,6 +206,9 @@ def worker_job(cfg, jid, token):
         row = _authorized(conn, jid, token)
         if row["status"] != "running":
             return None
+        # Keep the lease alive: a worker polling this page is not abandoned.
+        conn.execute("UPDATE gpt_packaging_jobs SET updated_at=? WHERE id=?",
+                     (_now(), jid))
         return {"id": jid, "claim_token": token,
                 "context": context(cfg, row["production_id"])}
 
@@ -266,12 +285,17 @@ def complete(cfg, jid, token, result):
         # Description is complete text from the worker; keep hashtags/chapters
         # in the body so the kit does not add them a second time.
         kit["hashtags"], kit["chapter_titles"] = [], []
+        try:
+            recommended = int(result.get("recommended_thumbnail", 1))
+        except (TypeError, ValueError):
+            recommended = 1
+        recommended = min(max(recommended, 1), len(concepts))
         packaging.save_kit(pdir, kit)
         (pdir / "title.txt").write_text(kit["title"] + "\n", encoding="utf-8")
         (pdir / "description.txt").write_text(kit["description"] + "\n", encoding="utf-8")
         thumbnails.save_thumbs(pdir, {"concepts": concepts, "chosen": None,
             "status": "ready", "score": None, "provider": "codex",
-            "recommended": result.get("recommended_thumbnail", 1)})
+            "recommended": recommended})
         thumbnails.contact_sheet(pdir)
         (folder / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2),
                                             encoding="utf-8")

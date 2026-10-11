@@ -2,8 +2,10 @@
 
 No image engine, browser or paid API is called by these tests.
 """
+import datetime as dt
 import json
 import os
+import re
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -99,15 +101,24 @@ class GPTPackagingTests(unittest.TestCase):
 
     def test_browser_worker_claim_resume_and_import(self):
         gp.queue(self.cfg, self.pid)
-        page = self.client.post("/gpt-pro/worker", data={"action": "claim"})
+        token = re.search(rb'name="csrf" value="([^"]+)"',
+                          self.client.get("/gpt-pro/worker").data).group(1).decode()
+        page = self.client.post("/gpt-pro/worker", data={"action": "claim",
+                                                         "csrf": token})
         self.assertIn(b"production-context", page.data)
         self.assertIn(b"Final script about preserving food.", page.data)
         self.assertIn(b"Packaging result JSON", self.client.get("/gpt-pro/worker").data)
         page = self.client.post("/gpt-pro/worker", data={"action": "complete",
-                               "result": json.dumps(self.result())})
+                               "csrf": token, "result": json.dumps(self.result())})
         self.assertIn(b"Completed", page.data)
         self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "complete")
         self.assertIn(b"Claim next queued job", self.client.get("/gpt-pro/worker").data)
+
+    def test_worker_post_without_csrf_token_is_rejected(self):
+        gp.queue(self.cfg, self.pid)
+        self.assertEqual(self.client.post("/gpt-pro/worker",
+                           data={"action": "claim"}).status_code, 403)
+        self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "queued")
 
     def test_browser_worker_rejects_proxy_and_remote_access(self):
         response = self.client.get("/gpt-pro/worker", headers={
@@ -181,6 +192,41 @@ class GPTPackagingTests(unittest.TestCase):
         conn.close()
         self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "failed")
         self.assertEqual(gp.queue(self.cfg, self.pid)["status"], "queued")
+
+    def _age_claim(self, jid, seconds):
+        aged = (dt.datetime.now(dt.timezone.utc)
+                - dt.timedelta(seconds=seconds)).isoformat(timespec="seconds")
+        conn = db.connect(self.cfg.db_path)
+        conn.execute("UPDATE gpt_packaging_jobs SET updated_at=? WHERE id=?",
+                     (aged, jid))
+        conn.commit()
+        conn.close()
+
+    def test_page_poll_keeps_lease_alive(self):
+        job = self.job()
+        self._age_claim(job["id"], gp.LEASE_SECONDS - 60)
+        self.assertIsNotNone(gp.worker_job(self.cfg, job["id"], job["claim_token"]))
+        self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "running")
+
+    def test_abandoned_claim_still_expires(self):
+        job = self.job()
+        self._age_claim(job["id"], gp.LEASE_SECONDS + 60)
+        self.assertIsNone(gp.worker_job(self.cfg, job["id"], job["claim_token"]))
+        self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "failed")
+
+    def test_complete_description_skips_chapter_and_hashtag_faults(self):
+        job = self.job()
+        gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
+        kit = packaging.load_kit(self.pdir)
+        self.assertTrue(kit["description_complete"])
+        self.assertEqual(packaging.local_faults(kit, [{"start": 0}]), [])
+
+    def test_recommended_thumbnail_is_clamped(self):
+        job = self.job()
+        result = self.result()
+        result["recommended_thumbnail"] = 9
+        gp.complete(self.cfg, job["id"], job["claim_token"], result)
+        self.assertEqual(thumbnails.load_thumbs(self.pdir)["recommended"], 3)
 
 
 if __name__ == "__main__":

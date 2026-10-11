@@ -10,8 +10,10 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import socket
+import sqlite3
 import subprocess
 import threading
 import time
@@ -2618,12 +2620,15 @@ def create_app(cfg) -> Flask:
         # inside a selected channel the page shows that channel's videos only
         # (?all=1 shows every channel)
         scope = None if request.args.get("all") else _selected_channel()
+        rows = [p for p in db.list_productions(conn)
+                if p["status"] in ("ready", "published")
+                and (scope is None or (p["own_channel_id"] or 0) == scope)]
+        try:
+            gpt_jobs = gpt_packaging.latest_for(cfg, [p["id"] for p in rows])
+        except (ValueError, OSError, sqlite3.Error):
+            gpt_jobs = {}
         all_items, ready_count, published_count = [], 0, 0
-        for p in db.list_productions(conn):
-            if p["status"] not in ("ready", "published"):
-                continue
-            if scope is not None and (p["own_channel_id"] or 0) != scope:
-                continue
+        for p in rows:
             if p["status"] == "ready":
                 ready_count += 1
             else:
@@ -2640,7 +2645,7 @@ def create_app(cfg) -> Flask:
                 "row": p,
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
-                "gpt_job": gpt_packaging.latest(cfg, p["id"]),
+                "gpt_job": gpt_jobs.get(p["id"]),
             })
         due_results = len(results_mod.due(conn))
         conn.close()
@@ -2678,7 +2683,7 @@ def create_app(cfg) -> Flask:
             return redirect("/finished?msg=" + quote(
                 "GPT Pro job " + job["status"] +
                 ". Codex picks up queued jobs on its scheduled check."))
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
             return redirect("/finished?error=" + quote(str(exc)))
 
     def _gpt_worker_only(require_header=True):
@@ -2694,6 +2699,11 @@ def create_app(cfg) -> Flask:
     @app.route("/gpt-pro/worker", methods=["GET", "POST"])
     def gpt_pro_worker():
         _gpt_worker_only(require_header=False)
+        csrf = session.get("gpt_worker_csrf")
+        if not csrf:
+            csrf = session["gpt_worker_csrf"] = secrets.token_urlsafe(24)
+        if request.method == "POST" and request.form.get("csrf") != csrf:
+            abort(403)
         saved = session.get("gpt_packaging_claim") or {}
         job, result, error = None, None, ""
         try:
@@ -2715,15 +2725,19 @@ def create_app(cfg) -> Flask:
                 session["gpt_packaging_claim"] = {"id": job["id"], "token": job["claim_token"]}
             else:
                 session.pop("gpt_packaging_claim", None)
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
             error = str(exc)
         return render_template("gpt_worker.html", job=job, result=result, error=error,
+            csrf_token=csrf,
             context_json=json.dumps(job["context"], ensure_ascii=False, indent=2) if job else "")
 
     @app.post("/gpt-pro/jobs/claim")
     def gpt_pro_claim():
         _gpt_worker_only()
-        return jsonify(job=gpt_packaging.claim(cfg))
+        try:
+            return jsonify(job=gpt_packaging.claim(cfg))
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            return jsonify(error=str(exc)), 400
 
     @app.post("/gpt-pro/jobs/<jid>/complete")
     def gpt_pro_complete(jid):
@@ -2732,7 +2746,7 @@ def create_app(cfg) -> Flask:
         try:
             saved = gpt_packaging.complete(cfg, jid, body.get("claim_token"), body.get("result"))
             return jsonify(result=saved)
-        except (ValueError, OSError) as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
             return jsonify(error=str(exc)), 400
 
     @app.post("/gpt-pro/jobs/<jid>/fail")
@@ -2743,7 +2757,7 @@ def create_app(cfg) -> Flask:
             job = gpt_packaging.fail(cfg, jid, body.get("claim_token"),
                                      body.get("error") or "Codex generation did not finish")
             return jsonify(job=job)
-        except ValueError as exc:
+        except (ValueError, OSError, sqlite3.Error) as exc:
             return jsonify(error=str(exc)), 400
 
     @app.post("/studio/<int:pid>/publish")

@@ -237,22 +237,24 @@ def checks(kit: dict, chapters: list[dict]) -> list[dict]:
         f"description has substance (200+ characters; {len(desc)})")
     add(len(desc) <= 4500, "fix", "description is under 4500 characters")
     hs = kit.get("hashtags") or []
-    add(HASHTAGS[0] <= len(hs) <= HASHTAGS[1], "fix",
-        f"{HASHTAGS[0]}-{HASHTAGS[1]} hashtags ({len(hs)})")
-    add(all(len(h) <= 30 for h in hs), "fix", "hashtags are short (30 or less)")
+    if not kit.get("description_complete"):  # body already carries them
+        add(HASHTAGS[0] <= len(hs) <= HASHTAGS[1], "fix",
+            f"{HASHTAGS[0]}-{HASHTAGS[1]} hashtags ({len(hs)})")
+        add(all(len(h) <= 30 for h in hs), "fix", "hashtags are short (30 or less)")
     tags = kit.get("tags") or []
     add(sum(len(t) + 1 for t in tags) <= TAG_CHARS, "fix",
         f"tags fit in {TAG_CHARS} characters")
     add(len(tags) >= 5, "tip", f"at least 5 tags ({len(tags)})")
     if chapters:
-        names = kit.get("chapter_titles") or []
         add(len(chapters) >= CHAPTER_MIN, "tip",
             f"{CHAPTER_MIN}+ chapters ({len(chapters)})")
-        add(len(names) >= len(chapters) and all(n.strip() for n in
-                                                names[:len(chapters)]),
-            "fix", "every chapter has a title")
-        add(all(len(n) <= CHAPTER_TITLE_MAX for n in names), "tip",
-            f"chapter titles are at most {CHAPTER_TITLE_MAX} characters")
+        if not kit.get("description_complete"):  # titles live in the body
+            names = kit.get("chapter_titles") or []
+            add(len(names) >= len(chapters) and all(n.strip() for n in
+                                                    names[:len(chapters)]),
+                "fix", "every chapter has a title")
+            add(all(len(n) <= CHAPTER_TITLE_MAX for n in names), "tip",
+                f"chapter titles are at most {CHAPTER_TITLE_MAX} characters")
         gaps = [b["start"] - a["start"]
                 for a, b in zip(chapters, chapters[1:])]
         add(all(g >= CHAPTER_GAP for g in gaps), "fix",
