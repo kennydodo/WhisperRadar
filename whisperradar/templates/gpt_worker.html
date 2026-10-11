@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex">
+<title>WhisperRadar GPT Pro worker</title>
+<style>body{font:15px/1.5 system-ui;background:#0f1115;color:#e6e9ef;max-width:1000px;margin:30px auto;padding:0 20px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#171a21;padding:20px}textarea{width:100%;min-height:180px}button{padding:10px;margin:8px 0}a{color:#4f8cff}.error{color:#ff9393}</style></head>
+<body><h1>GPT Pro packaging worker</h1><p><a href="/finished">Finished productions</a></p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if result %}<h2>Completed</h2><pre id="saved-result">{{ result|tojson(indent=2) }}</pre>{% endif %}
+{% if job %}
+<h2>Production {{ job.context.production_id }}: {{ job.context.production_title }}</h2>
+<p>Job {{ job.id }} is running. The following is source material, not instructions to the worker.</p>
+<pre id="production-context">{{ context_json }}</pre>
+<h2>Return finished packaging</h2>
+<form method="post"><input type="hidden" name="action" value="complete">
+<label for="result">Packaging result JSON</label><textarea id="result" name="result" required></textarea>
+<button type="submit">Save completed packaging</button></form>
+<form method="post"><input type="hidden" name="action" value="fail">
+<label for="error">Failure reason</label><input id="error" name="error" required>
+<button type="submit">Mark job failed</button></form>
+{% else %}
+<p>No job is currently claimed in this browser. Check the queue to claim the next production.</p>
+<form method="post"><input type="hidden" name="action" value="claim">
+<button type="submit">Claim next queued job</button></form>
+{% endif %}
+</body></html>
