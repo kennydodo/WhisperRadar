@@ -28,6 +28,10 @@ import { pauseForEnter } from '../src/lib/prompt.js';
 
 const STAGE_DIR = 'debug';
 
+function escapeRe(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function shot(page, tag) {
   const file = path.join(ROOT, STAGE_DIR, `video-${slugify(tag)}-${timestampSlug()}.png`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -36,7 +40,8 @@ async function shot(page, tag) {
 }
 
 async function clickRadio(page, label) {
-  const radio = page.getByRole('radio', { name: new RegExp(`^\\s*${label}\\s*$`, 'i') }).first();
+  // Accessible names can carry an icon word ("360p info"), so match the label as a whole word.
+  const radio = page.getByRole('radio', { name: new RegExp(`(^|\\s)${label}(\\s|$)`, 'i') }).first();
   if ((await radio.count().catch(() => 0)) === 0) return false;
   if ((await radio.getAttribute('aria-checked').catch(() => null)) === 'true') return true;
   await radio.click({ timeout: 5000 }).catch(() => {});
@@ -99,32 +104,67 @@ async function attachStartFrame(driver, page, imagePath) {
   await sleep(800);
   await shot(page, 'start-clicked');
 
+  const base = path.basename(imagePath);
+  const stem = base.replace(/\.[a-z0-9]+$/i, '');
+  const rowFor = () =>
+    page
+      .locator("button.asset-item[role='option']")
+      .filter({ has: page.locator('span.asset-title', { hasText: new RegExp(`^\\s*(${escapeRe(base)}|${escapeRe(stem)})\\s*$`, 'i') }) })
+      .first();
+  const search = async (text) => {
+    const box = page.locator("input[aria-label='Search assets']").first();
+    if ((await box.count().catch(() => 0)) === 0) return;
+    await box.fill(text).catch(() => {});
+    await sleep(1200);
+  };
+
+  // The picker keeps whatever was selected last time (the previous run's frame!), so
+  // "Add to prompt" alone would attach the OLD image. Always select the wanted file by name.
   if (!chooser) {
-    // Library path: same "Upload media" button as the ingredient picker.
-    const upload = page.getByRole('button', { name: /upload\s*media/i }).first();
-    if ((await upload.count().catch(() => 0)) === 0) {
-      throw new Error(
-        'Clicking "Start" opened neither a file chooser nor an asset library with "Upload media". ' +
-          'See debug/video-start-clicked-*.png and tell Claude what it shows.',
-      );
+    await search(stem);
+    if ((await rowFor().count().catch(() => 0)) === 0) {
+      log.info(`"${base}" is not in the project yet; uploading it.`);
+      const upload = page.getByRole('button', { name: /upload\s*media/i }).first();
+      if ((await upload.count().catch(() => 0)) === 0) {
+        throw new Error('The frame picker has no "Upload media" button. See debug/video-start-clicked-*.png.');
+      }
+      const second = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+      await upload.click({ timeout: 8000 });
+      chooser = await second;
     }
-    const second = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
-    await upload.click({ timeout: 8000 });
-    chooser = await second;
   }
   if (chooser) {
     await chooser.setFiles(imagePath);
-  } else {
-    const input = await driver.waitForFileInput(8000);
-    if (!input) throw new Error('No file input appeared after "Upload media".');
-    await input.setInputFiles(imagePath);
+    const until = Date.now() + 120000;
+    await sleep(2500);
+    while (Date.now() < until && (await rowFor().count().catch(() => 0)) === 0) {
+      await search(stem);
+    }
   }
-  await driver.waitForUploadToSettle({ expected: 1 });
-  if (await driver.pickerIsOpen()) {
-    const add = await driver.findByText('Add to prompt', { timeout: 6000, required: false });
-    if (add) await add.locator.click();
-    await sleep(1200);
+  const row = rowFor();
+  if ((await row.count().catch(() => 0)) === 0) {
+    await shot(page, 'frame-not-found');
+    throw new Error(`Could not find "${base}" in the frame picker after upload.`);
   }
+  await row.click({ timeout: 8000 });
+  await sleep(900);
+  const selected = await row.getAttribute('aria-selected').catch(() => null);
+  log.info(`Picked "${base}" in the frame picker (aria-selected=${selected}).`);
+  await shot(page, 'picked');
+  // The preview loads for a while after an upload; "Add to prompt" stays disabled until it does.
+  const addButton = page.getByRole('button', { name: /add to prompt/i }).first();
+  const addDeadline = Date.now() + 90000;
+  while (Date.now() < addDeadline) {
+    if ((await addButton.count().catch(() => 0)) > 0 && (await addButton.isEnabled().catch(() => false))) break;
+    await sleep(700);
+  }
+  if (!(await addButton.isEnabled().catch(() => false))) {
+    await shot(page, 'add-disabled');
+    throw new Error('"Add to prompt" never became enabled (the preview did not load).');
+  }
+  await shot(page, 'picked-ready');
+  await addButton.click({ timeout: 8000 });
+  await sleep(1500);
   await shot(page, 'start-attached');
 }
 
@@ -158,7 +198,6 @@ export async function videoCommand({ flags, context }) {
   const projectUrl = typeof flags['project-url'] === 'string' ? flags['project-url'].trim() : settings.projectUrl;
   if (!image || !fs.existsSync(image)) throw new Error('Missing or unreadable --image <file>.');
   if (!prompt) throw new Error('Missing --prompt "<motion description>".');
-  if (!projectUrl) throw new Error('Missing --project-url <Flow project URL>.');
 
   const opts = {
     model: typeof flags.model === 'string' ? flags.model : 'Omni 1.1 Flash',
@@ -175,11 +214,23 @@ export async function videoCommand({ flags, context }) {
   const driver = new FlowDriver({ page, context: browserContext, selectors: context.selectors, settings });
   const videoResponses = watchVideoResponses(page);
   try {
-    await driver.openProject(projectUrl);
+    if (projectUrl) {
+      await driver.openProject(projectUrl);
+    } else {
+      // No URL: open the project list and create (or reuse by name) a test project.
+      await driver.goto();
+      await driver.ensureProject('WhisperRadar motion tests');
+      log.info(`Using project ${page.url()} - pass it as --project-url next time.`);
+    }
     await configure(driver, page, opts);
     await attachStartFrame(driver, page, image);
     await driver.setPrompt(prompt);
     await shot(page, 'ready');
+    if (flags.generate === false) {
+      log.info('--no-generate: stopping before Generate (no credits used). Check debug/video-picked-*.png and video-ready-*.png.');
+      if (flags['keep-open'] === true) await pauseForEnter('Browser left open (--keep-open).');
+      return 0;
+    }
 
     const knownSources = new Set(await pageVideoSources(page));
     const knownResponses = new Set(videoResponses.keys());
