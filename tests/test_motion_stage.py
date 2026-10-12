@@ -75,5 +75,27 @@ class DeadProjectTests(unittest.TestCase):
         self.assertFalse(studio._flow_project_is_dead(["INFO all good"]))
 
 
+class ForgetProjectTests(unittest.TestCase):
+    def test_clears_the_stored_project(self):
+        import types
+        with tempfile.TemporaryDirectory() as d:
+            cfg = types.SimpleNamespace(db_path=Path(d) / "t.db")
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn) if hasattr(db, "init_db") else None
+            pid = db.create_production(conn, title="x") \
+                if hasattr(db, "create_production") else None
+            if pid is None:
+                conn.close()
+                self.skipTest("no production helper")
+            db.update_production(conn, pid, flow_project_url="https://f/p/1",
+                                flow_project_id="1")
+            conn.close()
+            studio.forget_flow_project(cfg, pid)
+            conn = db.connect(cfg.db_path)
+            row = db.get_production(conn, pid)
+            conn.close()
+            self.assertIsNone(row["flow_project_url"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1167,6 +1167,22 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
     return job_path
 
 
+def forget_flow_project(cfg, pid: int) -> None:
+    """Drop the production's stored Flow project (deleted, or another Google
+    account's), so the next stage creates a fresh one and records it."""
+    from . import db
+    try:
+        conn = db.connect(cfg.db_path)
+        try:
+            db.update_production(conn, pid, flow_project_url=None,
+                                 flow_project_id=None)
+        finally:
+            conn.close()
+    except Exception:           # never let tidy-up break a render
+        logging.getLogger(__name__).warning(
+            "could not clear the stored Flow project for production %s", pid)
+
+
 def _flow_project_is_dead(tail) -> bool:
     """True when FlowBatch's output says the Flow project is gone / not ours."""
     text = " ".join(tail or []).lower()
@@ -1214,6 +1230,7 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
         _safe_log(log, "refs: the stored Flow project is not available - "
                        "creating a new one")
         cmd = [a for a in cmd if a not in ("--project-url", url)]
+        forget_flow_project(cfg, pid)
         code, tail = _flowbatch_stream(cmd, repo, log, cancel)
     if code != 0:
         raise RuntimeError(
