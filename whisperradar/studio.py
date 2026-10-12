@@ -1167,6 +1167,13 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
     return job_path
 
 
+def _flow_project_is_dead(tail) -> bool:
+    """True when FlowBatch's output says the Flow project is gone / not ours."""
+    text = " ".join(tail or []).lower()
+    return "reports this project as unavailable" in text \
+        or "reason=project" in text
+
+
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                        log=None, cancel=None, upscale: int | None = None) -> dict:
     """Render the missing reference images with FlowBatch, then place them
@@ -1201,6 +1208,13 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                    f"(upscale tier {tier})")
     _safe_log(log, "$ " + " ".join(cmd))
     code, tail = _flowbatch_stream(cmd, repo, log, cancel)
+    if code != 0 and url and _flow_project_is_dead(tail):
+        # the stored project was deleted or belongs to another Google account:
+        # make the refs in a NEW project (the images stage does the same)
+        _safe_log(log, "refs: the stored Flow project is not available - "
+                       "creating a new one")
+        cmd = [a for a in cmd if a not in ("--project-url", url)]
+        code, tail = _flowbatch_stream(cmd, repo, log, cancel)
     if code != 0:
         raise RuntimeError(
             f"reference generation failed (exit {code}): "

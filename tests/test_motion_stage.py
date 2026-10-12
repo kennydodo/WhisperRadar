@@ -67,5 +67,13 @@ class WindowClipTests(unittest.TestCase):
         self.assertEqual(len(self._clips(30)), 2)
 
 
+class DeadProjectTests(unittest.TestCase):
+    def test_dead_project_output_is_recognised(self):
+        self.assertTrue(studio._flow_project_is_dead(
+            ["ERROR Flow reports this project as unavailable "
+             "(https://flow.google.com/404?reason=project)."]))
+        self.assertFalse(studio._flow_project_is_dead(["INFO all good"]))
+
+
 if __name__ == "__main__":
     unittest.main()
