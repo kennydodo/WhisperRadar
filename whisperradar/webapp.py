@@ -237,6 +237,7 @@ class _Job:
 
         def worker():
             _job_tls.job = self
+            db.start_step_clock()
             try:
                 fn()
                 self.log.append(f"=== {kind}: finished ===")

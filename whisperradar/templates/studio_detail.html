@@ -1181,7 +1181,7 @@
         <span class="badge done">{{ h["stage"] }}</span>
         <span class="muted">{{ h["method"] }}</span>
         <span class="detail">{{ h["detail"] }}</span>
-        <span class="muted" style="float:right">{{ h["created_at"] }}</span>
+        <span class="muted" style="float:right">{% if h["duration_seconds"] %}took {{ h["duration_seconds"]|dur }} &middot; {% endif %}{{ h["created_at"] }}</span>
       </li>
       {% else %}
       <li class="muted">No steps recorded yet.</li>

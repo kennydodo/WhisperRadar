@@ -2,6 +2,8 @@
 
 import json
 import sqlite3
+import threading
+import time
 from pathlib import Path
 
 SCHEMA = """
@@ -285,6 +287,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          # {"motion.easing": ...}; NULL = inherit the global ones
                          ("video_options", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
+    # how long a recorded step took (seconds); NULL for steps recorded before
+    # this existed or outside a job
+    _add_column_if_missing(conn, "production_steps", "duration_seconds", "REAL")
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_id", "TEXT")
@@ -990,6 +995,25 @@ def mark_production_published(conn, pid: int, published: bool = True) -> None:
     conn.commit()
 
 
+# Step timing: a job thread calls start_step_clock() when it starts; every
+# add_step() on that thread then records the time since the clock was last
+# started or the previous step on the thread finished, whichever is later.
+_STEP_CLOCK = threading.local()
+
+
+def start_step_clock() -> None:
+    _STEP_CLOCK.t = time.time()
+
+
+def _step_duration() -> float | None:
+    start = getattr(_STEP_CLOCK, "t", None)
+    if start is None:
+        return None
+    now = time.time()
+    _STEP_CLOCK.t = now
+    return round(max(0.0, now - start), 1)
+
+
 def add_step(conn, pid: int, stage: str, method: str = "auto",
              artifact: str | None = None, detail: str = "",
              status: str = "done") -> None:
@@ -1004,9 +1028,9 @@ def add_step(conn, pid: int, stage: str, method: str = "auto",
     History panel showing times that don't match the PC's clock)."""
     conn.execute(
         "INSERT INTO production_steps (production_id, stage, method, status,"
-        " artifact, detail, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))",
-        (pid, stage, method, status, artifact, detail),
+        " artifact, detail, created_at, duration_seconds)"
+        " VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), ?)",
+        (pid, stage, method, status, artifact, detail, _step_duration()),
     )
     conn.commit()
 
