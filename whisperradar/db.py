@@ -885,7 +885,7 @@ def start_run(conn) -> int:
 # ---------------------------------------------------------------- studio ---
 
 STAGES = ["style", "script", "audio", "srt", "shots", "refs", "images",
-          "merge", "review"]
+          "motion", "merge", "review"]
 
 _PROD_FIELDS = {"youtube_video_id", "title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",

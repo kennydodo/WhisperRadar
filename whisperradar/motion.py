@@ -205,3 +205,55 @@ def window_check(data: dict, cues: list[dict], seconds: float, to_seconds,
             f"have no \"ai_motion\" line: {shown}. Every shot there needs one "
             f"short sentence saying what moves and how the camera moves")
     return faults, warnings, assets
+
+
+# ------------------------------------------------------------ motion stage --
+# The MOTION stage (after IMAGES) turns each opening shot's still into one clip.
+
+CLIPS_DIR = "clips"
+
+
+def _find_image(images_dir, asset: str):
+    """The rendered image for a shotlist asset (extension may differ)."""
+    from pathlib import Path
+    stem = Path(asset).stem.lower()
+    try:
+        for p in Path(images_dir).iterdir():
+            if p.is_file() and p.stem.lower() == stem:
+                return p
+    except OSError:
+        pass
+    return None
+
+
+def window_clips(data: dict, cues: list[dict], seconds: float, to_seconds,
+                 pdir) -> list[dict]:
+    """The clips the opening needs: [{asset, image, prompt, out}] in shot order.
+
+    A shot qualifies when it starts inside the window and has an "ai_motion"
+    line. `image` is None while the still is not rendered yet."""
+    from pathlib import Path
+    pdir = Path(pdir)
+    _faults, _warnings, assets = window_check(data, cues, seconds, to_seconds)
+    out, seen = [], set()
+    for s in data.get("shots") or []:
+        if not isinstance(s, dict):
+            continue
+        asset = str(s.get("asset") or "")
+        prompt = str(s.get("ai_motion") or "").strip()
+        if not asset or asset not in assets or not prompt \
+                or asset.lower() in seen:
+            continue
+        seen.add(asset.lower())
+        img = _find_image(pdir / "images", asset)
+        out.append({"asset": asset, "image": str(img) if img else None,
+                    "prompt": prompt,
+                    "out": str(pdir / CLIPS_DIR / (Path(asset).stem + ".mp4"))})
+    return out
+
+
+def missing_clips(clips: list[dict]) -> list[dict]:
+    """Clips still to generate (no mp4 on disk yet)."""
+    from pathlib import Path
+    return [c for c in clips if not Path(c["out"]).is_file()
+            or Path(c["out"]).stat().st_size < 10_000]

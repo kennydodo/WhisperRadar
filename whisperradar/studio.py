@@ -2498,6 +2498,46 @@ def image_size_warning(cfg, pid: int, sample: int = 8) -> str:
             f"resolution / Upscale tier)")
 
 
+def run_motion_flowbatch(cfg, pid_dir: Path, pid: int, clips: list[dict],
+                         model: str, log=None, cancel=None,
+                         project_url: str | None = None) -> dict:
+    """Generate image-to-video clips with FlowBatch's `video --job`.
+
+    `clips` are [{image, prompt, out}] still to make. Returns FlowBatch's
+    report {done, failed, stopped, reason}; clips already on disk are never
+    redone. A credit/limit stop is reported, not raised, so the stage can
+    keep what it has and pause for a human."""
+    if not flowbatch_ready(cfg):
+        raise RuntimeError("Set studio.flowbatch_repo in config.yaml to "
+                           "your FlowBatch checkout (and run npm install)")
+    repo = flowbatch_dir(cfg)
+    url, source = flow_project_url_for(cfg, pid, project_url)
+    job = {"model": model, "aspect": "16:9", "projectUrl": url or "",
+           "items": [{"image": c["image"], "prompt": c["prompt"],
+                      "out": c["out"]} for c in clips]}
+    job_path = Path(pid_dir) / "motion_job.json"
+    report_path = Path(pid_dir) / "motion_report.json"
+    job_path.write_text(json.dumps(job, indent=2), encoding="utf-8")
+    report_path.unlink(missing_ok=True)
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flowbatch", log)
+    cmd = _flowbatch_cmd(["video", "--job", str(job_path),
+                          "--report", str(report_path), "--no-color"])
+    if log:
+        _safe_log(log, f"FlowBatch: {len(clips)} clip(s) with {model}"
+                       + (f", Flow project from {source}" if url else ""))
+        _safe_log(log, "$ " + " ".join(cmd))
+    code, tail = _flowbatch_stream(cmd, repo, log, cancel)
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        report = {"done": [], "failed": [], "stopped": True,
+                  "reason": "FlowBatch ended without a report: "
+                            + " ".join(tail[-3:])[:300]}
+    report["code"] = code
+    return report
+
+
 def prepare_project_folder(cfg, pid: int) -> Path:
     """Make the production folder a valid ImgToVideo project folder."""
     pdir = prod_dir(cfg, pid)

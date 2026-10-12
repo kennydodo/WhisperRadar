@@ -191,7 +191,116 @@ async function pageVideoSources(page) {
     .catch(() => []);
 }
 
+/** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout. */
+async function waitAndSave({ driver, page, videoResponses, knownSources, knownResponses, timeoutMs, out }) {
+  const deadline = Date.now() + timeoutMs;
+  let clip = null;
+  while (Date.now() < deadline && !clip) {
+    await sleep(4000);
+    const alert = await driver.freshAlert().catch(() => null);
+    if (alert) {
+      await shot(page, 'refused');
+      throw new Error(`Flow reported a problem: ${JSON.stringify(alert).slice(0, 300)}`);
+    }
+    const sources = (await pageVideoSources(page)).filter((src) => !knownSources.has(src));
+    const fresh = [...videoResponses.keys()].filter((url) => !knownResponses.has(url));
+    clip = [...sources, ...fresh].find((url) => /^https?:/i.test(url)) ?? null;
+  }
+  if (!clip) {
+    await shot(page, 'timeout');
+    throw new Error('No new video appeared before the timeout. See debug/video-timeout-*.png.');
+  }
+  log.info(`Clip URL found: ${clip.slice(0, 120)}...`);
+  const bytes = await driver.fetchBytes(clip);
+  if (!bytes) throw new Error('Found the clip URL but could not download it with the browser session.');
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, bytes);
+  log.ok(`Saved ${path.relative(ROOT, out)} (${(bytes.length / 1048576).toFixed(1)} MB)`);
+  return bytes.length;
+}
+
+/** One clip: attach the start frame, set the prompt, generate, save. */
+async function makeClip(ctx, { image, prompt, out, timeoutMs }) {
+  const { driver, page, videoResponses } = ctx;
+  await attachStartFrame(driver, page, image);
+  await driver.setPrompt(prompt);
+  await shot(page, 'ready');
+  const knownSources = new Set(await pageVideoSources(page));
+  const knownResponses = new Set(videoResponses.keys());
+  await driver.generate();
+  log.info(`Generating - waiting up to ${timeoutMs / 1000}s...`);
+  await shot(page, 'generating');
+  return waitAndSave({ driver, page, videoResponses, knownSources, knownResponses, timeoutMs, out });
+}
+
+/** Veo clips have a fixed length/size; only Omni takes resolution and duration. */
+function modelOptions(flags) {
+  const model = typeof flags.model === 'string' ? flags.model : 'Veo 3.1 - Lite';
+  const omni = /omni/i.test(model);
+  return {
+    model,
+    resolution: typeof flags.resolution === 'string' ? flags.resolution : omni ? '360p' : null,
+    duration: typeof flags.duration === 'string' ? flags.duration : omni ? '4s' : null,
+    aspect: typeof flags.aspect === 'string' ? flags.aspect : '16:9',
+  };
+}
+
+const OUT_OF_CREDITS = /credit|quota|limit|insufficient|upgrade/i;
+
+/** --job <json>: many clips in one browser session. Writes --report when asked. */
+async function runJob(flags, context) {
+  const { settings } = context;
+  const job = JSON.parse(fs.readFileSync(path.resolve(flags.job), 'utf8'));
+  const items = Array.isArray(job.items) ? job.items : [];
+  const reportPath = typeof flags.report === 'string' ? path.resolve(flags.report) : null;
+  const projectUrl = (typeof flags['project-url'] === 'string' ? flags['project-url'] : job.projectUrl || settings.projectUrl || '').trim();
+  const opts = modelOptions({ ...flags, model: flags.model ?? job.model, aspect: flags.aspect ?? job.aspect });
+  const timeoutMs = intFlag(flags, 'timeout', 600) * 1000;
+  const report = { done: [], failed: [], stopped: false, reason: '' };
+  const save = () => reportPath && fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+
+  const { context: browserContext, page } = await launchSession(settings);
+  const driver = new FlowDriver({ page, context: browserContext, selectors: context.selectors, settings });
+  const videoResponses = watchVideoResponses(page);
+  try {
+    if (projectUrl) await driver.openProject(projectUrl);
+    else await driver.ensureProject('WhisperRadar motion');
+    await configure(driver, page, opts);
+    let streak = 0;
+    for (const [i, item] of items.entries()) {
+      if (fs.existsSync(item.out) && fs.statSync(item.out).size > 10000) {
+        report.done.push(item.out);
+        continue;
+      }
+      log.info(`Clip ${i + 1}/${items.length}: ${path.basename(item.image)}`);
+      try {
+        await makeClip({ driver, page, videoResponses }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
+        report.done.push(item.out);
+        streak = 0;
+      } catch (error) {
+        const message = String(error.message ?? error);
+        log.error(message);
+        report.failed.push({ out: item.out, error: message });
+        streak += 1;
+        if (OUT_OF_CREDITS.test(message) || streak >= 2) {
+          report.stopped = true;
+          report.reason = OUT_OF_CREDITS.test(message) ? `Flow stopped the batch: ${message.slice(0, 200)}` : `${streak} clips failed in a row: ${message.slice(0, 200)}`;
+          break;
+        }
+      }
+      save();
+    }
+    if (report.failed.length && !report.stopped) report.reason = `${report.failed.length} clip(s) failed`;
+    save();
+    return report.failed.length ? 1 : 0;
+  } finally {
+    save();
+    await closeSession(browserContext);
+  }
+}
+
 export async function videoCommand({ flags, context }) {
+  if (typeof flags.job === 'string') return runJob(flags, context);
   const { settings } = context;
   const image = typeof flags.image === 'string' ? path.resolve(flags.image) : null;
   const prompt = typeof flags.prompt === 'string' ? flags.prompt.trim() : '';
@@ -199,12 +308,7 @@ export async function videoCommand({ flags, context }) {
   if (!image || !fs.existsSync(image)) throw new Error('Missing or unreadable --image <file>.');
   if (!prompt) throw new Error('Missing --prompt "<motion description>".');
 
-  const opts = {
-    model: typeof flags.model === 'string' ? flags.model : 'Omni 1.1 Flash',
-    resolution: typeof flags.resolution === 'string' ? flags.resolution : '360p',
-    duration: typeof flags.duration === 'string' ? flags.duration : '4s',
-    aspect: typeof flags.aspect === 'string' ? flags.aspect : '16:9',
-  };
+  const opts = modelOptions(flags);
   const timeoutMs = intFlag(flags, 'timeout', 600) * 1000;
   const out = path.resolve(
     typeof flags.out === 'string' ? flags.out : path.join('output', 'video-test', `${slugify(path.basename(image))}.mp4`),
@@ -214,53 +318,17 @@ export async function videoCommand({ flags, context }) {
   const driver = new FlowDriver({ page, context: browserContext, selectors: context.selectors, settings });
   const videoResponses = watchVideoResponses(page);
   try {
-    if (projectUrl) {
-      await driver.openProject(projectUrl);
-    } else {
-      // No URL: open the project list and create (or reuse by name) a test project.
-      await driver.goto();
-      await driver.ensureProject('WhisperRadar motion tests');
-      log.info(`Using project ${page.url()} - pass it as --project-url next time.`);
-    }
+    if (projectUrl) await driver.openProject(projectUrl);
+    else await driver.ensureProject('WhisperRadar motion tests');
     await configure(driver, page, opts);
-    await attachStartFrame(driver, page, image);
-    await driver.setPrompt(prompt);
-    await shot(page, 'ready');
     if (flags.generate === false) {
-      log.info('--no-generate: stopping before Generate (no credits used). Check debug/video-picked-*.png and video-ready-*.png.');
-      if (flags['keep-open'] === true) await pauseForEnter('Browser left open (--keep-open).');
-      return 0;
+      await attachStartFrame(driver, page, image);
+      await driver.setPrompt(prompt);
+      await shot(page, 'ready');
+      log.info('--no-generate: stopping before Generate.');
+    } else {
+      await makeClip({ driver, page, videoResponses }, { image, prompt, out, timeoutMs });
     }
-
-    const knownSources = new Set(await pageVideoSources(page));
-    const knownResponses = new Set(videoResponses.keys());
-    await driver.generate();
-    log.info(`Generating (${opts.model}, ${opts.resolution}, ${opts.duration}) - waiting up to ${timeoutMs / 1000}s...`);
-    await shot(page, 'generating');
-
-    const deadline = Date.now() + timeoutMs;
-    let clip = null;
-    while (Date.now() < deadline && !clip) {
-      await sleep(4000);
-      const alert = await driver.freshAlert().catch(() => null);
-      if (alert) {
-        await shot(page, 'refused');
-        throw new Error(`Flow reported a problem: ${JSON.stringify(alert).slice(0, 300)}`);
-      }
-      const sources = (await pageVideoSources(page)).filter((src) => !knownSources.has(src));
-      const fresh = [...videoResponses.keys()].filter((url) => !knownResponses.has(url));
-      clip = [...sources, ...fresh].find((url) => /^https?:/i.test(url)) ?? null;
-    }
-    if (!clip) {
-      await shot(page, 'timeout');
-      throw new Error('No new video appeared before the timeout. See debug/video-timeout-*.png.');
-    }
-    log.info(`Clip URL found: ${clip.slice(0, 120)}...`);
-    const bytes = await driver.fetchBytes(clip);
-    if (!bytes) throw new Error('Found the clip URL but could not download it with the browser session.');
-    fs.mkdirSync(path.dirname(out), { recursive: true });
-    fs.writeFileSync(out, bytes);
-    log.ok(`Saved ${path.relative(ROOT, out)} (${(bytes.length / 1048576).toFixed(1)} MB)`);
     if (flags['keep-open'] === true) await pauseForEnter('Browser left open (--keep-open).');
     return 0;
   } catch (error) {

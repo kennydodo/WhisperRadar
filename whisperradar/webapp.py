@@ -374,6 +374,7 @@ RESET_FILES = {
     "shots": ["shotlist.json", "shotlist.json.bak", "batch_sheet.txt",
               "prompts.txt"],
     "images": [],
+    "motion": [],
     "merge": ["final.mp4"],
 }
 
@@ -3504,6 +3505,11 @@ def create_app(cfg) -> Flask:
                                 if f.is_file():
                                     f.unlink(missing_ok=True)
                             removed.append("images/*")
+                    if stage == "motion":
+                        clip_dir = pdir / "clips"
+                        if clip_dir.exists():
+                            shutil.rmtree(clip_dir, ignore_errors=True)
+                            removed.append("clips/")
                     if stage == "merge":
                         out_dir = pdir / "out"
                         if out_dir.exists():
