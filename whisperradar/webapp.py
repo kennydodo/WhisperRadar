@@ -1219,12 +1219,50 @@ def create_app(cfg) -> Flask:
 
         if not ids:
             return back("Tick at least one channel first", "error")
-        if action not in ("pause", "activate", "genre", "kind", "remove"):
+        if action not in ("pause", "activate", "genre", "kind", "remove",
+                          "backfill", "views"):
             return back("Choose an action first", "error")
         if action == "genre" and not value:
             return back("Enter a genre to apply", "error")
         if action == "kind" and value not in ("primary", "similar"):
             return back("Choose primary or similar", "error")
+
+        if action in ("backfill", "views"):
+            # Long jobs: one background job works through the ticked channels
+            # one after another (the job slot runs a single job at a time).
+            log = logging.getLogger("whisperradar")
+            chosen = list(dict.fromkeys(ids))
+            label = "history backfill" if action == "backfill" else "view counts"
+
+            def worker():
+                conn = db.connect(cfg.db_path)
+                db.init_db(conn)
+                try:
+                    total = 0
+                    for n, channel_id in enumerate(chosen, 1):
+                        ch = db.get_channel(conn, channel_id)
+                        if not ch:
+                            continue
+                        log.info("%s %d/%d: %s", label, n, len(chosen), ch["name"])
+                        try:
+                            if action == "backfill":
+                                total += pipeline.import_history(cfg, conn, ch)
+                            else:
+                                total += pipeline.refresh_view_counts(cfg, conn, ch)
+                        except Exception as exc:  # one bad channel must not stop the rest
+                            log.warning("%s failed for %s: %s", label, ch["name"], exc)
+                    if action == "backfill":
+                        log.info("backfill finished: %d new backlog video(s)", total)
+                    else:
+                        log.info("view counts refreshed: %d row(s)", total)
+                finally:
+                    conn.close()
+
+            if not job.start(worker, label):
+                return back("A job is already running", "error")
+            noun = "channel" if len(chosen) == 1 else "channels"
+            what = "Importing history for" if action == "backfill" else "Refreshing view counts for"
+            return back(f"{what} {len(chosen)} {noun} - watch the log")
 
         done = 0
         conn = db.connect(cfg.db_path)

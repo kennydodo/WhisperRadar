@@ -120,6 +120,8 @@
       <option value="{{ 'activate' if state == 'paused' else 'pause' }}">{{ 'Activate' if state == 'paused' else 'Pause' }}</option>
       <option value="genre">Set genre</option>
       <option value="kind">Set kind</option>
+      <option value="backfill">Backfill full history (long job)</option>
+      <option value="views">Refresh view counts</option>
       <option value="remove">Remove (and their video records)</option>
     </select>
     <input type="text" name="bulk_value" id="bulk-genre" placeholder="genre e.g. tech" style="display:none; flex:0 0 140px">
