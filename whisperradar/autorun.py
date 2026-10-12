@@ -2062,6 +2062,20 @@ def _motion_clips(cfg, pid: int, pdir: Path, eff: dict) -> list[dict] | None:
     return clips or None
 
 
+def motion_summary(cfg, pid: int, pdir: Path, eff: dict) -> dict:
+    """What the Motion clips panel shows."""
+    clips = _motion_clips(cfg, pid, pdir, eff) or []
+    todo = {c["out"] for c in motion.missing_clips(clips)}
+    return {
+        "enabled": bool(eff.get("animate_enabled")),
+        "seconds": eff.get("animate_seconds"),
+        "model": eff.get("animate_model"),
+        "clips": [{"asset": c["asset"], "image": bool(c["image"]),
+                   "done": c["out"] not in todo, "prompt": c["prompt"]}
+                  for c in clips],
+    }
+
+
 @studio.batch_scoped
 def _run_motion(cfg, pid: int, log=None, cancel=None) -> None:
     """Turn the opening shots' stills into image-to-video clips (Flow, Veo).

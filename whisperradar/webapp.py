@@ -3279,6 +3279,7 @@ def create_app(cfg) -> Flask:
             nle_projects=nle_projects,
             refs=studio.shotlist_refs(pdir),
             generate_references=eff["generate_references"],
+            motion_info=autorun.motion_summary(cfg, pid, pdir, eff),
             brief_profile=briefs.resolve_profile(
                 eff.get("brief_motion"), eff.get("brief_min_hold"),
                 eff.get("brief_max_hold"),
@@ -4351,6 +4352,28 @@ def create_app(cfg) -> Flask:
         return _studio_url(pid, msg="Reference images started - run the "
                                     "images stage yourself when they are "
                                     "ready")
+
+    @app.post("/studio/<int:pid>/motion/run")
+    def studio_motion_run(pid):
+        """Manual: run ONLY the motion clips stage (Flow image-to-video for the
+        animated opening). Clips already made are kept; it moves the production
+        on to merge but never starts it."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        if not (pdir / "shotlist.json").exists():
+            return _studio_url(pid, error="Generate the shotlist first")
+        _job = sjob._real()
+
+        def worker():
+            autorun.raise_result(autorun.run_stage_and_advance(
+                cfg, pid, "motion", {
+                    "log": sjob.log.append,
+                    "cancel": (lambda _j=_job: _j.cancel)}))
+
+        sjob.start(worker, "motion clips")
+        return _studio_url(pid, msg="Motion clips started - a browser window "
+                                    "opens; clips already made are kept")
 
     @app.post("/studio/<int:pid>/images/render")
     def studio_images_render(pid):
