@@ -154,7 +154,7 @@ def channel_folder(root: Path, channel_name: str) -> Path:
 
 
 def auto_work_dir(cfg, conn, title: str,
-                  channel_name: str | None = None) -> str | None:
+                  channel_name: str | None = None) -> str:
     """<productions_root>/<channel>/<title> for a new production (just
     <productions_root>/<title> when it has no channel), or None when no
     location is set. The channel folder is created when it does not exist.
@@ -164,7 +164,9 @@ def auto_work_dir(cfg, conn, title: str,
 
     root = str(settings.load(conn).get("productions_root") or "").strip()
     if not root:
-        return None
+        raise RuntimeError(
+            "Set the productions location in Settings first - new "
+            "productions are only created inside it")
     base = Path(root).expanduser()
     if (channel_name or "").strip():
         base = channel_folder(base, channel_name)
