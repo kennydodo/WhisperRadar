@@ -313,7 +313,7 @@ def run(cfg, log=None, job=None, stop_before: str | None = None,
                 f"'{title}' (from [{video['channel_name']}] {video['title'][:60]})"
                 + (f" - {choice['reason']}" if choice["reason"] else ""))
             try:
-                work_dir = studio.auto_work_dir(cfg, conn, title)
+                work_dir = studio.auto_work_dir(cfg, conn, title, oc["name"])
             except RuntimeError as exc:
                 log(f"[produce] no production folder under the set location "
                     f"({exc}); using the default")

@@ -74,6 +74,55 @@ class ProductionFolderTests(unittest.TestCase):
         self.assertEqual(self.prod(2)["own_channel_id"], ch["id"])
         self.assertEqual(len(db.list_own_channels(self.conn)), 1)
 
+    def test_production_goes_inside_the_picked_channels_folder(self):
+        self.set_root()
+        db.create_own_channel(self.conn, "Quiet Nature", genre="nature")
+        oc = db.get_own_channel(self.conn, "Quiet Nature")
+        self.new(title="Owls at dusk", own_channel_id=str(oc["id"]))
+        wd = Path(self.prod()["work_dir"])
+        self.assertEqual(wd.name, "Owls at dusk")
+        self.assertEqual(wd.parent, (self.root / "Quiet Nature").resolve())
+        self.assertTrue(wd.is_dir())
+
+    def test_existing_channel_folder_is_reused_ignoring_case(self):
+        self.set_root()
+        (self.root / "quiet nature").mkdir(parents=True)
+        db.create_own_channel(self.conn, "Quiet Nature", genre="nature")
+        oc = db.get_own_channel(self.conn, "Quiet Nature")
+        self.new(title="One", own_channel_id=str(oc["id"]))
+        self.new(title="Two", own_channel_id=str(oc["id"]))
+        parents = {Path(self.prod(i)["work_dir"]).parent.name for i in (1, 2)}
+        self.assertEqual(parents, {"quiet nature"})
+        folders = [p.name for p in self.root.iterdir()]
+        self.assertEqual(len(folders), 1)
+
+    def test_typed_new_channel_gets_its_folder_created(self):
+        self.set_root()
+        self.new(title="First", channel_name="Brand New")
+        wd = Path(self.prod()["work_dir"])
+        self.assertEqual(wd.parent, (self.root / "Brand New").resolve())
+
+    def test_no_channel_keeps_the_production_in_the_root(self):
+        self.set_root()
+        self.new(title="Loose")
+        self.assertEqual(Path(self.prod()["work_dir"]).parent,
+                         self.root.resolve())
+
+    def test_a_production_folder_is_not_taken_for_a_channel_folder(self):
+        self.set_root()
+        prod_dir = self.root / "Clash"
+        prod_dir.mkdir(parents=True)
+        (prod_dir / studio.MARKER).touch()
+        (prod_dir / "script.md").write_text("x")
+        folder = studio.channel_folder(self.root, "Clash")
+        self.assertEqual(folder.name, "Clash (channel)")
+        self.assertTrue((prod_dir / "script.md").exists())
+
+    def test_auto_work_dir_with_channel_name_directly(self):
+        self.set_root()
+        wd = studio.auto_work_dir(self.cfg, self.conn, "Topic", "Chan: A?")
+        self.assertEqual(Path(wd).parent.name, "Chan A")
+
     def test_safe_folder_name(self):
         self.assertEqual(studio.safe_folder_name("  a<b>c.  "), "a b c")
         self.assertEqual(studio.safe_folder_name("???"), "production")
