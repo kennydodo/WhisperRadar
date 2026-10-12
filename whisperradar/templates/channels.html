@@ -190,14 +190,6 @@
           <div class="muted" style="font-size:12px">{{ link.detail if link else "" }}</div>
         </td>
         <td style="text-align:right; white-space:nowrap">
-          <form class="row" method="post" action="/my-channels/state" style="display:inline">
-            <input type="hidden" name="id" value="{{ ch['id'] }}">
-            <input type="hidden" name="state" value="{{ own_state }}">
-            <input type="hidden" name="active" value="{{ 0 if ch['active'] else 1 }}">
-            <button type="submit" class="ghost"
-                    title="{{ 'Pause: hides this channel from the list, Studio and Auto Run (settings and videos are kept)' if ch['active'] else 'Resume: the channel returns to the list, Studio and Auto Run' }}">
-              {{ 'pause' if ch['active'] else 'activate' }}</button>
-          </form>
           <button type="button" class="ghost" onclick="toggleEdit({{ ch['id'] }})"
                   title="Edit this channel and its production defaults (voice, image engine, render mode, upscale, auto-run, caps, seed folders, Flow project)">edit / defaults</button>
           <form class="row" method="post" action="/my-channels/sync" style="display:inline">
@@ -207,6 +199,14 @@
           </form>
           <a class="btn ghost" href="/my-channels/export?id={{ ch['id'] }}"
              title="Save this channel's settings as a JSON file">save</a>
+          <form class="row" method="post" action="/my-channels/state" style="display:inline">
+            <input type="hidden" name="id" value="{{ ch['id'] }}">
+            <input type="hidden" name="state" value="{{ own_state }}">
+            <input type="hidden" name="active" value="{{ 0 if ch['active'] else 1 }}">
+            <button type="submit" class="ghost"
+                    title="{{ 'Pause: hides this channel from the list, Studio and Auto Run (settings and videos are kept)' if ch['active'] else 'Resume: the channel returns to the list, Studio and Auto Run' }}">
+              {{ 'pause' if ch['active'] else 'activate' }}</button>
+          </form>
           <form class="row" method="post" action="/my-channels/remove" style="display:inline"
                 onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch['name'] }} from WhisperRadar? The Renderly channel is left untouched.')">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
