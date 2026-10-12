@@ -11,8 +11,14 @@ import { repairCommand } from '../commands/repair.js';
 import { prepareCommand } from '../commands/prepare.js';
 import { recoverCommand } from '../commands/recover.js';
 import { upscaleCommand } from '../commands/upscale.js';
+import { videoCommand } from '../commands/video.js';
 
 const COMMANDS = {
+  video: {
+    run: videoCommand,
+    valueFlags: ['image', 'prompt', 'project-url', 'model', 'resolution', 'duration', 'aspect', 'out', 'timeout', 'channel', 'slowmo', 'url', 'profile'],
+    summary: 'Image-to-video spike: one start frame + motion prompt -> one mp4 via Flow (default Omni 1.1 Flash).',
+  },
   login: {
     run: loginCommand,
     valueFlags: ['channel', 'slowmo', 'url', 'profile'],

@@ -11,6 +11,7 @@
     "login": "node src/cli.js login",
     "discover": "node src/cli.js discover",
     "doctor": "node src/cli.js doctor",
+    "video": "node src/cli.js video",
     "generate": "node src/cli.js generate",
     "gen": "node src/cli.js generate",
     "ui": "node src/cli.js serve",
