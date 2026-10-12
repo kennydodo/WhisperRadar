@@ -191,6 +191,9 @@ async function pageVideoSources(page) {
     .catch(() => []);
 }
 
+/** Videos already saved by this process (never taken twice). */
+const saved = new Set();
+
 /** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout. */
 async function waitAndSave({ driver, page, videoResponses, knownSources, knownResponses, timeoutMs, out }) {
   const deadline = Date.now() + timeoutMs;
@@ -208,8 +211,17 @@ async function waitAndSave({ driver, page, videoResponses, knownSources, knownRe
   }
   if (!clip) {
     await shot(page, 'timeout');
-    throw new Error('No new video appeared before the timeout. See debug/video-timeout-*.png.');
+    // Last resort: the clip may have finished without looking "new" to the
+    // checks above (cached response, recycled player). Take a video this batch
+    // has not saved yet, newest first, and say so.
+    const candidates = [...videoResponses.keys(), ...(await pageVideoSources(page))]
+      .filter((url) => /^https?:/i.test(url) && !saved.has(url));
+    log.warn(`Timeout: ${candidates.length} unsaved video URL(s) seen on the page.`);
+    clip = candidates.length ? candidates[candidates.length - 1] : null;
+    if (!clip) throw new Error('No new video appeared before the timeout. See debug/video-timeout-*.png.');
+    log.warn('Using the newest unsaved video as this clip.');
   }
+  saved.add(clip);
   log.info(`Clip URL found: ${clip.slice(0, 120)}...`);
   const bytes = await driver.fetchBytes(clip);
   if (!bytes) throw new Error('Found the clip URL but could not download it with the browser session.');
@@ -255,7 +267,7 @@ async function runJob(flags, context) {
   const reportPath = typeof flags.report === 'string' ? path.resolve(flags.report) : null;
   const projectUrl = (typeof flags['project-url'] === 'string' ? flags['project-url'] : job.projectUrl || settings.projectUrl || '').trim();
   const opts = modelOptions({ ...flags, model: flags.model ?? job.model, aspect: flags.aspect ?? job.aspect });
-  const timeoutMs = intFlag(flags, 'timeout', 600) * 1000;
+  const timeoutMs = intFlag(flags, 'timeout', 360) * 1000;
   const report = { done: [], failed: [], stopped: false, reason: '' };
   const save = () => reportPath && fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
