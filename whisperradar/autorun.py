@@ -24,7 +24,7 @@ from collections import Counter
 
 from pathlib import Path
 
-from . import ai33, briefs, db, handover, services, settings, studio, transcribe
+from . import ai33, briefs, db, handover, motion, services, settings, studio, transcribe
 from . import plan as packplan
 from .cli import format_duration
 
@@ -1081,6 +1081,19 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
         # a channel with references off must get NO references at all - the
         # planner is told, and the gate rejects any plan that still uses refs
         allow_refs = bool(eff["generate_references"])
+        # animated opening (per channel, off unless switched on): the writer
+        # plans the first N seconds for image-to-video, the checker needs an
+        # "ai_motion" line on each of those shots, the judge grades animatability
+        animate_seconds = (eff["animate_seconds"]
+                           if eff.get("animate_enabled") else None)
+        animation_note = ""
+        if animate_seconds:
+            last_cue = motion.window_last_cue(cues, animate_seconds,
+                                              studio._srt_seconds)
+            animation_note = motion.writer_note(animate_seconds, last_cue)
+            _log_line(f"shotlist: animated opening on - first "
+                      f"{animate_seconds}s (cues 1-{last_cue}) planned for "
+                      f"image-to-video ({eff['animate_model']})")
         attempts_allowed = max(1, int(eff["shotlist_max_attempts"]))
         # Pin the judge for this production once resolved, and reuse it on
         # every later resume. Without this, a production whose effective
@@ -1143,7 +1156,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
             if fix_mode:
                 fixed = _attempt_shotlist_fix(
                     cfg, prior, cues, provider, style_guide, bible_text,
-                    max_hold, allow_refs, total_s, attempt)
+                    max_hold, allow_refs, total_s, attempt,
+                    animation_rule=(motion.FIX_RULE if animate_seconds else ""))
                 if fixed is None:
                     fix_mode = False
                 else:
@@ -1175,7 +1189,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                     extra_direction=db.stage_extra(prod, "shots"),
                     bible=bible_text, feedback=feedback,
                     supplied_refs=studio.find_supplied_refs(pdir),
-                    pacing_note=pacing_note, allow_refs=allow_refs)
+                    pacing_note=pacing_note, allow_refs=allow_refs,
+                    animation_note=animation_note)
                 text = studio.llm_generate(
                     cfg, prompt, provider=provider,
                     max_tokens=studio.shotlist_max_tokens(
@@ -1246,13 +1261,13 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                     patched_assets=set(patches),
                     max_hold_seconds=max_hold, style_guide=style_guide,
                     temperature=eff["shotlist_judge_temperature"],
-                    profile=profile)
+                    profile=profile, animate_seconds=animate_seconds)
             else:
                 review = studio.review_shotlist(
                     cfg, data, cues, judge, max_hold_seconds=max_hold,
                     style_guide=style_guide,
                     temperature=eff["shotlist_judge_temperature"],
-                    profile=profile)
+                    profile=profile, animate_seconds=animate_seconds)
             if review["total"] and review["unreviewed"] == review["total"]:
                 # The judge never actually ran on a single shot - unlike a
                 # low completeness ratio (real information: some prompts are
@@ -1374,7 +1389,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
 def _attempt_shotlist_fix(cfg, prior: dict, cues: list[dict],
                           provider: str | None, style_guide: str,
                           bible_text: str, max_hold: float, allow_refs: bool,
-                          total_s: float, attempt: int):
+                          total_s: float, attempt: int,
+                          animation_rule: str = ""):
     """One fault-targeted fix round. Returns (fixed plan, {changed assets}) or
     None when the reply was unusable or changed nothing - the caller then
     falls back to a full re-plan, exactly as before."""
@@ -1382,7 +1398,8 @@ def _attempt_shotlist_fix(cfg, prior: dict, cues: list[dict],
     prompt = studio.shotlist_fix_prompt(
         prior["data"], list(prior["faults"]), list(prior.get("weak") or []),
         cue_text, len(cues), max_hold, style_guide=style_guide,
-        bible=bible_text, allow_refs=allow_refs)
+        bible=bible_text, allow_refs=allow_refs,
+        animation_rule=animation_rule)
     max_tokens = studio.shotlist_max_tokens(total_s, len(cues), max_hold)
     try:
         text = studio.llm_generate(cfg, prompt, provider=provider,

@@ -419,6 +419,16 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
             "allow_refs": bool(eff["generate_references"])}
 
 
+def _animation_note(eff: dict, cues: list) -> str:
+    """The animated-opening rules for the writer, or "" (channel has it off)."""
+    if not eff.get("animate_enabled"):
+        return ""
+    from . import motion
+    seconds = eff["animate_seconds"]
+    return motion.writer_note(
+        seconds, motion.window_last_cue(cues, seconds, studio._srt_seconds))
+
+
 def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
     ctx = _context(cfg, pid)
     eff = ctx["eff"]
@@ -444,7 +454,8 @@ def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
         brief, narration, ctx["visual_style"],
         extra_direction=db.stage_extra(ctx["prod"], "shots"),
         bible=bible, supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
-        pacing_note=pacing, allow_refs=plan["allow_refs"])
+        pacing_note=pacing, allow_refs=plan["allow_refs"],
+        animation_note=_animation_note(eff, plan["cues"]))
     if not bible.strip():
         # the brief's bible gate otherwise makes the LLM ask for one
         text += ("\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE: this channel "

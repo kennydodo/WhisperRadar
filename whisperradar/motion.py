@@ -81,3 +81,127 @@ def fit(shot_seconds: float) -> dict:
     played = CLIP_SECONDS / MIN_SPEED
     return {"play": CLIP_SECONDS, "speed": MIN_SPEED,
             "hold": round(shot - played, 3)}
+
+
+# ----------------------------------------------------- shotlist integration --
+# The animated opening is planned in the SHOTLIST (not the planning brief): the
+# writer gets WRITER_NOTE for the opening cues, every shot there carries an
+# "ai_motion" line, a free check enforces it, and the judge also grades whether
+# the image will animate well.
+
+def _first_cue(cues_value):
+    """First cue number of a shot's "cues" ("3-9", "3", 3, [3, 4])."""
+    if isinstance(cues_value, (list, tuple)) and cues_value:
+        return _first_cue(cues_value[0])
+    text = str(cues_value or "").strip()
+    head = text.replace("–", "-").split("-")[0].strip()
+    return int(head) if head.isdigit() else None
+
+
+def _last_cue(cues_value):
+    if isinstance(cues_value, (list, tuple)) and cues_value:
+        return _last_cue(cues_value[-1])
+    text = str(cues_value or "").strip().replace("–", "-")
+    tail = text.split("-")[-1].strip()
+    return int(tail) if tail.isdigit() else None
+
+
+def window_last_cue(cues: list[dict], seconds: float, to_seconds) -> int:
+    """Number of the last cue that STARTS before `seconds` (0 when none).
+    `cues` are {"index", "start", "end"}; `to_seconds` converts a timestamp."""
+    last = 0
+    for cue in cues:
+        if to_seconds(cue.get("start")) < float(seconds):
+            last = int(cue["index"])
+        else:
+            break
+    return last
+
+
+def writer_note(seconds: int, last_cue: int) -> str:
+    """The shotlist writer's extra instructions for the animated opening."""
+    return (
+        "\n\nANIMATED OPENING (strict rules for cues 1-%d ONLY, about the first "
+        "%d seconds of the video - the rest of the plan follows the rules "
+        "above unchanged): every image in this part is turned into an AI "
+        "image-to-video clip of about 8 seconds, so plan each one to ANIMATE "
+        "well:\n"
+        "- One clear subject (or one small group) in a simple, open scene with "
+        "visible depth - foreground, midground, background - and room around "
+        "the subject for the camera to move.\n"
+        "- A moment that implies motion: a pose that is about to change, wind, "
+        "water, smoke, light, a crowd, a vehicle, a gesture. Not a frozen "
+        "diagram.\n"
+        "- NO text, numbers, charts, screens, maps, split panels, collages, "
+        "reveal shots or infographics in this part: they cannot be animated "
+        "and the model garbles them.\n"
+        "- Keep each shot's hold to 8 seconds or less (4-8 is ideal): a clip "
+        "is 8 seconds long; a longer hold is slowed down or frozen.\n"
+        "- Give EVERY shot in this part an \"ai_motion\" field: one short "
+        "sentence saying what moves and how the camera moves (for example "
+        "\"slow push in; her hair and the curtains drift in the breeze\" or "
+        "\"camera pans right across the street as cars pass\"). Describe "
+        "movement only - never repeat the scene description, and keep the "
+        "camera move gentle (no cuts, no sudden zoom, no new subjects "
+        "appearing).\n"
+        "- Shots after cue %d do NOT get \"ai_motion\"."
+        % (last_cue, int(seconds), last_cue))
+
+
+FIX_RULE = (
+    " Shots in the animated opening (the first cues the checker names) must "
+    "keep a one-sentence \"ai_motion\" field (what moves, how the camera "
+    "moves) and an image that animates well: one clear subject, depth, no "
+    "text, charts or collages, hold of 8 seconds or less.")
+
+JUDGE_RULES = (
+    "\n\nANIMATION CHECK: shots marked \"ANIMATED SHOT\" will be turned into an "
+    "8-second AI image-to-video clip, using the planned motion shown. For "
+    "those shots ALSO judge whether the image will ANIMATE well: it needs one "
+    "clear subject (or small group) with space and depth around it, and a "
+    "scene where the planned motion is plausible. It will NOT animate well if "
+    "it relies on readable text, numbers, charts, maps or screens, is a "
+    "collage or split panel, is crowded and flat with no depth, or the "
+    "planned motion contradicts the scene. A shot that fails this is weak: "
+    "give verdict \"weak\" and put an item starting with \"animatable:\" "
+    "(plus the reason) in \"missing\". The usual completeness rules still "
+    "apply to these shots.")
+
+
+def window_check(data: dict, cues: list[dict], seconds: float, to_seconds,
+                 cue_range=None) -> tuple[list[str], list[str], set[str]]:
+    """(faults, warnings, assets in the window) for an animated opening.
+
+    Free checks, no LLM: every shot that starts inside the window needs a
+    non-empty "ai_motion"; a hold over the clip length is only a warning
+    (the renderer slows it or holds the last frame)."""
+    shots = [s for s in (data.get("shots") or []) if isinstance(s, dict)]
+    by_index = {int(c["index"]): c for c in cues}
+    limit = window_last_cue(cues, seconds, to_seconds)
+    faults: list[str] = []
+    warnings: list[str] = []
+    assets: set[str] = set()
+    missing: list[str] = []
+    for s in shots:
+        first, last = _first_cue(s.get("cues")), _last_cue(s.get("cues"))
+        if first is None or first > limit:
+            continue
+        asset = str(s.get("asset") or "")
+        assets.add(asset)
+        if not str(s.get("ai_motion") or "").strip():
+            missing.append(asset)
+        a, b = by_index.get(first), by_index.get(last if last is not None else first)
+        if a and b:
+            hold = to_seconds(b.get("end")) - to_seconds(a.get("start"))
+            if hold > MAX_STRETCH_SECONDS + 1e-6:
+                warnings.append(
+                    f"animated opening: {asset} holds {hold:.1f}s - longer than "
+                    f"{MAX_STRETCH_SECONDS:g}s, so its clip will be slowed and "
+                    f"then frozen (split it to keep it moving)")
+    if missing:
+        shown = ", ".join(missing[:10]) + ("..." if len(missing) > 10 else "")
+        faults.append(
+            f"{len(missing)} shot(s) in the animated opening (cues 1-{limit}) "
+            f"have no \"ai_motion\" line: {shown}. Every shot there needs one "
+            f"short sentence saying what moves and how the camera moves")
+    return faults, warnings, assets
