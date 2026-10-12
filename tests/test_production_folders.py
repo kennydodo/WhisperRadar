@@ -56,16 +56,18 @@ class ProductionFolderTests(unittest.TestCase):
         self.new(title="Same")
         self.assertEqual(Path(self.prod(2)["work_dir"]).name, "Same (2)")
 
-    def test_no_location_keeps_default_and_explicit_folder_wins(self):
-        self.new(title="A")
-        self.assertFalse(self.prod()["work_dir"])
-        self.assertTrue((self.cfg.studio_dir / "1").is_dir())
-        self.set_root()
+    def test_no_location_creates_nothing_and_explicit_folder_wins(self):
+        r = self.client.post("/studio/new", data={"title": "A"})
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("error=", r.headers["Location"])
+        self.assertIsNone(self.prod())                 # no production made
+        self.assertFalse(self.cfg.studio_dir.exists())  # no data\\studio folder
         mine = Path(self.tmp.name) / "mine"
         self.new(title="B", work_dir=str(mine))
-        self.assertEqual(Path(self.prod(2)["work_dir"]), mine.resolve())
+        self.assertEqual(Path(self.prod()["work_dir"]), mine.resolve())
 
     def test_missing_channel_is_created_and_reused(self):
+        self.set_root()
         self.new(title="One", channel_name="Brand New", genre="nature")
         ch = db.get_own_channel(self.conn, "Brand New")
         self.assertIsNotNone(ch)

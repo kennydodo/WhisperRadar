@@ -169,6 +169,7 @@ class ResearchPageTests(unittest.TestCase):
         self.cfg.studio_dir = Path(self.tmp.name) / "studio"
         self.conn = db.connect(self.cfg.db_path)
         db.init_db(self.conn)
+        db.set_setting(self.conn, "productions_root", str(Path(self.tmp.name) / "Productions"))
         db.add_channel(self.conn, "Chan One", "UC1", genre="animals")
         vids = [{"video_id": f"v{i}", "title": f"Video {i}",
                  "url": f"https://youtu.be/v{i}", "view_count": 1000}

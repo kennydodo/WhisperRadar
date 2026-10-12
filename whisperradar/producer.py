@@ -315,9 +315,10 @@ def run(cfg, log=None, job=None, stop_before: str | None = None,
             try:
                 work_dir = studio.auto_work_dir(cfg, conn, title, oc["name"])
             except RuntimeError as exc:
-                log(f"[produce] no production folder under the set location "
-                    f"({exc}); using the default")
-                work_dir = None
+                # never fall back to data\\studio: skip this channel instead
+                log(f"[produce] {oc['name']}: no production folder "
+                    f"({exc}) - nothing created")
+                continue
             pid = db.create_production(conn, title, oc["genre"],
                                        video["video_id"], work_dir)
             # llm_provider is NOT persisted here - see autorun._run_script's

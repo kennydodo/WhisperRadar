@@ -28,6 +28,7 @@ class Base(unittest.TestCase):
         self.cfg.studio_dir = Path(self.tmp.name) / "studio"
         self.conn = db.connect(self.cfg.db_path)
         db.init_db(self.conn)
+        db.set_setting(self.conn, "productions_root", str(Path(self.tmp.name) / "Productions"))
         self.a = db.create_own_channel(self.conn, "Channel A")
         self.b = db.create_own_channel(self.conn, "Channel B")
         self.pa1 = self._prod("Alpha one", self.a)
