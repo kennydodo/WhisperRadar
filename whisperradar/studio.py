@@ -131,16 +131,43 @@ def safe_folder_name(title: str, limit: int = 80) -> str:
     return (name[:limit].strip(" .") or "production")
 
 
-def auto_work_dir(cfg, conn, title: str) -> str | None:
-    """<productions_root>/<title> for a new production, or None when no
-    location is set. A name already taken by something that is not a
-    WhisperRadar production folder gets " (2)", " (3)", ... appended."""
+def channel_folder(root: Path, channel_name: str) -> Path:
+    """<root>/<channel name>, created when it is not there yet.
+
+    An existing folder is matched ignoring case (Windows would anyway). A
+    folder with that name that is itself a production (it carries the
+    WhisperRadar marker) is not a channel folder, so the channel gets
+    "<name> (channel)" instead."""
+    name = safe_folder_name(channel_name)
+    try:
+        for child in root.iterdir():
+            if child.is_dir() and child.name.lower() == name.lower():
+                if not (child / MARKER).exists():
+                    return child
+                name = f"{name} (channel)"
+                break
+    except OSError:
+        pass
+    folder = root / name
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def auto_work_dir(cfg, conn, title: str,
+                  channel_name: str | None = None) -> str | None:
+    """<productions_root>/<channel>/<title> for a new production (just
+    <productions_root>/<title> when it has no channel), or None when no
+    location is set. The channel folder is created when it does not exist.
+    A name already taken by something that is not a WhisperRadar production
+    folder gets " (2)", " (3)", ... appended."""
     from . import settings
 
     root = str(settings.load(conn).get("productions_root") or "").strip()
     if not root:
         return None
     base = Path(root).expanduser()
+    if (channel_name or "").strip():
+        base = channel_folder(base, channel_name)
     name = safe_folder_name(title)
     for n in range(1, 200):
         cand = base / (name if n == 1 else f"{name} ({n})")

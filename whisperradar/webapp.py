@@ -3079,17 +3079,27 @@ def create_app(cfg) -> Flask:
                         f"channel: #{taken['id']} {taken['title'][:60]} "
                         f"({db.SOURCE_USE_LABELS.get(taken['status'], taken['status'])})"))
             if not work_dir:
+                # the production goes inside its channel's folder
+                channel_name = None
+                if own_channel:
+                    oc0 = db.get_own_channel(conn, own_channel)
+                    channel_name = oc0["name"] if oc0 else None
+                elif new_channel:
+                    channel_name = new_channel
                 try:
-                    work_dir = studio.auto_work_dir(cfg, conn, title)
+                    work_dir = studio.auto_work_dir(
+                        cfg, conn, title, channel_name)
                 except RuntimeError as exc:
                     return redirect(f"/studio?error={quote(str(exc)[:150])}")
             if not own_channel and new_channel:
                 # no channel picked: use the one with that name, or make it
                 oc = db.get_own_channel(conn, new_channel)
                 if not oc:
-                    db.create_own_channel(conn, new_channel,
-                                          genre=genre if genre != "general"
-                                          else None)
+                    # genre is NOT NULL: leave it out (the column default)
+                    # rather than passing None for the generic "general"
+                    db.create_own_channel(
+                        conn, new_channel,
+                        **({"genre": genre} if genre != "general" else {}))
                     oc = db.get_own_channel(conn, new_channel)
                 own_channel = str(oc["id"])
             pid = db.create_production(conn, title, genre, source, work_dir)
