@@ -95,8 +95,8 @@ def queue(cfg, pid):
         prod = db.get_production(conn, pid)
         if not prod:
             raise ValueError("Unknown production")
-        if prod["status"] not in ("ready", "published"):
-            raise ValueError("Finish and approve this production first")
+        if prod["status"] != "ready":
+            raise ValueError("Finish and approve this production first; published productions cannot generate GPT packaging")
         pdir = studio.prod_dir(cfg, pid)
         if not (pdir / "script.md").is_file():
             raise ValueError("The final script is missing")
@@ -122,8 +122,8 @@ def _read(pdir, name):
 def context(cfg, pid):
     with _connect(cfg) as conn:
         prod = db.get_production(conn, pid)
-        if not prod or prod["status"] not in ("ready", "published"):
-            raise ValueError("Production is no longer finished")
+        if not prod or prod["status"] != "ready":
+            raise ValueError("Production is no longer ready; published productions cannot generate GPT packaging")
         pdir = studio.prod_dir(cfg, pid)
         own = db.get_own_channel(conn, prod["own_channel_id"]) if prod["own_channel_id"] else None
         style, style_src, bible, bible_src = autorun.style_bible(cfg, conn, prod, pdir)
@@ -251,9 +251,16 @@ def complete(cfg, jid, token, result):
             raise ValueError("A title of 1-100 characters is required")
         if not 200 <= len(kit["description"]) <= 4500:
             raise ValueError("The description must contain 200-4500 characters")
+        title_options = kit["titles"]
+        if (len(title_options) != 4
+                or any(not t["text"] or len(t["text"]) > 100 for t in title_options)
+                or len({t["text"].casefold() for t in title_options}) != 4):
+            raise ValueError("Exactly four distinct titles of 1-100 characters are required")
+        if kit["title"] not in {t["text"] for t in title_options}:
+            raise ValueError("The recommended title must be one of the four titles")
         items = result.get("thumbnails")
-        if not isinstance(items, list) or len(items) != 3:
-            raise ValueError("Exactly three finished thumbnails are required")
+        if not isinstance(items, list) or len(items) != 4:
+            raise ValueError("Exactly four finished thumbnails are required")
         prepared = []
         for it in items:
             if not isinstance(it, dict) or not str(it.get("text") or "").strip():
@@ -265,7 +272,7 @@ def complete(cfg, jid, token, result):
         folder.mkdir(parents=True, exist_ok=True)
         for previous in (pdir / packaging.KIT_FILE,
                          thumbnails.thumbs_dir(pdir) / thumbnails.THUMBS_FILE,
-                         pdir / "description.txt", pdir / "title.txt"):
+                         pdir / "description.txt", pdir / "title.txt", pdir / "titles.txt"):
             backup = folder / ("previous-" + previous.name)
             if previous.exists() and not backup.exists():
                 shutil.copy2(previous, backup)
@@ -292,6 +299,7 @@ def complete(cfg, jid, token, result):
         recommended = min(max(recommended, 1), len(concepts))
         packaging.save_kit(pdir, kit)
         (pdir / "title.txt").write_text(kit["title"] + "\n", encoding="utf-8")
+        (pdir / "titles.txt").write_text("\n".join(t["text"] for t in title_options) + "\n", encoding="utf-8")
         (pdir / "description.txt").write_text(kit["description"] + "\n", encoding="utf-8")
         thumbnails.save_thumbs(pdir, {"concepts": concepts, "chosen": None,
             "status": "ready", "score": None, "provider": "codex",
@@ -302,6 +310,7 @@ def complete(cfg, jid, token, result):
         saved = {"production_id": row["production_id"], "title": kit["title"],
                  "description_file": str(pdir / "description.txt"),
                  "title_file": str(pdir / "title.txt"),
+                 "titles_file": str(pdir / "titles.txt"), "titles": title_options,
                  "thumbnails": [str(pdir / c["final"]) for c in concepts]}
         conn.execute("UPDATE gpt_packaging_jobs SET status='complete',result=?,"
                      "updated_at=?,error='' WHERE id=?", (json.dumps(saved), _now(), jid))

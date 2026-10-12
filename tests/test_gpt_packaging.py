@@ -53,10 +53,11 @@ class GPTPackagingTests(unittest.TestCase):
 
     def result(self):
         return {"title": "How Did Ancient Humans Preserve Food?",
+                "titles": [{"text": text, "why": "Test angle"} for text in ("How Did Ancient Humans Preserve Food?", "Food Before Fridges", "Keeping Food Through Winter", "Ancient Food Storage")],
                 "description": "What did early humans do before refrigerators? " * 7,
                 "thumbnails": [{"path": str(self.generated), "text": text,
                                 "prompt": "Test prompt"}
-                               for text in ("NO FRIDGE?", "FOOD FOR LATER?", "BEAT THE ROT?")]}
+                               for text in ("NO FRIDGE?", "FOOD FOR LATER?", "BEAT THE ROT?", "SAVE THE FOOD?")]}
 
     def job(self):
         gp.queue(self.cfg, self.pid)
@@ -78,6 +79,29 @@ class GPTPackagingTests(unittest.TestCase):
         db.update_production(self.conn, self.pid, status="active")
         with self.assertRaisesRegex(ValueError, "Finish"):
             gp.queue(self.cfg, self.pid)
+
+    def test_published_production_cannot_generate(self):
+        db.update_production(self.conn, self.pid, status="published")
+        with self.assertRaisesRegex(ValueError, "published"):
+            gp.queue(self.cfg, self.pid)
+        for url in ("/finished?status=published", f"/studio/{self.pid}/thumbnails"):
+            page = self.client.get(url).data
+            self.assertRegex(page, rb'<button[^>]*disabled[^>]*>Generate with GPT Pro</button>')
+        self.client.post(f"/studio/{self.pid}/gpt-pro/generate")
+        self.assertIsNone(gp.latest(self.cfg, self.pid))
+
+    def test_published_after_queue_is_not_claimed(self):
+        gp.queue(self.cfg, self.pid)
+        db.update_production(self.conn, self.pid, status="published")
+        self.assertIsNone(gp.claim(self.cfg))
+        self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "failed")
+
+    def test_published_after_claim_cannot_import(self):
+        job = self.job()
+        db.update_production(self.conn, self.pid, status="published")
+        with self.assertRaisesRegex(ValueError, "published"):
+            gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
+        self.assertFalse((self.pdir / "title.txt").exists())
 
     def test_context_uses_live_channel_and_production_override(self):
         self.assertEqual(gp.context(self.cfg, self.pid)["visual_style"], "Live channel style")
@@ -133,15 +157,16 @@ class GPTPackagingTests(unittest.TestCase):
         saved = gp.complete(self.cfg, job["id"], job["claim_token"], result)
         self.assertEqual(gp.complete(self.cfg, job["id"], job["claim_token"], result), saved)
         self.assertEqual((self.pdir / "description.txt").read_text().strip(), result["description"].strip())
-        self.assertEqual(len(saved["thumbnails"]), 3)
+        self.assertEqual(len(saved["thumbnails"]), 4)
         for path in saved["thumbnails"]:
             with Image.open(path) as image:
                 self.assertEqual(image.size, (1280, 720))
         self.assertTrue((self.pdir / "title.txt").exists())
+        self.assertEqual((self.pdir / "titles.txt").read_text().splitlines(), [t["text"] for t in result["titles"]])
         kit = packaging.load_kit(self.pdir)
         self.assertEqual(packaging.assemble_description(kit, [{"start": 0}]), result["description"].strip())
         page = self.client.get("/finished")
-        self.assertIn(b"3 thumbnails", page.data)
+        self.assertIn(b"4 thumbnails", page.data)
         self.assertIn(b"kit ready", page.data)
         page = self.client.get(f"/studio/{self.pid}/thumbnails")
         self.assertIn(b"Choose this one", page.data)
@@ -176,9 +201,25 @@ class GPTPackagingTests(unittest.TestCase):
             gp.complete(self.cfg, job["id"], job["claim_token"], result)
         result = self.result()
         result["thumbnails"].pop()
-        with self.assertRaisesRegex(ValueError, "three"):
+        with self.assertRaisesRegex(ValueError, "four"):
             gp.complete(self.cfg, job["id"], job["claim_token"], result)
         self.assertFalse((self.pdir / "title.txt").exists())
+
+    def test_invalid_title_options_rejected_before_writing(self):
+        job = self.job()
+        for mode in ("missing", "duplicate", "long", "recommendation"):
+            result = self.result()
+            if mode == "missing":
+                result["titles"].pop()
+            elif mode == "duplicate":
+                result["titles"][3] = result["titles"][0]
+            elif mode == "long":
+                result["titles"][3]["text"] = "x" * 101
+            else:
+                result["title"] = "Outside the options"
+            with self.assertRaises(ValueError):
+                gp.complete(self.cfg, job["id"], job["claim_token"], result)
+            self.assertFalse((self.pdir / "titles.txt").exists())
 
     def test_failed_and_abandoned_jobs_can_be_retried_explicitly(self):
         job = self.job()
@@ -226,7 +267,7 @@ class GPTPackagingTests(unittest.TestCase):
         result = self.result()
         result["recommended_thumbnail"] = 9
         gp.complete(self.cfg, job["id"], job["claim_token"], result)
-        self.assertEqual(thumbnails.load_thumbs(self.pdir)["recommended"], 3)
+        self.assertEqual(thumbnails.load_thumbs(self.pdir)["recommended"], 4)
 
 
 if __name__ == "__main__":

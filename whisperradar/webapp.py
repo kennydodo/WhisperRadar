@@ -2649,6 +2649,7 @@ def create_app(cfg) -> Flask:
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
                 "gpt_job": gpt_jobs.get(p["id"]),
+                "has_titles_file": (studio.prod_dir(cfg, p["id"]) / "titles.txt").is_file(),
             })
         due_results = len(results_mod.due(conn))
         conn.close()

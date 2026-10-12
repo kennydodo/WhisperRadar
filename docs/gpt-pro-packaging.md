@@ -1,17 +1,17 @@
 # Generate with GPT Pro
 
 The Finished page and Thumbnails page have a **Generate with GPT Pro** button.
-It queues only the clicked, finished production. A scheduled Codex task checks
+It queues only the clicked, ready production. Published productions have the button disabled and are refused by the server, including jobs queued before publication. A scheduled Codex task checks
 the local worker page once an hour, reads the final script and resolved
-channel/production style and Bible, inspects references, and generates three
+channel/production style and Bible, inspects references, and generates four
 finished thumbnails using Codex's built-in image tool. It returns a recommended
-title and a complete YouTube description. The button label is not a model ID
+title, four distinct title options and a complete YouTube description. The button label is not a model ID
 and does not switch a ChatGPT subscription or select a separate Pro model.
 
 ## Files and review
 
-- `thumbnails/gpt-<job>-1.jpg`, `-2.jpg`, `-3.jpg`: 1280x720, under 2 MB.
-- `title.txt` and `description.txt`: in the production's source folder.
+- `thumbnails/gpt-<job>-1.jpg`, `-2.jpg`, `-3.jpg`, `-4.jpg`: 1280x720, under 2 MB.
+- `title.txt`, `titles.txt` and `description.txt`: in the production's source folder.
 - `publish_kit.json` and `thumbnails/thumbs.json`: imported for the existing UI.
 - `thumbnails/jobs/<job>/`: source result and backups of replaced metadata/text.
 
@@ -56,12 +56,13 @@ It must connect to localhost and keeps claim tokens out of console output.
   "title": "Recommended video title",
   "description": "Complete description, including optional verified chapters and hashtags",
   "keyword": "main topic",
-  "titles": [{"text": "Recommended video title", "why": "Reason"}],
+  "titles": [{"text": "Recommended video title", "why": "Reason"}, {"text": "Second title", "why": "Reason"}, {"text": "Third title", "why": "Reason"}, {"text": "Fourth title", "why": "Reason"}],
   "recommended_thumbnail": 1,
   "thumbnails": [
     {"path": "C:/Users/.../.codex/generated_images/.../one.png", "text": "HEADLINE ONE", "prompt": "Exact generation prompt", "idea": "Concept"},
     {"path": "C:/Users/.../.codex/generated_images/.../two.png", "text": "HEADLINE TWO", "prompt": "Exact generation prompt", "idea": "Concept"},
-    {"path": "C:/Users/.../.codex/generated_images/.../three.png", "text": "HEADLINE THREE", "prompt": "Exact generation prompt", "idea": "Concept"}
+    {"path": "C:/Users/.../.codex/generated_images/.../three.png", "text": "HEADLINE THREE", "prompt": "Exact generation prompt", "idea": "Concept"},
+    {"path": "C:/Users/.../.codex/generated_images/.../four.png", "text": "HEADLINE FOUR", "prompt": "Exact generation prompt", "idea": "Concept"}
   ]
 }
 ```
@@ -69,3 +70,5 @@ It must connect to localhost and keeps claim tokens out of console output.
 Tests: `python -m unittest tests.test_gpt_packaging tests.test_finished_page
 tests.test_packaging tests.test_thumbnails tests.test_thumbnail_at_review
 tests.test_thumbnail_auto_api` (no paid generators).
+
+Ready status does not automatically queue packaging. Click Generate with GPT Pro for each production. YouTube currently accepts up to three variants per A/B test; the fourth is a spare.
