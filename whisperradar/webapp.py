@@ -1921,7 +1921,10 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            own_channels = db.list_own_channels(conn)
+            all_own = db.list_own_channels(conn)
+            own_state = "paused" if request.args.get("state") == "paused" else "active"
+            own_channels = [c for c in all_own
+                            if (c["active"] if own_state == "active" else not c["active"])]
             # one shared lookup for every row: never one Renderly request per
             # channel, and never a blocking one
             channels, chan_error, known = studio.renderly_channel_list(cfg)
@@ -1949,6 +1952,9 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            own_state=own_state,
+            own_active_count=sum(1 for c in all_own if c["active"]),
+            own_paused_count=sum(1 for c in all_own if not c["active"]),
             handover_options={c["id"]: handover.available_for(cfg, c["id"])
                               for c in own_channels},
             handover_defaults={c["id"]: handover.channel_defaults(cfg, c["id"])
@@ -2376,6 +2382,37 @@ def create_app(cfg) -> Flask:
         else:
             msg = f"Renderly sync failed: {result.get('error')}"
         return redirect("/my-channels?msg=" + quote(msg))
+
+    @app.post("/my-channels/state")
+    def my_channels_state():
+        """Pause (hide) or re-activate own channels: one row's button, or every
+        ticked row (`id` repeated). A paused channel leaves the Active list,
+        the Studio picker and Auto Run; its settings and videos stay."""
+        ids = []
+        for raw in request.form.getlist("id"):
+            try:
+                ids.append(int(raw))
+            except ValueError:
+                pass
+        active = 1 if request.form.get("active") == "1" else 0
+        view = "?state=paused" if request.form.get("state") == "paused" else ""
+        sep = "&" if view else "?"
+        if not ids:
+            return redirect(f"/my-channels{view}{sep}error="
+                            + quote("Tick at least one channel first"))
+        done = 0
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            for oc_id in dict.fromkeys(ids):
+                if db.get_own_channel(conn, oc_id):
+                    db.update_own_channel(conn, oc_id, active=active)
+                    done += 1
+        finally:
+            conn.close()
+        noun = "channel" if done == 1 else "channels"
+        verb = "activated" if active else "paused"
+        return redirect(f"/my-channels{view}{sep}msg=" + quote(f"{done} {noun} {verb}"))
 
     @app.post("/my-channels/remove")
     def my_channels_remove():
