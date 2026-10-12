@@ -131,16 +131,34 @@
     </form>
     <form id="export-form" method="get" action="/my-channels/export"
           onsubmit="if(!document.querySelector('input.exp-pick:checked')){alert('Tick at least one channel first.');return false;}"></form>
+    <div class="inline" style="margin-top:14px; gap:6px">
+      <span class="muted" style="font-size:13px">
+        <a href="/my-channels" style="{{ 'color:var(--text);font-weight:600' if own_state == 'active' else '' }}">Active ({{ own_active_count }})</a>
+        &nbsp;|&nbsp;
+        <a href="/my-channels?state=paused" style="{{ 'color:var(--text);font-weight:600' if own_state == 'paused' else '' }}">Paused ({{ own_paused_count }})</a>
+      </span>
+    </div>
+    <form id="own-bulk" method="post" action="/my-channels/state" class="inline"
+          style="display:none; margin-top:10px; gap:8px; align-items:center"
+          onsubmit="return ownBulkSubmit(this)">
+      <input type="hidden" name="state" value="{{ own_state }}">
+      <input type="hidden" name="active" value="{{ 1 if own_state == 'paused' else 0 }}">
+      <b id="own-bulk-count">0 selected</b>
+      <button type="submit"
+              title="{{ 'Bring the ticked channels back into the list, Studio and Auto Run' if own_state == 'paused' else 'Hide the ticked channels from the list, Studio and Auto Run (settings and videos are kept)' }}">
+        {{ 'Activate selected' if own_state == 'paused' else 'Pause selected' }}</button>
+      <button type="button" class="ghost" onclick="ownBulkClear()">clear</button>
+    </form>
     <table style="margin-top:12px">
       <tr>
         <th style="width:24px"><input type="checkbox" title="select all"
-            onclick="document.querySelectorAll('input.exp-pick').forEach(function(c){c.checked=this.checked}.bind(this))"></th>
+            onclick="document.querySelectorAll('input.exp-pick').forEach(function(c){c.checked=this.checked}.bind(this)); updateOwnBar()"></th>
         <th>Name</th><th>Genre</th><th>Handle</th><th>State</th>
         <th>Renderly</th><th></th>
       </tr>
       {% for ch in own_channels %}
       <tr>
-        <td><input type="checkbox" class="exp-pick" name="id" value="{{ ch['id'] }}" form="export-form"></td>
+        <td><input type="checkbox" class="exp-pick" name="id" value="{{ ch['id'] }}" form="export-form" onchange="updateOwnBar()"></td>
         <td>{{ ch["name"] }}
           {% if ch["description"] %}<div class="muted" style="font-size:12px">{{ ch["description"] }}</div>{% endif %}
           <div class="muted mono" style="font-size:11px">
@@ -172,6 +190,14 @@
           <div class="muted" style="font-size:12px">{{ link.detail if link else "" }}</div>
         </td>
         <td style="text-align:right; white-space:nowrap">
+          <form class="row" method="post" action="/my-channels/state" style="display:inline">
+            <input type="hidden" name="id" value="{{ ch['id'] }}">
+            <input type="hidden" name="state" value="{{ own_state }}">
+            <input type="hidden" name="active" value="{{ 0 if ch['active'] else 1 }}">
+            <button type="submit" class="ghost"
+                    title="{{ 'Pause: hides this channel from the list, Studio and Auto Run (settings and videos are kept)' if ch['active'] else 'Resume: the channel returns to the list, Studio and Auto Run' }}">
+              {{ 'pause' if ch['active'] else 'activate' }}</button>
+          </form>
           <button type="button" class="ghost" onclick="toggleEdit({{ ch['id'] }})"
                   title="Edit this channel and its production defaults (voice, image engine, render mode, upscale, auto-run, caps, seed folders, Flow project)">edit / defaults</button>
           <form class="row" method="post" action="/my-channels/sync" style="display:inline">
@@ -705,12 +731,19 @@
       </tr>
       {% else %}
       <tr><td colspan="7" class="muted">
+        {% if own_state == 'paused' %}
+        No paused channels &mdash; pause one with its <b>pause</b> button to hide it
+        from this list, Studio and Auto Run (its settings and videos are kept).
+        {% elif own_paused_count %}
+        No active channels &mdash; see the Paused tab.
+        {% else %}
         No own channels yet. Create one above, then click
         <b>edit / defaults</b> on its row - that is where its narration voice,
         image engine, render mode, upscale, Auto Run window, candidate window,
         producer LLM, per-day cap, seed folders and Flow project URL live.
         Everything left on "inherit" uses the global value from
         <a href="/settings">Settings</a>.
+        {% endif %}
       </td></tr>
       {% endfor %}
     </table>
@@ -990,6 +1023,31 @@
     var ta = out.parentNode.querySelector('textarea[name=style]');
     if (ta) wrStyleCount(ta, out, parseInt(out.dataset.limit, 10));
   });
+</script>
+<script>
+  // bulk pause/activate for the ticked rows (the same ticks drive "download selected")
+  function updateOwnBar() {
+    const n = document.querySelectorAll('input.exp-pick:checked').length;
+    const bar = document.getElementById('own-bulk');
+    if (!bar) return;
+    bar.style.display = n ? 'flex' : 'none';
+    document.getElementById('own-bulk-count').textContent = n + ' selected';
+  }
+  function ownBulkClear() {
+    document.querySelectorAll('input.exp-pick').forEach(function (c) { c.checked = false; });
+    updateOwnBar();
+  }
+  function ownBulkSubmit(form) {
+    const ticked = document.querySelectorAll('input.exp-pick:checked');
+    if (!ticked.length) return false;
+    form.querySelectorAll('input[name="id"]').forEach(function (i) { i.remove(); });
+    ticked.forEach(function (c) {
+      const h = document.createElement('input');
+      h.type = 'hidden'; h.name = 'id'; h.value = c.value;
+      form.appendChild(h);
+    });
+    return true;
+  }
 </script>
 </body>
 </html>

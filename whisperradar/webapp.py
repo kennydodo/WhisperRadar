@@ -1204,6 +1204,95 @@ def create_app(cfg) -> Flask:
             conn.close()
         return _back(request, msg="Channel updated", base="/watched")
 
+    @app.post("/channels/bulk")
+    def channels_bulk():
+        """Apply one change to every ticked channel on the watched list:
+        pause / activate / set genre / set kind / remove."""
+        ids = [i for i in request.form.getlist("ids") if i]
+        action = request.form.get("bulk_action") or ""
+        value = (request.form.get("bulk_value") or "").strip()
+        view = "?state=paused" if request.form.get("state") == "paused" else ""
+        sep = "&" if view else "?"
+
+        def back(text, key="msg"):
+            return redirect(f"/watched{view}{sep}{key}={quote(text)}")
+
+        if not ids:
+            return back("Tick at least one channel first", "error")
+        if action not in ("pause", "activate", "genre", "kind", "remove",
+                          "backfill", "views"):
+            return back("Choose an action first", "error")
+        if action == "genre" and not value:
+            return back("Enter a genre to apply", "error")
+        if action == "kind" and value not in ("primary", "similar"):
+            return back("Choose primary or similar", "error")
+
+        if action in ("backfill", "views"):
+            # Long jobs: one background job works through the ticked channels
+            # one after another (the job slot runs a single job at a time).
+            log = logging.getLogger("whisperradar")
+            chosen = list(dict.fromkeys(ids))
+            label = "history backfill" if action == "backfill" else "view counts"
+
+            def worker():
+                conn = db.connect(cfg.db_path)
+                db.init_db(conn)
+                try:
+                    total = 0
+                    for n, channel_id in enumerate(chosen, 1):
+                        ch = db.get_channel(conn, channel_id)
+                        if not ch:
+                            continue
+                        log.info("%s %d/%d: %s", label, n, len(chosen), ch["name"])
+                        try:
+                            if action == "backfill":
+                                total += pipeline.import_history(cfg, conn, ch)
+                            else:
+                                total += pipeline.refresh_view_counts(cfg, conn, ch)
+                        except Exception as exc:  # one bad channel must not stop the rest
+                            log.warning("%s failed for %s: %s", label, ch["name"], exc)
+                    if action == "backfill":
+                        log.info("backfill finished: %d new backlog video(s)", total)
+                    else:
+                        log.info("view counts refreshed: %d row(s)", total)
+                finally:
+                    conn.close()
+
+            if not job.start(worker, label):
+                return back("A job is already running", "error")
+            noun = "channel" if len(chosen) == 1 else "channels"
+            what = "Importing history for" if action == "backfill" else "Refreshing view counts for"
+            return back(f"{what} {len(chosen)} {noun} - watch the log")
+
+        done = 0
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            for channel_id in dict.fromkeys(ids):
+                row = db.get_channel(conn, channel_id)
+                if not row:
+                    continue
+                if action == "remove":
+                    db.remove_channel(conn, channel_id)
+                elif action == "pause":
+                    db.update_channel(conn, channel_id, active=0)
+                elif action == "activate":
+                    db.update_channel(conn, channel_id, active=1)
+                elif action == "kind":
+                    db.update_channel(conn, channel_id, kind=value)
+                elif action == "genre":
+                    db.update_channel(conn, channel_id, genre=value)
+                    if row["genre"] != value:
+                        pipeline.move_channel_files(cfg, conn, row, value)
+                done += 1
+        finally:
+            conn.close()
+        verb = {"pause": "paused", "activate": "activated", "remove": "removed",
+                "genre": f"moved to genre \"{value}\"",
+                "kind": f"set to {value}"}[action]
+        noun = "channel" if done == 1 else "channels"
+        return back(f"{done} {noun} {verb}")
+
     @app.get("/status")
     def status():
         return {
@@ -1832,7 +1921,10 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            own_channels = db.list_own_channels(conn)
+            all_own = db.list_own_channels(conn)
+            own_state = "paused" if request.args.get("state") == "paused" else "active"
+            own_channels = [c for c in all_own
+                            if (c["active"] if own_state == "active" else not c["active"])]
             # one shared lookup for every row: never one Renderly request per
             # channel, and never a blocking one
             channels, chan_error, known = studio.renderly_channel_list(cfg)
@@ -1860,6 +1952,9 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            own_state=own_state,
+            own_active_count=sum(1 for c in all_own if c["active"]),
+            own_paused_count=sum(1 for c in all_own if not c["active"]),
             handover_options={c["id"]: handover.available_for(cfg, c["id"])
                               for c in own_channels},
             handover_defaults={c["id"]: handover.channel_defaults(cfg, c["id"])
@@ -2287,6 +2382,37 @@ def create_app(cfg) -> Flask:
         else:
             msg = f"Renderly sync failed: {result.get('error')}"
         return redirect("/my-channels?msg=" + quote(msg))
+
+    @app.post("/my-channels/state")
+    def my_channels_state():
+        """Pause (hide) or re-activate own channels: one row's button, or every
+        ticked row (`id` repeated). A paused channel leaves the Active list,
+        the Studio picker and Auto Run; its settings and videos stay."""
+        ids = []
+        for raw in request.form.getlist("id"):
+            try:
+                ids.append(int(raw))
+            except ValueError:
+                pass
+        active = 1 if request.form.get("active") == "1" else 0
+        view = "?state=paused" if request.form.get("state") == "paused" else ""
+        sep = "&" if view else "?"
+        if not ids:
+            return redirect(f"/my-channels{view}{sep}error="
+                            + quote("Tick at least one channel first"))
+        done = 0
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            for oc_id in dict.fromkeys(ids):
+                if db.get_own_channel(conn, oc_id):
+                    db.update_own_channel(conn, oc_id, active=active)
+                    done += 1
+        finally:
+            conn.close()
+        noun = "channel" if done == 1 else "channels"
+        verb = "activated" if active else "paused"
+        return redirect(f"/my-channels{view}{sep}msg=" + quote(f"{done} {noun} {verb}"))
 
     @app.post("/my-channels/remove")
     def my_channels_remove():
