@@ -258,6 +258,8 @@ class VideoClip:
     end_viewport: Rect = Rect(0, 0, 0, 0)
     transition: Optional[TransitionIn] = None
     reveal: Optional[RevealInfo] = None
+    # AI image-to-video clip that replaces the still's pan/zoom (animated opening)
+    video_path: Optional[str] = None
 
     def to_dict(self) -> dict:
         d: dict = {"file_path": self.file_path, "scene_id": self.scene_id}
@@ -278,6 +280,8 @@ class VideoClip:
             d["transition"] = self.transition.to_dict()
         if self.reveal is not None:
             d["reveal"] = self.reveal.to_dict()
+        if self.video_path:
+            d["video_path"] = self.video_path
         return d
 
     @staticmethod
@@ -296,7 +300,8 @@ class VideoClip:
             end_viewport=Rect.from_dict(d["end_viewport"]),
             transition=None if tr is None else TransitionIn(
                 tr.get("kind", "none"), int(tr.get("duration_frames", 0))),
-            reveal=None if rv is None else RevealInfo.from_dict(rv))
+            reveal=None if rv is None else RevealInfo.from_dict(rv),
+            video_path=d.get("video_path") or None)
 
 
 @dataclass

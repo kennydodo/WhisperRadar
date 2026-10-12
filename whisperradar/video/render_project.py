@@ -55,6 +55,24 @@ def images_from_timeline(timeline: m.Timeline) -> List[m.ImageInfo]:
     return result
 
 
+def attach_motion_clips(timeline: m.Timeline, folder: str) -> int:
+    """Point clips at their AI videos (clips\\<image stem>.mp4) when they exist.
+
+    Render-time only (not saved into timeline.json). Reveal clips keep their
+    own handling. Returns how many clips now play a video."""
+    n = 0
+    for scene in timeline.scenes:
+        for clip in scene.clips:
+            if clip.reveal is not None or not clip.file_path:
+                continue
+            stem = os.path.splitext(os.path.basename(clip.file_path))[0]
+            cand = os.path.join(folder, "clips", stem + ".mp4")
+            if os.path.isfile(cand) and os.path.getsize(cand) > 10_000:
+                clip.video_path = cand
+                n += 1
+    return n
+
+
 def find_srt(project_folder: str) -> Optional[str]:
     try:
         names = sorted(os.listdir(project_folder))
@@ -98,6 +116,7 @@ def render_final(project_folder: str, preview: bool,
         ffmpeg_path = resolve_effective_ffmpeg_path(options.render)
         runner = FfmpegRunner(ffmpeg_path)
         images = reveal_images.ensure(timeline, images, runner, cancel_event)
+        attach_motion_clips(timeline, folder)
         issues = sound_effects.resolve(timeline, folder, runner, options.render.ffprobe_path,
                                        options.sound.default_pop, cancel_event=cancel_event)
         if issue_sink is not None:
