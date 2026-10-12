@@ -16,8 +16,8 @@ import { videoCommand } from '../commands/video.js';
 const COMMANDS = {
   video: {
     run: videoCommand,
-    valueFlags: ['image', 'prompt', 'project-url', 'model', 'resolution', 'duration', 'aspect', 'out', 'timeout', 'channel', 'slowmo', 'url', 'profile'],
-    summary: 'Image-to-video spike: one start frame + motion prompt -> one mp4 via Flow (default Omni 1.1 Flash).',
+    valueFlags: ['job', 'report', 'image', 'prompt', 'project-url', 'model', 'resolution', 'duration', 'aspect', 'out', 'timeout', 'channel', 'slowmo', 'url', 'profile'],
+    summary: 'Image-to-video: one start frame + prompt (--image/--prompt), or a batch (--job file.json [--report file.json]) -> mp4 clips via Flow (default Veo 3.1 - Lite).',
   },
   login: {
     run: loginCommand,
