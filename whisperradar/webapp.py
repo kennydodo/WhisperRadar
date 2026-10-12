@@ -37,6 +37,7 @@ from flask import (
 )
 
 from . import external_prompts
+from . import motion
 from . import handover
 from . import demand as demand_mod
 from . import niche_chips
@@ -1974,6 +1975,9 @@ def create_app(cfg) -> Flask:
             upscale_labels=settings.UPSCALE_LABELS,
             native_tiers=settings.FLOW_NATIVE_TIERS,
             native_tier_labels=settings.FLOW_NATIVE_TIER_LABELS,
+            animate_models=motion.MODELS,
+            animate_min=motion.MIN_SECONDS, animate_max=motion.MAX_SECONDS,
+            animate_default=motion.DEFAULT_SECONDS,
             brief_presets=briefs.MOTION_PRESETS,
             brief_custom_label=briefs.CUSTOM_LABEL,
             brief_motion_codes=briefs.MOTION_CODE_INFO,
@@ -2278,6 +2282,16 @@ def create_app(cfg) -> Flask:
             fields["generate_references"] = (None if raw == ""
                                              else 1 if raw in ("1", "on", "true")
                                              else 0)
+        # animated opening (motion.py): per channel, off unless switched on
+        if "animate_enabled" in request.form:
+            raw = (request.form.get("animate_enabled") or "").strip()
+            fields["animate_enabled"] = 1 if raw in ("1", "on", "true") else 0
+        if "animate_seconds" in request.form:
+            raw = (request.form.get("animate_seconds") or "").strip()
+            fields["animate_seconds"] = motion.clamp_seconds(raw) if raw else None
+        if "animate_model" in request.form:
+            raw = (request.form.get("animate_model") or "").strip()
+            fields["animate_model"] = raw if raw in motion.MODELS else None
         # shotlist gate overrides
         if "shotlist_min_alignment" in request.form:
             raw = (request.form.get("shotlist_min_alignment") or "").strip()

@@ -330,6 +330,23 @@
                   <option value="0" {{ 'selected' if ch['generate_references'] == 0 else '' }}>skip the refs stage</option>
                 </select>
               </label>
+              <label title="Animate the first part of each video: Flow image-to-video clips for the opening shots. Off = this channel is untouched (no Motion clips step).">animated opening
+                <select name="animate_enabled">
+                  <option value="0" {{ 'selected' if not ch['animate_enabled'] else '' }}>off</option>
+                  <option value="1" {{ 'selected' if ch['animate_enabled'] else '' }}>on</option>
+                </select>
+              </label>
+              <label title="How much of the video to animate, in seconds ({{ animate_min }}-{{ animate_max }}). The window ends on a shot boundary at or just after this length.">animate first (s)
+                <input type="number" name="animate_seconds" min="{{ animate_min }}" max="{{ animate_max }}" step="5"
+                       value="{{ ch['animate_seconds'] if ch['animate_seconds'] else animate_default }}" style="width:80px">
+              </label>
+              <label title="Flow video model (720p, 8 s clips)">animation model
+                <select name="animate_model">
+                  {% for m in animate_models %}
+                  <option value="{{ m }}" {{ 'selected' if (ch['animate_model'] or animate_models[0]) == m else '' }}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>auto run
                 <select name="autorun_enabled">
                   <option value="">inherit</option>
