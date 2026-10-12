@@ -1204,6 +1204,57 @@ def create_app(cfg) -> Flask:
             conn.close()
         return _back(request, msg="Channel updated", base="/watched")
 
+    @app.post("/channels/bulk")
+    def channels_bulk():
+        """Apply one change to every ticked channel on the watched list:
+        pause / activate / set genre / set kind / remove."""
+        ids = [i for i in request.form.getlist("ids") if i]
+        action = request.form.get("bulk_action") or ""
+        value = (request.form.get("bulk_value") or "").strip()
+        view = "?state=paused" if request.form.get("state") == "paused" else ""
+        sep = "&" if view else "?"
+
+        def back(text, key="msg"):
+            return redirect(f"/watched{view}{sep}{key}={quote(text)}")
+
+        if not ids:
+            return back("Tick at least one channel first", "error")
+        if action not in ("pause", "activate", "genre", "kind", "remove"):
+            return back("Choose an action first", "error")
+        if action == "genre" and not value:
+            return back("Enter a genre to apply", "error")
+        if action == "kind" and value not in ("primary", "similar"):
+            return back("Choose primary or similar", "error")
+
+        done = 0
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            for channel_id in dict.fromkeys(ids):
+                row = db.get_channel(conn, channel_id)
+                if not row:
+                    continue
+                if action == "remove":
+                    db.remove_channel(conn, channel_id)
+                elif action == "pause":
+                    db.update_channel(conn, channel_id, active=0)
+                elif action == "activate":
+                    db.update_channel(conn, channel_id, active=1)
+                elif action == "kind":
+                    db.update_channel(conn, channel_id, kind=value)
+                elif action == "genre":
+                    db.update_channel(conn, channel_id, genre=value)
+                    if row["genre"] != value:
+                        pipeline.move_channel_files(cfg, conn, row, value)
+                done += 1
+        finally:
+            conn.close()
+        verb = {"pause": "paused", "activate": "activated", "remove": "removed",
+                "genre": f"moved to genre \"{value}\"",
+                "kind": f"set to {value}"}[action]
+        noun = "channel" if done == 1 else "channels"
+        return back(f"{done} {noun} {verb}")
+
     @app.get("/status")
     def status():
         return {
