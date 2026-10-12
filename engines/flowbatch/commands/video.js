@@ -259,6 +259,21 @@ function modelOptions(flags) {
 
 const OUT_OF_CREDITS = /credit|quota|limit|insufficient|upgrade/i;
 
+/** After a long generation Flow can leave the prompt box in another mode (no
+ * "Start" slot). Re-apply the settings; if that is not enough, reload the project. */
+async function ensureFramesMode({ driver, page, opts, projectUrl }) {
+  const hasStart = async () =>
+    (await page.getByRole('button', { name: /^\s*Start\s*$/ }).count().catch(() => 0)) > 0;
+  if (await hasStart()) return;
+  log.warn('No "Start" slot - re-applying the video settings.');
+  await configure(driver, page, opts).catch((error) => log.warn(`configure: ${String(error.message ?? error)}`));
+  if (await hasStart()) return;
+  log.warn('Still no "Start" slot - reloading the project page.');
+  await shot(page, 'no-start');
+  await driver.openProject(projectUrl || page.url());
+  await configure(driver, page, opts);
+}
+
 /** --job <json>: many clips in one browser session. Writes --report when asked. */
 async function runJob(flags, context) {
   const { settings } = context;
@@ -267,7 +282,7 @@ async function runJob(flags, context) {
   const reportPath = typeof flags.report === 'string' ? path.resolve(flags.report) : null;
   const projectUrl = (typeof flags['project-url'] === 'string' ? flags['project-url'] : job.projectUrl || settings.projectUrl || '').trim();
   const opts = modelOptions({ ...flags, model: flags.model ?? job.model, aspect: flags.aspect ?? job.aspect });
-  const timeoutMs = intFlag(flags, 'timeout', 360) * 1000;
+  const timeoutMs = intFlag(flags, 'timeout', 900) * 1000;
   const report = { done: [], failed: [], stopped: false, reason: '' };
   const save = () => reportPath && fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
@@ -286,12 +301,14 @@ async function runJob(flags, context) {
       }
       log.info(`Clip ${i + 1}/${items.length}: ${path.basename(item.image)}`);
       try {
+        await ensureFramesMode({ driver, page, opts, projectUrl });
         await makeClip({ driver, page, videoResponses }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
         report.done.push(item.out);
         streak = 0;
       } catch (error) {
         const message = String(error.message ?? error);
         log.error(message);
+        await shot(page, 'clip-error');
         report.failed.push({ out: item.out, error: message });
         streak += 1;
         if (OUT_OF_CREDITS.test(message) || streak >= 2) {
