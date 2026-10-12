@@ -620,6 +620,23 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
                                       plan["profile"])[0])
     rules = _hard_rules(plan, eff, ctx, n)
     audit = _alignment_rules(ctx["visual_style"])
+    # animated opening (channel setting): the app's own free check needs an
+    # "ai_motion" line on every shot in the window; the judge also grades how
+    # well each of those stills will animate
+    if eff.get("animate_enabled"):
+        from . import motion
+        seconds = eff["animate_seconds"]
+        last = motion.window_last_cue(cues, seconds, studio._srt_seconds)
+        rules += (f"\nANIMATED OPENING: every shot that starts in cues 1-{last} "
+                  f"(about the first {seconds} s) must have a non-empty "
+                  f"\"ai_motion\" field; shots after that must not.")
+        audit += motion.JUDGE_RULES + (
+            "\nIn this JSON the ANIMATED SHOTs are the shots that carry an "
+            "\"ai_motion\" field; that field is their planned motion.")
+        if data is not None:
+            a_faults, _warn, _assets = motion.window_check(
+                data, cues, seconds, studio._srt_seconds)
+            local = (local or []) + a_faults
     # reveal shots / sound effects: the built-in judge adds these rules per
     # chunk only when a chunk holds such a shot, and it splits a build-up into
     # one judged image per item. The external judge sees the raw JSON, so it

@@ -100,3 +100,39 @@ class JudgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExternalJudgeTests(unittest.TestCase):
+    """The web-chat route's judge prompt carries the animation rules and the
+    free ai_motion check (local faults)."""
+
+    def _prompt(self, enabled, motion_for):
+        from unittest import mock
+        from whisperradar import external_prompts as ep
+        cues = _cues()
+        data = _data(cues, motion_for=motion_for)
+        import json
+        eff = {"animate_enabled": enabled, "animate_seconds": 30,
+               "animate_model": motion.DEFAULT_MODEL,
+               "generate_references": False, "shotlist_min_alignment": 0.8}
+        plan = {"cues": cues, "profile": mock.Mock(reveal=False), "max_hold": 12,
+                "min_align": 0.8, "narration": "1: x (4s)"}
+        ctx = {"eff": eff, "visual_style": "", "bible": ""}
+        with mock.patch.object(ep, "_context", return_value=ctx), \
+             mock.patch.object(ep, "_plan_inputs", return_value=plan), \
+             mock.patch.object(ep, "_hard_rules", return_value="RULES"), \
+             mock.patch.object(ep, "_alignment_rules", return_value="AUDIT"), \
+             mock.patch.object(studio, "shotlist_structural_faults", return_value=[]), \
+             mock.patch.object(studio, "shotlist_pacing", return_value=([], [])):
+            return ep.shotlist_judge_prompt(None, 1, json.dumps(data))
+
+    def test_enabled_adds_rules_and_flags_a_missing_line(self):
+        prompt, local = self._prompt(True, lambda c: c not in (5, 6))
+        self.assertIn("ANIMATED OPENING", prompt)
+        self.assertIn("animatable", prompt)
+        self.assertTrue(any("ai_motion" in f for f in local))
+
+    def test_disabled_changes_nothing(self):
+        prompt, local = self._prompt(False, lambda c: False)
+        self.assertNotIn("ANIMATED OPENING", prompt)
+        self.assertEqual(local, [])
