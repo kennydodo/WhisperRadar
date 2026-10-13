@@ -106,6 +106,22 @@ def _last_cue(cues_value):
     return int(tail) if tail.isdigit() else None
 
 
+# The opening's stills are animated into 16:9 video clips, so only the two
+# zoom codes are allowed there: pans (PL/PR/PV) and tilts (PU/PD) need a
+# canvas wider or taller than the video frame, and ST is not a motion at all.
+OPENING_MOTIONS = ("ZI", "ZO")
+
+
+def shot_motion_code(shot: dict) -> str:
+    """A shot's motion code: its `motion` field, else the suffix of its asset
+    file name (S01_01_SCN_ZI.png -> ZI)."""
+    code = str(shot.get("motion") or "").strip().upper()
+    if code:
+        return code
+    stem = str(shot.get("asset") or "").rsplit(".", 1)[0]
+    return stem.rsplit("_", 1)[-1].upper() if "_" in stem else ""
+
+
 def window_last_cue(cues: list[dict], seconds: float, to_seconds) -> int:
     """Number of the last cue that STARTS before `seconds` (0 when none).
     `cues` are {"index", "start", "end"}; `to_seconds` converts a timestamp."""
@@ -126,6 +142,12 @@ def writer_note(seconds: int, last_cue: int) -> str:
         "above unchanged): every image in this part is turned into an AI "
         "image-to-video clip of about 8 seconds, so plan each one to ANIMATE "
         "well:\n"
+        "- MOTION CODE: every shot in this part uses ZI (slow push in) or ZO "
+        "(slow pull out) ONLY - in `motion` and in the asset file name. Never "
+        "PL, PR, PU, PD, PV or ST here: a pan or tilt needs a wider or taller "
+        "image than the 16:9 video frame, and the clip is animated from a "
+        "normal 16:9 image. Alternate ZI and ZO. The rest of the plan keeps "
+        "the usual motion codes.\n"
         "- One clear subject (or one small group) in a simple, open scene with "
         "visible depth - foreground, midground, background - and room around "
         "the subject for the camera to move.\n"
@@ -140,7 +162,7 @@ def writer_note(seconds: int, last_cue: int) -> str:
         "- Give EVERY shot in this part an \"ai_motion\" field: one short "
         "sentence saying what moves and how the camera moves (for example "
         "\"slow push in; her hair and the curtains drift in the breeze\" or "
-        "\"camera pans right across the street as cars pass\"). Describe "
+        "\"slow pull out; cars pass along the street\"). Describe "
         "movement only - never repeat the scene description, and keep the "
         "camera move gentle (no cuts, no sudden zoom, no new subjects "
         "appearing).\n"
@@ -150,6 +172,7 @@ def writer_note(seconds: int, last_cue: int) -> str:
 
 FIX_RULE = (
     " Shots in the animated opening (the first cues the checker names) must "
+    "use ZI or ZO as the motion code (no pans, tilts or static), "
     "keep a one-sentence \"ai_motion\" field (what moves, how the camera "
     "moves) and an image that animates well: one clear subject, depth, no "
     "text, charts or collages, hold of 8 seconds or less.")
@@ -182,12 +205,16 @@ def window_check(data: dict, cues: list[dict], seconds: float, to_seconds,
     warnings: list[str] = []
     assets: set[str] = set()
     missing: list[str] = []
+    wrong: list[tuple[str, str]] = []
     for s in shots:
         first, last = _first_cue(s.get("cues")), _last_cue(s.get("cues"))
         if first is None or first > limit:
             continue
         asset = str(s.get("asset") or "")
         assets.add(asset)
+        code = shot_motion_code(s)
+        if code not in OPENING_MOTIONS:
+            wrong.append((asset, code or "none"))
         if not str(s.get("ai_motion") or "").strip():
             missing.append(asset)
         a, b = by_index.get(first), by_index.get(last if last is not None else first)
@@ -198,6 +225,14 @@ def window_check(data: dict, cues: list[dict], seconds: float, to_seconds,
                     f"animated opening: {asset} holds {hold:.1f}s - longer than "
                     f"{MAX_STRETCH_SECONDS:g}s, so its clip will be slowed and "
                     f"then frozen (split it to keep it moving)")
+    if wrong:
+        shown = ", ".join(f"{a} ({c})" for a, c in wrong[:10]) \
+            + ("..." if len(wrong) > 10 else "")
+        faults.append(
+            f"{len(wrong)} shot(s) in the animated opening (cues 1-{limit}) "
+            f"do not use ZI or ZO: {shown}. The opening is animated from "
+            f"16:9 images, so only ZI/ZO are allowed there - no PL, PR, PU, "
+            f"PD, PV or ST; change the motion code and the asset file name")
     if missing:
         shown = ", ".join(missing[:10]) + ("..." if len(missing) > 10 else "")
         faults.append(

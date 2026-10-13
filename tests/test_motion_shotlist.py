@@ -46,6 +46,8 @@ class WriterNoteTests(unittest.TestCase):
         self.assertIn("cues 1-8", note)
         self.assertIn("ai_motion", note)
         self.assertIn("NO text", note)
+        self.assertIn("ZI (slow push in) or ZO", note)
+        self.assertNotIn("pans right", note)
 
     def test_prompt_gets_the_note_only_when_given(self):
         base = studio.shotlist_prompt("BRIEF", "1: hi (4s)")
@@ -67,6 +69,26 @@ class WindowCheckTests(unittest.TestCase):
         # shots after the window need nothing
         ok = _data(cues, motion_for=lambda c: c <= 8)
         self.assertEqual(motion.window_check(ok, cues, 30, studio._srt_seconds)[0], [])
+
+    def test_pans_tilts_and_static_are_faults_in_the_opening_only(self):
+        cues = _cues()
+        data = _data(cues)
+        for shot, code in zip(data["shots"], ["PL", "PU", "ST", "PV"]):
+            shot["motion"] = code
+            shot["asset"] = shot["asset"].replace("_ZI", "_" + code)
+        # a pan AFTER the window is fine
+        data["shots"][-1]["motion"] = "PR"
+        faults, _w, _a = motion.window_check(data, cues, 30, studio._srt_seconds)
+        self.assertEqual(len(faults), 1)
+        self.assertIn("4 shot(s)", faults[0])
+        self.assertIn("ZI or ZO", faults[0])
+        self.assertEqual(
+            motion.window_check(_data(cues), cues, 30, studio._srt_seconds)[0],
+            [])
+
+    def test_code_falls_back_to_the_file_name(self):
+        self.assertEqual(motion.shot_motion_code({"asset": "S01_01_SCN_PL.png"}), "PL")
+        self.assertEqual(motion.shot_motion_code({"asset": "x.png", "motion": "zo"}), "ZO")
 
     def test_long_hold_is_only_a_warning(self):
         cues = _cues()
