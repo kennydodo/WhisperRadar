@@ -93,15 +93,15 @@
   <p class="muted" style="margin:0 0 6px"><a href="/finished">&larr; Finished</a> &middot; <a href="/studio/{{ prod['id'] }}/kit">publish kit</a> &middot; <a href="/studio/{{ prod['id'] }}">open the production</a></p>
   <h1>Thumbnails &mdash; {{ prod['title'] }}</h1>
   {% if data.provider == 'codex' %}
-  <p class="sub">Three finished GPT thumbnails. Preview them below, download them, and choose your favourite.</p>
+  <p class="sub">{{ data.concepts|length }} finished GPT thumbnails. Preview them below, download them, and choose your favourite.</p>
   {% else %}
   <p class="sub">3&ndash;5 concepts: the character and the host together, the character alone, or the host alone &mdash; each with a few catchy words. A chat designs them, your image engine paints the picture, and the words are added sharp on top.</p>
   {% endif %}
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   <form method="post" action="/studio/{{ prod['id'] }}/gpt-pro/generate" style="margin-bottom:16px">
-    <button type="submit">Generate with GPT Pro</button>
-    <span class="muted" style="font-size:12px">Three finished thumbnails, a title and description from Codex.</span>
+    <button type="submit" {% if prod['status'] != 'ready' %}disabled{% endif %}>Generate with GPT Pro</button>
+    <span class="muted" style="font-size:12px">Four finished thumbnails, four titles and a description from Codex. Queue this production, then use Codex Scheduled &gt; Run now or wait for the hourly worker.</span>
   </form>
 
   <div class="panel">
