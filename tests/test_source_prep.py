@@ -114,3 +114,31 @@ class AutoRunRouteTests(unittest.TestCase):
             source_prep.prepare = orig
             autorun.run_pipeline = orig_run
             source_prep.drop_waiting("v1")
+
+
+class ResumeAfterRestartTests(unittest.TestCase):
+    setUp = SourceWaitTests.setUp
+    tearDown = SourceWaitTests.tearDown
+
+    def test_a_saved_request_runs_after_a_restart_once_the_text_exists(self):
+        import json
+        import time
+        from whisperradar.webapp import create_app
+        tr = self.t / "v1.txt"
+        tr.write_text("hello", encoding="utf-8")
+        db.set_video(self.conn, "v1", status="transcribed", transcript_path=str(tr))
+        marker = studio.prod_dir(self.cfg, self.pid) / "autorun_after_source.json"
+        marker.write_text(json.dumps({"provider": None}), encoding="utf-8")
+        calls = []
+        orig = autorun.run_pipeline
+        autorun.run_pipeline = lambda *a, **k: calls.append(a[1]) or "ok"
+        try:
+            create_app(self.cfg)
+            for _ in range(60):
+                if calls:
+                    break
+                time.sleep(0.1)
+            self.assertEqual(calls, [self.pid])
+            self.assertFalse(marker.exists())
+        finally:
+            autorun.run_pipeline = orig

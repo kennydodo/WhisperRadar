@@ -3267,24 +3267,24 @@ def create_app(cfg) -> Flask:
             msg = (f"?msg={quote('Seeded ' + ' + '.join(bits) + ' from ' + seeded['source'])}")
         return redirect(f"/studio/{pid}{msg}")
 
-    def _autorun_after_source(pid, wait):
-        """Auto-run on a production whose source transcript is still being
-        fetched: make sure the fetch is running, and start the auto-run by
-        itself the moment the text is there."""
-        vid = wait["video_id"]
-        provider = (request.form.get("provider") or "").strip() or None
-        conn = db.connect(cfg.db_path)
-        try:
-            prod = db.get_production(conn, pid)
-            cid = int(prod["own_channel_id"] or 0)
-        finally:
-            conn.close()
+    AFTER_SOURCE_FILE = "autorun_after_source.json"
+
+    def _queue_autorun_after_source(pid, vid, provider, cid):
+        """Start the auto-run the moment the source transcript is in place.
+        The request is saved in the production's folder, so a restart of the
+        app does not lose it (see _resume_after_source)."""
+        marker = studio.prod_dir(cfg, pid) / AFTER_SOURCE_FILE
+        marker.write_text(json.dumps({"provider": provider}), encoding="utf-8")
 
         def go():
             slot = _job_for_channel(cid)
 
             def worker():
                 _job_tls.job = slot
+                try:
+                    marker.unlink()
+                except OSError:
+                    pass
                 result = autorun.run_pipeline(cfg, pid, job=slot,
                                               log=slot.log.append,
                                               provider=provider)
@@ -3300,8 +3300,57 @@ def create_app(cfg) -> Flask:
         source_prep.when_ready(vid, go)
         if not source_prep.is_active(vid):
             source_prep.start_background(cfg, vid, sjob.log.append)
+
+    def _autorun_after_source(pid, wait):
+        """Auto-run on a production whose source transcript is still being
+        fetched: make sure the fetch is running, and start the auto-run by
+        itself the moment the text is there."""
+        provider = (request.form.get("provider") or "").strip() or None
+        conn = db.connect(cfg.db_path)
+        try:
+            prod = db.get_production(conn, pid)
+            cid = int(prod["own_channel_id"] or 0)
+        finally:
+            conn.close()
+        _queue_autorun_after_source(pid, wait["video_id"], provider, cid)
         return _studio_url(pid, msg="Auto-run will start by itself once the "
                                     "source transcript is ready")
+
+    def _resume_after_source():
+        """At start-up: pick up auto-run requests that were waiting for a
+        source transcript when the app stopped."""
+        try:
+            conn = db.connect(cfg.db_path)
+            try:
+                db.init_db(conn)
+                prods = list(db.list_productions(conn))
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001
+            return
+        for prod in prods:
+            try:
+                marker = studio.prod_dir(cfg, prod["id"]) / AFTER_SOURCE_FILE
+                if not marker.exists():
+                    continue
+                provider = json.loads(
+                    marker.read_text(encoding="utf-8")).get("provider")
+                wait = source_prep.state(cfg, prod["id"])
+                cid = int(prod["own_channel_id"] or 0)
+                if wait:
+                    _queue_autorun_after_source(prod["id"], wait["video_id"],
+                                                provider, cid)
+                else:
+                    marker.unlink()
+                    _queue_autorun_after_source(
+                        prod["id"], prod["source_video_id"] or "", provider,
+                        cid)
+                    source_prep._run_after(prod["source_video_id"] or "")
+            except Exception:  # noqa: BLE001 - a bad marker must not stop the app
+                continue
+
+    threading.Thread(target=_resume_after_source, daemon=True,
+                     name="resume-after-source").start()
 
     @app.post("/studio/<int:pid>/source/fetch")
     def studio_source_fetch(pid):
