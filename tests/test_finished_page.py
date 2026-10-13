@@ -96,6 +96,15 @@ class FinishedPageTests(unittest.TestCase):
         self.assertNotIn("From A", html)
         self.assertIn("From B", html)
 
+    def test_published_production_has_kit_links_and_generate_disabled(self):
+        pid = self._make("Out", self.chan_a, status="published")
+        html = self.client.get("/finished").get_data(as_text=True)
+        self.assertNotIn(f'href="/studio/{pid}/kit"', html)
+        self.assertNotIn(f'href="/studio/{pid}/thumbnails"', html)
+        self.assertIn('class="muted off">no kit', html)
+        row = html[html.index(f"/studio/{pid}/gpt-pro/generate"):]
+        self.assertIn("disabled", row[:300])
+
     def test_sorting_by_channel_orders_alphabetically(self):
         self._make("From B", self.chan_b, status="ready")
         self._make("From A", self.chan_a, status="ready")

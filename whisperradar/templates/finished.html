@@ -53,6 +53,8 @@
        font-size: 11px; letter-spacing: .04em; }
   th a { color: var(--muted); }
   th a.active { color: var(--accent); }
+  .off { opacity: .4; cursor: not-allowed; }
+  button:disabled { opacity: .4; cursor: not-allowed; filter: none; }
   td.actions { text-align: right; white-space: nowrap; }
   td.actions form { display: inline-block; margin-left: 6px; }
 </style>
@@ -134,10 +136,10 @@
           <td>
             {% if item.kit and item.kit.status == 'ready' %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge published" title="Publish kit is ready">kit ready{% if item.kit.score %} {{ item.kit.score }}{% endif %}</a>
             {% elif item.kit %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge genre" title="A draft kit - open it to finish it">kit draft</a>
-            {% else %}<a href="/studio/{{ item.row['id'] }}/kit" class="muted">no kit</a>{% endif %}
+            {% else %}{% if item.row['status'] == 'published' %}<span class="muted off">no kit</span>{% else %}<a href="/studio/{{ item.row['id'] }}/kit" class="muted">no kit</a>{% endif %}{% endif %}
             <br>{% if item.thumbs and item.thumbs.chosen %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge published" title="A thumbnail is chosen">thumbnail chosen</a>
             {% elif item.thumbs %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge genre" title="Concepts exist - pick one">{{ item.thumbs.count }} thumbnails</a>
-            {% else %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="muted">no thumbnail</a>{% endif %}
+            {% else %}{% if item.row['status'] == 'published' %}<span class="muted off">no thumbnail</span>{% else %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="muted">no thumbnail</a>{% endif %}{% endif %}
             <form method="post" action="/studio/{{ item.row['id'] }}/gpt-pro/generate" style="margin-top:6px">
               <button type="submit" class="ghost" {% if item.row['status'] != 'ready' or (item.gpt_job and item.gpt_job.status in ('queued', 'running')) %}disabled{% endif %}>{{ 'Generating with GPT Pro' if item.gpt_job and item.gpt_job.status == 'running' else ('Queued for GPT Pro' if item.gpt_job and item.gpt_job.status == 'queued' else 'Generate with GPT Pro') }}</button>
             </form>
