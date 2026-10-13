@@ -479,11 +479,14 @@ def _origin(ctx: dict) -> tuple[str, str]:
 
 def faults_for(cfg, pid: int, plan: dict) -> list[str]:
     """local_faults including the originality checks against the source."""
+    lean = False
     try:
-        origin = _origin(context(cfg, pid))
+        ctx = context(cfg, pid)
+        origin = _origin(ctx)
+        lean = bool(ctx.get("lean"))
     except Exception:  # noqa: BLE001 - a page must still render
         origin = ("", "")
-    return local_faults(plan, *origin)
+    return (lean_faults if lean else local_faults)(plan, *origin)
 
 
 def local_faults(plan: dict, source_title: str = "",
@@ -604,6 +607,15 @@ def context(cfg, pid: int) -> dict:
     except Exception:  # noqa: BLE001
         transcript = ""
     ctx["source"] = src
+    try:
+        from . import settings as _st
+        _c = db.connect(cfg.db_path)
+        try:
+            ctx["lean"] = bool(_st.load(_c).get("plan_lean", True))
+        finally:
+            _c.close()
+    except Exception:  # noqa: BLE001
+        ctx["lean"] = True
     # the creator's own instructions for this production (writer / judge)
     try:
         conn = db.connect(cfg.db_path)
@@ -784,6 +796,39 @@ def _repeat_direction(ctx: dict | None, key: str, who: str) -> str:
             f"them to the letter):\n{text}" if text else "")
 
 
+LEAN_TITLES = 4        # lean mode: the working title plus a few spares
+LEAN_ROUNDS = 2        # lean mode: one try and one correction
+
+_LEAN_RULES = f"""Rules:
+- This is only the WORKING title the script is written to; the final title, thumbnails and description are made later. Give a clear, natural title that sells the WHOLE video (the overview), never one point, example or number of it. You are not given the script on purpose.
+- ONE short phrase (about 45-65 characters), at most {TITLE_MAX}, no colon, no dash, no brackets, no second half. It reads like a sentence a person would say out loud. No ALL CAPS, at most one emoji.
+- A teaser, not the story: name the topic and the stake for the viewer; leave the answer and the fix for the video.
+- Say it in clearly different words from the winning titles below - learn their pattern, never copy their wording.
+- No numbered list ("5 Ways...") unless the brief says numbers are allowed and gives the counts.
+- Only promise what the overview can deliver."""
+
+
+def lean_faults(plan: dict, source_title: str = "",
+                transcript: str = "") -> list[str]:
+    """Lean mode keeps only the hard checks: a title, its length, a keyword,
+    and not a copy of the source's title. No style heuristics."""
+    title = plan["title"]
+    if not title:
+        return ["no title"]
+    f = originality_faults(plan, source_title, transcript)
+    if len(title) > TITLE_MAX:
+        f.append(f"title is {len(title)} characters; YouTube allows "
+                 f"{TITLE_MAX}")
+    if not plan["keyword"]:
+        f.append("no main keyword")
+    return f
+
+
+def lean_feedback(faults: list[str]) -> str:
+    return ("Fix these problems and reply with the complete JSON object "
+            "again, nothing else:\n- " + "\n- ".join(faults))
+
+
 def writer_prompt(ctx: dict) -> str:
     return _writer_prompt_base(ctx) + _writer_direction(ctx)
 
@@ -791,6 +836,24 @@ def writer_prompt(ctx: dict) -> str:
 def _writer_prompt_base(ctx: dict) -> str:
     past = "\n".join(f"- {t}" for t in ctx["past_titles"]) or "(none yet)"
     pkg = ctx.get("package") or {}
+    if ctx.get("lean"):
+        return f"""You are a YouTube title writer. A video is about to be made and needs a working title. You do not have the script - work from this description of the whole video.
+
+CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
+
+{_package_text(pkg)}
+{_numbers_text(ctx)}
+
+TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns, do not copy):
+{_refs_without_source(ctx)}
+
+THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
+{past}
+
+{_LEAN_RULES}
+
+Reply with ONE JSON object and nothing else. The FIRST title is the one you would choose:
+{{"titles": [{{"text": "...", "why": "one short line"}}, ... {LEAN_TITLES} different titles]}}"""
     return f"""You are a YouTube packaging strategist. A video is about to be made; design how it will be sold. Titles matter most. You do not have the script - work from this description of the whole video.
 
 CHANNEL: {ctx['channel'] or '(unnamed)'} - genre: {ctx['genre']}. {ctx['channel_about']}
@@ -1056,6 +1119,20 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
                 "complete plan as ONE JSON object in the format given, and "
                 "nothing else.", (), new_chat=False, ready=ws._has_json)
             continue
+        if ctx.get("lean"):
+            faults = lean_faults(plan, *_origin(ctx))
+            plan["score"] = None
+            plan["status"] = "draft" if faults else "ready"
+            log(f"round {rnd}: \"{plan['title'][:70]}\" - "
+                + (f"{len(faults)} problem(s)" if faults else "accepted"))
+            rank = (not faults, 0.0)
+            if best is None or rank > best[0]:
+                best = (rank, plan, {})
+            if not faults or rnd >= LEAN_ROUNDS or should_stop():
+                break
+            reply = transport.ask(writer, lean_feedback(faults), (),
+                                  new_chat=False, ready=ws._has_json)
+            continue
         faults = local_faults(plan, *_origin(ctx))
         log(f"round {rnd}: \"{plan['title'][:70]}\" - {len(faults)} rule "
             f"fault(s); asking {judge} to review")
@@ -1100,6 +1177,14 @@ def run_plan(cfg, pid: int, transport, writer: str = "zai",
                          src_title, transcript, _package_text(ctx["package"]),
                          hand),
             faults, ctx), (), new_chat=False, ready=ws._has_json)
+    if ctx.get("lean"):
+        plan = best[1]
+        old = load_plan(ctx["pdir"])
+        plan["applied"] = bool(old.get("applied")) and old.get("title") == plan["title"]
+        save_plan(ctx["pdir"], plan)
+        log("packaging plan saved" + ("" if plan["status"] == "ready"
+                                      else " as a draft"))
+        return plan
     chosen = best[1]["title"]
     plan = apply_pick(best[1], best[2], src_title)
     if plan.get("picked_by"):
@@ -1161,6 +1246,8 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
     base = writer_prompt(ctx)
     src_title, transcript = _origin(ctx)
     best, prompt, rnd = None, base, 0
+    if ctx.get("lean"):
+        max_rounds = min(max_rounds, LEAN_ROUNDS)
     while rnd < max_rounds:
         rnd += 1
         raw = studio.llm_generate(cfg, prompt, provider=writer,
@@ -1171,6 +1258,22 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
             log(f"round {rnd}: no usable plan in the reply")
             prompt = base + ("\n\nYour last reply had no usable JSON plan. "
                              "Reply with ONE JSON object only.")
+            continue
+        if ctx.get("lean"):
+            faults = lean_faults(plan, *_origin(ctx))
+            plan["score"] = None
+            plan["status"] = "draft" if faults else "ready"
+            log(f"round {rnd}: \"{plan['title'][:70]}\" - "
+                + (f"{len(faults)} problem(s)" if faults else "accepted"))
+            rank = (not faults, 0.0)
+            if best is None or rank > best[0]:
+                best = (rank, plan, {})
+            if not faults or should_stop():
+                break
+            prompt = (base + "\n\nYOUR PREVIOUS ATTEMPT:\n"
+                      + json.dumps({"titles": plan["titles"]},
+                                   ensure_ascii=False)
+                      + "\n\n" + lean_feedback(faults))
             continue
         faults = local_faults(plan, *_origin(ctx))
         verdict, score = {}, None
@@ -1212,6 +1315,11 @@ def run_plan_api(cfg, pid: int, writer: str | None, judge: str | None,
                       faults))
     if best is None:
         raise RuntimeError("the LLM returned no usable packaging plan")
+    if ctx.get("lean"):
+        save_plan(ctx["pdir"], best[1])
+        log("packaging plan saved" + ("" if best[1]["status"] == "ready"
+                                      else " as a draft"))
+        return best[1]
     chosen = best[1]["title"]
     plan = apply_pick(best[1], best[2], src_title)
     if plan["title"] != chosen:

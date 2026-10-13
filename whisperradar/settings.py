@@ -194,6 +194,17 @@ SPEC: list[dict] = [
                 "on with the original title.",
     },
     {
+        "key": "plan_lean", "type": "bool", "default": True,
+        "label": "Lean plan: just a working title and keyword",
+        "help": "The plan makes only the working title the script is "
+                "written to (and the main keyword): one title writer call, "
+                "no judge, no thumbnail idea, no title style rules - only "
+                "the checks that it is not a copy of the source's title, "
+                "not too long and has a keyword. Final titles, thumbnails "
+                "and the description come from Generate with GPT Pro. "
+                "Turn it off for the full judged plan.",
+    },
+    {
         "key": "autorun_thumbnails", "type": "bool", "default": True,
         "label": "Generate thumbnail concepts at the end (Auto Run)",
         "help": "After the pipeline finishes, Auto Run designs the thumbnail "
@@ -597,7 +608,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Auto Run", [
         "autorun_enabled", "per_day", "run_window_start", "run_window_end",
         "candidate_window_days", "topic_pick",
-        "autorun_plan", "niche_values", "autorun_thumbnails",
+        "autorun_plan", "plan_lean", "niche_values", "autorun_thumbnails",
         "autorun_transport",
         "autorun_writer", "autorun_judge",
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",

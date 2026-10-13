@@ -36,6 +36,14 @@ class FakeLLM:
 
 
 class ApiPlanTests(Base):
+    def setUp(self):
+        super().setUp()
+        from whisperradar import settings
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        settings.save(conn, {"plan_lean": "0"})     # the full judged plan
+        conn.close()
+
     def run_api(self, replies, judge="judge"):
         llm = FakeLLM(replies)
         with mock.patch.object(studio, "llm_generate", llm):
@@ -151,3 +159,16 @@ class AutoPlanStepTests(ApiPlanTests):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LeanApiTests(Base):
+    def test_one_writer_call_no_judge_and_no_thumbnail_call(self):
+        llm = FakeLLM([json.dumps({"titles": [
+            {"text": "What really fills an old coin jar", "why": "x"}]})])
+        with mock.patch.object(studio, "llm_generate", llm):
+            plan = pp.run_plan_api(self.cfg, self.pid, "writer", "judge",
+                                   log=lambda m: None)
+        self.assertEqual(plan["status"], "ready")
+        self.assertEqual([c[0] for c in llm.calls], ["writer"])
+        self.assertEqual(pp.load_plan(self.pdir)["title"],
+                         "What really fills an old coin jar")

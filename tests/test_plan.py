@@ -227,7 +227,41 @@ class ProdTests(Base):
         self.assertNotIn("Start with the jar overflowing.", text)
         self.assertNotIn("WAIT, WHAT?", text)
 
+    def full_mode(self):
+        from whisperradar import settings
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        settings.save(conn, {"plan_lean": "0"})
+        conn.close()
+
+    def test_lean_plan_is_one_writer_call_and_no_judge(self):
+        t = Fake(zai=[json.dumps({"titles": [
+                    {"text": "What really fills an old coin jar", "why": "x"}]})],
+                 deepseek=[json.dumps(PACKAGE)])
+        plan = pp.run_plan(self.cfg, self.pid, t, log=lambda m: None)
+        self.assertEqual(plan["status"], "ready")
+        self.assertEqual(plan["title"], "What really fills an old coin jar")
+        self.assertEqual(plan["keyword"], "coin jar")
+        self.assertEqual(sum(1 for c in t.calls if c["site"] == "zai"), 1)
+        self.assertEqual(sum(1 for c in t.calls if c["site"] == "deepseek"), 1)
+        self.assertIsNone(plan["score"])
+
+    def test_lean_plan_asks_once_more_then_keeps_the_best_as_draft(self):
+        long_title = "x " * 80
+        t = Fake(zai=[json.dumps({"titles": [{"text": long_title}]})] * 2,
+                 deepseek=[json.dumps(PACKAGE)])
+        plan = pp.run_plan(self.cfg, self.pid, t, log=lambda m: None)
+        self.assertEqual(plan["status"], "draft")
+        self.assertEqual(sum(1 for c in t.calls if c["site"] == "zai"), 2)
+
+    def test_lean_faults_skip_the_style_rules_and_thumbnail(self):
+        plan = pp.parse_plan({"keyword": "coin jar", "titles": [
+            {"text": "Why may the coin jar maybe fill"}]})
+        self.assertEqual(pp.lean_faults(plan), [])
+        self.assertTrue(pp.local_faults(plan))      # the full rules still object
+
     def test_run_plan_is_blind_and_the_judges_pick_becomes_the_title(self):
+        self.full_mode()
         from tests.test_external_prompts import SOURCE
         # the production's source video: a title the writer must never see
         conn = db.connect(self.cfg.db_path)
