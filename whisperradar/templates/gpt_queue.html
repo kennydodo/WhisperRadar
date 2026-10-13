@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Thumbnail queue - WhisperRadar</title>
+<style>body{font:15px/1.5 system-ui;background:#0f1115;color:#e6e9ef;max-width:1100px;margin:30px auto;padding:0 20px}a{color:#74a7ff}table{width:100%;border-collapse:collapse}td,th{padding:12px;text-align:left;border-bottom:1px solid #343a46}.muted{color:#a0a7b5}.error{color:#ff9393}</style>
+</head><body><nav><a href="/finished?all=1">Finished productions</a> &middot; <a href="/studio">Studio</a></nav>
+<h1>Thumbnail queue</h1>
+<p>{{ active_count }} queued or running job{{ '' if active_count == 1 else 's' }}.</p>
+<p>The GPT worker processes one queued production per run. To start immediately, open <b>Codex &rarr; Scheduled &rarr; WhisperRadar GPT Pro packaging &rarr; Run now</b>. This starts existing queued work; it does not queue another copy.</p>
+<p class="muted">WhisperRadar cannot currently trigger Codex Run now directly. <a href="/gpt-pro/worker">Open worker page</a> for claim/import diagnostics. New jobs are added with Generate with GPT Pro on Finished.</p>
+{% if not active_count %}<p>No packaging jobs are waiting or running.</p>{% endif %}
+{% if jobs %}<table><thead><tr><th>Production</th><th>Status</th><th>Queued at (UTC)</th><th>Last update (UTC)</th><th>Result</th></tr></thead><tbody>
+{% for job in jobs %}<tr><td><a href="/studio/{{ job.production_id }}">#{{ job.production_id }} {{ job.production_title or 'Unavailable production' }}</a></td><td>{{ job.status }}</td><td>{{ job.created_at }}</td><td>{{ job.updated_at }}</td><td>{% if job.status == 'complete' %}<a href="/studio/{{ job.production_id }}/thumbnails">Review thumbnails</a> &middot; <a href="/studio/{{ job.production_id }}/kit">Titles and description</a>{% elif job.error %}<span class="error">{{ job.error }}</span>{% else %}&mdash;{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% else %}<p>No packaging jobs have been created.</p>{% endif %}
+{% if active_count %}<script>setTimeout(function(){location.reload();},15000);</script>{% endif %}
+</body></html>

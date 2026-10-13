@@ -2934,6 +2934,12 @@ def create_app(cfg) -> Flask:
                              for c in own_channels if c["active"]],
             msg=request.args.get("msg"), error=request.args.get("error"))
 
+    @app.get("/gpt-pro/queue")
+    def gpt_pro_queue_page():
+        jobs = gpt_packaging.queue_status(cfg)
+        return render_template("gpt_queue.html", jobs=jobs,
+            active_count=sum(j["status"] in ("queued", "running") for j in jobs))
+
     @app.post("/studio/<int:pid>/gpt-pro/generate")
     def studio_gpt_pro_generate(pid):
         try:

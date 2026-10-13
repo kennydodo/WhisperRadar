@@ -89,6 +89,18 @@ def latest_for(cfg, pids):
     return {row["production_id"]: _public(row) for row in rows}
 
 
+def queue_status(cfg):
+    """Job history for the user queue page; never expose worker claim tokens."""
+    with _LOCK, _connect(cfg) as conn:
+        _expire(conn)
+        rows = conn.execute("SELECT j.*,p.title AS production_title,p.status AS production_status "
+                            "FROM gpt_packaging_jobs j LEFT JOIN productions p ON p.id=j.production_id "
+                            "ORDER BY CASE j.status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 ELSE 2 END, "
+                            "CASE WHEN j.status='queued' THEN j.rowid END ASC,j.rowid DESC LIMIT 200").fetchall()
+        return [dict(_public(row), production_title=row["production_title"],
+                     production_status=row["production_status"]) for row in rows]
+
+
 def queue(cfg, pid):
     with _LOCK, _connect(cfg) as conn:
         conn.execute("BEGIN IMMEDIATE")
