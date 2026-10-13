@@ -408,11 +408,11 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
 /**
  * Adopt a clip a stopped run generated but never downloaded - the video
  * equivalent of image recovery - instead of paying for a fresh generation.
- * Only safe when it is unambiguous: exactly one unsaved video in the project.
- * With several unsaved videos there is no way to tell which item each belongs
- * to, so generation runs normally.
+ * When several videos are unsaved, each tile's own "Reuse prompt" text is
+ * matched against the item's motion prompt (same rules as image recovery);
+ * only an unambiguous single match is adopted, never a guess.
  */
-async function adoptOrphanClip(ctx, { out }) {
+async function adoptOrphanClip(ctx, { out, prompt }) {
   loadSavedIds(out);
   const unsaved = async () =>
     (await videoCandidates(ctx.page, ctx.videoResponses))
@@ -425,7 +425,36 @@ async function adoptOrphanClip(ctx, { out }) {
     await sleep(2500);
     candidates = await unsaved();
   }
-  if (candidates.length !== 1) return false;
+  if (candidates.length === 0) return false;
+  if (candidates.length > 1) {
+    // More than one orphan: read each tile's own prompt and only adopt the
+    // tile whose prompt matches THIS item, and matches nothing else pending.
+    const tiles = await ctx.driver.listGeneratedResults().catch(() => []);
+    const videoTiles = tiles.filter((t) => t.src && mediaId(t.src) !== String(t.src));
+    const itemPrompt = normalizeMotionPrompt(prompt);
+    const hits = [];
+    for (const tile of videoTiles) {
+      const tilePrompt = await ctx.driver.readTilePrompt(tile.index, { selector: null }).catch(() => null);
+      if (!tilePrompt) continue;
+      const tileId = mediaId(tile.src);
+      if (motionPromptsMatch(itemPrompt, tilePrompt)) {
+        hits.push({ tile, clip: candidates.find((c) => c.id === tileId) });
+      }
+    }
+    // Adopt only an unambiguous single match with a resolvable URL.
+    if (hits.length !== 1 || !hits[0].clip) {
+      log.info(`${candidates.length} unsaved clip(s) in the project, none matching "${path.basename(out)}" unambiguously - generating instead.`);
+      return false;
+    }
+    const clip = hits[0].clip;
+    const bytes = await ctx.driver.fetchBytes(clip.url);
+    if (!bytes || bytes.length <= 10000) return false;
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, bytes);
+    rememberSavedId(out, clip.id);
+    log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, matched by its tile prompt)`);
+    return true;
+  }
   const clip = candidates[0];
   const bytes = await ctx.driver.fetchBytes(clip.url);
   if (!bytes || bytes.length <= 10000) return false;
@@ -434,6 +463,23 @@ async function adoptOrphanClip(ctx, { out }) {
   rememberSavedId(out, clip.id);
   log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, ${clip.id.slice(0, 8)})`);
   return true;
+}
+
+function normalizeMotionPrompt(text) {
+  return String(text ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Same rule as image recovery: a shared prefix of >=20 chars that covers the
+ * shorter of the two prompts identifies the tile; shorter prompts match only
+ * exactly. A tile ambiguous between items is never a match. */
+function motionPromptsMatch(itemPrompt, tilePrompt) {
+  const a = normalizeMotionPrompt(itemPrompt);
+  const b = normalizeMotionPrompt(tilePrompt);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  let shared = 0;
+  while (shared < Math.min(a.length, b.length) && a[shared] === b[shared]) shared += 1;
+  return shared >= 20 && shared >= Math.min(a.length, b.length);
 }
 
 /** One clip: attach the start frame, set the prompt, generate, save. */
@@ -445,6 +491,10 @@ async function makeClip(ctx, { image, prompt, out, timeoutMs }) {
   loadSavedIds(out);
   const knownIds = new Set((await videoCandidates(page, videoResponses)).map((c) => c.id));
   await driver.generate();
+  // A refusal banner left by an earlier clip reads as THIS one's outcome (a
+  // stale "Failed" killed a clip that was still at 22%), so everything already
+  // on the page is marked stale; only a fresh alert may fail the clip.
+  await driver.markStaleAlerts().catch(() => {});
   log.info(`Generating - waiting up to ${timeoutMs / 1000}s...`);
   await shot(page, 'generating');
   return waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen: ctx.reopen });
@@ -525,7 +575,7 @@ async function runJob(flags, context) {
           await sleep(20000);
         }
         try {
-          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out) })) break;
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt })) break;
           await ensureFramesMode({ driver, page, opts, projectUrl });
           await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
           madeThisRun += 1;
