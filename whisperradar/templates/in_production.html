@@ -76,7 +76,10 @@
   <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
-  <h1>In production</h1>
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+    <h1>In production</h1>
+    <form method="post" action="/in-production/open-folder"><button type="submit" class="ghost" title="Open the Productions folder (Settings) in the file manager">&#128193; Open working folder</button></form>
+  </div>
   <p class="sub">Every active production. <b>Continue</b> runs only the next stage; <b>Auto-run</b> runs everything up to review.</p>
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}

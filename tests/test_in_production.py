@@ -84,6 +84,25 @@ class InProductionTests(unittest.TestCase):
         self.assertIn("Visible One", html)
         self.assertNotIn("Hidden One", html)
 
+    def test_open_folder_button_opens_the_productions_folder(self):
+        from whisperradar import settings, studio
+        folder = Path(self.tmp.name) / "prods"
+        folder.mkdir()
+        settings.save(self.conn, {"productions_root": str(folder)})
+        self.assertIn("/in-production/open-folder",
+                      self.client.get("/in-production").get_data(as_text=True))
+        with mock.patch.object(studio, "open_folder") as op:
+            resp = self.client.post("/in-production/open-folder")
+        op.assert_called_once_with(folder)
+        self.assertIn("msg=", resp.headers["Location"])
+
+    def test_open_folder_without_a_setting_says_so(self):
+        from whisperradar import studio
+        with mock.patch.object(studio, "open_folder") as op:
+            resp = self.client.post("/in-production/open-folder")
+        op.assert_not_called()
+        self.assertIn("error=", resp.headers["Location"])
+
     def test_title_is_cut_at_100_characters(self):
         self._make("x" * 130)
         html = self.client.get("/in-production").get_data(as_text=True)

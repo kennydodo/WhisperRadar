@@ -225,6 +225,21 @@ def validate_work_dir(cfg, new_dir: str | Path) -> Path:
     return p
 
 
+def open_folder(path) -> None:
+    """Show a folder in the OS file manager (Explorer / Finder / xdg-open).
+    The server runs on the user's own machine, so this opens on their screen."""
+    import os
+    import subprocess
+    import sys
+    path = str(path)
+    if os.name == "nt":
+        os.startfile(path)  # noqa: S606 - a folder, opened in Explorer
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])
+
+
 def pick_folder(initial_dir: str | None = None) -> str | None:
     """Open the OS folder chooser and return the chosen absolute path.
 
