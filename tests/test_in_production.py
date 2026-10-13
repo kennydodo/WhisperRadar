@@ -71,6 +71,19 @@ class InProductionTests(unittest.TestCase):
             html = self.client.get("/in-production").get_data(as_text=True)
         self.assertIn("ready for review", html)
 
+    def test_productions_of_paused_channels_are_hidden(self):
+        self._make("Visible One")
+        other = db.create_own_channel(self.conn, "Paused Ch")
+        pid = db.create_production(self.conn, "Hidden One", "general",
+                                   None, None)
+        db.update_production(self.conn, pid, own_channel_id=other)
+        self.conn.execute("UPDATE own_channels SET active = 0 WHERE id = ?",
+                          (other,))
+        self.conn.commit()
+        html = self.client.get("/in-production").get_data(as_text=True)
+        self.assertIn("Visible One", html)
+        self.assertNotIn("Hidden One", html)
+
     def test_title_is_cut_at_100_characters(self):
         self._make("x" * 130)
         html = self.client.get("/in-production").get_data(as_text=True)

@@ -5009,10 +5009,13 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            own_by_id = {c["id"]: c["name"]
-                         for c in db.list_own_channels(conn)}
+            channels = db.list_own_channels(conn)
+            own_by_id = {c["id"]: c["name"] for c in channels}
+            paused = {c["id"] for c in channels if not c["active"]}
+            # finished work and paused channels do not belong here
             prods = [p for p in db.list_productions(conn)
-                     if p["status"] not in ("ready", "published")]
+                     if p["status"] not in ("ready", "published")
+                     and p["own_channel_id"] not in paused]
         finally:
             conn.close()
         with channel_jobs_lock:
