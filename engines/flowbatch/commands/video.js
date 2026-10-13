@@ -168,14 +168,38 @@ async function attachStartFrame(driver, page, imagePath) {
   await shot(page, 'start-attached');
 }
 
-/** Collect every video URL the page has fetched (the finished clip arrives as one). */
+/** Flow's video id (the uuid in /video/<uuid>) - the same clip gets a new signed URL each time. */
+function mediaId(url) {
+  const m = /\/video\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(String(url || ''));
+  return m ? m[1].toLowerCase() : String(url || '');
+}
+
+const FLOW_VIDEO_URL = /https:\/\/flow-content\.google\/video\/[0-9a-f-]{36}[^"'\s\\<>]*/gi;
+
+/**
+ * Collect every video the page learns about, keyed by video id: a response that
+ * IS a video, and - because Flow only loads a tile's <video> once it is visible -
+ * video URLs inside the JSON the app polls for generation status.
+ */
 function watchVideoResponses(page) {
   const seen = new Map();
-  page.on('response', (response) => {
-    const type = response.headers()['content-type'] || '';
-    const url = response.url();
-    if (/^video\//i.test(type) || /\.mp4(\?|$)/i.test(url)) {
-      seen.set(url, { type, status: response.status(), at: Date.now() });
+  const add = (url, via, status) => {
+    const id = mediaId(url);
+    if (!seen.has(id)) seen.set(id, { url, via, status, at: Date.now() });
+  };
+  page.on('response', async (response) => {
+    try {
+      const type = response.headers()['content-type'] || '';
+      const url = response.url();
+      if (/^video\//i.test(type) || /\.mp4(\?|$)/i.test(url)) {
+        add(url, 'video', response.status());
+        return;
+      }
+      if (!/json|text\/plain|protobuf/i.test(type) || !/google|labs/i.test(new URL(url).host)) return;
+      const text = (await response.text()).replace(/\\u0026/g, '&').replace(/\\u003d/g, '=').replace(/\\\//g, '/');
+      for (const found of text.match(FLOW_VIDEO_URL) ?? []) add(found, 'json', response.status());
+    } catch {
+      /* body not available (redirect, aborted, streamed) */
     }
   });
   return seen;
@@ -191,11 +215,48 @@ async function pageVideoSources(page) {
     .catch(() => []);
 }
 
-/** Videos already saved by this process (never taken twice). */
+/** Video ids already saved (this process, plus the ids file in the clips folder). */
 const saved = new Set();
 
+function idsFileFor(out) {
+  return path.join(path.dirname(out), '.flow-clip-ids.json');
+}
+
+function loadSavedIds(out) {
+  try {
+    for (const id of Object.keys(JSON.parse(fs.readFileSync(idsFileFor(out), 'utf8')))) saved.add(id);
+  } catch {
+    /* none yet */
+  }
+}
+
+function rememberSavedId(out, id) {
+  saved.add(id);
+  const file = idsFileFor(out);
+  let map = {};
+  try {
+    map = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    /* new file */
+  }
+  map[id] = path.basename(out);
+  try {
+    fs.writeFileSync(file, JSON.stringify(map, null, 2));
+  } catch {
+    /* best effort */
+  }
+}
+
+/** Every video the page or its network traffic knows right now: [{ id, url }]. */
+async function videoCandidates(page, videoResponses) {
+  const out = new Map();
+  for (const url of await pageVideoSources(page)) if (/^https?:/i.test(url)) out.set(mediaId(url), { id: mediaId(url), url });
+  for (const [id, info] of videoResponses) if (/^https?:/i.test(info.url)) out.set(id, { id, url: info.url });
+  return [...out.values()];
+}
+
 /** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout. */
-async function waitAndSave({ driver, page, videoResponses, knownSources, knownResponses, timeoutMs, out }) {
+async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out }) {
   const deadline = Date.now() + timeoutMs;
   let clip = null;
   while (Date.now() < deadline && !clip) {
@@ -205,28 +266,19 @@ async function waitAndSave({ driver, page, videoResponses, knownSources, knownRe
       await shot(page, 'refused');
       throw new Error(`Flow reported a problem: ${JSON.stringify(alert).slice(0, 300)}`);
     }
-    const sources = (await pageVideoSources(page)).filter((src) => !knownSources.has(src));
-    const fresh = [...videoResponses.keys()].filter((url) => !knownResponses.has(url));
-    clip = [...sources, ...fresh].find((url) => /^https?:/i.test(url)) ?? null;
+    const fresh = (await videoCandidates(page, videoResponses)).filter((c) => !knownIds.has(c.id) && !saved.has(c.id));
+    clip = fresh.length ? fresh[fresh.length - 1] : null;
   }
   if (!clip) {
     await shot(page, 'timeout');
-    // Last resort: the clip may have finished without looking "new" to the
-    // checks above (cached response, recycled player). Take a video this batch
-    // has not saved yet, newest first, and say so.
-    const candidates = [...videoResponses.keys(), ...(await pageVideoSources(page))]
-      .filter((url) => /^https?:/i.test(url) && !saved.has(url));
-    log.warn(`Timeout: ${candidates.length} unsaved video URL(s) seen on the page.`);
-    clip = candidates.length ? candidates[candidates.length - 1] : null;
-    if (!clip) throw new Error('No new video appeared before the timeout. See debug/video-timeout-*.png.');
-    log.warn('Using the newest unsaved video as this clip.');
+    throw new Error('No new video appeared before the timeout. See debug/video-timeout-*.png.');
   }
-  saved.add(clip);
-  log.info(`Clip URL found: ${clip.slice(0, 120)}...`);
-  const bytes = await driver.fetchBytes(clip);
+  log.info(`Clip found (${clip.id}): ${clip.url.slice(0, 100)}...`);
+  const bytes = await driver.fetchBytes(clip.url);
   if (!bytes) throw new Error('Found the clip URL but could not download it with the browser session.');
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, bytes);
+  rememberSavedId(out, clip.id);
   log.ok(`Saved ${path.relative(ROOT, out)} (${(bytes.length / 1048576).toFixed(1)} MB)`);
   return bytes.length;
 }
@@ -237,12 +289,12 @@ async function makeClip(ctx, { image, prompt, out, timeoutMs }) {
   await attachStartFrame(driver, page, image);
   await driver.setPrompt(prompt);
   await shot(page, 'ready');
-  const knownSources = new Set(await pageVideoSources(page));
-  const knownResponses = new Set(videoResponses.keys());
+  loadSavedIds(out);
+  const knownIds = new Set((await videoCandidates(page, videoResponses)).map((c) => c.id));
   await driver.generate();
   log.info(`Generating - waiting up to ${timeoutMs / 1000}s...`);
   await shot(page, 'generating');
-  return waitAndSave({ driver, page, videoResponses, knownSources, knownResponses, timeoutMs, out });
+  return waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out });
 }
 
 /** Veo clips have a fixed length/size; only Omni takes resolution and duration. */
