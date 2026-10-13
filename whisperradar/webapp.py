@@ -3166,6 +3166,42 @@ def create_app(cfg) -> Flask:
             msg = (f"?msg={quote('Seeded ' + ' + '.join(bits) + ' from ' + seeded['source'])}")
         return redirect(f"/studio/{pid}{msg}")
 
+    def _autorun_after_source(pid, wait):
+        """Auto-run on a production whose source transcript is still being
+        fetched: make sure the fetch is running, and start the auto-run by
+        itself the moment the text is there."""
+        vid = wait["video_id"]
+        provider = (request.form.get("provider") or "").strip() or None
+        conn = db.connect(cfg.db_path)
+        try:
+            prod = db.get_production(conn, pid)
+            cid = int(prod["own_channel_id"] or 0)
+        finally:
+            conn.close()
+
+        def go():
+            slot = _job_for_channel(cid)
+
+            def worker():
+                _job_tls.job = slot
+                result = autorun.run_pipeline(cfg, pid, job=slot,
+                                              log=slot.log.append,
+                                              provider=provider)
+                if result.startswith("failed:"):
+                    raise RuntimeError(result.split(":", 1)[1])
+
+            for _ in range(360):                      # up to an hour
+                if slot.start(worker, "auto-run"):
+                    slot.pid = pid
+                    return
+                time.sleep(10)
+
+        source_prep.when_ready(vid, go)
+        if not source_prep.is_active(vid):
+            source_prep.start_background(cfg, vid, sjob.log.append)
+        return _studio_url(pid, msg="Auto-run will start by itself once the "
+                                    "source transcript is ready")
+
     @app.post("/studio/<int:pid>/source/fetch")
     def studio_source_fetch(pid):
         """(Re)start the download + transcription of the production's source video."""
@@ -4817,6 +4853,9 @@ def create_app(cfg) -> Flask:
                 return redirect("/studio?error=Unknown+production")
         finally:
             conn.close()
+        wait = source_prep.state(cfg, pid)
+        if wait:
+            return _autorun_after_source(pid, wait)
         plan = autorun.build_plan(cfg, pid)
         if not any(e["action"] == "run" for e in plan):
             pause = next((e for e in plan if e["action"] == "pause"), None)

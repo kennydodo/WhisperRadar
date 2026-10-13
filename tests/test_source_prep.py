@@ -58,6 +58,32 @@ class SourceWaitTests(unittest.TestCase):
         self.assertEqual((pdir / "source_transcript.txt").read_text(
             encoding="utf-8"), "hello source")
 
+    def test_callback_fires_after_a_successful_fetch_only(self):
+        import time
+        calls = []
+        orig = source_prep.prepare
+        try:
+            source_prep.prepare = lambda cfg, vid, log_fn=None: None
+            source_prep.when_ready("v1", lambda: calls.append("go"))
+            source_prep.start_background(self.cfg, "v1")
+            for _ in range(50):
+                if calls:
+                    break
+                time.sleep(0.05)
+            self.assertEqual(calls, ["go"])
+
+            def boom(cfg, vid, log_fn=None):
+                raise RuntimeError("x")
+            source_prep.prepare = boom
+            source_prep.when_ready("v1", lambda: calls.append("bad"))
+            time.sleep(0.2)
+            source_prep.start_background(self.cfg, "v1")
+            time.sleep(0.5)
+            self.assertEqual(calls, ["go"])
+        finally:
+            source_prep.prepare = orig
+            source_prep.drop_waiting("v1")
+
     def test_production_without_source_never_waits(self):
         pid = db.create_production(self.conn, "Q", "general", None, None)
         self.assertIsNone(source_prep.state(self.cfg, pid))
@@ -65,3 +91,26 @@ class SourceWaitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AutoRunRouteTests(unittest.TestCase):
+    setUp = SourceWaitTests.setUp
+    tearDown = SourceWaitTests.tearDown
+
+    def test_autorun_click_while_waiting_queues_instead_of_erroring(self):
+        from whisperradar.webapp import create_app
+        import time
+        orig = source_prep.prepare
+        orig_run = autorun.run_pipeline
+        source_prep.prepare = lambda cfg, vid, log_fn=None: None
+        autorun.run_pipeline = lambda *a, **k: "ok"
+        try:
+            client = create_app(self.cfg).test_client()
+            r = client.post(f"/studio/{self.pid}/auto-run", follow_redirects=False)
+            loc = r.headers.get("Location", "")
+            self.assertIn("will+start+by+itself", loc.replace("%20", "+"))
+            time.sleep(0.5)
+        finally:
+            source_prep.prepare = orig
+            autorun.run_pipeline = orig_run
+            source_prep.drop_waiting("v1")

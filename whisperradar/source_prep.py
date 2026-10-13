@@ -134,15 +134,20 @@ def start_background(cfg, video_id: str, log_fn=None) -> bool:
         _failed.pop(video_id, None)
 
     def worker():
+        _ok = False
         try:
             with _RUN_LOCK:
                 prepare(cfg, video_id, log_fn)
+            _ok = True
         except Exception as exc:                      # shown on the production
             log.error("source transcript for %s failed: %s", video_id, exc)
             _failed[video_id] = str(exc)
+            _ok = False
         finally:
             with _mutex:
                 _active.discard(video_id)
+        if _ok:
+            _run_after(video_id)
 
     threading.Thread(target=worker, daemon=True,
                      name=f"source-{video_id}").start()
@@ -151,3 +156,29 @@ def start_background(cfg, video_id: str, log_fn=None) -> bool:
 
 def is_active(video_id: str) -> bool:
     return video_id in _active
+
+
+# ---- "start auto-run when the transcript is there"
+_after: dict[str, list] = {}
+
+
+def when_ready(video_id: str, fn) -> None:
+    """Call fn() once the video's transcript is in place (right away if it
+    already is). Callbacks are kept in memory only."""
+    with _mutex:
+        _after.setdefault(video_id, []).append(fn)
+
+
+def _run_after(video_id: str) -> None:
+    with _mutex:
+        fns = _after.pop(video_id, [])
+    for fn in fns:
+        try:
+            fn()
+        except Exception as exc:
+            log.error("after-transcript step failed: %s", exc)
+
+
+def drop_waiting(video_id: str) -> None:
+    with _mutex:
+        _after.pop(video_id, None)
