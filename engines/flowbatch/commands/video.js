@@ -141,14 +141,34 @@ async function attachStartFrame(driver, page, imagePath) {
       await search(stem);
     }
   }
-  const row = rowFor();
+  let row = rowFor();
   if ((await row.count().catch(() => 0)) === 0) {
     await shot(page, 'frame-not-found');
     throw new Error(`Could not find "${base}" in the frame picker after upload.`);
   }
-  await row.click({ timeout: 8000 });
-  await sleep(900);
-  const selected = await row.getAttribute('aria-selected').catch(() => null);
+  // The sheet can reopen with the last pick still selected; clicking that row
+  // then applies it and closes the sheet in one step, so aria-selected reads
+  // null on the now-gone element. Re-locate the row on every attempt and treat
+  // "sheet closed right after our click" as the frame being attached.
+  const sheetGone = async () =>
+    (await page.locator("button.asset-item[role='option']").count().catch(() => 0)) === 0;
+  let selected = await row.getAttribute('aria-selected').catch(() => null);
+  for (let attempt = 1; attempt <= 3 && selected !== 'true'; attempt += 1) {
+    await row.click({ timeout: 8000 }).catch(() => {});
+    await sleep(900);
+    if (await sheetGone()) {
+      log.info(`"${base}" was applied and the frame picker closed.`);
+      await shot(page, 'picked');
+      return;
+    }
+    row = rowFor();
+    if ((await row.count().catch(() => 0)) === 0) break;
+    selected = await row.getAttribute('aria-selected').catch(() => null);
+    if (selected !== 'true') {
+      log.warn(`"${base}" not selected yet (aria-selected=${selected}) - re-searching and clicking again.`);
+      await search(stem);
+    }
+  }
   log.info(`Picked "${base}" in the frame picker (aria-selected=${selected}).`);
   await shot(page, 'picked');
   // The preview loads for a while after an upload; "Add to prompt" stays disabled until it does.
@@ -174,7 +194,33 @@ function mediaId(url) {
   return m ? m[1].toLowerCase() : String(url || '');
 }
 
-const FLOW_VIDEO_URL = /https:\/\/flow-content\.google\/video\/[0-9a-f-]{36}[^"'\s\\<>]*/gi;
+// The signed query is part of the URL; the match may run through JSON escape
+// backslashes (Flow writes "=" as \u003d or \u003D, sometimes double-escaped)
+// because decodeFlowVideoUrl undoes them before the URL is ever fetched.
+const FLOW_VIDEO_URL = /https:\/\/flow-content\.google\/video\/[0-9a-f-]{36}[^\s"'<>]*/gi;
+
+/** Undo JSON string escaping (any case, up to two levels deep) on a URL scraped
+ * from raw response text. Without the full ?Expires=...&Signature=... query the
+ * CDN refuses the download, so this must never stop at a backslash. */
+export function decodeFlowVideoUrl(raw) {
+  let url = String(raw);
+  for (let pass = 0; pass < 3 && url.includes('\\'); pass += 1) {
+    url = url
+      .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/\\([^0-9a-fA-F]|$)/g, '$1');
+  }
+  return url;
+}
+
+/** Every complete flow video URL in a raw JSON/protobuf response body. */
+export function extractFlowVideoUrls(text) {
+  const urls = [];
+  for (const found of String(text).match(FLOW_VIDEO_URL) ?? []) {
+    const url = decodeFlowVideoUrl(found);
+    if (url) urls.push(url);
+  }
+  return urls;
+}
 
 /**
  * Collect every video the page learns about, keyed by video id: a response that
@@ -196,8 +242,7 @@ function watchVideoResponses(page) {
         return;
       }
       if (!/json|text\/plain|protobuf/i.test(type) || !/google|labs/i.test(new URL(url).host)) return;
-      const text = (await response.text()).replace(/\\u0026/g, '&').replace(/\\u003d/g, '=').replace(/\\\//g, '/');
-      for (const found of text.match(FLOW_VIDEO_URL) ?? []) add(found, 'json', response.status());
+      for (const found of extractFlowVideoUrls(await response.text())) add(found, 'json', response.status());
     } catch {
       /* body not available (redirect, aborted, streamed) */
     }
@@ -291,11 +336,16 @@ async function dumpFirstTile(page) {
   }
 }
 
-/** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout. */
+/** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout.
+ * A clip URL can appear in the status JSON before Flow has finished writing the
+ * file, so a failed download is retried until the deadline instead of stopping. */
 async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen }) {
   const started = Date.now();
   const deadline = started + timeoutMs;
   let clip = null;
+  let bytes = null;
+  let loggedId = null;
+  let fetchFails = 0;
   let pokes = 0;
   let nextPoke = started + 45000;
   let navigated = false;
@@ -303,7 +353,21 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
     const fresh = (await videoCandidates(page, videoResponses)).filter((c) => !knownIds.has(c.id) && !saved.has(c.id));
     return fresh.length ? fresh[fresh.length - 1] : null;
   };
-  while (Date.now() < deadline && !clip) {
+  const tryFetch = async () => {
+    if (!clip) return;
+    if (loggedId !== clip.id) {
+      loggedId = clip.id;
+      log.info(`Clip found (${clip.id}): ${clip.url.slice(0, 100)}`);
+    }
+    bytes = await driver.fetchBytes(clip.url);
+    if (!bytes) {
+      fetchFails += 1;
+      if (fetchFails === 1 || fetchFails % 5 === 0) {
+        log.warn(`Clip ${clip.id} is not downloadable yet (attempt ${fetchFails}) - keep waiting for Flow to finish it.`);
+      }
+    }
+  };
+  while (Date.now() < deadline && !bytes) {
     await sleep(4000);
     const alert = await driver.freshAlert().catch(() => null);
     if (alert) {
@@ -311,29 +375,65 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
       throw new Error(`Flow reported a problem: ${JSON.stringify(alert).slice(0, 300)}`);
     }
     clip = await findFresh();
-    if (!clip && Date.now() >= nextPoke) {
+    if (clip) await tryFetch();
+    if (!bytes && Date.now() >= nextPoke) {
       nextPoke = Date.now() + 25000;
       pokes += 1;
       if (pokes === 1) await dumpFirstTile(page);
       log.info(`Waiting for the clip (${Math.round((Date.now() - started) / 1000)}s) - opening the newest video tile to make Flow load it.`);
       navigated = (await pokeNewestVideoTile(page, { open: pokes % 2 === 0 })) || navigated;
       await sleep(2500);
-      clip = await findFresh();
+      clip = (await findFresh()) || clip;
+      await tryFetch();
     }
   }
   if (!clip) {
     await shot(page, 'timeout');
     throw new Error('The clip did not finish or could not be found before the timeout. See debug/video-timeout-*.png.');
   }
-  log.info(`Clip found (${clip.id}): ${clip.url.slice(0, 100)}...`);
-  const bytes = await driver.fetchBytes(clip.url);
-  if (!bytes) throw new Error('Found the clip URL but could not download it with the browser session.');
+  if (!bytes) {
+    await shot(page, 'undownloadable');
+    throw new Error(
+      `Found the clip URL (${clip.id}) but could not download it with the browser session (${fetchFails} attempt(s)). See debug/video-undownloadable-*.png.`,
+    );
+  }
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, bytes);
   rememberSavedId(out, clip.id);
   log.ok(`Saved ${path.relative(ROOT, out)} (${(bytes.length / 1048576).toFixed(1)} MB)`);
   if (navigated && reopen) await reopen().catch((error) => log.warn(`reopen: ${String(error.message ?? error)}`));
   return bytes.length;
+}
+
+/**
+ * Adopt a clip a stopped run generated but never downloaded - the video
+ * equivalent of image recovery - instead of paying for a fresh generation.
+ * Only safe when it is unambiguous: exactly one unsaved video in the project.
+ * With several unsaved videos there is no way to tell which item each belongs
+ * to, so generation runs normally.
+ */
+async function adoptOrphanClip(ctx, { out }) {
+  loadSavedIds(out);
+  const unsaved = async () =>
+    (await videoCandidates(ctx.page, ctx.videoResponses))
+      .filter((c) => /^https?:/i.test(c.url) && !saved.has(c.id));
+  let candidates = await unsaved();
+  if (candidates.length === 0) {
+    // Flow only exposes a finished clip's URL once its tile is hovered, so
+    // nudge the newest tile before concluding there is nothing to adopt.
+    await pokeNewestVideoTile(ctx.page, { open: false });
+    await sleep(2500);
+    candidates = await unsaved();
+  }
+  if (candidates.length !== 1) return false;
+  const clip = candidates[0];
+  const bytes = await ctx.driver.fetchBytes(clip.url);
+  if (!bytes || bytes.length <= 10000) return false;
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, bytes);
+  rememberSavedId(out, clip.id);
+  log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, ${clip.id.slice(0, 8)})`);
+  return true;
 }
 
 /** One clip: attach the start frame, set the prompt, generate, save. */
@@ -394,6 +494,7 @@ async function runJob(flags, context) {
   const { context: browserContext, page } = await launchSession(settings);
   const driver = new FlowDriver({ page, context: browserContext, selectors: context.selectors, settings });
   const videoResponses = watchVideoResponses(page);
+  const ctx = { driver, page, videoResponses };
   try {
     if (projectUrl) await driver.openProject(projectUrl);
     else await driver.ensureProject('WhisperRadar motion');
@@ -410,6 +511,10 @@ async function runJob(flags, context) {
       }
       log.info(`Clip ${i + 1}/${items.length}: ${path.basename(item.image)}`);
       try {
+        if (await adoptOrphanClip(ctx, { out: path.resolve(item.out) })) {
+          report.done.push(item.out);
+          continue;
+        }
         await ensureFramesMode({ driver, page, opts, projectUrl });
         await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
         report.done.push(item.out);
