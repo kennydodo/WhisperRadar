@@ -180,17 +180,20 @@ def build_draft_content(timeline: m.Timeline, images: Sequence[m.ImageInfo],
 
     material_by_file: Dict[str, str] = {}
     for clip in clips:
-        key = clip.file_path.lower()
+        # The animated opening: a clip backed by its AI video uses the mp4 as
+        # its material (the video carries its own motion), like the ffmpeg
+        # render plan - otherwise CapCut shows the still, not the clip.
+        key = (clip.video_path or clip.file_path).lower()
         if key in material_by_file:
             continue
         mid = _new_id()
         material_by_file[key] = mid
-        w, h = dims.get(key, (cw, ch))
-        videos.append(_video_material(mid, clip.file_path, w, h))
+        w, h = dims.get(clip.file_path.lower(), (cw, ch))
+        videos.append(_video_material(mid, clip.video_path or clip.file_path, w, h))
 
     video_segments: List[dict] = []
     for clip in clips:
-        mid = material_by_file[clip.file_path.lower()]
+        mid = material_by_file[(clip.video_path or clip.file_path).lower()]
         dur_us = _us(clip.duration_frames, fps)
         comp_ids = []
         for kind, coll in _VIDEO_COMPANIONS:
@@ -202,7 +205,8 @@ def build_draft_content(timeline: m.Timeline, images: Sequence[m.ImageInfo],
             "target_timerange": {"start": _us(clip.start_frame, fps), "duration": dur_us},
             "source_timerange": {"start": 0, "duration": dur_us},
             "extra_material_refs": comp_ids, "clip": _clip_block(),
-            "common_keyframes": _scale_keyframes(clip, dims, canvas_aspect, dur_us) or [],
+            "common_keyframes": [] if clip.video_path else
+            (_scale_keyframes(clip, dims, canvas_aspect, dur_us) or []),
             "speed": 1.0})
 
     audio_mid = _new_id()
