@@ -104,6 +104,14 @@ class FinishedPageTests(unittest.TestCase):
         self.assertIn('class="muted off">no kit', html)
         row = html[html.index(f"/studio/{pid}/gpt-pro/generate"):]
         self.assertIn("disabled", row[:300])
+        self.assertIn("ghost off", row[:300])
+
+    def test_ready_production_button_is_not_grayed_out(self):
+        pid = self._make("Ready", self.chan_a, status="ready")
+        html = self.client.get("/finished").get_data(as_text=True)
+        row = html[html.index(f"/studio/{pid}/gpt-pro/generate"):]
+        self.assertNotIn("ghost off", row[:300])
+        self.assertNotIn("disabled", row[:300])
 
     def test_sorting_by_channel_orders_alphabetically(self):
         self._make("From B", self.chan_b, status="ready")
