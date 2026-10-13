@@ -408,24 +408,57 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
 /**
  * Adopt a clip a stopped run generated but never downloaded - the video
  * equivalent of image recovery - instead of paying for a fresh generation.
- * Only safe when it is unambiguous: exactly one unsaved video in the project.
- * With several unsaved videos there is no way to tell which item each belongs
- * to, so generation runs normally.
+ * Flow's error alerts do not always mean the video was not generated, so this
+ * also runs right after a clip fails: look for the finished clip, download it,
+ * move on. When several videos are unsaved, each tile's own "Reuse prompt"
+ * text is matched against the item's motion prompt (same rules as image
+ * recovery); only an unambiguous single match is adopted, never a guess.
  */
-async function adoptOrphanClip(ctx, { out }) {
+async function adoptOrphanClip(ctx, { out, prompt, rounds = 1, gapMs = 10000 }) {
   loadSavedIds(out);
   const unsaved = async () =>
     (await videoCandidates(ctx.page, ctx.videoResponses))
       .filter((c) => /^https?:/i.test(c.url) && !saved.has(c.id));
   let candidates = await unsaved();
-  if (candidates.length === 0) {
-    // Flow only exposes a finished clip's URL once its tile is hovered, so
-    // nudge the newest tile before concluding there is nothing to adopt.
-    await pokeNewestVideoTile(ctx.page, { open: false });
+  // Flow only exposes a finished clip's URL once its tile is hovered (or its
+  // status JSON mentions it), so keep poking the newest tile between rounds -
+  // a clip that finished seconds ago may need a few nudges to surface.
+  for (let round = 0; candidates.length === 0 && round < rounds; round += 1) {
+    await sleep(round === 0 ? 2000 : gapMs);
+    await pokeNewestVideoTile(ctx.page, { open: round % 2 === 1 }).catch(() => {});
     await sleep(2500);
     candidates = await unsaved();
   }
-  if (candidates.length !== 1) return false;
+  if (candidates.length === 0) return false;
+  if (candidates.length > 1) {
+    // More than one orphan: read each tile's own prompt and only adopt the
+    // tile whose prompt matches THIS item, and matches nothing else pending.
+    const tiles = await ctx.driver.listGeneratedResults().catch(() => []);
+    const videoTiles = tiles.filter((t) => t.src && mediaId(t.src) !== String(t.src));
+    const itemPrompt = normalizeMotionPrompt(prompt);
+    const hits = [];
+    for (const tile of videoTiles) {
+      const tilePrompt = await ctx.driver.readTilePrompt(tile.index, { selector: null }).catch(() => null);
+      if (!tilePrompt) continue;
+      const tileId = mediaId(tile.src);
+      if (motionPromptsMatch(itemPrompt, tilePrompt)) {
+        hits.push({ tile, clip: candidates.find((c) => c.id === tileId) });
+      }
+    }
+    // Adopt only an unambiguous single match with a resolvable URL.
+    if (hits.length !== 1 || !hits[0].clip) {
+      log.info(`${candidates.length} unsaved clip(s) in the project, none matching "${path.basename(out)}" unambiguously - generating instead.`);
+      return false;
+    }
+    const clip = hits[0].clip;
+    const bytes = await ctx.driver.fetchBytes(clip.url);
+    if (!bytes || bytes.length <= 10000) return false;
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, bytes);
+    rememberSavedId(out, clip.id);
+    log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, matched by its tile prompt)`);
+    return true;
+  }
   const clip = candidates[0];
   const bytes = await ctx.driver.fetchBytes(clip.url);
   if (!bytes || bytes.length <= 10000) return false;
@@ -434,6 +467,23 @@ async function adoptOrphanClip(ctx, { out }) {
   rememberSavedId(out, clip.id);
   log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, ${clip.id.slice(0, 8)})`);
   return true;
+}
+
+function normalizeMotionPrompt(text) {
+  return String(text ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Same rule as image recovery: a shared prefix of >=20 chars that covers the
+ * shorter of the two prompts identifies the tile; shorter prompts match only
+ * exactly. A tile ambiguous between items is never a match. */
+function motionPromptsMatch(itemPrompt, tilePrompt) {
+  const a = normalizeMotionPrompt(itemPrompt);
+  const b = normalizeMotionPrompt(tilePrompt);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  let shared = 0;
+  while (shared < Math.min(a.length, b.length) && a[shared] === b[shared]) shared += 1;
+  return shared >= 20 && shared >= Math.min(a.length, b.length);
 }
 
 /** One clip: attach the start frame, set the prompt, generate, save. */
@@ -445,6 +495,10 @@ async function makeClip(ctx, { image, prompt, out, timeoutMs }) {
   loadSavedIds(out);
   const knownIds = new Set((await videoCandidates(page, videoResponses)).map((c) => c.id));
   await driver.generate();
+  // A refusal banner left by an earlier clip reads as THIS one's outcome (a
+  // stale "Failed" killed a clip that was still at 22%), so everything already
+  // on the page is marked stale; only a fresh alert may fail the clip.
+  await driver.markStaleAlerts().catch(() => {});
   log.info(`Generating - waiting up to ${timeoutMs / 1000}s...`);
   await shot(page, 'generating');
   return waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen: ctx.reopen });
@@ -504,32 +558,65 @@ async function runJob(flags, context) {
       await driver.openProject(homeUrl);
       await configure(driver, page, opts);
     };
+    let madeThisRun = 0;
     for (const [i, item] of items.entries()) {
       if (fs.existsSync(item.out) && fs.statSync(item.out).size > 10000) {
         report.done.push(item.out);
         continue;
       }
       log.info(`Clip ${i + 1}/${items.length}: ${path.basename(item.image)}`);
-      try {
-        if (await adoptOrphanClip(ctx, { out: path.resolve(item.out) })) {
-          report.done.push(item.out);
-          continue;
+      // Flow's audio pass intermittently fails a freshly started generation
+      // ("Failed"); back-to-back generations make it worse, so settle after
+      // each clip and retry a failing one a couple of times before moving on.
+      // An error does NOT always mean the video was not generated: before any
+      // retry - and before giving up - look for the finished clip first, the
+      // way image recovery does, download it and move on.
+      const RETRIES = 2;
+      for (let attempt = 1; attempt <= 1 + RETRIES; attempt += 1) {
+        if (madeThisRun > 0) {
+          log.info(`Settling 30s so the previous clip fully finishes before the next generation starts.`);
+          await sleep(30000);
         }
-        await ensureFramesMode({ driver, page, opts, projectUrl });
-        await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
-        report.done.push(item.out);
-      } catch (error) {
-        const message = String(error.message ?? error);
-        log.error(message);
-        await shot(page, 'clip-error');
-        report.failed.push({ out: item.out, error: message });
-        // one clip at a time: if this one did not finish, the rest do not start
-        report.stopped = true;
-        report.reason = OUT_OF_CREDITS.test(message)
-          ? `Flow stopped the batch: ${message.slice(0, 200)}`
-          : `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
-        break;
+        if (attempt > 1) {
+          log.warn(`Retrying clip ${i + 1} (attempt ${attempt}/${1 + RETRIES}) after Flow's failure.`);
+          await sleep(20000);
+        }
+        try {
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt })) break;
+          await ensureFramesMode({ driver, page, opts, projectUrl });
+          await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
+          madeThisRun += 1;
+          break;
+        } catch (error) {
+          const message = String(error.message ?? error);
+          await shot(page, 'clip-error');
+          if (OUT_OF_CREDITS.test(message)) {
+            log.error(message);
+            report.failed.push({ out: item.out, error: message });
+            report.stopped = true;
+            report.reason = `Flow stopped the batch: ${message.slice(0, 200)}`;
+            break;
+          }
+          // Check the project for the finished clip before paying for a retry:
+          // a few patient rounds, poking tiles so Flow surfaces it.
+          log.warn(`Clip ${i + 1} failed (${message.slice(0, 160)}) - checking whether Flow generated it anyway.`);
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt, rounds: 4, gapMs: 12000 })) {
+            madeThisRun += 1;
+            break;
+          }
+          if (attempt >= 1 + RETRIES) {
+            log.error(message);
+            report.failed.push({ out: item.out, error: message });
+            // one clip at a time: if this one did not finish, the rest do not start
+            report.stopped = true;
+            report.reason = `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
+            break;
+          }
+          log.warn(`No finished clip found in the project - will retry generation (attempt ${attempt + 1}/${1 + RETRIES}).`);
+        }
       }
+      if (report.stopped) break;
+      report.done.push(item.out);
       save();
     }
     if (report.failed.length && !report.stopped) report.reason = `${report.failed.length} clip(s) failed`;

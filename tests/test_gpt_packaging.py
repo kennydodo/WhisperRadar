@@ -69,6 +69,18 @@ class GPTPackagingTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn(b"Generate with GPT Pro", response.data)
 
+    def test_queue_page_lists_jobs_without_claiming_or_requeueing(self):
+        job = gp.queue(self.cfg, self.pid)
+        page = self.client.get("/gpt-pro/queue")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Ancient food", page.data)
+        self.assertIn(b"queued", page.data)
+        self.assertIn(b"Run now", page.data)
+        self.assertEqual(gp.latest(self.cfg, self.pid)["id"], job["id"])
+        self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "queued")
+        claim = gp.claim(self.cfg)
+        self.assertNotIn(claim["claim_token"].encode(), self.client.get("/gpt-pro/queue").data)
+
     def test_duplicate_clicks_keep_one_job(self):
         first = gp.queue(self.cfg, self.pid)
         self.assertEqual(gp.queue(self.cfg, self.pid)["id"], first["id"])
