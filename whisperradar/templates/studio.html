@@ -408,10 +408,6 @@
     });
     search.addEventListener('focus', render);
     search.addEventListener('blur', close);
-    // a click anywhere in the list (its scrollbar, the gaps between rows)
-    // must not move focus off the input, or 'blur' closes the list before a
-    // video can be picked
-    panel.addEventListener('mousedown', function (e) { e.preventDefault(); });
     search.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -496,21 +492,13 @@
 {% if job.running or also_running %}
 <script>
   // a job is running: reload this list by itself when it ends or moves on to
-  // its next stage - but never while the New production form is being used
-  // (a reload would close the video list and wipe what was typed)
+  // its next stage (nothing is typed on this page that a reload could lose)
   (function () {
     var lastStage = {{ (job.stage or '')|tojson }}, lastSeq = {{ job.seq }};
-    function typing() {
-      var a = document.activeElement;
-      if (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) return true;
-      var q = document.querySelector('#source-search, input[name=title]');
-      return !!(q && q.value);
-    }
     function tick() {
       fetch('/studio/job').then(function (r) { return r.json(); }).then(function (j) {
-        if ((!j.running || j.seq !== lastSeq ||
-            (j.pipeline && (j.stage || '') !== lastStage)) && !typing()) {
-          location.reload(); return; }
+        if (!j.running || j.seq !== lastSeq ||
+            (j.pipeline && (j.stage || '') !== lastStage)) { location.reload(); return; }
         setTimeout(tick, 3000);
       }).catch(function () { setTimeout(tick, 5000); });
     }

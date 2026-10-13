@@ -5056,40 +5056,6 @@ def create_app(cfg) -> Flask:
                                msg=request.args.get("msg"),
                                error=request.args.get("error"))
 
-    @app.post("/in-production/open-folder")
-    def in_production_open_folder():
-        """Open the Productions folder (Settings) in the file manager. Only
-        from the machine the app runs on - it opens on that screen."""
-        try:
-            local = ipaddress.ip_address(
-                request.remote_addr or "").is_loopback
-        except ValueError:
-            local = False
-        if not local or any(request.headers.get(h)
-                            for h in remote.PROXY_HEADERS):
-            return redirect("/in-production?error=" + quote(
-                "The folder can only be opened from the computer WhisperRadar "
-                "runs on"))
-        conn = db.connect(cfg.db_path)
-        db.init_db(conn)
-        try:
-            root = str(settings.load(conn).get("productions_root")
-                       or "").strip()
-        finally:
-            conn.close()
-        if not root:
-            return redirect("/in-production?error=" + quote(
-                "No Productions folder is set - choose one in Settings"))
-        folder = Path(root).expanduser()
-        if not folder.is_dir():
-            return redirect("/in-production?error=" + quote(
-                f"The Productions folder does not exist: {folder}"))
-        try:
-            studio.open_folder(folder)
-        except OSError as exc:
-            return redirect("/in-production?error=" + quote(str(exc)[:150]))
-        return redirect("/in-production?msg=" + quote(f"Opened {folder}"))
-
     @app.post("/studio/<int:pid>/open-folder")
     def studio_open_folder(pid):
         """Open this production's working folder in the file manager."""

@@ -1262,23 +1262,7 @@
   document.addEventListener('input', function (e) {
     if (e.isTrusted && e.target) userEdited.add(e.target);
   }, true);
-  // an OS file dialog (choose a video / audio / images) is open: the page
-  // cannot see inside it, but a reload would close it under the user's hands
-  let picking = false;
-  document.addEventListener('click', function (e) {
-    if (e.target && e.target.matches && e.target.matches('input[type="file"]'))
-      picking = true;
-  }, true);
-  document.addEventListener('change', function (e) {
-    if (e.target && e.target.type === 'file') picking = false;
-  }, true);
-  document.addEventListener('cancel', function () { picking = false; }, true);
-  // the dialog hands focus back to the page when it closes (pick or cancel)
-  window.addEventListener('focus', function () {
-    setTimeout(function () { picking = false; }, 500);
-  });
   function reloadWhenSafe() {
-    if (picking) { setTimeout(reloadWhenSafe, 3000); return; }
     const dirty = [...userEdited].some((el) => document.contains(el) &&
       el.type !== 'checkbox' && el.type !== 'radio' &&
       el.value !== el.defaultValue);
@@ -1307,7 +1291,7 @@
           const typed = [...userEdited].some((el) => document.contains(el) &&
             el.type !== 'checkbox' && el.type !== 'radio' &&
             el.value !== el.defaultValue);
-          if (!typed && !picking) { location.reload(); return; }
+          if (!typed) { location.reload(); return; }
         }
         if (bar) {
           bar.style.display = '';
