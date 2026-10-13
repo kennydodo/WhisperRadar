@@ -255,10 +255,54 @@ async function videoCandidates(page, videoResponses) {
   return [...out.values()];
 }
 
+/**
+ * Flow lists a finished video as a thumbnail with a play badge and only fetches
+ * the file once its tile is hovered or opened - so automation sees nothing
+ * until it does the same. Hover the newest video tile; when asked, open it.
+ * Returns true when the page was navigated (the caller must reopen the project).
+ */
+async function pokeNewestVideoTile(page, { open }) {
+  const tiles = page.locator('flow-grid-tile-container, flow-tile-container');
+  if ((await tiles.count().catch(() => 0)) === 0) return false;
+  const withBadge = tiles.filter({
+    has: page.locator('video, [class*="play" i], mat-icon:text-matches("play", "i"), [aria-label*="play" i]'),
+  });
+  const tile = (await withBadge.count().catch(() => 0)) > 0 ? withBadge.first() : tiles.first();
+  await tile.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+  await tile.hover({ timeout: 4000 }).catch(() => {});
+  if (!open) return false;
+  const before = page.url();
+  await tile.click({ timeout: 4000 }).catch(() => {});
+  await sleep(3500);
+  return page.url() !== before || (await page.locator('video').count().catch(() => 0)) > 0;
+}
+
+async function dumpFirstTile(page) {
+  try {
+    const html = await page
+      .locator('flow-grid-tile-container, flow-tile-container')
+      .first()
+      .evaluate((node) => node.outerHTML.slice(0, 6000));
+    const file = path.join(ROOT, STAGE_DIR, `video-tile-${timestampSlug()}.html`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, html);
+  } catch {
+    /* no tile to dump */
+  }
+}
+
 /** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout. */
-async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out }) {
-  const deadline = Date.now() + timeoutMs;
+async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen }) {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   let clip = null;
+  let pokes = 0;
+  let nextPoke = started + 45000;
+  let navigated = false;
+  const findFresh = async () => {
+    const fresh = (await videoCandidates(page, videoResponses)).filter((c) => !knownIds.has(c.id) && !saved.has(c.id));
+    return fresh.length ? fresh[fresh.length - 1] : null;
+  };
   while (Date.now() < deadline && !clip) {
     await sleep(4000);
     const alert = await driver.freshAlert().catch(() => null);
@@ -266,12 +310,20 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
       await shot(page, 'refused');
       throw new Error(`Flow reported a problem: ${JSON.stringify(alert).slice(0, 300)}`);
     }
-    const fresh = (await videoCandidates(page, videoResponses)).filter((c) => !knownIds.has(c.id) && !saved.has(c.id));
-    clip = fresh.length ? fresh[fresh.length - 1] : null;
+    clip = await findFresh();
+    if (!clip && Date.now() >= nextPoke) {
+      nextPoke = Date.now() + 25000;
+      pokes += 1;
+      if (pokes === 1) await dumpFirstTile(page);
+      log.info(`Waiting for the clip (${Math.round((Date.now() - started) / 1000)}s) - opening the newest video tile to make Flow load it.`);
+      navigated = (await pokeNewestVideoTile(page, { open: pokes % 2 === 0 })) || navigated;
+      await sleep(2500);
+      clip = await findFresh();
+    }
   }
   if (!clip) {
     await shot(page, 'timeout');
-    throw new Error('No new video appeared before the timeout. See debug/video-timeout-*.png.');
+    throw new Error('The clip did not finish or could not be found before the timeout. See debug/video-timeout-*.png.');
   }
   log.info(`Clip found (${clip.id}): ${clip.url.slice(0, 100)}...`);
   const bytes = await driver.fetchBytes(clip.url);
@@ -280,6 +332,7 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
   fs.writeFileSync(out, bytes);
   rememberSavedId(out, clip.id);
   log.ok(`Saved ${path.relative(ROOT, out)} (${(bytes.length / 1048576).toFixed(1)} MB)`);
+  if (navigated && reopen) await reopen().catch((error) => log.warn(`reopen: ${String(error.message ?? error)}`));
   return bytes.length;
 }
 
@@ -294,7 +347,7 @@ async function makeClip(ctx, { image, prompt, out, timeoutMs }) {
   await driver.generate();
   log.info(`Generating - waiting up to ${timeoutMs / 1000}s...`);
   await shot(page, 'generating');
-  return waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out });
+  return waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen: ctx.reopen });
 }
 
 /** Veo clips have a fixed length/size; only Omni takes resolution and duration. */
@@ -345,7 +398,11 @@ async function runJob(flags, context) {
     if (projectUrl) await driver.openProject(projectUrl);
     else await driver.ensureProject('WhisperRadar motion');
     await configure(driver, page, opts);
-    let streak = 0;
+    const homeUrl = projectUrl || page.url();
+    const reopen = async () => {
+      await driver.openProject(homeUrl);
+      await configure(driver, page, opts);
+    };
     for (const [i, item] of items.entries()) {
       if (fs.existsSync(item.out) && fs.statSync(item.out).size > 10000) {
         report.done.push(item.out);
@@ -354,20 +411,19 @@ async function runJob(flags, context) {
       log.info(`Clip ${i + 1}/${items.length}: ${path.basename(item.image)}`);
       try {
         await ensureFramesMode({ driver, page, opts, projectUrl });
-        await makeClip({ driver, page, videoResponses }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
+        await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
         report.done.push(item.out);
-        streak = 0;
       } catch (error) {
         const message = String(error.message ?? error);
         log.error(message);
         await shot(page, 'clip-error');
         report.failed.push({ out: item.out, error: message });
-        streak += 1;
-        if (OUT_OF_CREDITS.test(message) || streak >= 2) {
-          report.stopped = true;
-          report.reason = OUT_OF_CREDITS.test(message) ? `Flow stopped the batch: ${message.slice(0, 200)}` : `${streak} clips failed in a row: ${message.slice(0, 200)}`;
-          break;
-        }
+        // one clip at a time: if this one did not finish, the rest do not start
+        report.stopped = true;
+        report.reason = OUT_OF_CREDITS.test(message)
+          ? `Flow stopped the batch: ${message.slice(0, 200)}`
+          : `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
+        break;
       }
       save();
     }
