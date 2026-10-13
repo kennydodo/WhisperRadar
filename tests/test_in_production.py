@@ -103,6 +103,18 @@ class InProductionTests(unittest.TestCase):
         op.assert_not_called()
         self.assertIn("error=", resp.headers["Location"])
 
+    def test_production_page_has_an_open_folder_button(self):
+        from whisperradar import studio
+        pid = self._make("Inside")
+        html = self.client.get(f"/studio/{pid}").get_data(as_text=True)
+        self.assertIn(f"/studio/{pid}/open-folder", html)
+        with mock.patch.object(studio, "open_folder") as op:
+            resp = self.client.post(f"/studio/{pid}/open-folder")
+        op.assert_called_once()
+        self.assertEqual(Path(op.call_args[0][0]),
+                         studio.prod_dir(self.cfg, pid))
+        self.assertIn("msg=", resp.headers["Location"])
+
     def test_title_is_cut_at_100_characters(self):
         self._make("x" * 130)
         html = self.client.get("/in-production").get_data(as_text=True)

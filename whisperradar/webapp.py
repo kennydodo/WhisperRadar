@@ -5090,6 +5090,32 @@ def create_app(cfg) -> Flask:
             return redirect("/in-production?error=" + quote(str(exc)[:150]))
         return redirect("/in-production?msg=" + quote(f"Opened {folder}"))
 
+    @app.post("/studio/<int:pid>/open-folder")
+    def studio_open_folder(pid):
+        """Open this production's working folder in the file manager."""
+        try:
+            local = ipaddress.ip_address(
+                request.remote_addr or "").is_loopback
+        except ValueError:
+            local = False
+        if not local or any(request.headers.get(h)
+                            for h in remote.PROXY_HEADERS):
+            return _studio_url(pid, error="The folder can only be opened "
+                               "from the computer WhisperRadar runs on")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/studio?error=Unknown+production")
+        finally:
+            conn.close()
+        folder = studio.prod_dir(cfg, pid)
+        try:
+            studio.open_folder(folder)
+        except OSError as exc:
+            return _studio_url(pid, error=str(exc)[:150])
+        return _studio_url(pid, msg="Opened the working folder")
+
     @app.post("/studio/<int:pid>/continue")
     def studio_continue(pid):
         """Run just the next stage that has work to do, then stop."""

@@ -148,6 +148,7 @@
   <div class="panel" style="padding:10px 14px">
     <div class="inline" style="justify-content:space-between">
       <span class="muted" style="font-size:12px">Working folder: <span class="mono">{{ work_dir }}</span></span>
+      <form method="post" action="/studio/{{ prod['id'] }}/open-folder" style="display:inline;margin:0 8px 0 -4px"><button type="submit" class="ghost" style="padding:2px 9px;font-size:12px" title="Open this production's folder in the file manager">&#128193; Open folder</button></form>
       {% if source_tr %}
       <details style="flex:1">
         <summary class="muted" style="font-size:12px; cursor:pointer">view transcript</summary>
