@@ -57,6 +57,7 @@
   td.actions form { display: inline-block; margin-left: 6px; }
   .badge.running { background: rgba(63,185,111,.15); color: var(--green); }
   .badge.failed { background: rgba(224,92,92,.15); color: var(--red); }
+  .badge.off { background: rgba(139,147,163,.15); color: var(--gray); text-decoration: line-through; }
   .small { font-size: 12px; }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
@@ -84,7 +85,7 @@
   {% else %}
   <div class="panel" style="padding:0;overflow-x:auto">
   <table>
-    <thead><tr><th>Channel</th><th>ID</th><th>Title</th><th>Stage</th><th></th></tr></thead>
+    <thead><tr><th>Channel</th><th>ID</th><th>Title</th><th>Stage</th><th>Created</th><th></th></tr></thead>
     <tbody>
     {% for r in rows %}
     <tr>
@@ -92,13 +93,14 @@
       <td>#{{ r.id }}</td>
       <td><a href="/studio/{{ r.id }}">{{ r.title }}</a></td>
       <td>
-        <span class="badge genre">{{ r.stage }}</span>
+        <span class="badge {{ 'off' if r.skipped else 'genre' }}"{% if r.skipped %} title="Skipped: {{ r.skipped }}"{% endif %}>{{ r.stage }}</span>
         {% if r.job %}<span class="badge running">&#9654; running {{ r.job.stage or r.job.kind }}</span>
         {% elif r.failed %}<span class="badge failed">failed</span>
         {% elif r.next and r.next.action == 'pause' %}<div class="muted small" title="{{ r.next.detail }}">waiting: {{ r.next.detail[:90] }}</div>
-        {% elif r.next %}<div class="muted small">next: {{ r.next.stage }}</div>
-        {% else %}<div class="muted small">ready for review</div>{% endif %}
+        {% elif r.next %}<div class="muted small">{% if r.skipped %}{{ r.stage }} skipped ({{ r.skipped }}); next: {{ r.next.stage }} - {% endif %}{{ r.next.detail[:90] }}</div>
+        {% else %}<div class="muted small">all stages done - ready for review</div>{% endif %}
       </td>
+      <td class="muted small" style="white-space:nowrap">{{ r.created }}</td>
       <td class="actions">
         {% if r.next and r.next.action == 'run' and not r.job %}
         <form method="post" action="/studio/{{ r.id }}/continue"><input type="hidden" name="back" value="in-production"><button type="submit" title="Run {{ r.next.stage }} only">Continue</button></form>

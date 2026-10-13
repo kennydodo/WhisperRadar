@@ -5023,9 +5023,13 @@ def create_app(cfg) -> Flask:
         for p in prods:
             job = running.get(p["id"])
             nxt = None
+            skipped = None
             try:
                 plan = autorun.build_plan(cfg, p["id"])
                 nxt = next((e for e in plan if e["action"] != "skip"), None)
+                skipped = next((e["detail"] for e in plan
+                                if e["stage"] == p["stage"]
+                                and e["action"] == "skip"), None)
             except Exception:  # noqa: BLE001 - one bad folder must not hide the list
                 nxt = None
             rows.append({
@@ -5033,6 +5037,10 @@ def create_app(cfg) -> Flask:
                 "channel": own_by_id.get(p["own_channel_id"]) or "No channel",
                 "title": (p["title"] or "")[:100],
                 "stage": p["stage"],
+                # a stage that will be skipped (no motion clips for this
+                # channel, say) is shown grayed out
+                "skipped": skipped,
+                "created": (p["created_at"] or "")[:16],
                 "failed": p["status"] == "failed",
                 "next": nxt,
                 "job": ({"kind": job.kind, "stage": job.stage}

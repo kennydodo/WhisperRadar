@@ -51,6 +51,26 @@ class InProductionTests(unittest.TestCase):
         self.assertIn(f"/studio/{a}/continue", html)
         self.assertIn(f"/studio/{a}/auto-run", html)
 
+    def test_skipped_stage_is_grayed_out_and_created_is_shown(self):
+        pid = self._make("Skipper")
+        db.update_production(self.conn, pid, stage="motion")
+        plan = [{"stage": "motion", "action": "skip", "detail": "off"},
+                {"stage": "merge", "action": "run", "detail": "final"}]
+        with mock.patch.object(autorun, "build_plan", return_value=plan):
+            html = self.client.get("/in-production").get_data(as_text=True)
+        self.assertIn('badge off"', html)       # motion grayed out
+        self.assertIn("motion skipped", html)
+        self.assertIn("next: merge", html)
+        self.assertIn(time.strftime("%Y"), html)   # created column
+
+    def test_everything_done_shows_review(self):
+        pid = self._make("Done")
+        db.update_production(self.conn, pid, stage="motion")
+        plan = [{"stage": "merge", "action": "skip", "detail": "done"}]
+        with mock.patch.object(autorun, "build_plan", return_value=plan):
+            html = self.client.get("/in-production").get_data(as_text=True)
+        self.assertIn("ready for review", html)
+
     def test_title_is_cut_at_100_characters(self):
         self._make("x" * 130)
         html = self.client.get("/in-production").get_data(as_text=True)
