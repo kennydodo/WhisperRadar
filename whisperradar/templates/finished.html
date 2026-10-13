@@ -76,7 +76,16 @@
   <p class="muted">GPT Pro checks queued jobs once an hour. To run them immediately, open Codex → Scheduled → WhisperRadar GPT Pro packaging → Run now.</p>
   <p class="sub">productions that passed review and are ready to publish</p>
   <p class="muted">GPT packaging starts when you click Generate with GPT Pro for a production: four thumbnails, four titles and a description. The worker checks hourly; use Codex Scheduled &gt; Run now after queueing for an immediate check.</p>
-  {% if scope_name %}<div class="muted" style="font-size:13px; margin:-8px 0 12px">Showing <b>{{ scope_name }}</b> only - <a href="?all=1">show all channels</a></div>{% endif %}
+  <form method="get" style="margin:-4px 0 12px">
+    <input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="dir" value="{{ dir }}">
+    {% if status_filter != 'all' %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+    <label class="muted" style="font-size:13px">Channel
+      <select name="channel" onchange="this.form.submit()" style="background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px">
+        <option value="">All channels</option>
+        {% for c in channel_options %}<option value="{{ c.id }}" {{ 'selected' if scope == c.id }}>{{ c.name }}</option>{% endfor %}
+        <option value="0" {{ 'selected' if scope == 0 }}>No channel</option>
+      </select></label>
+  </form>
 
   <div class="tabs">
     <a href="?{{ qs(status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All ({{ ready_count + published_count }})</a>

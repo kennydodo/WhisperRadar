@@ -2872,9 +2872,9 @@ def create_app(cfg) -> Flask:
         if status_filter not in ("all", "ready", "published"):
             status_filter = "all"
 
-        # inside a selected channel the page shows that channel's videos only
-        # (?all=1 shows every channel)
-        scope = None if request.args.get("all") else _selected_channel()
+        # every channel by default; ?channel=<id> narrows to one
+        # (0 = productions with no channel)
+        scope = request.args.get("channel", type=int)
         rows = [p for p in db.list_productions(conn)
                 if p["status"] in ("ready", "published")
                 and (scope is None or (p["own_channel_id"] or 0) == scope)]
@@ -2919,17 +2919,19 @@ def create_app(cfg) -> Flask:
         items.sort(key=key_fns[sort], reverse=(direction == "desc"))
 
         def qs(**overrides) -> str:
-            vals = {"sort": sort, "dir": direction, "status": status_filter}
+            vals = {"sort": sort, "dir": direction, "status": status_filter,
+                    "channel": "" if scope is None else scope}
             vals.update(overrides)
             return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
-                            if v and v != "all")
+                            if (v or v == 0) and v != "" and v != "all")
 
         return render_template(
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
             status_filter=status_filter, ready_count=ready_count,
             published_count=published_count, due_results=due_results,
-            scope_name=(None if scope is None
-                        else own_by_id.get(scope) or "No channel"),
+            scope=scope,
+            channel_options=[{"id": c["id"], "name": c["name"]}
+                             for c in own_channels if c["active"]],
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.post("/studio/<int:pid>/gpt-pro/generate")

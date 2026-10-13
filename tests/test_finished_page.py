@@ -82,6 +82,20 @@ class FinishedPageTests(unittest.TestCase):
         resp = self.client.get("/finished")
         self.assertNotIn(b"Still Working", resp.data)
 
+    def test_shows_every_channel_by_default_and_filters_on_request(self):
+        self._make("From A", self.chan_a, status="ready")
+        self._make("From B", self.chan_b, status="ready")
+        # the channel picked in Studio no longer narrows this page
+        self.client.post("/studio/channel",
+                         data={"own_channel_id": self.chan_a})
+        html = self.client.get("/finished").get_data(as_text=True)
+        self.assertIn("From A", html)
+        self.assertIn("From B", html)
+        html = self.client.get(
+            f"/finished?channel={self.chan_b}").get_data(as_text=True)
+        self.assertNotIn("From A", html)
+        self.assertIn("From B", html)
+
     def test_sorting_by_channel_orders_alphabetically(self):
         self._make("From B", self.chan_b, status="ready")
         self._make("From A", self.chan_a, status="ready")
