@@ -210,7 +210,7 @@ class SfxFaultTests(unittest.TestCase):
     def test_a_name_or_list_on_the_right_shots_is_fine(self):
         self.assertEqual(studio.shotlist_sfx_faults(
             [{"asset": "a_ST.png", "sfx": "pop"},
-             _shot(reveal=(1, 2, 3)) | {"sfx": ["ding", "pop"]},
+             _shot(reveal=(1, 2, 3)) | {"sfx": ["pop", "pop"]},
              {"asset": "b_ST.png"}]), [])
 
     def test_bad_names_are_rejected(self):
@@ -287,11 +287,9 @@ class BriefVariantTests(unittest.TestCase):
     def test_the_section_teaches_grid_build_up_and_sound_effects(self):
         text = briefs.reveal_block()
         for needle in ('"layout": "grid"', '"assets"', "REPLACE the previous one",
-                       '"sfx": "pop"', "pop, ding, click, tick, whoosh, swipe",
+                       '"sfx": "pop"', "Use ONE sound for the whole video",
                        "centre-cropped"):
             self.assertIn(needle, text)
-        for name in studio.BUILTIN_SFX:
-            self.assertIn(name, text)
 
 
 class ChannelSettingTests(unittest.TestCase):

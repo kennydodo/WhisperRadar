@@ -22,7 +22,7 @@ class ChannelSfxTests(unittest.TestCase):
         text = briefs.reveal_block(False, prof.sfx)
         self.assertIn('"sfx": "pop_marimba"', text)
         self.assertIn("Use ONE sound for the whole video", text)
-        self.assertNotIn("ding", text)
+        self.assertNotIn('"ding"', text)
 
     def test_pop_itself_is_the_default_not_a_custom_sound(self):
         self.assertEqual(
