@@ -49,6 +49,31 @@
   .search { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
   .search input[type=search] { flex: 0 1 280px; }
   .count { color: var(--muted); font-size: 12px; margin-left: 8px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+  .chip { background: transparent; border: 1px solid var(--border); color: var(--muted);
+          border-radius: 20px; padding: 2px 11px; font-size: 12px; font-weight: 500; cursor: pointer; }
+  .chip:hover { color: var(--text); filter: none; }
+  .chip.on { background: rgba(79,140,255,.18); border-color: var(--accent); color: var(--accent); }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--text); }
+  th.sorted::after { content: ' \25BE'; }
+  th.sorted.asc::after { content: ' \25B4'; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .quiet { color: var(--amber); }
+  .good { color: var(--green); font-weight: 600; }
+  details.more { display: inline-block; position: relative; }
+  details.more > summary { list-style: none; cursor: pointer; display: inline-block;
+          border: 1px solid var(--border); border-radius: 7px; padding: 4px 10px; color: var(--muted); font-size: 13px; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more[open] > summary { color: var(--text); }
+  details.more .menu { position: absolute; right: 0; top: 30px; z-index: 5; background: var(--panel);
+          border: 1px solid var(--border); border-radius: 8px; padding: 6px; min-width: 150px;
+          display: flex; flex-direction: column; gap: 4px; text-align: left; }
+  details.more .menu form { display: block; margin: 0; }
+  details.more .menu button, details.more .menu a { display: block; width: 100%; text-align: left;
+          background: transparent; border: none; color: var(--text); padding: 5px 8px; border-radius: 5px;
+          font-size: 13px; font-weight: 500; }
+  details.more .menu button:hover, details.more .menu a:hover { background: #12151c; text-decoration: none; filter: none; color: var(--text); }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
 </head>
@@ -83,7 +108,7 @@
     <form class="inline" method="post" action="/channels/add">
       <input type="text" name="url" placeholder="https://www.youtube.com/@channel or UC..." required>
       <input type="text" name="name" placeholder="Name (optional)" style="flex:0 0 160px">
-      <input type="text" name="genre" placeholder="genre e.g. tech" style="flex:0 0 140px">
+      <input type="text" name="genre" list="genre-list" placeholder="genre e.g. tech" style="flex:0 0 140px">
       <select name="kind">
         <option value="primary">primary</option>
         <option value="similar">similar</option>
@@ -99,6 +124,7 @@
     </form>
   </div>
 
+  <datalist id="genre-list">{% for g in genres %}<option value="{{ g }}">{% endfor %}</datalist>
   <div class="search">
     <span class="count" style="margin-left:0">
       <a href="/watched" class="{{ 'active' if state == 'active' else '' }}"
@@ -107,8 +133,25 @@
       <a href="/watched?state=paused" style="{{ 'color:var(--text);font-weight:600' if state == 'paused' else '' }}">Paused ({{ paused_count }})</a>
     </span>
     <input type="search" id="channel-search" placeholder="filter by name or genre..."
-           autocomplete="off" oninput="filterChannels(this.value)">
+           autocomplete="off" oninput="applyFilters()">
     <span class="count" id="channel-count"></span>
+  </div>
+  <div class="chips" id="genre-chips">
+    <button type="button" class="chip on" data-genre="" onclick="pickGenre(this)">All ({{ channels|length }})</button>
+    {% for g, n in genre_counts.items() %}<button type="button" class="chip" data-genre="{{ g|lower }}" onclick="pickGenre(this)">{{ g }} ({{ n }})</button>{% endfor %}
+    {% if quiet_count %}<button type="button" class="chip" id="quiet-chip" onclick="toggleQuiet(this)" title="No upload for more than {{ quiet_days }} days">Quiet ({{ quiet_count }})</button>{% endif %}
+    <details class="more" style="margin-left:auto">
+      <summary>Rename / merge a genre</summary>
+      <div class="menu" style="min-width:300px;padding:10px">
+        <form method="post" action="/watched/genre/rename" class="inline">
+          <select name="old">{% for g in genres %}<option>{{ g }}</option>{% endfor %}</select>
+          <span class="muted">&rarr;</span>
+          <input type="text" name="new" list="genre-list" placeholder="new name" required style="width:140px">
+          <button type="submit" style="width:auto">Rename</button>
+        </form>
+        <div class="muted" style="font-size:12px;padding:0 4px">Naming an existing genre merges the two. Files move with the channels.</div>
+      </div>
+    </details>
   </div>
 
   <form id="bulk-form" method="post" action="/channels/bulk" class="panel inline"
@@ -124,7 +167,7 @@
       <option value="views">Refresh view counts</option>
       <option value="remove">Remove (and their video records)</option>
     </select>
-    <input type="text" name="bulk_value" id="bulk-genre" placeholder="genre e.g. tech" style="display:none; flex:0 0 140px">
+    <input type="text" name="bulk_value" id="bulk-genre" list="genre-list" placeholder="genre e.g. tech" style="display:none; flex:0 0 140px">
     <select name="bulk_value" id="bulk-kind" style="display:none" disabled>
       <option value="primary">primary</option>
       <option value="similar">similar</option>
@@ -135,16 +178,25 @@
 
   <div class="panel">
     <table id="channel-table">
-      <tr><th style="width:28px"><input type="checkbox" id="select-all" form="bulk-form" title="Select all shown channels" onchange="selectAllShown(this.checked)"></th><th>Name</th><th>Channel ID</th><th>Kind</th><th>Genre</th><th>State</th><th></th></tr>
+      <tr><th style="width:28px"><input type="checkbox" id="select-all" form="bulk-form" title="Select all shown channels" onchange="selectAllShown(this.checked)"></th>
+        <th class="sortable" data-key="name" onclick="sortBy('name')">Name</th>
+        <th class="sortable" data-key="genre" onclick="sortBy('genre')">Genre</th>
+        <th class="sortable num" data-key="videos" onclick="sortBy('videos')" title="transcribed / videos">Videos</th>
+        <th class="sortable num" data-key="last" onclick="sortBy('last')">Last upload</th>
+        <th class="sortable num" data-key="best" onclick="sortBy('best')" title="best video vs. the channel's norm">Best outlier</th>
+        <th></th></tr>
       {% for ch in channels %}
-      <tr data-search="{{ (ch['name'] ~ ' ' ~ ch['genre'])|lower }}">
+      {% set st = stats.get(ch['channel_id']) or {} %}
+      <tr class="crow" data-search="{{ (ch['name'] ~ ' ' ~ ch['genre'])|lower }}" data-genre="{{ (ch['genre'] or 'general')|lower }}"
+          data-quiet="{{ 1 if st.get('quiet') else 0 }}" data-name="{{ ch['name']|lower }}" data-videos="{{ st.get('videos', 0) }}"
+          data-last="{{ st.get('days') if st.get('days') is not none else 99999 }}" data-best="{{ st.get('best') if st.get('best') is not none else -1 }}">
         <td><input type="checkbox" class="row-check" name="ids" form="bulk-form" value="{{ ch['channel_id'] }}" onchange="updateBulkBar()"></td>
-        <td>{{ ch["name"] }}<br><a href="/watched/{{ ch['channel_id'] }}/similar">Find similar channels</a></td>
-        <td class="mono muted">{{ ch["channel_id"] }}</td>
-        <td>{{ ch["kind"] }}</td>
+        <td>{{ ch["name"] }}{% if ch['kind'] == 'similar' %} <span class="muted" style="font-size:11px">(similar)</span>{% endif %}
+          <br><span class="mono muted" title="channel id">{{ ch["channel_id"] }}</span></td>
         <td class="muted">{{ ch["genre"] }}</td>
-        <td>{% if ch["active"] %}<span class="badge transcribed">active</span>
-            {% else %}<span class="badge skipped">paused</span>{% endif %}</td>
+        <td class="num">{{ st.get('transcribed', 0) }} / {{ st.get('videos', 0) }}</td>
+        <td class="num {{ 'quiet' if st.get('quiet') }}" title="{{ st.get('last') or 'no dates yet' }}">{% if st.get('days') is not none %}{% if st['days'] < 1 %}today{% elif st['days'] < 60 %}{{ st['days'] }}d ago{% elif st['days'] < 730 %}{{ (st['days'] / 30)|int }}mo ago{% else %}{{ (st['days'] / 365)|int }}y ago{% endif %}{% if st.get('quiet') %} &middot; quiet{% endif %}{% else %}<span class="muted">?</span>{% endif %}</td>
+        <td class="num">{% if st.get('best') is not none %}<span class="{{ 'good' if st['best'] >= 5 else '' }}">{{ st['best'] }}x</span>{% else %}<span class="muted">-</span>{% endif %}</td>
         <td style="text-align:right; white-space:nowrap">
           <form class="row" method="post" action="/channels/state" style="display:inline">
             <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
@@ -155,27 +207,25 @@
               {{ 'pause' if ch['active'] else 'activate' }}</button>
           </form>
           <button type="button" class="ghost" onclick="toggleEdit('{{ ch['channel_id'] }}')">edit</button>
-          <a class="ghost" href="/watched/{{ ch['channel_id'] }}/look"
-             style="padding:4px 10px;border:1px solid var(--border);border-radius:6px"
-             title="Take a few real video frames from this channel and have a web chat write its visual style guide and character/environment bible (kept with this channel only)">style &amp; bible</a>
-          <form class="row" method="post" action="/channels/backfill" style="display:inline"
-                title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
-            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
-            <button type="submit" class="ghost">backfill</button>
-          </form>
-          <form class="row" method="post" action="/channels/views" style="display:inline"
-                title="Refresh this channel's video view counts (for the 'most viewed' sort)">
-            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
-            <button type="submit" class="ghost">views</button>
-          </form>
-          <form class="row" method="post" action="/channels/remove"
-                onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch["name"] }} and its video records?')">
-            <input type="hidden" name="key" value="{{ ch["channel_id"] }}">
-            <button type="submit" class="ghost">remove</button>
-          </form>
+          <details class="more"><summary>more</summary>
+            <div class="menu">
+              <a href="/watched/{{ ch['channel_id'] }}/similar">Find similar channels</a>
+              <a href="/watched/{{ ch['channel_id'] }}/look"
+                 title="Take a few real video frames from this channel and have a web chat write its visual style guide and character/environment bible (kept with this channel only)">Style &amp; bible</a>
+              <form method="post" action="/channels/backfill"
+                    title="Import this channel's full upload history into the backlog (RSS only lists the latest 15)">
+                <input type="hidden" name="key" value="{{ ch["channel_id"] }}"><button type="submit">Backfill history</button></form>
+              <form method="post" action="/channels/views"
+                    title="Refresh this channel's video view counts (for the 'most viewed' sort)">
+                <input type="hidden" name="key" value="{{ ch["channel_id"] }}"><button type="submit">Refresh views</button></form>
+              <form method="post" action="/channels/remove"
+                    onsubmit="return wrConfirmSubmit(this, 'Remove {{ ch["name"] }} and its video records?')">
+                <input type="hidden" name="key" value="{{ ch["channel_id"] }}"><button type="submit" style="color:var(--red)">Remove</button></form>
+            </div>
+          </details>
         </td>
       </tr>
-      <tr id="edit-{{ ch['channel_id'] }}" data-search="{{ (ch['name'] ~ ' ' ~ ch['genre'])|lower }}" style="display:none">
+      <tr id="edit-{{ ch['channel_id'] }}" class="erow" data-owner="{{ ch['channel_id'] }}" style="display:none">
         <td colspan="7" style="background:#12151c">
           <form class="inline" method="post" action="/channels/edit">
             <input type="hidden" name="channel_id" value="{{ ch["channel_id"] }}">
@@ -183,7 +233,7 @@
               <input type="text" name="name" value="{{ ch["name"] }}" style="width:180px">
             </label>
             <label class="muted" style="font-size:12px">genre
-              <input type="text" name="genre" value="{{ ch["genre"] }}" style="width:120px">
+              <input type="text" name="genre" list="genre-list" value="{{ ch["genre"] }}" style="width:140px">
             </label>
             <select name="kind">
               <option value="primary" {{ 'selected' if ch['kind'] == 'primary' else '' }}>primary</option>
@@ -265,32 +315,63 @@
     if (form) { form.reset(); }
     row.style.display = 'none';
   }
-  // Client-side filter: with 10+ watched channels, scanning the whole table
-  // for one name gets tedious - this narrows it as you type, no reload.
-  function filterChannels(raw) {
-    const q = raw.trim().toLowerCase();
-    const rows = document.querySelectorAll('#channel-table tr[data-search]');
-    let total = 0;
-    let shown = 0;
-    rows.forEach(function (row) {
-      const isEditRow = row.id && row.id.indexOf('edit-') === 0;
-      const match = !q || row.dataset.search.indexOf(q) !== -1;
-      if (isEditRow) {
-        // an edit row's own visibility is controlled by toggleEdit(), not the
-        // filter - only hide it when its owning channel row is filtered out
-        if (!match) row.style.display = 'none';
-        return;
-      }
-      total++;
-      row.style.display = match ? '' : 'none';
-      if (match) shown++;
+  // ---- filter (text + genre chip + quiet) and sort, all client-side ----
+  var activeGenre = '';
+  var onlyQuiet = false;
+  var sortKey = null, sortAsc = true;
+  function pickGenre(btn) {
+    activeGenre = btn.dataset.genre;
+    document.querySelectorAll('#genre-chips .chip[data-genre]').forEach(function (c) {
+      c.classList.toggle('on', c === btn);
     });
-    const countEl = document.getElementById('channel-count');
-    if (countEl) {
-      countEl.textContent = q ? shown + ' of ' + total + ' shown' : '';
-    }
+    applyFilters();
+  }
+  function toggleQuiet(btn) {
+    onlyQuiet = !onlyQuiet;
+    btn.classList.toggle('on', onlyQuiet);
+    applyFilters();
+  }
+  function applyFilters() {
+    var q = document.getElementById('channel-search').value.trim().toLowerCase();
+    var total = 0, shown = 0;
+    document.querySelectorAll('#channel-table tr.crow').forEach(function (row) {
+      var ok = (!q || row.dataset.search.indexOf(q) !== -1)
+            && (!activeGenre || row.dataset.genre === activeGenre)
+            && (!onlyQuiet || row.dataset.quiet === '1');
+      total++;
+      row.style.display = ok ? '' : 'none';
+      if (ok) shown++;
+      var edit = document.getElementById('edit-' + row.querySelector('.row-check').value);
+      if (edit && !ok) edit.style.display = 'none';
+    });
+    var countEl = document.getElementById('channel-count');
+    if (countEl) countEl.textContent = (q || activeGenre || onlyQuiet) ? shown + ' of ' + total + ' shown' : '';
     updateBulkBar();
   }
+  function sortBy(key) {
+    sortAsc = (sortKey === key) ? !sortAsc : (key === 'name' || key === 'genre' || key === 'last');
+    sortKey = key;
+    var table = document.getElementById('channel-table');
+    var rows = Array.prototype.slice.call(table.querySelectorAll('tr.crow'));
+    var num = (key !== 'name' && key !== 'genre');
+    rows.sort(function (a, b) {
+      var x = a.dataset[key === 'genre' ? 'genre' : key], y = b.dataset[key === 'genre' ? 'genre' : key];
+      if (num) { x = parseFloat(x); y = parseFloat(y); }
+      else { x = x || ''; y = y || ''; }
+      var r = x < y ? -1 : (x > y ? 1 : 0);
+      return sortAsc ? r : -r;
+    });
+    rows.forEach(function (row) {
+      var edit = document.getElementById('edit-' + row.querySelector('.row-check').value);
+      table.appendChild(row);
+      if (edit) table.appendChild(edit);
+    });
+    document.querySelectorAll('#channel-table th.sortable').forEach(function (th) {
+      th.classList.toggle('sorted', th.dataset.key === key);
+      th.classList.toggle('asc', th.dataset.key === key && sortAsc);
+    });
+  }
+  function filterChannels() { applyFilters(); }
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
 <script src="{{ url_for('static', filename='keepscroll.js') }}"></script>

@@ -189,6 +189,45 @@ class _TeeLog(deque):
             pass
 
 
+QUIET_DAYS = 60       # a watched channel with no upload this long is "quiet"
+
+
+def _watched_stats(conn) -> dict:
+    """Per watched channel: video count, transcribed count, last upload, best
+    outlier multiplier, and whether it has gone quiet. One pass over videos."""
+    import datetime as _dt
+    from . import outliers
+    out: dict = {}
+    now = _dt.datetime.now(_dt.timezone.utc)
+    for r in conn.execute(
+            "SELECT channel_id, COUNT(*) AS n,"
+            " SUM(CASE WHEN status = 'transcribed' THEN 1 ELSE 0 END) AS t,"
+            " MAX(published_at) AS last FROM videos GROUP BY channel_id"):
+        last = outliers.parse_date(r["last"])
+        days = (now - last).days if last else None
+        out[r["channel_id"]] = {
+            "videos": r["n"], "transcribed": r["t"] or 0,
+            "last": last.date().isoformat() if last else "",
+            "days": days, "best": None,
+            "quiet": days is not None and days > QUIET_DAYS}
+    try:
+        rows = conn.execute(
+            "SELECT v.video_id, v.channel_id, c.name AS channel_name,"
+            " c.genre AS genre, v.title, v.url, v.published_at,"
+            " v.view_count, v.duration, v.status FROM videos v"
+            " JOIN channels c ON c.channel_id = v.channel_id"
+            " WHERE v.view_count IS NOT NULL").fetchall()
+        for item in outliers.build(rows):
+            st = out.get(item["channel_id"])
+            m = item.get("multiplier")
+            if st is not None and m is not None and (
+                    st["best"] is None or m > st["best"]):
+                st["best"] = round(m, 1)
+    except Exception:  # noqa: BLE001 - the list must still render
+        pass
+    return out
+
+
 def _studio_log_path(cfg) -> Path:
     return Path(cfg.db_path).parent / "logs" / "studio.log"
 
@@ -1154,19 +1193,53 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         db.sync_channels(conn, cfg.channels)
         all_channels = db.list_channels(conn)
+        stats = _watched_stats(conn)
         conn.close()
         state = "paused" if request.args.get("state") == "paused" else "active"
         channels = [c for c in all_channels
                     if (c["active"] if state == "active" else not c["active"])]
+        genre_counts = {}
+        for c in channels:
+            genre_counts[c["genre"] or "general"] = genre_counts.get(
+                c["genre"] or "general", 0) + 1
+        quiet_count = sum(1 for c in channels
+                          if (stats.get(c["channel_id"]) or {}).get("quiet"))
         return render_template(
             "watched.html",
-            channels=channels,
+            channels=channels, stats=stats, quiet_days=QUIET_DAYS,
+            quiet_count=quiet_count,
+            genres=sorted({c["genre"] or "general" for c in all_channels},
+                          key=str.lower),
+            genre_counts=dict(sorted(genre_counts.items(),
+                                     key=lambda kv: kv[0].lower())),
             active_count=sum(1 for c in all_channels if c["active"]),
             paused_count=sum(1 for c in all_channels if not c["active"]),
             state=state,
             msg=request.args.get("msg"),
             error=request.args.get("error"),
         )
+
+    @app.post("/watched/genre/rename")
+    def watched_genre_rename():
+        """Rename a genre for every channel that has it; renaming to a genre
+        that already exists merges the two. Files follow the channels."""
+        old = (request.form.get("old") or "").strip()
+        new = (request.form.get("new") or "").strip()
+        if not old or not new:
+            return redirect("/watched?error=" + quote("Pick a genre and type "
+                                                      "its new name"))
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            rows = [c for c in db.list_channels(conn)
+                    if (c["genre"] or "general") == old]
+            for row in rows:
+                db.update_channel(conn, row["channel_id"], genre=new)
+                pipeline.move_channel_files(cfg, conn, row, new)
+        finally:
+            conn.close()
+        return redirect("/watched?msg=" + quote(
+            f"{len(rows)} channel(s) moved from '{old}' to '{new}'"))
 
     @app.post("/channels/state")
     def channels_state():
