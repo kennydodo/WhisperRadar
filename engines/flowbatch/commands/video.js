@@ -504,32 +504,51 @@ async function runJob(flags, context) {
       await driver.openProject(homeUrl);
       await configure(driver, page, opts);
     };
+    let madeThisRun = 0;
     for (const [i, item] of items.entries()) {
       if (fs.existsSync(item.out) && fs.statSync(item.out).size > 10000) {
         report.done.push(item.out);
         continue;
       }
       log.info(`Clip ${i + 1}/${items.length}: ${path.basename(item.image)}`);
-      try {
-        if (await adoptOrphanClip(ctx, { out: path.resolve(item.out) })) {
-          report.done.push(item.out);
-          continue;
+      // Flow's audio pass intermittently fails a freshly started generation
+      // ("Failed"); back-to-back generations make it worse, so settle after
+      // each clip and retry a failing one a couple of times before moving on.
+      const RETRIES = 2;
+      for (let attempt = 1; attempt <= 1 + RETRIES; attempt += 1) {
+        if (madeThisRun > 0) {
+          log.info(`Settling 30s so the previous clip fully finishes before the next generation starts.`);
+          await sleep(30000);
         }
-        await ensureFramesMode({ driver, page, opts, projectUrl });
-        await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
-        report.done.push(item.out);
-      } catch (error) {
-        const message = String(error.message ?? error);
-        log.error(message);
-        await shot(page, 'clip-error');
-        report.failed.push({ out: item.out, error: message });
-        // one clip at a time: if this one did not finish, the rest do not start
-        report.stopped = true;
-        report.reason = OUT_OF_CREDITS.test(message)
-          ? `Flow stopped the batch: ${message.slice(0, 200)}`
-          : `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
-        break;
+        if (attempt > 1) {
+          log.warn(`Retrying clip ${i + 1} (attempt ${attempt}/${1 + RETRIES}) after Flow's failure.`);
+          await sleep(20000);
+        }
+        try {
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out) })) break;
+          await ensureFramesMode({ driver, page, opts, projectUrl });
+          await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
+          madeThisRun += 1;
+          break;
+        } catch (error) {
+          const message = String(error.message ?? error);
+          if (OUT_OF_CREDITS.test(message) || attempt >= 1 + RETRIES) {
+            log.error(message);
+            await shot(page, 'clip-error');
+            report.failed.push({ out: item.out, error: message });
+            // one clip at a time: if this one did not finish, the rest do not start
+            report.stopped = true;
+            report.reason = OUT_OF_CREDITS.test(message)
+              ? `Flow stopped the batch: ${message.slice(0, 200)}`
+              : `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
+            break;
+          }
+          log.warn(`Clip ${i + 1} failed (${message.slice(0, 160)}) - will retry.`);
+          await shot(page, 'clip-retry');
+        }
       }
+      if (report.stopped) break;
+      report.done.push(item.out);
       save();
     }
     if (report.failed.length && !report.stopped) report.reason = `${report.failed.length} clip(s) failed`;
