@@ -1071,16 +1071,13 @@ def reveal_block(strict: bool = False, sfx: str = "") -> str:
         "sides. If each picture should instead REPLACE the previous one, do "
         "not use `reveal`: plan ordinary consecutive shots.\n\n"
         "Sound effects (optional, any shot): add `\"sfx\": \"" + snd + "\"` to play a "
-        "short sound (about a second) when the shot starts. On a reveal shot "
-        "a single name plays at every item; a list gives one name per item, "
-        "e.g. `[\"ding\", \"" + snd + "\", \"" + snd + "\"]` (the last name repeats when the "
-        "list is short). Built-in sounds: pop, ding, click, tick, whoosh, "
-        "swipe" + (f", and this channel's own sound `{snd}`: use `{snd}` as "
-                   f"the default sound rather than `pop`" if snd != "pop" else "")
-        + ". Use them sparingly — on reveal items or a deliberate emphasis "
-        "— and keep to one or two sounds across the video; never on most "
-        "shots, and never as a substitute for the narration. A normal shot "
-        "takes ONE name, not a list.\n\n"
+        "short sound (about a second) when the shot starts. Use ONE sound for the "
+        "whole video: always `" + snd + "`, on every shot that has an sfx, never "
+        "a different one and never a mix. On a reveal shot a single name "
+        "plays at every item (`\"sfx\": \"" + snd + "\"`); do not give a list. "
+        "Use it sparingly — on reveal items or a deliberate emphasis — never "
+        "on most shots, and never as a substitute for the narration. A normal "
+        "shot takes ONE name, not a list.\n\n"
         "Final check for every reveal shot, before you output: the `reveal` "
         "list has one cue per item, increasing, starting at the shot's first "
         "cue and inside its `cues`; `motion` is ST and the file name ends "
@@ -1088,8 +1085,7 @@ def reveal_block(strict: bool = False, sfx: str = "") -> str:
         "right in narration order, keeps each in its own equal slice and "
         "forbids anything crossing a slice line; a grid has exactly 4 cues; "
         "separate images have one `assets` entry per cue, the first equal to "
-        "`asset`, each its own entry in `images`; any `sfx` is a built-in "
-        "name; and reveal shots are no more than about 10% of all shots.\n")
+        "`asset`, each its own entry in `images`; any `sfx` is the single channel sound `" + snd + "`; and reveal shots are no more than about 10% of all shots.\n")
     return text + (REVEAL_REQUIRED_RULE if strict else "")
 
 

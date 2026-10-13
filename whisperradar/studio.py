@@ -5014,6 +5014,12 @@ def shotlist_sfx_faults(shots: list[dict]) -> list[str]:
         elif items is not None and len(names) > len(items):
             faults.append(f"{asset}: {len(names)} sfx names for "
                           f"{len(items)} reveal items")
+    used = {n.lower() for s in shots if isinstance(s, dict) and s.get("sfx")
+            for n in (shot_sfx(s) or []) if n}
+    if len(used) > 1:
+        faults.append("the video uses several sound effects ("
+                      + ", ".join(sorted(used)) + "); use ONE sound name on "
+                      "every shot that has an sfx")
     return faults
 
 
