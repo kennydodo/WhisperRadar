@@ -408,20 +408,24 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
 /**
  * Adopt a clip a stopped run generated but never downloaded - the video
  * equivalent of image recovery - instead of paying for a fresh generation.
- * When several videos are unsaved, each tile's own "Reuse prompt" text is
- * matched against the item's motion prompt (same rules as image recovery);
- * only an unambiguous single match is adopted, never a guess.
+ * Flow's error alerts do not always mean the video was not generated, so this
+ * also runs right after a clip fails: look for the finished clip, download it,
+ * move on. When several videos are unsaved, each tile's own "Reuse prompt"
+ * text is matched against the item's motion prompt (same rules as image
+ * recovery); only an unambiguous single match is adopted, never a guess.
  */
-async function adoptOrphanClip(ctx, { out, prompt }) {
+async function adoptOrphanClip(ctx, { out, prompt, rounds = 1, gapMs = 10000 }) {
   loadSavedIds(out);
   const unsaved = async () =>
     (await videoCandidates(ctx.page, ctx.videoResponses))
       .filter((c) => /^https?:/i.test(c.url) && !saved.has(c.id));
   let candidates = await unsaved();
-  if (candidates.length === 0) {
-    // Flow only exposes a finished clip's URL once its tile is hovered, so
-    // nudge the newest tile before concluding there is nothing to adopt.
-    await pokeNewestVideoTile(ctx.page, { open: false });
+  // Flow only exposes a finished clip's URL once its tile is hovered (or its
+  // status JSON mentions it), so keep poking the newest tile between rounds -
+  // a clip that finished seconds ago may need a few nudges to surface.
+  for (let round = 0; candidates.length === 0 && round < rounds; round += 1) {
+    await sleep(round === 0 ? 2000 : gapMs);
+    await pokeNewestVideoTile(ctx.page, { open: round % 2 === 1 }).catch(() => {});
     await sleep(2500);
     candidates = await unsaved();
   }
@@ -564,6 +568,9 @@ async function runJob(flags, context) {
       // Flow's audio pass intermittently fails a freshly started generation
       // ("Failed"); back-to-back generations make it worse, so settle after
       // each clip and retry a failing one a couple of times before moving on.
+      // An error does NOT always mean the video was not generated: before any
+      // retry - and before giving up - look for the finished clip first, the
+      // way image recovery does, download it and move on.
       const RETRIES = 2;
       for (let attempt = 1; attempt <= 1 + RETRIES; attempt += 1) {
         if (madeThisRun > 0) {
@@ -582,19 +589,30 @@ async function runJob(flags, context) {
           break;
         } catch (error) {
           const message = String(error.message ?? error);
-          if (OUT_OF_CREDITS.test(message) || attempt >= 1 + RETRIES) {
+          await shot(page, 'clip-error');
+          if (OUT_OF_CREDITS.test(message)) {
             log.error(message);
-            await shot(page, 'clip-error');
+            report.failed.push({ out: item.out, error: message });
+            report.stopped = true;
+            report.reason = `Flow stopped the batch: ${message.slice(0, 200)}`;
+            break;
+          }
+          // Check the project for the finished clip before paying for a retry:
+          // a few patient rounds, poking tiles so Flow surfaces it.
+          log.warn(`Clip ${i + 1} failed (${message.slice(0, 160)}) - checking whether Flow generated it anyway.`);
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt, rounds: 4, gapMs: 12000 })) {
+            madeThisRun += 1;
+            break;
+          }
+          if (attempt >= 1 + RETRIES) {
+            log.error(message);
             report.failed.push({ out: item.out, error: message });
             // one clip at a time: if this one did not finish, the rest do not start
             report.stopped = true;
-            report.reason = OUT_OF_CREDITS.test(message)
-              ? `Flow stopped the batch: ${message.slice(0, 200)}`
-              : `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
+            report.reason = `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
             break;
           }
-          log.warn(`Clip ${i + 1} failed (${message.slice(0, 160)}) - will retry.`);
-          await shot(page, 'clip-retry');
+          log.warn(`No finished clip found in the project - will retry generation (attempt ${attempt + 1}/${1 + RETRIES}).`);
         }
       }
       if (report.stopped) break;
