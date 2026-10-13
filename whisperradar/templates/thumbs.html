@@ -92,11 +92,7 @@
 <div class="wrap">
   <p class="muted" style="margin:0 0 6px"><a href="/finished">&larr; Finished</a> &middot; <a href="/studio/{{ prod['id'] }}/kit">publish kit</a> &middot; <a href="/studio/{{ prod['id'] }}">open the production</a></p>
   <h1>Thumbnails &mdash; {{ prod['title'] }}</h1>
-  {% if data.provider == 'codex' %}
-  <p class="sub">{{ data.concepts|length }} finished GPT thumbnails. Preview them below, download them, and choose your favourite.</p>
-  {% else %}
-  <p class="sub">3&ndash;5 concepts: the character and the host together, the character alone, or the host alone &mdash; each with a few catchy words. A chat designs them, your image engine paints the picture, and the words are added sharp on top.</p>
-  {% endif %}
+  <p class="sub">Thumbnails come from Generate with GPT Pro: four finished images with the words in the picture. Preview them, download them, and choose your favourite.</p>
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   <form method="post" action="/studio/{{ prod['id'] }}/gpt-pro/generate" style="margin-bottom:16px">
@@ -104,96 +100,25 @@
     <span class="muted" style="font-size:12px">Four finished thumbnails, four titles and a description from Codex. Queue this production, then use Codex Scheduled &gt; Run now or wait for the hourly worker.</span>
   </form>
 
-  <div class="panel">
-    <h2>Inspiration</h2>
-    <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/inspiration" style="margin:0">
-      <button type="submit" class="ghost">{{ 'Pull again' if inspiration else 'Pull the source and top outlier thumbnails' }}</button>
-      <span class="muted" style="font-size:12px">&nbsp; the thumbnail of the video this is based on, plus the niche's best outliers</span>
-    </form>
-    {% if inspiration %}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-top:10px">
-      {% for i in inspiration %}<a href="https://youtu.be/{{ i.id }}" target="_blank" rel="noopener"><img class="big" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px" loading="lazy" src="{{ i.url }}" alt=""></a>{% endfor %}
-    </div>
-    <div class="muted" style="font-size:12px;margin-top:6px">Look at what they have in common: the faces, the colours, how few words. Use it to edit the concepts below. The pictures are for you, they are not sent to the chats.</div>
-    {% endif %}
-  </div>
-
-  <div class="panel">
-    <h2>Design concepts</h2>
-    {% if job.running %}
-      <div id="running" class="banner ok" style="margin:0">Running: {{ job.kind }}</div>
-      <pre class="log" id="log"></pre>
-      <form method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:8px">
-        <button type="submit" class="ghost">Stop after this round</button></form>
-    {% elif not has_script %}
-      <div class="muted">This production has no script yet.</div>
-    {% else %}
-    <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/concepts">
-      <div class="row">
-        <label>Writer<select name="writer"><option value="zai">z.ai (GLM)</option><option value="deepseek">DeepSeek</option></select></label>
-        <label>Model<select name="zai_model"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
-        <label>Deep Think<select name="zai_thinking"><option>Low</option><option>High</option><option>Max</option></select></label>
-        <label>Judge<select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai (GLM)</option></select></label>
-        <label>DeepThink<select name="deepseek_deepthink"><option value="on">on</option><option value="off">off</option></select></label>
-        <button type="submit">{{ 'Redesign concepts' if data.concepts else 'Design concepts' }}</button>
-      </div>
-      <div class="muted" style="font-size:12px;margin-top:6px">Runs until the judge passes the set (8+) or you stop it. New chats; the script, shotlist and kit chats are left alone. A redo keeps the pictures of concepts whose picture prompt did not change.</div>
-    </form>
-    {% endif %}
-  </div>
-
   {% if data.concepts %}
-  <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/save">
-  <div class="panel">
-    <h2>Pictures
-      {% if data.score %}<span class="badge ok" title="the judge's score">judge {{ data.score }}</span>{% endif %}
-      <span class="badge {{ 'ok' if data.status == 'ready' else 'warn' }}">{{ data.status }}</span></h2>
-    {% if not job.running and data.provider != 'codex' %}
-      <button type="submit" formaction="/studio/{{ prod['id'] }}/thumbnails/art">Make all pictures</button>
-      <span class="muted" style="font-size:12px">&nbsp; uses this channel's image engine (FlowBatch or Renderly); ~{{ data.concepts|length }} generation(s)</span>
-    {% endif %}
-  </div>
-
   <div class="grid">
   {% for c in data.concepts %}
     <div class="card {{ 'chosen' if data.chosen == c.id else '' }}">
-      {% if c.final_url %}<img class="big" src="{{ c.final_url }}" alt="">
-      {% elif c.art_url %}<img class="big" src="{{ c.art_url }}" alt="">
-      {% else %}<div class="ph">no picture yet</div>{% endif %}
-      {% if c.final and c.thumb_score %}<div class="muted" style="font-size:12px;margin-top:4px">
-        <b class="mult {{ 'm10' if c.thumb_score.score >= 70 else ('m5' if c.thumb_score.score >= 45 else 'm3') }}">{{ c.thumb_score.score }}/100 &middot; {{ c.thumb_score.label }}</b>
-        <span title="judge 60%, local phone-size check 40%; a missing half is scaled over 100 and said"> {{ c.thumb_score.why|join('; ') }}</span></div>{% endif %}
-      <div style="margin-top:8px"><span class="chip">{{ layouts[c.layout] }}</span>
-        {% if data.chosen == c.id %}<span class="badge ok">chosen</span>{% endif %}
+      {% if c.final_url %}<img class="big" src="{{ c.final_url }}" alt="">{% else %}<div class="ph">no picture</div>{% endif %}
+      <div style="margin-top:8px">{% if data.chosen == c.id %}<span class="badge ok">chosen</span>{% endif %}
+        {% if c.text %}<span class="muted" style="font-size:12px">{{ c.text }}</span>{% endif %}
         {% if c.idea %}<span class="muted" style="font-size:12px"> &middot; {{ c.idea }}</span>{% endif %}</div>
-      {% if c.precomposed %}
-      <p class="muted" style="font-size:12px">GPT artwork includes the words: <b>{{ c.text }}</b>. Use Generate with GPT Pro for a new set.</p>
-      {% else %}
-      <label>Words (max 4)</label>
-      <input type="text" name="text_{{ c.id }}" value="{{ c.text }}" maxlength="40">
-      <div class="row">
-        <label>Place<select name="pos_{{ c.id }}">{% for p in positions %}<option {{ 'selected' if c.text_pos == p else '' }}>{{ p }}</option>{% endfor %}</select></label>
-        <label>Text colour<input type="color" name="color_{{ c.id }}" value="{{ c.text_color }}"></label>
-        <label>Accent<input type="color" name="accent_{{ c.id }}" value="{{ c.accent }}"></label>
-      </div>
-      <div class="row">
-        <label>Attention device<select name="emph_{{ c.id }}">{% for e in emphases %}<option {{ 'selected' if (c.emphasis or 'none') == e else '' }}>{{ e }}</option>{% endfor %}</select></label>
-        <label>Points at (focal)<select name="focal_{{ c.id }}">{% for f in focals %}<option {{ 'selected' if (c.focal or 'auto') == f else '' }}>{{ f }}</option>{% endfor %}</select></label>
-      </div>
-      <label>Picture prompt</label>
-      <textarea name="prompt_{{ c.id }}">{{ c.art_prompt }}</textarea>
-      {% endif %}
       <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
-        {% if not job.running and not c.precomposed %}<button type="submit" class="ghost" name="ids" value="{{ c.id }}" formaction="/studio/{{ prod['id'] }}/thumbnails/art">{{ 'Redo picture' if c.art_file else 'Make picture' }}</button>{% endif %}
-        {% if c.final %}<button type="submit" name="id" value="{{ c.id }}" formaction="/studio/{{ prod['id'] }}/thumbnails/choose">{{ 'Unchoose' if data.chosen == c.id else 'Choose this one' }}</button>
+        {% if c.final %}<form method="post" action="/studio/{{ prod['id'] }}/thumbnails/choose" style="margin:0">
+          <button type="submit" name="id" value="{{ c.id }}">{{ 'Unchoose' if data.chosen == c.id else 'Choose this one' }}</button></form>
         <a class="btn" style="background:transparent;border:1px solid var(--border);color:var(--muted)" href="{{ c.final_url }}" download="thumbnail-{{ c.id }}.jpg">download</a>{% endif %}
       </div>
     </div>
   {% endfor %}
   </div>
-  {% if data.provider != 'codex' %}<div style="margin:14px 0"><button type="submit">Save changes and re-compose</button>
-    <span class="muted" style="font-size:12px">&nbsp; re-draws the words on every picture</span></div>{% endif %}
-  </form>
+  {% else %}
+  <div class="panel muted">No thumbnails yet. Use Generate with GPT Pro above.</div>
+  {% endif %}
 
   {% if sheet_url %}
   <div class="panel">
@@ -203,34 +128,6 @@
   </div>
   {% endif %}
 
-  {% if not job.running %}
-  <form method="post" action="/studio/{{ prod['id'] }}/thumbnails/picture" enctype="multipart/form-data" class="panel">
-    <h2>Use your own picture</h2>
-    <div class="row">
-      <label>For concept<select name="id">{% for c in data.concepts %}<option value="{{ c.id }}">{{ loop.index }}. {{ c.text }}</option>{% endfor %}</select></label>
-      <label>Upload (PNG/JPG)<input type="file" name="file" accept=".png,.jpg,.jpeg"></label>
-      {% if images %}<label>or one of this video's images<select name="image"><option value="">-</option>{% for im in images %}<option>{{ im }}</option>{% endfor %}</select></label>{% endif %}
-      <button type="submit">Use it</button>
-    </div>
-  </form>
-  {% endif %}
-  {% endif %}
 </div>
-<script>
-  (function () {
-    var box = document.getElementById('running');
-    if (!box) return;
-    var log = document.getElementById('log');
-    function tick() {
-      fetch('/studio/job').then(function (r) { return r.json(); }).then(function (j) {
-        if (log) log.textContent = (j.log || []).slice(-12).join('\n');
-        if (!j.running) { location.href = location.pathname; return; }
-        setTimeout(tick, 3000);
-      }).catch(function () { setTimeout(tick, 5000); });
-    }
-    tick();
-  })();
-</script>
-{% include "_webchat_extra.html" %}
 </body>
 </html>

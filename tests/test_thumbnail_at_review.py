@@ -34,7 +34,7 @@ class ThumbnailAtReviewTests(unittest.TestCase):
 
     def test_review_offers_generate_when_no_concepts(self):
         html = self.client.get(f"/studio/{self.pid}").get_data(as_text=True)
-        self.assertIn("Generate thumbnail concepts", html)
+        self.assertIn("Thumbnails (GPT)", html)
         self.assertIn(f"/studio/{self.pid}/thumbnails", html)
         self.assertIn("none yet", html)
 
@@ -43,9 +43,7 @@ class ThumbnailAtReviewTests(unittest.TestCase):
         thumbnails.save_thumbs(pdir, {"concepts": [
             {"id": f"c{i}", "text": "T", "art_prompt": "p"} for i in range(3)]})
         html = self.client.get(f"/studio/{self.pid}").get_data(as_text=True)
-        self.assertIn("Open thumbnails", html)
-        self.assertIn("3 concept(s)", html)
-        self.assertNotIn("Generate thumbnail concepts", html)
+        self.assertIn("3 thumbnail(s)", html)
 
 
 if __name__ == "__main__":

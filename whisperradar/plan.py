@@ -850,6 +850,7 @@ TITLES THAT BEAT THEIR CHANNEL'S NORM IN THIS NICHE (learn the patterns, do not 
 THIS CHANNEL'S EARLIER TITLES (stay consistent in style, do not repeat):
 {past}
 
+{ctx.get('learned') or ''}
 {_LEAN_RULES}
 
 Reply with ONE JSON object and nothing else. The FIRST title is the one you would choose:

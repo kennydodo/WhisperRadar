@@ -185,7 +185,7 @@ class AppTests(Base):
         pid = db.create_production(conn, "T")
         conn.close()
         for url in (f"/studio/{pid}/kit", f"/studio/{pid}/plan",
-                    f"/studio/{pid}/thumbnails", f"/studio/{pid}"):
+                    f"/studio/{pid}"):
             html = self.client.get(url).get_data(as_text=True)
             self.assertIn('"key": "my-chat"', html, url)
 

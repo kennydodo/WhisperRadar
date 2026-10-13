@@ -53,28 +53,6 @@ class DbSwipeTests(unittest.TestCase):
         self.assertEqual(len(db.list_swipes(self.conn)), 2)
 
 
-BASE_CTX = {"channel": "Chan", "genre": "home", "channel_about": "about",
-            "kit_title": "Kit title", "keyword": "kw", "script": "text",
-            "bible": "", "ref_text": "(none)", "refs": [("t", 5.0)]}
-
-
-class WriterPromptTests(unittest.TestCase):
-    def test_swipe_block_appears_only_when_there_are_swipes(self):
-        with_swipes = dict(BASE_CTX, swipes=[
-            {"kind": "thumbnail", "title": "The Box Rule",
-             "note": "ellipse on the clutter", "channel_name": "Home One"}])
-        text = thumbnails.writer_prompt(with_swipes)
-        self.assertIn("SWIPE FILE", text)
-        self.assertIn("The Box Rule", text)
-        self.assertIn("ellipse on the clutter", text)
-        self.assertIn("do not copy", text)
-        without = thumbnails.writer_prompt(dict(BASE_CTX, swipes=[]))
-        self.assertNotIn("SWIPE FILE", without)
-
-    def test_missing_swipes_key_is_fine(self):
-        self.assertNotIn("SWIPE FILE", thumbnails.writer_prompt(BASE_CTX))
-
-
 class SwipePageTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

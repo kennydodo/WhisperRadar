@@ -79,17 +79,6 @@ class PlanThumbsRoutingTests(Base):
         pj.assert_called_once()
         ap.assert_called_once()
 
-    def test_auto_thumbnails_webchat_uses_concepts_job(self):
-        pdir = autorun.studio.prod_dir(self.cfg, self.pid)
-        pdir.mkdir(parents=True, exist_ok=True)
-        (pdir / "script.md").write_text("coins " * 30, "utf-8")
-        with mock.patch.object(th, "concepts_job") as cj, \
-             mock.patch.object(th, "run_concepts_api",
-                               side_effect=AssertionError("api used")):
-            autorun._auto_thumbnails(self.cfg, self.pid, None,
-                                     lambda m: None, transport="webchat")
-        cj.assert_called_once()
-
 
 class WebchatPairTests(Base):
     def test_pair_comes_from_settings_and_last_options(self):

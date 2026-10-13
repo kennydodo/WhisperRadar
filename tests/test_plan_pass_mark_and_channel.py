@@ -33,15 +33,13 @@ class PassMarkTests(unittest.TestCase):
         self.assertEqual(settings.SPEC_BY_KEY["plan_min_rating"]["default"], 9.5)
         self.assertEqual(settings.load(self.conn)["plan_min_rating"], 9.5)
 
-    def test_all_three_judges_read_the_same_setting(self):
+    def test_both_judges_read_the_same_setting(self):
         self.assertEqual(packplan.pass_mark(self.cfg), 9.5)
         self.assertEqual(packaging.pass_mark(self.cfg), 9.5)
-        self.assertEqual(thumbnails.pass_mark(self.cfg), 9.5)
 
     def test_setting_is_honoured(self):
         db.set_setting(self.conn, "plan_min_rating", "8.0")
         self.assertEqual(packplan.pass_mark(self.cfg), 8.0)
-        self.assertEqual(thumbnails.pass_mark(self.cfg), 8.0)
 
     def test_judge_prompt_states_the_bar(self):
         ctx = {"channel": "X", "genre": "g", "transcript": "", "refs": [],

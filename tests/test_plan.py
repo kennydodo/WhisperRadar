@@ -350,33 +350,6 @@ class ProdTests(Base):
         self.assertEqual(pp.load_plan(self.pdir)["thumbnail"]["layout"], "host")
         self.assertIn("/plan", c.get(f"/studio/{self.pid}").get_data(as_text=True))
 
-    def test_inspiration_downloads_and_page_shows_it(self):
-        conn = db.connect(self.cfg.db_path)
-        db.add_channel(conn, "Chan", "UC1", genre="g")
-        vids = [{"video_id": f"v{i}", "title": f"V{i}", "url": f"u{i}",
-                 "view_count": 1000} for i in range(8)]
-        vids.append({"video_id": "hit", "title": "Hit", "url": "u",
-                     "view_count": 90000})
-        db.upsert_videos(conn, "UC1", vids)
-        db.update_production(conn, self.pid, source_video_id="v1")
-        conn.commit()
-        conn.close()
-        asked = []
-
-        def opener(url):
-            asked.append(url)
-            if "maxres" in url and "hit" in url:
-                raise OSError("404")
-            return b"\xff\xd8" + b"0" * 3000
-        got = th.fetch_inspiration(self.cfg, self.pid, log=lambda m: None,
-                                   opener=opener)
-        ids = [g["id"] for g in got]
-        self.assertEqual(ids[0], "v1")
-        self.assertIn("hit", ids)
-        self.assertTrue(any("hqdefault" in u and "hit" in u for u in asked))
-        c = create_app(self.cfg).test_client()
-        html = c.get(f"/studio/{self.pid}/thumbnails").get_data(as_text=True)
-        self.assertIn("inspiration/hit.jpg", html)
 
 class SourceTitleStaysOutTests(unittest.TestCase):
     def test_refs_never_include_the_source_title(self):

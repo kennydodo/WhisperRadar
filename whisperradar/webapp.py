@@ -5057,109 +5057,14 @@ def create_app(cfg) -> Flask:
         data = thumbnails.load_thumbs(pdir)
         stamp = int(time.time())
         for c in data["concepts"]:      # bust the browser cache after a redo
-            c["art_url"] = (f"/studio/file/{pid}/{c['art_file']}?t={stamp}"
-                            if c.get("art_file") else "")
             c["final_url"] = (f"/studio/file/{pid}/{c['final']}?t={stamp}"
                               if c.get("final") else "")
         sheet = thumbnails.thumbs_dir(pdir) / "sheet.jpg"
         return render_template(
             "thumbs.html", prod=prod, data=data, layouts=thumbnails.LAYOUTS,
-            positions=thumbnails.POSITIONS, emphases=thumbnails.EMPHASES,
-            focals=thumbnails.FOCALS, job=sjob._real(),
-            has_script=(pdir / "script.md").exists(),
             sheet_url=(f"/studio/file/{pid}/thumbnails/sheet.jpg?t={stamp}"
                        if sheet.is_file() else ""),
-            images=thumbnails.production_images(pdir),
-            inspiration=[
-                {"id": f[:-4], "url": f"/studio/file/{pid}/thumbnails/"
-                 f"inspiration/{f}"}
-                for f in thumbnails.inspiration_files(pdir)],
             msg=request.args.get("msg"), error=request.args.get("error"))
-
-    @app.post("/studio/<int:pid>/thumbnails/inspiration")
-    def studio_thumbnails_inspiration(pid):
-        """Pull the thumbnails of the source video and the niche's best
-        outliers, to look at while choosing the concept."""
-        got = thumbnails.fetch_inspiration(cfg, pid)
-        if not got:
-            return _thumbs_back(pid, error="No thumbnails could be fetched "
-                                           "- is there a source video?")
-        return _thumbs_back(pid, msg=f"{len(got)} thumbnail(s) pulled")
-
-    @app.post("/studio/<int:pid>/thumbnails/concepts")
-    def studio_thumbnails_concepts(pid):
-        from . import webchat
-        if sjob.running:
-            return _thumbs_back(pid, error="A job is already running")
-        writer = (request.form.get("writer") or "zai").strip()
-        judge = (request.form.get("judge") or "deepseek").strip()
-        if writer not in webchat.SITES or judge not in webchat.SITES:
-            return _thumbs_back(pid, error="Unknown chat site")
-        if not (studio.prod_dir(cfg, pid) / "script.md").exists():
-            return _thumbs_back(pid, error="This production has no script yet")
-        options = _chat_options(request.form)
-        log = sjob.log.append
-        job = sjob._real()
-
-        def worker():
-            thumbnails.concepts_job(cfg, pid, writer, judge, log,
-                                    lambda: job.cancel, options)
-
-        sjob.start(worker, f"thumbnail concepts in web chat ({writer} "
-                           f"writes, {judge} judges)")
-        return _thumbs_back(pid, msg="Concept run started - a browser "
-                                     "window will open")
-
-    @app.post("/studio/<int:pid>/thumbnails/art")
-    def studio_thumbnails_art(pid):
-        if sjob.running:
-            return _thumbs_back(pid, error="A job is already running")
-        data = thumbnails.load_thumbs(studio.prod_dir(cfg, pid))
-        if not data["concepts"]:
-            return _thumbs_back(pid, error="Design the concepts first")
-        ids = request.form.getlist("ids") or None
-        log = sjob.log.append
-        job = sjob._real()
-
-        def worker():
-            thumbnails.generate_art(cfg, pid, ids, log, lambda: job.cancel)
-
-        sjob.start(worker, "thumbnail pictures")
-        return _thumbs_back(pid, msg="Making the pictures with your image "
-                                     "engine")
-
-    @app.post("/studio/<int:pid>/thumbnails/save")
-    def studio_thumbnails_save(pid):
-        """Edits to the words, their place and colours, and the art prompt;
-        re-composes every thumbnail."""
-        pdir = studio.prod_dir(cfg, pid)
-        data = thumbnails.load_thumbs(pdir)
-        form = request.form
-        for c in data["concepts"]:
-            if c.get("precomposed"):
-                continue
-            i = c["id"]
-            if f"text_{i}" in form:
-                c["text"] = thumbnails.clean_text(form.get(f"text_{i}"))
-            pos = (form.get(f"pos_{i}") or "").strip()
-            if pos in thumbnails.POSITIONS:
-                c["text_pos"] = pos
-            emph = (form.get(f"emph_{i}") or "").strip()
-            if emph in thumbnails.EMPHASES:
-                c["emphasis"] = emph
-            focal = (form.get(f"focal_{i}") or "").strip()
-            if focal in thumbnails.FOCALS:
-                c["focal"] = focal
-            c["text_color"] = thumbnails._color(form.get(f"color_{i}"),
-                                                c["text_color"])
-            c["accent"] = thumbnails._color(form.get(f"accent_{i}"),
-                                            c["accent"])
-            prompt = (form.get(f"prompt_{i}") or "").strip()
-            if prompt:
-                c["art_prompt"] = prompt
-        thumbnails.save_thumbs(pdir, data)
-        thumbnails.compose_all(pdir)
-        return _thumbs_back(pid, msg="Saved and re-composed")
 
     @app.post("/studio/<int:pid>/thumbnails/choose")
     def studio_thumbnails_choose(pid):
@@ -5172,33 +5077,6 @@ def create_app(cfg) -> Flask:
         thumbnails.save_thumbs(pdir, data)
         return _thumbs_back(pid, msg="Chosen - this is the one to upload"
                             if data["chosen"] else "Choice cleared")
-
-    @app.post("/studio/<int:pid>/thumbnails/picture")
-    def studio_thumbnails_picture(pid):
-        """Use your own picture (upload) or one of the production's images
-        as the art for a concept."""
-        pdir = studio.prod_dir(cfg, pid)
-        cid = (request.form.get("id") or "").strip()
-        up = request.files.get("file")
-        src = None
-        tmp = None
-        if up and up.filename:
-            ext = Path(up.filename).suffix.lower()
-            if ext not in (".png", ".jpg", ".jpeg"):
-                return _thumbs_back(pid, error="Use a PNG or JPG")
-            tmp = thumbnails.thumbs_dir(pdir) / ("upload" + ext)
-            tmp.parent.mkdir(parents=True, exist_ok=True)
-            up.save(tmp)
-            src = tmp
-        else:
-            name = Path(request.form.get("image") or "").name
-            if name and name in thumbnails.production_images(pdir):
-                src = pdir / "images" / name
-        ok = bool(src) and thumbnails.set_art(pdir, cid, src)
-        if tmp is not None:
-            tmp.unlink(missing_ok=True)
-        return (_thumbs_back(pid, msg="Picture set") if ok
-                else _thumbs_back(pid, error="Could not use that picture"))
 
     # ---- packaging plan (plan.py): title + promise + hook before the script --
 
