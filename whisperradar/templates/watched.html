@@ -261,6 +261,14 @@
       {% endfor %}
     </table>
   </div>
+  <div id="pager" class="search" style="display:none; justify-content:center">
+    <button type="button" class="ghost" id="pager-prev" onclick="goPage(-1)">&larr; prev</button>
+    <span class="count" id="pager-info"></span>
+    <button type="button" class="ghost" id="pager-next" onclick="goPage(1)">next &rarr;</button>
+    <select onchange="setPer(this.value)" title="channels per page">
+      <option value="25">25 / page</option><option value="50" selected>50 / page</option><option value="100">100 / page</option>
+    </select>
+  </div>
 </div>
 
 <script>
@@ -331,23 +339,42 @@
     btn.classList.toggle('on', onlyQuiet);
     applyFilters();
   }
-  function applyFilters() {
+  var PER = 50, page = 0;
+  function applyFilters(keepPage) {
+    if (keepPage !== true) page = 0;
     var q = document.getElementById('channel-search').value.trim().toLowerCase();
-    var total = 0, shown = 0;
-    document.querySelectorAll('#channel-table tr.crow').forEach(function (row) {
-      var ok = (!q || row.dataset.search.indexOf(q) !== -1)
-            && (!activeGenre || row.dataset.genre === activeGenre)
-            && (!onlyQuiet || row.dataset.quiet === '1');
-      total++;
-      row.style.display = ok ? '' : 'none';
-      if (ok) shown++;
-      var edit = document.getElementById('edit-' + row.querySelector('.row-check').value);
-      if (edit && !ok) edit.style.display = 'none';
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#channel-table tr.crow'));
+    var matched = rows.filter(function (row) {
+      return (!q || row.dataset.search.indexOf(q) !== -1)
+          && (!activeGenre || row.dataset.genre === activeGenre)
+          && (!onlyQuiet || row.dataset.quiet === '1');
     });
+    var pages = Math.max(1, Math.ceil(matched.length / PER));
+    if (page >= pages) page = pages - 1;
+    var from = page * PER, to = from + PER;
+    rows.forEach(function (row) {
+      var i = matched.indexOf(row);
+      var show = i !== -1 && i >= from && i < to;
+      row.style.display = show ? '' : 'none';
+      var edit = document.getElementById('edit-' + row.querySelector('.row-check').value);
+      if (edit && !show) edit.style.display = 'none';
+    });
+    var filtered = q || activeGenre || onlyQuiet;
     var countEl = document.getElementById('channel-count');
-    if (countEl) countEl.textContent = (q || activeGenre || onlyQuiet) ? shown + ' of ' + total + ' shown' : '';
+    if (countEl) countEl.textContent = filtered ? matched.length + ' of ' + rows.length + ' match' : '';
+    // the pager appears only once more than PER channels match
+    var pager = document.getElementById('pager');
+    if (pager) {
+      pager.style.display = matched.length > PER ? 'flex' : 'none';
+      document.getElementById('pager-info').textContent =
+        (from + 1) + '\u2013' + Math.min(to, matched.length) + ' of ' + matched.length;
+      document.getElementById('pager-prev').disabled = page === 0;
+      document.getElementById('pager-next').disabled = page >= pages - 1;
+    }
     updateBulkBar();
   }
+  function goPage(delta) { page += delta; applyFilters(true); }
+  function setPer(n) { PER = parseInt(n, 10) || 50; applyFilters(); }
   function sortBy(key) {
     sortAsc = (sortKey === key) ? !sortAsc : (key === 'name' || key === 'genre' || key === 'last');
     sortKey = key;
@@ -370,8 +397,10 @@
       th.classList.toggle('sorted', th.dataset.key === key);
       th.classList.toggle('asc', th.dataset.key === key && sortAsc);
     });
+    applyFilters();
   }
   function filterChannels() { applyFilters(); }
+  applyFilters();
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
 <script src="{{ url_for('static', filename='keepscroll.js') }}"></script>
