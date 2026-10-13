@@ -40,6 +40,7 @@ from . import external_prompts
 from . import motion
 from . import handover
 from . import source_prep
+from . import source_analysis
 from . import demand as demand_mod
 from . import niche_chips
 from . import niche as niche_mod
@@ -2579,7 +2580,31 @@ def create_app(cfg) -> Flask:
         if not path.exists():
             abort(404)
         text = path.read_text(encoding="utf-8")
-        return render_template("transcript.html", row=row, text=text)
+        return render_template("transcript.html", row=row, text=text,
+                               analysis=source_analysis.load(cfg, video_id),
+                               analysis_running=research_job.running,
+                               msg=request.args.get("msg"),
+                               error=request.args.get("error"))
+
+    @app.post("/transcript/<video_id>/analyze")
+    def transcript_analyze(video_id):
+        """Score why this source video works (web chat, no credits)."""
+        from . import webchat
+        back = f"/transcript/{video_id}"
+        if research_job.running:
+            return redirect(back + "?error=A+research+job+is+already+running")
+        writer = (request.form.get("writer") or "zai").strip()
+        if writer not in webchat.SITES:
+            return redirect(back + "?error=Unknown+chat+site")
+        options = _chat_options(request.form)
+        job = research_job
+
+        def worker():
+            source_analysis.run(cfg, video_id, writer, job.log.append,
+                                lambda: job.cancel, options)
+
+        research_job.start(worker, f"video analysis in web chat ({writer})")
+        return redirect(back + "?msg=Analysis+started+-+a+browser+window+will+open")
 
     @app.get("/file/<video_id>")
     def file_download(video_id):
@@ -3150,6 +3175,9 @@ def create_app(cfg) -> Flask:
         if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
             pdir = studio.prod_dir(cfg, pid)
             shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
+            ana = source_analysis.path_for(cfg, source)
+            if ana.exists():
+                shutil.copy(ana, pdir / "source_analysis.json")
         elif row:
             # no transcript yet: fetch it in its own background job so the
             # dashboard and the studio stay free; auto-run waits for it

@@ -33,6 +33,28 @@
     <a class="btn" href="/file/{{ row['video_id'] }}">Download .txt</a>
     <a class="btn secondary" href="/">Back to dashboard</a>
   </div>
+  {% if msg %}<div style="margin-bottom:12px;color:#3fb96f">{{ msg }}</div>{% endif %}
+  {% if error %}<div style="margin-bottom:12px;color:#e05c5c">{{ error }}</div>{% endif %}
+  <h2 style="font-size:16px;margin:0 0 8px">Why it works</h2>
+  {% if analysis %}
+  <div class="meta">{{ analysis.overall }}/10 overall &middot; {{ analysis.made_at }} &middot; {{ analysis.writer }}</div>
+  {% if analysis.summary %}<p>{{ analysis.summary }}</p>{% endif %}
+  <table style="width:100%;border-collapse:collapse;margin-bottom:12px">
+    {% for d in analysis.dimensions %}
+    <tr style="border-top:1px solid var(--border)">
+      <td style="padding:8px 10px 8px 0;white-space:nowrap;font-weight:600;vertical-align:top">{{ '%.1f' % d.score }}</td>
+      <td style="padding:8px 10px 8px 0;vertical-align:top;white-space:nowrap">{{ d.label }}</td>
+      <td style="padding:8px 0;vertical-align:top"><i class="muted" style="color:var(--muted)">&ldquo;{{ d.quote }}&rdquo;</i><br>{{ d.analysis }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if analysis.takeaways %}<p style="margin:4px 0"><b>Techniques to reuse</b></p>
+  <ul>{% for t in analysis.takeaways %}<li>{{ t }}</li>{% endfor %}</ul>{% endif %}
+  {% endif %}
+  <form method="post" action="/transcript/{{ row['video_id'] }}/analyze" style="margin-bottom:20px">
+    <button type="submit" {{ 'disabled' if analysis_running }}>{{ 'Analyse again' if analysis else 'Analyse why it works' }}</button>
+    <span class="meta">uses a web chat (z.ai by default), no credits</span>
+  </form>
   <pre class="copyable">{{ text }}</pre>
 </div>
 <script>
