@@ -113,16 +113,15 @@ class PickerTests(Base):
         self.assertFalse(b"Choose a channel" in page)
         wr_tmp.cleanup(tmp)
 
-    def test_finished_page_is_scoped_to_the_selected_channel(self):
+    def test_finished_page_shows_every_channel_and_filters_on_request(self):
         db.update_production(self.conn, self.pa1, status="ready")
         db.update_production(self.conn, self.pb, status="ready")
-        self.select(self.a)
+        self.select(self.a)          # Studio's channel no longer narrows it
         page = self.client.get("/finished").data
+        self.assertTrue(b"Alpha one" in page and b"Bravo one" in page)
+        page = self.client.get(f"/finished?channel={self.a}").data
         self.assertTrue(b"Alpha one" in page)
         self.assertFalse(b"Bravo one" in page)
-        self.assertTrue(b"show all channels" in page)
-        page = self.client.get("/finished?all=1").data
-        self.assertTrue(b"Alpha one" in page and b"Bravo one" in page)
 
 
 class LockedProductionTests(Base):

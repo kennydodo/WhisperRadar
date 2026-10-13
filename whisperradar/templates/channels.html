@@ -65,6 +65,25 @@
   .grp[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 8px; }
   .grp-sub { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 12px 0 4px; }
   .grp-tools { font-size: 12px; margin: 10px 0 0; text-align: right; }
+
+  .wsel { position: relative; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .wsel-btn { background: var(--panel2, #12151c); color: var(--text); border: 1px solid var(--border);
+              border-radius: 7px; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .wsel-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .wsel-tag { background: rgba(79,140,255,.15); color: var(--accent); border-radius: 20px;
+              padding: 1px 4px 1px 10px; font-size: 12px; font-weight: 600; }
+  .wsel-tag button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 5px; font-size: 14px; }
+  .wsel-panel { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 380px; max-width: 92vw;
+                background: var(--panel, #171a21); border: 1px solid var(--border); border-radius: 10px;
+                padding: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+  .wsel-panel[hidden] { display: none; }
+  .wsel-search { width: 100%; }
+  .wsel-bar { display: flex; justify-content: space-between; align-items: center; margin: 6px 0; font-size: 12px; }
+  .wsel-list { max-height: 300px; overflow-y: auto; }
+  .wsel-gh { display: flex; gap: 6px; align-items: center; font-weight: 700; font-size: 12px; color: var(--muted);
+             text-transform: uppercase; letter-spacing: .04em; padding: 6px 2px 2px; }
+  .wsel-item { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 3px 6px 3px 18px; border-radius: 5px; cursor: pointer; }
+  .wsel-item:hover { background: rgba(255,255,255,.05); }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
 </head>
@@ -245,21 +264,37 @@
             <div style="margin-top:10px">
               <input type="hidden" name="watched_present" value="1">
               <div class="muted" style="font-size:12px; margin-bottom:4px">Watched channels this channel draws its source videos from (the Studio's "Based on" list shows only these). None ticked = all watched channels.</div>
-              <div class="inline" style="gap:4px 14px; flex-wrap:wrap">
-                {% for wc in watched_channels %}
-                <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px">
-                  <input type="checkbox" name="watched" value="{{ wc['channel_id'] }}" {{ 'checked' if wc['channel_id'] in watched_by_oc.get(ch['id'], []) else '' }}>
-                  {{ wc['name'] }}</label>
-                {% else %}
-                <span class="muted" style="font-size:12px">No watched channels yet - add some on <a href="/watched">Watched Channels</a>.</span>
-                {% endfor %}
-                {% set picked = watched_by_oc.get(ch['id'], []) %}
-                {% set visible_ids = watched_channels | map(attribute='channel_id') | list %}
-                {% for wid in picked if wid not in visible_ids %}
-                {# picked while active, now paused: kept out of sight, kept in the selection #}
-                <input type="hidden" name="watched" value="{{ wid }}">
-                {% endfor %}
+              {% set picked = watched_by_oc.get(ch['id'], []) %}
+              {% if watched_channels %}
+              <div class="wsel" data-wsel>
+                <button type="button" class="wsel-btn" aria-haspopup="true"><span class="wsel-label">All watched channels</span> &#9662;</button>
+                <div class="wsel-tags"></div>
+                <div class="wsel-panel" hidden>
+                  <input type="search" class="wsel-search" placeholder="Search channels or genres..." autocomplete="off">
+                  <div class="wsel-bar"><span class="wsel-count muted"></span> <button type="button" class="wsel-clear ghost">Clear</button></div>
+                  <div class="wsel-list">
+                    {% for genre, items in watched_channels | sort(attribute='name') | groupby('genre') %}
+                    <div class="wsel-group" data-genre="{{ genre | lower }}">
+                      <label class="wsel-gh"><input type="checkbox" class="wsel-gall"> {{ genre }} <span class="muted">({{ items | length }})</span></label>
+                      {% for wc in items %}
+                      <label class="wsel-item" data-hay="{{ (wc['name'] ~ ' ' ~ genre) | lower }}">
+                        <input type="checkbox" name="watched" value="{{ wc['channel_id'] }}" data-name="{{ wc['name'] }}" {{ 'checked' if wc['channel_id'] in picked else '' }}>
+                        {{ wc['name'] }}</label>
+                      {% endfor %}
+                    </div>
+                    {% endfor %}
+                    <div class="wsel-none muted" hidden>No channel matches.</div>
+                  </div>
+                </div>
               </div>
+              {% else %}
+              <span class="muted" style="font-size:12px">No watched channels yet - add some on <a href="/watched">Watched Channels</a>.</span>
+              {% endif %}
+              {% set visible_ids = watched_channels | map(attribute='channel_id') | list %}
+              {% for wid in picked if wid not in visible_ids %}
+              {# picked while active, now paused: kept out of sight, kept in the selection #}
+              <input type="hidden" name="watched" value="{{ wid }}">
+              {% endfor %}
             </div>
             </details>
             <details class="grp" id="edit-{{ ch['id'] }}-production">
@@ -1074,6 +1109,76 @@
     });
     return true;
   }
+</script>
+<script>
+// Watched-channel pickers: a dropdown with search, genre groups and tags.
+// The checkboxes stay real form inputs, so saving works as before.
+(function () {
+  document.querySelectorAll('[data-wsel]').forEach(function (root) {
+    var btn = root.querySelector('.wsel-btn'), panel = root.querySelector('.wsel-panel');
+    var search = root.querySelector('.wsel-search'), tags = root.querySelector('.wsel-tags');
+    var label = root.querySelector('.wsel-label'), count = root.querySelector('.wsel-count');
+    var boxes = Array.prototype.slice.call(root.querySelectorAll('input[name="watched"]'));
+    function refresh() {
+      var on = boxes.filter(function (b) { return b.checked; });
+      label.textContent = on.length ? 'Watched channels: ' + on.length + ' selected'
+                                    : 'All watched channels';
+      count.textContent = on.length + ' of ' + boxes.length + ' selected';
+      tags.innerHTML = '';
+      on.forEach(function (b) {
+        var t = document.createElement('span'); t.className = 'wsel-tag';
+        t.appendChild(document.createTextNode(b.dataset.name));
+        var x = document.createElement('button'); x.type = 'button'; x.textContent = '\u00d7';
+        x.title = 'Remove'; x.addEventListener('click', function () { b.checked = false; refresh(); });
+        t.appendChild(x); tags.appendChild(t);
+      });
+      root.querySelectorAll('.wsel-group').forEach(function (g) {
+        var inG = g.querySelectorAll('input[name="watched"]');
+        var all = g.querySelector('.wsel-gall');
+        var n = Array.prototype.filter.call(inG, function (b) { return b.checked; }).length;
+        all.checked = n === inG.length; all.indeterminate = n > 0 && n < inG.length;
+      });
+    }
+    function filter() {
+      var q = search.value.trim().toLowerCase(), shown = 0;
+      root.querySelectorAll('.wsel-group').forEach(function (g) {
+        var any = false;
+        g.querySelectorAll('.wsel-item').forEach(function (it) {
+          var ok = !q || it.dataset.hay.indexOf(q) !== -1;
+          it.hidden = !ok; if (ok) { any = true; shown++; }
+        });
+        g.hidden = !any;
+      });
+      root.querySelector('.wsel-none').hidden = shown > 0;
+    }
+    btn.addEventListener('click', function () {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) { search.value = ''; filter(); search.focus(); }
+    });
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') e.preventDefault();
+      if (e.key === 'Escape') panel.hidden = true;
+    });
+    root.querySelector('.wsel-clear').addEventListener('click', function () {
+      boxes.forEach(function (b) { b.checked = false; }); refresh();
+    });
+    root.querySelectorAll('.wsel-gall').forEach(function (all) {
+      all.addEventListener('change', function () {
+        // select-all acts on the channels currently shown (so it works with the search)
+        all.closest('.wsel-group').querySelectorAll('.wsel-item').forEach(function (it) {
+          if (!it.hidden) it.querySelector('input').checked = all.checked;
+        });
+        refresh();
+      });
+    });
+    boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+    document.addEventListener('mousedown', function (e) {
+      if (!root.contains(e.target)) panel.hidden = true;
+    });
+    refresh();
+  });
+})();
 </script>
 </body>
 </html>
