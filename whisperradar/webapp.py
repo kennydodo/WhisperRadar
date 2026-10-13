@@ -39,6 +39,7 @@ from flask import (
 from . import external_prompts
 from . import motion
 from . import handover
+from . import source_prep
 from . import demand as demand_mod
 from . import niche_chips
 from . import niche as niche_mod
@@ -3149,6 +3150,10 @@ def create_app(cfg) -> Flask:
         if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
             pdir = studio.prod_dir(cfg, pid)
             shutil.copy(row["transcript_path"], pdir / "source_transcript.txt")
+        elif row:
+            # no transcript yet: fetch it in its own background job so the
+            # dashboard and the studio stay free; auto-run waits for it
+            source_prep.start_background(cfg, source, sjob.log.append)
         msg = ""
         if seeded["bible"] or seeded["style"] or seeded["refs"]:
             bits = []
@@ -3160,6 +3165,21 @@ def create_app(cfg) -> Flask:
                 bits.append(f"{seeded['refs']} ref image(s)")
             msg = (f"?msg={quote('Seeded ' + ' + '.join(bits) + ' from ' + seeded['source'])}")
         return redirect(f"/studio/{pid}{msg}")
+
+    @app.post("/studio/<int:pid>/source/fetch")
+    def studio_source_fetch(pid):
+        """(Re)start the download + transcription of the production's source video."""
+        conn = db.connect(cfg.db_path)
+        try:
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        if not prod or not prod["source_video_id"]:
+            return _studio_url(pid, error="This production has no source video")
+        started = source_prep.start_background(cfg, prod["source_video_id"],
+                                               sjob.log.append)
+        return _studio_url(pid, msg=("Getting the source transcript"
+                                     if started else "Already getting it"))
 
     @app.get("/studio/<int:pid>")
     def studio_detail(pid):
@@ -3177,6 +3197,7 @@ def create_app(cfg) -> Flask:
                             if prod["source_video_id"] else None)
         finally:
             conn.close()
+        source_wait = source_prep.state(cfg, pid)
 
         stage = request.args.get("stage") or prod["stage"]
         if stage not in db.STAGES:
@@ -3303,6 +3324,7 @@ def create_app(cfg) -> Flask:
             refs=studio.shotlist_refs(pdir),
             generate_references=eff["generate_references"],
             motion_info=autorun.motion_summary(cfg, pid, pdir, eff),
+            source_wait=source_wait,
             brief_profile=briefs.resolve_profile(
                 eff.get("brief_motion"), eff.get("brief_min_hold"),
                 eff.get("brief_max_hold"),

@@ -24,7 +24,7 @@ from collections import Counter
 
 from pathlib import Path
 
-from . import ai33, briefs, db, handover, motion, services, settings, studio, transcribe
+from . import ai33, briefs, db, handover, motion, services, settings, source_prep, studio, transcribe
 from . import plan as packplan
 from .cli import format_duration
 
@@ -2194,6 +2194,10 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
     """What auto-run would do for one stage right now:
     {stage, action: 'skip'|'run'|'pause', detail}."""
     pdir = studio.prod_dir(cfg, pid)
+    wait = source_prep.state(cfg, pid)
+    if wait and not (stage == "style" and studio.find_writing_style(pdir)):
+        # nothing to compare with or take points from until it is there
+        return {"stage": stage, "action": "pause", "detail": wait["text"]}
     if stage == "style":
         if studio.find_writing_style(pdir):
             return {"stage": stage, "action": "skip",

@@ -4,7 +4,12 @@ import logging
 import shutil
 from pathlib import Path
 
+import threading
+
 from . import db, download, transcribe, watch
+
+# one transcription at a time, whichever job asked (dashboard or source prep)
+TRANSCRIBE_LOCK = threading.Lock()
 
 log = logging.getLogger("whisperradar")
 
@@ -194,12 +199,13 @@ def process_transcripts(cfg, conn, video_ids: list[str] | None = None) -> int:
             # keep channels separated on disk: transcripts/<genre>/
             out_txt = (cfg.transcripts_dir / (video["channel_genre"] or "general")
                        / f"{video['video_id']}.txt")
-            meta = transcribe.transcribe_audio(
-                audio_path,
-                out_txt,
-                model_size=cfg.whisper_model,
-                language=cfg.whisper_language,
-            )
+            with TRANSCRIBE_LOCK:
+                meta = transcribe.transcribe_audio(
+                    audio_path,
+                    out_txt,
+                    model_size=cfg.whisper_model,
+                    language=cfg.whisper_language,
+                )
             db.set_video(
                 conn,
                 video["video_id"],

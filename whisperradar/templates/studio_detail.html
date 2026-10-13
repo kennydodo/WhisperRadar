@@ -199,6 +199,8 @@
 
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+  {% if source_wait %}<div class="banner {{ 'err' if source_wait.state == 'error' else 'job' }}">Source: {{ source_wait.text }}.
+    {% if source_wait.state != 'waiting' %}<form method="post" action="/studio/{{ prod['id'] }}/source/fetch" style="display:inline"><button type="submit">{{ 'Try again' if source_wait.state == 'error' else 'Get the transcript' }}</button></form>{% else %}Auto-run starts working on it once it is ready; you can keep using the app meanwhile.<script>setTimeout(function(){ location.reload(); }, 15000);</script>{% endif %}</div>{% endif %}
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
   {% if job.pause_reason and not job.running and job.pid == prod['id'] %}<div class="banner job">Auto-run paused: {{ job.pause_reason }} - handle it, then click Resume.</div>{% endif %}
   {% if job.summary and not job.running and job.pid == prod['id'] %}<div class="banner ok">{{ job.summary }}</div>{% endif %}
