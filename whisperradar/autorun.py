@@ -2480,7 +2480,8 @@ def _auto_plan(cfg, pid: int, provider: str | None, log, cancel=None,
 
 def run_pipeline(cfg, pid: int, job=None, log=None,
                  stop_before: str | None = None,
-                 provider: str | None = None) -> str:
+                 provider: str | None = None,
+                 one_stage: bool = False) -> str:
     """Run every remaining stage in order, skipping the ones that are
     already done and pausing when manual input is missing.
 
@@ -2488,6 +2489,9 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
     become runnable mid-run (e.g. shots created the shotlist) execute
     instead of pausing per an outdated snapshot. `provider` overrides the
     saved LLM for every text stage of this run (style, script, shots).
+
+    `one_stage` runs just the next stage that has work to do and then stops
+    (the In production page's Continue button).
 
     Returns 'ok', 'stopped', 'paused:<reason>' or 'failed:<error>'.
     Never touches the review stage: the production pointer ends at review.
@@ -2588,6 +2592,11 @@ def run_pipeline(cfg, pid: int, job=None, log=None,
         finally:
             conn.close()
         log(f"[auto-run] stage {i}/{total}: {stage} - done")
+        if one_stage:
+            if job is not None:
+                job.summary = f"{stage} done"
+                job.resume = False
+            return "ok"
     # the pipeline is done (not stopped/paused/failed - those returned early);
     # thumbnails, titles and the description come from Generate with GPT Pro
     summary = (f"Auto-run complete: {ran} stage(s) executed, "

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>In production - WhisperRadar</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #12151c; --border: #262b36;
+    --text: #e6e9ef; --muted: #8b93a3; --accent: #4f8cff; --green: #3fb96f;
+    --amber: #e0a93f; --red: #e05c5c; --gray: #565d6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { display:flex; gap:18px; align-items:center; max-width:1100px;
+            margin:0 auto; padding:14px 16px 0; }
+  .topnav .brand { font-weight:700; font-size:15px; color:var(--text); }
+  .topnav a { color:var(--muted); font-size:13px; }
+  .topnav a.active { color:var(--accent); font-weight:600; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 18px 16px 60px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 2px 0 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--border);
+           border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  button, .btn { background: var(--accent); color: #fff; border: none;
+          border-radius: 7px; padding: 7px 14px; font-size: 13px;
+          font-weight: 600; cursor: pointer; display: inline-block; }
+  button:hover, .btn:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; border: 1px solid var(--border);
+                 color: var(--muted); padding: 4px 10px; font-weight: 500; }
+  button.ghost:hover { color: var(--accent); border-color: var(--accent); filter: none; }
+  .banner { border-radius: 8px; padding: 9px 14px; margin-bottom: 14px; font-weight: 600; }
+  .banner.ok { background: rgba(63,185,111,.12); color: var(--green); }
+  .banner.err { background: rgba(224,92,92,.12); color: var(--red); }
+  .badge { display: inline-block; padding: 1px 9px; border-radius: 20px;
+           font-size: 12px; font-weight: 600; }
+  .badge.genre { background: rgba(79,140,255,.15); color: var(--accent); }
+  .badge.chan { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.ready { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.published { background: rgba(63,185,111,.15); color: var(--green); }
+  .tabs { display:flex; gap:6px; margin-bottom:14px; }
+  .tabs a { padding:5px 12px; border-radius:20px; font-size:12px;
+            color:var(--muted); border:1px solid var(--border); }
+  .tabs a.active { color:#fff; background:var(--accent); border-color:var(--accent); }
+  .muted { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border);
+           font-size: 13px; }
+  th { color: var(--muted); font-weight: 600; text-transform: uppercase;
+       font-size: 11px; letter-spacing: .04em; }
+  th a { color: var(--muted); }
+  th a.active { color: var(--accent); }
+  td.actions { text-align: right; white-space: nowrap; }
+  td.actions form { display: inline-block; margin-left: 6px; }
+  .badge.running { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.failed { background: rgba(224,92,92,.15); color: var(--red); }
+  .small { font-size: 12px; }
+</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
+</head>
+<body>
+<nav class="topnav">
+  <span class="brand">WhisperRadar</span>
+  <a href="/">Dashboard</a>
+  <a href="/watched">Watched Channels</a>
+  <a href="/research">Research</a>
+  <a href="/studio">Studio</a>
+  <a href="/in-production" class="active">In production</a>
+  <a href="/finished">Finished</a>
+  <a href="/my-channels">My Channels</a>
+  <a href="/settings">Settings</a>
+  <a href="/handover">Hand-over</a>
+</nav>
+<div class="wrap">
+  <h1>In production</h1>
+  <p class="sub">Every active production. <b>Continue</b> runs only the next stage; <b>Auto-run</b> runs everything up to review.</p>
+  {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
+  {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+  {% if not rows %}
+  <div class="panel muted">Nothing in production right now.</div>
+  {% else %}
+  <div class="panel" style="padding:0;overflow-x:auto">
+  <table>
+    <thead><tr><th>Channel</th><th>ID</th><th>Title</th><th>Stage</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td><span class="badge chan">{{ r.channel }}</span></td>
+      <td>#{{ r.id }}</td>
+      <td><a href="/studio/{{ r.id }}">{{ r.title }}</a></td>
+      <td>
+        <span class="badge genre">{{ r.stage }}</span>
+        {% if r.job %}<span class="badge running">&#9654; running {{ r.job.stage or r.job.kind }}</span>
+        {% elif r.failed %}<span class="badge failed">failed</span>
+        {% elif r.next and r.next.action == 'pause' %}<div class="muted small" title="{{ r.next.detail }}">waiting: {{ r.next.detail[:90] }}</div>
+        {% elif r.next %}<div class="muted small">next: {{ r.next.stage }}</div>
+        {% else %}<div class="muted small">ready for review</div>{% endif %}
+      </td>
+      <td class="actions">
+        {% if r.next and r.next.action == 'run' and not r.job %}
+        <form method="post" action="/studio/{{ r.id }}/continue"><input type="hidden" name="back" value="in-production"><button type="submit" title="Run {{ r.next.stage }} only">Continue</button></form>
+        <form method="post" action="/studio/{{ r.id }}/auto-run"><input type="hidden" name="back" value="in-production"><button type="submit" class="ghost" title="Run every remaining stage up to review">Auto-run</button></form>
+        {% elif r.job %}
+        <a class="btn ghost" href="/studio/{{ r.id }}">Open</a>
+        {% else %}
+        <a class="btn ghost" href="/studio/{{ r.id }}">Open</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+{% if any_running %}<script>setTimeout(function(){ location.reload(); }, 15000);</script>{% endif %}
+<script src="{{ url_for('static', filename='keepscroll.js') }}"></script>
+</body>
+</html>

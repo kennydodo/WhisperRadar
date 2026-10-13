@@ -3313,8 +3313,8 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         _queue_autorun_after_source(pid, wait["video_id"], provider, cid)
-        return _studio_url(pid, msg="Auto-run will start by itself once the "
-                                    "source transcript is ready")
+        return _run_back(pid, msg="Auto-run will start by itself once the "
+                                  "source transcript is ready")
 
     def _resume_after_source():
         """At start-up: pick up auto-run requests that were waiting for a
@@ -4989,13 +4989,99 @@ def create_app(cfg) -> Flask:
                 "running": sjob.running,
                 "paused": sjob.pause_reason if sjob.pid == pid else None}
 
+    def _run_back(pid, msg: str | None = None, error: str | None = None):
+        """Back to where a run was started: the In production list when the
+        button was there, else the production page."""
+        if request.form.get("back") == "in-production":
+            parts = []
+            if msg:
+                parts.append(f"msg={quote(msg)}")
+            if error:
+                parts.append(f"error={quote(error)}")
+            return redirect("/in-production"
+                            + ("?" + "&".join(parts) if parts else ""))
+        return _studio_url(pid, msg=msg, error=error)
+
+    @app.get("/in-production")
+    def in_production():
+        """Every active production in one list: channel, id, title, stage,
+        what is running right now, and Continue / Auto-run buttons."""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            own_by_id = {c["id"]: c["name"]
+                         for c in db.list_own_channels(conn)}
+            prods = [p for p in db.list_productions(conn)
+                     if p["status"] not in ("ready", "published")]
+        finally:
+            conn.close()
+        with channel_jobs_lock:
+            slots = list(channel_jobs.values())
+        slots += [scheduler_job]
+        running = {j.pid: j for j in slots if j.running and j.pid}
+        rows = []
+        for p in prods:
+            job = running.get(p["id"])
+            nxt = None
+            try:
+                plan = autorun.build_plan(cfg, p["id"])
+                nxt = next((e for e in plan if e["action"] != "skip"), None)
+            except Exception:  # noqa: BLE001 - one bad folder must not hide the list
+                nxt = None
+            rows.append({
+                "id": p["id"],
+                "channel": own_by_id.get(p["own_channel_id"]) or "No channel",
+                "title": (p["title"] or "")[:100],
+                "stage": p["stage"],
+                "failed": p["status"] == "failed",
+                "next": nxt,
+                "job": ({"kind": job.kind, "stage": job.stage}
+                        if job else None)})
+        rows.sort(key=lambda r: (r["channel"].lower(), r["id"]))
+        return render_template("in_production.html", rows=rows,
+                               any_running=any(r["job"] for r in rows),
+                               msg=request.args.get("msg"),
+                               error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/continue")
+    def studio_continue(pid):
+        """Run just the next stage that has work to do, then stop."""
+        if sjob.running:
+            return _run_back(pid, error="A job is already running")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/in-production?error=Unknown+production")
+        finally:
+            conn.close()
+        plan = autorun.build_plan(cfg, pid)
+        nxt = next((e for e in plan if e["action"] != "skip"), None)
+        if nxt is None:
+            return _run_back(pid, error="Every stage up to review is "
+                                        "already done")
+        if nxt["action"] == "pause":
+            return _run_back(pid, error=f"Cannot continue - {nxt['detail']}")
+
+        def worker():
+            result = autorun.run_pipeline(cfg, pid, job=sjob._real(),
+                                          log=sjob.log.append,
+                                          one_stage=True)
+            if result.startswith(("failed:", "paused:")):
+                raise RuntimeError(result.split(":", 1)[1])
+
+        if not sjob.start(worker, "continue"):
+            return _run_back(pid, error="A job is already running")
+        sjob.pid = pid
+        return _run_back(pid, msg=f"Running {nxt['stage']}")
+
     @app.post("/studio/<int:pid>/auto-run")
     def studio_autorun(pid):
         """Run every remaining pipeline stage in order, skipping the done
         ones, pausing on missing manual input, and always stopping before
         review."""
         if sjob.running:
-            return _studio_url(pid, error="A job is already running")
+            return _run_back(pid, error="A job is already running")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -5010,9 +5096,9 @@ def create_app(cfg) -> Flask:
         if not any(e["action"] == "run" for e in plan):
             pause = next((e for e in plan if e["action"] == "pause"), None)
             if pause:
-                return _studio_url(pid,
+                return _run_back(pid,
                                    error=f"Nothing to run - {pause['detail']}")
-            return _studio_url(
+            return _run_back(
                 pid, error="Every stage up to review is already done")
 
         provider = (request.form.get("provider") or "").strip() or None
@@ -5025,9 +5111,9 @@ def create_app(cfg) -> Flask:
                 raise RuntimeError(result.split(":", 1)[1])
 
         if not sjob.start(worker, "auto-run"):
-            return _studio_url(pid, error="A job is already running")
+            return _run_back(pid, error="A job is already running")
         sjob.pid = pid  # pause/summary state belongs to this production
-        return _studio_url(pid, msg="Auto-run started")
+        return _run_back(pid, msg="Auto-run started")
 
     @app.post("/studio/<int:pid>/auto-run/stop")
     def studio_autorun_stop(pid):
