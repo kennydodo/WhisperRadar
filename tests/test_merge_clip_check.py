@@ -146,6 +146,58 @@ class MergeClipCheckTests(MergeImageCheckTests):
                 autorun._run_merge(self.cfg, self.pid, "cli")
         self.assertIn("opening clips", str(ctx.exception))
 
+    def test_with_stills_bypasses_the_clip_gate_but_not_images(self):
+        """The user's explicit 'render with stills' choice: missing clips no
+        longer pause the merge (missing images still do)."""
+        (self.img / "a_ST.png").write_bytes(b"x")
+        with mock.patch.object(autorun, "_effective", _animate_on()), \
+             mock.patch.object(autorun, "_motion_clips", self._clips(None)), \
+             mock.patch.object(studio, "find_audio", return_value=Path("a.mp3")), \
+             mock.patch.object(studio, "find_srt", return_value=Path("a.srt")), \
+             mock.patch.object(studio, "find_images", return_value=[Path("x")]), \
+             mock.patch.object(autorun, "_stage_params", return_value={}), \
+             mock.patch.object(studio, "run_merge_render", return_value={}) as render:
+            # 1 of 3 images missing AND clips missing: the images pass runs
+            # (the mock creates the rest), then the merge renders
+            autorun._run_merge(self.cfg, self.pid, "cli", with_stills=True)
+        self.assertTrue(render.called)
+
+    def test_with_stills_renders_straight_when_images_are_complete(self):
+        (self.img / "a_ST.png").write_bytes(b"x")
+        (self.img / "b_ST.png").write_bytes(b"x")
+        (self.img / "c_ST.png").write_bytes(b"x")
+        with mock.patch.object(autorun, "_effective", _animate_on()), \
+             mock.patch.object(autorun, "_motion_clips", self._clips(None)), \
+             mock.patch.object(studio, "find_audio", return_value=Path("a.mp3")), \
+             mock.patch.object(studio, "find_srt", return_value=Path("a.srt")), \
+             mock.patch.object(studio, "find_images", return_value=[Path("x")]), \
+             mock.patch.object(autorun, "_stage_params", return_value={}), \
+             mock.patch.object(studio, "run_merge_render", return_value={}) as render:
+            autorun._run_merge(self.cfg, self.pid, "cli", with_stills=True)
+        self.assertTrue(render.called)
+
+    def test_render_route_accepts_the_with_stills_choice(self):
+        c = create_app(self.cfg).test_client()
+        for n in ("a_ST.png", "b_ST.png", "c_ST.png"):
+            (self.img / n).write_bytes(b"x")
+        with mock.patch.object(autorun, "_effective", _animate_on()), \
+             mock.patch.object(autorun, "_motion_clips", self._clips(None)), \
+             mock.patch.object(studio, "find_audio", return_value=Path("a.mp3")), \
+             mock.patch.object(studio, "find_srt", return_value=Path("a.srt")), \
+             mock.patch.object(studio, "find_images", return_value=[Path("x")]), \
+             mock.patch.object(autorun, "run_stage_and_advance",
+                               return_value="ok") as run:
+            r = c.post(f"/studio/{self.pid}/video/render",
+                       data={"render_with_stills": "1"})
+            import time
+            time.sleep(0.3)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("stills", r.headers["Location"].replace("+", " "))
+        self.assertTrue(run.called)
+        params = run.call_args[0][3] if len(run.call_args[0]) > 3 \
+            else run.call_args.kwargs.get("params") or {}
+        self.assertTrue(params.get("with_stills"))
+
     def test_with_all_clips_the_inherited_image_path_is_unchanged(self):
         """Clips complete + images missing: the images stage fills the gap and
         the merge runs, exactly like the images-only gate before."""

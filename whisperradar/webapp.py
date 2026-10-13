@@ -4768,7 +4768,13 @@ def create_app(cfg) -> Flask:
                 or not studio.find_images(pid_dir=pdir):
             return _studio_url(
                 pid, error="Need audio, subtitles and images first")
-        gap = autorun._merge_pause_reason(cfg, pid)
+        # render even with opening clips missing (the stills fill the gaps)?
+        # an explicit user choice from the merge panel's second button.
+        with_stills = request.form.get("render_with_stills") == "1"
+        gap = autorun._merge_pause_reason(cfg, pid, with_stills=with_stills)
+        if gap and with_stills:
+            # with_stills only bypasses the clip gate; images still block
+            return _studio_url(pid, error="Cannot render: " + gap)
         _job = sjob._real()
 
         def worker():
@@ -4776,7 +4782,8 @@ def create_app(cfg) -> Flask:
             autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "merge", {
                     "mode": "cli", "log": sjob.log.append,
-                    "cancel": (lambda _j=_job: _j.cancel)}))
+                    "cancel": (lambda _j=_job: _j.cancel),
+                    "with_stills": with_stills}))
 
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
@@ -4793,6 +4800,12 @@ def create_app(cfg) -> Flask:
             return _studio_url(
                 pid, msg="Images are missing - rendering them first, then "
                          f"the preview + {label} export")
+        if with_stills:
+            sjob.start(worker, f"preview + {label} export (stills stand in "
+                               f"for the missing clips)")
+            return _studio_url(pid, msg=f"Preview build + {label} export "
+                                        f"started (stills stand in for the "
+                                        f"missing clips)")
         sjob.start(worker, f"preview + {label} export (ImgToVideo)")
         return _studio_url(pid, msg=f"Preview build + {label} export started")
 
