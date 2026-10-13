@@ -37,6 +37,7 @@ from flask import (
 )
 
 from . import external_prompts
+from . import motion
 from . import handover
 from . import demand as demand_mod
 from . import niche_chips
@@ -373,6 +374,7 @@ RESET_FILES = {
     "shots": ["shotlist.json", "shotlist.json.bak", "batch_sheet.txt",
               "prompts.txt"],
     "images": [],
+    "motion": [],
     "merge": ["final.mp4"],
 }
 
@@ -1974,6 +1976,9 @@ def create_app(cfg) -> Flask:
             upscale_labels=settings.UPSCALE_LABELS,
             native_tiers=settings.FLOW_NATIVE_TIERS,
             native_tier_labels=settings.FLOW_NATIVE_TIER_LABELS,
+            animate_models=motion.MODELS,
+            animate_min=motion.MIN_SECONDS, animate_max=motion.MAX_SECONDS,
+            animate_default=motion.DEFAULT_SECONDS,
             brief_presets=briefs.MOTION_PRESETS,
             brief_custom_label=briefs.CUSTOM_LABEL,
             brief_motion_codes=briefs.MOTION_CODE_INFO,
@@ -2278,6 +2283,16 @@ def create_app(cfg) -> Flask:
             fields["generate_references"] = (None if raw == ""
                                              else 1 if raw in ("1", "on", "true")
                                              else 0)
+        # animated opening (motion.py): per channel, off unless switched on
+        if "animate_enabled" in request.form:
+            raw = (request.form.get("animate_enabled") or "").strip()
+            fields["animate_enabled"] = 1 if raw in ("1", "on", "true") else 0
+        if "animate_seconds" in request.form:
+            raw = (request.form.get("animate_seconds") or "").strip()
+            fields["animate_seconds"] = motion.clamp_seconds(raw) if raw else None
+        if "animate_model" in request.form:
+            raw = (request.form.get("animate_model") or "").strip()
+            fields["animate_model"] = raw if raw in motion.MODELS else None
         # shotlist gate overrides
         if "shotlist_min_alignment" in request.form:
             raw = (request.form.get("shotlist_min_alignment") or "").strip()
@@ -3274,6 +3289,7 @@ def create_app(cfg) -> Flask:
             nle_projects=nle_projects,
             refs=studio.shotlist_refs(pdir),
             generate_references=eff["generate_references"],
+            motion_info=autorun.motion_summary(cfg, pid, pdir, eff),
             brief_profile=briefs.resolve_profile(
                 eff.get("brief_motion"), eff.get("brief_min_hold"),
                 eff.get("brief_max_hold"),
@@ -3500,6 +3516,11 @@ def create_app(cfg) -> Flask:
                                 if f.is_file():
                                     f.unlink(missing_ok=True)
                             removed.append("images/*")
+                    if stage == "motion":
+                        clip_dir = pdir / "clips"
+                        if clip_dir.exists():
+                            shutil.rmtree(clip_dir, ignore_errors=True)
+                            removed.append("clips/")
                     if stage == "merge":
                         out_dir = pdir / "out"
                         if out_dir.exists():
@@ -4341,6 +4362,28 @@ def create_app(cfg) -> Flask:
         return _studio_url(pid, msg="Reference images started - run the "
                                     "images stage yourself when they are "
                                     "ready")
+
+    @app.post("/studio/<int:pid>/motion/run")
+    def studio_motion_run(pid):
+        """Manual: run ONLY the motion clips stage (Flow image-to-video for the
+        animated opening). Clips already made are kept; it moves the production
+        on to merge but never starts it."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        if not (pdir / "shotlist.json").exists():
+            return _studio_url(pid, error="Generate the shotlist first")
+        _job = sjob._real()
+
+        def worker():
+            autorun.raise_result(autorun.run_stage_and_advance(
+                cfg, pid, "motion", {
+                    "log": sjob.log.append,
+                    "cancel": (lambda _j=_job: _j.cancel)}))
+
+        sjob.start(worker, "motion clips")
+        return _studio_url(pid, msg="Motion clips started - a browser window "
+                                    "opens; clips already made are kept")
 
     @app.post("/studio/<int:pid>/images/render")
     def studio_images_render(pid):

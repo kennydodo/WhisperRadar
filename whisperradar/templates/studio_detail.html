@@ -206,7 +206,8 @@
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
 
   {% set STAGE_DISPLAY = {'style': 'writing style', 'shots': 'shotlist', 'srt': 'subtitles',
-                          'refs': 'references', 'merge': 'merge & export'} %}
+                          'refs': 'references', 'motion': 'motion clips',
+                          'merge': 'merge & export'} %}
   {% set RESET_BLURB = {
     'style': 'everything re-runs, starting from a fresh writing style guide',
     'script': 'also deletes the subtitles and shotlist (a new script is generated; kept audio will no longer match it)',
@@ -215,6 +216,7 @@
     'shots': 'deletes the shotlist and re-plans it from the kept subtitles',
     'refs': 'deletes the reference images WhisperRadar generated (supplied refs are kept) and re-generates them',
     'images': 'deletes the rendered images and the merge output (preview + NLE export), then re-renders everything (fills the gaps)',
+    'motion': 'deletes the animated-opening clips (clips\\) and makes them again from the rendered images',
     'merge': 'just re-does the final preview/NLE export',
   } %}
   {% set RESETTABLE = stages[:stages.index('review')] if 'review' in stages else stages %}
@@ -1029,6 +1031,46 @@
           <button type="submit" class="secondary">Upload images</button>
         </form>
       </div>
+
+    {% elif stage == "motion" %}
+      <div class="muted" style="margin-bottom:8px">
+        The animated opening: each still in the first part of the video becomes
+        an AI image-to-video clip (Flow, {{ motion_info.model or 'Veo 3.1 - Lite' }}, about 8 s each) from its
+        <span class="mono">ai_motion</span> line. Clips are saved in
+        <span class="mono">clips\</span>; ones already made are kept, so you can run this again
+        after a pause or when credits refresh. The renderer plays a clip in its shot
+        and uses the plain still everywhere else.
+        {% if not motion_info.enabled %}
+        <b>The animated opening is off for this channel</b> - this stage is skipped
+        (My Channels &rarr; Production defaults &rarr; animated opening).
+        {% endif %}
+      </div>
+      {% if motion_info.clips %}
+      <table>
+        <tr><th>Shot</th><th>State</th><th>Planned motion</th></tr>
+        {% for c in motion_info.clips %}
+        <tr>
+          <td class="mono">{{ c.asset }}</td>
+          <td>{% if c.done %}<span class="badge on">clip made</span>
+              {% elif not c.image %}<span class="badge off">image missing</span>
+              {% else %}<span class="badge warn">to generate</span>{% endif %}</td>
+          <td class="muted" style="font-size:12px">{{ c.prompt[:160] }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="actions" style="margin-top:10px">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/motion/run"
+              onsubmit="return wrConfirmSubmit(this, 'Generate the missing opening clips now? This uses Flow credits (about 10 per Veo 3.1 Lite clip). Clips already made are kept.')">
+          <button type="submit" class="green" {{ 'disabled' if job.running else '' }}>
+            Generate motion clips
+          </button>
+        </form>
+      </div>
+      {% elif motion_info.enabled %}
+      <div class="muted">No shot in the opening has an <span class="mono">ai_motion</span> line - nothing to animate; continue to merge.</div>
+      {% else %}
+      <div class="muted">Nothing to do here - continue to merge.</div>
+      {% endif %}
 
     {% elif stage == "merge" %}
       {% if review_video %}

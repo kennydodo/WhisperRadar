@@ -8,7 +8,7 @@ own_channels and are NULL when the channel inherits these globals.
 
 import re
 
-from . import briefs
+from . import briefs, motion
 
 # Flow native renders download at Flow's own size (1376x768); one local
 # Real-ESRGAN pass then upscales to one of FlowBatch's tiers.
@@ -844,6 +844,8 @@ def for_production(conn, prod) -> dict:
         # the refs stage is per channel (a channel may have no refs at all)
         "generate_references": bool(row_get(own, "generate_references",
                                             int(glob["generate_references"]))),
+        # animated opening: per channel only (motion.py)
+        **motion.effective(own),
         "own_channel": own,
         "own_channel_name": row_get(own, "name"),
         "renderly_channel_name": (row_get(own, "renderly_channel_name")

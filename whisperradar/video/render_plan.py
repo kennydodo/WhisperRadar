@@ -9,6 +9,7 @@ import os
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
+from .. import motion
 from . import encoder_probe, tool_locator, transition_cuts
 from . import models as m
 
@@ -145,11 +146,38 @@ def _source_input_arguments(file_path: str, options) -> List[str]:
     return ["-loop", "1", "-r", F(options.output.fps), "-i", file_path]
 
 
+def _clip_input_arguments(clip, options) -> List[str]:
+    """Input of a clip: its AI video when it has one, else the looped still."""
+    if getattr(clip, "video_path", None):
+        return ["-i", clip.video_path]
+    return _source_input_arguments(clip.file_path, options)
+
+
+def _build_video_chain(clip, piece_start, piece_count, options) -> str:
+    """Filter chain for a clip backed by an AI video.
+
+    The shot lasts clip.duration_frames; motion.fit says how the (fixed 8 s)
+    video fills it: play the first part, or slow it down, or play it slowed
+    and hold the last frame. The chain builds the shot's full timeline, then
+    cuts [piece_start, piece_start + piece_count) out of it, exactly like the
+    still chains so transitions line up."""
+    r = options.render
+    fps = float(options.output.fps)
+    shot_seconds = clip.duration_frames / fps
+    fit = motion.fit(shot_seconds)
+    return (f"trim=duration={F(fit['play'])},setpts=(PTS-STARTPTS)/{F(fit['speed'])},"
+            f"fps={F(fps)},tpad=stop_mode=clone:stop_duration={F(shot_seconds + 1)},"
+            f"scale={r.preview_width}:{r.preview_height}:force_original_aspect_ratio=increase,"
+            f"crop={r.preview_width}:{r.preview_height},setsar=1,"
+            f"trim=start_frame={_i(piece_start)}:end_frame={_i(piece_start + piece_count)},"
+            "setpts=PTS-STARTPTS,format=yuv420p")
+
+
 def _build_segment_arguments(clip, sw, sh, piece_start, piece_count, options, output_path) -> List[str]:
     if piece_count < 1:
         raise RuntimeError(f'Clip "{clip.file_path}" has an empty render range; cannot render.')
     return _wrap_segment_arguments(
-        _source_input_arguments(clip.file_path, options), None,
+        _clip_input_arguments(clip, options), None,
         _build_side_chain(clip, sw, sh, piece_start, piece_count, options),
         piece_count, options.render, output_path)
 
@@ -167,8 +195,8 @@ def _build_join_arguments(outgoing, ow, oh, incoming, iw, ih, transition_frames,
           f"duration={F(transition_frames / float(options.output.fps))}:offset=0,"
           "format=yuv420p")
     return _wrap_segment_arguments(
-        _source_input_arguments(outgoing.file_path, options)
-        + _source_input_arguments(incoming.file_path, options),
+        _clip_input_arguments(outgoing, options)
+        + _clip_input_arguments(incoming, options),
         fc, None, transition_frames, options.render, output_path)
 
 
@@ -195,6 +223,8 @@ def _viewport_size_changes(clip) -> bool:
 
 
 def _build_side_chain(clip, sw, sh, piece_start, piece_count, options) -> str:
+    if getattr(clip, "video_path", None):
+        return _build_video_chain(clip, piece_start, piece_count, options)
     out_aspect = options.output.width / options.output.height
     bounds = m.Rect(0, 0, sw, sh)
     sv, ev = clip.start_viewport, clip.end_viewport

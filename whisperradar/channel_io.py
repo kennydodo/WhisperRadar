@@ -30,6 +30,7 @@ _INT = {"active": (0, 1), "default_upscale": (0, 4),
         "candidate_window_days": (0, 3650), "script_max_attempts": (1, 10),
         "shotlist_max_attempts": (1, 8), "per_day": (0, 50),
         "generate_references": (0, 1), "autorun_enabled": (0, 1),
+        "animate_enabled": (0, 1), "animate_seconds": (30, 180),
         "brief_reveal": (0, 2)}
 _FLOAT = {"script_min_rating": (1.0, 10.0), "script_max_overlap": (0.0, 1.0),
           "shotlist_min_alignment": (0.0, 1.0), "brief_min_hold": (0.0, 600.0),
@@ -146,6 +147,9 @@ def _clean(key, value, known_watched, provider_names, notes, label):
         value = value.lower()
         return value if value in settings.FLOW_NATIVE_TIERS else _bad(
             notes, label, key, value)
+    if key == "animate_model":
+        from . import motion
+        return value if value in motion.MODELS else _bad(notes, label, key, value)
     if key == "brief_motion":
         value = value.lower()
         return value if (value in briefs.MOTION_PRESETS

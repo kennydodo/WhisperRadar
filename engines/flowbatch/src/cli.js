@@ -11,8 +11,14 @@ import { repairCommand } from '../commands/repair.js';
 import { prepareCommand } from '../commands/prepare.js';
 import { recoverCommand } from '../commands/recover.js';
 import { upscaleCommand } from '../commands/upscale.js';
+import { videoCommand } from '../commands/video.js';
 
 const COMMANDS = {
+  video: {
+    run: videoCommand,
+    valueFlags: ['job', 'report', 'image', 'prompt', 'project-url', 'model', 'resolution', 'duration', 'aspect', 'out', 'timeout', 'channel', 'slowmo', 'url', 'profile'],
+    summary: 'Image-to-video: one start frame + prompt (--image/--prompt), or a batch (--job file.json [--report file.json]) -> mp4 clips via Flow (default Veo 3.1 - Lite).',
+  },
   login: {
     run: loginCommand,
     valueFlags: ['channel', 'slowmo', 'url', 'profile'],

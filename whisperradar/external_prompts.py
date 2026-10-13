@@ -419,6 +419,16 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
             "allow_refs": bool(eff["generate_references"])}
 
 
+def _animation_note(eff: dict, cues: list) -> str:
+    """The animated-opening rules for the writer, or "" (channel has it off)."""
+    if not eff.get("animate_enabled"):
+        return ""
+    from . import motion
+    seconds = eff["animate_seconds"]
+    return motion.writer_note(
+        seconds, motion.window_last_cue(cues, seconds, studio._srt_seconds))
+
+
 def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
     ctx = _context(cfg, pid)
     eff = ctx["eff"]
@@ -444,7 +454,8 @@ def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
         brief, narration, ctx["visual_style"],
         extra_direction=db.stage_extra(ctx["prod"], "shots"),
         bible=bible, supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
-        pacing_note=pacing, allow_refs=plan["allow_refs"])
+        pacing_note=pacing, allow_refs=plan["allow_refs"],
+        animation_note=_animation_note(eff, plan["cues"]))
     if not bible.strip():
         # the brief's bible gate otherwise makes the LLM ask for one
         text += ("\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE: this channel "
@@ -609,6 +620,23 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
                                       plan["profile"])[0])
     rules = _hard_rules(plan, eff, ctx, n)
     audit = _alignment_rules(ctx["visual_style"])
+    # animated opening (channel setting): the app's own free check needs an
+    # "ai_motion" line on every shot in the window; the judge also grades how
+    # well each of those stills will animate
+    if eff.get("animate_enabled"):
+        from . import motion
+        seconds = eff["animate_seconds"]
+        last = motion.window_last_cue(cues, seconds, studio._srt_seconds)
+        rules += (f"\nANIMATED OPENING: every shot that starts in cues 1-{last} "
+                  f"(about the first {seconds} s) must have a non-empty "
+                  f"\"ai_motion\" field; shots after that must not.")
+        audit += motion.JUDGE_RULES + (
+            "\nIn this JSON the ANIMATED SHOTs are the shots that carry an "
+            "\"ai_motion\" field; that field is their planned motion.")
+        if data is not None:
+            a_faults, _warn, _assets = motion.window_check(
+                data, cues, seconds, studio._srt_seconds)
+            local = (local or []) + a_faults
     # reveal shots / sound effects: the built-in judge adds these rules per
     # chunk only when a chunk holds such a shot, and it splits a build-up into
     # one judged image per item. The external judge sees the raw JSON, so it

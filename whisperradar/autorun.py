@@ -24,7 +24,7 @@ from collections import Counter
 
 from pathlib import Path
 
-from . import ai33, briefs, db, handover, services, settings, studio, transcribe
+from . import ai33, briefs, db, handover, motion, services, settings, studio, transcribe
 from . import plan as packplan
 from .cli import format_duration
 
@@ -1081,6 +1081,19 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
         # a channel with references off must get NO references at all - the
         # planner is told, and the gate rejects any plan that still uses refs
         allow_refs = bool(eff["generate_references"])
+        # animated opening (per channel, off unless switched on): the writer
+        # plans the first N seconds for image-to-video, the checker needs an
+        # "ai_motion" line on each of those shots, the judge grades animatability
+        animate_seconds = (eff["animate_seconds"]
+                           if eff.get("animate_enabled") else None)
+        animation_note = ""
+        if animate_seconds:
+            last_cue = motion.window_last_cue(cues, animate_seconds,
+                                              studio._srt_seconds)
+            animation_note = motion.writer_note(animate_seconds, last_cue)
+            _log_line(f"shotlist: animated opening on - first "
+                      f"{animate_seconds}s (cues 1-{last_cue}) planned for "
+                      f"image-to-video ({eff['animate_model']})")
         attempts_allowed = max(1, int(eff["shotlist_max_attempts"]))
         # Pin the judge for this production once resolved, and reuse it on
         # every later resume. Without this, a production whose effective
@@ -1143,7 +1156,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
             if fix_mode:
                 fixed = _attempt_shotlist_fix(
                     cfg, prior, cues, provider, style_guide, bible_text,
-                    max_hold, allow_refs, total_s, attempt)
+                    max_hold, allow_refs, total_s, attempt,
+                    animation_rule=(motion.FIX_RULE if animate_seconds else ""))
                 if fixed is None:
                     fix_mode = False
                 else:
@@ -1175,7 +1189,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                     extra_direction=db.stage_extra(prod, "shots"),
                     bible=bible_text, feedback=feedback,
                     supplied_refs=studio.find_supplied_refs(pdir),
-                    pacing_note=pacing_note, allow_refs=allow_refs)
+                    pacing_note=pacing_note, allow_refs=allow_refs,
+                    animation_note=animation_note)
                 text = studio.llm_generate(
                     cfg, prompt, provider=provider,
                     max_tokens=studio.shotlist_max_tokens(
@@ -1246,13 +1261,13 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                     patched_assets=set(patches),
                     max_hold_seconds=max_hold, style_guide=style_guide,
                     temperature=eff["shotlist_judge_temperature"],
-                    profile=profile)
+                    profile=profile, animate_seconds=animate_seconds)
             else:
                 review = studio.review_shotlist(
                     cfg, data, cues, judge, max_hold_seconds=max_hold,
                     style_guide=style_guide,
                     temperature=eff["shotlist_judge_temperature"],
-                    profile=profile)
+                    profile=profile, animate_seconds=animate_seconds)
             if review["total"] and review["unreviewed"] == review["total"]:
                 # The judge never actually ran on a single shot - unlike a
                 # low completeness ratio (real information: some prompts are
@@ -1374,7 +1389,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
 def _attempt_shotlist_fix(cfg, prior: dict, cues: list[dict],
                           provider: str | None, style_guide: str,
                           bible_text: str, max_hold: float, allow_refs: bool,
-                          total_s: float, attempt: int):
+                          total_s: float, attempt: int,
+                          animation_rule: str = ""):
     """One fault-targeted fix round. Returns (fixed plan, {changed assets}) or
     None when the reply was unusable or changed nothing - the caller then
     falls back to a full re-plan, exactly as before."""
@@ -1382,7 +1398,8 @@ def _attempt_shotlist_fix(cfg, prior: dict, cues: list[dict],
     prompt = studio.shotlist_fix_prompt(
         prior["data"], list(prior["faults"]), list(prior.get("weak") or []),
         cue_text, len(cues), max_hold, style_guide=style_guide,
-        bible=bible_text, allow_refs=allow_refs)
+        bible=bible_text, allow_refs=allow_refs,
+        animation_rule=animation_rule)
     max_tokens = studio.shotlist_max_tokens(total_s, len(cues), max_hold)
     try:
         text = studio.llm_generate(cfg, prompt, provider=provider,
@@ -2026,6 +2043,92 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
         conn.close()
 
 
+def _motion_clips(cfg, pid: int, pdir: Path, eff: dict) -> list[dict] | None:
+    """The opening's clips for this production, or None when the channel has
+    the animated opening off / the production has nothing to animate."""
+    if not eff.get("animate_enabled"):
+        return None
+    path = pdir / "shotlist.json"
+    srt = studio.find_srt(pdir)
+    if not path.exists() or not srt:
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        cues = studio.parse_srt_cues(srt.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    clips = motion.window_clips(data, cues, eff["animate_seconds"],
+                                studio._srt_seconds, pdir)
+    return clips or None
+
+
+def motion_summary(cfg, pid: int, pdir: Path, eff: dict) -> dict:
+    """What the Motion clips panel shows."""
+    clips = _motion_clips(cfg, pid, pdir, eff) or []
+    todo = {c["out"] for c in motion.missing_clips(clips)}
+    return {
+        "enabled": bool(eff.get("animate_enabled")),
+        "seconds": eff.get("animate_seconds"),
+        "model": eff.get("animate_model"),
+        "clips": [{"asset": c["asset"], "image": bool(c["image"]),
+                   "done": c["out"] not in todo, "prompt": c["prompt"]}
+                  for c in clips],
+    }
+
+
+@studio.batch_scoped
+def _run_motion(cfg, pid: int, log=None, cancel=None) -> None:
+    """Turn the opening shots' stills into image-to-video clips (Flow, Veo).
+
+    Only channels with the animated opening switched on get here with work to
+    do; everything else skips and the production continues as normal. Clips
+    already on disk are kept, so a resume only makes what is missing. If Flow
+    runs out of credits the clips made so far stay and the run pauses."""
+    t0 = time.monotonic()
+    log = log or (lambda m: None)
+    pdir = studio.prepare_project_folder(cfg, pid)
+    eff = _effective(cfg, pid)
+
+    def _step(detail, status="done"):
+        conn = _connect(cfg)
+        try:
+            db.add_step(conn, pid, "motion", "auto", detail=detail,
+                        status=status)
+        finally:
+            conn.close()
+
+    clips = _motion_clips(cfg, pid, pdir, eff)
+    if not clips:
+        _step("skipped - animated opening is off for this channel or the "
+              "shotlist has no shots to animate")
+        return
+    unready = [c["asset"] for c in clips if not c["image"]]
+    if unready:
+        raise _Paused(f"{len(unready)} opening image(s) are not rendered yet "
+                      f"({', '.join(unready[:4])}) - run the images stage, "
+                      f"then Resume")
+    todo = motion.missing_clips(clips)
+    if not todo:
+        _step(f"all {len(clips)} clip(s) already exist")
+        return
+    model = eff["animate_model"]
+    log(f"[motion] {len(todo)} of {len(clips)} clip(s) to generate with {model}")
+    report = studio.run_motion_flowbatch(
+        cfg, pdir, pid, todo, model, log=log, cancel=cancel,
+        project_url=None)
+    made = len(todo) - len(motion.missing_clips(todo))
+    left = len(motion.missing_clips(clips))
+    if left:
+        reason = (report.get("reason") or "FlowBatch stopped early")[:300]
+        _step(f"{made} clip(s) made, {left} still missing - {reason}",
+              status="failed")
+        raise _Paused(f"motion: {made} clip(s) made, {left} missing "
+                      f"({reason}). Credits refresh daily - Resume to "
+                      f"continue, or skip the rest")
+    _step(f"{len(clips)} clip(s) ready ({model}); {made} new, "
+          f"{int(time.monotonic() - t0)}s")
+
+
 _RUNNERS = {
     "style": _run_style,
     "script": _run_script,
@@ -2034,6 +2137,7 @@ _RUNNERS = {
     "shots": _run_shots,
     "refs": _run_refs,
     "images": _run_images,
+    "motion": _run_motion,
     "merge": _run_merge,
 }
 
@@ -2205,6 +2309,22 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
                       f"rest via FlowBatch ({_upscale_text(eff)}"
                       + (f", {refs} ref image(s)" if refs else "") + ")")
         return {"stage": stage, "action": "run", "detail": detail}
+    if stage == "motion":
+        eff = _effective(cfg, pid)
+        if not eff.get("animate_enabled"):
+            return {"stage": stage, "action": "skip",
+                    "detail": "animated opening is off for this channel"}
+        clips = _motion_clips(cfg, pid, pdir, eff)
+        if not clips:
+            return {"stage": stage, "action": "skip",
+                    "detail": "the shotlist has no shots to animate"}
+        todo = motion.missing_clips(clips)
+        if not todo:
+            return {"stage": stage, "action": "skip",
+                    "detail": f"all {len(clips)} clip(s) already exist"}
+        return {"stage": stage, "action": "run",
+                "detail": f"{len(todo)} of {len(clips)} opening clip(s) via "
+                          f"Flow ({eff['animate_model']})"}
     if stage == "merge":
         if studio.merge_done(pdir):
             return {"stage": stage, "action": "skip",
@@ -2265,7 +2385,7 @@ def _stage_params(cfg, pid: int, stage: str, log, cancel=None,
             params["renderly_channel"] = studio.resolve_renderly_channel(
                 cfg, eff["own_channel"], create=True)
         return params
-    if stage == "merge":
+    if stage in ("merge", "motion"):
         return {"log": log, "cancel": cancel}
     return {}
 

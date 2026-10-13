@@ -254,6 +254,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("render_target", "TEXT"),
                          ("render_resolution", "TEXT"),
                          ("generate_references", "INTEGER"),
+                         # animated opening (motion.py): per channel only
+                         ("animate_enabled", "INTEGER"),
+                         ("animate_seconds", "INTEGER"),
+                         ("animate_model", "TEXT"),
                          # Flow native: upscale level (off|1k|2k|4k) for the
                          # one local ESRGAN pass; NULL = inherit
                          ("flow_native_upscale", "TEXT"),
@@ -881,7 +885,7 @@ def start_run(conn) -> int:
 # ---------------------------------------------------------------- studio ---
 
 STAGES = ["style", "script", "audio", "srt", "shots", "refs", "images",
-          "merge", "review"]
+          "motion", "merge", "review"]
 
 _PROD_FIELDS = {"youtube_video_id", "title", "genre", "stage", "status", "notes",
                 "source_video_id", "llm_provider", "extra_prompt", "work_dir",
@@ -1110,6 +1114,7 @@ _OWN_CHANNEL_FIELDS = {
     "shotlist_min_alignment", "shotlist_max_attempts",
     "shotlist_judge_provider", "render_target", "render_resolution",
     "generate_references", "flow_native_upscale", "brief_motion", "brief_presentation",
+    "animate_enabled", "animate_seconds", "animate_model",
     "brief_reveal", "brief_sfx", "brief_min_hold", "brief_max_hold", "brief_custom", "brief_types",
     "watched_channels",
     "renderly_channel_id", "renderly_channel_name",

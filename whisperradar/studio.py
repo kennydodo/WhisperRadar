@@ -24,7 +24,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import briefs
+from . import briefs, motion
 
 log = logging.getLogger("whisperradar")
 
@@ -1196,6 +1196,29 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
     return job_path
 
 
+def forget_flow_project(cfg, pid: int) -> None:
+    """Drop the production's stored Flow project (deleted, or another Google
+    account's), so the next stage creates a fresh one and records it."""
+    from . import db
+    try:
+        conn = db.connect(cfg.db_path)
+        try:
+            db.update_production(conn, pid, flow_project_url=None,
+                                 flow_project_id=None)
+        finally:
+            conn.close()
+    except Exception:           # never let tidy-up break a render
+        logging.getLogger(__name__).warning(
+            "could not clear the stored Flow project for production %s", pid)
+
+
+def _flow_project_is_dead(tail) -> bool:
+    """True when FlowBatch's output says the Flow project is gone / not ours."""
+    text = " ".join(tail or []).lower()
+    return "reports this project as unavailable" in text \
+        or "reason=project" in text
+
+
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                        log=None, cancel=None, upscale: int | None = None) -> dict:
     """Render the missing reference images with FlowBatch, then place them
@@ -1230,6 +1253,14 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                    f"(upscale tier {tier})")
     _safe_log(log, "$ " + " ".join(cmd))
     code, tail = _flowbatch_stream(cmd, repo, log, cancel)
+    if code != 0 and url and _flow_project_is_dead(tail):
+        # the stored project was deleted or belongs to another Google account:
+        # make the refs in a NEW project (the images stage does the same)
+        _safe_log(log, "refs: the stored Flow project is not available - "
+                       "creating a new one")
+        cmd = [a for a in cmd if a not in ("--project-url", url)]
+        forget_flow_project(cfg, pid)
+        code, tail = _flowbatch_stream(cmd, repo, log, cancel)
     if code != 0:
         raise RuntimeError(
             f"reference generation failed (exit {code}): "
@@ -2525,6 +2556,46 @@ def image_size_warning(cfg, pid: int, sample: int = 8) -> str:
     return (f"images are only {narrowest}px on their long side but the render output is "
             f"{out_w}px wide - ImgToVideo will scale them up (check Render "
             f"resolution / Upscale tier)")
+
+
+def run_motion_flowbatch(cfg, pid_dir: Path, pid: int, clips: list[dict],
+                         model: str, log=None, cancel=None,
+                         project_url: str | None = None) -> dict:
+    """Generate image-to-video clips with FlowBatch's `video --job`.
+
+    `clips` are [{image, prompt, out}] still to make. Returns FlowBatch's
+    report {done, failed, stopped, reason}; clips already on disk are never
+    redone. A credit/limit stop is reported, not raised, so the stage can
+    keep what it has and pause for a human."""
+    if not flowbatch_ready(cfg):
+        raise RuntimeError("Set studio.flowbatch_repo in config.yaml to "
+                           "your FlowBatch checkout (and run npm install)")
+    repo = flowbatch_dir(cfg)
+    url, source = flow_project_url_for(cfg, pid, project_url)
+    job = {"model": model, "aspect": "16:9", "projectUrl": url or "",
+           "items": [{"image": c["image"], "prompt": c["prompt"],
+                      "out": c["out"]} for c in clips]}
+    job_path = Path(pid_dir) / "motion_job.json"
+    report_path = Path(pid_dir) / "motion_report.json"
+    job_path.write_text(json.dumps(job, indent=2), encoding="utf-8")
+    report_path.unlink(missing_ok=True)
+    from . import chrome_profile
+    chrome_profile.apply(cfg, "flowbatch", log)
+    cmd = _flowbatch_cmd(["video", "--job", str(job_path),
+                          "--report", str(report_path), "--no-color"])
+    if log:
+        _safe_log(log, f"FlowBatch: {len(clips)} clip(s) with {model}"
+                       + (f", Flow project from {source}" if url else ""))
+        _safe_log(log, "$ " + " ".join(cmd))
+    code, tail = _flowbatch_stream(cmd, repo, log, cancel)
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        report = {"done": [], "failed": [], "stopped": True,
+                  "reason": "FlowBatch ended without a report: "
+                            + " ".join(tail[-3:])[:300]}
+    report["code"] = code
+    return report
 
 
 def prepare_project_folder(cfg, pid: int) -> Path:
@@ -4248,7 +4319,8 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     extra_direction: str = "", bible: str = "",
                     feedback: str = "",
                     supplied_refs: list[str] | None = None,
-                    pacing_note: str = "", allow_refs: bool = True) -> str:
+                    pacing_note: str = "", allow_refs: bool = True,
+                    animation_note: str = "") -> str:
     """Assemble the manifest-authoring brief with its inputs: the narration
     (cue-delimited, timestamp-free - see compact_srt), the channel visual
     style, the optional character / reference bible, and the creator's
@@ -4323,7 +4395,7 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
 INPUT 1 - NARRATION (one line per cue: "N: text (Ns)"; the cue numbers are what the shot `cues` ranges refer to and the (Ns) is how long the cue runs; timestamps are intentionally omitted):
 {narration.strip()}
 
-{style_block}{bible_block}{extra}{fix_block}{refs_block}{pacing_block}"""
+{style_block}{bible_block}{extra}{fix_block}{refs_block}{pacing_block}{animation_note or ""}"""
 
 
 def shotlist_patch_prompt(weak: list[dict], style_guide: str = "",
@@ -4503,7 +4575,8 @@ def shotlist_fix_scope(data: dict, faults: list[str], weak: list[dict],
 def shotlist_fix_prompt(data: dict, faults: list[str], weak: list[dict],
                         cue_text: dict[int, str], cue_count: int,
                         max_hold_seconds: float, style_guide: str = "",
-                        bible: str = "", allow_refs: bool = True) -> str:
+                        bible: str = "", allow_refs: bool = True,
+                        animation_rule: str = "") -> str:
     """The writer's fix request: the checker's faults (and the weak prompts)
     plus just the part of the plan they concern. The reply is a JSON DELTA -
     see apply_shotlist_fix - never the whole shotlist."""
@@ -4553,7 +4626,7 @@ def shotlist_fix_prompt(data: dict, faults: list[str], weak: list[dict],
         "name continues the numbering; the motion code in a file name "
         "matches the shot's motion; every image prompt states who or what "
         "is in frame, what they are doing, where, the props involved and "
-        "the information the cue conveys." + refs_rule +
+        "the information the cue conveys." + refs_rule + animation_rule +
         "\n\nFAULTS TO FIX (must all be gone afterwards):\n" + fault_lines +
         ("\n\nWEAK PROMPTS TO REWRITE:\n" + "\n".join(weak_lines)
          if weak_lines else "") +
@@ -5444,12 +5517,16 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
                 f'  BUILD-UP IMAGE {item[0]} of {item[1]} ({item[2]}): shown '
                 f'in its own slot beside the others and centre-cropped to '
                 f'fill it\n')
+        if s.get("animate"):
+            reveal_line += (f'  ANIMATED SHOT (becomes an 8s video clip), '
+                            f'planned motion: "{str(s.get("ai_motion") or "")}"\n')
         items.append(f'- asset: {s.get("asset")}\n'
                      f'  cues {rng[0]}-{rng[1]} narrate: "{narration}"\n'
                      + reveal_line +
                      f'  image prompt: "{str(s.get("prompt"))}"')
     reveal_rules = ((REVEAL_JUDGE_RULES if any(
         shot_reveal(s) for s in chunk) else "")
+        + (motion.JUDGE_RULES if any(s.get("animate") for s in chunk) else "")
         + (REVEAL_BUILDUP_JUDGE_RULES if any(
             s.get("reveal_item") for s in chunk) else ""))
     return (
@@ -5688,7 +5765,8 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                     chunk_size: int = 20,
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                     style_guide: str = "", temperature: float = 1.0,
-                    profile: "briefs.MotionProfile | None" = None) -> dict:
+                    profile: "briefs.MotionProfile | None" = None,
+                    animate_seconds: float | None = None) -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
     {faults, matched, total, weak, ratio, error, unreviewed, warnings,
     verdicts}. Never raises.
@@ -5709,11 +5787,23 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
     pacing_faults, pacing_warnings = shotlist_pacing(
         data, cues, max_hold_seconds, profile)
     faults = faults + pacing_faults
+    animated: set[str] = set()
+    if animate_seconds:
+        # animated opening: free checks (ai_motion present) + the judge grades
+        # animatability for the shots inside the window
+        a_faults, a_warnings, animated = motion.window_check(
+            data, cues, animate_seconds, _srt_seconds)
+        faults = faults + a_faults
+        pacing_warnings = list(pacing_warnings) + a_warnings
     cue_text = {c["index"]: c["text"] for c in cues}
     prompt_by_file = {str(i.get("file")): i.get("prompt")
                       for i in (data.get("images") or [])
                       if isinstance(i, dict)}
     shots = judge_shots(data, prompt_by_file)
+    if animated:
+        for s_ in shots:
+            if str(s_.get("asset")) in animated:
+                s_["animate"] = True
     total = len(shots)
     if not shots:
         return {"faults": faults, "matched": 0, "total": 0, "weak": [],
@@ -5734,7 +5824,8 @@ def review_shotlist_patch(cfg, data: dict, cues: list[dict],
                           chunk_size: int = 20,
                           max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                           style_guide: str = "", temperature: float = 1.0,
-                          profile: "briefs.MotionProfile | None" = None
+                          profile: "briefs.MotionProfile | None" = None,
+                          animate_seconds: float | None = None
                           ) -> dict:
     """Same shape and contract as review_shotlist, but only re-runs the judge
     on `patched_assets` - every other shot's alignment verdict is carried
@@ -5757,11 +5848,23 @@ def review_shotlist_patch(cfg, data: dict, cues: list[dict],
     pacing_faults, pacing_warnings = shotlist_pacing(
         data, cues, max_hold_seconds, profile)
     faults = faults + pacing_faults
+    animated: set[str] = set()
+    if animate_seconds:
+        # animated opening: free checks (ai_motion present) + the judge grades
+        # animatability for the shots inside the window
+        a_faults, a_warnings, animated = motion.window_check(
+            data, cues, animate_seconds, _srt_seconds)
+        faults = faults + a_faults
+        pacing_warnings = list(pacing_warnings) + a_warnings
     cue_text = {c["index"]: c["text"] for c in cues}
     prompt_by_file = {str(i.get("file")): i.get("prompt")
                       for i in (data.get("images") or [])
                       if isinstance(i, dict)}
     shots = judge_shots(data, prompt_by_file)
+    if animated:
+        for s_ in shots:
+            if str(s_.get("asset")) in animated:
+                s_["animate"] = True
     total = len(shots)
     if not shots:
         return {"faults": faults, "matched": 0, "total": 0, "weak": [],
