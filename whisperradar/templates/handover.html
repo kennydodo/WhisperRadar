@@ -88,16 +88,8 @@
       <pre>{{ pv['plan'] | tojson(indent=1) }}</pre>
     </details>
     {% if not t['builtin'] %}
-    {% if own_channels %}
-    <form method="post" action="/handover/channels/{{ t['id'] }}" style="margin-top:8px">
-      <span class="muted">Available in:</span>
-      {% for c in own_channels %}
-      <label class="chk"><input type="checkbox" name="channels" value="{{ c['id'] }}" {{ 'checked' if c['id'] in t['channels'] }}> {{ c['name'] }}</label>
-      {% endfor %}
-      <span class="muted">{{ '(tick a channel to use it; channels can also do this in their own settings)' if t['optin'] else '(none ticked = every channel)' }}</span>
-      <button class="ghost" type="submit">Save</button>
-    </form>
-    {% endif %}
+    <p class="muted" style="margin-top:8px">Used by: {% if t['optin'] %}{{ t['channel_names']|join(', ') or 'no channel yet' }}{% else %}{{ t['channel_names']|join(', ') or 'every channel' }}{% endif %}
+      &middot; each channel ticks it in its own settings (My Channels &rarr; Hand-over templates).</p>
     <form method="post" action="/handover/rename/{{ t['id'] }}" style="margin-top:8px">
       <input type="text" name="name" value="{{ t['name'] }}" required>
       <button class="ghost" type="submit">Rename</button>
