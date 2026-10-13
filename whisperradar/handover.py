@@ -58,6 +58,7 @@ def _clean(tid: str, raw: dict) -> dict | None:
             "mask_names": bool(raw.get("mask_names", False)),
             "reorder": bool(raw.get("reorder", False)),
             "channels": _clean_channels(raw.get("channels")),
+            "optin": bool(raw.get("optin", False)),
             "parts": parts, "help": str(raw.get("help") or ""),
             "instructions": _clean_instructions(raw.get("instructions"))}
 
@@ -129,6 +130,9 @@ def save_user_template(cfg, name: str, scrub: bool, guard: bool,
                  "mask_names": bool(mask_names),
                  "reorder": bool(reorder),
                  "channels": _clean_channels(channels),
+                 # a template of yours starts unused: each channel opts in
+                 # (channel settings), nothing is picked at creation
+                 "optin": True,
                  "parts": [p for p in parts if p in ALL_PARTS],
                  "help": help_text,
                  "instructions": _clean_instructions(instructions)}
@@ -169,6 +173,48 @@ def set_template_channels(cfg, tid: str, channels: list) -> bool:
     return True
 
 
+def set_channel_templates(cfg, own_channel_id: int, tids: list,
+                          all_channel_ids: list) -> None:
+    """The templates of yours this channel uses (ticked in the channel's
+    settings). A template made before opt-in existed with no channel list
+    meant "every channel": it becomes an explicit list first."""
+    cid = int(own_channel_id)
+    want = set(tids or [])
+    path = template_path(cfg)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    for tid, raw in data.items():
+        if not isinstance(raw, dict):
+            continue
+        chans = _clean_channels(raw.get("channels"))
+        if not raw.get("optin") and not chans:
+            chans = _clean_channels(all_channel_ids)
+        if tid in want and cid not in chans:
+            chans.append(cid)
+        elif tid not in want and cid in chans:
+            chans.remove(cid)
+        raw["channels"] = chans
+        raw["optin"] = True
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def uses_template(t: dict, own_channel_id) -> bool:
+    """Does this channel use the template (builtins: always)?"""
+    try:
+        cid = int(own_channel_id)
+    except (TypeError, ValueError):
+        cid = None
+    if t["builtin"]:
+        return True
+    if t.get("optin"):
+        return cid in t["channels"]
+    return not t.get("channels") or cid in t["channels"]
+
+
 def delete_user_template(cfg, tid: str) -> bool:
     path = template_path(cfg)
     try:
@@ -198,14 +244,15 @@ def get(cfg, tid: str | None) -> dict:
 
 
 def available_for(cfg, own_channel_id) -> list:
-    """Templates a channel may use: built-ins, templates with no channel list,
-    and templates that list this channel. No channel = the unrestricted ones."""
+    """Templates a channel uses: built-ins, templates the channel ticked,
+    and older templates with no channel list (every channel). No channel =
+    only the built-ins and the unrestricted older ones."""
     try:
         cid = int(own_channel_id) if own_channel_id not in (None, "") else None
     except (TypeError, ValueError):
         cid = None
     return [t for t in all_templates(cfg).values()
-            if t["builtin"] or not t.get("channels") or cid in t["channels"]]
+            if uses_template(t, cid)]
 
 
 def channel_defaults(cfg, own_channel_id) -> dict:

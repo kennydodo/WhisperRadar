@@ -429,7 +429,7 @@ class ChannelScope(unittest.TestCase):
         self.assertNotIn(tid, ids_b)
         self.assertNotIn(tid, ids_none)
         for ids in (ids_a, ids_b, ids_none):
-            self.assertIn(free, ids)
+            self.assertNotIn(free, ids)   # nobody ticked it yet
             self.assertIn("style", ids)
             self.assertIn("full", ids)
 

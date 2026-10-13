@@ -1961,6 +1961,10 @@ def create_app(cfg) -> Flask:
                               for c in own_channels},
             handover_defaults={c["id"]: handover.channel_defaults(cfg, c["id"])
                                for c in own_channels},
+            handover_all=list(handover.all_templates(cfg).values()),
+            handover_uses={c["id"]: {t["id"]: handover.uses_template(t, c["id"])
+                                     for t in handover.all_templates(cfg).values()}
+                           for c in own_channels},
             watched_channels=watched_channels, watched_by_oc=watched_by_oc,
             renderly_url=cfg.renderly_url, genres=genres,
             source_genres=source_genres,
@@ -2162,6 +2166,14 @@ def create_app(cfg) -> Flask:
         oc_id = _own_channel_id()
         if not oc_id:
             return redirect("/my-channels?error=Unknown+channel")
+        conn = db.connect(cfg.db_path)
+        try:
+            ids = [c["id"] for c in db.list_own_channels(conn)]
+        finally:
+            conn.close()
+        if request.form.get("handover_listed"):
+            handover.set_channel_templates(
+                cfg, oc_id, request.form.getlist("handover_use"), ids)
         handover.set_channel_default(cfg, oc_id,
                                      request.form.get("handover_plan") or "",
                                      request.form.get("handover_script") or "")

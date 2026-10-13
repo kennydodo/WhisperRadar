@@ -94,7 +94,7 @@
       {% for c in own_channels %}
       <label class="chk"><input type="checkbox" name="channels" value="{{ c['id'] }}" {{ 'checked' if c['id'] in t['channels'] }}> {{ c['name'] }}</label>
       {% endfor %}
-      <span class="muted">(none ticked = every channel)</span>
+      <span class="muted">{{ '(tick a channel to use it; channels can also do this in their own settings)' if t['optin'] else '(none ticked = every channel)' }}</span>
       <button class="ghost" type="submit">Save</button>
     </form>
     {% endif %}
@@ -121,13 +121,8 @@
         <label class="chk"><input type="checkbox" name="mask_names"> Replace names from the original with [name] (use instead of scrub to keep the points)</label>
         <label class="chk"><input type="checkbox" name="reorder"> Re-order the points before the writer gets them (the app does it, whatever order the judge used)</label>
       </p>
-      {% if own_channels %}
-      <p><b>Available in:</b>
-        {% for c in own_channels %}
-        <label class="chk"><input type="checkbox" name="channels" value="{{ c['id'] }}"> {{ c['name'] }}</label>
-        {% endfor %}
-        <span class="muted">(none ticked = every channel)</span></p>
-      {% endif %}
+      <p class="muted">Channels choose the template themselves in their own settings
+        (My Channels &rarr; Hand-over templates).</p>
       {% for stage, plist in parts.items() %}
       <p><b>{{ stage|capitalize }} stage passes:</b>
         {% for key, label in plist %}
