@@ -23,6 +23,10 @@
              text-transform: uppercase; letter-spacing: .04em; padding: 6px 2px 2px; }
   .wsel-item { display: flex !important; flex-direction: row !important; gap: 8px; align-items: center; font-size: 13px; color: var(--text, #e6e8ee);
                padding: 3px 6px 3px 18px; border-radius: 5px; cursor: pointer; }
+  /* pages that style every input (flex:1, padding) must not stretch the checkboxes */
+  .wsel input[type=checkbox] { flex: none; width: auto; height: auto; padding: 0; margin: 0; }
+  .wsel-search { flex: none; width: 100%; box-sizing: border-box; }
+  .wsel label { justify-content: flex-start; text-align: left; width: auto; }
   .wsel-item[hidden], .wsel-group[hidden], .wsel-none[hidden] { display: none !important; }
   .wsel-item:hover { background: rgba(255,255,255,.05); }
   .wsel-clear { background: transparent; border: 1px solid var(--border); color: var(--accent); border-radius: 6px; padding: 1px 8px; cursor: pointer; }
