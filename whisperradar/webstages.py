@@ -603,6 +603,18 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                 "Remove every mention of the " + "/".join(meta)
                 + ": the script is spoken narration and must never refer to "
                 "the thumbnail, cover or title.")
+        promo = _plan.promo_mentions(script)
+        if promo:
+            passed = False
+            reasons.append("the script contains a sponsor/ad/promotion ("
+                           + ", ".join(promo) + ") - remove it; no sponsor "
+                           "read, ad, course or product promotion, code, QR "
+                           "code or link at any point of the video")
+            judged["feedback"].append(
+                "Remove every sponsor read, ad, course or product promotion, "
+                "discount code, QR code and link (found: " + ", ".join(promo)
+                + "). The only call to action is the closing "
+                "subscribe/like/next-video one.")
         if cut:
             passed = False
             reasons.append("the script looks cut off")

@@ -780,6 +780,17 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             passed = False
             why = list(why) + [f"{len(rating['must_fix'])} factual correction(s) "
                                f"required by the judge"]
+        from . import plan as _plan_mod
+        promo = _plan_mod.promo_mentions(text)
+        if promo:
+            passed = False
+            why = list(why) + ["the script contains a sponsor/ad/promotion ("
+                               + ", ".join(promo) + ") - remove it"]
+            rating["feedback"] = list(rating.get("feedback") or []) + [
+                "Remove every sponsor read, ad, course or product promotion, "
+                "discount code, QR code and link (found: " + ", ".join(promo)
+                + "). The only call to action is the closing "
+                "subscribe/like/next-video one."]
         struct = studio.structure_copy(text, source_text)
         if struct["flag"]:
             passed = False

@@ -3629,6 +3629,12 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
            f"material error you would have flagged in round 1; new polish "
            f"goes in feedback.\n" if earlier else "")
         +
+        f"- NO PROMOTION, AT ANY POSITION. A sponsor read, ad, course or "
+        f"product promotion, discount or promo code, QR code, link or offer "
+        f"anywhere in the script (start, middle or end) is a failure: put it "
+        f"in \"must_fix\" (the passage -> promotion is not allowed -> remove "
+        f"it). Even if the STYLE GUIDE mentions one, it is not wanted. The "
+        f"closing subscribe/like/next-video call to action is fine.\n"
         f"- Every \"must_fix\" and \"feedback\" entry is usable by the "
         f"writer as written: the passage of the SCRIPT, why it is wrong, "
         f"and what must change. Keep mandatory corrections (must_fix) apart "
@@ -3827,6 +3833,9 @@ Rules:
 - Describe patterns abstractly (e.g. "short punchy sentences, averages 8-12 words").
 - Fit the genre and the channel; do not invent facts about the topic.
 - Be concrete enough that another writer could follow the style without seeing any example.
+- No sponsor read, ad, course or product promotion beat at any position. CTA Style covers ONLY the
+  closing call to action (subscribe, like, watch next): no links, QR codes,
+  discount codes or offers.
 
 Output ONLY the style guide markdown."""
 
@@ -3871,6 +3880,13 @@ Rules:
 - Describe patterns abstractly (e.g. "short punchy sentences, averages 8-12 words").
 - Do NOT quote, copy, or paraphrase any phrase or sentence from the transcript.
 - Be concrete enough that another writer could imitate the style without ever seeing the transcript.
+- IGNORE every sponsor read, ad, course or product promotion and self-promotion in
+  the transcript, WHEREVER it sits (any minute, any percentage of the video): they
+  are not part of the writing style. Do NOT list them as a beat
+  in Structure (work out the timing as if they were not there) and do NOT describe
+  them in CTA Style.
+- CTA Style covers ONLY the closing call to action (subscribe, like, watch next).
+  Do not mention links, QR codes, discount codes, offers or products.
 
 Output ONLY the style guide markdown."""
 
@@ -3942,6 +3958,11 @@ Rules:
   then go straight into the call to action - do not summarize the video, restate
   the thesis, or add a second "so what does this all mean" passage before it.
 - End with a short call to action matching the style guide's CTA style.
+- Write NO sponsor read, ad, course or product promotion, discount code, QR code,
+  link or offer anywhere in the script, at ANY point of the video (start, middle or
+  end), even if the style guide mentions one. The
+  closing call to action is the only promotion; never invent a product, course or
+  offer.
 
 Output ONLY the script text."""
 

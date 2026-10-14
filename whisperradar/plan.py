@@ -559,6 +559,26 @@ def meta_mentions(script: str) -> list[str]:
     return sorted({m.group(1).lower() for m in _META_RE.finditer(script or "")})
 
 
+_PROMO_RE = re.compile(
+    r"\b(sponsors?|sponsored|sponsorship|brought to you by|paid promotion|"
+    r"(?:promo|promotion|discount|coupon|referral|affiliate|voucher) codes?|"
+    r"use (?:the )?code|qr codes?|\d{1,3}\s?% off|"
+    r"link (?:is )?(?:in|below)(?: the)? (?:description|comments?|bio)|"
+    r"(?:in|from) the description below|click the link|"
+    r"(?:enrol|enroll)(?:l)? (?:now|today|in)|"
+    r"(?:my|our) (?:online )?(?:course|masterclass|membership|newsletter)|"
+    r"join (?:my|our|the) (?:course|membership|newsletter|community))\b",
+    re.I)
+
+
+def promo_mentions(script: str) -> list[str]:
+    """Sponsor reads, ads, course/product promotion, codes, QR codes and links
+    in a spoken script, at ANY position: the channel never wants them (the only
+    call to action is the closing subscribe/like/next-video one)."""
+    return sorted({" ".join(m.group(1).lower().split())
+                   for m in _PROMO_RE.finditer(script or "")})
+
+
 def with_plan(cfg, prod, direction: str) -> str:
     """The script stage's extra direction plus the packaging plan, when the
     production has one."""
