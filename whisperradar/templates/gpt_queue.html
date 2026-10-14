@@ -4,8 +4,8 @@
 </head><body><nav><a href="/finished?all=1">Finished productions</a> &middot; <a href="/studio">Studio</a></nav>
 <h1>Thumbnail queue</h1>
 <p>{{ active_count }} queued or running job{{ '' if active_count == 1 else 's' }}.</p>
-<p>The GPT worker processes one queued production per run. To start immediately, open <b>Codex &rarr; Scheduled &rarr; WhisperRadar GPT Pro packaging &rarr; Run now</b>. This starts existing queued work; it does not queue another copy.</p>
-<p class="muted">WhisperRadar cannot currently trigger Codex Run now directly. <a href="/gpt-pro/worker">Open worker page</a> for claim/import diagnostics. New jobs are added with Generate with GPT Pro on Finished.</p>
+<p>The local Codex worker starts when you click Generate with GPT Pro, processing queued productions one at a time. Keep WhisperRadar running. No scheduled task is required.</p>
+<p class="muted">Codex must be installed, signed in with ChatGPT and support built-in image generation. Failed or expired jobs can be retried with Generate with GPT Pro on Finished. <a href="/gpt-pro/worker">Open worker page</a> for manual claim/import diagnostics.</p>
 {% if not active_count %}<p>No packaging jobs are waiting or running.</p>{% endif %}
 {% if jobs %}<table><thead><tr><th>Production</th><th>Status</th><th>Queued at (UTC)</th><th>Last update (UTC)</th><th>Result</th></tr></thead><tbody>
 {% for job in jobs %}<tr><td><a href="/studio/{{ job.production_id }}">#{{ job.production_id }} {{ job.production_title or 'Unavailable production' }}</a></td><td>{{ job.status }}</td><td>{{ job.created_at }}</td><td>{{ job.updated_at }}</td><td>{% if job.status == 'complete' %}<a href="/studio/{{ job.production_id }}/thumbnails">Review thumbnails</a> &middot; <a href="/studio/{{ job.production_id }}/kit">Titles and description</a>{% elif job.error %}<span class="error">{{ job.error }}</span>{% else %}&mdash;{% endif %}</td></tr>{% endfor %}

@@ -75,9 +75,9 @@
 </nav>
 <div class="wrap">
   <h1>Finished</h1>
-  <p class="muted">GPT Pro checks queued jobs once an hour. To run them immediately, open Codex → Scheduled → WhisperRadar GPT Pro packaging → Run now.</p>
+  <p class="muted">GPT packaging uses this PC's signed-in Codex runtime. Keep WhisperRadar running while it generates.</p>
   <p class="sub">productions that passed review and are ready to publish</p>
-  <p class="muted">GPT packaging starts when you click Generate with GPT Pro for a production: four thumbnails, four titles and a description. The worker checks hourly; use Codex Scheduled &gt; Run now after queueing for an immediate check.</p>
+  <p class="muted">Click Generate with GPT Pro to start immediately: four thumbnails, four titles and a description. No scheduled Codex chat is needed. Codex must be signed in with ChatGPT and support built-in image generation.</p>
   <form method="get" style="margin:-4px 0 12px">
     <input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="dir" value="{{ dir }}">
     {% if status_filter != 'all' %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}

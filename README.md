@@ -1,5 +1,27 @@
 # WhisperRadar
 
+### Portable GPT/Codex packaging
+
+Finished > Generate with GPT Pro now launches this computer's local Codex
+runtime immediately. No scheduled Codex chat or laptop-specific automation is
+needed. Keep the dashboard running until the job completes. The worker uses
+ChatGPT sign-in and built-in image generation; it never falls back to API-key
+billing. Review the four thumbnails, four titles and description before publishing.
+
+The runtime is discovered on PATH, or from the Windows Codex desktop app's
+local executable cache. `WR_CODEX_EXE` may point to a native executable for an
+installation outside those locations. Codex must be signed in with ChatGPT and
+have built-in image generation enabled. Installing a generic ChatGPT/Cowork
+desktop client alone is not a guarantee that a Codex runtime is available.
+Missing runtime, sign-in and feature problems appear before a job is queued.
+
+Each run uses `data/codex_packaging/<job-id>/` for its source context, result
+and `worker.log`. Existing production import validation remains in force.
+Worker failures become retryable failed jobs; abandoned claims expire after
+two hours and are not silently regenerated. Click Generate again after expiry.
+Use the local worker page only for manual diagnostics, not concurrently with
+the automatic worker.
+
 Watch a list of YouTube channels (plus "similar" channels you pick), detect
 new uploads daily, download the audio, transcribe it with Whisper, and keep
 everything in a local database so you can export transcripts and feed them to

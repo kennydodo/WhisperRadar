@@ -50,6 +50,7 @@ from . import trending as trending_mod
 from . import timing as timing_mod
 from . import packaging
 from . import gpt_packaging
+from . import codex_worker
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
 from . import youtube_api
@@ -2943,11 +2944,14 @@ def create_app(cfg) -> Flask:
     @app.post("/studio/<int:pid>/gpt-pro/generate")
     def studio_gpt_pro_generate(pid):
         try:
+            executable = codex_worker.discover()
+            codex_worker.preflight(executable)
             job = gpt_packaging.queue(cfg, pid)
+            codex_worker.start(cfg, executable)
             return redirect("/finished?msg=" + quote(
                 "GPT Pro job " + job["status"] +
-                ". Codex picks up queued jobs on its scheduled check."))
-        except (ValueError, OSError, sqlite3.Error) as exc:
+                ". The local Codex worker starts immediately; no scheduled task is needed."))
+        except (ValueError, OSError, sqlite3.Error, subprocess.SubprocessError) as exc:
             return redirect("/finished?error=" + quote(str(exc)))
 
     def _gpt_worker_only(require_header=True):

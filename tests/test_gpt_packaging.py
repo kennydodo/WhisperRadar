@@ -45,6 +45,10 @@ class GPTPackagingTests(unittest.TestCase):
         self.generated.parent.mkdir(parents=True)
         Image.new("RGB", (640, 360), "orange").save(self.generated)
         self.client = create_app(self.cfg).test_client()
+        for name, value in (("discover", "codex"), ("preflight", None), ("start", None)):
+            mock = patch("whisperradar.codex_worker." + name, return_value=value)
+            mock.start()
+            self.addCleanup(mock.stop)
 
     def tearDown(self):
         self.env.stop()
@@ -69,13 +73,26 @@ class GPTPackagingTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn(b"Generate with GPT Pro", response.data)
 
+    def test_missing_runtime_does_not_leave_queued_work(self):
+        with patch("whisperradar.codex_worker.discover", side_effect=ValueError("Runtime missing")):
+            response = self.client.post(f"/studio/{self.pid}/gpt-pro/generate")
+        self.assertIn("Runtime%20missing", response.location)
+        self.assertIsNone(gp.latest(self.cfg, self.pid))
+
+    def test_generate_starts_local_worker(self):
+        with patch("whisperradar.codex_worker.start") as start:
+            response = self.client.post(f"/studio/{self.pid}/gpt-pro/generate")
+        self.assertEqual(response.status_code, 302)
+        start.assert_called_once_with(self.cfg, "codex")
+        self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "queued")
+
     def test_queue_page_lists_jobs_without_claiming_or_requeueing(self):
         job = gp.queue(self.cfg, self.pid)
         page = self.client.get("/gpt-pro/queue")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"Ancient food", page.data)
         self.assertIn(b"queued", page.data)
-        self.assertIn(b"Run now", page.data)
+        self.assertIn(b"No scheduled task", page.data)
         self.assertEqual(gp.latest(self.cfg, self.pid)["id"], job["id"])
         self.assertEqual(gp.latest(self.cfg, self.pid)["status"], "queued")
         claim = gp.claim(self.cfg)
