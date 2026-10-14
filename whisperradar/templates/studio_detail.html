@@ -1105,6 +1105,18 @@
             {{ 'Working...' if job.running else 'Build preview + export to ' ~ render_target_label }}
           </button>
         </form>
+        {% if motion_info.enabled and motion_info.clips %}
+        {% set clips_todo = motion_info.clips | rejectattr('done') | list %}
+        {% if clips_todo %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render">
+          <input type="hidden" name="render_with_stills" value="1">
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (hooks.merge and audio and srt and images) else '' }}
+                  title="Render now: the {{ motion_info.clips | selectattr('done') | list | length }} finished clip(s) are used, the stills stand in for the {{ clips_todo | length }} missing one(s). You can re-render later once the clips are made.">
+            Render with stills ({{ clips_todo | length }} clip(s) missing)
+          </button>
+        </form>
+        {% endif %}
+        {% endif %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/upload" enctype="multipart/form-data">
           <input type="file" name="video_file" accept="video/*" required>
           <button type="submit" class="secondary">Upload final video</button>

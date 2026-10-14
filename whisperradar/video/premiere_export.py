@@ -205,8 +205,16 @@ def export(timeline: m.Timeline, images: Sequence[m.ImageInfo],
 
 def _video_clip_item(clip, dims, index, timebase, res, include_motion, start_offset, duration,
                      frozen_motion, opacity_ramp, motion_head_frames=0) -> El:
-    source_w, source_h = dims[clip.file_path]
-    file_name = _basename(clip.file_path)
+    # The animated opening: a clip backed by its AI video plays the mp4 itself
+    # (with its own in-file motion), like the ffmpeg render plan - the still's
+    # pan/zoom keyframes must NOT be applied to it, and the media must point at
+    # the mp4 or Premiere shows the still instead of the clip.
+    video_path = getattr(clip, "video_path", None)
+    source = video_path if video_path else clip.file_path
+    # mp4 dimensions are unknown to the images inventory; the render pipeline
+    # scales/crops to the project resolution anyway, so pass the project res.
+    source_w, source_h = dims.get(source) or (res.width, res.height)
+    file_name = _basename(source)
     id_suffix = str(index + 1) + ("-x" if frozen_motion else "")
     start = clip.start_frame + start_offset
 
@@ -221,8 +229,8 @@ def _video_clip_item(clip, dims, index, timebase, res, include_motion, start_off
         _t("end", start + duration),
         _t("in", "0"),
         _t("out", duration),
-        _file_el(id_suffix, file_name, clip.file_path, timebase, duration, source_w, source_h)])
-    if include_motion:
+        _file_el(id_suffix, file_name, source, timebase, duration, source_w, source_h)])
+    if include_motion and not video_path:
         item.add(El("filter", _motion_effect(
             clip, source_w, source_h, res, id_suffix,
             1 if frozen_motion else duration, timebase, frozen_motion, motion_head_frames)))

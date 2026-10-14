@@ -188,11 +188,27 @@ async function attachStartFrame(driver, page, imagePath) {
   await shot(page, 'start-attached');
 }
 
-/** Flow's video id (the uuid in /video/<uuid>) - the same clip gets a new signed URL each time. */
+/**
+ * Stable identity of a video across Flow's URL variants. flow-content URLs
+ * carry the uuid in the path; tile previews are served through googlevideo
+ * mirrors (rr1-/rr3-/rr5---sn-*.googlevideo.com) whose host and signature
+ * change per fetch but whose `id=` query parameter is the video's stable key.
+ * Without this normalization the same video gets a different "id" per mirror,
+ * the saved-set never matches it, and one clip can be saved under several
+ * shot names (the S01_05/S01_13/S01_15 and S01_06/S01_07 duplicates).
+ */
 function mediaId(url) {
-  const m = /\/video\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(String(url || ''));
-  return m ? m[1].toLowerCase() : String(url || '');
+  const s = String(url || '');
+  const flow = /\/video\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(s);
+  if (flow) return flow[1].toLowerCase();
+  if (/googlevideo\.com\/videoplayback/i.test(s)) {
+    const id = /[?&]id=([^&]+)/i.exec(s);
+    if (id) return `gv:${id[1]}`;
+  }
+  return s;
 }
+
+export { mediaId };
 
 // The signed query is part of the URL; the match may run through JSON escape
 // backslashes (Flow writes "=" as \u003d or \u003D, sometimes double-escaped)

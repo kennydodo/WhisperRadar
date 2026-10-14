@@ -288,11 +288,15 @@ def _shotlist_image_count(pdir: Path) -> int:
         return 0
 
 
-def _merge_pause_reason(cfg, pid: int) -> str | None:
+def _merge_pause_reason(cfg, pid: int, with_stills: bool = False) -> str | None:
     """Why the merge/render must not start yet, or None. Checked BEFORE any
     rendering, on every route (manual button and auto-run): a render with
     gaps wastes the machine's time, and the merge would silently sanitize the
-    unrendered shots out of the plan for good."""
+    unrendered shots out of the plan for good. Also covers the animated
+    opening: a render with opening clips missing would bake the stills into
+    preview.mp4 and the NLE exports (the clips would never be seen) - unless
+    the user chose to render with stills (with_stills), which keeps the clips
+    that exist and falls back to the stills for the missing ones."""
     pdir = studio.prod_dir(cfg, pid)
     total = _shotlist_image_count(pdir)
     missing = _missing_images(pdir)
@@ -302,6 +306,22 @@ def _merge_pause_reason(cfg, pid: int) -> str | None:
         return (f"only {total - len(missing)} of {total} shotlist images "
                 f"exist; missing: {shown}. Render them in the images stage "
                 f"first - nothing was rendered")
+    if with_stills:
+        return None
+    try:
+        eff = _effective(cfg, pid)
+    except Exception:  # noqa: BLE001 - settings trouble must not block the render
+        return None
+    clips = _motion_clips(cfg, pid, pdir, eff)
+    if clips:
+        todo = motion.missing_clips(clips)
+        if todo:
+            shown = ", ".join(c["asset"] for c in todo[:8]) + (
+                f" (+{len(todo) - 8} more)" if len(todo) > 8 else "")
+            return (f"only {len(clips) - len(todo)} of {len(clips)} opening "
+                    f"clips exist; missing: {shown}. Generate them in the "
+                    f"motion stage first, or render with stills - nothing "
+                    f"was rendered")
     return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -1989,10 +2009,13 @@ def upscale_images(cfg, pid: int, log=None, cancel=None) -> dict:
 
 
 def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
-               cancel=None) -> None:
+               cancel=None, with_stills: bool = False) -> None:
     """mode: 'hook' = studio.merge_command only (merge route),
     'cli' = ImgToVideo.Cli preview build + NLE export (video/render route),
-    None = whatever is configured (auto-run)."""
+    None = whatever is configured (auto-run).
+    with_stills: render even with opening clips missing - the clips that
+    exist are used, the stills fill the rest (the user's explicit choice;
+    auto-run never sets it)."""
     pdir = studio.prepare_project_folder(cfg, pid)
     audio = studio.find_audio(pdir)
     srt = studio.find_srt(pdir)
@@ -2006,18 +2029,25 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
     # filled afterwards, and a render with gaps wastes the machine's time.
     if log is None:
         log = lambda m: None
-    reason = _merge_pause_reason(cfg, pid)
+    reason = _merge_pause_reason(cfg, pid, with_stills=with_stills)
     if reason:
+        if "clips exist" in reason:
+            # the motion stage fills clip gaps; the images stage cannot.
+            # with_stills never gets here (the clip gate is bypassed).
+            raise _Paused(f"merge: {reason}")
         log(f"[merge] images missing before the render - rendering them "
             f"first: {reason}")
         _run_images(cfg, pid, **_stage_params(cfg, pid, "images", log,
                                               cancel=cancel))
-        reason = _merge_pause_reason(cfg, pid)
+        reason = _merge_pause_reason(cfg, pid, with_stills=with_stills)
         if reason:
             if mode is None:
                 raise _Paused(reason)   # unattended: pause for a human
             raise RuntimeError("still missing after rendering - nothing was "
                                "merged: " + reason)
+    if with_stills:
+        log("[merge] rendering with stills: the clips that exist are used, "
+            "the missing ones fall back to their stills")
     if mode == "hook":
         if not cfg.studio_merge_command:
             raise RuntimeError("No merge_command in config.yaml")
@@ -2333,6 +2363,15 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
         if studio.merge_done(pdir):
             return {"stage": stage, "action": "skip",
                     "detail": "preview/NLE export already exists"}
+        gap = _merge_pause_reason(cfg, pid)
+        if gap:
+            # the pre-render gate: images are filled by the images stage
+            # (run), opening clips only by the motion stage (pause)
+            action = "run" if "images" in gap else "pause"
+            return {"stage": stage, "action": action,
+                    "detail": gap + (" - the images stage fills them"
+                                     if action == "run" else
+                                     " - use the motion stage's Resume")}
         if cfg.studio_merge_command:
             return {"stage": stage, "action": "run",
                     "detail": "final render via the configured merge hook "

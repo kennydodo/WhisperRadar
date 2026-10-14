@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { decodeFlowVideoUrl, extractFlowVideoUrls } from '../../commands/video.js';
+import { decodeFlowVideoUrl, extractFlowVideoUrls, mediaId } from '../../commands/video.js';
 import { setLevel } from '../../src/lib/log.js';
 
 setLevel('silent');
@@ -43,4 +43,20 @@ test('extractFlowVideoUrls keeps the whole signed query from raw JSON text', () 
 
 test('extractFlowVideoUrls finds nothing in unrelated text', () => {
   assert.deepEqual(extractFlowVideoUrls('{"state":"RUNNING","image":"https://flow-content.google/image/abc"}'), []);
+});
+
+test('mediaId normalizes googlevideo mirrors of the same video to one identity', () => {
+  const a = 'https://rr1---sn-4g5ednz7.googlevideo.com/videoplayback?expire=1&ei=x&id=da2e2056a4d94cb9&itag=22&sig=AAA';
+  const b = 'https://rr3---sn-aj4g55-52.googlevideo.com/videoplayback?expire=2&ei=y&id=da2e2056a4d94cb9&itag=22&sig=BBB';
+  const c = 'https://rr5---sn-4g5lznly.googlevideo.com/videoplayback?expire=3&ei=z&id=da2e2056a4d94cb9&itag=22&sig=CCC';
+  assert.equal(mediaId(a), 'gv:da2e2056a4d94cb9');
+  assert.equal(mediaId(a), mediaId(b));
+  assert.equal(mediaId(b), mediaId(c));
+  // a different video keeps a different identity
+  const other = 'https://rr3---sn-aj4g55-52.googlevideo.com/videoplayback?expire=1&ei=y&id=609dcac093ef49f8&itag=22';
+  assert.notEqual(mediaId(other), mediaId(a));
+  // flow-content uuids keep their path identity
+  assert.equal(mediaId(`${BASE}?Expires=1`), UUID);
+  // unknown URLs fall back to the full string
+  assert.equal(mediaId('https://example.com/x.mp4'), 'https://example.com/x.mp4');
 });
