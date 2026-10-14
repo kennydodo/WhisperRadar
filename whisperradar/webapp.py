@@ -2140,6 +2140,8 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
+                            for k in studio.STYLE_VARIANTS],
             own_state=own_state,
             own_active_count=sum(1 for c in all_own if c["active"]),
             own_paused_count=sum(1 for c in all_own if not c["active"]),
@@ -2420,6 +2422,10 @@ def create_app(cfg) -> Flask:
         for key in ("style", "bible"):   # multi-line text: keep newlines
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip() or None
+        if "style_variant" in request.form:
+            raw = (request.form.get("style_variant") or "").strip()
+            fields["style_variant"] = (raw if raw in studio.STYLE_VARIANTS
+                                       else None)   # empty = inherit
         for key in ("default_engine", "default_render_mode", "topic_pick"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip() or None
@@ -3621,6 +3627,9 @@ def create_app(cfg) -> Flask:
         }
         page = render_template(
             "studio_detail.html", prod=prod, steps=steps, history=history,
+            style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
+                            for k in studio.STYLE_VARIANTS],
+            style_variant_eff=studio.style_variant(cfg, pid=pid),
             stages=db.STAGES, stage=stage, script_text=script_text,
             style=style, style_text=style_text, source_tr=source_tr,
             style_src=style_src, bible_src=bible_src,
@@ -4158,6 +4167,24 @@ def create_app(cfg) -> Flask:
         except RuntimeError as exc:
             return {"ready": bool(ai33.api_key(cfg)), "voices": [],
                     "source": source, "error": str(exc)}
+
+    @app.post("/studio/<int:pid>/style-variant")
+    def studio_style_variant_save(pid):
+        raw = (request.form.get("style_variant") or "").strip()
+        v = raw if raw in studio.STYLE_VARIANTS else None   # empty = inherit
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return _studio_url(pid, error="Unknown production")
+            db.update_production(conn, pid, style_variant=v)
+            eff_v = studio.style_variant(conn=conn, pid=pid)
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Writing style: " + (
+            studio.STYLE_VARIANT_LABELS[v] if v else
+            "inherit (" + studio.STYLE_VARIANT_LABELS[eff_v] + ")")
+            + ". It applies the next time the style guide / script is generated.")
 
     @app.post("/studio/<int:pid>/voice")
     def studio_voice_save(pid):

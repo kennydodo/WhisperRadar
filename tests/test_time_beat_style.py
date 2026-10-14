@@ -90,3 +90,37 @@ class StyleVariantSettingTests(unittest.TestCase):
             db.set_setting(conn, "style_variant", "bogus")
             self.assertEqual(studio.style_variant(conn=conn), "time-beat")
             conn.close()
+
+
+class StyleVariantPrecedenceTests(unittest.TestCase):
+    def test_production_over_channel_over_global(self):
+        import tempfile
+        from pathlib import Path
+        from whisperradar import db, studio
+
+        class Cfg:
+            pass
+        with tempfile.TemporaryDirectory() as d:
+            cfg = Cfg()
+            cfg.db_path = Path(d) / "t.db"
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+            cid = db.create_own_channel(conn, name="C") if hasattr(
+                db, "create_own_channel") else None
+            pid = db.create_production(conn, title="T", genre="g") if hasattr(
+                db, "create_production") else None
+            if cid is None or pid is None:
+                self.skipTest("db helper names differ")
+            db.update_production(conn, pid, own_channel_id=cid)
+            self.assertEqual(studio.style_variant(conn=conn, pid=pid),
+                             "time-beat")
+            db.set_setting(conn, "style_variant", "classic")
+            self.assertEqual(studio.style_variant(conn=conn, pid=pid),
+                             "classic")
+            db.update_own_channel(conn, cid, style_variant="time-beat")
+            self.assertEqual(studio.style_variant(conn=conn, pid=pid),
+                             "time-beat")
+            db.update_production(conn, pid, style_variant="classic")
+            self.assertEqual(studio.style_variant(conn=conn, pid=pid),
+                             "classic")
+            conn.close()

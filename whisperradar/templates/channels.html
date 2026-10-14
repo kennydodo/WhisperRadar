@@ -322,6 +322,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>writing style format
+                <select name="style_variant">
+                  <option value="">inherit (Settings)</option>
+                  {% for k, label in style_variants %}
+                  <option value="{{ k }}" {{ 'selected' if ch['style_variant'] == k else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>render mode
                 <select name="default_render_mode" class="rendermode-select">
                   <option value="">inherit</option>

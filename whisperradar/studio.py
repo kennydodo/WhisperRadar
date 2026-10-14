@@ -3904,16 +3904,27 @@ STYLE_VARIANT_LABELS = {"time-beat": "Time beat style (default)",
                         "classic": "Classic style (old)"}
 
 
-def style_variant(cfg=None, conn=None) -> str:
-    """The writing-style variant the user picked in Settings; the default
-    (time beat) when nothing valid is saved."""
+def style_variant(cfg=None, conn=None, pid=None) -> str:
+    """The writing-style variant in force. Most specific wins: the
+    production's own choice, then its channel's, then the global setting in
+    Settings, then the default (time beat)."""
     from . import db
     own = conn is None
+    v = ""
     try:
         if own:
             conn = db.connect(cfg.db_path)
             db.init_db(conn)
-        v = (db.get_setting(conn, "style_variant") or "").strip()
+        if pid is not None:
+            prod = db.get_production(conn, pid)
+            if prod is not None:
+                v = (prod["style_variant"] or "").strip()
+                if v not in STYLE_VARIANTS:
+                    ch = db.get_own_channel(conn, prod["own_channel_id"])
+                    v = ((ch["style_variant"] if ch is not None else "")
+                         or "").strip()
+        if v not in STYLE_VARIANTS:
+            v = (db.get_setting(conn, "style_variant") or "").strip()
     except Exception:
         v = ""
     finally:

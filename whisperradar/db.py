@@ -289,12 +289,16 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("handover_default", "TEXT"),
                          # ImgToVideo option overrides: flat JSON
                          # {"motion.easing": ...}; NULL = inherit the global ones
-                         ("video_options", "TEXT")):
+                         ("video_options", "TEXT"),
+                         # writing-style variant ("time-beat"/"classic");
+                         # NULL = inherit the global setting
+                         ("style_variant", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     # how long a recorded step took (seconds); NULL for steps recorded before
     # this existed or outside a job
     _add_column_if_missing(conn, "production_steps", "duration_seconds", "REAL")
     _add_column_if_missing(conn, "productions", "warning", "TEXT")
+    _add_column_if_missing(conn, "productions", "style_variant", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_url", "TEXT")
     _add_column_if_missing(conn, "productions", "flow_project_id", "TEXT")
     # autorun marks productions the producer created, so auto-resume only ever
@@ -928,6 +932,7 @@ _PROD_FIELDS = {"youtube_video_id", "title", "genre", "stage", "status", "notes"
                 "own_channel_id", "warning", "flow_project_url",
                 "flow_project_id", "autorun", "last_attempt_at",
                 "style_override", "bible_override", "published_at",
+                "style_variant",
                 "handover"}
 
 
@@ -1140,7 +1145,7 @@ _OWN_CHANNEL_FIELDS = {
     "handover_default", "video_options",
     "default_voice", "default_engine", "default_render_mode",
     "default_upscale", "bible_dir", "refs_dir", "style", "bible",
-    "flow_project_url",
+    "flow_project_url", "style_variant",
     "autorun_enabled", "per_day", "topic_pick",
     "run_window_start", "run_window_end", "candidate_window_days",
     "producer_llm_provider",

@@ -368,6 +368,16 @@
       <div class="muted" style="margin-bottom:8px">No writing style guide yet. Generate one from the source transcript's writing style, or write your own below - it is passed to the LLM for the script only.</div>
       {% endif %}
       <div class="muted" style="font-size:12px; margin-bottom:8px"><b>Writing style</b> = how the script sounds (voice, pacing, hook, structure, CTA). It is not the <b>visual style</b> - how the images look - which is set on the channel (My Channels &gt; Style, bible &amp; references) and used at the shotlist stage.</div>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/style-variant" style="margin-bottom:8px; gap:6px; align-items:center">
+        <label style="font-size:13px">Writing style format
+          <select name="style_variant" onchange="this.form.submit()" title="Time beat style: beats are roles with timing as a share of the runtime. Classic style: the old format. Inherit uses the channel's choice, then Settings.">
+            <option value="">inherit (now: {{ dict(style_variants).get(style_variant_eff) }})</option>
+            {% for k, label in style_variants %}
+            <option value="{{ k }}" {{ 'selected' if prod['style_variant'] == k else '' }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/generate">
           <button type="submit" class="green" {{ 'disabled' if job.running or not llm_ready else '' }}

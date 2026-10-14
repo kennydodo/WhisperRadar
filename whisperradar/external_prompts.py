@@ -203,7 +203,7 @@ def style_extraction_prompt(cfg, pid: int, title: str = "") -> str:
         return studio.style_prompt(
             _title(ctx, title), ctx["prod"]["genre"], source,
             word_count=words,
-            variant=studio.style_variant(cfg),
+            variant=studio.style_variant(cfg, pid=pid),
             extra_direction=db.stage_extra(ctx["prod"], "style"))
     except RuntimeError as exc:
         raise PromptError(str(exc)) from exc
@@ -242,7 +242,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         _title(ctx, title), prod["genre"], facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
-        style_variant=studio.style_variant(cfg),
+        style_variant=studio.style_variant(cfg, pid=pid),
         extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
     lo, hi = _length_window(int(target_words))
