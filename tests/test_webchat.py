@@ -954,6 +954,46 @@ class ContinuePressTests(unittest.TestCase):
         self.assertEqual(page.script, 1)
 
 
+class ConfirmSendTests(unittest.TestCase):
+    def _page(self, clk, events):
+        class P:
+            def __init__(self):
+                self.t = 0
+
+            def evaluate(self, js, arg=None):
+                if js is wc._TA_LEN_JS:
+                    return events.get("box", 0) if self.t >= events.get("box_at", 99) else 0
+                if js is wc.DEEPSEEK.generating_js:
+                    return self.t >= events.get("gen_at", 99)
+                if js is wc._MSG_COUNT_JS:
+                    return 0
+                if js is wc._STATE_JS:
+                    return {"count": 0, "text": "", "url": ""}
+                return False
+
+            def wait_for_timeout(self, ms):
+                clk.t += ms / 1000.0
+                self.t += ms / 1000.0
+        return P()
+
+    def test_generation_after_the_box_emptied_is_a_real_send(self):
+        page = self._page(Clock(), {"gen_at": 3})
+        self.assertEqual(wc._confirm_send(page, wc.DEEPSEEK, False, 0, 0,
+                                          lambda m: None),
+                         ("it is generating", False))
+
+    def test_text_coming_back_means_the_send_did_not_go_out(self):
+        page = self._page(Clock(), {"box": 605, "box_at": 4})
+        self.assertEqual(wc._confirm_send(page, wc.DEEPSEEK, False, 0, 0,
+                                          lambda m: None), ("", True))
+
+    def test_no_sign_either_way_falls_back_to_the_box_emptied(self):
+        page = self._page(Clock(), {})
+        self.assertEqual(wc._confirm_send(page, wc.DEEPSEEK, False, 0, 0,
+                                          lambda m: None),
+                         ("the box emptied", False))
+
+
 class FailedUploadTests(unittest.TestCase):
     """A chip with the file name AND 'Server busy' means the file never arrived."""
 

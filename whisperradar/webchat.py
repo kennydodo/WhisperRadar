@@ -1260,6 +1260,31 @@ def _press_continue(page, site, log, n: int, diag: dict) -> str:
     return label
 
 
+def _confirm_send(page, site, new_chat, msgs_before, before, log,
+                  limit: float = 10.0):
+    """After 'the box emptied': ('a real sign', False) when the answer started,
+    ('', True) when the text is back in the box (the send did not go out), and
+    ('the box emptied', False) when nothing more can be told in `limit` s."""
+    waited = 0.0
+    while waited < limit:
+        page.wait_for_timeout(1000)
+        waited += 1.0
+        try:
+            if page.evaluate(site.generating_js):
+                return "it is generating", False
+            if new_chat and page.evaluate(site.sent_js):
+                return "the address changed", False
+            if (page.evaluate(_MSG_COUNT_JS) or 0) > msgs_before:
+                return "a new message appeared", False
+            if page.evaluate(_STATE_JS, {"reply": site.reply})["count"] > before:
+                return "a new reply element appeared", False
+            if (page.evaluate(_TA_LEN_JS, site.box) or 0) > 0:
+                return "", True
+        except Exception:  # noqa: BLE001
+            break
+    return "the box emptied", False
+
+
 def _busy(page, site: Site) -> dict:
     out = page.evaluate(_BUSY_JS, {"re": BUSY_RE, "reply": site.reply})
     return out if isinstance(out, dict) else {"n": 0, "text": ""}
@@ -1350,9 +1375,17 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
             except OSError:
                 pass
             seen = _name_counts(page, files)
+            # a big attachment is still being processed after its chip shows:
+            # give it 1 s per 50 KB on top of the 3 s (at most 15 s) before sending
+            try:
+                big = sum(Path(str(f)).stat().st_size for f in files)
+            except OSError:
+                big = 0
+            up_settle = min(15.0, 3.0 + big / 50000.0)
             try:
                 page.set_input_files(site.files, [str(f) for f in files])
-                _wait_for_uploads(page, files, clock, log, seen=seen)
+                _wait_for_uploads(page, files, clock, log, seen=seen,
+                                  settle=up_settle)
             except Exception as exc:  # noqa: BLE001
                 if len(files) < 2 or "single file" not in str(exc):
                     raise
@@ -1363,7 +1396,8 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 for f in files:
                     one = _name_counts(page, [f])
                     page.set_input_files(site.files, [str(f)])
-                    _wait_for_uploads(page, [f], clock, log, seen=one)
+                    _wait_for_uploads(page, [f], clock, log, seen=one,
+                                      settle=up_settle)
 
         n = page.evaluate(_PASTE_JS, {"box": site.box, "text": prompt})
         # a textarea turns \r\n into \n, so compare with the normalised text and
@@ -1428,6 +1462,18 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                        else "a new reply element appeared" if page.evaluate(
                            _STATE_JS, {"reply": site.reply})["count"] > before
                        else "")
+                if why == "the box emptied":
+                    # an emptied box alone proved wrong: ChatGPT clears it while
+                    # a big attachment is still being processed and the message
+                    # is never sent. Wait for a real sign (it generates, a new
+                    # message / reply appears, the address changes); when the
+                    # text comes back instead, the send did not go out.
+                    why, refilled = _confirm_send(
+                        page, site, new_chat, msgs_before, before, log)
+                    if refilled:
+                        log(f"{site.name}: the box filled again - the send "
+                            f"did not go out (try {attempt}/3)")
+                        break
                 if why:
                     log(f"{site.name}: send registered ({why})")
                     took = True
