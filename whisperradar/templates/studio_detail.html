@@ -399,22 +399,27 @@
       {% else %}
       <div class="warn" style="margin-bottom:8px">No writing style guide yet - <a href="/studio/{{ prod['id'] }}?stage=style">create one in the writing style stage</a> so the script matches the source video's voice.</div>
       {% endif %}
-      <form method="post" action="/studio/{{ prod['id'] }}/script/save">
-        <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
-        {% if steps.get("script") and "WARNING" in (steps["script"]["detail"] or "") %}
-        <div class="warn">High overlap with the source transcript - rewrite flagged parts before publishing.</div>
-        {% endif %}
-        <div class="actions">
-          <button type="submit" {{ 'disabled' if job.running else '' }}>Save script</button>
-          <input type="hidden" name="kind" value="script">
-          <input type="text" name="name" placeholder="version name (e.g. take-2)" style="width:190px"
-                 title="Name used by 'Save as version'">
-          <button type="submit" class="secondary" formaction="/studio/{{ prod['id'] }}/versions/save"
-                  title="Save the current script text as a named version">
-            Save as version
-          </button>
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/script" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
+            onsubmit="return wrConfirmSubmit(this, 'Run the script in web chats? A browser window opens and the chats are driven for you.')">
+        <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
+        <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <label>Writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
+          <label>Model <select name="zai_model" title="z.ai model for this run"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
+          <label>Deep Think <select name="zai_thinking" title="z.ai's Deep Think level for this run. Low is fastest; Max can think for many minutes (and once spent a whole turn thinking)"><option value="Low">Low</option><option value="High">High</option><option value="Max">Max</option></select></label>
         </div>
+        <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <label>Judge <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
+          <label>DeepThink <select name="deepseek_deepthink" title="DeepSeek's DeepThink switch for this run"><option value="on">On</option><option value="off">Off</option></select></label>
+        </div>
+        <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
+                title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run script in web chat</button>
       </form>
+      {% if job.running and 'web chat' in (job.kind or '') %}
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:6px">
+        <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">■ Stop web-chat run</button>
+        <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
+      </form>
+      {% endif %}
       <details class="extbox" style="margin-top:10px">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the script</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
@@ -442,6 +447,41 @@
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
         <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
       </details>
+      <details class="extbox" style="margin-top:10px">
+        <summary style="cursor:pointer; font-weight:600">Use an API LLM for the script</summary>
+        <div style="margin-top:8px">
+      <div class="actions">
+        {% if providers %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
+              onsubmit="return wrConfirmSubmit(this, 'Generate a script with the selected LLM? Existing script will be overwritten.')">
+          {{ provider_select('script') }}
+          <button type="submit" {{ 'disabled' if job.running or not llm_ready else '' }}
+                   title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in Settings > LLM providers') }}">
+            {{ 'Working...' if job.running else 'Generate script' }}
+          </button>
+        </form>
+        {% else %}
+        <span class="muted">No LLM providers configured (Settings > LLM providers) - paste or upload a script instead.</span>
+        {% endif %}
+      </div>
+        </div>
+      </details>
+      <form method="post" action="/studio/{{ prod['id'] }}/script/save">
+        <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
+        {% if steps.get("script") and "WARNING" in (steps["script"]["detail"] or "") %}
+        <div class="warn">High overlap with the source transcript - rewrite flagged parts before publishing.</div>
+        {% endif %}
+        <div class="actions">
+          <button type="submit" {{ 'disabled' if job.running else '' }}>Save script</button>
+          <input type="hidden" name="kind" value="script">
+          <input type="text" name="name" placeholder="version name (e.g. take-2)" style="width:190px"
+                 title="Name used by 'Save as version'">
+          <button type="submit" class="secondary" formaction="/studio/{{ prod['id'] }}/versions/save"
+                  title="Save the current script text as a named version">
+            Save as version
+          </button>
+        </div>
+      </form>
       {% if script_versions %}
       <div class="actions" style="margin-top:4px">
         <span class="muted" style="font-size:12px">Saved versions (click to load):</span>
@@ -466,44 +506,11 @@
       </div>
       {% endif %}
       <div class="actions">
-        {% if providers %}
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/generate"
-              onsubmit="return wrConfirmSubmit(this, 'Generate a script with the selected LLM? Existing script will be overwritten.')">
-          {{ provider_select('script') }}
-          <button type="submit" {{ 'disabled' if job.running or not llm_ready else '' }}
-                   title="{{ 'Generate with the selected provider' if llm_ready and not job.running else ('A job is already running' if job.running else 'Add an api_key (or its WR_ env variable) for at least one provider in Settings > LLM providers') }}">
-            {{ 'Working...' if job.running else 'Generate script' }}
-          </button>
-        </form>
-        {% else %}
-        <span class="muted">No LLM providers configured (Settings > LLM providers) - paste or upload a script instead.</span>
-        {% endif %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/script/save" enctype="multipart/form-data">
           <input type="file" name="script_file" accept=".txt,.md">
           <button type="submit" class="secondary">Upload script file</button>
         </form>
       </div>
-      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/script" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
-            onsubmit="return wrConfirmSubmit(this, 'Run the script in web chats? A browser window opens and the chats are driven for you.')">
-        <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
-        <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-          <label>Writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
-          <label>Model <select name="zai_model" title="z.ai model for this run"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
-          <label>Deep Think <select name="zai_thinking" title="z.ai's Deep Think level for this run. Low is fastest; Max can think for many minutes (and once spent a whole turn thinking)"><option value="Low">Low</option><option value="High">High</option><option value="Max">Max</option></select></label>
-        </div>
-        <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-          <label>Judge <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
-          <label>DeepThink <select name="deepseek_deepthink" title="DeepSeek's DeepThink switch for this run"><option value="on">On</option><option value="off">Off</option></select></label>
-        </div>
-        <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
-                title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run script in web chat</button>
-      </form>
-      {% if job.running and 'web chat' in (job.kind or '') %}
-      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:6px">
-        <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">■ Stop web-chat run</button>
-        <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
-      </form>
-      {% endif %}
       {% if style %}
       <div class="muted" style="font-size:12px; margin-top:8px">Writing style guide is applied to this generation - <a href="/studio/{{ prod['id'] }}?stage=style">view / edit it</a>.</div>
       {% else %}
@@ -704,19 +711,6 @@
         <br>Planning brief: <b>{{ brief_profile.label }}</b>{% if brief_profile.max_hold %} (holds {% if brief_profile.min_hold %}{{ '%g' % brief_profile.min_hold }}-{% else %}up to {% endif %}{{ '%g' % brief_profile.max_hold }}s){% endif %}{% if brief_presentation %}, with a presentation note{% endif %}
         (set per channel on <a href="/my-channels">My Channels</a>).
       </div>
-      <div class="actions">
-        {% if providers %}
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/shotlist/generate">
-          {{ provider_select('shots') }}
-          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and srt) else '' }}
-                  title="{{ 'Plan shots from the subtitles with ' + (stage_labels.get('shots') or llm_label) if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs subtitles done and a configured LLM') }}">
-            {{ 'Working...' if job.running else 'Plan shotlist with ' + (stage_labels.get('shots') or llm_label) }}
-          </button>
-        </form>
-        {% else %}
-        <span class="muted">No LLM providers configured (Settings > LLM providers) - write the shotlist by hand below.</span>
-        {% endif %}
-      </div>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/shots" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
             onsubmit="return wrConfirmSubmit(this, 'Run the shotlist in web chats? A browser window opens and the chats are driven for you.')">
         <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
@@ -740,16 +734,6 @@
         <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
       </form>
       {% endif %}
-      <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
-        <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
-        <div id="shotcount" class="muted" style="font-size:12px; margin-top:3px"></div>
-        <div class="actions">
-          <button type="submit" {{ 'disabled' if job.running else '' }}>Save shotlist</button>
-          {% if batch_sheet %}
-          <a class="btn secondary" style="font-size:12px" href="/studio/file/{{ prod['id'] }}/batch_sheet.txt" target="_blank">View batch sheet</a>
-          {% endif %}
-        </div>
-      </form>
       <details class="extbox" style="margin-top:10px; margin-bottom:10px">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the shotlist</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
@@ -768,6 +752,34 @@
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
         <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
       </details>
+      <details class="extbox" style="margin-top:10px; margin-bottom:10px">
+        <summary style="cursor:pointer; font-weight:600">Use an API LLM for the shotlist</summary>
+        <div style="margin-top:8px">
+      <div class="actions">
+        {% if providers %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/shotlist/generate">
+          {{ provider_select('shots') }}
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (llm_ready and srt) else '' }}
+                  title="{{ 'Plan shots from the subtitles with ' + (stage_labels.get('shots') or llm_label) if llm_ready and srt and not job.running else ('A job is already running' if job.running else 'Needs subtitles done and a configured LLM') }}">
+            {{ 'Working...' if job.running else 'Plan shotlist with ' + (stage_labels.get('shots') or llm_label) }}
+          </button>
+        </form>
+        {% else %}
+        <span class="muted">No LLM providers configured (Settings > LLM providers) - write the shotlist by hand below.</span>
+        {% endif %}
+      </div>
+        </div>
+      </details>
+      <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
+        <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
+        <div id="shotcount" class="muted" style="font-size:12px; margin-top:3px"></div>
+        <div class="actions">
+          <button type="submit" {{ 'disabled' if job.running else '' }}>Save shotlist</button>
+          {% if batch_sheet %}
+          <a class="btn secondary" style="font-size:12px" href="/studio/file/{{ prod['id'] }}/batch_sheet.txt" target="_blank">View batch sheet</a>
+          {% endif %}
+        </div>
+      </form>
       <h2>Visual style (how the images look)</h2>
       <div class="muted" style="font-size:12px; margin-bottom:6px">
         The art direction passed to the shotlist planner and applied to every image. It is not the writing style (how the script sounds).
