@@ -119,6 +119,9 @@ class RenderlyExportBatchTests(unittest.TestCase):
         cfg = _cfg(Path(d) / "wr.db")
         cfg.imgtovideo_repo = str(repo)
         cfg.renderly_url = "http://127.0.0.1:8022"
+        # this test covers the CLI branch; the in-process python engine
+        # (studio.video_engine: python) exports the batch without a subprocess
+        cfg.studio_video_engine = "csharp"
 
         calls = []
 

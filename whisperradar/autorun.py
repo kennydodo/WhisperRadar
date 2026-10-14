@@ -323,11 +323,6 @@ def _merge_pause_reason(cfg, pid: int, with_stills: bool = False) -> str | None:
                     f"motion stage first, or render with stills - nothing "
                     f"was rendered")
     return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return len(data.get("images", []))
-    except (ValueError, OSError):
-        return 0
 
 
 # ------------------------------------------------------- stage runners ---

@@ -398,9 +398,10 @@ class CustomChannelTests(_ChannelCase):
         titles = re.findall(r'<summary>(.*?) <span', edit)
         self.assertEqual(titles, [
             "Basics", "Production defaults", "Visual style, bible &amp; references",
-            "Planning brief", "Auto Run", "Quality gates"])
+            "Planning brief", "Hand-over templates", "Auto Run",
+            "Quality gates"])
         groups = re.split(r'<details class="grp"', edit)[1:]
-        self.assertEqual(len(groups), 6)
+        self.assertEqual(len(groups), 7)
         where = {}
         for title, body in zip(titles, groups):
             for name in re.findall(r'name="([a-z_]+)"', body):
@@ -416,7 +417,7 @@ class CustomChannelTests(_ChannelCase):
                 ("script_min_rating", "Quality gates"),
                 ("shotlist_min_alignment", "Quality gates")):
             self.assertEqual(where.get(name), title, name)
-        self.assertTrue("</details>" in edit and edit.count("<details") == 6)
+        self.assertTrue("</details>" in edit and edit.count("<details") == 7)
 
     def test_the_groups_keep_their_contents_off_the_border(self):
         page = self.client.get("/my-channels").get_data(as_text=True)

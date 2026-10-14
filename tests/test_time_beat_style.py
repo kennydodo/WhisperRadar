@@ -124,3 +124,17 @@ class StyleVariantPrecedenceTests(unittest.TestCase):
             self.assertEqual(studio.style_variant(conn=conn, pid=pid),
                              "classic")
             conn.close()
+
+
+class BeatTableParsingTests(unittest.TestCase):
+    def test_loose_percentage_forms_and_two_beat_fallback(self):
+        from whisperradar import studio
+        g = ("## Structure\n- 0% – 5%: hook\n- 5 to 20%: setup\n"
+             "- 20-60%: middle\n- 60-100%: end\n")
+        t = studio.beat_word_table(g, 1000)
+        self.assertEqual(len(t.splitlines()), 4)
+        two = "## Structure\n- 0-50%: a\n- 50-100%: b\n"
+        self.assertEqual(studio.beat_word_table(two, 1000), "")
+        p = " ".join(studio.script_prompt("T", "g", "facts", two, 1000).split())
+        self.assertNotIn("is a TIME BEAT pattern", p)
+        self.assertNotIn("TIME BEATS FOR THIS SCRIPT", p)

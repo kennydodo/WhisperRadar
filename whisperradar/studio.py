@@ -3974,7 +3974,8 @@ def style_prompt_from_scratch(title: str, genre: str, channel: str = "",
     return base if variant == "classic" else _time_beat_prompt(base)
 
 
-_BEAT_PCT = re.compile(r"(\d{1,3})\s*[-\u2013\u2014]\s*(\d{1,3})\s*%")
+_BEAT_PCT = re.compile(
+    r"(\d{1,3})\s*%?\s*(?:[-\u2013\u2014]|\bto\b)\s*(\d{1,3})\s*%")
 
 
 def beat_word_table(style_guide: str, target_words: int) -> str:
@@ -4022,9 +4023,13 @@ hook pattern, structure, and CTA style all come from it):
 {style[:6000]}"""
         else:
             table = beat_word_table(style, target_words)
+            lead = ("Its Structure section is a TIME BEAT pattern: the ROLE of\n"
+                    "each beat and its share of the runtime."
+                    if table else
+                    "Where its Structure section lists beats, they describe a\n"
+                    "rhythm (each beat's role and timing).")
             style_block = f"""STYLE GUIDE (match its tone, pacing, rhythm, hook pattern
-and CTA style exactly. Its Structure section is a TIME BEAT pattern: the ROLE of
-each beat and its share of the runtime. It is a rhythm to follow, never the
+and CTA style exactly. {lead} It is a rhythm to follow, never the
 story: do not reuse the reference video's topic, examples or order of ideas):
 {style[:6000]}""" + (f"""
 
