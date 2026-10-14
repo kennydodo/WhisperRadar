@@ -70,6 +70,8 @@
           background: transparent; border: none; color: var(--text); padding: 5px 8px; border-radius: 5px;
           font-size: 13px; font-weight: 500; }
   details.more .menu button:hover, details.more .menu a:hover { background: #12151c; text-decoration: none; filter: none; color: var(--text); }
+  button.mk { padding: 2px 9px; font-size: 12px; border-radius: 6px; }
+  details.more > summary { padding: 2px 8px; font-size: 12px; }
   .banner.make { background: rgba(79,140,255,.12); color: var(--accent); }
   pre.logbox { background: #0a0c10; border: 1px solid var(--border); border-radius: 8px;
                padding: 12px; max-height: 260px; overflow-y: auto; font-size: 12px;
@@ -215,7 +217,7 @@
           <form class="row" method="post" action="/videos/make" title="Download the audio and make the transcript - runs on its own, apart from the buttons above">
             {{ hidden_filters() }}
             <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
-            <button type="submit" {{ 'disabled' if make.running else '' }}>make it</button>
+            <button type="submit" class="mk" {{ 'disabled' if make.running else '' }}>make it</button>
           </form>
           {% endif %}
           <details class="more"><summary>more</summary>
