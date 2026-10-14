@@ -164,7 +164,13 @@ def _scale_keyframes(clip, dims, canvas_aspect, duration_us) -> Optional[List[di
 
 
 def build_draft_content(timeline: m.Timeline, images: Sequence[m.ImageInfo],
-                        draft_name: str) -> str:
+                        draft_name: str, freezes: Optional[Dict[str, str]] = None) -> str:
+    from .. import motion
+    max_stretch = motion.MAX_STRETCH_SECONDS
+
+    def motion_max_stretch():
+        return max_stretch
+
     fps = timeline.fps
     cw, ch = timeline.resolution.width, timeline.resolution.height
     canvas_aspect = cw / ch
@@ -179,7 +185,8 @@ def build_draft_content(timeline: m.Timeline, images: Sequence[m.ImageInfo],
         "placeholder_infos", "vocal_separations")}
 
     material_by_file: Dict[str, str] = {}
-    for clip in clips:
+    freeze_material_by_clip: Dict[int, str] = {}
+    for i, clip in enumerate(clips):
         # The animated opening: a clip backed by its AI video uses the mp4 as
         # its material (the video carries its own motion), like the ffmpeg
         # render plan - otherwise CapCut shows the still, not the clip.
@@ -190,23 +197,79 @@ def build_draft_content(timeline: m.Timeline, images: Sequence[m.ImageInfo],
         material_by_file[key] = mid
         w, h = dims.get(clip.file_path.lower(), (cw, ch))
         videos.append(_video_material(mid, clip.video_path or clip.file_path, w, h))
+        # a shot that can outlast its 8s clip freezes the mp4's last frame
+        # (the render's tpad clone); the freeze png is its own photo material
+        freeze = (freezes or {}).get(clip.video_path) if clip.video_path else None
+        if freeze and os.path.isfile(freeze) and clip.duration_frames / fps > motion_max_stretch():
+            fmid = _new_id()
+            freeze_material_by_clip[i] = fmid
+            videos.append(_video_material(fmid, freeze, cw, ch))
 
     video_segments: List[dict] = []
-    for clip in clips:
-        mid = material_by_file[(clip.video_path or clip.file_path).lower()]
+    for i, clip in enumerate(clips):
+        key = (clip.video_path or clip.file_path).lower()
+        mid = material_by_file[key]
         dur_us = _us(clip.duration_frames, fps)
         comp_ids = []
         for kind, coll in _VIDEO_COMPANIONS:
             cid = _new_id()
             comp_ids.append(cid)
             collections[coll].append(_companion(kind, cid))
+        if clip.video_path:
+            # mirror motion.fit like the render: the 8s media plays at fit's
+            # speed (covering up to 10s), a longer shot freezes its last frame.
+            # Segments must tile the shot's span - anything past the media end
+            # is black in CapCut too (the S03_01 black tail).
+            from .. import motion
+            fit = motion.fit(clip.duration_frames / fps)
+            play_us = _us(int(round(fit["play"] * fps)), fps)
+            max_stretch_us = _us(int(round(motion.MAX_STRETCH_SECONDS * fps)), fps)
+            if dur_us <= max(max_stretch_us, play_us):
+                # one segment: slow the media so it covers the whole shot
+                video_segments.append({
+                    "id": _new_id(), "material_id": mid,
+                    "target_timerange": {"start": _us(clip.start_frame, fps),
+                                         "duration": dur_us},
+                    "source_timerange": {"start": 0, "duration": play_us},
+                    "extra_material_refs": comp_ids, "clip": _clip_block(),
+                    "common_keyframes": [],
+                    "speed": round(play_us / dur_us, 4)})
+                continue
+            seg = {
+                "id": _new_id(), "material_id": mid,
+                "target_timerange": {"start": _us(clip.start_frame, fps),
+                                     "duration": play_us},
+                "source_timerange": {"start": 0, "duration": play_us},
+                "extra_material_refs": comp_ids, "clip": _clip_block(),
+                "common_keyframes": [],
+                "speed": fit["speed"]}
+            video_segments.append(seg)
+            hold_us = dur_us - play_us
+            fmid = freeze_material_by_clip.get(i)
+            if hold_us > 0 and fmid:
+                comp2 = []
+                for kind, coll in _VIDEO_COMPANIONS:
+                    cid = _new_id()
+                    comp2.append(cid)
+                    collections[coll].append(_companion(kind, cid))
+                video_segments.append({
+                    "id": _new_id(), "material_id": fmid,
+                    "target_timerange": {"start": _us(clip.start_frame, fps) + play_us,
+                                         "duration": hold_us},
+                    "source_timerange": {"start": 0, "duration": hold_us},
+                    "extra_material_refs": comp2, "clip": _clip_block(),
+                    "common_keyframes": [], "speed": 1.0})
+            else:
+                seg["target_timerange"]["duration"] = dur_us
+                seg["source_timerange"]["duration"] = play_us
+                seg["speed"] = round(play_us / dur_us, 4)
+            continue
         video_segments.append({
             "id": _new_id(), "material_id": mid,
             "target_timerange": {"start": _us(clip.start_frame, fps), "duration": dur_us},
             "source_timerange": {"start": 0, "duration": dur_us},
             "extra_material_refs": comp_ids, "clip": _clip_block(),
-            "common_keyframes": [] if clip.video_path else
-            (_scale_keyframes(clip, dims, canvas_aspect, dur_us) or []),
+            "common_keyframes": _scale_keyframes(clip, dims, canvas_aspect, dur_us) or [],
             "speed": 1.0})
 
     audio_mid = _new_id()
@@ -334,12 +397,13 @@ def build_meta_info(timeline: m.Timeline, images: Sequence[m.ImageInfo], output_
     return dumps(meta)
 
 
-def export(timeline: m.Timeline, images: Sequence[m.ImageInfo], output_folder: str) -> str:
+def export(timeline: m.Timeline, images: Sequence[m.ImageInfo], output_folder: str,
+           freezes: Optional[Dict[str, str]] = None) -> str:
     """Write the draft folder; returns the draft_content.json path."""
     os.makedirs(output_folder, exist_ok=True)
     draft_name = os.path.basename(output_folder.rstrip("\\/"))
     content_path = os.path.join(output_folder, "draft_content.json")
-    for name, text in (("draft_content.json", build_draft_content(timeline, images, draft_name)),
+    for name, text in (("draft_content.json", build_draft_content(timeline, images, draft_name, freezes)),
                        ("draft_meta_info.json",
                         build_meta_info(timeline, images, output_folder, draft_name))):
         with open(os.path.join(output_folder, name), "w", encoding="utf-8", newline="") as fh:
