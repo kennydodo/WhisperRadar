@@ -3594,8 +3594,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
     return (
         f"You are a demanding but fair YouTube script editor for the channel "
         f"genre '{genre}'. Score this script for the video \"{title}\". "
-        f"The bar is a script a viewer enjoys and is not misled by - not a "
-        f"fact-check audit.\n\n"
+        f"The bar is a script a viewer enjoys and is not misled by.\n\n"
         f"Score each criterion 1-10:\n{rubric}\n\n"
         f"Measured 5-gram overlap with the original: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
@@ -3609,7 +3608,8 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"(\"verified\", \"wrong\" or \"unverified\"), the support you "
         f"found, and the correction. If you cannot browse or cannot find "
         f"support, the status is \"unverified\" - never write that all "
-        f"claims check out without evidence.\n"
+        f"claims check out without evidence. Do the audit inside this reply: "
+        f"never announce an audit and stop - finish with the JSON verdict.\n"
         f"- KEEP THE REPLY SHORT so it is never cut off: list at most 8 of the "
         f"most important claims, each \"support\" and \"correction\" under "
         f"20 words, and finish the JSON.\n"
@@ -3661,7 +3661,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"BRIEF AND KEYWORDS GIVEN TO THE WRITER:\n{brief or '(none)'}\n\n"
         f"ORIGINAL (for tone, style, hook, flow and ending ONLY):\n"
         f"{orig or '(none)'}\n\n"
-        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:3000]}\n\n"
+        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:6000]}\n\n"
         f"{direction_block}"
         f"SCRIPT:\n{script or ''}\n\n"
         f"Reply with ONLY a JSON object:\n"
@@ -3935,8 +3935,9 @@ Rules:
 - About {target_words} words - this is a real target, not a ceiling. If you are
   running short, do NOT pad by repeating a point already made; instead go deeper
   on a point you have not fully unpacked yet, add another concrete example from
-  your research, or slow down and narrate a moment instead of summarizing it. Conversational, second person, no stage directions,
-  no scene labels.
+  your research, or slow down and narrate a moment instead of summarizing it. Conversational, no stage directions, no scene
+  labels. Use the narrator's person and voice the STYLE GUIDE describes
+  (second person only when it says so or gives none).
 - Write ONE ending. Land the final point once, in a single short closing passage,
   then go straight into the call to action - do not summarize the video, restate
   the thesis, or add a second "so what does this all mean" passage before it.
