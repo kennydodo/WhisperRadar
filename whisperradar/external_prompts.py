@@ -146,7 +146,7 @@ def _swap_blocks(text: str, out_files: list, style_ref: str = "",
                  orig_ref: str = "") -> str:
     """Replace the token-marked style / facts blocks of a studio prompt with
     short references to the attached files."""
-    text = re.sub(r"STYLE GUIDE \(match this exactly.*?\):\n" +
+    text = re.sub(r"STYLE GUIDE \(match (?:this exactly|its tone).*?\):\n" +
                   re.escape(_STYLE_TOKEN), lambda m: style_ref, text,
                   flags=re.S)
     text = re.sub(r"FACTS gathered from research \(use these, nothing "
@@ -203,6 +203,7 @@ def style_extraction_prompt(cfg, pid: int, title: str = "") -> str:
         return studio.style_prompt(
             _title(ctx, title), ctx["prod"]["genre"], source,
             word_count=words,
+            variant=studio.style_variant(cfg),
             extra_direction=db.stage_extra(ctx["prod"], "style"))
     except RuntimeError as exc:
         raise PromptError(str(exc)) from exc
@@ -241,6 +242,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         _title(ctx, title), prod["genre"], facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
+        style_variant=studio.style_variant(cfg),
         extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
     lo, hi = _length_window(int(target_words))

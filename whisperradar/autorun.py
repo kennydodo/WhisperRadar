@@ -347,7 +347,9 @@ def _run_style(cfg, pid: int, provider: str | None = None) -> None:
             prompt = studio.style_prompt(prod["title"], prod["genre"],
                                          source_text,
                                          extra_direction=db.stage_extra(
-                                             prod, "style"))
+                                             prod, "style"),
+                                         variant=studio.style_variant(
+                                             conn=conn))
         else:
             # no source to analyse: write it from the title, the channel and
             # the creator's direction instead of pausing
@@ -357,7 +359,8 @@ def _run_style(cfg, pid: int, provider: str | None = None) -> None:
                 channel=eff.get("own_channel_name") or "",
                 channel_notes=settings.row_get(eff.get("own_channel"),
                                            "description") or "",
-                extra_direction=db.stage_extra(prod, "style"))
+                extra_direction=db.stage_extra(prod, "style"),
+                variant=studio.style_variant(conn=conn))
         text = studio.llm_generate(cfg, prompt, provider=provider)
         if not text:
             raise RuntimeError("LLM returned an empty style guide")
@@ -728,6 +731,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
+            style_variant=studio.style_variant(cfg),
             extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
         text = studio.llm_generate(

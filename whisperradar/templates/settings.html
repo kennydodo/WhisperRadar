@@ -357,6 +357,21 @@
   </script>
 
   <div class="tabpanel" data-tab="LLM">
+  <h2>Writing style</h2>
+  <p class="help">
+    Which style-guide format the style stage writes and the script stage follows.
+    <b>Time beat style</b>: beats are roles with timing as a share of the runtime,
+    never copied from the reference video. <b>Classic style</b>: the old format
+    (beats with rough timing). Existing style guides are not changed.
+  </p>
+  <form method="post" action="/settings/style-variant" class="panel">
+    <select name="style_variant">
+      {% for k, label in style_variants %}
+      <option value="{{ k }}" {{ 'selected' if k == style_variant }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Save</button>
+  </form>
   <h2>LLM providers</h2>
   <p class="help">
     One entry per gateway and its key. Add several models under one gateway -

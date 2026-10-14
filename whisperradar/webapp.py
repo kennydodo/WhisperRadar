@@ -1687,6 +1687,22 @@ def create_app(cfg) -> Flask:
 
         threading.Thread(target=run, daemon=True).start()
 
+    @app.post("/settings/style-variant")
+    def settings_style_variant_save():
+        v = (request.form.get("style_variant") or "").strip()
+        if v not in studio.STYLE_VARIANTS:
+            return redirect("/settings?tab=LLM&error=" + quote(
+                "Unknown writing style - nothing was saved"))
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            db.set_setting(conn, "style_variant", v)
+        finally:
+            conn.close()
+        return redirect("/settings?tab=LLM&msg=" + quote(
+            "Writing style set to " + studio.STYLE_VARIANT_LABELS[v]
+            + ". It applies to the next style guide / script you generate."))
+
     @app.post("/settings/webchat-sites")
     def settings_webchat_sites_save():
         """Save the chat sites you added (not the API LLMs). A site that is
@@ -1890,6 +1906,9 @@ def create_app(cfg) -> Flask:
             override_counts=override_counts,
             providers=[p["name"] for p in studio.providers(cfg)],
             providers_nested=studio.providers_nested(cfg),
+            style_variant=studio.style_variant(cfg),
+            style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
+                            for k in studio.STYLE_VARIANTS],
             webchat_sites=_webchat_sites_saved(),
             autorun_options=autorun_options,
             site_choices=[(k, getattr(v, "name", k))

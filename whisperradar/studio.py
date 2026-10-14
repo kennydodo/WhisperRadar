@@ -3801,7 +3801,7 @@ def judge_provider(cfg, writer: str | None, preferred: str | None) -> str | None
     return ready[0]["name"] if ready else writer
 
 
-def style_prompt_from_scratch(title: str, genre: str, channel: str = "",
+def _style_prompt_from_scratch_classic(title: str, genre: str, channel: str = "",
                               channel_notes: str = "",
                               extra_direction: str = "") -> str:
     """The writing style guide for a production with NO source transcript:
@@ -3840,7 +3840,7 @@ Rules:
 Output ONLY the style guide markdown."""
 
 
-def style_prompt(title: str, genre: str, source_text: str,
+def _style_prompt_classic(title: str, genre: str, source_text: str,
                  word_count: int | None = None,
                  extra_direction: str = "") -> str:
     text = (source_text or "").strip()
@@ -3891,9 +3891,111 @@ Rules:
 Output ONLY the style guide markdown."""
 
 
+# ---- style variants ---------------------------------------------------------
+# "classic" = the style-analysis prompts as they were until 2026-10-14. Their
+# Structure section gave absolute times (0:00-0:45) and described the reference
+# video's own story beat by beat, so a script following it copied the
+# reference's order and was failed as "too close to the source".
+# "time-beat" (the default) = beats described by their ROLE only, timing as a
+# share of the runtime only, and the writer turns those shares into word counts.
+STYLE_VARIANTS = ("time-beat", "classic")
+DEFAULT_STYLE_VARIANT = "time-beat"
+STYLE_VARIANT_LABELS = {"time-beat": "Time beat style (default)",
+                        "classic": "Classic style (old)"}
+
+
+def style_variant(cfg=None, conn=None) -> str:
+    """The writing-style variant the user picked in Settings; the default
+    (time beat) when nothing valid is saved."""
+    from . import db
+    own = conn is None
+    try:
+        if own:
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+        v = (db.get_setting(conn, "style_variant") or "").strip()
+    except Exception:
+        v = ""
+    finally:
+        if own and conn is not None:
+            conn.close()
+    return v if v in STYLE_VARIANTS else DEFAULT_STYLE_VARIANT
+
+_TB_HEADER_OLD = "## Structure (beats in order, with rough timing)"
+_TB_HEADER_NEW = "## Structure (time beats: roles in order, timing as % of runtime)"
+_TB_RULES = """- TIME BEATS. In the Structure section describe each beat by its ROLE in the
+  story (e.g. "reveal of the hidden mechanism", "objection and reassurance",
+  "emotional payoff"), NEVER by this transcript's own topic, example, number,
+  title, character or story: a beat must still make sense for a video on a
+  completely different subject. Give the timing of every beat ONLY as a share of
+  the total runtime (e.g. "0-5%", "35-48%"): never minutes or seconds, and never
+  state how long the reference is. Use 6-12 beats covering 0-100% without gaps.
+  No beat may be a sponsor, ad, course or product promotion, wherever it sits.
+  The writer will build its OWN story in this rhythm."""
+
+
+def _time_beat_prompt(text: str) -> str:
+    text = text.replace(_TB_HEADER_OLD, _TB_HEADER_NEW)
+    text = text.replace(" - reflect this in the Structure section.",
+                        " - use it only to judge pacing; give ALL timing as a "
+                        "share of the runtime.")
+    marker = "\n\nOutput ONLY the style guide markdown."
+    if marker in text:
+        return text.replace(marker, "\n" + _TB_RULES + marker, 1)
+    return text.rstrip() + "\n" + _TB_RULES + "\n"
+
+
+def style_prompt(title: str, genre: str, source_text: str,
+                 word_count: int | None = None,
+                 extra_direction: str = "",
+                 variant: str | None = None) -> str:
+    base = _style_prompt_classic(title, genre, source_text, word_count,
+                                 extra_direction)
+    return base if variant == "classic" else _time_beat_prompt(base)
+
+
+def style_prompt_from_scratch(title: str, genre: str, channel: str = "",
+                              channel_notes: str = "",
+                              extra_direction: str = "",
+                              variant: str | None = None) -> str:
+    base = _style_prompt_from_scratch_classic(title, genre, channel,
+                                              channel_notes, extra_direction)
+    return base if variant == "classic" else _time_beat_prompt(base)
+
+
+_BEAT_PCT = re.compile(r"(\d{1,3})\s*[-\u2013\u2014]\s*(\d{1,3})\s*%")
+
+
+def beat_word_table(style_guide: str, target_words: int) -> str:
+    """The style guide's time beats turned into word ranges for THIS script:
+    '0-5% = words 0-60'. Empty when the guide has no percentage beats (an
+    old-format guide with minutes in it)."""
+    sec = re.search(r"##\s*Structure[^\n]*\n(.*?)(?=\n##\s|\Z)",
+                    style_guide or "", re.S)
+    if not sec or target_words <= 0:
+        return ""
+    rows = []
+    for line in sec.group(1).splitlines():
+        m = _BEAT_PCT.search(line)
+        if not m:
+            continue
+        a, b = int(m.group(1)), int(m.group(2))
+        if not (0 <= a < b <= 100):
+            continue
+        role = _BEAT_PCT.sub("", line)
+        role = re.sub(r"[*_`]|\(\s*\)", "", role)
+        role = re.sub(r"\s+", " ", role).strip(" -:\u2022\t0123456789.)(")
+        role = re.sub(r"^[\s\u2014-]+", "", role)
+        role = role.replace(" \u2014 ", ": ").replace(" - ", ": ")[:90]
+        rows.append(f"- {a}-{b}% = about words {round(target_words * a / 100)}"
+                    f"-{round(target_words * b / 100)}: {role}")
+    return "\n".join(rows) if len(rows) >= 3 else ""
+
+
 def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = 1200,
-                  variation: str = "", extra_direction: str = "") -> str:
+                  variation: str = "", extra_direction: str = "",
+                  style_variant: str | None = None) -> str:
     facts = (source_text or "").strip()[:4000]      # a ~100-word brief
     if facts:
         facts_block = ("BRIEF (what the video is about, and the KEYWORDS you "
@@ -3903,11 +4005,26 @@ def script_prompt(title: str, genre: str, source_text: str,
                        "research the topic yourself.")
     style = (style_guide or "").strip()
     if style:
-        style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
+        if style_variant == "classic":
+            style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
 hook pattern, structure, and CTA style all come from it):
 {style[:6000]}"""
+        else:
+            table = beat_word_table(style, target_words)
+            style_block = f"""STYLE GUIDE (match its tone, pacing, rhythm, hook pattern
+and CTA style exactly. Its Structure section is a TIME BEAT pattern: the ROLE of
+each beat and its share of the runtime. It is a rhythm to follow, never the
+story: do not reuse the reference video's topic, examples or order of ideas):
+{style[:6000]}""" + (f"""
+
+TIME BEATS FOR THIS SCRIPT (about {target_words} words in total):
+{table}""" if table else "")
     else:
         style_block = "No style guide provided."
+    beat_rule = ("" if style_variant == "classic" else
+                 "\n  Keep the STYLE GUIDE's time-beat rhythm (each beat's role "
+                 "and its share of the runtime), but fill every beat with YOUR "
+                 "own story and ideas, never the reference's.")
     var_block = f"\n{variation}" if variation else ""
     extra = (extra_direction or "").strip()
     if extra:
@@ -3939,7 +4056,7 @@ Rules:
   Keep an uncertain claim as uncertain ("may have", "suggests") - never upgrade it
   into "proves".
 - Choose your OWN story structure and decide yourself what the viewer should
-  learn first, where the tension or surprise lands, and how it ends.
+  learn first, where the tension or surprise lands, and how it ends.{beat_rule}
 - Story dressing is yours to invent: if the script needs a character, a company, a
   place or personal figures, make up NEW ones. Never reuse a character name,
   company name or scenario detail from an earlier script of this channel.
