@@ -907,6 +907,20 @@ def create_app(cfg) -> Flask:
                 q=q, sort=sort, limit=per, offset=(page - 1) * per,
                 reverse=reverse)
         genres = sorted({c["genre"] for c in channels if c["genre"]})
+        topics_data = topics_mod.load_topics(cfg)
+        analysis_data = (_analysis(items, args.get("v")) if tab == "analyze"
+                         else None)
+        # videos already taken by a production in any channel and any state
+        wanted = [r["video_id"] for r in shown]
+        for tp in (topics_data.get("topics") or []):
+            wanted += [v.get("video_id") for v in (tp.get("videos") or [])]
+        if analysis_data and analysis_data.get("found"):
+            wanted.append(analysis_data["item"]["video_id"])
+        conn = db.connect(cfg.db_path)
+        try:
+            taken = db.source_uses(conn, wanted)
+        finally:
+            conn.close()
 
         own_ids = {o["id"] for o in own}
         picked_own = _num("own", -1, int)
@@ -960,9 +974,8 @@ def create_app(cfg) -> Flask:
                 else None),
             ranked=(insights.rank_channels(items) if tab == "channels"
                     else []),
-            analysis=(_analysis(items, args.get("v")) if tab == "analyze"
-                      else None),
-            topics=topics_mod.load_topics(cfg), job=research_job,
+            analysis=analysis_data, taken=taken,
+            topics=topics_data, job=research_job,
             api={"source": youtube_api.key_source(cfg),
                  "used": youtube_api.quota_used(cfg),
                  "left": youtube_api.quota_left(cfg),

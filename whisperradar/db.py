@@ -811,6 +811,36 @@ def source_use_tags(conn, own_channel_id, videos) -> dict[str, str]:
     return {vid: tag for vid, tag in tags.items() if vid in wanted}
 
 
+def source_uses(conn, video_ids) -> dict[str, list[dict]]:
+    """{video_id: [{"id", "status", "label", "channel"}]} for every production
+    built on one of these source videos, in ANY channel and ANY state, so the
+    Research page can show a video that is already taken before a second
+    production is started on it. A video flagged `produced` by hand with no
+    production anywhere gets a single "marked produced" entry."""
+    ids = [v for v in video_ids if v]
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    rows = conn.execute(
+        "SELECT p.id, p.source_video_id AS vid, p.status,"
+        " COALESCE(o.name, '') AS channel FROM productions p"
+        " LEFT JOIN own_channels o ON o.id = p.own_channel_id"
+        f" WHERE p.source_video_id IN ({marks}) ORDER BY p.id", ids).fetchall()
+    out: dict[str, list[dict]] = {}
+    for r in rows:
+        status = r["status"] or "active"
+        out.setdefault(r["vid"], []).append({
+            "id": r["id"], "status": status,
+            "label": SOURCE_USE_LABELS.get(status, status),
+            "channel": r["channel"]})
+    for r in conn.execute(
+            f"SELECT video_id FROM videos WHERE produced = 1"
+            f" AND video_id IN ({marks})", ids):
+        out.setdefault(r[0], [{"id": None, "status": "marked",
+                               "label": "marked produced", "channel": ""}])
+    return out
+
+
 def source_in_channel(conn, video_id: str, own_channel_id):
     """The production already built on this source in this channel (the
     newest), or None."""

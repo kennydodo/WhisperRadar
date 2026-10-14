@@ -43,6 +43,9 @@
            font-size: 11px; font-weight: 600; background: rgba(86,93,107,.25);
            color: var(--muted); }
   .badge.transcribed { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.taken { background: rgba(240,180,60,.16); color: #e0a93a; margin-left: 6px; white-space: nowrap; }
+  .badge.taken.published, .badge.taken.ready { background: rgba(63,185,111,.15); color: var(--green); }
+  .badge.taken.failed { background: rgba(230,90,90,.15); color: #e06060; }
   button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
           padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
   button:hover { filter: brightness(1.1); }
@@ -63,6 +66,8 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
 </head>
 <body>
+{% macro taken_badges(video_id) %}{% for u in taken.get(video_id, []) %}<a class="badge taken {{ u.status }}" {% if u.id %}href="/studio/{{ u.id }}"{% endif %} style="text-decoration:none" title="Already used for a production{% if u.channel %} in {{ u.channel }}{% endif %}{% if u.id %} (#{{ u.id }}){% endif %} - starting another would make the same video twice">{{ u.label }}{% if u.channel %} &middot; {{ u.channel }}{% endif %}</a>{% endfor %}{% endmacro %}
+
 <style>
   .topnav { display:flex; gap:18px; align-items:center; max-width:1100px; margin:0 auto;
             padding:14px 16px 0; flex-wrap:wrap; }
@@ -178,7 +183,7 @@
     <div class="panel"><div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
       <img src="https://i.ytimg.com/vi/{{ analysis.item.video_id }}/mqdefault.jpg" alt="" style="width:240px;border-radius:7px">
       <div style="flex:1;min-width:240px"><div class="title" style="font-size:16px"><a href="{{ analysis.item.url }}" target="_blank" rel="noopener">{{ analysis.item.title }}</a></div>
-        <div class="muted">{{ analysis.item.channel_name }}</div>
+        <div class="muted">{{ analysis.item.channel_name }}</div>{% if taken.get(analysis.item.video_id) %}<div style="margin-top:6px">{{ taken_badges(analysis.item.video_id) }}</div>{% endif %}
         <ul style="margin:10px 0 0;padding-left:18px">{% for n in analysis.notes %}<li style="margin-bottom:4px">{{ n }}</li>{% endfor %}</ul>
         <form method="post" action="/studio/new" style="margin-top:12px">
           <input type="hidden" name="title" value="{{ analysis.item.title }}"><input type="hidden" name="source_video_id" value="{{ analysis.item.video_id }}"><input type="hidden" name="genre" value="{{ analysis.item.genre or '' }}">
@@ -276,7 +281,7 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:10px">
       {% for v in tp.videos[:6] %}<a href="https://youtu.be/{{ v.video_id }}" target="_blank" rel="noopener" style="color:inherit">
         <img class="th" style="width:100%;height:auto;aspect-ratio:16/9" loading="lazy" src="https://i.ytimg.com/vi/{{ v.video_id }}/mqdefault.jpg" alt="">
-        <div style="font-size:12px;margin-top:3px">{{ v.title }}</div>
+        <div style="font-size:12px;margin-top:3px">{{ v.title }}{{ taken_badges(v.video_id) }}</div>
         <div class="muted" style="font-size:11px">{{ v.channel_name }} &middot; {{ v.multiplier }}x</div></a>{% endfor %}
     </div>
   </div>
@@ -350,7 +355,7 @@
     {% for r in rows %}
       <tr>
         <td><a href="{{ r.url }}" target="_blank" rel="noopener"><img class="th" loading="lazy" src="{{ r.thumb }}" alt=""></a></td>
-        <td><div class="title"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a>{% if r.breakout %} <span class="mult m10" title="recent, well above its channel's norm and not slowing down">&#128293; breaking out</span>{% endif %}</div>
+        <td><div class="title"><a href="{{ r.url }}" target="_blank" rel="noopener">{{ r.title }}</a>{% if r.breakout %} <span class="mult m10" title="recent, well above its channel's norm and not slowing down">&#128293; breaking out</span>{% endif %}{{ taken_badges(r.video_id) }}</div>
             <div class="muted" style="font-size:12px">{{ r.channel_name }}{% if r.duration %} &middot; {{ (r.duration // 60)|int }}:{{ '%02d' % (r.duration % 60)|int }}{% endif %}</div></td>
         <td class="num"><span class="mult {{ 'm10' if r.multiplier >= 10 else ('m5' if r.multiplier >= 5 else 'm3') }}"
               title="views / {{ fmt_views(r.baseline) }} ({{ r.baseline_how }})">{{ '%.1f' % r.multiplier }}x</span></td>
