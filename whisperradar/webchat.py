@@ -1197,6 +1197,12 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 log(status)
 
         if files:
+            try:
+                log(f"{site.name}: attaching " + ", ".join(
+                    f"{Path(str(f)).name} ({Path(str(f)).stat().st_size:,} bytes)"
+                    for f in files))
+            except OSError:
+                pass
             seen = _name_counts(page, files)
             try:
                 page.set_input_files(site.files, [str(f) for f in files])
@@ -1691,6 +1697,108 @@ def _name_counts(page, files) -> dict:
     return counts
 
 
+# An attachment chip can carry the file's name AND an error ("Server busy",
+# upload failed) - the name check above passes, yet the file never reached the
+# chat and the send button stays greyed out. This finds the text of the chip
+# (the nearest block around the file name) that shows such an error.
+_UPLOAD_ERR_RE = re.compile(
+    r"server busy|upload(?:ing)? (?:failed|error)|failed to upload|"
+    r"couldn.?t upload|can.?t upload|upload fail|try again|retry", re.I)
+
+_UPLOAD_ERROR_JS = """(names) => {
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
+  const err = /server busy|upload(ing)? (failed|error)|failed to upload|couldn.?t upload|can.?t upload|upload fail|try again|retry/i;
+  let best = '';
+  for (const el of document.querySelectorAll('div,span,li,a,p')) {
+    if (!vis(el)) continue;
+    const t = (el.innerText || '').trim();
+    if (!t || t.length > 300 || !err.test(t)) continue;
+    if (!names.some(n => t.includes(n))) continue;
+    if (!best || t.length < best.length) best = t;
+  }
+  return best;
+}"""
+
+# Press the retry control of the failed chip: a button / role=button / link /
+# svg-carrying element inside the smallest block that holds the file name and
+# the error; failing that the first small element at its left (the icon).
+_UPLOAD_RETRY_JS = """(names) => {
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
+  const err = /server busy|upload(ing)? (failed|error)|failed to upload|couldn.?t upload|can.?t upload|upload fail|try again|retry/i;
+  let chip = null, len = 1e9;
+  for (const el of document.querySelectorAll('div,span,li,a,p')) {
+    if (!vis(el)) continue;
+    const t = (el.innerText || '').trim();
+    if (!t || t.length > 300 || !err.test(t)) continue;
+    if (!names.some(n => t.includes(n))) continue;
+    if (t.length < len) { chip = el; len = t.length; }
+  }
+  if (!chip) return '';
+  const fire = el => {
+    const r = el.getBoundingClientRect();
+    const o = {bubbles: true, cancelable: true, view: window,
+               clientX: r.left + r.width / 2, clientY: r.top + r.height / 2};
+    for (const ev of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'])
+      el.dispatchEvent(new MouseEvent(ev, o));
+  };
+  const d = e => (e.tagName || '').toLowerCase() + '.' +
+                 String(e.className && e.className.baseVal !== undefined
+                        ? e.className.baseVal : e.className || '').slice(0, 40);
+  let box = chip;
+  for (let i = 0; i < 3 && box; i++, box = box.parentElement) {
+    const c = box.querySelector('button,[role=button],a,svg');
+    if (c && vis(c)) { const t = c.closest('button,[role=button],a') || c;
+                       fire(t); return d(t); }
+  }
+  const kid = [...chip.querySelectorAll('*')].find(
+      e => vis(e) && e.getBoundingClientRect().width < 60);
+  if (kid) { fire(kid); return d(kid); }
+  fire(chip); return d(chip);
+}"""
+
+
+def _upload_error(page, names) -> str:
+    try:
+        txt = page.evaluate(_UPLOAD_ERROR_JS, list(names))
+    except Exception:  # noqa: BLE001
+        return ""
+    txt = txt if isinstance(txt, str) else ""
+    return txt if _UPLOAD_ERR_RE.search(txt) else ""
+
+
+def _fix_failed_uploads(page, names, clock, log, tries: int = 3,
+                        wait: float = 40.0) -> None:
+    """A chip that shows a file name but also 'Server busy' means the file did
+    NOT arrive. Press its retry control and wait for the error to go; when it
+    will not, stop with a clear message instead of sending without the file."""
+    err = _upload_error(page, names)
+    for attempt in range(1, tries + 1):
+        if not err:
+            return
+        what = err.replace("\n", " / ")[:120]
+        log(f"the upload shows an error ({what}) - pressing retry "
+            f"({attempt}/{tries})")
+        try:
+            how = page.evaluate(_UPLOAD_RETRY_JS, list(names))
+        except Exception:  # noqa: BLE001
+            how = ""
+        log(f"  retry pressed on: {how or 'nothing found'}")
+        t0 = clock()
+        while clock() - t0 < wait:
+            page.wait_for_timeout(2000)
+            err = _upload_error(page, names)
+            if not err:
+                log("the upload went through after the retry")
+                page.wait_for_timeout(3000)
+                return
+    if err:
+        raise WebChatError(
+            "the attached file did not upload (" + err.replace("\n", " / ")[:120]
+            + ") - the site says it is busy; try again in a minute")
+
+
 def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
                       seen: Optional[dict] = None, settle: float = 3.0) -> None:
     """Wait until every NEW attachment shows in the chat. In a chat that
@@ -1711,6 +1819,7 @@ def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
                      and _thumb_count(page) - seen["__thumbs__"] >= len(names))
         if by_name or by_thumbs:
             page.wait_for_timeout(int(settle * 1000))   # let the upload finish
+            _fix_failed_uploads(page, names, clock, log)
             return
         if clock() - t0 > limit:
             raise WebChatError("the attached file(s) never showed up in the "

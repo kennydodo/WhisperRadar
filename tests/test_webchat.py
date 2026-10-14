@@ -894,6 +894,50 @@ class UploadCountTests(unittest.TestCase):
         self.assertGreaterEqual(page.ticks, 5)
 
 
+class FailedUploadTests(unittest.TestCase):
+    """A chip with the file name AND 'Server busy' means the file never arrived."""
+
+    def _page(self, clk, errors_before_ok):
+        class P:
+            def __init__(self):
+                self.errs = errors_before_ok
+                self.retries = 0
+
+            def evaluate(self, js, arg=None):
+                if js is wc._UPLOAD_ERROR_JS:
+                    return ("shotlist.json\nServer busy" if self.errs > 0
+                            else "shotlist.json")
+                if js is wc._UPLOAD_RETRY_JS:
+                    self.retries += 1
+                    self.errs = 0 if self.retries >= errors_before_ok else self.errs
+                    return "div.retry"
+                return "shotlist.json shotlist.json"
+
+            def wait_for_timeout(self, ms):
+                clk.t += ms / 1000.0
+        return P()
+
+    def test_retry_is_pressed_until_the_error_is_gone(self):
+        clk, logs = Clock(), []
+        page = self._page(clk, 1)
+        wc._fix_failed_uploads(page, ["shotlist.json"], clk, logs.append)
+        self.assertEqual(page.retries, 1)
+        self.assertTrue(any("went through" in m for m in logs))
+
+    def test_a_chip_that_never_recovers_stops_the_run(self):
+        clk = Clock()
+        page = self._page(clk, 99)
+        page.retries = -10**6            # retry never clears it
+        with self.assertRaises(wc.WebChatError):
+            wc._fix_failed_uploads(page, ["shotlist.json"], clk, lambda m: None)
+
+    def test_a_healthy_chip_is_left_alone(self):
+        clk = Clock()
+        page = self._page(clk, 0)
+        wc._fix_failed_uploads(page, ["shotlist.json"], clk, lambda m: None)
+        self.assertEqual(page.retries, 0)
+
+
 class ImageUploadTests(unittest.TestCase):
     """ChatGPT shows attached images as thumbnails: no file name in the text."""
 
