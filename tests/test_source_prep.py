@@ -89,6 +89,16 @@ class SourceWaitTests(unittest.TestCase):
         self.assertIsNone(source_prep.state(self.cfg, pid))
 
 
+    def test_starting_the_app_does_not_create_folders_of_missing_productions(self):
+        from whisperradar.webapp import create_app
+        gone = self.t / "gone-folder"
+        db.update_production(self.conn, self.pid, work_dir=str(gone))
+        create_app(self.cfg)
+        import time
+        time.sleep(0.5)
+        self.assertFalse(gone.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -3342,7 +3342,12 @@ def create_app(cfg) -> Flask:
             return
         for prod in prods:
             try:
-                marker = studio.prod_dir(cfg, prod["id"]) / AFTER_SOURCE_FILE
+                # look only: studio.prod_dir() would create the folder of
+                # every production whose folder is gone
+                folder = (Path(prod["work_dir"]).expanduser()
+                          if prod["work_dir"]
+                          else cfg.studio_dir / str(prod["id"]))
+                marker = folder / AFTER_SOURCE_FILE
                 if not marker.exists():
                     continue
                 provider = json.loads(
