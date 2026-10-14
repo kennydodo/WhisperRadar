@@ -1101,6 +1101,16 @@ _CONTINUE_JS = """(labels) => {
     const t=(b.innerText||b.getAttribute('aria-label')||'').trim().toLowerCase();
     if (t && t.length<40 && labels.some(l=>t===l||t.startsWith(l))) {
       b.click(); return t; } }
+  // DeepSeek's "Continue" is a plain styled element, not a button: take the
+  // smallest visible element whose whole text is a Continue label, outside
+  // the reply text itself
+  const tiny=[...document.querySelectorAll('div,span,a')]
+    .filter(x=>x.offsetParent!==null && x.children.length<=2)
+    .filter(x=>{const t=(x.innerText||'').trim().toLowerCase();
+                return t && t.length<40 && labels.some(l=>t===l);})
+    .sort((p,q)=>p.querySelectorAll('*').length-q.querySelectorAll('*').length);
+  if (tiny.length) { tiny[0].click();
+    return (tiny[0].innerText||'').trim().toLowerCase(); }
   return ''; }"""
 
 
@@ -1384,6 +1394,27 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 # is working, so the start wait begins again
                 grew_at = clock()
             page_len = n_len
+            if (not started and ready is not None and clock() - t0 > 15
+                    and clock() - max(t0, grew_at) >= 6
+                    and clock() - cand_at >= 4):
+                # the reply element was never recognised (DeepThink pages):
+                # when the page has gone quiet and a COMPLETE answer is
+                # already on it, take it now instead of waiting out the
+                # start limit
+                cand_at = clock()
+                try:
+                    cands = page.evaluate(_CANDIDATES_JS, site.reply) or []
+                except Exception:  # noqa: BLE001
+                    cands = []
+                whole = after_prompt(page, prompt)
+                if whole:
+                    cands = [whole] + list(cands)
+                for cand in cands:
+                    got = clean_reply(cand)
+                    if got and ready(got):
+                        log(f"{site.name}: a complete answer is on the page "
+                            f"({len(got)} chars) - using it")
+                        return got
             if started:
                 pass
             elif clock() - max(t0, grew_at) > start_wait:
@@ -1416,8 +1447,8 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 and not ready(clean_reply(last_text))):
             done_waiting = False           # settled, but not a full answer yet
         if (ready is not None and started and not gen and not done_waiting
-                and clock() - stable_since >= 20
-                and clock() - cand_at >= 30):
+                and clock() - stable_since >= 8
+                and clock() - cand_at >= 4):
             cand_at = clock()              # the reply may sit in another block
             try:
                 cands = page.evaluate(_CANDIDATES_JS, site.reply) or []

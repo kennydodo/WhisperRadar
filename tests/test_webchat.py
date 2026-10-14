@@ -228,6 +228,20 @@ class AskTests(unittest.TestCase):
         out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk, start_wait=90.0)
         self.assertEqual(out, "done")
 
+    def test_complete_answer_on_an_unrecognised_page_is_taken_in_seconds(self):
+        # DeepThink page: the reply element is never recognised, but the page
+        # already holds the finished JSON verdict - no 90 s start wait
+        clk = Clock()
+        verdict = '{"faults": [], "shots": [], "detailed_ratio": 1.0, ' \
+                  '"pass": true, "fixes": []}'
+        page = FakePage(clk, wc.DEEPSEEK, [("", False)] * 400)
+        page.cands = [verdict]
+        t0 = clk.t
+        out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk, start_wait=90.0,
+                     ready=lambda t: t.startswith("{") and t.endswith("}"))
+        self.assertEqual(out, verdict)
+        self.assertLess(clk.t - t0, 30)
+
     def test_missing_attachment_chip_fails(self):
         clk = Clock()
 

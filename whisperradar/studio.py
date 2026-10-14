@@ -5295,7 +5295,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
 # Reference names ARE the identity: FlowBatch attaches project assets by
 # name, Renderly resolves them as filenames, and Flow's own card matching is
 # fuzzy. So the shape is enforced, not hoped for.
-REF_NAME_RE = re.compile(r"^(CH|BG|OBJ)_[A-Z0-9]+(?:_[0-9]{2})?$")
+REF_NAME_RE = re.compile(r"^(CH|BG|OBJ)_[A-Z0-9]+(?:_[A-Z0-9]+)*$")
 
 # Refs a plan INVENTS for on-the-fly generation are capped: each one is a Flow
 # generation (credits), and a plan that leans on invented refs instead of the
