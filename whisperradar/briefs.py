@@ -59,7 +59,7 @@ MIX_MIN_ZOOM_SHOTS = 10
 # original brief, so these cannot drift from it unnoticed)
 STANDARD_SLOTS: dict[str, str] = {
     "HOLD_RULE": (
-        "A hold that runs long (roughly 15 seconds or more) is acceptable only when it carries motion — a long hold on a static frame is never acceptable (Section 7)."),
+        "A hold that runs long must carry motion — a long hold on a static frame is never acceptable (ST is only for short holds, Section 5) — and no hold may exceed the channel's maximum (PACING MATH block)."),
     "MOTION_SECTION": """\
 ### Motion is assigned with composition, not after it
 

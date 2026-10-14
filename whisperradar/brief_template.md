@@ -6,7 +6,7 @@ You will receive: the final narration .srt file, the channel's visual style inst
 
 ## SECTION 1 — NARRATION IS THE SOURCE OF TRUTH
 
-The SRT controls narration timing, semantic structure, visual changes, and visual content. Do NOT divide the video by arbitrary duration rules: no fixed seconds-per-image rule, no minimum/maximum image duration, no target image count. Visual changes come from changes in meaning. A visual may last two seconds if a new idea starts after two seconds, or fifteen seconds if the narration keeps developing the same idea.
+The SRT controls narration timing, semantic structure, visual changes, and visual content. Do NOT divide the video by arbitrary duration rules: no fixed seconds-per-image rule and no target image count. Visual changes come from changes in meaning. The only duration limits are the channel's own hold limits (a maximum, and on slow-paced channels also a minimum) given in the PACING MATH block at the end of this brief: never hold an image longer than that maximum, whatever the narration is doing. A visual may last two seconds if a new idea starts after two seconds, or as long as the maximum if the narration keeps developing the same idea.
 
 ## SECTION 2 — THE TWO FAILURES: OVER-GENERATION AND UNDER-GENERATION
 
@@ -28,9 +28,9 @@ The traps above say when NOT to create an image. These say when you MUST. The cu
 - **The action changes**: from describing a state to doing something, or back.
 - **A list of parallel items ends** and the payoff or application begins.
 
-Holding through rephrasing is correct; holding through a new concrete detail is the lazy default. A long hold is never cheaper than a split — each new concrete detail deserves its own visual.
+Holding through rephrasing is correct; holding through a new concrete detail is the lazy default, so each new concrete detail deserves its own visual — unless the PACING MATH block says this is a slow-paced channel that groups ideas into longer shots, in which case follow it.
 
-Health metric — there are no image counts, rates, or duration caps. Average shot duration is an observation, never a target: a 4-second shot is correct if the idea changed; a long hold is correct if the narration keeps developing the same idea. {{HOLD_RULE}} There are exactly two failures: **fragmentation** — changing images more often than ideas change (one cue = one image); and **truncation** — stopping before the final cue to keep the count low (Section 7). Nothing else about your image count or pacing is a failure.
+Health metric — there is no target image count. Average shot duration is an observation, never a target: a 4-second shot is correct if the idea changed; a long hold is correct if the narration keeps developing the same idea, up to the channel's maximum hold. {{HOLD_RULE}} There are three failures: **fragmentation** — changing images more often than ideas change (one cue = one image); **truncation** — stopping before the final cue to keep the count low (Section 7); and **an over-long hold** — an image held longer than the channel's maximum (split it at a meaning boundary). The maximum implies a floor on the number of images; the PACING MATH block gives it. Nothing else about your image count or pacing is a failure.
 
 ## SECTION 3 — HIERARCHY
 
@@ -155,7 +155,7 @@ When the narration describes a communicative or expressive act — signing, spea
 
 When the narration states that a subject felt or showed a specific emotional reaction at a beat — grief, joy, fear, surprise, anger, relief, devastation, affection, and the like — the prompt must specify the visible facial expression and/or body-language cue that conveys it: eyes, mouth, brow, posture, gesture. A prop, a symbol, or an infographic icon standing next to an otherwise neutral subject does not show the reaction; "mourned it when it was gone" needs the subject's face and posture to carry grief, not just an empty blanket or a faded outline beside an unreadable expression. This applies across every genre and subject, human or animal.
 
-This does not extend to narration that only discusses an emotion as a concept, process or general claim rather than a subject's reaction at that moment ("bonding releases oxytocin", "pet owners report better mental health") — that stays narration's job like any other internal or statistical claim (SECTION 11's judge exclusions), and INF/CMP explainer diagrams illustrating such claims with icons are unaffected. The line is whether a specific subject is shown having the reaction: if so, show it on them; if the beat is describing the idea rather than a moment, an icon or prop remains fine.
+This does not extend to narration that only discusses an emotion as a concept, process or general claim rather than a subject's reaction at that moment ("bonding releases oxytocin", "pet owners report better mental health") — that stays narration's job like any other internal or statistical claim, and INF/CMP explainer diagrams illustrating such claims with icons are unaffected. The line is whether a specific subject is shown having the reaction: if so, show it on them; if the beat is describing the idea rather than a moment, an icon or prop remains fine.
 
 ## SECTION 12 — FINAL VALIDATION CHECKLIST
 
