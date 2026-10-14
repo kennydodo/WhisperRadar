@@ -81,7 +81,10 @@ class FakePage:
             return {"count": 1 if (self.sent and text) else 0, "text": text,
                     "url": self.url}
         if js is wc._CANDIDATES_JS:
-            return getattr(self, "cands", None)
+            # `pre_cands` = blocks already on the page before our send (an
+            # older answer in a continued chat); `cands` = after the send
+            return (getattr(self, "cands", None) if self.sent
+                    else getattr(self, "pre_cands", None))
         if js is wc._CONTINUE_JS:
             if self.continue_frames and self.frame[0]:
                 self.clicked_continue += 1
@@ -241,6 +244,38 @@ class AskTests(unittest.TestCase):
                      ready=lambda t: t.startswith("{") and t.endswith("}"))
         self.assertEqual(out, verdict)
         self.assertLess(clk.t - t0, 30)
+
+    def test_an_older_answer_on_the_page_is_never_taken_for_the_new_one(self):
+        # a continued chat still holds the previous stage's verdict: it is a
+        # valid JSON verdict, but it was there BEFORE we sent
+        clk = Clock()
+        old = '{"score": 9.5, "criteria": {}, "claims": [], "must_fix": []}'
+        page = FakePage(clk, wc.DEEPSEEK, [("", False)] * 40
+                        + [('{"faults": [], "pass": true}', False)] * 12)
+        page.pre_cands = [old]
+        page.cands = [old]
+        out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk, start_wait=90.0,
+                     ready=lambda t: t.startswith("{") and t.endswith("}"))
+        self.assertEqual(out, '{"faults": [], "pass": true}')
+
+    def test_continue_is_pressed_before_any_reply_element_is_recognised(self):
+        clk = Clock()
+        page = FakePage(clk, wc.DEEPSEEK, [("", False)] * 30)
+        page.frame = ("", False)
+        # Continue is offered while nothing has started (no reply element)
+        orig = page.evaluate
+
+        def ev(js, arg=None):
+            if js is wc._CONTINUE_JS and page.sent and not page.clicked_continue:
+                page.clicked_continue += 1
+                page.script = [('{"faults": [], "pass": true}', False)] * 12
+                page.frame = ("", True)
+                return "continue"
+            return orig(js, arg)
+        page.evaluate = ev
+        out = wc.ask(page, wc.DEEPSEEK, "p", clock=clk, start_wait=90.0)
+        self.assertEqual(out, '{"faults": [], "pass": true}')
+        self.assertEqual(page.clicked_continue, 1)
 
     def test_missing_attachment_chip_fails(self):
         clk = Clock()

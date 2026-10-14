@@ -73,7 +73,8 @@ class WebTransport:
         # a judge's JSON verdict: a reply that stopped without it is given a
         # nudge after seconds, not after the 5 minute default
         extra = ({"ready_wait": JUDGE_READY_WAIT}
-                 if ready is _is_json_verdict else {})
+                 if ready in (_is_json_verdict, _is_script_verdict,
+                              _is_shotlist_verdict) else {})
         return self.chat.ask(site, prompt, list(files), new_chat=new_chat,
                              options=self.options.get(site), ready=ready,
                              log=self.log, **extra)
@@ -232,14 +233,27 @@ JUDGE_NUDGE = ("Your last reply had no JSON verdict. Do any checking you "
                "JSON verdict in the format you were given.")
 
 
-def _nudge_judge(transport, judge: str, log) -> str:
+def _nudge_judge(transport, judge: str, log, ready=None) -> str:
     log(f"{judge}: no verdict yet - asking for it in the same chat")
     return _send(transport, judge, lambda f: JUDGE_NUDGE, log,
-                 new_chat=False, ready=_is_json_verdict)
+                 new_chat=False, ready=ready or _is_json_verdict)
 
 
 def _is_json_verdict(text: str) -> bool:
     return bool(studio._parse_json_object(text))
+
+
+def _is_script_verdict(text: str) -> bool:
+    """A script judge's verdict: a JSON object with a score. Any other JSON
+    on the page (an older answer, the format example) is not one."""
+    d = studio._parse_json_object(text)
+    return bool(d) and "score" in d
+
+
+def _is_shotlist_verdict(text: str) -> bool:
+    """A shotlist judge's verdict: a JSON object with faults and pass."""
+    d = studio._parse_json_object(text)
+    return bool(d) and "faults" in d and "pass" in d
 
 
 def _has_json(text: str) -> bool:
@@ -510,18 +524,18 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                    else None)
         for attempt in (1, 2):      # a judge reply with no score is asked again
             if attempt == 2:
-                raw = _nudge_judge(transport, judge, log)
+                raw = _nudge_judge(transport, judge, log, _is_script_verdict)
             elif judge_open:
                 raw = _send(transport, judge,
                             lambda f: _script_followup(script, words, target, overlap,
                                                        studio.script_looks_truncated(script),
                                                        struct0, judge_dir), log,
-                            new_chat=False, ready=_is_json_verdict)
+                            new_chat=False, ready=_is_script_verdict)
             else:
                 raw = _send(transport, judge,
                             lambda f: ep.script_judge_prompt(
                                 cfg, pid, script, title, None, None, None, f),
-                            log, ready=_is_json_verdict)
+                            log, ready=_is_script_verdict)
             _dump(cfg, pid, f"script_judge_reply_round{rnd}", raw)
             verdict = studio._parse_json_object(raw)
             if verdict:
@@ -921,7 +935,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             fresh = not (judge_open or judge_cont)
             try:
                 return _send(transport, judge, build, log, new_chat=fresh,
-                             ready=_is_json_verdict)
+                             ready=_is_shotlist_verdict)
             except webchat.ChatLost:
                 if judge_open or not judge_cont:
                     raise
@@ -929,7 +943,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                     f"starting a new one")
                 judge_cont = False
                 return _send(transport, judge, build, log, new_chat=True,
-                             ready=_is_json_verdict)
+                             ready=_is_shotlist_verdict)
 
         raw = send_judge()
         dump(f"judge_reply_round{rnd}", raw)
@@ -937,7 +951,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
         if not verdict:
             log(f"{judge} gave no usable verdict - asking once more")
             try:
-                raw = _nudge_judge(transport, judge, log)
+                raw = _nudge_judge(transport, judge, log, _is_shotlist_verdict)
             except webchat.ChatLost:
                 raw = send_judge()
             verdict = studio._parse_json_object(raw)

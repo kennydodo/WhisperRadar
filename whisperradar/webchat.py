@@ -1174,6 +1174,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
     WebChatTimeout."""
     if not resume and not (prompt or "").strip():
         raise WebChatError("Nothing to send")
+    pre_cands: set = set()                 # reply-like blocks already on the page
     if resume:
         _wait_for_box(page, site, clock)
         if site.stream:
@@ -1229,6 +1230,14 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         if site.stream:
             page.evaluate(_CAP_RESET_JS)
         msgs_before = page.evaluate(_MSG_COUNT_JS) or 0
+        # What the page already holds BEFORE the send: in a chat that is
+        # continued, an earlier answer (another stage's verdict) is still on it
+        # and must never be taken for the answer to THIS prompt.
+        try:
+            pre_cands = {clean_reply(c) for c in
+                         (page.evaluate(_CANDIDATES_JS, site.reply) or [])}
+        except Exception:  # noqa: BLE001
+            pre_cands = set()
         _busy(page, site)                  # mark banners already on the page
         # A send is only repeated when there is NO sign it went out: the box still
         # holds the text, the address did not change, nothing is generating, no
@@ -1411,10 +1420,21 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                     cands = [whole] + list(cands)
                 for cand in cands:
                     got = clean_reply(cand)
-                    if got and ready(got):
+                    if got and got not in pre_cands and ready(got):
                         log(f"{site.name}: a complete answer is on the page "
                             f"({len(got)} chars) - using it")
                         return got
+            if (not started and not gen and continues < continue_max
+                    and clock() - t0 > 15
+                    and clock() - max(t0, grew_at) >= 8):
+                # the model stopped part-way (DeepSeek: "Stopped" + Continue)
+                # before any reply element was recognised
+                clicked = page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
+                if clicked:
+                    continues += 1
+                    log(f"{site.name}: clicked '{clicked}' ({continues})")
+                    grew_at = clock()
+                    continue
             if started:
                 pass
             elif clock() - max(t0, grew_at) > start_wait:
@@ -1459,7 +1479,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 cands = [whole] + list(cands)
             for cand in cands:
                 got = clean_reply(cand)
-                if got and ready(got):
+                if got and got not in pre_cands and ready(got):
                     log(f"{site.name}: the reply was in another block of the "
                         f"page ({len(got)} chars) - using it")
                     return got
