@@ -118,7 +118,8 @@ class MotionEngine:
         return MotionDecision(_pick_first_not_previous(AUTO_POOL, ctx.previous), m.AUTO_SELECTED)
 
     def plan_clip(self, motion: str, source: str, pan_right: bool,
-                  image_width: int, image_height: int) -> ClipMotionPlan:
+                  image_width: int, image_height: int,
+                  duration_seconds: Optional[float] = None) -> ClipMotionPlan:
         warnings: list = []
         out_aspect = self._output.width / self._output.height
         image_aspect = image_width / image_height
@@ -173,16 +174,29 @@ class MotionEngine:
                     "using a gentle push-in instead — generate a 200%-tall image (2304x2160) to pan.",
                     pan_right, image_width, image_height)
             x = (image_width - fit_width) / 2.0
+            # Pacing: a short shot crawling over the same fixed 4% sweep reads
+            # as a sprint (its mid-shot ease_in_out surge is the fastest thing
+            # in the video). Travel grows with the shot's length instead, up
+            # to the configured cap; a minimum keeps ~3s shots barely moving
+            # rather than strobing.
+            if duration_seconds and duration_seconds > 0:
+                floor = self._motion.pan_travel_seconds_floor
+                target = (self._motion.pan_target_speed_px_per_second
+                          * max(duration_seconds, floor))
+                travel = min(target, self._output.height
+                             * self._motion.pan_max_travel_percent / 100.0, spare_y)
+            else:
+                travel = min(mo.pan_max_travel_percent / 100.0 * self._output.height, spare_y)
+            travel = max(travel, 2.0)
+            center = spare_y / 2.0
             if source == m.EXPLICIT_CODE:
                 start_y = spare_y if motion == m.PAN_UP else 0
                 end_y = 0 if motion == m.PAN_UP else spare_y
             else:
-                capped = min(mo.pan_max_travel_percent / 100.0 * self._output.height, spare_y)
-                center = spare_y / 2.0
                 if motion == m.PAN_UP:
-                    start_y, end_y = center + capped / 2.0, center - capped / 2.0
+                    start_y, end_y = center + travel / 2.0, center - travel / 2.0
                 else:
-                    start_y, end_y = center - capped / 2.0, center + capped / 2.0
+                    start_y, end_y = center - travel / 2.0, center + travel / 2.0
             return ClipMotionPlan(motion, source, m.Rect(x, start_y, fit_width, fit_height),
                                   m.Rect(x, end_y, fit_width, fit_height), warnings)
 

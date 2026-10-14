@@ -247,7 +247,8 @@ def _assemble_timeline(inventory, timing, audio_seconds, options, issues) -> m.T
 
             pan_right = ctx.previous != m.PAN_RIGHT
             plan_ = engine.plan_clip(requested_motion, requested_source, pan_right,
-                                     image.width, image.height)
+                                     image.width, image.height,
+                                     duration_seconds=timed.duration_frames / options.output.fps)
             effective_motion = plan_.motion
             effective_source = requested_source if plan_.motion == requested_motion else m.AUTO_SELECTED
 
@@ -259,7 +260,9 @@ def _assemble_timeline(inventory, timing, audio_seconds, options, issues) -> m.T
                     f"{fname} has unknown dimensions; cannot compute viewports."))
 
             easing = (clip_override.easing if clip_override is not None and clip_override.easing is not None
-                      else options.motion.easing)
+                      else manifest_planner._resolve_easing(
+                          requested_motion, timed.duration_frames / options.output.fps,
+                          options.motion))
             final = MotionDecision(effective_motion, effective_source)
             if options.transitions.enabled and (si != 0 or i > 0):
                 is_boundary = i == 0 and len(previous_scene_id) > 0 and previous_scene_id != scene.scene_id

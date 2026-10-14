@@ -340,6 +340,10 @@ def _is_pan_motion(motion) -> bool:
 def _resolve_easing(motion, motion_seconds: float, mo: MotionOptions) -> str:
     if _is_pan_motion(motion) and motion_seconds > mo.long_pan_linear_threshold_seconds:
         return m.LINEAR
+    if motion in (m.PAN_UP, m.PAN_DOWN) and motion_seconds < mo.pan_ease_out_below_seconds:
+        # start moving immediately and land gently: the ease_in_out hump
+        # reads as a mid-shot sprint on short vertical pans
+        return m.EASE_OUT
     return mo.easing
 
 
@@ -391,9 +395,10 @@ def _build_clip(shot, asset, image, start, duration, fps, options, overrides, is
         if motion_frames < duration:
             motion_duration_frames = max(2, motion_frames)
 
-    start_vp, end_vp = _resolve_viewports(shot, asset, motion, motion_source, image, options, issues)
-
     effective_seconds = (motion_duration_frames if motion_duration_frames is not None else duration) / fps
+    start_vp, end_vp = _resolve_viewports(shot, asset, motion, motion_source, image, options, issues,
+                                          duration_seconds=effective_seconds)
+
     easing = (shot_override.easing if shot_override is not None and shot_override.easing is not None
               else _resolve_easing(motion, effective_seconds, options.motion))
 
@@ -436,10 +441,12 @@ def _apply_transitions(clips, shots, fps, options, overrides):
         incoming.transition = incoming_tr
 
 
-def _resolve_viewports(shot, asset, motion, motion_source, image, options, issues):
+def _resolve_viewports(shot, asset, motion, motion_source, image, options, issues,
+                       duration_seconds: float | None = None):
     if motion not in (m.STATIC, m.ZOOM_IN, m.ZOOM_OUT):
         pan = MotionEngine(options.motion, options.output).plan_clip(
-            motion, motion_source, motion != m.PAN_LEFT, image.width, image.height)
+            motion, motion_source, motion != m.PAN_LEFT, image.width, image.height,
+            duration_seconds=duration_seconds)
         return pan.start, pan.end
     base = _resolve_base_rect(shot, asset, image, options, issues)
     s0, s1 = _resolve_scales(shot, motion, options.motion)
