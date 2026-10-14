@@ -1114,6 +1114,152 @@ _CONTINUE_JS = """(labels) => {
   return ''; }"""
 
 
+# ---- Continue: press it properly and say what happened ------------------------------
+# A "clicked 'continue'" log line only meant the script found something and
+# called .click() on it. DeepSeek ignored such a click on some runs (a script
+# click is "untrusted"; the real button may be a styled div, scrolled out of
+# view, or covered). So: describe the element, alternate between a script
+# click and a REAL mouse click, record the clicks a person makes by hand, and
+# log whether the button was still there after each press.
+
+_CONTINUE_INFO_JS = """(labels) => {
+  const vis = e => e.offsetParent !== null;
+  const lab = e => (e.innerText || e.getAttribute('aria-label') || '')
+                   .trim().toLowerCase();
+  const ok = t => t && t.length < 40 && labels.some(l => t === l || t.startsWith(l));
+  let list = [...document.querySelectorAll('button,[role=button],.ds-button')]
+      .filter(vis).filter(b => ok(lab(b))).reverse();
+  let kind = 'button';
+  if (!list.length) {
+    kind = 'plain element';
+    list = [...document.querySelectorAll('div,span,a')]
+      .filter(x => vis(x) && x.children.length <= 2)
+      .filter(x => { const t = lab(x); return t && t.length < 40 &&
+                                       labels.some(l => t === l); })
+      .sort((p, q) => p.querySelectorAll('*').length - q.querySelectorAll('*').length);
+  }
+  if (!list.length) return null;
+  const el = list[0];
+  try { el.scrollIntoView({block: 'center', inline: 'center'}); } catch (e) {}
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const top = document.elementFromPoint(cx, cy);
+  const nm = e => e ? (e.tagName || '').toLowerCase() + '.' +
+        String(e.className && e.className.baseVal !== undefined
+               ? e.className.baseVal : e.className || '').slice(0, 50) : '';
+  const cs = getComputedStyle(el);
+  return {text: lab(el), kind: kind, candidates: list.length, el: nm(el),
+          role: el.getAttribute('role') || '', disabled: !!el.disabled ||
+            el.getAttribute('aria-disabled') === 'true',
+          x: Math.round(cx), y: Math.round(cy), w: Math.round(r.width),
+          h: Math.round(r.height),
+          in_view: cx >= 0 && cy >= 0 && cx <= innerWidth && cy <= innerHeight,
+          covered_by: (top && !el.contains(top) && !top.contains(el)) ? nm(top) : '',
+          pointer_events: cs.pointerEvents, hidden_tab: document.hidden,
+          focused: document.hasFocus(),
+          html: (el.outerHTML || '').replace(/\\s+/g, ' ').slice(0, 160)};
+}"""
+
+# remembers every click on the page (ours are isTrusted=false, a person's or a
+# real mouse click is true) so a manual Continue press can be compared
+_CLICK_SPY_JS = """() => {
+  if (window.__wrSpy) return true;
+  window.__wrSpy = []; 
+  document.addEventListener('click', e => {
+    const t = e.target || {};
+    window.__wrSpy.push({trusted: e.isTrusted,
+      tag: (t.tagName || '').toLowerCase(),
+      cls: String(t.className && t.className.baseVal !== undefined
+                  ? t.className.baseVal : t.className || '').slice(0, 50),
+      text: ((t.innerText || '') + '').trim().slice(0, 30),
+      path: (e.composedPath ? e.composedPath() : []).slice(0, 4).map(
+        x => (x.tagName || '').toLowerCase() + '.' +
+             String(x.className && x.className.baseVal !== undefined
+                    ? x.className.baseVal : x.className || '').slice(0, 30)
+      ).join(' < ')});
+    if (window.__wrSpy.length > 20) window.__wrSpy.shift();
+  }, true);
+  return true; }"""
+_CLICK_SPY_READ_JS = """() => { const a = window.__wrSpy || [];
+  window.__wrSpy = a.length ? [] : window.__wrSpy; return a; }"""
+
+DIAG_DIR = Path("data") / "logs"
+
+
+def _continue_methods(site) -> tuple:
+    # DeepSeek's Continue ignored a script click on some runs: start there with
+    # a real mouse click. The other chats keep the script click first.
+    return ("mouse", "script") if site.key == "deepseek" else ("script", "mouse")
+
+
+def _press_continue(page, site, log, n: int, diag: dict) -> str:
+    """Press Continue (n = presses so far). Returns the label pressed, or ''."""
+    labels = list(CONTINUE_LABELS)
+    try:
+        page.evaluate(_CLICK_SPY_JS)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        info = page.evaluate(_CONTINUE_INFO_JS, labels)
+    except Exception:  # noqa: BLE001
+        info = None
+    info = info if isinstance(info, dict) else None
+    # what happened to the previous press, and any click a person made since
+    try:
+        spy = page.evaluate(_CLICK_SPY_READ_JS)
+    except Exception:  # noqa: BLE001
+        spy = None
+    if isinstance(spy, list) and spy:
+        for c in spy[-6:]:
+            if isinstance(c, dict):
+                log(f"{site.name}: click seen on the page - "
+                    f"{'REAL (person/mouse)' if c.get('trusted') else 'script'}"
+                    f" {c.get('tag')}.{c.get('cls')} '{c.get('text')}' "
+                    f"path: {c.get('path')}")
+    if info and diag.get("method"):
+        log(f"{site.name}: the Continue button is STILL there after the last "
+            f"press ({diag['method']} click) - trying another way")
+        if not diag.get("shot"):
+            diag["shot"] = True
+            try:
+                DIAG_DIR.mkdir(parents=True, exist_ok=True)
+                f = DIAG_DIR / f"continue-{site.key}-{int(time.time())}.png"
+                page.screenshot(path=str(f))
+                log(f"{site.name}: screenshot of the stuck Continue: {f}")
+            except Exception:  # noqa: BLE001
+                pass
+    if info:
+        log(f"{site.name}: Continue element: {info.get('kind')} "
+            f"{info.get('el')} role='{info.get('role')}' text='{info.get('text')}' "
+            f"at ({info.get('x')},{info.get('y')}) {info.get('w')}x{info.get('h')} "
+            f"in_view={info.get('in_view')} disabled={info.get('disabled')} "
+            f"covered_by='{info.get('covered_by')}' "
+            f"pointer_events={info.get('pointer_events')} "
+            f"candidates={info.get('candidates')} tab_hidden={info.get('hidden_tab')} "
+            f"focused={info.get('focused')} html={info.get('html')}")
+    methods = _continue_methods(site)
+    method = methods[n % len(methods)]
+    label = ""
+    if method == "mouse" and info and hasattr(page, "mouse") \
+            and not info.get("disabled") and info.get("w") and info.get("h"):
+        try:
+            page.mouse.move(info["x"], info["y"])
+            page.wait_for_timeout(200)
+            page.mouse.click(info["x"], info["y"])
+            label = info.get("text") or "continue"
+        except Exception as exc:  # noqa: BLE001
+            log(f"{site.name}: the mouse click failed ({exc}) - script click")
+            method = "script"
+    else:
+        method = "script"
+    if not label:
+        label = page.evaluate(_CONTINUE_JS, labels)
+    diag["method"] = method if label else ""
+    if label:
+        log(f"{site.name}: pressed Continue by {method} click")
+    return label
+
+
 def _busy(page, site: Site) -> dict:
     out = page.evaluate(_BUSY_JS, {"re": BUSY_RE, "reply": site.reply})
     return out if isinstance(out, dict) else {"n": 0, "text": ""}
@@ -1310,6 +1456,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
 
     t0 = clock()
     last_text, stable_since, continues = "", clock(), 0
+    cdiag: dict = {}          # what the last Continue press looked like
     started = False
     probed = False
     if resume:
@@ -1435,7 +1582,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                     and clock() - max(t0, grew_at) >= 8):
                 # the model stopped part-way (DeepSeek: "Stopped" + Continue)
                 # before any reply element was recognised
-                clicked = page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
+                clicked = _press_continue(page, site, log, continues, cdiag)
                 if clicked:
                     continues += 1
                     log(f"{site.name}: clicked '{clicked}' ({continues})")
@@ -1494,7 +1641,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 and clock() - stable_since >= settle):
             # the reply stopped part-way and is not a full answer yet (a JSON
             # step): a "Continue" button is how the site offers the rest
-            clicked = page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
+            clicked = _press_continue(page, site, log, continues, cdiag)
             if clicked:
                 continues += 1
                 log(f"{site.name}: clicked '{clicked}' ({continues})")
@@ -1509,7 +1656,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 except Exception:  # noqa: BLE001
                     pass
         if done_waiting:
-            clicked = (page.evaluate(_CONTINUE_JS, list(CONTINUE_LABELS))
+            clicked = (_press_continue(page, site, log, continues, cdiag)
                        if continues < continue_max else "")
             if clicked:
                 continues += 1

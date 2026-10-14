@@ -894,6 +894,66 @@ class UploadCountTests(unittest.TestCase):
         self.assertGreaterEqual(page.ticks, 5)
 
 
+class ContinuePressTests(unittest.TestCase):
+    INFO = {"text": "continue", "kind": "plain element", "el": "div.x", "role": "",
+            "disabled": False, "x": 50, "y": 60, "w": 90, "h": 30, "in_view": True,
+            "covered_by": "", "pointer_events": "auto", "candidates": 1,
+            "hidden_tab": False, "focused": True, "html": "<div>Continue</div>"}
+
+    def _page(self, info):
+        outer = self
+
+        class Mouse:
+            def __init__(self):
+                self.clicks = []
+
+            def move(self, x, y):
+                pass
+
+            def click(self, x, y):
+                self.clicks.append((x, y))
+
+        class P:
+            mouse = Mouse()
+            script = 0
+
+            def evaluate(self, js, arg=None):
+                if js is wc._CONTINUE_INFO_JS:
+                    return info
+                if js is wc._CONTINUE_JS:
+                    P.script += 1
+                    return "continue"
+                return None
+
+            def wait_for_timeout(self, ms):
+                pass
+        return P()
+
+    def test_deepseek_gets_a_real_mouse_click_first(self):
+        page, logs, diag = self._page(self.INFO), [], {}
+        out = wc._press_continue(page, wc.DEEPSEEK, logs.append, 0, diag)
+        self.assertEqual(out, "continue")
+        self.assertEqual(page.mouse.clicks, [(50, 60)])
+        self.assertEqual(page.script, 0)
+        self.assertTrue(any("by mouse click" in m for m in logs))
+        self.assertTrue(any("Continue element:" in m for m in logs))
+
+    def test_other_sites_start_with_the_script_click_then_the_mouse(self):
+        page, logs, diag = self._page(self.INFO), [], {}
+        wc._press_continue(page, wc.ZAI, logs.append, 0, diag)
+        self.assertEqual((page.script, page.mouse.clicks), (1, []))
+        wc._press_continue(page, wc.ZAI, logs.append, 1, diag)   # still there
+        self.assertEqual(page.mouse.clicks, [(50, 60)])
+        self.assertTrue(any("STILL there" in m for m in logs))
+
+    def test_without_page_info_it_falls_back_to_the_script_click(self):
+        page = self._page(None)
+        self.assertEqual(
+            wc._press_continue(page, wc.DEEPSEEK, lambda m: None, 0, {}),
+            "continue")
+        self.assertEqual(page.script, 1)
+
+
 class FailedUploadTests(unittest.TestCase):
     """A chip with the file name AND 'Server busy' means the file never arrived."""
 
