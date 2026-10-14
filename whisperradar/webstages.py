@@ -70,9 +70,13 @@ class WebTransport:
             # ChatGPT draws an image when a prompt talks about thumbnails and
             # then runs into the free plan's image limit
             prompt = prompt.rstrip() + NO_IMAGES_NOTE
+        # a judge's JSON verdict: a reply that stopped without it is given a
+        # nudge after seconds, not after the 5 minute default
+        extra = ({"ready_wait": JUDGE_READY_WAIT}
+                 if ready is _is_json_verdict else {})
         return self.chat.ask(site, prompt, list(files), new_chat=new_chat,
                              options=self.options.get(site), ready=ready,
-                             log=self.log)
+                             log=self.log, **extra)
 
     def set_stop(self, should_stop) -> None:
         """Let a wait for model capacity end when the user stops the run."""
@@ -217,6 +221,21 @@ def ensure_brief(cfg, pid: int, transport, who: str, log,
     autorun.save_brief(pdir, brief, source)
     log("keyword brief saved")
     return brief, True
+
+
+# A judge that announces an audit ("I'll audit the key claims before
+# scoring.") and then ends its turn has not answered. Give it a short nudge in
+# the SAME chat instead of waiting minutes and re-sending the whole prompt.
+JUDGE_READY_WAIT = 45.0
+JUDGE_NUDGE = ("Your last reply had no JSON verdict. Do any checking you "
+               "still need NOW, in this same reply, and finish with ONLY the "
+               "JSON verdict in the format you were given.")
+
+
+def _nudge_judge(transport, judge: str, log) -> str:
+    log(f"{judge}: no verdict yet - asking for it in the same chat")
+    return _send(transport, judge, lambda f: JUDGE_NUDGE, log,
+                 new_chat=False, ready=_is_json_verdict)
 
 
 def _is_json_verdict(text: str) -> bool:
@@ -490,7 +509,9 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         struct0 = (studio.structure_copy(script, source) if source.strip()
                    else None)
         for attempt in (1, 2):      # a judge reply with no score is asked again
-            if judge_open:
+            if attempt == 2:
+                raw = _nudge_judge(transport, judge, log)
+            elif judge_open:
                 raw = _send(transport, judge,
                             lambda f: _script_followup(script, words, target, overlap,
                                                        studio.script_looks_truncated(script),
@@ -915,7 +936,10 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
         verdict = studio._parse_json_object(raw)
         if not verdict:
             log(f"{judge} gave no usable verdict - asking once more")
-            raw = send_judge()
+            try:
+                raw = _nudge_judge(transport, judge, log)
+            except webchat.ChatLost:
+                raw = send_judge()
             verdict = studio._parse_json_object(raw)
         if verdict:
             judge_open = True
