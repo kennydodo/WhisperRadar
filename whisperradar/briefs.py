@@ -48,6 +48,9 @@ MIN_HOLD_MAX_SHORT_SHARE = 0.35
 # shots cannot show a mix.
 ZOOM_SPLIT = (0.40, 0.60)
 MIX_FLOOR_RATIO = 0.5
+# A share cap (ST, one code, a code group) is met when the share is at most the
+# cap plus this many percentage points: 10.05% against a ~10% cap is not a fault.
+SHARE_TOLERANCE = 0.02
 MIX_MIN_SHOTS = 20
 MIX_MIN_ZOOM_SHOTS = 10
 

@@ -5212,7 +5212,8 @@ def shotlist_pacing(data: dict, cues: list[dict],
                 f"{a} ({h:.0f}s, ST)" for h, a in static_long[:4]))
     st = [(h, a) for h, m, a, _f, _l in holds if m == "ST"]
     if (prof.st_max_share is not None and st
-            and len(st) / len(holds) > prof.st_max_share):
+            and len(st) / len(holds) > prof.st_max_share
+            + briefs.SHARE_TOLERANCE + 1e-9):
         faults.append(f"ST is {len(st) / len(holds):.0%} of shots (cap ~"
                       f"{prof.st_max_share:.0%}) - ST is the exception, not "
                       f"the default")
@@ -5228,12 +5229,12 @@ def shotlist_pacing(data: dict, cues: list[dict],
                             if m and m != "REVEAL"}):
             share = sum(1 for _h, m, _a, _f, _l in holds if m == code) / len(holds)
             share_cap = prof.code_share_overrides.get(code, prof.code_max_share)
-            if share > share_cap:
+            if share > share_cap + briefs.SHARE_TOLERANCE + 1e-9:
                 faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
                               f"{share_cap:.0%}) - vary the motion codes")
     for codes, share_cap in getattr(prof, "group_caps", ()):
         share = sum(1 for _h, m, _a, _f, _l in holds if m in codes) / len(holds)
-        if share > share_cap + 1e-9:
+        if share > share_cap + briefs.SHARE_TOLERANCE + 1e-9:
             faults.append(f"{'/'.join(codes)} together are {share:.0%} of "
                           f"shots (cap ~{share_cap:.0%}) - vary the motion "
                           f"codes")

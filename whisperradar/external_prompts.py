@@ -513,7 +513,12 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         motion.append(f"{'/'.join(codes)} together may be at most "
                       f"{share_cap:.0%} of shots")
     if motion:
-        lines.append("MOTION MIX: " + "; ".join(motion) + ".")
+        lines.append("MOTION MIX: " + "; ".join(motion) + ". Every share "
+                     f"limit here has a tolerance of {briefs.SHARE_TOLERANCE:.0%}"
+                     f" (percentage points): a share up to "
+                     f"{briefs.SHARE_TOLERANCE:.0%} over its cap is NOT a "
+                     f"fault (10.05% against a 10% cap passes). Do not report "
+                     f"it.")
     mix = briefs.mix_text(profile)
     if mix:
         lines.append("MOTION TARGETS: " + mix + " Plans of "
