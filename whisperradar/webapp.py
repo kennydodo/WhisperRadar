@@ -349,6 +349,31 @@ def _transcribe_one(cfg, video_id: str):
         conn.close()
 
 
+def _make_transcript(cfg, video_id: str):
+    """Everything a video needs to get its transcript: download the audio
+    (unless it is already there), then transcribe it."""
+    conn = db.connect(cfg.db_path)
+    db.init_db(conn)
+    try:
+        row = db.get_video(conn, video_id)
+        if not row or row["status"] == "transcribed":
+            return
+        if row["status"] != "downloaded":
+            if row["audio_path"]:
+                db.set_video(conn, video_id, status="downloaded", error=None)
+            else:
+                db.set_video(conn, video_id, status="new", auto=1, error=None)
+                pipeline.process_downloads(cfg, conn, video_ids=[video_id])
+        row = db.get_video(conn, video_id)
+        if row and row["status"] == "downloaded":
+            pipeline.process_transcripts(cfg, conn, video_ids=[video_id])
+        row = db.get_video(conn, video_id)
+        if row and row["status"] != "transcribed":
+            raise RuntimeError(row["error"] or "the transcript was not made")
+    finally:
+        conn.close()
+
+
 def _download_many(cfg, video_ids: list[str]):
     """Bulk counterpart of `_download_one`, for the dashboard's multi-select
     actions - one job, one `process_downloads` call for the whole batch."""
@@ -616,6 +641,11 @@ def create_app(cfg) -> Flask:
     # job in the studio, nor the dashboard's job.
     research_job = _Job(-2, "research", log_path=_studio_log_path(cfg))
 
+    # The dashboard's "Make it" (download + transcribe ONE video) has a slot of
+    # its own too: it neither waits for the dashboard's Run all / download job
+    # nor blocks it.
+    make_job = _Job(-3, "make transcript", log_path=_studio_log_path(cfg))
+
     def _other_running_jobs() -> list[dict]:
         """Jobs running in channels other than the current one, for the
         'also running' note."""
@@ -834,6 +864,8 @@ def create_app(cfg) -> Flask:
             msg=request.args.get("msg"),
             error=request.args.get("error"),
             job=job,
+            make=make_job,
+            make_text="\n".join(list(make_job.log))[-1500:],
             log_text="\n".join(list(job.log))[-4000:],
         ))
         if remember_size:
@@ -1411,7 +1443,32 @@ def create_app(cfg) -> Flask:
             "running": job.running,
             "kind": job.kind,
             "log": list(job.log)[-80:],
+            "make_running": make_job.running,
+            "make_kind": make_job.kind,
+            "make_log": list(make_job.log)[-40:],
         }
+
+    @app.post("/videos/make")
+    def videos_make():
+        """"Make it": download the audio and transcribe ONE video in the
+        dashboard's own `make_job` slot, independent of the dashboard job."""
+        video_id = request.form.get("video_id") or ""
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            row = db.get_video(conn, video_id)
+        finally:
+            conn.close()
+        if not row:
+            return _back(request, error="Unknown video")
+        if row["status"] == "transcribed":
+            return _back(request, msg="Already has a transcript")
+        title = (row["title"] or video_id)[:70]
+        if not make_job.start(lambda: _make_transcript(cfg, video_id),
+                              f"make transcript: {title}"):
+            return _back(request, error="A transcript is already being made "
+                                        "- wait for it to finish")
+        return _back(request, msg=f"Making the transcript of {title}")
 
     @app.post("/channels/add")
     def channels_add():
