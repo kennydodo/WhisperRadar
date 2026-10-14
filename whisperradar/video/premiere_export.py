@@ -126,7 +126,8 @@ def _round(x: float) -> int:
 # ---- the exporter -----------------------------------------------------------------
 def export(timeline: m.Timeline, images: Sequence[m.ImageInfo],
            include_motion_keyframes: bool = True,
-           options: Optional[ProjectOptions] = None) -> str:
+           options: Optional[ProjectOptions] = None,
+           freezes: Optional[Dict[str, str]] = None) -> str:
     project = options or ProjectOptions()
     dims: Dict[str, Tuple[int, int]] = {i.file_path: (i.width, i.height) for i in images}
     clips = [c for s in timeline.scenes for c in s.clips]
@@ -155,10 +156,15 @@ def export(timeline: m.Timeline, images: Sequence[m.ImageInfo],
             opacity.append((cue, 100.0))
             opacity.append((cue + max(1, cuts[index][0] // 2), 0.0))
 
-        base_items.append(_video_clip_item(
-            clip, dims, index, timebase, res, include_motion_keyframes,
-            start_offset=head_in, duration=clip.duration_frames - head_in + hold_out,
-            frozen_motion=False, opacity_ramp=opacity or None, motion_head_frames=head_in))
+        base_items.extend(_video_backed_items(
+            clip, dims, index, timebase, res, head_in,
+            clip.duration_frames - head_in + hold_out, freezes)
+            if getattr(clip, "video_path", None) else [
+                _video_clip_item(
+                    clip, dims, index, timebase, res, include_motion_keyframes,
+                    start_offset=head_in, duration=clip.duration_frames - head_in + hold_out,
+                    frozen_motion=False, opacity_ramp=opacity or None,
+                    motion_head_frames=head_in)])
 
         if index > 0 and cuts[index - 1][0] > 0:
             cut_frames = cuts[index - 1][0]
@@ -204,7 +210,7 @@ def export(timeline: m.Timeline, images: Sequence[m.ImageInfo],
 
 
 def _video_clip_item(clip, dims, index, timebase, res, include_motion, start_offset, duration,
-                     frozen_motion, opacity_ramp, motion_head_frames=0) -> El:
+                     frozen_motion, opacity_ramp, motion_head_frames=0, freezes=None) -> El:
     # The animated opening: a clip backed by its AI video plays the mp4 itself
     # (with its own in-file motion), like the ffmpeg render plan - the still's
     # pan/zoom keyframes must NOT be applied to it, and the media must point at
@@ -237,6 +243,75 @@ def _video_clip_item(clip, dims, index, timebase, res, include_motion, start_off
     if opacity_ramp:
         item.add(_opacity_filter(opacity_ramp))
     return item
+
+
+def _video_backed_items(clip, dims, index, timebase, res, start_offset, duration,
+                        freezes):
+    """A video-backed shot as FCP7 items, mirroring motion.fit exactly like the
+    ffmpeg render: the mp4 plays at fit's speed (8s of media covers up to 10s
+    of shot), and a longer shot freezes the mp4's last frame for the rest -
+    otherwise Premiere runs past the end of the media and shows black (the
+    S03_01 black tail in production 46)."""
+    from .. import motion
+    fit = motion.fit(clip.duration_frames / float(timebase))
+    # source frames the media plays: play-seconds worth at the media's rate
+    play_src = _round(fit["play"] * timebase)
+    speed_pct = _round(fit["speed"] * 100.0)
+    play_tline = _round(play_src * 100.0 / max(1, speed_pct)) if speed_pct else duration
+    # a stretch can cover at most MAX_STRETCH (0.8x); beyond that freeze
+    max_stretch_frames = _round(motion.MAX_STRETCH_SECONDS * timebase)
+    start = clip.start_frame + start_offset
+    items = []
+
+    def item(suffix, media_path, media_name, src_in, src_out, t_start, t_dur,
+             speed, extra=None):
+        el = El("clipitem").attr("id", f"clipitem-{index + 1}{suffix}")
+        el.add([
+            _t("masterclipid", f"masterclip-{index + 1}{suffix}"),
+            _t("name", media_name),
+            _t("enabled", "TRUE"),
+            _t("duration", t_dur),
+            _rate(timebase),
+            _t("start", t_start),
+            _t("end", t_start + t_dur),
+            _t("in", src_in),
+            _t("out", src_out),
+            _file_el(f"{index + 1}{suffix}", media_name, media_path, timebase, t_dur,
+                     res.width, res.height)])
+        if speed != 100 and media_path == clip.video_path:
+            el.add(El("filter", El(
+                "effect", _t("name", "Speed"), _t("effectid", "speed"),
+                _t("effectcategory", "motion"), _t("effecttype", "motion"),
+                _t("mediatype", "video"),
+                El("parameter", _t("parameterid", "speed"), _t("name", "Speed"),
+                   _t("value", str(speed)), _t("value2", "1")))))
+        if extra:
+            for e in extra:
+                el.add(e)
+        return el
+
+    freeze = (freezes or {}).get(clip.video_path)
+    if duration <= max(max_stretch_frames, play_tline):
+        # one item: slow the media so it covers the whole shot span (the base
+        # items must tile the timeline - a span past the media end is black)
+        stretch = _round(100.0 * play_src / max(1, duration))
+        items.append(item("", clip.video_path, _basename(clip.video_path),
+                          0, play_src, start, duration, stretch))
+    else:
+        played = play_tline
+        items.append(item("", clip.video_path, _basename(clip.video_path),
+                          0, play_src, start, played, speed_pct))
+        hold = duration - played
+        if hold > 0 and freeze and os.path.isfile(freeze):
+            items.append(item("-h", freeze, _basename(freeze), 0, hold,
+                              start + played, hold, 100))
+        elif hold > 0:
+            # no freeze frame available: stretch the played part over the whole
+            # shot instead of showing black after the media ends
+            items = [item("", clip.video_path, _basename(clip.video_path),
+                          0, play_src, start, duration,
+                          _round(100.0 * play_src / max(1, duration)))]
+    return items
 
 
 def _file_el(id_suffix, file_name, path, timebase, duration, w, h) -> El:
