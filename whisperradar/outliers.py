@@ -169,7 +169,7 @@ def build(rows: Iterable, now: _dt.datetime | None = None, window: int = WINDOW,
 
 
 def filter_sort(items: list[dict], *, min_multiplier: float = 3.0,
-                max_age_days: float | None = None, channel_id: str = "",
+                max_age_days: float | None = None, channel_id="",
                 genre: str = "", hide_shorts: bool = True, q: str = "",
                 min_views: int = 0, sort: str = "multiplier",
                 limit: int = 200, offset: int = 0,
@@ -177,11 +177,16 @@ def filter_sort(items: list[dict], *, min_multiplier: float = 3.0,
     """(the rows to show, how many matched before the limit). A window on the
     age drops videos with no publish date - they cannot be placed."""
     q = (q or "").strip().lower()
+    # one channel id, or several (the Research channel picker): none = all
+    if isinstance(channel_id, str):
+        wanted = {channel_id} if channel_id else set()
+    else:
+        wanted = {c for c in (channel_id or []) if c}
     keep = []
     for it in items:
         if it["multiplier"] < min_multiplier or it["views"] < min_views:
             continue
-        if channel_id and it["channel_id"] != channel_id:
+        if wanted and it["channel_id"] not in wanted:
             continue
         if genre and (it["genre"] or "") != genre:
             continue

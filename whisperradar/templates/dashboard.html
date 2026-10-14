@@ -92,10 +92,11 @@
   <a href="/settings">Settings</a>
   <a href="/handover">Hand-over</a>
 </nav>
+{% from "_wsel.html" import wsel_assets, channel_picker %}
 {% macro hidden_filters() %}
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
   {% if genre %}<input type="hidden" name="genre" value="{{ genre }}">{% endif %}
-  {% if channel %}<input type="hidden" name="channel" value="{{ channel }}">{% endif %}
+  {% for c in channel %}<input type="hidden" name="channel" value="{{ c }}">{% endfor %}
   {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
   {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
   {% if per_page and per_page != 50 %}<input type="hidden" name="per_page" value="{{ per_page }}">{% endif %}
@@ -129,12 +130,7 @@
     <input type="hidden" name="status" value="{{ status or '' }}">
     <input type="hidden" name="genre" value="{{ genre or '' }}">
     <input type="hidden" name="sort" value="{{ sort or '' }}">
-    <select name="channel" onchange="this.form.submit()">
-      <option value="">all channels</option>
-      {% for ch in channels %}
-      <option value="{{ ch['channel_id'] }}" {{ 'selected' if channel == ch['channel_id'] else '' }}>{{ ch["name"] }} ({{ ch["genre"] }})</option>
-      {% endfor %}
-    </select>
+    {{ channel_picker(channels, channel, "all channels", true) }}
     <select name="per_page" onchange="this.form.submit()" title="Videos per page">
       {% for n in per_page_options %}
       <option value="{{ n }}" {{ 'selected' if per_page == n else '' }}>{{ n }}/page</option>
@@ -275,7 +271,7 @@
         <form method="get" action="/" class="jump" title="Jump to page">
           <input type="hidden" name="status" value="{{ status or '' }}">
           <input type="hidden" name="genre" value="{{ genre or '' }}">
-          <input type="hidden" name="channel" value="{{ channel or '' }}">
+          {% for c in channel %}<input type="hidden" name="channel" value="{{ c }}">{% endfor %}
           <input type="hidden" name="sort" value="{{ sort or '' }}">
           <input type="hidden" name="q" value="{{ q or '' }}">
           <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -381,5 +377,6 @@
 </script>
 <script src="{{ url_for('static', filename='confirm.js') }}"></script>
 <script src="{{ url_for('static', filename='keepscroll.js') }}"></script>
+{{ wsel_assets() }}
 </body>
 </html>

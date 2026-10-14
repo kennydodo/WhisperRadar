@@ -713,9 +713,14 @@ def _video_filters(status: str | None, genre: str | None, backlog: bool,
     if genre:
         clauses.append("c.genre = ?")
         params.append(genre)
-    if channel:
-        clauses.append("(c.channel_id = ? OR lower(c.name) = lower(?))")
-        params.extend([channel, channel])
+    chans = ([channel] if isinstance(channel, str) else list(channel or []))
+    chans = [c for c in chans if c]
+    if chans:
+        # one or several channels (the dashboard's channel picker)
+        one = "(c.channel_id = ? OR lower(c.name) = lower(?))"
+        clauses.append("(" + " OR ".join([one] * len(chans)) + ")")
+        for c in chans:
+            params.extend([c, c])
     if q:
         clauses.append("v.title LIKE ?")
         params.append(f"%{q}%")

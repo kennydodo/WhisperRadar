@@ -72,9 +72,10 @@ def _back(request, msg: str | None = None, error: str | None = None,
     """
     parts = []
     for key in ("status", "genre", "channel", "sort", "q", "per_page", "page"):
-        val = request.form.get(key)
-        if val:
-            parts.append(f"{key}={quote(val)}")
+        for val in (request.form.getlist(key) if key == "channel"
+                    else [request.form.get(key)]):
+            if val:
+                parts.append(f"{key}={quote(val)}")
     if msg:
         parts.append(f"msg={quote(msg)}")
     if error:
@@ -764,7 +765,9 @@ def create_app(cfg) -> Flask:
         if backlog:
             status = None
         genre = request.args.get("genre") or None
-        channel = request.args.get("channel") or None
+        # the channel filter takes several channels (?channel=a&channel=b)
+        channel = [c.strip() for c in request.args.getlist("channel")
+                   if c and c.strip()]
         sort = request.args.get("sort") or None
         q = (request.args.get("q") or "").strip() or None
         # page size: an explicit ?per_page= wins and is remembered in a cookie
@@ -802,7 +805,11 @@ def create_app(cfg) -> Flask:
                     "per_page": per_page if per_page != PAGE_SIZE else None}
             page_override = overrides.pop("page", None)
             vals.update(overrides)
-            parts = [f"{k}={quote(str(v))}" for k, v in vals.items() if v]
+            parts = []
+            for k, v in vals.items():
+                for x in (v if isinstance(v, (list, tuple)) else [v]):
+                    if x:
+                        parts.append(f"{k}={quote(str(x))}")
             if page_override:
                 parts.append(f"page={page_override}")
             return "&".join(parts)
@@ -856,7 +863,13 @@ def create_app(cfg) -> Flask:
         max_age = float(age_raw) if age_raw.isdigit() else None
         sort = args.get("sort") if args.get("sort") in outliers.SORTS \
             else "multiplier"
-        channel_id = (args.get("channel") or "").strip()
+        # the channel filter takes several channels (?channel=a&channel=b);
+        # none picked = all watched channels
+        channel_ids = []
+        for raw_c in args.getlist("channel"):
+            c_id = (raw_c or "").strip()
+            if c_id and c_id not in channel_ids:
+                channel_ids.append(c_id)
         genre = (args.get("genre") or "").strip()
         hide_shorts = args.get("shorts") != "show"
         q = (args.get("q") or "").strip()
@@ -873,8 +886,10 @@ def create_app(cfg) -> Flask:
             " c.genre AS genre, v.title, v.url, v.published_at,"
             " v.view_count, v.duration, v.status FROM videos v"
             " JOIN channels c ON c.channel_id = v.channel_id"
-            " WHERE (c.active = 1 OR c.channel_id = ?)"
-            " AND v.view_count IS NOT NULL", (channel_id,)).fetchall()
+            " WHERE (c.active = 1 OR c.channel_id IN (%s))"
+            " AND v.view_count IS NOT NULL"
+            % ",".join("?" * max(1, len(channel_ids))),
+            tuple(channel_ids) or ("",)).fetchall()
         channels = sorted(db.list_channels(conn),
                           key=lambda c: (not c["active"],
                                          (c["name"] or "").lower()))
@@ -895,7 +910,7 @@ def create_app(cfg) -> Flask:
         with_momentum = sum(1 for i in items if i["momentum"] is not None)
         shown, matched = outliers.filter_sort(
             items, min_multiplier=min_mult, max_age_days=max_age,
-            channel_id=channel_id, genre=genre, hide_shorts=hide_shorts,
+            channel_id=channel_ids, genre=genre, hide_shorts=hide_shorts,
             q=q, sort=sort, limit=per, offset=(page - 1) * per,
             reverse=reverse)
         pages = max(1, -(-matched // per))
@@ -903,7 +918,7 @@ def create_app(cfg) -> Flask:
             page = pages
             shown, matched = outliers.filter_sort(
                 items, min_multiplier=min_mult, max_age_days=max_age,
-                channel_id=channel_id, genre=genre, hide_shorts=hide_shorts,
+                channel_id=channel_ids, genre=genre, hide_shorts=hide_shorts,
                 q=q, sort=sort, limit=per, offset=(page - 1) * per,
                 reverse=reverse)
         genres = sorted({c["genre"] for c in channels if c["genre"]})
@@ -930,13 +945,18 @@ def create_app(cfg) -> Flask:
         def rqs(**over):
             vals = {"own": picked_own if picked_own in own_ids else "",
                     "mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
-                    "channel": channel_id, "genre": genre, "q": q,
+                    "channel": channel_ids, "genre": genre, "q": q,
                     "shorts": "hide" if hide_shorts else "show",
                     "per": per, "page": page,
                     "dir": "flip" if reverse else ""}
             vals.update(over)
-            return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
-                            if v not in ("", None))
+            parts = []
+            for k, v in vals.items():
+                if isinstance(v, (list, tuple)):      # a repeated parameter
+                    parts += [f"{k}={quote(str(x))}" for x in v if x]
+                elif v not in ("", None):
+                    parts.append(f"{k}={quote(str(v))}")
+            return "&".join(parts)
 
         def arrow(key):
             from markupsafe import Markup
@@ -983,7 +1003,8 @@ def create_app(cfg) -> Flask:
             discovered=_discovered_unwatched(channels),
             f={"mult": f"{min_mult:g}", "age": age_raw, "sort": sort,
                "per": per,
-               "channel": channel_id, "genre": genre, "q": q,
+               "channel": channel_ids[0] if len(channel_ids) == 1 else "",
+               "channels": channel_ids, "genre": genre, "q": q,
                "shorts": "hide" if hide_shorts else "show"},
             msg=request.args.get("msg"), error=request.args.get("error"))
 
@@ -2713,7 +2734,7 @@ def create_app(cfg) -> Flask:
     @app.get("/export_all")
     def export_all():
         genre = request.args.get("genre") or None
-        channel = request.args.get("channel") or None
+        channel = [c for c in request.args.getlist("channel") if c] or None
         conn = db.connect(cfg.db_path)
         try:
             rows = db.get_videos(conn, status="transcribed", genre=genre,
@@ -2731,7 +2752,7 @@ def create_app(cfg) -> Flask:
         if genre:
             suffix += f"_{genre}"
         if channel:
-            suffix += f"_{_slugify(channel)[:30]}"
+            suffix += f"_{_slugify('-'.join(channel))[:30]}"
         return send_file(
             buf,
             as_attachment=True,

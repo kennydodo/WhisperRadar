@@ -1,0 +1,131 @@
+{# Searchable channel picker, grouped by genre, several channels (tags).
+   Use: {{ wsel_assets() }} once per page, {{ channel_picker(channels, picked) }}
+   where each channel has channel_id, name, genre, active. The checkboxes are
+   real inputs named "channel", so a plain GET form submits them repeated. #}
+{% macro wsel_assets() %}
+<style>
+  .fld { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  .wsel { position: relative; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .wsel-btn { background: var(--panel2, #12151c); color: var(--text, #e6e8ee); border: 1px solid var(--border);
+              border-radius: 7px; padding: 6px 12px; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .wsel-tags { display: flex; gap: 6px; flex-wrap: wrap; max-width: 520px; }
+  .wsel-tag { background: rgba(79,140,255,.15); color: var(--accent); border-radius: 20px;
+              padding: 1px 4px 1px 10px; font-size: 12px; font-weight: 600; }
+  .wsel-tag button { background: none; border: none; color: inherit; cursor: pointer; padding: 0 5px; font-size: 14px; }
+  .wsel-panel { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 380px; max-width: 92vw;
+                background: var(--panel, #171a21); border: 1px solid var(--border); border-radius: 10px;
+                padding: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+  .wsel-panel[hidden] { display: none; }
+  .wsel-search { width: 100%; }
+  .wsel-bar { display: flex; justify-content: space-between; align-items: center; margin: 6px 0; font-size: 12px; }
+  .wsel-list { max-height: 300px; overflow-y: auto; }
+  .wsel-gh { display: flex !important; flex-direction: row !important; gap: 6px; align-items: center; font-weight: 700; font-size: 12px; color: var(--muted);
+             text-transform: uppercase; letter-spacing: .04em; padding: 6px 2px 2px; }
+  .wsel-item { display: flex !important; flex-direction: row !important; gap: 8px; align-items: center; font-size: 13px; color: var(--text, #e6e8ee);
+               padding: 3px 6px 3px 18px; border-radius: 5px; cursor: pointer; }
+  .wsel-item[hidden], .wsel-group[hidden], .wsel-none[hidden] { display: none !important; }
+  .wsel-item:hover { background: rgba(255,255,255,.05); }
+  .wsel-clear { background: transparent; border: 1px solid var(--border); color: var(--accent); border-radius: 6px; padding: 1px 8px; cursor: pointer; }
+</style>
+<script>
+// Channel filter: a dropdown with search, genre groups and tags (several channels).
+// The checkboxes stay real form inputs named "channel", so the filter works as before.
+(function () {
+  document.querySelectorAll('[data-wsel]').forEach(function (root) {
+    var btn = root.querySelector('.wsel-btn'), panel = root.querySelector('.wsel-panel');
+    var search = root.querySelector('.wsel-search'), tags = root.querySelector('.wsel-tags');
+    var label = root.querySelector('.wsel-label'), allText = label.textContent, count = root.querySelector('.wsel-count');
+    var boxes = Array.prototype.slice.call(root.querySelectorAll('input[name="channel"]'));
+    function refresh() {
+      var on = boxes.filter(function (b) { return b.checked; });
+      label.textContent = on.length ? on.length + ' channel' + (on.length === 1 ? '' : 's') + ' selected'
+                                    : allText;
+      count.textContent = on.length + ' of ' + boxes.length + ' selected';
+      tags.innerHTML = '';
+      on.forEach(function (b) {
+        var t = document.createElement('span'); t.className = 'wsel-tag';
+        t.appendChild(document.createTextNode(b.dataset.name));
+        var x = document.createElement('button'); x.type = 'button'; x.textContent = '\u00d7';
+        x.title = 'Remove'; x.addEventListener('click', function () { b.checked = false; refresh(); });
+        t.appendChild(x); tags.appendChild(t);
+      });
+      root.querySelectorAll('.wsel-group').forEach(function (g) {
+        var inG = g.querySelectorAll('input[name="channel"]');
+        var all = g.querySelector('.wsel-gall');
+        var n = Array.prototype.filter.call(inG, function (b) { return b.checked; }).length;
+        all.checked = n === inG.length; all.indeterminate = n > 0 && n < inG.length;
+      });
+    }
+    function filter() {
+      var q = search.value.trim().toLowerCase(), shown = 0;
+      root.querySelectorAll('.wsel-group').forEach(function (g) {
+        var any = false;
+        g.querySelectorAll('.wsel-item').forEach(function (it) {
+          var ok = !q || it.dataset.hay.indexOf(q) !== -1;
+          it.hidden = !ok; if (ok) { any = true; shown++; }
+        });
+        g.hidden = !any;
+      });
+      root.querySelector('.wsel-none').hidden = shown > 0;
+    }
+    btn.addEventListener('click', function () {
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) { search.value = ''; filter(); search.focus(); }
+    });
+    search.addEventListener('input', filter);
+    search.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') e.preventDefault();
+      if (e.key === 'Escape') panel.hidden = true;
+    });
+    root.querySelector('.wsel-clear').addEventListener('click', function () {
+      boxes.forEach(function (b) { b.checked = false; }); refresh();
+    });
+    root.querySelectorAll('.wsel-gall').forEach(function (all) {
+      all.addEventListener('change', function () {
+        // select-all acts on the channels currently shown (so it works with the search)
+        all.closest('.wsel-group').querySelectorAll('.wsel-item').forEach(function (it) {
+          if (!it.hidden) it.querySelector('input').checked = all.checked;
+        });
+        refresh();
+      });
+    });
+    boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+    document.addEventListener('mousedown', function (e) {
+      if (!root.contains(e.target)) panel.hidden = true;
+    });
+    refresh();
+    // dashboard: apply the filter when the dropdown closes with a changed selection
+    var form = root.closest('form'), start = boxes.map(function (b) { return b.checked; }).join();
+    function closed() {
+      if (root.hasAttribute('data-autosubmit') && form &&
+          boxes.map(function (b) { return b.checked; }).join() !== start) form.submit();
+    }
+    new MutationObserver(function () { if (panel.hidden) closed(); })
+      .observe(panel, {attributes: true, attributeFilter: ['hidden']});
+  });
+})();
+</script>
+{% endmacro %}
+{% macro channel_picker(channels, picked, all_label='all watched', autosubmit=False) %}
+<div class="wsel" data-wsel {{ 'data-autosubmit' if autosubmit else '' }}>
+  <button type="button" class="wsel-btn" aria-haspopup="true"><span class="wsel-label">{{ all_label }}</span> &#9662;</button>
+  <div class="wsel-tags"></div>
+  <div class="wsel-panel" hidden>
+    <input type="search" class="wsel-search" placeholder="Search channels or genres..." autocomplete="off">
+    <div class="wsel-bar"><span class="wsel-count muted"></span> <button type="button" class="wsel-clear ghost">Clear</button></div>
+    <div class="wsel-list">
+      {% for genre, items in channels | sort(attribute='name') | groupby('genre') %}
+      <div class="wsel-group">
+        <label class="wsel-gh"><input type="checkbox" class="wsel-gall"> {{ genre or 'general' }} <span class="muted">({{ items | length }})</span></label>
+        {% for c in items %}
+        <label class="wsel-item" data-hay="{{ (c['name'] ~ ' ' ~ (genre or 'general')) | lower }}">
+          <input type="checkbox" name="channel" value="{{ c['channel_id'] }}" data-name="{{ c['name'] }}" {{ 'checked' if c['channel_id'] in picked else '' }}>
+          {{ c['name'] }}{{ '' if c['active'] else ' (paused)' }}</label>
+        {% endfor %}
+      </div>
+      {% endfor %}
+      <div class="wsel-none muted" hidden>No channel matches.</div>
+    </div>
+  </div>
+</div>
+{% endmacro %}
