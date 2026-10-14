@@ -100,6 +100,21 @@ class ResearchPageTests(unittest.TestCase):
         self.assertIn("My Channel", m.group(1))
         self.assertIn(f'href="/studio/{pid}"', html)
 
+    def test_make_this_is_grayed_out_only_for_a_taken_video(self):
+        html = self.client.get("/research").get_data(as_text=True)
+        self.assertNotIn('disabled class="off"', html)
+        pid = db.create_production(self.conn, "Huge outlier", "general",
+                                   "vbig", None)
+        db.update_production(self.conn, pid, own_channel_id=self.own)
+        html = self.client.get("/research").get_data(as_text=True)
+        self.assertIn('disabled class="off"', html)
+        self.assertIn(f"(#{pid})", html)
+        # the plain videos stay available (not outliers, so no button) and
+        # the analyze panel for the taken video is disabled too
+        html = self.client.get("/research?tab=analyze&v=vbig").get_data(
+            as_text=True)
+        self.assertIn('disabled class="off"', html)
+
     def test_other_states_are_shown_too(self):
         pid = db.create_production(self.conn, "Huge outlier", "general",
                                    "vbig", None)

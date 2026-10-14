@@ -46,6 +46,7 @@
   .badge.taken { background: rgba(240,180,60,.16); color: #e0a93a; margin-left: 6px; white-space: nowrap; }
   .badge.taken.published, .badge.taken.ready { background: rgba(63,185,111,.15); color: var(--green); }
   .badge.taken.failed { background: rgba(230,90,90,.15); color: #e06060; }
+  button.off, button.off:hover { opacity: .4; cursor: not-allowed; filter: grayscale(1); }
   button, .btn { background: var(--accent); color: #fff; border: none; border-radius: 7px;
           padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
   button:hover { filter: brightness(1.1); }
@@ -187,7 +188,7 @@
         <ul style="margin:10px 0 0;padding-left:18px">{% for n in analysis.notes %}<li style="margin-bottom:4px">{{ n }}</li>{% endfor %}</ul>
         <form method="post" action="/studio/new" style="margin-top:12px">
           <input type="hidden" name="title" value="{{ analysis.item.title }}"><input type="hidden" name="source_video_id" value="{{ analysis.item.video_id }}"><input type="hidden" name="genre" value="{{ analysis.item.genre or '' }}">
-          <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}"><button type="submit">Make this</button></form>
+          <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">{% set tk = taken.get(analysis.item.video_id) %}<button type="submit" {% if tk %}disabled class="off" title="Already used for a production (#{{ tk[0].id or 'marked produced' }})"{% endif %}>Make this</button></form>
       </div></div></div>
     {% else %}<div class="panel muted">That video is not among the scored videos (it must belong to a watched channel and have a view count, and its channel needs 5+ other videos).</div>{% endif %}
   {% endif %}
@@ -275,7 +276,7 @@
         <input type="hidden" name="source_video_id" value="{{ tp.videos[0].video_id }}">
         <input type="hidden" name="genre" value="{{ tp.videos[0].genre or '' }}">
         <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">
-        <button type="submit" title="Start a production from the best video of this topic">Make this</button>
+        {% set tk = taken.get(tp.videos[0].video_id) %}<button type="submit" {% if tk %}disabled class="off" title="This video is already used for a production (#{{ tk[0].id or 'marked produced' }})"{% else %}title="Start a production from the best video of this topic"{% endif %}>Make this</button>
       </form>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px;margin-top:10px">
@@ -370,7 +371,7 @@
             <input type="hidden" name="source_video_id" value="{{ r.video_id }}">
             <input type="hidden" name="genre" value="{{ r.genre or '' }}">
             <input type="hidden" name="own_channel_id" class="own-id" value="{{ selected_own or (own[0]['id'] if own else '') }}">
-            <button type="submit" title="Start a production from this video">Make this</button>
+            {% set tk = taken.get(r.video_id) %}<button type="submit" {% if tk %}disabled class="off" title="Already used for a production (#{{ tk[0].id or 'marked produced' }}) - not made twice"{% else %}title="Start a production from this video"{% endif %}>Make this</button>
           </form>
           <a href="/research?tab=analyze&v={{ r.video_id }}" style="font-size:12px">analyze</a>
           <form method="post" action="/swipes" style="display:inline;margin:0">
