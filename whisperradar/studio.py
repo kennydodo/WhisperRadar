@@ -1187,8 +1187,10 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
         "name": f"wr-{pid}-refs",
         "outputsDir": str(pdir / "refs"),
         "refMode": "reuse",
-        # FlowBatch renames each generated tile after its ref, so the later
-        # prepare finds it in the gallery by name instead of uploading a copy
+        # Intended: FlowBatch renames each generated tile after its ref so the
+        # later prepare finds it by name. NOTE: FlowBatch does not implement
+        # `nameAssets` yet (load.js ignores it), so prepare still attaches the
+        # local files - but now inside the SAME project the refs were made in.
         "nameAssets": True,
         "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
                      "outputs": 1, "refMode": "reuse"},
@@ -1234,6 +1236,33 @@ def _flow_project_is_dead(tail) -> bool:
         or "reason=project" in text
 
 
+def _create_and_record_flow_project(cfg, pdir: Path, pid: int,
+                                    job_path: Path, log=None) -> str | None:
+    """Create a fresh Flow project through FlowBatch `prepare --new-project`,
+    store its URL on the production and put it in the job. Returns the URL, or
+    None when prepare could not make one (the caller then lets `generate` open
+    its own project, as before)."""
+    log = log or (lambda m: None)
+    try:
+        report = run_flowbatch_prepare(cfg, pdir, job_path, log,
+                                       new_project=True)
+    except BatchCancelled:
+        raise
+    except Exception as exc:  # noqa: BLE001 - never block the refs on this
+        _safe_log(log, f"refs: could not pre-create the Flow project: {exc}")
+        return None
+    if not _usable_flow_project(report):
+        _safe_log(log, "refs: no Flow project was created up front - "
+                       "FlowBatch will open its own")
+        return None
+    _apply_prepare_report(cfg, pdir, pid, job_path, report, log)
+    url, _ = flow_project_url_for(cfg, pid)
+    if url:
+        _safe_log(log, f"refs: Flow project recorded - the images stage "
+                       f"will reuse it ({url})")
+    return url
+
+
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                        log=None, cancel=None, upscale: int | None = None) -> dict:
     """Render the missing reference images with FlowBatch, then place them
@@ -1262,6 +1291,11 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                               "--output", str(pdir / "refs"),
                               "--no-color"])
     url, _ = flow_project_url_for(cfg, pid)
+    if not url:
+        # First pass for this video: create the Flow project HERE and record it,
+        # so the images stage opens this same project instead of making a
+        # second one (and re-uploading the references into it).
+        url = _create_and_record_flow_project(cfg, pdir, pid, job_path, log)
     if url:
         cmd += ["--project-url", url]
     _safe_log(log, f"refs: generating {len(refs)} reference image(s) "
@@ -1275,6 +1309,10 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                        "creating a new one")
         cmd = [a for a in cmd if a not in ("--project-url", url)]
         forget_flow_project(cfg, pid)
+        # record the replacement too, so it is not a third, unrecorded project
+        fresh = _create_and_record_flow_project(cfg, pdir, pid, job_path, log)
+        if fresh:
+            cmd += ["--project-url", fresh]
         code, tail = _flowbatch_stream(cmd, repo, log, cancel)
     if code != 0:
         raise RuntimeError(

@@ -241,6 +241,8 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
             with mock.patch.object(studio, "flowbatch_ready", return_value=True), \
                     mock.patch.object(studio, "flowbatch_dir", return_value=pdir), \
                     mock.patch.object(studio, "set_flowbatch_tier") as tier, \
+                    mock.patch.object(studio, "run_flowbatch_prepare",
+                                      return_value={}), \
                     mock.patch.object(studio.subprocess, "Popen",
                                       return_value=Proc()):
                 out = studio.run_flowbatch_refs(
@@ -248,6 +250,71 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
             tier.assert_called_once_with(cfg, 0)
             self.assertEqual(out["generated"], ["CH_MAYA"])
             self.assertFalse((pdir / "flow_refs").exists())
+
+
+    def test_first_pass_creates_the_project_and_generate_uses_it(self):
+        """No stored Flow project: refs creates it via prepare --new-project,
+        records it, and passes it to generate - so the images stage reuses it
+        instead of opening a second project."""
+        url = "https://labs.google/fx/tools/flow/project/abcdef12-3456"
+        with wr_tmp.tempdir() as tmp:
+            pdir = Path(tmp)
+            (pdir / "refs").mkdir()
+            (pdir / "refs" / "CH_MAYA.png").write_bytes(b"x")
+            (pdir / "shotlist.json").write_text(json.dumps(
+                {"refs": {"CH_MAYA": None}, "images": []}), encoding="utf-8")
+            cfg = load_config()
+            cmds, prepared = [], []
+
+            def fake_stream(cmd, repo, log, cancel):
+                cmds.append(list(cmd))
+                return 0, []
+
+            def fake_prepare(cfg_, pdir_, job_path, log=None, new_project=False):
+                prepared.append(new_project)
+                return {"projectUrl": url, "projectId": "abcdef12-3456",
+                        "created": True, "refs": []}
+
+            stored = {"url": None}
+
+            def fake_url(cfg_, pid, override=None):
+                return stored["url"], "production" if stored["url"] else "none"
+
+            def fake_apply(cfg_, pdir_, pid, job_path, report, log=None):
+                stored["url"] = report["projectUrl"]
+
+            with mock.patch.object(studio, "flowbatch_ready", return_value=True), \
+                    mock.patch.object(studio, "flowbatch_dir", return_value=pdir), \
+                    mock.patch.object(studio, "set_flowbatch_tier"), \
+                    mock.patch.object(studio, "flow_project_url_for", fake_url), \
+                    mock.patch.object(studio, "run_flowbatch_prepare", fake_prepare), \
+                    mock.patch.object(studio, "_apply_prepare_report", fake_apply), \
+                    mock.patch.object(studio, "_flowbatch_stream", fake_stream):
+                studio.run_flowbatch_refs(
+                    cfg, pdir, 1, {"CH_MAYA": {"prompt": "p"}})
+            self.assertEqual(prepared, [True])
+            self.assertIn("--project-url", cmds[0])
+            self.assertEqual(cmds[0][cmds[0].index("--project-url") + 1], url)
+
+    def test_stored_project_is_not_recreated(self):
+        with wr_tmp.tempdir() as tmp:
+            pdir = Path(tmp)
+            (pdir / "refs").mkdir()
+            (pdir / "refs" / "CH_MAYA.png").write_bytes(b"x")
+            (pdir / "shotlist.json").write_text(json.dumps(
+                {"refs": {"CH_MAYA": None}, "images": []}), encoding="utf-8")
+            cfg = load_config()
+            with mock.patch.object(studio, "flowbatch_ready", return_value=True), \
+                    mock.patch.object(studio, "flowbatch_dir", return_value=pdir), \
+                    mock.patch.object(studio, "set_flowbatch_tier"), \
+                    mock.patch.object(studio, "flow_project_url_for",
+                                      return_value=("https://x/project/1", "production")), \
+                    mock.patch.object(studio, "run_flowbatch_prepare") as prep, \
+                    mock.patch.object(studio, "_flowbatch_stream",
+                                      return_value=(0, [])):
+                studio.run_flowbatch_refs(
+                    cfg, pdir, 1, {"CH_MAYA": {"prompt": "p"}})
+            prep.assert_not_called()
 
 
 if __name__ == "__main__":
