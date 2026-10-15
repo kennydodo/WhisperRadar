@@ -3752,6 +3752,65 @@ def create_app(cfg) -> Flask:
                 gone.append(name)
         return gone
 
+    def _reset_webchat_debug(pdir: Path, with_script: bool) -> list:
+        """Delete the raw web-chat replies (webchat_debug). Starting over from
+        the shots stage keeps the script stage's own replies."""
+        gone = []
+        d = pdir / "webchat_debug"
+        if not d.is_dir():
+            return gone
+        for f in list(d.iterdir()):
+            if not f.is_file():
+                continue
+            if not with_script and f.name.startswith("script_"):
+                continue
+            try:
+                f.unlink()
+                gone.append(f"webchat_debug/{f.name}")
+            except OSError:
+                pass
+        if with_script:
+            try:
+                d.rmdir()
+            except OSError:
+                pass
+        return gone
+
+    def _reset_production_overrides(conn, pid: int, pdir: Path,
+                                    reset: list) -> list:
+        """Drop what the user selected on this production so that only the
+        channel's settings apply again: the style variant, the own-style /
+        own-bible switches, the voice and render mode of the stages being
+        redone, and the style.md / bible.md copies seeded from the channel
+        (re-seeded from the channel's current text straight away)."""
+        from . import settings
+        gone = []
+        fields = {"style_variant": None, "style_override": 0,
+                  "bible_override": 0}
+        if "audio" in reset:
+            fields["voice"] = None
+        if "images" in reset:
+            fields["render_mode"] = None
+        db.update_production(conn, pid, **fields)
+        gone.append("production overrides (" + ", ".join(sorted(fields)) + ")")
+        prod = db.get_production(conn, pid)
+        try:
+            eff = settings.for_production(conn, prod)
+        except Exception:  # noqa: BLE001
+            return gone
+        # only a copy the channel can replace is deleted: a channel-less
+        # production's own style.md / bible.md is its only source
+        for name, key in (("style.md", "style"), ("bible.md", "bible")):
+            f = pdir / name
+            if f.exists() and str(eff.get(key) or "").strip():
+                f.unlink()
+                gone.append(name)
+        try:
+            studio.seed_production(cfg, conn, prod)
+        except Exception:  # noqa: BLE001
+            pass
+        return gone
+
     def _reset_script_scores(conn, pid: int, pdir: Path) -> list:
         gone = []
         notes = pdir / "research_notes.md"
@@ -3774,8 +3833,10 @@ def create_app(cfg) -> Flask:
     def studio_start_over(pid):
         """Start over: reset progress from a chosen stage onward - deletes
         that stage's generated artifacts and step history so auto-run (or
-        the manual buttons) re-executes it. Inputs like the bible, refs,
-        named versions and notes are kept."""
+        the manual buttons) re-executes it. It also returns the production to the
+        channel's settings: its own overrides go and style.md / bible.md are
+        re-seeded from the channel. Refs we did not generate, named versions
+        and notes are kept."""
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         from_stage = request.form.get("from") or ""
@@ -3808,13 +3869,18 @@ def create_app(cfg) -> Flask:
                 removed = []
                 if from_stage == "plan":
                     removed += _reset_plan(conn, pid, pdir)
-                if "script" in reset:
-                    # old chats may hold the original script or old scores:
+                if "script" in reset or "shots" in reset:
+                    # old chats hold the old inputs (style, script, scores):
                     # every LLM starts the next run in a fresh chat
                     cf = pdir / "webchat_chats.json"
                     if cf.exists():
                         cf.unlink()
                         removed.append("webchat_chats.json")
+                    # ...and so do the raw replies kept for debugging or for
+                    # "Reuse the saved plan": a plan made from the old style
+                    # must not come back after a start over
+                    removed += _reset_webchat_debug(pdir, "script" in reset)
+                if "script" in reset:
                     # the generated keyword brief and any "script gate failed"
                     # warning belong to the script stage's scoring
                     removed += _reset_script_scores(conn, pid, pdir)
@@ -3884,6 +3950,12 @@ def create_app(cfg) -> Flask:
                             shutil.rmtree(out_dir, ignore_errors=True)
                             removed.append("out/")
                 db.delete_steps(conn, pid, reset)
+                # "start over" means back to the CHANNEL's settings: every
+                # per-production choice that overrides one is dropped, and the
+                # seeded copies of the channel's style / bible are replaced by
+                # fresh ones. (A manual edit of shotlist.json made AFTER the
+                # start over stays that production's own.)
+                removed += _reset_production_overrides(conn, pid, pdir, reset)
                 db.update_production(
                     conn, pid, stage="style" if from_stage == "plan"
                     else from_stage, status="active")

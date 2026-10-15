@@ -147,7 +147,57 @@ class StartOverTests(unittest.TestCase):
         self.assertFalse((self.pdir / "webchat_chats.json").exists())
         (self.pdir / "webchat_chats.json").write_text("{}", encoding="utf-8")
         self._post("shots")
-        self.assertTrue((self.pdir / "webchat_chats.json").exists())
+        # the shots chats hold the old style too: a start over drops them
+        self.assertFalse((self.pdir / "webchat_chats.json").exists())
+
+    def test_shots_reset_drops_saved_plan_replies_but_keeps_script_ones(self):
+        d = self.pdir / "webchat_debug"
+        d.mkdir()
+        for n in ("plan_reply_1.txt", "judge_reply_round1.txt",
+                  "script_draft_round1.txt"):
+            (d / n).write_text("x", encoding="utf-8")
+        self._post("shots")
+        self.assertFalse((d / "plan_reply_1.txt").exists())
+        self.assertFalse((d / "judge_reply_round1.txt").exists())
+        self.assertTrue((d / "script_draft_round1.txt").exists())
+        self._post("script")
+        self.assertFalse(d.exists())
+
+    def test_start_over_drops_production_overrides_and_reseeds_the_style(self):
+        conn = db.connect(self.cfg.db_path)
+        conn.execute("UPDATE own_channels SET style=?, bible=? WHERE id=?",
+                     ("NEW channel style", "NEW channel bible",
+                      db.get_production(conn, self.pid)["own_channel_id"]))
+        db.update_production(conn, self.pid, style_variant="classic",
+                             style_override=1, bible_override=1,
+                             voice="v1", render_mode="x")
+        conn.commit()
+        conn.close()
+        (self.pdir / "style.md").write_text("OLD seeded style",
+                                            encoding="utf-8")
+        (self.pdir / "bible.md").write_text("OLD bible", encoding="utf-8")
+        self._post("images")
+        conn = db.connect(self.cfg.db_path)
+        prod = db.get_production(conn, self.pid)
+        conn.close()
+        self.assertIsNone(prod["style_variant"])
+        self.assertFalse(prod["style_override"])
+        self.assertFalse(prod["bible_override"])
+        self.assertIsNone(prod["render_mode"])
+        self.assertEqual("v1", prod["voice"])    # audio was not redone
+        self.assertEqual("NEW channel style",
+                         (self.pdir / "style.md").read_text("utf-8").strip())
+        self.assertEqual("NEW channel bible",
+                         (self.pdir / "bible.md").read_text("utf-8").strip())
+
+    def test_channel_less_production_keeps_its_own_style_file(self):
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, own_channel_id=None)
+        conn.commit()
+        conn.close()
+        (self.pdir / "style.md").write_text("mine", encoding="utf-8")
+        self._post("images")
+        self.assertEqual("mine", (self.pdir / "style.md").read_text("utf-8"))
 
     def test_script_reset_keeps_manual_notes(self):
         (self.pdir / "research_notes.md").write_text("mine", encoding="utf-8")

@@ -254,7 +254,7 @@
   <div id="resetmodal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:61; align-items:center; justify-content:center">
     <div style="background:var(--panel); border:1px solid var(--border); border-radius:10px; max-width:560px; width:94%; padding:18px 20px">
       <h2 style="margin-top:0">Start over</h2>
-      <div class="muted" style="font-size:13px; margin-bottom:10px">Resets progress from the chosen stage onward: the generated files and the step history of those stages are deleted, and auto-run will execute them again. Inputs are kept: source transcript, bible, refs, named versions, notes. Pick any already-reached stage - one step back, or all the way to the beginning.</div>
+      <div class="muted" style="font-size:13px; margin-bottom:10px">Resets progress from the chosen stage onward: the generated files and the step history of those stages are deleted, and auto-run will execute them again. The production's own overrides (style variant, own style/bible, voice and render mode of the redone stages) are dropped, so the channel's settings apply again, and the saved chats and plan replies are deleted. Kept: source transcript, supplied refs, named versions, notes. Pick any already-reached stage - one step back, or all the way to the beginning.</div>
       <label style="display:block; margin:8px 0; color:var(--text)">
         <input type="radio" name="resetfrom" value="plan">
         From the <b>plan</b> (the very beginning)
