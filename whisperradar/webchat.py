@@ -2090,6 +2090,21 @@ def cdp_alive(key: str, timeout: float = 1.5) -> bool:
         return False
 
 
+# A chat window that is minimised or covered must keep working: by default
+# Chrome then throttles its timers and pauses rendering (the page's animation
+# frames, which Playwright waits on before every click), so the Send / Continue
+# click never lands and the reply never seems to start. The same settings keep
+# FlowBatch's browser running in the background. Chrome honours only ONE
+# --disable-features flag (the last), so the feature is a separate name that
+# each launcher folds into its own list.
+BACKGROUND_SAFE_ARGS = [
+    "--disable-background-timer-throttling",
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+]
+BACKGROUND_DISABLED_FEATURES = "CalculateNativeWinOcclusion"
+
+
 def find_chrome() -> str | None:
     cands = []
     for var in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
@@ -2127,7 +2142,9 @@ def start_chrome(key: str, profile_root, wait: float = 20.0) -> bool:
             # a fresh, quiet window: no synced extensions (a wallet extension
             # opened its own blank tab in front of the chat), no sync prompt
             "--disable-extensions", "--disable-sync",
-            "--disable-features=ChromeWhatsNewUI", SITES[key].url]
+            *BACKGROUND_SAFE_ARGS,
+            "--disable-features=ChromeWhatsNewUI,"
+            + BACKGROUND_DISABLED_FEATURES, SITES[key].url]
     flags = 0
     if os.name == "nt":
         flags = (getattr(subprocess, "DETACHED_PROCESS", 0)
@@ -2184,7 +2201,9 @@ def launch_persistent(pw, site: Site, profile_root, headless: bool = False,
           # Google refuses sign-in in a browser that announces
           # itself as automated; drop those tells.
           "ignore_default_args": ["--enable-automation"],
-          "args": ["--disable-blink-features=AutomationControlled"]}
+          "args": ["--disable-blink-features=AutomationControlled",
+                   *BACKGROUND_SAFE_ARGS,
+                   "--disable-features=" + BACKGROUND_DISABLED_FEATURES]}
     # Prefer the real installed Chrome, then Edge, then Playwright's
     # own Chromium (the first two pass Google's sign-in check).
     last: Exception | None = None
@@ -2268,6 +2287,7 @@ class WebChat:
         self._ctx: dict = {}
         self._hooked: set = set()
         self._attached: set = set()     # sites driven in the user's Chrome
+        self._kept_active: set = set()  # pages already told to stay active
         self.should_stop = None         # () -> bool, checked while waiting
         self._urls: dict = {}       # site -> URL of its current chat
         self._home: dict = {}       # site -> the one chat reused (REUSE_CHAT)
@@ -2321,12 +2341,36 @@ class WebChat:
                     "(" + _CAPTURE_JS + ")()")
             except Exception:  # noqa: BLE001
                 pass
+        pg = None
         if key in self._attached:
             host = SITES[key].url.split("//")[-1].split("/")[0]
-            for pg in ctx.pages:
-                if host in str(pg.url):
-                    return pg
-        return ctx.pages[0] if ctx.pages else ctx.new_page()
+            for cand in ctx.pages:
+                if host in str(cand.url):
+                    pg = cand
+                    break
+        if pg is None:
+            pg = ctx.pages[0] if ctx.pages else ctx.new_page()
+        self._keep_active(ctx, pg)
+        return pg
+
+    def _keep_active(self, ctx, page) -> None:
+        """Tell the page it is focused and not frozen, so it keeps running
+        while its window is minimised or behind others. Best effort: the
+        launch flags are the main protection and a failure here is harmless."""
+        if id(page) in self._kept_active:
+            return
+        self._kept_active.add(id(page))
+        try:
+            cdp = ctx.new_cdp_session(page)
+            for method, params in (
+                    ("Emulation.setFocusEmulationEnabled", {"enabled": True}),
+                    ("Page.setWebLifecycleState", {"state": "active"})):
+                try:
+                    cdp.send(method, params)
+                except Exception:  # noqa: BLE001 - experimental / unsupported
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
 
     def detect_models(self, key: str) -> dict:
         _note_rows(key, None, None)            # start a fresh rows file
