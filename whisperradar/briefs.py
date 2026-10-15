@@ -86,7 +86,7 @@ Motion must vary. A video where every shot is ZI has the same problem as one whe
     "CHECK_HOLD": (
         "long holds are acceptable only where the idea keeps developing and the shot carries motion — never on ST."),
     "CHECK_MOTION": (
-        "ST appears only on ~1–2-cue shots, capped at ~10% of shots, and only where the composition cannot tolerate overscan. Every other shot carries motion that matches its composition and canvas (a PR shot has the subject in the left third on a wide canvas; a ZI shot is centered with overscan; etc.). No single motion code exceeds ~40% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN where the story changes place or topic - sparingly, never on the last shot."),
+        "ST appears only on ~1–2-cue shots, capped at ~10% of shots, and only where the composition cannot tolerate overscan. Every other shot carries motion that matches its composition and canvas (a PR shot has the subject in the left third on a wide canvas; a ZI shot is centered with overscan; etc.). No single motion code exceeds ~40% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - sparingly, never on the last shot."),
     "EX_A": "PR",
     "EX_B": "ST",
     "EX_C": "ZI",
@@ -235,8 +235,8 @@ Because nothing moves, each image must work as a complete, finished frame on the
             "filename ends in `_ST.png` — no ZI/ZO/PL/PR/PU/PD/PV anywhere, "
             "and no ST share or ST hold limits apply on this channel. "
             "Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/"
-            "SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN where the story changes place "
-            "or topic - sparingly, never on the last shot."),
+            "SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - "
+            "sparingly, never on the last shot."),
         "EX_A": "ST", "EX_B": "ST", "EX_C": "ST",
     })
 
@@ -304,7 +304,7 @@ Motion must vary. A video where every shot is ZI has the same problem as one whe
             "- `motion`: ST | ZI | ZO | PU | PD — **must match the motion code in the asset's own filename**. Never write PL, PR or PV on this channel. **ST is rare and special:** use it only on very short holds — roughly 1–2 cues (~2–4 seconds) — and cap it at ~10% of shots, reserving it for compositions that cannot tolerate overscan. Every shot that holds longer must carry motion. Vary the codes — no single motion code above ~40% of shots."),
         "CANVAS_SPEC": "ST/ZI/ZO: 2304x1296 · PU/PD: 2304x2160",
         "CHECK_MOTION": (
-            "Only ST, ZI, ZO, PU and PD are used - no PL, PR or PV anywhere. ST appears only on ~1–2-cue shots, capped at ~10% of shots. Every other shot carries motion that matches its composition and canvas. No single motion code exceeds ~40% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN where the story changes place or topic - sparingly, never on the last shot."),
+            "Only ST, ZI, ZO, PU and PD are used - no PL, PR or PV anywhere. ST appears only on ~1–2-cue shots, capped at ~10% of shots. Every other shot carries motion that matches its composition and canvas. No single motion code exceeds ~40% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - sparingly, never on the last shot."),
         "EX_A": "PD", "EX_B": "ST", "EX_C": "ZI",
     })
 
@@ -328,7 +328,7 @@ Alternate the two zooms so the video breathes in and out: neither ZI nor ZO abov
             "- `motion`: ST | ZI | ZO — **must match the motion code in the asset's own filename**. This channel has no pans or tilts: never write PL, PR, PU, PD or PV. **ST is rare and special:** only on very short holds — roughly 1–2 cues (~2–4 seconds) — and capped at ~10% of shots. Every other shot is ZI or ZO; neither above ~65% of shots."),
         "CANVAS_SPEC": "ST/ZI/ZO: 2304x1296",
         "CHECK_MOTION": (
-            "Only ST, ZI and ZO are used - no PL/PR/PU/PD/PV anywhere. ST appears only on ~1–2-cue shots, capped at ~10% of shots. Neither ZI nor ZO exceeds ~65% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN where the story changes place or topic - sparingly, never on the last shot."),
+            "Only ST, ZI and ZO are used - no PL/PR/PU/PD/PV anywhere. ST appears only on ~1–2-cue shots, capped at ~10% of shots. Neither ZI nor ZO exceeds ~65% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - sparingly, never on the last shot."),
         "EX_A": "ZO", "EX_B": "ST", "EX_C": "ZI",
     })
 
@@ -370,7 +370,7 @@ DOCUMENTARY = MotionProfile(
         "MOTION_FIELD_RULE": (
             "- `motion`: ST | ZI | ZO | PL | PR | PU | PD | PV — **must match the motion code in the asset's own filename** (the image was composed for that motion and overscan). **This channel is slow and observational:** ZI and ZO carry most shots (each up to ~55%); every pan or tilt (PL, PR, PU, PD, PV) is a rare accent, ~10% of shots at most per code; ST is almost never used (~5% of shots, only on a ~1–2-cue hold). Every long hold carries a slow motion."),
         "CHECK_MOTION": (
-            "ZI and ZO carry most shots (neither above ~55%); each of PL/PR/PU/PD/PV stays at ~10% of shots or less; ST is ~5% of shots at most, only on ~1–2-cue holds. Every other shot carries motion that matches its composition and canvas. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN where the story changes place or topic - sparingly, never on the last shot."),
+            "ZI and ZO carry most shots (neither above ~55%); each of PL/PR/PU/PD/PV stays at ~10% of shots or less; ST is ~5% of shots at most, only on ~1–2-cue holds. Every other shot carries motion that matches its composition and canvas. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - sparingly, never on the last shot."),
     })
 
 MOTION_PRESETS: dict[str, MotionProfile] = {
@@ -624,8 +624,8 @@ def custom_profile(spec) -> MotionProfile:
         + (shares + " " if shares else "")
         + "Every motion code in `shots[].motion` matches the motion code in "
         "that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, "
-        "or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN where the story "
-        "changes place or topic - sparingly, never on the last shot.")
+        "or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes "
+        "only - sparingly, never on the last shot.")
     seq = moving or ["ST"]
     slots = {
         "MOTION_SECTION": section,
