@@ -8,6 +8,7 @@ import { ROOT, slugify } from '../src/lib/paths.js';
 import { timestampSlug, sleep } from '../src/lib/time.js';
 import { intFlag } from '../src/lib/args.js';
 import { pauseForEnter } from '../src/lib/prompt.js';
+import { VideoTrace } from '../src/lib/videoTrace.js';
 
 /**
  * Image-to-video spike: one start frame + one motion prompt -> one mp4.
@@ -243,11 +244,23 @@ export function extractFlowVideoUrls(text) {
  * IS a video, and - because Flow only loads a tile's <video> once it is visible -
  * video URLs inside the JSON the app polls for generation status.
  */
+/** The trace of the clip being waited for (null between clips). */
+let activeTrace = null;
+
+// Status-like fields in Flow's polling JSON ("mediaGenerationStatus": "PENDING").
+const STATUS_FIELD = /"([A-Za-z_]*(?:status|state)[A-Za-z_]*)"\s*:\s*"([A-Za-z_]{3,40})"/gi;
+
 function watchVideoResponses(page) {
   const seen = new Map();
   const add = (url, via, status) => {
     const id = mediaId(url);
-    if (!seen.has(id)) seen.set(id, { url, via, status, at: Date.now() });
+    // A later sighting of the same clip carries a fresher signed URL; the first
+    // one may have expired by the time the file is written, so keep the newest.
+    const known = seen.get(id);
+    if (!known || known.url !== url) {
+      seen.set(id, { url, via, status, at: Date.now() });
+      activeTrace?.note('net', { via, id: id.slice(0, 40), status, refreshed: Boolean(known), url: String(url).slice(0, 90) });
+    }
   };
   page.on('response', async (response) => {
     try {
@@ -258,7 +271,11 @@ function watchVideoResponses(page) {
         return;
       }
       if (!/json|text\/plain|protobuf/i.test(type) || !/google|labs/i.test(new URL(url).host)) return;
-      for (const found of extractFlowVideoUrls(await response.text())) add(found, 'json', response.status());
+      const body = await response.text();
+      for (const found of extractFlowVideoUrls(body)) add(found, 'json', response.status());
+      if (activeTrace && /video|veo|flow-content/i.test(body)) {
+        for (const match of body.matchAll(STATUS_FIELD)) activeTrace.status(match[1], match[2]);
+      }
     } catch {
       /* body not available (redirect, aborted, streamed) */
     }
@@ -311,8 +328,10 @@ function rememberSavedId(out, id) {
 /** Every video the page or its network traffic knows right now: [{ id, url }]. */
 async function videoCandidates(page, videoResponses) {
   const out = new Map();
-  for (const url of await pageVideoSources(page)) if (/^https?:/i.test(url)) out.set(mediaId(url), { id: mediaId(url), url });
+  // Network sightings first, then the live page sources: the page's current
+  // src is the freshest signed URL, so it wins over a stored one.
   for (const [id, info] of videoResponses) if (/^https?:/i.test(info.url)) out.set(id, { id, url: info.url });
+  for (const url of await pageVideoSources(page)) if (/^https?:/i.test(url)) out.set(mediaId(url), { id: mediaId(url), url });
   return [...out.values()];
 }
 
@@ -352,6 +371,26 @@ async function dumpFirstTile(page) {
   }
 }
 
+/** Download a clip, recording the HTTP status (the reason a download fails). */
+async function tracedFetch(driver, url, trace, id) {
+  if (!driver?.context?.request) return driver.fetchBytes(url);
+  try {
+    const response = await driver.context.request.get(url);
+    const status = response.status();
+    if (!response.ok()) {
+      trace?.note('fetch', { id: id.slice(0, 40), ok: false, status });
+      return null;
+    }
+    const body = await response.body().catch(() => null);
+    const ok = Boolean(body && body.length > 0);
+    trace?.note('fetch', { id: id.slice(0, 40), ok, status, bytes: body ? body.length : 0 });
+    return ok ? body : null;
+  } catch (error) {
+    trace?.note('fetch', { id: id.slice(0, 40), ok: false, error: String(error?.message ?? error).slice(0, 120) });
+    return null;
+  }
+}
+
 /** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout.
  * A clip URL can appear in the status JSON before Flow has finished writing the
  * file, so a failed download is retried until the deadline instead of stopping. */
@@ -365,8 +404,27 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
   let pokes = 0;
   let nextPoke = started + 45000;
   let navigated = false;
+  const trace = activeTrace;
+  let lastPollNote = 0;
   const findFresh = async () => {
-    const fresh = (await videoCandidates(page, videoResponses)).filter((c) => !knownIds.has(c.id) && !saved.has(c.id));
+    const all = await videoCandidates(page, videoResponses);
+    const fresh = all.filter((c) => !knownIds.has(c.id) && !saved.has(c.id));
+    if (trace && Date.now() - lastPollNote >= 4000) {
+      lastPollNote = Date.now();
+      const tile = await page
+        .locator('flow-grid-tile-container, flow-tile-container')
+        .first()
+        .innerText({ timeout: 1500 })
+        .then((t) => t.replace(/\s+/g, ' ').trim().slice(0, 80))
+        .catch(() => '');
+      trace.note('poll', {
+        candidates: all.length,
+        fresh: fresh.length,
+        knownOrSaved: all.length - fresh.length,
+        videos: (await pageVideoSources(page)).length,
+        tile,
+      });
+    }
     return fresh.length ? fresh[fresh.length - 1] : null;
   };
   const tryFetch = async () => {
@@ -375,7 +433,7 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
       loggedId = clip.id;
       log.info(`Clip found (${clip.id}): ${clip.url.slice(0, 100)}`);
     }
-    bytes = await driver.fetchBytes(clip.url);
+    bytes = await tracedFetch(driver, clip.url, trace, clip.id);
     if (!bytes) {
       fetchFails += 1;
       if (fetchFails === 1 || fetchFails % 5 === 0) {
@@ -387,6 +445,7 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
     await sleep(4000);
     const alert = await driver.freshAlert().catch(() => null);
     if (alert) {
+      trace?.note('alert', { text: JSON.stringify(alert).slice(0, 300) });
       await shot(page, 'refused');
       throw new Error(`Flow reported a problem: ${JSON.stringify(alert).slice(0, 300)}`);
     }
@@ -397,6 +456,7 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
       pokes += 1;
       if (pokes === 1) await dumpFirstTile(page);
       log.info(`Waiting for the clip (${Math.round((Date.now() - started) / 1000)}s) - opening the newest video tile to make Flow load it.`);
+      trace?.note('poke', { n: pokes, open: pokes % 2 === 0 });
       navigated = (await pokeNewestVideoTile(page, { open: pokes % 2 === 0 })) || navigated;
       await sleep(2500);
       clip = (await findFresh()) || clip;
@@ -517,7 +577,23 @@ async function makeClip(ctx, { image, prompt, out, timeoutMs }) {
   await driver.markStaleAlerts().catch(() => {});
   log.info(`Generating - waiting up to ${timeoutMs / 1000}s...`);
   await shot(page, 'generating');
-  return waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen: ctx.reopen });
+  const traceFile = path.join(ROOT, STAGE_DIR, `video-trace-${slugify(path.basename(out))}-${timestampSlug()}.jsonl`);
+  const trace = new VideoTrace({ file: traceFile });
+  trace.note('start', { out: path.basename(out), timeoutS: timeoutMs / 1000, known: knownIds.size });
+  activeTrace = trace;
+  try {
+    const size = await waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen: ctx.reopen });
+    trace.writeSummary('saved');
+    return size;
+  } catch (error) {
+    const text = trace.writeSummary('failed');
+    log.warn(`Clip diagnosis (${path.relative(ROOT, traceFile)}):\n${text}`);
+    const verdict = trace.diagnose().verdict;
+    error.message = `${error.message} [diagnosis: ${verdict}]`;
+    throw error;
+  } finally {
+    activeTrace = null;
+  }
 }
 
 /** Veo clips have a fixed length/size; only Omni takes resolution and duration. */
@@ -557,7 +633,7 @@ async function runJob(flags, context) {
   const reportPath = typeof flags.report === 'string' ? path.resolve(flags.report) : null;
   const projectUrl = (typeof flags['project-url'] === 'string' ? flags['project-url'] : job.projectUrl || settings.projectUrl || '').trim();
   const opts = modelOptions({ ...flags, model: flags.model ?? job.model, aspect: flags.aspect ?? job.aspect });
-  const timeoutMs = intFlag(flags, 'timeout', 900) * 1000;
+  const timeoutMs = intFlag(flags, 'timeout', 1800) * 1000;
   const report = { done: [], failed: [], stopped: false, reason: '' };
   const save = () => reportPath && fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
@@ -616,7 +692,7 @@ async function runJob(flags, context) {
           // Check the project for the finished clip before paying for a retry:
           // a few patient rounds, poking tiles so Flow surfaces it.
           log.warn(`Clip ${i + 1} failed (${message.slice(0, 160)}) - checking whether Flow generated it anyway.`);
-          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt, rounds: 4, gapMs: 12000 })) {
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt, rounds: 12, gapMs: 30000 })) {
             madeThisRun += 1;
             break;
           }
