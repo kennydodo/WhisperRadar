@@ -148,6 +148,29 @@ class AttachGateTests(unittest.TestCase):
             os.utime(clip, (old, old))      # clip made long before the still
             self.assertEqual(render_project.attach_motion_clips(tl, d), 0)
 
+    def test_shots_past_the_current_window_keep_the_still(self):
+        """animate_seconds was 60 when the clips were made, then the channel
+        shrank the opening to 30s: the shot at 40s must not play its clip."""
+        with tempfile.TemporaryDirectory() as d:
+            tl, img, clip = self._setup(d)
+            late = _clip(90, path=str(img))
+            late.start_frame = 1200           # 40 s at 30 fps
+            tl.scenes[0].clips.append(late)
+            (Path(d) / "motion_gate.json").write_text(
+                '{"enabled": true, "window_seconds": 30}')
+            self.assertEqual(render_project.attach_motion_clips(tl, d), 1)
+            self.assertIsNotNone(tl.scenes[0].clips[0].video_path)
+            self.assertIsNone(tl.scenes[0].clips[1].video_path)
+
+    def test_no_window_key_attaches_everywhere(self):
+        with tempfile.TemporaryDirectory() as d:
+            tl, img, clip = self._setup(d)
+            late = _clip(90, path=str(img))
+            late.start_frame = 3000
+            tl.scenes[0].clips.append(late)
+            (Path(d) / "motion_gate.json").write_text('{"enabled": true}')
+            self.assertEqual(render_project.attach_motion_clips(tl, d), 2)
+
 
 class HoldWarningTests(unittest.TestCase):
     def test_padding_counts_toward_the_hold_limit(self):

@@ -61,15 +61,22 @@ MOTION_GATE_FILE = "motion_gate.json"
 _log = logging.getLogger(__name__)
 
 
-def motion_enabled(folder: str) -> bool:
-    """False when the merge step recorded that the channel's animated opening
-    is OFF (clips left in clips\\ must then not be used). No gate file
-    (standalone use) means enabled, the original behaviour."""
+def motion_gate(folder: str) -> dict:
+    """The merge step records {"enabled": bool, "window_seconds": number?}
+    when it resolves the channel's animated opening. No gate file (standalone
+    use) means enabled with no window limit - the original behaviour."""
     try:
         with open(os.path.join(folder, MOTION_GATE_FILE), encoding="utf-8") as f:
-            return bool(json.load(f).get("enabled", True))
-    except (OSError, ValueError, AttributeError):
-        return True
+            gate = json.load(f)
+        return gate if isinstance(gate, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def motion_enabled(folder: str) -> bool:
+    """False when the merge step recorded that the channel's animated opening
+    is OFF (clips left in clips\\ must then not be used)."""
+    return bool(motion_gate(folder).get("enabled", True))
 
 
 def attach_motion_clips(timeline: m.Timeline, folder: str) -> int:
@@ -77,16 +84,27 @@ def attach_motion_clips(timeline: m.Timeline, folder: str) -> int:
 
     Render-time only (not saved into timeline.json). Reveal clips keep their
     own handling. A clip is NOT used when the channel's animated opening is
-    off, or when its still was regenerated after the clip was made (the pair
-    would no longer match). Returns how many clips now play a video."""
+    off, when the shot has fallen outside the current window (animate_seconds
+    was lowered after the clips were made), or when its still was regenerated
+    after the clip was made (the pair would no longer match). Returns how
+    many clips now play a video."""
     if not motion_enabled(folder):
         _log.info("animated opening is off for this channel - clips in "
                   "clips\\ are ignored")
         return 0
-    n = 0
+    gate = motion_gate(folder)
+    try:
+        window = float(gate.get("window_seconds") or 0) or None
+    except (TypeError, ValueError):
+        window = None
+    fps = float(getattr(timeline, "fps", 0) or 0) or None
+    n = skipped_window = 0
     for scene in timeline.scenes:
         for clip in scene.clips:
             if clip.reveal is not None or not clip.file_path:
+                continue
+            if window and fps and clip.start_frame / fps >= window - 1e-6:
+                skipped_window += 1
                 continue
             stem = os.path.splitext(os.path.basename(clip.file_path))[0]
             cand = os.path.join(folder, "clips", stem + ".mp4")
@@ -104,6 +122,9 @@ def attach_motion_clips(timeline: m.Timeline, folder: str) -> int:
                     continue
                 clip.video_path = cand
                 n += 1
+    if skipped_window:
+        _log.info("%d clip(s) sit past the animated opening's current window "
+                  "(%.0fs) and were left as stills", skipped_window, window)
     return n
 
 

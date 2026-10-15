@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveReferenceStatuses, uniqueRefs } from '../../commands/prepare.js';
+import { resolveReferenceStatuses, uniqueRefs, referenceRecordFor } from '../../commands/prepare.js';
 import { setLevel } from '../../src/lib/log.js';
 
 setLevel('silent');
@@ -37,7 +37,40 @@ test('a reference already in the project is reported reused', async () => {
   const out = await resolveReferenceStatuses(driver, [{ name: 'A', path: 'a.png' }], {
     fileExists: () => true,
   });
-  assert.deepEqual(out, [{ name: 'A', kind: 'image', status: 'reused', path: 'a.png' }]);
+  assert.deepEqual(out, [{ name: 'A', kind: 'image', status: 'reused', path: 'a.png', source: 'gallery' }]);
+});
+
+test('a ref the record vouches for is reused without probing or uploading', async () => {
+  const driver = refDriver({
+    has: (name) => {
+      if (name === 'CH_A') throw new Error('should not probe a recorded reference');
+      return true;
+    },
+    onUpload: () => {
+      throw new Error('should not upload a recorded reference');
+    },
+  });
+  const out = await resolveReferenceStatuses(
+    driver,
+    [{ name: 'CH_A', path: 'refs/CH_A.png' }, { name: 'BG_B', path: 'refs/BG_B.png' }],
+    { fileExists: () => true, record: new Set(['CH_A']) },
+  );
+  assert.equal(out[0].status, 'reused');
+  assert.equal(out[0].source, 'record');
+  // an unrecorded name still takes the normal gallery probe path
+  assert.equal(out[1].source, 'gallery');
+});
+
+test('the record only applies to the project it was written for', () => {
+  const url = 'https://flow.google.com/project/aaaa';
+  assert.deepEqual(
+    [...referenceRecordFor({ projectUrl: url, refsGenerated: { projectUrl: url, names: ['CH_A'] } })],
+    ['CH_A'],
+  );
+  assert.equal(referenceRecordFor({ projectUrl: 'https://flow.google.com/project/bbbb', refsGenerated: { projectUrl: url, names: ['CH_A'] } }), null);
+  assert.equal(referenceRecordFor({ projectUrl: null, refsGenerated: { projectUrl: url, names: ['CH_A'] } }), null);
+  assert.equal(referenceRecordFor({ projectUrl: url, refsGenerated: { projectUrl: url, names: [] } }), null);
+  assert.equal(referenceRecordFor({ projectUrl: url }), null);
 });
 
 test('a missing reference with a local file is uploaded', async () => {
@@ -101,5 +134,5 @@ test('a reference status entry matches the report contract shape', async () => {
   const out = await resolveReferenceStatuses(refDriver({ has: () => true }), [{ name: 'A', path: 'a.png' }], {
     fileExists: () => true,
   });
-  assert.deepEqual(Object.keys(out[0]).sort(), ['kind', 'name', 'path', 'status']);
+  assert.deepEqual(Object.keys(out[0]).sort(), ['kind', 'name', 'path', 'source', 'status']);
 });

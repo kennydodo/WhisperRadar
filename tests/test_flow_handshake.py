@@ -134,6 +134,53 @@ class ImagesPrecedenceGuard(unittest.TestCase):
                          "the channel URL must not override the production row")
 
 
+class RefModeFlipTests(unittest.TestCase):
+    """'assets' mode (never upload) is only safe when every reused ref was
+    VERIFIED in the gallery; a ref the record vouches for keeps 'reuse' mode,
+    so the generation stage still uploads it if the name cannot be found."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = _cfg(Path(self.tmp.name) / "wr.db")
+        conn = db.connect(self.cfg.db_path)
+        db.init_db(conn)
+        self.pid = db.create_production(conn, "P", "general", None, None)
+        conn.commit()
+        conn.close()
+        self.pdir = Path(self.tmp.name) / "p"
+        self.pdir.mkdir()
+
+    def tearDown(self):
+        wr_tmp.cleanup(self.tmp)
+
+    def _apply(self, refs):
+        job = self.pdir / "flowbatch.json"
+        job.write_text(json.dumps({"name": "wr-1", "images": [],
+                                   "refMode": "reuse"}), encoding="utf-8")
+        studio._apply_prepare_report(self.cfg, self.pdir, self.pid, job,
+                                     {"projectUrl": PROJECT, "refs": refs},
+                                     log=lambda m: None)
+        return json.loads(job.read_text(encoding="utf-8"))["refMode"]
+
+    def test_gallery_verified_refs_switch_to_assets(self):
+        self.assertEqual(self._apply([
+            {"name": "CH_A", "status": "reused", "source": "gallery"},
+            {"name": "BG_B", "status": "uploaded", "source": "upload"},
+        ]), "assets")
+
+    def test_record_only_refs_keep_reuse_mode(self):
+        self.assertEqual(self._apply([
+            {"name": "CH_A", "status": "reused", "source": "record"},
+            {"name": "BG_B", "status": "reused", "source": "gallery"},
+        ]), "reuse")
+
+    def test_legacy_report_without_source_still_flips(self):
+        # older prepare.js reports have no source field: gallery probes were
+        # the only way to reach 'reused', so the flip stays safe
+        self.assertEqual(self._apply([{"name": "CH_A", "status": "reused"}]),
+                         "assets")
+
+
 class FlowBatchPrepareTests(unittest.TestCase):
     """prepare writes its report BEFORE the ref work, so a failed ref step still
     leaves a usable project - generation then uploads the refs itself."""

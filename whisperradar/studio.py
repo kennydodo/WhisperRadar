@@ -1070,6 +1070,38 @@ def flow_project_url_for(cfg, pid: int,
 
 
 REFS_GENERATED_MANIFEST = "refs_generated.json"
+# Sidecar to the names manifest: WHICH Flow project those refs were generated
+# in. The images stage's prepare step trusts it and never re-uploads a ref it
+# lists for the same project (the uploads created duplicate assets - docs/
+# flow-refs-no-reupload-2026-10-15.md). Kept separate from refs_generated.json
+# because three readers consume that file as a plain name list.
+REFS_PROJECT_RECORD = "refs_project.json"
+
+
+def _record_refs_project(pdir: Path, project_url, names) -> None:
+    """Merge the refs generated in THIS Flow project into the sidecar record."""
+    project_url = str(project_url or "").strip()
+    if not project_url or not names:
+        return
+    record = _refs_project_record(pdir)
+    if record.get("projectUrl") != project_url:
+        record = {"projectUrl": project_url, "names": []}
+    known = set(record.get("names") or [])
+    known.update(str(n) for n in names)
+    record["names"] = sorted(known)
+    try:
+        (pdir / REFS_PROJECT_RECORD).write_text(
+            json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _refs_project_record(pdir: Path) -> dict:
+    try:
+        loaded = json.loads((pdir / REFS_PROJECT_RECORD).read_text(encoding="utf-8"))
+        return loaded if isinstance(loaded, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 
 def find_supplied_refs(pdir: Path) -> list[str]:
@@ -1340,6 +1372,8 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
         (pdir / REFS_GENERATED_MANIFEST).write_text(
             json.dumps(sorted(generated), indent=2) + "\n", encoding="utf-8")
         _update_ref_paths(pdir, generated)
+        recorded_url, _ = flow_project_url_for(cfg, pid)
+        _record_refs_project(pdir, recorded_url, generated)
         log(f"refs: {len(generated)} reference image(s) ready in refs\\ - "
             f"{', '.join(generated[:6])}")
     if missing:
@@ -1639,6 +1673,12 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
         note = ("No visual style found (shotlist style / style.md empty): "
                 "the Flow images are rendered from their own prompts only.")
         log.warning("FlowBatch: %s", note)
+    # refs the refs stage generated inside this same Flow project: prepare
+    # must not upload them again (prepare.js checks the project match).
+    record = _refs_project_record(pid_dir)
+    if record.get("projectUrl") and record.get("names"):
+        job["refsGenerated"] = {"projectUrl": str(record["projectUrl"]),
+                                "names": list(record["names"])}
     job_path = pid_dir / "flowbatch.json"
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
@@ -1947,7 +1987,14 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
         present = {"uploaded", "reused", "generated"}
         ok = all(str(r.get("status") or "").lower() in present
                  for r in refs if isinstance(r, dict))
-        mode = "assets" if ok else "reuse"
+        # A 'reused' that only the refs record vouches for (source "record")
+        # has never been seen by name in the gallery: keep refMode "reuse" so
+        # the generation stage can still fall back to uploading it. Once every
+        # ref is gallery-proven (probe hit, or uploaded earlier), "assets"
+        # mode is safe and no upload ever happens again.
+        verified = all(str(r.get("source") or "").lower() != "record"
+                       for r in refs if isinstance(r, dict))
+        mode = "assets" if ok and verified else "reuse"
         if job.get("refMode") != mode:
             job["refMode"] = mode
             changed = True
@@ -1957,9 +2004,14 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
             changed = True
         missing = [str(r.get("name")) for r in refs if isinstance(r, dict)
                    and str(r.get("status") or "").lower() == "missing"]
-        if ok:
+        if ok and verified:
             log(f"FlowBatch: all {len(refs)} reference(s) are in the "
                 f"project - refMode 'assets' (no uploads)")
+        elif ok:
+            log(f"FlowBatch: {len(refs)} reference(s) covered - "
+                f"{sum(1 for r in refs if isinstance(r, dict) and str(r.get('source') or '').lower() == 'record')} "
+                "trusted from the refs record, refMode stays 'reuse' so the "
+                "generation stage uploads any name it cannot find")
         elif missing:
             log(f"FlowBatch: {len(missing)} reference(s) missing from the "
                 f"project: {', '.join(missing[:8])}")
@@ -2433,7 +2485,8 @@ def _run_imgtovideo_cli(cli: Path, args: list[str], timeout: int = 14400):
 
 
 def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
-                     animate: bool | None = None) -> dict:
+                     animate: bool | None = None,
+                     window_seconds: float | None = None) -> dict:
     """Merge with ImgToVideo.Cli (headless): build the fast preview draft,
     then export the NLE project for `target`. Returns
     {preview, target, project} - preview is the playable out\\preview.mp4,
@@ -2456,10 +2509,14 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
         shutil.copy(audio, audio_dir / f"narration{audio.suffix}")
     sanitize_shotlist(pid_dir)
     if animate is not None:
-        # tell the renderer whether the channel's animated opening is ON, so
-        # clips left over in clips\\ are not used when it is switched off
+        # tell the renderer whether the channel's animated opening is ON and
+        # how long the window is, so clips left over in clips\\ are not used
+        # when it is switched off - or when the window has since been shrunk
+        gate = {"enabled": bool(animate)}
+        if window_seconds:
+            gate["window_seconds"] = float(window_seconds)
         (pid_dir / "motion_gate.json").write_text(
-            json.dumps({"enabled": bool(animate)}), encoding="utf-8")
+            json.dumps(gate), encoding="utf-8")
 
     # 1. fast preview draft - the reviewable cut
     if _python_video(cfg):

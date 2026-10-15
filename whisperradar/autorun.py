@@ -2077,7 +2077,8 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
         eff_m = _effective(cfg, pid)
         target = eff_m["render_target"]
         result = studio.run_merge_render(
-            cfg, pdir, target, animate=bool(eff_m.get("animate_enabled")))
+            cfg, pdir, target, animate=bool(eff_m.get("animate_enabled")),
+            window_seconds=eff_m.get("animate_seconds"))
         detail = (f"preview + {studio.RENDER_TARGET_LABELS[target]} project")
     conn = _connect(cfg)
     try:

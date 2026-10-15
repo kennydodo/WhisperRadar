@@ -15,9 +15,12 @@ import { sleep } from '../src/lib/time.js';
  *      as the project exists - not at exit - so a later crash still leaves the
  *      project URL behind;
  *   2. FLOW_PROJECT_URL=<url> is printed un-prefixed on stdout for manual runs;
- *   3. every reference is reported as uploaded | reused | missing, which is what
- *      lets the caller switch the job to refMode "assets" (attach by name, never
- *      upload, no duplicate project assets).
+ *   3. every reference is reported as uploaded | reused | missing with a
+ *      source (gallery | upload | record), which is what lets the caller
+ *      switch the job to refMode "assets" (attach by name, never upload, no
+ *      duplicate project assets) - but only once every reused ref is
+ *      gallery-verified; a ref trusted from the refs record alone keeps
+ *      refMode "reuse" as the upload fallback.
  *
  * The report is optional and its absence is never fatal: the caller treats a
  * failure, a missing command or an unreadable report as "no project yet" and
@@ -62,16 +65,27 @@ export function uniqueRefs(job) {
  * failure is logged and the reference is reported `missing` - which tells the
  * caller to upload it at generation time instead.
  */
-export async function resolveReferenceStatuses(driver, refs, { fileExists = fs.existsSync } = {}) {
+export async function resolveReferenceStatuses(driver, refs, { fileExists = fs.existsSync, record = null } = {}) {
   const results = [];
   for (const ref of refs) {
+    // The refs stage generated this image in THIS project and recorded it;
+    // uploading the local copy again would duplicate the project asset and
+    // cost the whole prepare time. Trust the record - the generation stage
+    // still attaches by name and uploads only what it truly cannot find.
+    if (record && record.has(ref.name)) {
+      results.push({ name: ref.name, kind: 'image', status: 'reused', path: ref.path ?? null, source: 'record' });
+      continue;
+    }
     let status = 'missing';
+    let source = null;
     try {
       if (await driver.galleryHasAsset(ref.name)) {
         status = 'reused';
+        source = 'gallery';
       } else if (ref.path && fileExists(ref.path)) {
         await driver.attachUploadedFiles([ref.path]);
         status = 'uploaded';
+        source = 'upload';
       }
     } catch (error) {
       log.warn(
@@ -79,9 +93,23 @@ export async function resolveReferenceStatuses(driver, refs, { fileExists = fs.e
           'Reporting it missing; the generation stage will try again.',
       );
     }
-    results.push({ name: ref.name, kind: 'image', status, path: ref.path ?? null });
+    results.push({ name: ref.name, kind: 'image', status, path: ref.path ?? null, source });
   }
   return results;
+}
+
+/**
+ * The refs stage's record of references it generated inside a specific Flow
+ * project. Valid only when the project the job runs in is the same one - a
+ * fresh project contains none of those tiles.
+ */
+export function referenceRecordFor(job) {
+  const record = job && job.refsGenerated;
+  if (!record || typeof record !== 'object') return null;
+  const projectUrl = String(record.projectUrl ?? '');
+  if (!projectUrl || !job.projectUrl || record.projectUrl !== job.projectUrl) return null;
+  const names = Array.isArray(record.names) ? record.names : [];
+  return names.length ? new Set(names.map(String)) : null;
 }
 
 export async function prepareCommand({ flags, context, positionals }) {
@@ -165,7 +193,7 @@ export async function prepareCommand({ flags, context, positionals }) {
       // Upload through the same paths the generation stage uses. A fresh upload is
       // provisional: Flow shows it in the picker long before it is committed, and a
       // large file can look present and then be gone by the time the session ends.
-      report.refs = await resolveReferenceStatuses(driver, refs);
+      report.refs = await resolveReferenceStatuses(driver, refs, { record: referenceRecordFor(job) });
       const attemptedUpload = report.refs.some((entry) => entry.status === 'uploaded');
 
       if (attemptedUpload) {

@@ -317,5 +317,72 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
             prep.assert_not_called()
 
 
+    def test_generated_refs_are_recorded_for_their_project(self):
+        """The refs stage writes a sidecar naming the Flow project its tiles
+        live in, so the images stage never uploads them a second time."""
+        url = "https://flow.google.com/project/aaaa1111-2222"
+        with wr_tmp.tempdir() as tmp:
+            pdir = Path(tmp)
+            (pdir / "refs").mkdir()
+            (pdir / "refs" / "CH_MAYA.png").write_bytes(b"x")
+            (pdir / "shotlist.json").write_text(json.dumps(
+                {"refs": {"CH_MAYA": None}, "images": []}), encoding="utf-8")
+            cfg = load_config()
+            with mock.patch.object(studio, "flowbatch_ready", return_value=True), \
+                    mock.patch.object(studio, "flowbatch_dir", return_value=pdir), \
+                    mock.patch.object(studio, "set_flowbatch_tier"), \
+                    mock.patch.object(studio, "flow_project_url_for",
+                                      return_value=(url, "production")), \
+                    mock.patch.object(studio, "_flowbatch_stream",
+                                      return_value=(0, [])):
+                studio.run_flowbatch_refs(cfg, pdir, 1, {"CH_MAYA": {"prompt": "p"}})
+            rec = json.loads((pdir / studio.REFS_PROJECT_RECORD).read_text(
+                encoding="utf-8"))
+            self.assertEqual(rec["projectUrl"], url)
+            self.assertIn("CH_MAYA", rec["names"])
+
+    def test_the_images_job_carries_the_record(self):
+        url = "https://flow.google.com/project/aaaa1111-2222"
+        with wr_tmp.tempdir() as tmp:
+            pdir = Path(tmp)
+            (pdir / "refs").mkdir()
+            (pdir / "refs" / "CH_MAYA.png").write_bytes(b"x")
+            (pdir / "refs_project.json").write_text(json.dumps(
+                {"projectUrl": url, "names": ["CH_MAYA"]}), encoding="utf-8")
+            (pdir / "shotlist.json").write_text(json.dumps({
+                "refs": {"CH_MAYA": None},
+                "images": [{"file": "S01_01_SCN_ZI.png", "prompt": "p",
+                            "refs": ["CH_MAYA"]}],
+            }), encoding="utf-8")
+            cfg = load_config()
+            job_path, _ = studio.prepare_flowbatch_job(
+                cfg, pdir, 1, project_url=url)
+            job = json.loads(job_path.read_text(encoding="utf-8"))
+            self.assertEqual(job["refsGenerated"],
+                             {"projectUrl": url, "names": ["CH_MAYA"]})
+
+    def test_a_record_is_carried_verbatim_the_guard_is_in_preparejs(self):
+        """Python always embeds the record; prepare.js only trusts it when the
+        project the job opens matches record.projectUrl (tested JS-side)."""
+        url = "https://flow.google.com/project/aaaa1111-2222"
+        other = "https://flow.google.com/project/bbbb9999-0000"
+        with wr_tmp.tempdir() as tmp:
+            pdir = Path(tmp)
+            (pdir / "refs").mkdir()
+            (pdir / "refs" / "CH_MAYA.png").write_bytes(b"x")
+            (pdir / "refs_project.json").write_text(json.dumps(
+                {"projectUrl": other, "names": ["CH_MAYA"]}), encoding="utf-8")
+            (pdir / "shotlist.json").write_text(json.dumps({
+                "refs": {"CH_MAYA": other},
+                "images": [{"file": "S01_01_SCN_ZI.png", "prompt": "p",
+                            "refs": ["CH_MAYA"]}],
+            }), encoding="utf-8")
+            cfg = load_config()
+            job_path, _ = studio.prepare_flowbatch_job(
+                cfg, pdir, 1, project_url=url)
+            job = json.loads(job_path.read_text(encoding="utf-8"))
+            self.assertEqual(job["refsGenerated"]["projectUrl"], other)
+
+
 if __name__ == "__main__":
     unittest.main()
