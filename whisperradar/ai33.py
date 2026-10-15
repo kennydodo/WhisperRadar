@@ -213,6 +213,19 @@ def _log(msg: str) -> None:
     print(f"[ai33] {msg}", file=sys.stderr, flush=True)
 
 
+class TransientError(RuntimeError):
+    """The service said "busy / try again" (429/5xx) or could not be reached.
+    `http` is True when the server itself answered (so it did NOT take a
+    submitted request); False for network failures, where it may have."""
+
+    def __init__(self, message: str, http: bool = False):
+        super().__init__(message)
+        self.http = http
+
+
+_TRANSIENT_HTTP = {408, 425, 429, 500, 502, 503, 504}
+
+
 def _request(url: str, api_key: str, *, data: bytes | None = None,
              headers: dict | None = None, method: str = "GET") -> bytes:
     req = urllib.request.Request(url, data=data, method=method)
@@ -233,9 +246,15 @@ def _request(url: str, api_key: str, *, data: bytes | None = None,
             detail = exc.read().decode("utf-8", "replace")[:300]
         except OSError:
             pass
-        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
+        err = (TransientError if exc.code in _TRANSIENT_HTTP else RuntimeError)
+        msg = f"HTTP {exc.code} from {url}: {detail}"
+        if err is TransientError:
+            raise TransientError(msg, http=True) from exc
+        raise RuntimeError(msg) from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"cannot reach {url}: {exc.reason}") from exc
+        raise TransientError(f"cannot reach {url}: {exc.reason}") from exc
+    except (TimeoutError, ConnectionError) as exc:
+        raise TransientError(f"no answer from {url}: {exc}") from exc
 
 
 def _json(resp: bytes) -> dict:
@@ -383,37 +402,73 @@ def warm_cache(cfg) -> None:
     threading.Thread(target=run, daemon=True, name="ai33-voice-warm").start()
 
 
+MAX_POLL_HICCUPS = 20          # consecutive "busy" answers tolerated while polling
+
+
 def generate(cfg, text: str, voice_id: str | None, *, speed: float = 1.0,
              file_name: str | None = None, timeout_s: int = 3300,
-             log=None) -> str:
-    """Submit a v3 TTS task, poll until done, return the audio URL."""
+             log=None, task_id: str | None = None) -> str:
+    """Submit a v3 TTS task, poll until done, return the audio URL.
+
+    The service answers "Task polling temporarily busy" (HTTP 503) from time to
+    time while the task keeps running: polling rides those out instead of
+    failing a task that was accepted (and paid for). `task_id` resumes polling
+    a task submitted earlier instead of submitting a new one."""
     key = api_key(cfg)
     if not key:
         raise RuntimeError("no OpenSpeaker API key - add one in Settings > "
                            "LLM, or set WR_AI33_API_KEY")
     log = log or _log
-    body, ctype = _multipart({
-        "text": text,
-        "voice_id": voice_id or "edge_en-US-BrianMultilingualNeural",
-        "speed": speed,
-        "file_name": file_name,
-    })
-    resp = _json(_request(f"{base_url(cfg)}/v3/text-to-speech", key,
-                          data=body, headers={"Content-Type": ctype},
-                          method="POST"))
-    if not resp.get("success") or not resp.get("task_id"):
-        raise RuntimeError(f"TTS task was not accepted: {resp}")
-    task_id = resp["task_id"]
-    log(f"task {task_id} submitted (voice {voice_id or 'default'})")
+    if task_id:
+        log(f"resuming task {task_id}")
+    else:
+        body, ctype = _multipart({
+            "text": text,
+            "voice_id": voice_id or "edge_en-US-BrianMultilingualNeural",
+            "speed": speed,
+            "file_name": file_name,
+        })
+        resp = None
+        for attempt in range(1, 5):
+            try:
+                resp = _json(_request(
+                    f"{base_url(cfg)}/v3/text-to-speech", key,
+                    data=body, headers={"Content-Type": ctype},
+                    method="POST"))
+                break
+            except TransientError as exc:
+                # only a server that ANSWERED busy did not take the task; a
+                # dropped connection might have, so that is not resent
+                if not exc.http or attempt == 4:
+                    raise
+                log(f"service busy on submit ({attempt}/4) - retrying in 15s")
+                time.sleep(15)
+        if not resp.get("success") or not resp.get("task_id"):
+            raise RuntimeError(f"TTS task was not accepted: {resp}")
+        task_id = resp["task_id"]
+        log(f"task {task_id} submitted (voice {voice_id or 'default'})")
 
     deadline = time.monotonic() + timeout_s
+    hiccups = 0
     while True:
-        time.sleep(5)
+        time.sleep(5 + min(hiccups * 5, 25))
         if time.monotonic() > deadline:
             raise RuntimeError(
                 f"TTS task {task_id} not done after {timeout_s}s - "
                 "check it in the OpenSpeaker app")
-        task = _json(_request(f"{base_url(cfg)}/v1/task/{task_id}", key))
+        try:
+            task = _json(_request(f"{base_url(cfg)}/v1/task/{task_id}", key))
+        except TransientError as exc:
+            hiccups += 1
+            log(f"service busy while checking the task ({hiccups}/"
+                f"{MAX_POLL_HICCUPS}) - it keeps running, will ask again")
+            if hiccups >= MAX_POLL_HICCUPS:
+                raise RuntimeError(
+                    f"{exc} - gave up checking task {task_id}; it may still "
+                    f"finish: re-run with --task-id {task_id} or check the "
+                    "OpenSpeaker app") from exc
+            continue
+        hiccups = 0
         status = task.get("status")
         log(f"status={status} progress={task.get('progress')}%")
         if status == "done":
@@ -435,7 +490,15 @@ def generate(cfg, text: str, voice_id: str | None, *, speed: float = 1.0,
 
 def download(cfg, url: str, out: str) -> None:
     key = api_key(cfg)
-    data = _request(url, key or "")
+    for attempt in range(1, 5):
+        try:
+            data = _request(url, key or "")
+            break
+        except TransientError:
+            if attempt == 4:
+                raise
+            _log(f"download busy ({attempt}/4) - retrying in 10s")
+            time.sleep(10)
     with open(out, "wb") as fh:
         fh.write(data)
     _log(f"wrote {out} ({len(data)} bytes)")

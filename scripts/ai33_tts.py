@@ -51,6 +51,10 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=3300,
                         help="max seconds to wait for the task "
                         "(default: %(default)s)")
+    parser.add_argument("--task-id", default=None,
+                        help="resume a task that was already submitted (its "
+                        "id is in the error message) instead of submitting a "
+                        "new one; pass only the output path")
     parser.add_argument("--voices", action="store_true",
                         help="list voices instead of generating")
     parser.add_argument("--provider", default=None,
@@ -89,6 +93,15 @@ def main() -> int:
                       f"{v.get('language') or ''}\t{v.get('gender') or ''}")
         return 0
 
+    if args.task_id and args.script and not args.out:
+        args.script, args.out = None, args.script      # only the output path
+    if args.task_id:
+        if not args.out:
+            parser.error("--task-id needs the output path")
+        url = ai33.generate(cfg, "", None, task_id=args.task_id,
+                            timeout_s=args.timeout)
+        ai33.download(cfg, url, args.out)
+        return 0
     if not args.script or not args.out:
         parser.error("script and out paths are required "
                      "(called by WhisperRadar with {script} {out})")
