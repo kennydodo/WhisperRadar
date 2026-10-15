@@ -117,6 +117,23 @@ class MotionEngine:
                 return MotionDecision(c, m.AUTO_SELECTED)
         return MotionDecision(_pick_first_not_previous(AUTO_POOL, ctx.previous), m.AUTO_SELECTED)
 
+    def _paced_travel(self, out_span: float, img_per_out: float,
+                      spare: float, duration_seconds: Optional[float]) -> float:
+        """Auto-selected pan travel, in IMAGE pixels: an accent, capped at
+        pan_max_travel_percent of the OUTPUT dimension (converted through the
+        image's own fit-to-output scale, so a 1:1 PU canvas and a 16:9 one
+        move the same number of screen pixels). Without a duration the legacy
+        behavior stands, byte-compatible with the C# engine."""
+        mo = self._motion
+        if duration_seconds and duration_seconds > 0:
+            target = (mo.pan_target_speed_px_per_second
+                      * max(duration_seconds, mo.pan_travel_seconds_floor)) * img_per_out
+            cap = mo.pan_max_travel_percent / 100.0 * out_span * img_per_out
+            travel = min(target, cap, spare)
+        else:
+            travel = min(mo.pan_max_travel_percent / 100.0 * out_span, spare)
+        return max(travel, 2.0)
+
     def plan_clip(self, motion: str, source: str, pan_right: bool,
                   image_width: int, image_height: int,
                   duration_seconds: Optional[float] = None) -> ClipMotionPlan:
@@ -155,15 +172,21 @@ class MotionEngine:
                 start_x = 0 if pan_right else spare_x
                 end_x = spare_x if pan_right else 0
             elif source == m.EXPLICIT_CODE:
+                # filename-coded pans sweep the full band edge-to-edge: the
+                # image is composed to travel out of frame; easing decides
+                # the speed profile (short pans ease out: fast start,
+                # decelerating to rest)
                 start_x = 0 if motion == m.PAN_RIGHT else spare_x
                 end_x = spare_x if motion == m.PAN_RIGHT else 0
             else:
-                capped = min(mo.pan_max_travel_percent / 100.0 * self._output.width, spare_x)
+                travel = self._paced_travel(self._output.width,
+                                            fit_width / self._output.width,
+                                            spare_x, duration_seconds)
                 center = spare_x / 2.0
                 if motion == m.PAN_RIGHT:
-                    start_x, end_x = center - capped / 2.0, center + capped / 2.0
+                    start_x, end_x = center - travel / 2.0, center + travel / 2.0
                 else:
-                    start_x, end_x = center + capped / 2.0, center - capped / 2.0
+                    start_x, end_x = center + travel / 2.0, center - travel / 2.0
             return ClipMotionPlan(motion, source, m.Rect(start_x, y, fit_width, fit_height),
                                   m.Rect(end_x, y, fit_width, fit_height), warnings)
 
@@ -174,25 +197,20 @@ class MotionEngine:
                     "using a gentle push-in instead — generate a 200%-tall image (2304x2160) to pan.",
                     pan_right, image_width, image_height)
             x = (image_width - fit_width) / 2.0
-            # Pacing: a short shot crawling over the same fixed 4% sweep reads
-            # as a sprint (its mid-shot ease_in_out surge is the fastest thing
-            # in the video). Travel grows with the shot's length instead, up
-            # to the configured cap; a minimum keeps ~3s shots barely moving
-            # rather than strobing.
-            if duration_seconds and duration_seconds > 0:
-                floor = self._motion.pan_travel_seconds_floor
-                target = (self._motion.pan_target_speed_px_per_second
-                          * max(duration_seconds, floor))
-                travel = min(target, self._output.height
-                             * self._motion.pan_max_travel_percent / 100.0, spare_y)
-            else:
-                travel = min(mo.pan_max_travel_percent / 100.0 * self._output.height, spare_y)
-            travel = max(travel, 2.0)
+            # A filename-coded pan sweeps the whole overscan band edge-to-edge
+            # - the composition is meant to travel out of frame. Easing shapes
+            # the speed: short pans ease out (start fast, decelerate to rest);
+            # the old mid-shot surge came from ease_in_out, not the distance.
+            # Auto-selected pans are accents: paced travel capped at
+            # pan_max_travel_percent of the output dimension.
             center = spare_y / 2.0
             if source == m.EXPLICIT_CODE:
                 start_y = spare_y if motion == m.PAN_UP else 0
                 end_y = 0 if motion == m.PAN_UP else spare_y
             else:
+                travel = self._paced_travel(self._output.height,
+                                            fit_height / self._output.height,
+                                            spare_y, duration_seconds)
                 if motion == m.PAN_UP:
                     start_y, end_y = center + travel / 2.0, center - travel / 2.0
                 else:

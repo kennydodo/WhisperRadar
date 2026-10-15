@@ -383,7 +383,9 @@ class EditPlannerTests(unittest.TestCase):
         c4 = clips[3]
         self.assertEqual((m.PAN_RIGHT, m.EXPLICIT_CODE, 453), (c4.motion, c4.motion_source, c4.start_frame))
         self.assertEqual(0, c4.start_viewport.x)
-        self.assertEqual(576, c4.end_viewport.x)
+        # explicit PR sweeps the full band edge-to-edge; the pan-pacing work
+        # shapes it with ease-out easing, not a shorter distance
+        self.assertAlmostEqual(576.0, c4.end_viewport.x, places=1)
         self.assertFalse([i for i in result.issues if i.severity in (m.WARNING, m.ERROR)])
         self.assertEqual(2, len([i for i in result.issues if i.code == "MOTION_EXPLICIT"]))
 
@@ -879,9 +881,15 @@ class ManifestPlannerTests(unittest.TestCase):
         o.clips.append(ov.ClipOverride(file="images/S01_B01_01.png", shot="SH001", motion=m.PAN_RIGHT,
                                        easing=m.EASE_IN))
         o.cuts.append(ov.CutOverride(os.path.join("images", "S01_B03_01_INFO.png"), "fade_black"))
-        clips = mplan_ok(overrides=o)[0].scenes[0].clips
-        self.assertEqual(m.PAN_RIGHT, clips[0].motion)
-        self.assertEqual(m.OVERRIDE, clips[0].motion_source)
+        tl, _, issues = mplan_ok(overrides=o)
+        clips = tl.scenes[0].clips
+        # the PR image has no horizontal overscan: the engine's push-in
+        # fallback is surfaced honestly (relabeled + VIEWPORT warning)
+        # instead of rendering a push-in under a pan label
+        self.assertEqual(m.ZOOM_IN, clips[0].motion)
+        self.assertEqual(m.AUTO_SELECTED, clips[0].motion_source)
+        self.assertTrue([i for i in issues if i.code == "VIEWPORT"
+                         and i.severity == m.WARNING and "SH001" in i.message])
         self.assertEqual(m.EASE_IN, clips[0].easing)
         self.assertEqual("fade_black", clips[3].transition.kind)
 
@@ -930,9 +938,17 @@ class ManifestPlannerTests(unittest.TestCase):
         self.assertEqual("fade_black", flat[1].transition.kind)
 
     def test_pans_delegate_to_motion_engine(self):
-        sh2 = mplan_ok()[0].scenes[0].clips[1]
+        imgs = [_image(os.path.join("images", "S01_B01_01.png"), 1920, 1080, stem="S01_B01_01"),
+                _image(os.path.join("images", "S01_B02_01.png"), 2880, 1296, stem="S01_B02_01",
+                       index=2, code=m.PAN_RIGHT),
+                _image(os.path.join("images", "S01_B03_01_INFO.png"), 1920, 1080, stem="S01_B03_01_INFO")]
+        result = mplan(images=imgs)
+        sh2 = result.timeline.scenes[0].clips[1]
         self.assertEqual((m.PAN_RIGHT, m.EXPLICIT_CODE), (sh2.motion, sh2.motion_source))
         self.assertGreater(sh2.end_viewport.x, sh2.start_viewport.x)
+        # explicit PR = full-band sweep (576 px here), shaped by easing
+        self.assertAlmostEqual(576.0, sh2.end_viewport.x)
+        self.assertEqual([], [i for i in result.issues if i.code == "VIEWPORT"])
 
     def test_missing_shotlist_motion_falls_back_to_the_filename_code(self):
         manifest = with_shot(sample_manifest(), 1, motion=None)

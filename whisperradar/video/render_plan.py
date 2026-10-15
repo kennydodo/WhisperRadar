@@ -447,7 +447,17 @@ def _easing_expression(easing: str, progress: str) -> str:
     if easing == m.EASE_IN:
         return f"pow({clamped},2)"
     if easing == m.EASE_OUT:
-        return f"1-pow(1-{clamped},2)"
+        # parenthesized: this string is embedded as dy*<expr>; without the
+        # parens ffmpeg parses dy*1-pow(...) and the move lands on frame 0
+        return f"(1-pow(1-{clamped},2))"
+    if easing == m.EASE_OUT_HOLD:
+        # constant speed through the first PAN_HOLD_FRACTION of the shot,
+        # then decelerate to rest; both coefficients keep position and
+        # velocity continuous across the switch (no visible kink)
+        s = m.PAN_HOLD_FRACTION
+        return (f"if(lt({clamped},{F(s)}),"
+                f"{F(2.0 / (1.0 + s))}*{clamped},"
+                f"1-{F(1.0 / ((1.0 - s) * (1.0 + s)))}*pow(1-{clamped},2))")
     if easing == m.EASE_IN_OUT:
         return f"pow({clamped},3)*({clamped}*({clamped}*6-15)+10)"
     return progress
@@ -459,6 +469,11 @@ def _easing_value(easing: str, progress: float) -> float:
         return progress * progress
     if easing == m.EASE_OUT:
         return 1 - (1 - progress) * (1 - progress)
+    if easing == m.EASE_OUT_HOLD:
+        s = m.PAN_HOLD_FRACTION
+        if progress <= s:
+            return (2.0 / (1.0 + s)) * progress
+        return 1.0 - ((1.0 - progress) * (1.0 - progress)) / ((1.0 - s) * (1.0 + s))
     if easing == m.EASE_IN_OUT:
         return progress * progress * progress * (progress * (progress * 6 - 15) + 10)
     return progress

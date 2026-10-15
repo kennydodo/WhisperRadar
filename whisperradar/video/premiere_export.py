@@ -114,6 +114,11 @@ def _eased(easing: str, progress: float) -> float:
         return p * p
     if easing == m.EASE_OUT:
         return 1 - (1 - p) * (1 - p)
+    if easing == m.EASE_OUT_HOLD:
+        s = m.PAN_HOLD_FRACTION
+        if p <= s:
+            return (2.0 / (1.0 + s)) * p
+        return 1.0 - ((1.0 - p) * (1.0 - p)) / ((1.0 - s) * (1.0 + s))
     if easing == m.EASE_IN_OUT:
         return p * p * p * (p * (p * 6 - 15) + 10)
     return p

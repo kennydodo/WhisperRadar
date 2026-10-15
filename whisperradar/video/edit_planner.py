@@ -261,7 +261,7 @@ def _assemble_timeline(inventory, timing, audio_seconds, options, issues) -> m.T
 
             easing = (clip_override.easing if clip_override is not None and clip_override.easing is not None
                       else manifest_planner._resolve_easing(
-                          requested_motion, timed.duration_frames / options.output.fps,
+                          plan_.motion, timed.duration_frames / options.output.fps,
                           options.motion))
             final = MotionDecision(effective_motion, effective_source)
             if options.transitions.enabled and (si != 0 or i > 0):

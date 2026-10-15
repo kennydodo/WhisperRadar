@@ -5,7 +5,7 @@
     "width": 2560,
     "height": 1440
   },
-  "fps": 30,
+  "fps": 30.0,
   "audio": {
     "file_path": "E:\\YOUTUBE\\TEST PROJECTS\\4_animals_four_minds_that_surprise_scientists\\audio\\narration.mp3",
     "duration_frames": 7975
@@ -26,12 +26,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -60,12 +60,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -89,12 +89,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -127,12 +127,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -154,22 +154,22 @@
           "duration_frames": 129,
           "motion": "pan_up",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "end_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "fade_black",
@@ -184,22 +184,22 @@
           "duration_frames": 165,
           "motion": "pan_down",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "transition": {
             "kind": "crossfade",
@@ -216,12 +216,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -244,22 +244,22 @@
           "duration_frames": 97,
           "motion": "pan_down",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "transition": {
             "kind": "crossfade",
@@ -284,12 +284,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -306,12 +306,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -344,12 +344,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -373,12 +373,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -403,12 +403,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -433,20 +433,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -472,20 +472,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -511,12 +511,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -539,22 +539,22 @@
           "duration_frames": 226,
           "motion": "pan_up",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "end_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -569,22 +569,22 @@
           "duration_frames": 166,
           "motion": "pan_down",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "transition": {
             "kind": "crossfade",
@@ -609,12 +609,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -638,12 +638,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -676,12 +676,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -696,22 +696,22 @@
           "duration_frames": 182,
           "motion": "pan_down",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "transition": {
             "kind": "crossfade",
@@ -726,22 +726,22 @@
           "duration_frames": 191,
           "motion": "pan_up",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "end_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -756,22 +756,22 @@
           "duration_frames": 208,
           "motion": "pan_down",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "transition": {
             "kind": "crossfade",
@@ -788,12 +788,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -833,12 +833,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "fade_black",
@@ -855,20 +855,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -894,20 +894,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -933,12 +933,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -963,12 +963,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1001,12 +1001,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1023,12 +1023,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1068,12 +1068,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "fade_black",
@@ -1090,12 +1090,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1120,12 +1120,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1158,12 +1158,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1178,22 +1178,22 @@
           "duration_frames": 140,
           "motion": "pan_up",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "end_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1218,12 +1218,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1247,12 +1247,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1285,12 +1285,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1307,20 +1307,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1346,20 +1346,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1385,12 +1385,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1423,12 +1423,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1452,12 +1452,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1482,20 +1482,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "fade_white",
@@ -1521,20 +1521,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1560,12 +1560,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1590,12 +1590,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1635,12 +1635,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "fade_black",
@@ -1657,12 +1657,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1695,12 +1695,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1724,12 +1724,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1754,12 +1754,12 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
             "x": 72.4528301886794,
@@ -1784,20 +1784,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1823,20 +1823,20 @@
           "motion_source": "explicit_code",
           "easing": "ease_in_out",
           "start_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1870,12 +1870,12 @@
             "bottom": 1392.8971962616822
           },
           "end_viewport": {
-            "x": 0,
-            "y": 0,
-            "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "x": 0.0,
+            "y": 0.0,
+            "width": 2560.0,
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",
@@ -1890,22 +1890,22 @@
           "duration_frames": 168,
           "motion": "pan_up",
           "motion_source": "explicit_code",
-          "easing": "ease_out",
+          "easing": "ease_out_hold",
           "start_viewport": {
-            "x": 0,
-            "y": 1120,
+            "x": 0.0,
+            "y": 1120.0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 2560
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 2560.0
           },
           "end_viewport": {
-            "x": 0,
+            "x": 0.0,
             "y": 0,
             "width": 2560,
-            "height": 1440,
-            "right": 2560,
-            "bottom": 1440
+            "height": 1440.0,
+            "right": 2560.0,
+            "bottom": 1440.0
           },
           "transition": {
             "kind": "crossfade",

@@ -48,12 +48,16 @@ class MotionOptions:
     zoom_out_start_percent: float = 107.0
     zoom_out_end_percent: float = 100.0
     pan_max_travel_percent: float = 4.0
-    # PU/PD pacing: travel grows with shot length (px/s) instead of a fixed
-    # distance, so short shots crawl instead of sprinting the same 4% sweep;
-    # shots under the ease-out threshold start moving immediately and land
-    # gently instead of surging mid-shot (ease_in_out's velocity hump).
+    # AUTO-selected pans (no filename code) are accents: travel grows with
+    # shot length up to pan_max_travel_percent of the output dimension.
+    # Filename-coded pans (the images composed for a pan) sweep the whole
+    # overscan band edge-to-edge - the composition travels out of frame - and
+    # are shaped by EASING instead of a distance cap: shots under the
+    # ease-out threshold start fast and decelerate to rest (ease_out), so the
+    # pan "speeds in a bit fast and slows down till the frame is out of
+    # sight" rather than surging mid-shot (ease_in_out) or crawling.
     pan_travel_seconds_floor: float = 3.0
-    pan_target_speed_px_per_second: float = 4.0
+    pan_target_speed_px_per_second: float = 20.0
     pan_ease_out_below_seconds: float = 10.0
     static_every_min_shots: int = 4
     static_every_max_shots: int = 6

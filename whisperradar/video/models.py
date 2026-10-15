@@ -14,9 +14,15 @@ EXPLICIT_CODE, AUTO_SELECTED, OVERRIDE = "explicit_code", "auto_selected", "over
 MOTION_SOURCES = (EXPLICIT_CODE, AUTO_SELECTED, OVERRIDE)
 
 LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT = "linear", "ease_in", "ease_out", "ease_in_out"
-EASINGS = (LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT)
+EASE_OUT_HOLD = "ease_out_hold"
+EASINGS = (LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT, EASE_OUT_HOLD)
 EASING_NAMES = {LINEAR: "Linear", EASE_IN: "Ease in", EASE_OUT: "Ease out",
-                EASE_IN_OUT: "Ease in out"}
+                EASE_IN_OUT: "Ease in out", EASE_OUT_HOLD: "Ease out hold"}
+# ease_out_hold: constant speed for this fraction of the shot (2-3 s on a
+# 6-10 s pan), then quadratic deceleration to rest; velocity-continuous at
+# the split so no kink shows. y = A*t for t<=s, else 1 - B*(1-t)^2 with
+# A = 2/(1+s), B = 1/(1-s^2).
+PAN_HOLD_FRACTION = 0.35
 
 TRANSITION_KINDS = (
     "none", "crossfade", "fade_black", "fade_white", "wipe_left", "wipe_right", "wipe_up",

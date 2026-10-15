@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -340,10 +341,13 @@ def _is_pan_motion(motion) -> bool:
 def _resolve_easing(motion, motion_seconds: float, mo: MotionOptions) -> str:
     if _is_pan_motion(motion) and motion_seconds > mo.long_pan_linear_threshold_seconds:
         return m.LINEAR
-    if motion in (m.PAN_UP, m.PAN_DOWN) and motion_seconds < mo.pan_ease_out_below_seconds:
-        # start moving immediately and land gently: the ease_in_out hump
-        # reads as a mid-shot sprint on short vertical pans
-        return m.EASE_OUT
+    if motion in (m.PAN_UP, m.PAN_DOWN, m.PAN_LEFT, m.PAN_RIGHT) \
+            and motion_seconds < mo.pan_ease_out_below_seconds:
+        # cruise then brake: constant speed for the first ~2-3 s, then a
+        # continuous deceleration to rest as the composition leaves frame
+        # (a plain ease_out starts slowing on frame 1; ease_in_out surges
+        # mid-shot)
+        return m.EASE_OUT_HOLD
     return mo.easing
 
 
@@ -396,8 +400,11 @@ def _build_clip(shot, asset, image, start, duration, fps, options, overrides, is
             motion_duration_frames = max(2, motion_frames)
 
     effective_seconds = (motion_duration_frames if motion_duration_frames is not None else duration) / fps
-    start_vp, end_vp = _resolve_viewports(shot, asset, motion, motion_source, image, options, issues,
-                                          duration_seconds=effective_seconds)
+    requested_motion = motion
+    motion, start_vp, end_vp = _resolve_viewports(shot, asset, motion, motion_source, image, options,
+                                                  issues, duration_seconds=effective_seconds)
+    if motion != requested_motion:
+        motion_source = m.AUTO_SELECTED
 
     easing = (shot_override.easing if shot_override is not None and shot_override.easing is not None
               else _resolve_easing(motion, effective_seconds, options.motion))
@@ -449,14 +456,24 @@ def _apply_transitions(clips, shots, fps, options, overrides):
 
 def _resolve_viewports(shot, asset, motion, motion_source, image, options, issues,
                        duration_seconds: float | None = None):
+    """(effective_motion, start_viewport, end_viewport).
+
+    A pan that the image has no overscan for degrades to a push-in inside
+    the engine; without reporting that here the clip kept its pan label,
+    rendered the engine's push-in viewports and no build-report warning was
+    ever written - the pan silently "did not work"."""
     if motion not in (m.STATIC, m.ZOOM_IN, m.ZOOM_OUT):
         pan = MotionEngine(options.motion, options.output).plan_clip(
             motion, motion_source, motion != m.PAN_LEFT, image.width, image.height,
             duration_seconds=duration_seconds)
-        return pan.start, pan.end
+        for w in pan.warnings:
+            issues.append(_issue(
+                m.WARNING, "VIEWPORT",
+                f'Shot "{shot.shot_id}" ({os.path.basename(image.file_path)}): {w}'))
+        return pan.motion, pan.start, pan.end
     base = _resolve_base_rect(shot, asset, image, options, issues)
     s0, s1 = _resolve_scales(shot, motion, options.motion)
-    return _scale_rect(base, s0, image), _scale_rect(base, s1, image)
+    return motion, _scale_rect(base, s0, image), _scale_rect(base, s1, image)
 
 
 def _centered_band(width, height, fraction) -> m.Rect:
