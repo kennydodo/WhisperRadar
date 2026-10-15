@@ -100,7 +100,7 @@
             "duration_frames": 173,
             "motion": "PD",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -186,7 +186,7 @@
             "duration_frames": 196,
             "motion": "PU",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {

@@ -207,7 +207,7 @@
           "duration_frames": 173,
           "motion": "pan_down",
           "motion_source": "explicit_code",
-          "easing": "ease_in_out",
+          "easing": "ease_out",
           "start_viewport": {
             "x": 0,
             "y": 0,
@@ -461,7 +461,7 @@
           "duration_frames": 196,
           "motion": "pan_up",
           "motion_source": "explicit_code",
-          "easing": "ease_in_out",
+          "easing": "ease_out",
           "start_viewport": {
             "x": 0,
             "y": 1120,

@@ -89,7 +89,7 @@
             "duration_frames": 129,
             "motion": "PU",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Dip to black"
           },
           {
@@ -98,7 +98,7 @@
             "duration_frames": 165,
             "motion": "PD",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -116,7 +116,7 @@
             "duration_frames": 97,
             "motion": "PD",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -204,7 +204,7 @@
             "duration_frames": 226,
             "motion": "PU",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -213,7 +213,7 @@
             "duration_frames": 166,
             "motion": "PD",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -256,7 +256,7 @@
             "duration_frames": 182,
             "motion": "PD",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -265,7 +265,7 @@
             "duration_frames": 191,
             "motion": "PU",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -274,7 +274,7 @@
             "duration_frames": 208,
             "motion": "PD",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -405,7 +405,7 @@
             "duration_frames": 140,
             "motion": "PU",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           },
           {
@@ -622,7 +622,7 @@
             "duration_frames": 168,
             "motion": "PU",
             "motion_source": "ExplicitCode",
-            "easing": "Ease in out",
+            "easing": "Ease out",
             "transition_in": "Crossfade"
           }
         ]
