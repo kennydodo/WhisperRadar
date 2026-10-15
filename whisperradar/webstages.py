@@ -611,8 +611,9 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                            "read, ad, course or product promotion, code, QR "
                            "code or link at any point of the video")
             judged["feedback"].append(
-                "Remove every sponsor read, ad, course or product promotion, "
-                "discount code, QR code and link (found: " + ", ".join(promo)
+                "Rewrite so the narration does not read as an ad: no sponsor read, "
+                "course or product promotion, discount code, QR code or link "
+                "(found: " + ", ".join(promo)
                 + "). The only call to action is the closing "
                 "subscribe/like/next-video one.")
         if cut:

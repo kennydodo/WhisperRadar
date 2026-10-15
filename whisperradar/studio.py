@@ -3634,6 +3634,9 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"anywhere in the script (start, middle or end) is a failure: put it "
         f"in \"must_fix\" (the passage -> promotion is not allowed -> remove "
         f"it). Even if the STYLE GUIDE mentions one, it is not wanted. The "
+        f"word \"sponsor\" inside the story is fine - only an ad-read is a "
+        f"failure. Never pass on a point that asks the writer to add or "
+        f"keep a sponsor read, ad or promotion; drop it. The "
         f"closing subscribe/like/next-video call to action is fine.\n"
         f"- Every \"must_fix\" and \"feedback\" entry is usable by the "
         f"writer as written: the passage of the SCRIPT, why it is wrong, "
@@ -4015,7 +4018,9 @@ def script_prompt(title: str, genre: str, source_text: str,
     else:
         facts_block = ("No brief available - write from the title alone and "
                        "research the topic yourself.")
-    style = (style_guide or "").strip()
+    from . import plan as _plan_mod
+    # a sponsor/ad/promotion point in the guide is never handed to the writer
+    style = _plan_mod.drop_promo_lines((style_guide or "").strip()).strip()
     if style:
         if style_variant == "classic":
             style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
@@ -4093,7 +4098,8 @@ Rules:
 - End with a short call to action matching the style guide's CTA style.
 - Write NO sponsor read, ad, course or product promotion, discount code, QR code,
   link or offer anywhere in the script, at ANY point of the video (start, middle or
-  end), even if the style guide mentions one. The
+  end), even if the style guide mentions one. (The word "sponsor" is fine when it
+  is part of the story itself; the narration just must never read as an ad.) The
   closing call to action is the only promotion; never invent a product, course or
   offer.
 

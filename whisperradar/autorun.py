@@ -786,8 +786,9 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             why = list(why) + ["the script contains a sponsor/ad/promotion ("
                                + ", ".join(promo) + ") - remove it"]
             rating["feedback"] = list(rating.get("feedback") or []) + [
-                "Remove every sponsor read, ad, course or product promotion, "
-                "discount code, QR code and link (found: " + ", ".join(promo)
+                "Rewrite so the narration does not read as an ad: no sponsor read, "
+                "course or product promotion, discount code, QR code or link "
+                "(found: " + ", ".join(promo)
                 + "). The only call to action is the closing "
                 "subscribe/like/next-video one."]
         struct = studio.structure_copy(text, source_text)

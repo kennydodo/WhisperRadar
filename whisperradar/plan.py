@@ -559,9 +559,19 @@ def meta_mentions(script: str) -> list[str]:
     return sorted({m.group(1).lower() for m in _META_RE.finditer(script or "")})
 
 
+# Ad-READ patterns only. The word "sponsor" itself is fine when it is part of
+# the story ("the shrine was sponsored by merchants", a video about
+# sponsorships); what is never wanted is the narration reading as an ad.
 _PROMO_RE = re.compile(
-    r"\b(sponsors?|sponsored|sponsorship|brought to you by|paid promotion|"
+    r"\b(brought to you by|paid promotion|"
+    r"(?:this|today'?s) (?:video|episode|segment|part) (?:is|was) "
+    r"(?:sponsored|brought)|"
+    r"(?:today'?s|our|my|the) (?:video )?sponsor|"
+    r"thanks to \w+(?: \w+)? for sponsoring|"
+    r"sponsor(?:ing|ed)? (?:this|today'?s) (?:video|episode)|"
+    r"sponsor(?:ed)? (?:message|read|segment|spot|link)|"
     r"(?:promo|promotion|discount|coupon|referral|affiliate|voucher) codes?|"
+    r"affiliate links?|"
     r"use (?:the )?code|qr codes?|\d{1,3}\s?% off|"
     r"link (?:is )?(?:in|below)(?: the)? (?:description|comments?|bio)|"
     r"(?:in|from) the description below|click the link|"
@@ -574,9 +584,20 @@ _PROMO_RE = re.compile(
 def promo_mentions(script: str) -> list[str]:
     """Sponsor reads, ads, course/product promotion, codes, QR codes and links
     in a spoken script, at ANY position: the channel never wants them (the only
-    call to action is the closing subscribe/like/next-video one)."""
+    call to action is the closing subscribe/like/next-video one). The plain
+    word "sponsor" in the story is not flagged."""
     return sorted({" ".join(m.group(1).lower().split())
                    for m in _PROMO_RE.finditer(script or "")})
+
+
+def drop_promo_lines(text: str) -> str:
+    """A style guide / brief with every line that asks for a sponsor read, ad or
+    promotion taken out, so the writer is never handed such a point."""
+    keep = [ln for ln in (text or "").splitlines()
+            if not (_PROMO_RE.search(ln)
+                    or re.search(r"\b(sponsor|mid-?roll)\b.*\b(beat|segment|read|slot|cta|promotion|ad)\b", ln, re.I)
+                    or re.search(r"\b(ad|promotion)\b.*\b(beat|segment|slot)\b", ln, re.I))]
+    return "\n".join(keep)
 
 
 def with_plan(cfg, prod, direction: str) -> str:

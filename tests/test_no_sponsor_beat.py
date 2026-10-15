@@ -30,6 +30,9 @@ class PromoCheckTests(unittest.TestCase):
         from whisperradar import plan
         self.assertEqual(plan.promo_mentions("Plain narration. Of course it works."), [])
         for text in ("Today's video is sponsored by Acme.",
+                     "This video is sponsored by Acme.",
+                     "Thanks to Acme for sponsoring this one.",
+                     "Our sponsor today is Acme.",
                      "Use code BRAIN20 for 20% off.",
                      "Scan the QR code on screen.",
                      "The link is in the description.",
@@ -39,7 +42,10 @@ class PromoCheckTests(unittest.TestCase):
 
     def test_ordinary_words_are_not_flagged(self):
         from whisperradar import plan
-        for text in ("Of course the brain keeps working.",
+        for text in ("The shrine was sponsored by local merchants.",
+                     "Sponsorship deals changed the sport.",
+                     "He found a sponsor for the expedition.",
+                     "Of course the brain keeps working.",
                      "Subscribe and watch the next video.",
                      "The course of the river changed.",
                      "A rule of thumb for rest."):
@@ -49,3 +55,17 @@ class PromoCheckTests(unittest.TestCase):
         p = studio.rating_prompt("T", "g", "script", "src", "style", 0.0)
         self.assertIn("NO PROMOTION, AT ANY POSITION", p)
         self.assertIn("must_fix", p)
+
+
+class DropPromoLinesTests(unittest.TestCase):
+    def test_sponsor_points_never_reach_the_writer(self):
+        from whisperradar import plan
+        guide = ("## Structure\n- 0-5%: hook\n"
+                 "- 35-40%: Mid-roll sponsor CTA (course promotion)\n"
+                 "- 40-100%: payoff\n")
+        out = plan.drop_promo_lines(guide)
+        self.assertNotIn("sponsor", out.lower())
+        self.assertIn("hook", out)
+        self.assertIn("payoff", out)
+        p = studio.script_prompt("T", "g", "facts", guide)
+        self.assertNotIn("Mid-roll sponsor", p)
