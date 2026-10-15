@@ -488,5 +488,16 @@ class PlannerIntegrationTests(unittest.TestCase):
                       used.read_text(encoding="utf-8"))
 
 
+class TransitionRuleTests(unittest.TestCase):
+    def test_every_profile_allows_the_slide_transitions(self):
+        from whisperradar import briefs
+        for key, prof in briefs.MOTION_PRESETS.items():
+            slots = prof.slot_values()
+            text = " ".join(str(v) for v in slots.values())
+            with self.subTest(profile=key):
+                self.assertIn("SLIDE_UP", text)
+                self.assertNotIn("Transitions only", text)
+
+
 if __name__ == "__main__":
     unittest.main()
