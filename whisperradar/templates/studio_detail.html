@@ -797,6 +797,16 @@
       </div>
       {% if visual_style_text %}<pre class="copyable" id="vstyletext" style="margin:0 0 4px; font-size:12px; white-space:pre-wrap; max-height:220px; overflow-y:auto">{{ visual_style_text }}</pre>
       <div id="vstylecount" class="muted" style="font-size:12px; margin-bottom:12px"></div>{% endif %}
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/visual-density" style="margin:0 0 12px; gap:6px; align-items:center">
+        <label style="font-size:13px">Frame density
+          <select name="visual_density" onchange="this.form.submit()" title="How crowded the images may be. The planner is told the limit and the shotlist review marks prompts that go past it as too busy. Inherit uses the channel's choice.">
+            <option value="">inherit (now: {{ dict(densities).get(density_eff) }})</option>
+            {% for k, label in densities %}
+            <option value="{{ k }}" {{ 'selected' if prod['visual_density'] == k else '' }}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
       <h2>Character / reference bible (optional)</h2>
       <div class="muted" style="font-size:12px; margin-bottom:6px">Recurring characters, environments, wardrobe, objects - kept consistent across all generated images. Passed to the shotlist planner as its reference bible.</div>
       <div class="muted" style="font-size:12px; margin-bottom:6px">

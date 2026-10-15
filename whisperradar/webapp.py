@@ -2142,6 +2142,8 @@ def create_app(cfg) -> Flask:
             "channels.html", own_channels=own_channels, links=links,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
+            densities=[(k, studio.DENSITY_LABELS[k])
+                       for k in studio.DENSITIES],
             own_state=own_state,
             own_active_count=sum(1 for c in all_own if c["active"]),
             own_paused_count=sum(1 for c in all_own if not c["active"]),
@@ -2426,6 +2428,10 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("style_variant") or "").strip()
             fields["style_variant"] = (raw if raw in studio.STYLE_VARIANTS
                                        else None)   # empty = inherit
+        if "visual_density" in request.form:
+            raw = (request.form.get("visual_density") or "").strip()
+            fields["visual_density"] = (raw if raw in studio.DENSITIES
+                                        else None)   # empty = rich
         for key in ("default_engine", "default_render_mode", "topic_pick"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip() or None
@@ -3630,6 +3636,9 @@ def create_app(cfg) -> Flask:
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
             style_variant_eff=studio.style_variant(cfg, pid=pid),
+            densities=[(k, studio.DENSITY_LABELS[k])
+                       for k in studio.DENSITIES],
+            density_eff=studio.visual_density(cfg, pid=pid),
             stages=db.STAGES, stage=stage, script_text=script_text,
             style=style, style_text=style_text, source_tr=source_tr,
             style_src=style_src, bible_src=bible_src,
@@ -3793,6 +3802,7 @@ def create_app(cfg) -> Flask:
         if "shots" in reset:
             fields["style_override"] = 0
             fields["bible_override"] = 0
+            fields["visual_density"] = None
         if "audio" in reset:
             fields["voice"] = None
         if "images" in reset:
@@ -4267,6 +4277,25 @@ def create_app(cfg) -> Flask:
             studio.STYLE_VARIANT_LABELS[v] if v else
             "inherit (" + studio.STYLE_VARIANT_LABELS[eff_v] + ")")
             + ". It applies the next time the style guide / script is generated.")
+
+    @app.post("/studio/<int:pid>/visual-density")
+    def studio_visual_density_save(pid):
+        raw = (request.form.get("visual_density") or "").strip()
+        v = raw if raw in studio.DENSITIES else None   # empty = inherit
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                return _studio_url(pid, error="Unknown production")
+            db.update_production(conn, pid, visual_density=v)
+            eff_v = studio.visual_density(conn=conn, pid=pid)
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Frame density: " + (
+            studio.DENSITY_LABELS[v] if v else
+            "inherit (" + studio.DENSITY_LABELS[eff_v] + ")")
+            + ". It applies the next time the shotlist is planned or "
+            "reviewed.")
 
     @app.post("/studio/<int:pid>/voice")
     def studio_voice_save(pid):
