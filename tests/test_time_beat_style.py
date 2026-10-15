@@ -138,3 +138,16 @@ class BeatTableParsingTests(unittest.TestCase):
         p = " ".join(studio.script_prompt("T", "g", "facts", two, 1000).split())
         self.assertNotIn("is a TIME BEAT pattern", p)
         self.assertNotIn("TIME BEATS FOR THIS SCRIPT", p)
+
+
+class OldGuideWordingTests(unittest.TestCase):
+    def test_clock_times_are_treated_as_proportions(self):
+        from whisperradar import studio
+        old = ("## Structure\n- 0:00-0:20 hook\n- 0:20-2:00 story\n"
+               "- 2:00-3:00 end\n")
+        p = " ".join(studio.script_prompt("T", "g", "facts", old, 900).split())
+        self.assertIn("Clock times in it (m:ss) belong to the reference video", p)
+        self.assertNotIn("TIME BEATS FOR THIS SCRIPT", p)
+        new = ("## Structure\n- 0-5%: hook\n- 5-60%: story\n- 60-100%: end\n")
+        q = " ".join(studio.script_prompt("T", "g", "facts", new, 900).split())
+        self.assertNotIn("Clock times in it", q)

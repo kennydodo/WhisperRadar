@@ -4076,7 +4076,11 @@ hook pattern, structure, and CTA style all come from it):
                     "each beat and its share of the runtime."
                     if table else
                     "Where its Structure section lists beats, they describe a\n"
-                    "rhythm (each beat's role and timing).")
+                    "rhythm (each beat's role and timing)."
+                    + (" Clock times in it (m:ss) belong to the reference video:\n"
+                       "use them only as proportions of the runtime, scaled to this\n"
+                       "script's length."
+                       if re.search(r"\b\d{1,2}:\d{2}\b", style) else ""))
             style_block = f"""STYLE GUIDE (match its tone, pacing, rhythm, hook pattern
 and CTA style exactly. {lead} It is a rhythm to follow, never the
 story: do not reuse the reference video's topic, examples or order of ideas):

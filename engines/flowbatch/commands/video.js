@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -300,16 +301,40 @@ function idsFileFor(out) {
   return path.join(path.dirname(out), '.flow-clip-ids.json');
 }
 
+/**
+ * One clip is reachable under several identities (the flow-content uuid and the
+ * googlevideo `gv:` id), and nothing in a URL links them. The clip's bytes do:
+ * every saved clip's content hash is kept beside its ids, and a "new" clip whose
+ * bytes match a saved one is a duplicate, not a fresh result.
+ */
+const savedHashes = new Set();
+
+export function contentHash(bytes) {
+  return `sha1:${crypto.createHash('sha1').update(bytes).digest('hex')}`;
+}
+
+/** True when these bytes are a clip that was already saved (the id is then also marked saved). */
+function isSavedContent(bytes, id) {
+  if (!bytes || !savedHashes.has(contentHash(bytes))) return false;
+  if (id) saved.add(id);
+  return true;
+}
+
 function loadSavedIds(out) {
   try {
-    for (const id of Object.keys(JSON.parse(fs.readFileSync(idsFileFor(out), 'utf8')))) saved.add(id);
+    for (const id of Object.keys(JSON.parse(fs.readFileSync(idsFileFor(out), 'utf8')))) {
+      if (id.startsWith('sha1:')) savedHashes.add(id);
+      else saved.add(id);
+    }
   } catch {
     /* none yet */
   }
 }
 
-function rememberSavedId(out, id) {
+function rememberSavedId(out, id, bytes = null) {
   saved.add(id);
+  const hash = bytes ? contentHash(bytes) : null;
+  if (hash) savedHashes.add(hash);
   const file = idsFileFor(out);
   let map = {};
   try {
@@ -318,6 +343,7 @@ function rememberSavedId(out, id) {
     /* new file */
   }
   map[id] = path.basename(out);
+  if (hash) map[hash] = path.basename(out);
   try {
     fs.writeFileSync(file, JSON.stringify(map, null, 2));
   } catch {
@@ -371,6 +397,31 @@ async function dumpFirstTile(page) {
   }
 }
 
+/**
+ * Several unsaved clips are on the page: pick the one whose own tile prompt
+ * matches THIS item's motion prompt, only when exactly one does. Returns the
+ * candidate or null (never a guess).
+ */
+export function pickClipByPrompt(fresh, tiles, itemPrompt) {
+  const hits = [];
+  for (const tile of tiles) {
+    const clip = fresh.find((c) => c.id === tile.id);
+    if (clip && tile.prompt && motionPromptsMatch(itemPrompt, tile.prompt)) hits.push(clip);
+  }
+  return hits.length === 1 ? hits[0] : null;
+}
+
+async function matchFreshByPrompt(driver, fresh, itemPrompt) {
+  const results = await driver.listGeneratedResults().catch(() => []);
+  const tiles = [];
+  for (const tile of results) {
+    if (!tile.src || mediaId(tile.src) === String(tile.src)) continue;
+    const prompt = await driver.readTilePrompt(tile.index, { selector: null }).catch(() => null);
+    if (prompt) tiles.push({ id: mediaId(tile.src), prompt });
+  }
+  return pickClipByPrompt(fresh, tiles, itemPrompt);
+}
+
 /** Download a clip, recording the HTTP status (the reason a download fails). */
 async function tracedFetch(driver, url, trace, id) {
   if (!driver?.context?.request) return driver.fetchBytes(url);
@@ -394,7 +445,7 @@ async function tracedFetch(driver, url, trace, id) {
 /** Wait for one new clip, save it, return its size. Throws on a Flow alert / timeout.
  * A clip URL can appear in the status JSON before Flow has finished writing the
  * file, so a failed download is retried until the deadline instead of stopping. */
-async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen }) {
+async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen, prompt = '' }) {
   const started = Date.now();
   const deadline = started + timeoutMs;
   let clip = null;
@@ -406,6 +457,7 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
   let navigated = false;
   const trace = activeTrace;
   let lastPollNote = 0;
+  let ambiguousSince = 0;
   const findFresh = async () => {
     const all = await videoCandidates(page, videoResponses);
     const fresh = all.filter((c) => !knownIds.has(c.id) && !saved.has(c.id));
@@ -425,6 +477,22 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
         tile,
       });
     }
+    if (fresh.length > 1 && prompt) {
+      // more than one unsaved clip: take the one whose tile prompt is this
+      // item's; wait a minute for that to become unambiguous before falling
+      // back to the newest (a wrong file name is worse than a short wait)
+      const match = await matchFreshByPrompt(driver, fresh, prompt).catch(() => null);
+      if (match) {
+        ambiguousSince = 0;
+        return match;
+      }
+      ambiguousSince ||= Date.now();
+      if (Date.now() - ambiguousSince < 60000) {
+        trace?.note('ambiguous', { fresh: fresh.length });
+        return null;
+      }
+      log.warn(`${fresh.length} unsaved clips and none matches this item's prompt - taking the newest.`);
+    }
     return fresh.length ? fresh[fresh.length - 1] : null;
   };
   const tryFetch = async () => {
@@ -434,6 +502,14 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
       log.info(`Clip found (${clip.id}): ${clip.url.slice(0, 100)}`);
     }
     bytes = await tracedFetch(driver, clip.url, trace, clip.id);
+    if (bytes && isSavedContent(bytes, clip.id)) {
+      // the same clip under another identity (uuid vs gv:) - already saved
+      trace?.note('duplicate', { id: clip.id.slice(0, 40) });
+      log.info(`Clip ${clip.id} has the same content as an already saved clip - ignoring it.`);
+      bytes = null;
+      clip = null;
+      return;
+    }
     if (!bytes) {
       fetchFails += 1;
       if (fetchFails === 1 || fetchFails % 5 === 0) {
@@ -475,7 +551,7 @@ async function waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, 
   }
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, bytes);
-  rememberSavedId(out, clip.id);
+  rememberSavedId(out, clip.id, bytes);
   log.ok(`Saved ${path.relative(ROOT, out)} (${(bytes.length / 1048576).toFixed(1)} MB)`);
   if (navigated && reopen) await reopen().catch((error) => log.warn(`reopen: ${String(error.message ?? error)}`));
   return bytes.length;
@@ -529,18 +605,20 @@ async function adoptOrphanClip(ctx, { out, prompt, rounds = 1, gapMs = 10000 }) 
     const clip = hits[0].clip;
     const bytes = await ctx.driver.fetchBytes(clip.url);
     if (!bytes || bytes.length <= 10000) return false;
+    if (isSavedContent(bytes, clip.id)) return false;
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, bytes);
-    rememberSavedId(out, clip.id);
+    rememberSavedId(out, clip.id, bytes);
     log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, matched by its tile prompt)`);
     return true;
   }
   const clip = candidates[0];
   const bytes = await ctx.driver.fetchBytes(clip.url);
   if (!bytes || bytes.length <= 10000) return false;
+  if (isSavedContent(bytes, clip.id)) return false;
   fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, bytes);
-  rememberSavedId(out, clip.id);
+  rememberSavedId(out, clip.id, bytes);
   log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, ${clip.id.slice(0, 8)})`);
   return true;
 }
@@ -582,7 +660,7 @@ async function makeClip(ctx, { image, prompt, out, timeoutMs }) {
   trace.note('start', { out: path.basename(out), timeoutS: timeoutMs / 1000, known: knownIds.size });
   activeTrace = trace;
   try {
-    const size = await waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen: ctx.reopen });
+    const size = await waitAndSave({ driver, page, videoResponses, knownIds, timeoutMs, out, reopen: ctx.reopen, prompt });
     trace.writeSummary('saved');
     return size;
   } catch (error) {

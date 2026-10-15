@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { decodeFlowVideoUrl, extractFlowVideoUrls, mediaId } from '../../commands/video.js';
+import { contentHash, decodeFlowVideoUrl, extractFlowVideoUrls, mediaId, pickClipByPrompt } from '../../commands/video.js';
 import { setLevel } from '../../src/lib/log.js';
 
 setLevel('silent');
@@ -59,4 +59,29 @@ test('mediaId normalizes googlevideo mirrors of the same video to one identity',
   assert.equal(mediaId(`${BASE}?Expires=1`), UUID);
   // unknown URLs fall back to the full string
   assert.equal(mediaId('https://example.com/x.mp4'), 'https://example.com/x.mp4');
+});
+
+test('contentHash links one clip across identities', () => {
+  const a = Buffer.from('same video bytes');
+  assert.equal(contentHash(a), contentHash(Buffer.from('same video bytes')));
+  assert.notEqual(contentHash(a), contentHash(Buffer.from('other')));
+  assert.match(contentHash(a), /^sha1:[0-9a-f]{40}$/);
+});
+
+test('pickClipByPrompt takes the clip whose tile prompt matches, never a guess', () => {
+  const fresh = [
+    { id: 'a', url: 'u1' },
+    { id: 'b', url: 'u2' },
+  ];
+  const tiles = [
+    { id: 'a', prompt: 'Slow push in on the lighthouse at dusk' },
+    { id: 'b', prompt: 'Camera drifts left across the harbour at night' },
+  ];
+  assert.equal(pickClipByPrompt(fresh, tiles, 'slow push in on the lighthouse at dusk, gentle')?.id, 'a');
+  assert.equal(pickClipByPrompt(fresh, tiles, 'something else entirely, unrelated words'), null);
+  // two tiles matching the same prompt is ambiguous -> null
+  const dup = [...tiles, { id: 'a', prompt: 'Slow push in on the lighthouse at dusk' }];
+  assert.equal(pickClipByPrompt(fresh, dup, 'Slow push in on the lighthouse at dusk'), null);
+  // a tile for a clip that is not fresh is ignored
+  assert.equal(pickClipByPrompt([fresh[1]], tiles, 'Slow push in on the lighthouse at dusk'), null);
 });
