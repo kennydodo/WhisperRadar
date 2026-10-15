@@ -4036,6 +4036,89 @@ def style_variant(cfg=None, conn=None, pid=None) -> str:
             conn.close()
     return v if v in STYLE_VARIANTS else DEFAULT_STYLE_VARIANT
 
+# How crowded the channel's frames may be. A production's own choice wins, then
+# its channel's, then "rich" = no limit (what every channel did before this
+# existed). The planner is told the level up front and the shotlist audit
+# rejects prompts that go past it ("too busy"), the way it rejects prompts that
+# say too little.
+DENSITIES = ("minimal", "moderate", "rich")
+DEFAULT_DENSITY = "rich"
+DENSITY_LABELS = {
+    "minimal": "Minimal (one subject, at most 2 props, no scenery)",
+    "moderate": "Moderate (a bit more than minimal)",
+    "rich": "Rich (no limit)",
+}
+_DENSITY_LIMITS = {
+    "minimal": (
+        "VISUAL DENSITY: MINIMAL. Every frame is deliberately sparse: ONE main "
+        "subject (one character, or one object / symbol / diagram), at most "
+        "TWO small supporting objects, and no background scenery, crowds, "
+        "decorative clutter or small details. Empty space is the default. A "
+        "place is shown by one simple symbol, never a full scene."),
+    "moderate": (
+        "VISUAL DENSITY: MODERATE, a bit more than minimal. One main "
+        "subject (or two characters when the beat is about their "
+        "interaction), up to about FOUR supporting objects or background "
+        "items, and a simple setting. No crowds, no intricate or "
+        "heavily detailed scenes, no long lists of props."),
+}
+
+
+def visual_density(cfg=None, conn=None, pid=None) -> str:
+    """The frame density in force: the production's own choice, then its
+    channel's, then the default (rich = no limit)."""
+    from . import db
+    own = conn is None
+    v = ""
+    try:
+        if own:
+            conn = db.connect(cfg.db_path)
+            db.init_db(conn)
+        if pid is not None:
+            prod = db.get_production(conn, pid)
+            if prod is not None:
+                v = (prod["visual_density"] or "").strip()
+                if v not in DENSITIES:
+                    ch = db.get_own_channel(conn, prod["own_channel_id"])
+                    v = ((ch["visual_density"] if ch is not None else "")
+                         or "").strip()
+    except Exception:
+        v = ""
+    finally:
+        if own and conn is not None:
+            conn.close()
+    return v if v in DENSITIES else DEFAULT_DENSITY
+
+
+def density_planner_block(density: str) -> str:
+    """What the planner is told about frame density ('' for rich)."""
+    limit = _DENSITY_LIMITS.get(density or "")
+    if not limit:
+        return ""
+    return ("\n\n" + limit + " Write every image prompt (and every reference "
+            "prompt) within this limit: do not add props, scenery or extra "
+            "characters the narration does not name. A short prompt is "
+            "right.")
+
+
+def density_audit_block(density: str) -> str:
+    """The audit's over-specification rule ('' for rich)."""
+    limit = _DENSITY_LIMITS.get(density or "")
+    if not limit:
+        return ""
+    return (
+        "\n\nFRAME DENSITY - checked in ADDITION to completeness. "
+        + limit +
+        " A prompt that goes past this limit is too busy: give it the "
+        "verdict \"weak\", leave \"missing\" empty and start \"reason\" "
+        "with \"too busy:\" followed by exactly what to remove (e.g. \"too "
+        "busy: drop the trees, the fire and the second hut\"). An element "
+        "the narration explicitly names always counts as required and is "
+        "never too busy. Under this density a short, sparse prompt is GOOD: "
+        "do NOT mark it weak for lacking a setting, props or background, "
+        "and do not ask for more than the narration names.")
+
+
 _TB_HEADER_OLD = "## Structure (beats in order, with rough timing)"
 _TB_HEADER_NEW = "## Structure (time beats: roles in order, timing as % of runtime)"
 _TB_RULES = """- TIME BEATS. In the Structure section describe each beat by its ROLE in the
@@ -4601,7 +4684,7 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     feedback: str = "",
                     supplied_refs: list[str] | None = None,
                     pacing_note: str = "", allow_refs: bool = True,
-                    animation_note: str = "") -> str:
+                    animation_note: str = "", density: str = "") -> str:
     """Assemble the manifest-authoring brief with its inputs: the narration
     (cue-delimited, timestamp-free - see compact_srt), the channel visual
     style, the optional character / reference bible, and the creator's
@@ -4675,7 +4758,7 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
 INPUT 1 - NARRATION (one line per cue: "N: text (Ns)"; the cue numbers are what the shot `cues` ranges refer to and the (Ns) is how long the cue runs; timestamps are intentionally omitted):
 {narration.strip()}
 
-{style_block}{bible_block}{extra}{fix_block}{refs_block}{pacing_block}{animation_note or ""}"""
+{style_block}{density_planner_block(density)}{bible_block}{extra}{fix_block}{refs_block}{pacing_block}{animation_note or ""}"""
 
 
 def shotlist_patch_prompt(weak: list[dict], style_guide: str = "",
@@ -5765,7 +5848,7 @@ def shotlist_structural_faults(data: dict, cue_count: int,
 
 
 def alignment_prompt(chunk: list[dict], cues: dict[int, str],
-                     style_guide: str = "") -> str:
+                     style_guide: str = "", density: str = "") -> str:
     """Audit prompt COMPLETENESS per scene, not just topical match.
 
     Rendering an image is slow and costs credits, so a prompt that only
@@ -5866,6 +5949,8 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
         "Judge visual completeness only: stylistic wording is irrelevant, and "
         "do not require anything the narration does not ask for, or anything "
         "in the excluded list above.\n\n"
+        + (density_audit_block(density).lstrip("\n") + "\n\n"
+           if density_audit_block(density) else "")
         + (f"CHANNEL VISUAL STYLE (its text/number policy decides the "
            f"exact-number exclusion above):\n{style_guide.strip()[:2000]}\n\n"
            if (style_guide or "").strip() else "")
@@ -5950,7 +6035,8 @@ def judge_shots(data: dict, prompt_by_file: dict) -> list[dict]:
 
 def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
                        provider: str | None, chunk_size: int,
-                       style_guide: str, temperature: float) -> dict:
+                       style_guide: str, temperature: float,
+                       density: str = "") -> dict:
     """Run alignment_prompt over `shots` in chunk_size-sized batches, IN
     PARALLEL. Returns {matched, weak, verdicts, unreviewed, error}.
 
@@ -5983,7 +6069,8 @@ def _judge_shot_chunks(cfg, shots: list[dict], cue_text: dict[int, str],
         for retry in range(2):  # first try + one retry
             try:
                 reply = _parse_json_object(llm_generate(
-                    cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide),
+                    cfg, alignment_prompt(chunk, cue_text, style_guide=style_guide,
+                                     density=density),
                     provider=provider, temperature=temperature))
                 return chunk, reply, None
             except Exception as exc:  # noqa: BLE001 - a judge failure must
@@ -6053,7 +6140,8 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                     style_guide: str = "", temperature: float = 1.0,
                     profile: "briefs.MotionProfile | None" = None,
-                    animate_seconds: float | None = None) -> dict:
+                    animate_seconds: float | None = None,
+                    density: str = "") -> dict:
     """Structural faults + a per-scene prompt-completeness audit. Returns
     {faults, matched, total, weak, ratio, error, unreviewed, warnings,
     verdicts}. Never raises.
@@ -6097,7 +6185,7 @@ def review_shotlist(cfg, data: dict, cues: list[dict], provider: str | None,
                 "ratio": 0.0, "error": None, "unreviewed": 0,
                 "warnings": pacing_warnings, "verdicts": {}}
     result = _judge_shot_chunks(cfg, shots, cue_text, provider, chunk_size,
-                                style_guide, temperature)
+                                style_guide, temperature, density=density)
     ratio = (result["matched"] / total) if total else 0.0
     return {"faults": faults, "matched": result["matched"], "total": total,
             "weak": result["weak"][:30], "ratio": ratio,
@@ -6112,7 +6200,8 @@ def review_shotlist_patch(cfg, data: dict, cues: list[dict],
                           max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                           style_guide: str = "", temperature: float = 1.0,
                           profile: "briefs.MotionProfile | None" = None,
-                          animate_seconds: float | None = None
+                          animate_seconds: float | None = None,
+                          density: str = ""
                           ) -> dict:
     """Same shape and contract as review_shotlist, but only re-runs the judge
     on `patched_assets` - every other shot's alignment verdict is carried
@@ -6163,7 +6252,8 @@ def review_shotlist_patch(cfg, data: dict, cues: list[dict],
     to_judge = [s for s in shots if str(s.get("asset")) in to_judge_assets]
     carried = [s for s in shots if str(s.get("asset")) not in to_judge_assets]
     fresh = (_judge_shot_chunks(cfg, to_judge, cue_text, provider, chunk_size,
-                                style_guide, temperature) if to_judge else
+                                style_guide, temperature, density=density)
+             if to_judge else
             {"matched": 0, "weak": [], "verdicts": {}, "unreviewed": 0,
              "error": None})
     matched = fresh["matched"]

@@ -330,6 +330,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>frame density
+                <select name="visual_density" title="How crowded the images may be. The shotlist planner is told the limit and the review rejects prompts that go past it.">
+                  <option value="">Rich (no limit)</option>
+                  {% for k, label in densities if k != 'rich' %}
+                  <option value="{{ k }}" {{ 'selected' if ch['visual_density'] == k else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>render mode
                 <select name="default_render_mode" class="rendermode-select">
                   <option value="">inherit</option>

@@ -1066,6 +1066,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
         studio.seed_production(cfg, conn, prod)
         style_guide, style_src, bible_text, bible_src = style_bible(
             cfg, conn, prod, pdir)
+        density = studio.visual_density(conn=conn, pid=pid)
         if not bible_text:
             # the manifest-authoring brief's bible gate: the LLM will refuse
             # to plan without one (it just asks for the bible instead)
@@ -1221,7 +1222,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                     bible=bible_text, feedback=feedback,
                     supplied_refs=studio.find_supplied_refs(pdir),
                     pacing_note=pacing_note, allow_refs=allow_refs,
-                    animation_note=animation_note)
+                    animation_note=animation_note, density=density)
                 text = studio.llm_generate(
                     cfg, prompt, provider=provider,
                     max_tokens=studio.shotlist_max_tokens(
@@ -1292,13 +1293,15 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                     patched_assets=set(patches),
                     max_hold_seconds=max_hold, style_guide=style_guide,
                     temperature=eff["shotlist_judge_temperature"],
-                    profile=profile, animate_seconds=animate_seconds)
+                    profile=profile, animate_seconds=animate_seconds,
+                    density=density)
             else:
                 review = studio.review_shotlist(
                     cfg, data, cues, judge, max_hold_seconds=max_hold,
                     style_guide=style_guide,
                     temperature=eff["shotlist_judge_temperature"],
-                    profile=profile, animate_seconds=animate_seconds)
+                    profile=profile, animate_seconds=animate_seconds,
+                    density=density)
             if review["total"] and review["unreviewed"] == review["total"]:
                 # The judge never actually ran on a single shot - unlike a
                 # low completeness ratio (real information: some prompts are
