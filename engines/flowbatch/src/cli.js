@@ -12,6 +12,7 @@ import { prepareCommand } from '../commands/prepare.js';
 import { recoverCommand } from '../commands/recover.js';
 import { upscaleCommand } from '../commands/upscale.js';
 import { videoCommand } from '../commands/video.js';
+import { assetsCommand } from '../commands/assets.js';
 
 const COMMANDS = {
   video: {
@@ -73,6 +74,11 @@ const COMMANDS = {
     run: recoverCommand,
     valueFlags: ['job', 'report', 'output', 'project-url', 'profile', 'channel', 'slowmo', 'url'],
     summary: 'Download a stopped batch\u2019s already-generated results from the project gallery, without generating.',
+  },
+  assets: {
+    run: assetsCommand,
+    valueFlags: ['project-url', 'search', 'profile', 'channel', 'slowmo', 'url'],
+    summary: 'List the Flow project\u2019s asset titles (read only) - to see how generated tiles are named.',
   },
   upscale: {
     run: upscaleCommand,
