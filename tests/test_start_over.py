@@ -176,19 +176,35 @@ class StartOverTests(unittest.TestCase):
         (self.pdir / "style.md").write_text("OLD seeded style",
                                             encoding="utf-8")
         (self.pdir / "bible.md").write_text("OLD bible", encoding="utf-8")
-        self._post("images")
+        self._post("script")
         conn = db.connect(self.cfg.db_path)
         prod = db.get_production(conn, self.pid)
         conn.close()
         self.assertIsNone(prod["style_variant"])
         self.assertFalse(prod["style_override"])
         self.assertFalse(prod["bible_override"])
-        self.assertIsNone(prod["render_mode"])
+        self.assertIsNone(prod["render_mode"])   # images are redone too
         self.assertEqual("v1", prod["voice"])    # audio was not redone
         self.assertEqual("NEW channel style",
                          (self.pdir / "style.md").read_text("utf-8").strip())
         self.assertEqual("NEW channel bible",
                          (self.pdir / "bible.md").read_text("utf-8").strip())
+
+    def test_start_over_leaves_earlier_stages_choices_alone(self):
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, style_variant="classic",
+                             style_override=1, voice="v1")
+        conn.commit()
+        conn.close()
+        (self.pdir / "style.md").write_text("kept", encoding="utf-8")
+        self._post("images")
+        conn = db.connect(self.cfg.db_path)
+        prod = db.get_production(conn, self.pid)
+        conn.close()
+        self.assertEqual("classic", prod["style_variant"])
+        self.assertTrue(prod["style_override"])
+        self.assertEqual("v1", prod["voice"])
+        self.assertEqual("kept", (self.pdir / "style.md").read_text("utf-8"))
 
     def test_channel_less_production_keeps_its_own_style_file(self):
         conn = db.connect(self.cfg.db_path)
@@ -196,7 +212,7 @@ class StartOverTests(unittest.TestCase):
         conn.commit()
         conn.close()
         (self.pdir / "style.md").write_text("mine", encoding="utf-8")
-        self._post("images")
+        self._post("shots")
         self.assertEqual("mine", (self.pdir / "style.md").read_text("utf-8"))
 
     def test_script_reset_keeps_manual_notes(self):

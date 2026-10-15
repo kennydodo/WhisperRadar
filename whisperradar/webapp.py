@@ -3785,14 +3785,24 @@ def create_app(cfg) -> Flask:
         (re-seeded from the channel's current text straight away)."""
         from . import settings
         gone = []
-        fields = {"style_variant": None, "style_override": 0,
-                  "bible_override": 0}
+        # only what belongs to the stages being redone: the stages before the
+        # chosen one are left exactly as they are
+        fields = {}
+        if "style" in reset or "script" in reset:
+            fields["style_variant"] = None
+        if "shots" in reset:
+            fields["style_override"] = 0
+            fields["bible_override"] = 0
         if "audio" in reset:
             fields["voice"] = None
         if "images" in reset:
             fields["render_mode"] = None
-        db.update_production(conn, pid, **fields)
-        gone.append("production overrides (" + ", ".join(sorted(fields)) + ")")
+        if fields:
+            db.update_production(conn, pid, **fields)
+            gone.append("production overrides ("
+                        + ", ".join(sorted(fields)) + ")")
+        if "shots" not in reset:
+            return gone     # style.md / bible.md feed the shots stage onward
         prod = db.get_production(conn, pid)
         try:
             eff = settings.for_production(conn, prod)
