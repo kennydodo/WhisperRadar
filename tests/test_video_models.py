@@ -98,6 +98,12 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(m.minimum_size(m.PAN_UP), (2304, 2160))
         self.assertEqual(m.to_xfade_name("fade_black"), "fadeblack")
 
+    def test_slide_transitions_map_to_xfade(self):
+        for d in ("left", "right", "up", "down"):
+            self.assertIn("slide_" + d, m.TRANSITION_KINDS)
+            self.assertEqual(m.to_xfade_name("slide_" + d), "slide" + d)
+            self.assertTrue(m.TRANSITION_NAMES["slide_" + d])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -409,6 +409,10 @@ def _build_clip(shot, asset, image, start, duration, fps, options, overrides, is
         start_viewport=start_vp, end_viewport=end_vp, motion_duration_frames=motion_duration_frames)
 
 
+_SLIDE_TYPES = {"SLIDE_LEFT": "slide_left", "SLIDE_RIGHT": "slide_right",
+                "SLIDE_UP": "slide_up", "SLIDE_DOWN": "slide_down"}
+
+
 def _apply_transitions(clips, shots, fps, options, overrides):
     for i in range(len(clips) - 1):
         incoming = clips[i + 1][0]
@@ -428,6 +432,8 @@ def _apply_transitions(clips, shots, fps, options, overrides):
                 incoming_tr = m.TransitionIn("fade_black", frames)
             elif ttype == "DIP_WHITE" and frames >= 2:
                 incoming_tr = m.TransitionIn("fade_white", frames)
+            elif ttype in _SLIDE_TYPES and frames >= 2:
+                incoming_tr = m.TransitionIn(_SLIDE_TYPES[ttype], frames)
             else:
                 incoming_tr = None
         elif options.transitions.enabled:

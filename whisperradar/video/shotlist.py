@@ -535,7 +535,8 @@ def expand(document: ShotListDocument, subtitles: list, image_file_names: list,
         transition_out = None
         if t is not None and t.type.upper() != "CUT":
             up = t.type.upper()
-            if up in ("CROSSFADE", "DIP", "DIP_WHITE"):
+            if up in ("CROSSFADE", "DIP", "DIP_WHITE", "SLIDE_LEFT", "SLIDE_RIGHT",
+                      "SLIDE_UP", "SLIDE_DOWN"):
                 transition_out = mf.VisualTransition(up, round(transitions.duration_seconds * 1000))
             else:
                 transition_out = t

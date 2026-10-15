@@ -891,6 +891,13 @@ class ManifestPlannerTests(unittest.TestCase):
         self.assertAlmostEqual(1080 * 0.70, sh1.start_viewport.height, 1)
         self.assertAlmostEqual(1080 * 0.70 / 1.06, sh1.end_viewport.height, 1)
 
+    def test_slide_shot_transitions(self):
+        for name, kind in (("SLIDE_LEFT", "slide_left"), ("SLIDE_RIGHT", "slide_right"),
+                           ("SLIDE_UP", "slide_up"), ("SLIDE_DOWN", "slide_down")):
+            manifest = with_shot(sample_manifest(), 2, transition_out=mf.VisualTransition(name, 180))
+            clips = mplan_ok(manifest=manifest)[0].scenes[0].clips
+            self.assertEqual(kind, clips[3].transition.kind)
+
     def test_applies_transitions_from_previous_shot(self):
         manifest = with_shot(sample_manifest(), 2, transition_out=mf.VisualTransition("CROSSFADE", 180))
         clips = mplan_ok(manifest=manifest)[0].scenes[0].clips

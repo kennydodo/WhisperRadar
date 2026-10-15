@@ -20,18 +20,20 @@ EASING_NAMES = {LINEAR: "Linear", EASE_IN: "Ease in", EASE_OUT: "Ease out",
 
 TRANSITION_KINDS = (
     "none", "crossfade", "fade_black", "fade_white", "wipe_left", "wipe_right", "wipe_up",
-    "wipe_down", "slide_left", "slide_right", "dissolve", "circle_open", "circle_close",
-    "smooth_left", "smooth_right")
+    "wipe_down", "slide_left", "slide_right", "slide_up", "slide_down", "dissolve",
+    "circle_open", "circle_close", "smooth_left", "smooth_right")
 TRANSITION_NAMES = {
     "crossfade": "Crossfade", "fade_black": "Dip to black", "fade_white": "Dip to white",
     "wipe_left": "Wipe left", "wipe_right": "Wipe right", "wipe_up": "Wipe up",
     "wipe_down": "Wipe down", "slide_left": "Slide left", "slide_right": "Slide right",
+    "slide_up": "Slide up", "slide_down": "Slide down",
     "dissolve": "Dissolve", "circle_open": "Circle open", "circle_close": "Circle close",
     "smooth_left": "Smooth push left", "smooth_right": "Smooth push right"}
 _XFADE = {
     "crossfade": "fade", "fade_black": "fadeblack", "fade_white": "fadewhite",
     "wipe_left": "wipeleft", "wipe_right": "wiperight", "wipe_up": "wipeup",
     "wipe_down": "wipedown", "slide_left": "slideleft", "slide_right": "slideright",
+    "slide_up": "slideup", "slide_down": "slidedown",
     "dissolve": "dissolve", "circle_open": "circleopen", "circle_close": "circleclose",
     "smooth_left": "smoothleft", "smooth_right": "smoothright"}
 
