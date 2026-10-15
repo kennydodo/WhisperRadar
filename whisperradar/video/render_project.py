@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import copy
+import json
+import logging
 import os
 import shutil
 import threading
@@ -55,11 +57,32 @@ def images_from_timeline(timeline: m.Timeline) -> List[m.ImageInfo]:
     return result
 
 
+MOTION_GATE_FILE = "motion_gate.json"
+_log = logging.getLogger(__name__)
+
+
+def motion_enabled(folder: str) -> bool:
+    """False when the merge step recorded that the channel's animated opening
+    is OFF (clips left in clips\\ must then not be used). No gate file
+    (standalone use) means enabled, the original behaviour."""
+    try:
+        with open(os.path.join(folder, MOTION_GATE_FILE), encoding="utf-8") as f:
+            return bool(json.load(f).get("enabled", True))
+    except (OSError, ValueError, AttributeError):
+        return True
+
+
 def attach_motion_clips(timeline: m.Timeline, folder: str) -> int:
     """Point clips at their AI videos (clips\\<image stem>.mp4) when they exist.
 
     Render-time only (not saved into timeline.json). Reveal clips keep their
-    own handling. Returns how many clips now play a video."""
+    own handling. A clip is NOT used when the channel's animated opening is
+    off, or when its still was regenerated after the clip was made (the pair
+    would no longer match). Returns how many clips now play a video."""
+    if not motion_enabled(folder):
+        _log.info("animated opening is off for this channel - clips in "
+                  "clips\\ are ignored")
+        return 0
     n = 0
     for scene in timeline.scenes:
         for clip in scene.clips:
@@ -68,6 +91,17 @@ def attach_motion_clips(timeline: m.Timeline, folder: str) -> int:
             stem = os.path.splitext(os.path.basename(clip.file_path))[0]
             cand = os.path.join(folder, "clips", stem + ".mp4")
             if os.path.isfile(cand) and os.path.getsize(cand) > 10_000:
+                try:
+                    stale = (os.path.getmtime(clip.file_path)
+                             > os.path.getmtime(cand) + 2.0)
+                except OSError:
+                    stale = False       # image not on disk here: cannot tell
+                if stale:
+                    _log.warning(
+                        "clip %s.mp4 is older than its image - the still was "
+                        "regenerated after the clip; using the still instead "
+                        "(re-run the motion stage for this shot)", stem)
+                    continue
                 clip.video_path = cand
                 n += 1
     return n

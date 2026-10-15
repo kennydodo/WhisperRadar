@@ -114,3 +114,49 @@ class FrameCountTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AttachGateTests(unittest.TestCase):
+    def _setup(self, d):
+        (Path(d) / "clips").mkdir()
+        (Path(d) / "images").mkdir()
+        img = Path(d) / "images" / "S01_SCN_ZI.png"
+        img.write_bytes(b"i")
+        clip = Path(d) / "clips" / "S01_SCN_ZI.mp4"
+        clip.write_bytes(b"x" * 20000)
+        tl = m.Timeline(scenes=[m.Scene(id="1", clips=[_clip(90, path=str(img))])])
+        return tl, img, clip
+
+    def test_off_channel_ignores_leftover_clips(self):
+        with tempfile.TemporaryDirectory() as d:
+            tl, _img, _clip_p = self._setup(d)
+            (Path(d) / "motion_gate.json").write_text('{"enabled": false}')
+            self.assertEqual(render_project.attach_motion_clips(tl, d), 0)
+            self.assertIsNone(tl.scenes[0].clips[0].video_path)
+
+    def test_on_channel_uses_the_clip(self):
+        with tempfile.TemporaryDirectory() as d:
+            tl, _img, _clip_p = self._setup(d)
+            (Path(d) / "motion_gate.json").write_text('{"enabled": true}')
+            self.assertEqual(render_project.attach_motion_clips(tl, d), 1)
+
+    def test_clip_older_than_its_regenerated_still_is_skipped(self):
+        import os
+        with tempfile.TemporaryDirectory() as d:
+            tl, img, clip = self._setup(d)
+            old = os.path.getmtime(clip) - 600
+            os.utime(clip, (old, old))      # clip made long before the still
+            self.assertEqual(render_project.attach_motion_clips(tl, d), 0)
+
+
+class HoldWarningTests(unittest.TestCase):
+    def test_padding_counts_toward_the_hold_limit(self):
+        from whisperradar import motion
+        data = {"shots": [{"asset": "S01_SCN_ZI.png", "cues": "1", "motion": "ZI",
+                           "ai_motion": "slow push"}]}
+        cues = [{"index": 1, "start": 0, "end": 9.8}]
+        _f, warns, _a = motion.window_check(data, cues, 60, lambda v: float(v))
+        self.assertTrue(warns, "9.8s + 0.5s padding exceeds the 10s stretch")
+        cues = [{"index": 1, "start": 0, "end": 9.0}]
+        _f, warns, _a = motion.window_check(data, cues, 60, lambda v: float(v))
+        self.assertFalse(warns)

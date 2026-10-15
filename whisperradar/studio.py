@@ -2432,7 +2432,8 @@ def _run_imgtovideo_cli(cli: Path, args: list[str], timeout: int = 14400):
     return result
 
 
-def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
+def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
+                     animate: bool | None = None) -> dict:
     """Merge with ImgToVideo.Cli (headless): build the fast preview draft,
     then export the NLE project for `target`. Returns
     {preview, target, project} - preview is the playable out\\preview.mp4,
@@ -2454,6 +2455,11 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere") -> dict:
     if audio:
         shutil.copy(audio, audio_dir / f"narration{audio.suffix}")
     sanitize_shotlist(pid_dir)
+    if animate is not None:
+        # tell the renderer whether the channel's animated opening is ON, so
+        # clips left over in clips\\ are not used when it is switched off
+        (pid_dir / "motion_gate.json").write_text(
+            json.dumps({"enabled": bool(animate)}), encoding="utf-8")
 
     # 1. fast preview draft - the reviewable cut
     if _python_video(cfg):

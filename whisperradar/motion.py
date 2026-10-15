@@ -25,6 +25,9 @@ DEFAULT_SECONDS = 60
 CLIP_SECONDS = 8.0
 MIN_SPEED = 0.8                       # slowest playback that still looks natural
 MAX_STRETCH_SECONDS = CLIP_SECONDS / MIN_SPEED   # 10.0
+# the renderer fits the clip to the shot PLUS the crossfade padding on its
+# cut (TransitionOptions.duration_seconds, 0.5 s by default)
+TRANSITION_PAD_SECONDS = 0.5
 
 
 def clamp_seconds(value) -> int:
@@ -220,9 +223,10 @@ def window_check(data: dict, cues: list[dict], seconds: float, to_seconds,
         a, b = by_index.get(first), by_index.get(last if last is not None else first)
         if a and b:
             hold = to_seconds(b.get("end")) - to_seconds(a.get("start"))
-            if hold > MAX_STRETCH_SECONDS + 1e-6:
+            if hold + TRANSITION_PAD_SECONDS > MAX_STRETCH_SECONDS + 1e-6:
                 warnings.append(
-                    f"animated opening: {asset} holds {hold:.1f}s - longer than "
+                    f"animated opening: {asset} holds {hold:.1f}s (+"
+                    f"{TRANSITION_PAD_SECONDS:g}s transition) - longer than "
                     f"{MAX_STRETCH_SECONDS:g}s, so its clip will be slowed and "
                     f"then frozen (split it to keep it moving)")
     if wrong:

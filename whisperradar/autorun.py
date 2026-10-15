@@ -2074,8 +2074,10 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
         detail = "final.mp4"
     else:
         # preview draft + NLE project for the global render target
-        target = _effective(cfg, pid)["render_target"]
-        result = studio.run_merge_render(cfg, pdir, target)
+        eff_m = _effective(cfg, pid)
+        target = eff_m["render_target"]
+        result = studio.run_merge_render(
+            cfg, pdir, target, animate=bool(eff_m.get("animate_enabled")))
         detail = (f"preview + {studio.RENDER_TARGET_LABELS[target]} project")
     conn = _connect(cfg)
     try:
