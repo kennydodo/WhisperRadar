@@ -202,7 +202,7 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   {% if source_wait %}<div class="banner {{ 'err' if source_wait.state == 'error' else 'job' }}">Source: {{ source_wait.text }}.
-    {% if source_wait.state != 'waiting' %}<form method="post" action="/studio/{{ prod['id'] }}/source/fetch" style="display:inline"><button type="submit">{{ 'Try again' if source_wait.state == 'error' else 'Get the transcript' }}</button></form>{% else %}Click Auto-run now and it starts by itself when the text is ready; you can keep using the app meanwhile.<script>setTimeout(function(){ location.reload(); }, 15000);</script>{% endif %}</div>{% endif %}
+    {% if source_wait.state != 'waiting' %}<form method="post" action="/studio/{{ prod['id'] }}/source/fetch" style="display:inline"><button type="submit">{{ 'Try again' if source_wait.state == 'error' else 'Get the transcript' }}</button></form>{% else %}Click Auto-run now and it starts by itself when the text is ready; you can keep using the app meanwhile.{% endif %}</div>{% endif %}
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
   {% if job.pause_reason and not job.running and job.pid == prod['id'] %}<div class="banner job">Auto-run paused: {{ job.pause_reason }} - handle it, then click Resume.</div>{% endif %}
   {% if job.summary and not job.running and job.pid == prod['id'] %}<div class="banner ok">{{ job.summary }}</div>{% endif %}
@@ -1321,22 +1321,16 @@
       const bar = document.getElementById('jobbar');
       // a job can start and finish between two polls - its seq bump gives
       // it away even when we never saw it running
+      // (a LOWER seq is a restarted server, not a finished job)
       if (s.seq !== lastSeq) {
+        if (s.seq > lastSeq && !s.running) wasRunning = true;
         lastSeq = s.seq;
-        if (!s.running) wasRunning = true;
       }
       if (s.running) {
         wasRunning = true;     // a job that began after this page loaded
         // auto-run is ONE long job: show each finished stage as it happens
         // (only when nothing typed on the page would be lost)
         const ours = !s.pid || s.pid === {{ prod['id'] }};
-        if (ours && s.pipeline && (s.stage || '') !== shownStage) {
-          shownStage = s.stage || '';
-          const typed = [...userEdited].some((el) => document.contains(el) &&
-            el.type !== 'checkbox' && el.type !== 'radio' &&
-            el.value !== el.defaultValue);
-          if (!typed) { location.reload(); return; }
-        }
         if (bar) {
           bar.style.display = '';
           bar.textContent = 'Working: ' + s.kind +
