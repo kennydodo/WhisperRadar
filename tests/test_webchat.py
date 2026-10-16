@@ -592,6 +592,55 @@ class SitesTests(unittest.TestCase):
         self.assertIn("return 'opened';", wc._CLICK_TEXT_JS)      # no open: nothing to open
 
 
+class NavigationRaceTests(unittest.TestCase):
+    """Qwen's start page redirects itself right after load: a script run in
+    that moment dies with "Execution context was destroyed"."""
+
+    class Page:
+        def __init__(self, fail_times, urls=("https://q/", "https://q/c/1")):
+            self.fail, self.calls, self.urls, self.i = fail_times, 0, list(urls), 0
+            self.waited = 0
+
+        @property
+        def url(self):
+            return self.urls[min(self.i, len(self.urls) - 1)]
+
+        def wait_for_timeout(self, ms):
+            self.waited += ms
+            self.i += 1
+
+        def evaluate(self, script, arg=None):
+            self.calls += 1
+            if self.fail > 0:
+                self.fail -= 1
+                raise RuntimeError("Page.evaluate: Execution context was "
+                                   "destroyed, most likely because of a "
+                                   "navigation")
+            return True
+
+    def test_evaluate_is_retried_after_a_navigation(self):
+        pg = self.Page(2)
+        self.assertTrue(wc._eval_nav_safe(pg, "()=>1"))
+        self.assertEqual(pg.calls, 3)
+
+    def test_other_errors_and_endless_navigation_are_raised(self):
+        class Boom(self.Page):
+            def evaluate(self, script, arg=None):
+                raise RuntimeError("something else")
+        with self.assertRaises(RuntimeError):
+            wc._eval_nav_safe(Boom(0), "()=>1")
+        with self.assertRaises(RuntimeError):
+            wc._eval_nav_safe(self.Page(99), "()=>1", tries=3)
+
+    def test_settle_waits_for_the_redirect(self):
+        pg = self.Page(0)
+        wc._settle_url(pg, quiet=1.0, limit=8.0)
+        self.assertGreaterEqual(pg.i, 2)        # saw the url change, then waited
+
+    def test_settle_never_raises(self):
+        wc._settle_url(object())                 # no url / wait_for_timeout
+
+
 if __name__ == "__main__":
     unittest.main()
 

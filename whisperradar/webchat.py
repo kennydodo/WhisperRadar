@@ -1360,7 +1360,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         _goto(page, site.url)
     _wait_for_box(page, site, clock)
     if site.stream:
-        page.evaluate(_CAPTURE_JS)         # no-op when already hooked
+        _eval_nav_safe(page, _CAPTURE_JS)  # no-op when already hooked
     if not resume:
         if new_chat and site.prepare:
             status = site.prepare(page, **(options or {}))
@@ -1519,7 +1519,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         page.wait_for_timeout(int(poll * 1000))
         if stop is not None and stop():
             raise WebChatError(f"{site.name}: stopped by you while waiting")
-        if page.evaluate(_BOT_JS):
+        if _eval_nav_safe(page, _BOT_JS):
             raise BotCheck(f"{site.name} is asking for a human check - open "
                            f"the browser window and complete it yourself")
         st = page.evaluate(_STATE_JS, {"reply": site.reply})
@@ -1771,6 +1771,49 @@ def _goto(page, url, wait: float = 60.0) -> None:
     streaming requests (Qwen) never fire within 30 s - the box check after it
     already waits for the real thing."""
     page.goto(url, wait_until="domcontentloaded", timeout=int(wait * 1000))
+    _settle_url(page)
+
+
+def _nav_destroyed(exc: BaseException) -> bool:
+    """Playwright's error for a script that ran while the page navigated
+    away (a client-side redirect right after load)."""
+    m = str(exc)
+    return ("Execution context was destroyed" in m
+            or "Cannot find context with specified id" in m)
+
+
+def _settle_url(page, quiet: float = 2.0, limit: float = 12.0) -> None:
+    """Wait until the page has stopped redirecting itself. Qwen's start page
+    loads, then jumps to its last chat / a new-chat address a moment later;
+    a script run in between dies with "Execution context was destroyed".
+    Best effort: a page that never settles is used as it is."""
+    try:
+        last, quiet_polls = str(page.url or ""), 0
+        for _ in range(max(1, int(limit / 0.5))):
+            page.wait_for_timeout(500)
+            cur = str(page.url or "")
+            if cur != last:
+                last, quiet_polls = cur, 0
+            else:
+                quiet_polls += 1
+                if quiet_polls * 0.5 >= quiet:
+                    return
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _eval_nav_safe(page, script, arg=None, tries: int = 4):
+    """page.evaluate that waits and runs again when the page navigated under
+    it (see _settle_url)."""
+    for i in range(tries):
+        try:
+            return (page.evaluate(script) if arg is None
+                    else page.evaluate(script, arg))
+        except Exception as exc:  # noqa: BLE001
+            if not _nav_destroyed(exc) or i == tries - 1:
+                raise
+            page.wait_for_timeout(1000)
+            _settle_url(page, quiet=1.0, limit=8.0)
 
 
 
@@ -1871,7 +1914,7 @@ def _wait_for_box(page, site: Site, clock, limit: float = 40.0) -> None:
             raise NeedsSignIn(
                 f"{site.name} needs you to sign in: run "
                 f"`python -m whisperradar.webchat login {site.key}`")
-        if page.evaluate(_BOX_THERE_JS, site.box):
+        if _eval_nav_safe(page, _BOX_THERE_JS, site.box):
             return
         if clock() - t0 > limit:
             raise NeedsSignIn(
