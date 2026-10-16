@@ -1384,7 +1384,6 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
             up_settle = min(15.0, 3.0 + big / 50000.0)
             try:
                 page.set_input_files(site.files, [str(f) for f in files])
-                _ensure_attached(page, site, files, seen, log)
                 _wait_for_uploads(page, files, clock, log, seen=seen,
                                   settle=up_settle)
             except Exception as exc:  # noqa: BLE001
@@ -2054,106 +2053,6 @@ def _fix_failed_uploads(page, names, clock, log, tries: int = 3,
         raise WebChatError(
             "the attached file did not upload (" + err.replace("\n", " / ")[:120]
             + ") - the site says it is busy; try again in a minute")
-
-
-# A chat page whose file <input> is not the one the composer uses (Qwen: the
-# first input[type=file] is something else, so setting a file on it shows
-# nothing) needs another route to the attachment. The routes are tried in
-# turn, each checked by whether the file name shows up on the page:
-#   1. the same files on every OTHER file input of the page;
-#   2. the page's own "+" / attach button (and its "Upload file" menu entry)
-#      through a real file chooser.
-_MARK_ATTACH_JS = r"""(a) => {
-  document.querySelectorAll('[data-wr-attach]').forEach(e => e.removeAttribute('data-wr-attach'));
-  const boxes = [...document.querySelectorAll(a.box)];
-  const box = boxes.find(b => b.getBoundingClientRect().width > 0) || boxes[0];
-  if (!box) return 'no box';
-  const bb = box.getBoundingClientRect();
-  if (a.menu) {                      // the menu entry that uploads a file
-    const re = /upload|attach|file|document|computer|device|local/i;
-    const items = [...document.querySelectorAll(
-      '[role=menuitem],[role=option],li,button,[role=button],div,span')]
-      .filter(e => { const r = e.getBoundingClientRect();
-        return r.width > 20 && r.height > 12 && r.height < 90 && e.children.length < 4
-          && re.test((e.innerText || '').trim()) && (e.innerText || '').trim().length < 40; });
-    if (!items.length) return 'no menu entry';
-    items[0].setAttribute('data-wr-attach', '1'); return items[0].innerText.trim();
-  }
-  const row = [...document.querySelectorAll('button,[role=button],div,span,i,svg')]
-    .filter(e => { const r = e.getBoundingClientRect();
-      return r.width >= 14 && r.width <= 64 && r.height >= 14 && r.height <= 64
-        && Math.abs((r.top + r.bottom) / 2 - (bb.top + bb.bottom) / 2) < 70
-        && r.right <= bb.left + 24 && r.right >= bb.left - 160; })
-    .sort((x, y) => x.getBoundingClientRect().left - y.getBoundingClientRect().left);
-  if (!row.length) return 'no plus button';
-  const el = row[0].closest('button,[role=button]') || row[0];
-  el.setAttribute('data-wr-attach', '1'); return 'plus';
-}"""
-_FILE_INPUTS_JS = r"""() => [...document.querySelectorAll('input[type=file]')]
-  .map(i => (i.getAttribute('accept') || '*') + (i.multiple ? ' multi' : ''))"""
-
-
-def _names_shown(page, names, seen, wait: float) -> bool:
-    for _ in range(max(1, int(wait * 2))):
-        body = page.evaluate("()=>document.body.innerText") or ""
-        if all(body.count(n) > seen.get(n, 0) for n in names):
-            return True
-        page.wait_for_timeout(500)
-    return False
-
-
-def _ensure_attached(page, site: Site, files, seen: dict, log) -> None:
-    """After set_input_files: if the file names did not show up, try the other
-    routes (see above). Never raises - the caller's normal wait reports a file
-    that still did not arrive. Images (no name on the page) are skipped."""
-    names = [Path(str(f)).name for f in files]
-    if not names or all(_is_image(n) for n in names):
-        return
-    try:
-        if _names_shown(page, names, seen, 6.0):
-            return
-        paths = [str(f) for f in files]
-        accepts = page.evaluate(_FILE_INPUTS_JS) or []
-        log(f"{site.name}: the file did not show up after the first file "
-            f"input - the page has {len(accepts)} file input(s): {accepts}")
-        for i in range(1, len(accepts)):
-            try:
-                page.locator(site.files).nth(i).set_input_files(paths)
-            except Exception as exc:  # noqa: BLE001
-                log(f"{site.name}: file input {i + 1} refused it "
-                    f"({str(exc)[:80]})")
-                continue
-            if _names_shown(page, names, seen, 6.0):
-                log(f"{site.name}: attached through file input {i + 1}")
-                return
-        # the page's own attach button, with a real file chooser
-        mark = page.evaluate(_MARK_ATTACH_JS, {"box": site.box, "menu": False})
-        if mark != "plus":
-            log(f"{site.name}: no attach button found ({mark})")
-            return
-        target = page.locator("[data-wr-attach]").first
-        try:
-            with page.expect_file_chooser(timeout=4000) as fc:
-                target.click(timeout=4000)
-            fc.value.set_files(paths)
-        except Exception:  # noqa: BLE001 - a menu opened instead
-            page.wait_for_timeout(700)
-            entry = page.evaluate(_MARK_ATTACH_JS,
-                                  {"box": site.box, "menu": True})
-            if entry in ("no box", "no menu entry"):
-                log(f"{site.name}: the attach button opened no upload "
-                    f"entry ({entry}); buttons: "
-                    f"{page.evaluate(_BUTTONS_JS)}")
-                return
-            log(f"{site.name}: choosing the menu entry '{entry}'")
-            with page.expect_file_chooser(timeout=6000) as fc:
-                page.locator("[data-wr-attach]").first.click(timeout=4000)
-            fc.value.set_files(paths)
-        if _names_shown(page, names, seen, 8.0):
-            log(f"{site.name}: attached through the page's attach button")
-    except Exception as exc:  # noqa: BLE001
-        log(f"{site.name}: the extra attach routes failed "
-            f"({type(exc).__name__}: {str(exc)[:100]})")
 
 
 def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
