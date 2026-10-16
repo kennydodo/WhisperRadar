@@ -1036,6 +1036,33 @@ def flowbatch_ready(cfg) -> bool:
         and shutil.which("node") is not None
 
 
+def prompts_over_budget(data: dict, style: str = "") -> tuple[int, list]:
+    """(per-prompt budget, [(file, length, chars over)] worst first).
+
+    Flow takes the style and ONE image prompt together, up to
+    FLOWBATCH_MAX_PROMPT_CHARS: a prompt longer than that limit minus the style
+    (and its joining space) makes the style get dropped from every image. The
+    style is the shotlist's own, else the one passed in."""
+    style = (style or data.get("style") or "").strip()
+    budget = FLOWBATCH_MAX_PROMPT_CHARS - (len(style) + 1 if style else 0)
+    over = []
+    for item in data.get("images", []):
+        if not isinstance(item, dict):
+            continue
+        n = len(str(item.get("prompt") or ""))
+        if n > budget:
+            over.append((str(item.get("file") or "?"), n, n - budget))
+    over.sort(key=lambda t: (-t[2], t[0]))
+    return budget, over
+
+
+def over_budget_text(budget: int, over: list, shown: int = 5) -> str:
+    """'S02_06_CMP_PL.png 700 chars (80 over); ...' for the worst `shown`."""
+    parts = [f"{f} {n} chars ({x} over)" for f, n, x in over[:shown]]
+    more = len(over) - shown
+    return "; ".join(parts) + (f"; and {more} more" if more > 0 else "")
+
+
 def flow_project_url_for(cfg, pid: int,
                          override: str | None = None) -> tuple[str | None, str]:
     """(url, source) for a production's Flow project.
@@ -1748,10 +1775,14 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
         job["style"] = style
         _clear_style_warning(cfg, pid)
     elif style:
+        budget, over = prompts_over_budget(data, style)
         note = (f"Visual style NOT attached to the Flow images: the style is "
                 f"{len(style)} chars and the longest image prompt {longest}, "
-                f"over Flow's {FLOWBATCH_MAX_PROMPT_CHARS}-char limit. Shorten "
-                f"the style or the longest prompts, then re-plan or resume.")
+                f"over Flow's {FLOWBATCH_MAX_PROMPT_CHARS}-char limit (the "
+                f"style leaves {budget} chars per prompt). "
+                f"{len(over)} prompt(s) are too long: "
+                f"{over_budget_text(budget, over)}. Shorten those prompts "
+                f"(or the style), then re-plan or resume.")
         log.warning("FlowBatch: %s", note)
         _set_production_warning(cfg, pid, note)
     else:
@@ -5985,6 +6016,20 @@ def shotlist_structural_faults(data: dict, cue_count: int,
     if dupes:
         faults.append(f"{len(dupes)} image prompt(s) are exact duplicates: "
                       f"{'; '.join(dupes[:4])}")
+
+    # Flow takes the style and one prompt together: a prompt over the budget
+    # makes the style get dropped from every image, so name the prompts now
+    budget, over = prompts_over_budget(data)
+    if over:
+        style_len = len((data.get("style") or "").strip())
+        faults.append(
+            f"{len(over)} image prompt(s) are too long for Flow (limit "
+            f"{FLOWBATCH_MAX_PROMPT_CHARS} for style + prompt"
+            + (f"; the {style_len}-char style leaves {budget} per prompt"
+               if style_len else "")
+            + f"): {over_budget_text(budget, over, 6)}. Shorten ONLY those "
+            f"prompts - cut composition boilerplate and anything the style "
+            f"already says")
 
     # Reference registry: the names are the contract with Flow, so a bad or
     # undeclared name must fail here rather than become "reference not found,
