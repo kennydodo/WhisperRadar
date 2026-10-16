@@ -3816,21 +3816,18 @@ def _parse_json_object(text: str, want: tuple = ()) -> dict:
     With `want` (the verdict's expected keys) the scan takes the LAST top-level
     object that parses AND contains all of them: a thinking judge that shows a
     sample verdict while reasoning and only emits the real one at the end is
-    then read correctly instead of grabbing its first, discarded draft. With no
-    `want` this is unchanged behaviour (the first balanced object)."""
+    then read correctly instead of grabbing its first, discarded draft. Every
+    candidate goes through the same repair ladder as the fallback (trailing
+    comma, curly quotes) - otherwise a curly-quoted final verdict after a
+    plain-ASCII draft would match nothing here and the fallback would hand
+    back the DRAFT as if it were the verdict. With no `want` this returns the
+    first balanced object that parses."""
     text = text or ""
     if want:
         best = None
         for cand in _iter_json_objects(text):
-            try:
-                data = json.loads(cand, strict=False)
-            except ValueError:
-                try:
-                    data = json.loads(re.sub(r",(\s*[}\]])", r"\1", cand),
-                                      strict=False)
-                except ValueError:
-                    continue
-            if isinstance(data, dict) and all(k in data for k in want):
+            data = _json_candidate(cand)
+            if data is not None and all(k in data for k in want):
                 best = data
         if best is not None:
             return best

@@ -265,9 +265,7 @@ class OptionsTests(unittest.TestCase):
                                    {"deepthink": True, "search": True}))
         d = ws.WebTransport(Chat(), lambda m: None)
         d.ask("deepseek", "p")
-        # the default judge runs WITHOUT web search (it reviews the plan
-        # against the rules, not the web) - the form can still switch it on
-        self.assertEqual(seen[2][1], {"deepthink": True, "search": False})
+        self.assertEqual(seen[2][1], {"deepthink": True, "search": True})
 
 
 class RouteOptionTests(Base):
@@ -592,6 +590,18 @@ class VerdictParseShapeTests(unittest.TestCase):
                  '{"pass": true, "faults": [], "shots": [], "detailed_ratio": 1}')
         got = studio._parse_json_object(reply, want=("pass", "faults"))
         self.assertTrue(got.get("pass"))
+
+    def test_curly_quoted_final_verdict_beats_a_plain_draft(self):
+        # Claude's caught case: the want-scan must repair curly quotes too,
+        # or the shaped search matches nothing and the fallback hands back the
+        # DRAFT object as the verdict
+        draft = '{"pass": false, "faults": ["seen too early"], "shots": [], "detailed_ratio": 0.4}'
+        final = ('{“pass”: true, “faults”: [], “shots”: [], '
+                 '“detailed_ratio”: 1}')
+        got = studio._parse_json_object(draft + " on reflection:\n" + final,
+                                        want=("pass", "faults"))
+        self.assertTrue(got["pass"])
+        self.assertEqual(got["faults"], [])
 
 
 class CodeFirstRejectionTests(Base):

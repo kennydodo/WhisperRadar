@@ -48,12 +48,9 @@ class StageFailed(RuntimeError):
 
 # ---- transport ----------------------------------------------------------------
 
-# what each site's mode switches default to when the run does not say. The
-# DeepSeek web search is OFF by default: the facts are already in the plan and
-# research notes, and a web round-trip every judge call added ~30-60s to each
-# of the measured reviews. The Studio's web-chat form re-enables it per run.
+# what each site's mode switches default to when the run does not say
 DEFAULT_OPTIONS = {"zai": {"thinking": "Low", "model": "flash"},
-                   "deepseek": {"deepthink": True, "search": False}}
+                   "deepseek": {"deepthink": True, "search": True}}
 
 
 NO_IMAGES_NOTE = ("\n\n(Reply with text only - do not create, draw or generate "
