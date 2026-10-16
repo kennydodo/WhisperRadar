@@ -33,6 +33,8 @@ from . import autorun, db, external_prompts as ep, handover, studio, webchat
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
 INLINE_MAX_CHARS = 60000
+# sites that cannot take attachments from the automation: never switch to files
+INLINE_ONLY_SITES = frozenset({"qwen"})
 # None = no limit: the loop runs until the judge passes the work (or you stop
 # it). Only an explicit `rounds=` caps it.
 MAX_ROUNDS = None
@@ -188,7 +190,9 @@ def _send(transport, site: str, build: Callable, log,
     alongside the prompt."""
     text = build(None)
     files = None
-    if len(text) > INLINE_MAX_CHARS:
+    # Qwen's page ignores files set on its upload input (nothing shows up and
+    # the run stalls), so everything goes in the message itself
+    if len(text) > INLINE_MAX_CHARS and site not in INLINE_ONLY_SITES:
         files = []
         text = build(files)
     tmp, paths = None, list(uploads)

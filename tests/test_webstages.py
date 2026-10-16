@@ -349,6 +349,38 @@ class RouteTests(Base):
             f"/studio/{self.pid}/webchat/bogus").headers["Location"])
 
 
+class InlineOnlySiteTests(unittest.TestCase):
+    class T:
+        def __init__(self):
+            self.calls = []
+
+        def ask(self, site, prompt, files=(), new_chat=True, ready=None):
+            self.calls.append((site, prompt, list(files)))
+            return "ok"
+
+    @staticmethod
+    def _build(files):
+        big = "N" * (ws.INLINE_MAX_CHARS + 500)
+        if files is None:
+            return "INLINE " + big
+        files.append({"name": "narration.txt", "text": big, "about": "a"})
+        return "see narration.txt"
+
+    def test_qwen_always_gets_the_text_in_the_message(self):
+        t = self.T()
+        ws._send(t, "qwen", self._build, lambda m: None)
+        site, prompt, files = t.calls[0]
+        self.assertTrue(prompt.startswith("INLINE"))
+        self.assertEqual(files, [])
+
+    def test_other_sites_still_switch_to_files_when_big(self):
+        t = self.T()
+        ws._send(t, "zai", self._build, lambda m: None)
+        site, prompt, files = t.calls[0]
+        self.assertEqual(prompt, "see narration.txt")
+        self.assertEqual(len(files), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
 
