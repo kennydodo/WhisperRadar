@@ -51,7 +51,7 @@ export async function assetsCommand({ flags, context }) {
     await page.screenshot({ path: path.join(dir, `assets-${stamp}.png`) }).catch(() => {});
 
     const items = [];
-    for (const selector of context.selectors.candidates('assetPickerItem')) {
+    for (const selector of driver.selectors.candidates('assetPickerItem')) {
       const found = page.locator(selector);
       const count = await found.count().catch(() => 0);
       if (count === 0) continue;
