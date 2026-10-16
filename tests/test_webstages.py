@@ -411,6 +411,22 @@ class MissingAttachmentTests(unittest.TestCase):
         ws._send(t, "zai", self._build, lambda m: None, uploads=["/x/i.png"])
         self.assertEqual(t.calls[2]["files"], ["/x/i.png"])
 
+    def test_transport_takes_a_missing_reply_as_final(self):
+        seen = {}
+
+        class Chat:
+            def ask(self, site, prompt, files, new_chat=True, options=None,
+                    ready=None, log=None, **kw):
+                seen["ready"] = ready
+                return "Missing: narration.txt"
+        tr = ws.WebTransport(Chat(), lambda m: None)
+        tr.ask("zai", "p", ["/x/narration.txt"], ready=ws._has_json)
+        self.assertTrue(seen["ready"]("Missing: narration.txt"))
+        self.assertTrue(seen["ready"]('{"a": 1}'))
+        self.assertFalse(seen["ready"]("still thinking"))
+        tr.ask("zai", "p", [], ready=ws._has_json)         # no files: as before
+        self.assertIs(seen["ready"], ws._has_json)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,6 +78,14 @@ class WebTransport:
                               _is_shotlist_verdict) else {})
         if upload_settle:
             extra["upload_settle"] = upload_settle
+        if files and ready is not None:
+            # a `Missing: <file>` reply is not the answer the caller waits
+            # for, but it is final: take it at once (so _send can retry)
+            # instead of waiting the full ready_wait for a JSON that will
+            # never come
+            _caller_ready = ready
+            ready = lambda t, _r=_caller_ready: (  # noqa: E731
+                _is_missing_reply(t) or _r(t))
         t0 = time.monotonic()
         try:
             reply = self.chat.ask(site, prompt, list(files), new_chat=new_chat,
