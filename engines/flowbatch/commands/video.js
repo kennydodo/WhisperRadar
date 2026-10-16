@@ -613,6 +613,13 @@ async function adoptOrphanClip(ctx, { out, prompt, rounds = 1, gapMs = 10000 }) 
     return true;
   }
   const clip = candidates[0];
+  const tiles = await ctx.driver.listGeneratedResults().catch(() => []);
+  const tile = tiles.find((t) => t.src && mediaId(t.src) === clip.id);
+  const tilePrompt = tile ? await ctx.driver.readTilePrompt(tile.index, { selector: null }).catch(() => null) : null;
+  if (!orphanBelongsToItem(tilePrompt, prompt)) {
+    log.info(`The one unsaved clip in the project belongs to another prompt, not "${path.basename(out)}" - generating instead.`);
+    return false;
+  }
   const bytes = await ctx.driver.fetchBytes(clip.url);
   if (!bytes || bytes.length <= 10000) return false;
   if (isSavedContent(bytes, clip.id)) return false;
@@ -621,6 +628,26 @@ async function adoptOrphanClip(ctx, { out, prompt, rounds = 1, gapMs = 10000 }) 
   rememberSavedId(out, clip.id, bytes);
   log.ok(`Adopted the clip a previous run generated but never downloaded: ${path.basename(out)} (${(bytes.length / 1048576).toFixed(1)} MB, ${clip.id.slice(0, 8)})`);
   return true;
+}
+
+/**
+ * A lone unsaved clip in the project is almost always the clip the previous run
+ * generated for THIS item, but a failed earlier item leaves its own orphan
+ * behind and the batch now carries on past a failed clip. So when the clip's
+ * tile prompt can be read it must be this item's; an unreadable prompt keeps
+ * the old behaviour (adopt) because a missed clip costs a paid regeneration.
+ */
+export function orphanBelongsToItem(tilePrompt, itemPrompt) {
+  if (!normalizeMotionPrompt(tilePrompt)) return true;
+  return motionPromptsMatch(itemPrompt, tilePrompt);
+}
+
+/** Consecutive failed clips after which the batch stops instead of grinding
+ * through the rest while Flow is evidently broken. */
+export const MAX_CONSECUTIVE_CLIP_FAILURES = 2;
+
+export function batchShouldStop(consecutiveFailures, limit = MAX_CONSECUTIVE_CLIP_FAILURES) {
+  return consecutiveFailures >= limit;
 }
 
 function normalizeMotionPrompt(text) {
@@ -711,7 +738,7 @@ async function runJob(flags, context) {
   const reportPath = typeof flags.report === 'string' ? path.resolve(flags.report) : null;
   const projectUrl = (typeof flags['project-url'] === 'string' ? flags['project-url'] : job.projectUrl || settings.projectUrl || '').trim();
   const opts = modelOptions({ ...flags, model: flags.model ?? job.model, aspect: flags.aspect ?? job.aspect });
-  const timeoutMs = intFlag(flags, 'timeout', 1800) * 1000;
+  const timeoutMs = intFlag(flags, 'timeout', 100) * 1000;
   const report = { done: [], failed: [], stopped: false, reason: '' };
   const save = () => reportPath && fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
 
@@ -729,6 +756,7 @@ async function runJob(flags, context) {
       await configure(driver, page, opts);
     };
     let madeThisRun = 0;
+    let consecutiveFailures = 0;
     for (const [i, item] of items.entries()) {
       if (fs.existsSync(item.out) && fs.statSync(item.out).size > 10000) {
         report.done.push(item.out);
@@ -742,6 +770,7 @@ async function runJob(flags, context) {
       // retry - and before giving up - look for the finished clip first, the
       // way image recovery does, download it and move on.
       const RETRIES = 2;
+      let clipDone = false;
       for (let attempt = 1; attempt <= 1 + RETRIES; attempt += 1) {
         if (madeThisRun > 0) {
           log.info(`Settling 30s so the previous clip fully finishes before the next generation starts.`);
@@ -752,10 +781,14 @@ async function runJob(flags, context) {
           await sleep(20000);
         }
         try {
-          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt })) break;
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt })) {
+            clipDone = true;
+            break;
+          }
           await ensureFramesMode({ driver, page, opts, projectUrl });
           await makeClip({ driver, page, videoResponses, reopen }, { image: path.resolve(item.image), prompt: item.prompt, out: path.resolve(item.out), timeoutMs });
           madeThisRun += 1;
+          clipDone = true;
           break;
         } catch (error) {
           const message = String(error.message ?? error);
@@ -770,23 +803,35 @@ async function runJob(flags, context) {
           // Check the project for the finished clip before paying for a retry:
           // a few patient rounds, poking tiles so Flow surfaces it.
           log.warn(`Clip ${i + 1} failed (${message.slice(0, 160)}) - checking whether Flow generated it anyway.`);
-          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt, rounds: 12, gapMs: 30000 })) {
+          if (await adoptOrphanClip(ctx, { out: path.resolve(item.out), prompt: item.prompt, rounds: 3, gapMs: 15000 })) {
             madeThisRun += 1;
+            clipDone = true;
             break;
           }
           if (attempt >= 1 + RETRIES) {
             log.error(message);
             report.failed.push({ out: item.out, error: message });
-            // one clip at a time: if this one did not finish, the rest do not start
-            report.stopped = true;
-            report.reason = `clip ${i + 1} of ${items.length} did not finish, so the rest were not started: ${message.slice(0, 200)}`;
             break;
           }
           log.warn(`No finished clip found in the project - will retry generation (attempt ${attempt + 1}/${1 + RETRIES}).`);
         }
       }
       if (report.stopped) break;
-      report.done.push(item.out);
+      if (clipDone) {
+        consecutiveFailures = 0;
+        report.done.push(item.out);
+      } else {
+        // The clip is lost for this run, but the next ones are independent: keep
+        // going, and stop only when failures come back to back (Flow is down).
+        consecutiveFailures += 1;
+        if (batchShouldStop(consecutiveFailures)) {
+          report.stopped = true;
+          report.reason = `${consecutiveFailures} clips in a row did not finish (clip ${i + 1} of ${items.length} was the last), so the rest were not started: ${report.failed[report.failed.length - 1]?.error?.slice(0, 200) ?? ''}`;
+          save();
+          break;
+        }
+        log.warn(`Clip ${i + 1} did not finish - continuing with the next one (${consecutiveFailures}/${MAX_CONSECUTIVE_CLIP_FAILURES} failures in a row allowed).`);
+      }
       save();
     }
     if (report.failed.length && !report.stopped) report.reason = `${report.failed.length} clip(s) failed`;
@@ -808,7 +853,7 @@ export async function videoCommand({ flags, context }) {
   if (!prompt) throw new Error('Missing --prompt "<motion description>".');
 
   const opts = modelOptions(flags);
-  const timeoutMs = intFlag(flags, 'timeout', 600) * 1000;
+  const timeoutMs = intFlag(flags, 'timeout', 100) * 1000;
   const out = path.resolve(
     typeof flags.out === 'string' ? flags.out : path.join('output', 'video-test', `${slugify(path.basename(image))}.mp4`),
   );

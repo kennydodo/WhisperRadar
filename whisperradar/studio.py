@@ -1194,9 +1194,42 @@ def shotlist_refs(pdir: Path) -> dict:
 
 
 def refs_to_generate(pdir: Path) -> dict:
-    """The used refs that have no usable file but do have a prompt."""
+    """The used refs that have no usable file but do have a prompt.
+
+    A ref whose image already sits in refs\\ is never generated again, even
+    when the shotlist registry does not point at it (a re-plan can blank the
+    registry entry of a ref that was generated earlier): regenerating it
+    would spend a Flow generation on, and upload a duplicate of, an image we
+    already have. Delete the file from refs\\ to have it made again."""
     return {n: r for n, r in shotlist_refs(pdir).items()
-            if not r["provided"] and r["prompt"]}
+            if not r["provided"] and not r["disk"] and r["prompt"]}
+
+
+def adopt_disk_refs(pdir: Path) -> list[str]:
+    """Point the shotlist registry at refs that already exist in refs\\ but
+    that the registry does not resolve (blank, or a path that is gone), so the
+    images stage attaches them instead of treating them as missing. Returns
+    the names adopted."""
+    adopted: dict[str, str] = {}
+    for name, ref in shotlist_refs(pdir).items():
+        if not ref["provided"] and ref["disk"]:
+            adopted[name] = f"refs/{ref['disk'].name}"
+    if not adopted:
+        return []
+    shotlist_path = pdir / "shotlist.json"
+    try:
+        data = json.loads(shotlist_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    registry = data.get("refs")
+    if not isinstance(registry, dict):
+        registry = {}
+    registry.update(adopted)
+    data["refs"] = registry
+    shotlist_path.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8")
+    return sorted(adopted)
 
 
 def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
@@ -1295,6 +1328,19 @@ def _create_and_record_flow_project(cfg, pdir: Path, pid: int,
     return url
 
 
+def _without_existing_refs(pdir: Path, refs: dict, log=None) -> dict:
+    """Drop refs whose image is already in refs\\ - the last guard before a
+    generation is paid for, whoever the caller is."""
+    have = {n for n, r in shotlist_refs(pdir).items() if r["disk"] or r["provided"]}
+    kept = {n: r for n, r in (refs or {}).items() if n not in have}
+    skipped = [n for n in (refs or {}) if n in have]
+    if skipped:
+        _safe_log(log or (lambda m: None),
+                  f"refs: {len(skipped)} already in refs\\ - not generated "
+                  f"again ({', '.join(skipped[:6])})")
+    return kept
+
+
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                        log=None, cancel=None, upscale: int | None = None) -> dict:
     """Render the missing reference images with FlowBatch, then place them
@@ -1306,6 +1352,7 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
     Returns {generated: [names], missing: [names]} - nothing raises for a ref
     that could not be made; the caller reports it."""
     log = log or (lambda m: None)
+    refs = _without_existing_refs(pdir, refs, log)
     if not refs:
         return {"generated": [], "missing": []}
     if not flowbatch_ready(cfg):
@@ -1428,6 +1475,7 @@ def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
     Returns {generated: [names], missing: [names]} - nothing raises for a
     ref that could not be made; the caller reports it."""
     log = log or (lambda m: None)
+    refs = _without_existing_refs(pdir, refs, log)
     if not refs:
         return {"generated": [], "missing": []}
     # the same style source the FlowBatch refs job uses - the shotlist's own

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { contentHash, decodeFlowVideoUrl, extractFlowVideoUrls, mediaId, pickClipByPrompt } from '../../commands/video.js';
+import { MAX_CONSECUTIVE_CLIP_FAILURES, batchShouldStop, contentHash, decodeFlowVideoUrl, extractFlowVideoUrls, mediaId, orphanBelongsToItem, pickClipByPrompt } from '../../commands/video.js';
 import { setLevel } from '../../src/lib/log.js';
 
 setLevel('silent');
@@ -84,4 +84,21 @@ test('pickClipByPrompt takes the clip whose tile prompt matches, never a guess',
   assert.equal(pickClipByPrompt(fresh, dup, 'Slow push in on the lighthouse at dusk'), null);
   // a tile for a clip that is not fresh is ignored
   assert.equal(pickClipByPrompt([fresh[1]], tiles, 'Slow push in on the lighthouse at dusk'), null);
+});
+
+test('a lone orphan clip is adopted only for the item whose prompt its tile carries', () => {
+  const item = 'Slow push in on the lighthouse at dusk, gentle waves';
+  assert.equal(orphanBelongsToItem('slow push in on the lighthouse at dusk, gentle waves', item), true);
+  assert.equal(orphanBelongsToItem('A fox runs across the snowy field at sunrise', item), false);
+  // unreadable tile prompt: keep adopting (a missed clip costs a paid regeneration)
+  assert.equal(orphanBelongsToItem(null, item), true);
+  assert.equal(orphanBelongsToItem('   ', item), true);
+});
+
+test('the batch carries on past one failed clip and stops only on back-to-back failures', () => {
+  assert.equal(MAX_CONSECUTIVE_CLIP_FAILURES, 2);
+  assert.equal(batchShouldStop(0), false);
+  assert.equal(batchShouldStop(1), false);
+  assert.equal(batchShouldStop(2), true);
+  assert.equal(batchShouldStop(3), true);
 });

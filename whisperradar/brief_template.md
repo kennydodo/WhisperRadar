@@ -88,7 +88,7 @@ Raw JSON. No fences, no commentary. Exactly this shape:
 
 ```
 {
-  "style": "<MASTER PROMPT: all constant instructions — art style, palette, rendering quality, line treatment, tone, text policy, character continuity, recurring objects. Individual prompts must not repeat any of this. HARD LIMIT 1500 CHARACTERS (~220–230 words) — the batch app's master box cannot hold more. If the channel style runs longer, compress adjectives and examples; never cut the character-identity sentences.>",
+  "style": "<MASTER PROMPT: all constant instructions — art style, palette, rendering quality, line treatment, tone, text policy, character continuity, recurring objects. Individual prompts must not repeat any of this. Keep the channel's style wording as it is given — do not compress or paraphrase it; never drop the character-identity sentences.>",
   "refs": {
     "david_face": "D:/Refs/david_face.png",
     "conference_room": "D:/Refs/conference_room.png",
@@ -167,7 +167,7 @@ Before output, verify:
 3. Reuse decisions are content-driven; every `images[]` entry is used by at least one shot; every `asset` exists in `images[]`.
 4. Filenames match `S##_##_TYPE_MOTION.png`; all unique; types and motions from the code tables.
 5. {{CHECK_MOTION}}
-6. Prompts are as detailed as the image needs and describe only what makes this image different from every other: subject, action, composition, spatial layout, where the scene's light comes from. Zero style language anywhere in a prompt — no palette, no grade, no "photorealistic", "cinematic", film grain, or mood adjectives belonging to the channel. The master prompt (`style` field) is the only place style is stated; the batch app merges master + card at generation time. **Length self-check:** the master stays under 1500 characters (~220–230 words) and every prompt under 2400 (~350–375 words) — re-read the master and the 2–3 longest prompts before output and trim anything over budget.
+6. Prompts are as detailed as the image needs and describe only what makes this image different from every other: subject, action, composition, spatial layout, where the scene's light comes from. Zero style language anywhere in a prompt — no palette, no grade, no "photorealistic", "cinematic", film grain, or mood adjectives belonging to the channel. The master prompt (`style` field) is the only place style is stated; the batch app merges master + card at generation time. **Length self-check:** every prompt stays under 2400 characters (~350–375 words) — re-read the 2–3 longest prompts before output and trim anything over budget.
 7. The shotlist JSON is the only output: raw and complete, nothing written after it.
 8. Every `refs` name on an image exists in the top-level `refs` registry, spelled exactly as the reference bible supplies it; refs appear only where the subject is actually visible, chosen to fit the beat (never all of them); first ref is the dominant subject; no image carries more than 10 refs; INF/PROC diagrams carry none; a supplied recurring character is actually cast somewhere in the plan. Omit the whole registry when no reference bible exists.
 9. Content policy (Section 11A): no prompt or refPrompt names a real person, shows a minor in distress or undressed, depicts gore, wounds, nudity, self-harm, drug use, weapons in use, hate symbols, real brands or logos. Anything dark is shown by implication (aftermath, silhouette, object, wide shot), not depiction.

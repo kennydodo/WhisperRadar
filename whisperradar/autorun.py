@@ -1535,6 +1535,12 @@ def _run_refs(cfg, pid: int, log=None, cancel=None) -> None:
     if not eff["generate_references"]:
         _step("skipped - reference generation is off for this channel")
         return
+    # a ref generated earlier whose registry entry was blanked (a re-plan) is
+    # re-attached, never generated a second time
+    adopted = studio.adopt_disk_refs(pdir)
+    if adopted:
+        log(f"[auto-run] refs: {len(adopted)} reference(s) already in refs\\ "
+            f"re-attached, not generated again: {', '.join(adopted[:6])}")
     used = studio.shotlist_refs(pdir)
     if not used:
         _step("the shotlist declares no references")

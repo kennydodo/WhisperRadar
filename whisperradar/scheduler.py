@@ -16,6 +16,7 @@ not running, use `wr.py produce` from Windows Task Scheduler instead.
 
 import logging
 import threading
+from pathlib import Path
 from datetime import datetime, timedelta
 
 from . import db, producer, settings
@@ -62,10 +63,21 @@ class Scheduler:
 
     def _loop(self) -> None:
         while not self._stop.wait(TICK_SECONDS):
+            if not self._database_folder_exists():
+                # the app's data folder is gone (a test's temp dir, a removed
+                # drive): ticking would only reopen connections to nothing
+                log.info("scheduler: database folder is gone - ticker stopped")
+                return
             try:
                 self._last_tick = self.tick()
             except Exception as exc:  # noqa: BLE001 - a tick must never die
                 log.warning("scheduler: tick failed: %s", exc)
+
+    def _database_folder_exists(self) -> bool:
+        try:
+            return Path(self.cfg.db_path).parent.is_dir()
+        except (TypeError, ValueError, OSError):
+            return True
 
     # ------------------------------------------------------------- state --
 

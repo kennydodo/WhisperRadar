@@ -763,24 +763,38 @@ def create_app(cfg) -> Flask:
 
     def _autostart_services() -> None:
         """Optionally bring the engine's services up with the dashboard, so
-        there is no .bat to remember."""
+        there is no .bat to remember.
+
+        The setting is read here, on the caller's thread, and the connection
+        is closed before create_app returns: a background thread holding a
+        database connection open raced the caller (a test's temp folder
+        cannot be removed on Windows while any connection is open)."""
         conn = db.connect(cfg.db_path)
-        db.init_db(conn)
         try:
+            db.init_db(conn)
             if not settings.load(conn).get("services_autostart"):
                 return
         finally:
             conn.close()
-        try:
-            services.MANAGER.ensure(cfg, ["renderly"],
-                                    log_fn=lambda m: logging.getLogger(
-                                        "whisperradar").info("autostart: %s", m))
-        except Exception as exc:  # noqa: BLE001 - never block the dashboard
-            logging.getLogger("whisperradar").warning(
-                "service autostart failed: %s", exc)
 
-    threading.Thread(target=_autostart_services, name="wr-autostart",
-                     daemon=True).start()
+        def bring_up() -> None:
+            try:
+                services.MANAGER.ensure(cfg, ["renderly"],
+                                        log_fn=lambda m: logging.getLogger(
+                                            "whisperradar").info(
+                                            "autostart: %s", m))
+            except Exception as exc:  # noqa: BLE001 - never block the dashboard
+                logging.getLogger("whisperradar").warning(
+                    "service autostart failed: %s", exc)
+
+        threading.Thread(target=bring_up, name="wr-autostart",
+                         daemon=True).start()
+
+    try:
+        _autostart_services()
+    except Exception as exc:  # noqa: BLE001 - never block the dashboard
+        logging.getLogger("whisperradar").warning(
+            "service autostart failed: %s", exc)
 
     @app.get("/")
     def index():
@@ -3452,16 +3466,22 @@ def create_app(cfg) -> Flask:
 
     def _resume_after_source():
         """At start-up: pick up auto-run requests that were waiting for a
-        source transcript when the app stopped."""
+        source transcript when the app stopped. The productions are listed
+        here, before create_app returns, so no thread holds a database
+        connection open behind the caller's back."""
         try:
             conn = db.connect(cfg.db_path)
             try:
                 db.init_db(conn)
-                prods = list(db.list_productions(conn))
+                prods = [dict(p) for p in db.list_productions(conn)]
             finally:
                 conn.close()
         except Exception:  # noqa: BLE001
             return
+        threading.Thread(target=_resume_waiting, args=(prods,), daemon=True,
+                         name="resume-after-source").start()
+
+    def _resume_waiting(prods):
         for prod in prods:
             try:
                 # look only: studio.prod_dir() would create the folder of
@@ -3488,8 +3508,7 @@ def create_app(cfg) -> Flask:
             except Exception:  # noqa: BLE001 - a bad marker must not stop the app
                 continue
 
-    threading.Thread(target=_resume_after_source, daemon=True,
-                     name="resume-after-source").start()
+    _resume_after_source()
 
     @app.post("/studio/<int:pid>/source/fetch")
     def studio_source_fetch(pid):
