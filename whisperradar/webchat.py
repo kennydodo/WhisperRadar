@@ -1652,11 +1652,27 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
             active = clock()               # still thinking / writing
         stuck = bool(gen_stuck and gen and clean_reply(last_text)
                      and clock() - stable_since >= gen_stuck)
+        # A page whose "generating" flag never clears (z.ai's stop button) must
+        # not cost the full gen_stuck wait when the reply is already a COMPLETE
+        # answer: once it has been still for GEN_READY_WAIT seconds and passes
+        # the caller's completeness check, take it.
+        complete_early = bool(
+            not stuck and gen and ready is not None and gen_stuck
+            and clean_reply(last_text)
+            and clock() - stable_since >= GEN_READY_WAIT
+            and ready(clean_reply(last_text)))
+        if complete_early:
+            stuck = True
         if stuck and not stuck_logged:
             stuck_logged = True
-            log(f"{site.name}: the page still says it is generating but the "
-                f"reply has not changed for {int(gen_stuck)}s - taking it as "
-                f"finished")
+            if complete_early:
+                log(f"{site.name}: the page still says it is generating but "
+                    f"the reply is a complete answer and has not changed for "
+                    f"{int(GEN_READY_WAIT)}s - taking it as finished")
+            else:
+                log(f"{site.name}: the page still says it is generating but "
+                    f"the reply has not changed for {int(gen_stuck)}s - "
+                    f"taking it as finished")
         done_waiting = (started and (not gen or stuck)
                         and clock() - stable_since >= settle)
         if done_waiting and not clean_reply(last_text):
@@ -1731,6 +1747,10 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 f"{site.name} did not finish within {int(max_total)}s",
                 clean_reply(last_text))
 
+
+# seconds a "still generating" page may sit unchanged before a reply that
+# already passes the completeness check (`ready`) is taken as finished
+GEN_READY_WAIT = 20.0
 
 # the prompt box must be VISIBLE: pages carry hidden off-screen textareas,
 # and scoping the send/paste to one of those is how "no send button" happened

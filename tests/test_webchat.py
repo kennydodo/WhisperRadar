@@ -326,6 +326,24 @@ class AskTests(unittest.TestCase):
         self.assertEqual(out, "the whole reply")
         self.assertTrue(any("taking it as finished" in m for m in logs))
 
+    def test_a_stuck_flag_with_a_complete_reply_is_taken_in_seconds(self):
+        # z.ai's "generating" flag never clears: a reply that already passes
+        # the completeness check must not wait out the 240 s fallback
+        logs = []
+        out, page = run(wc.ZAI, [("{\"ok\": 1}", True)] * 400,
+                        ready=lambda t: t.endswith("}"), log=logs.append)
+        self.assertEqual(out, "{\"ok\": 1}")
+        self.assertLess(page.clock(), 120)
+        self.assertTrue(any("complete answer" in m for m in logs))
+
+    def test_a_stuck_flag_with_an_incomplete_reply_still_waits_it_out(self):
+        logs = []
+        out, page = run(wc.ZAI, [("{\"ok\": 1", True)] * 400,
+                        ready=lambda t: t.endswith("}"), log=logs.append,
+                        ready_wait=0)
+        self.assertGreaterEqual(page.clock(), 240)
+        self.assertFalse(any("complete answer" in m for m in logs))
+
     def test_a_reply_that_is_still_growing_is_not_cut_off(self):
         frames = [("word " * n, True) for n in range(1, 200)] + [("done", False)]
         out, _ = run(wc.ZAI, frames)
