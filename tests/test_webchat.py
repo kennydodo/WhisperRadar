@@ -641,6 +641,20 @@ class NavigationRaceTests(unittest.TestCase):
         wc._settle_url(object())                 # no url / wait_for_timeout
 
 
+class ComposerPickTests(unittest.TestCase):
+    """In an open Qwen chat the first visible match of the box selector can be
+    a role=textbox element that is no editor (a code block): the paste script's
+    native textarea setter then died with "Illegal invocation"."""
+
+    def test_every_box_picker_prefers_the_last_real_editor(self):
+        src = Path(wc.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("getBoundingClientRect().width > 0) ||", src)
+        self.assertEqual(src.count("ed[ed.length - 1]"), 5)
+        for js in (wc._PASTE_JS, wc._COMPOSER_JS, wc._TA_LEN_JS,
+                   wc._GENERIC_SEND_JS):
+            self.assertIn("e.isContentEditable || e.tagName === 'TEXTAREA'", js)
+
+
 if __name__ == "__main__":
     unittest.main()
 

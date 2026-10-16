@@ -625,7 +625,7 @@ DEFAULT_GENERATING = ('[aria-label*="Stop" i], [title*="Stop" i], '
 
 _GENERIC_SEND_JS = """() => {
   const list = [...document.querySelectorAll(%s)];
-  const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0] || null;
+  const ta = ((l) => { const v = l.filter(e => e.getBoundingClientRect().width > 0); const ed = v.filter(e => e.isContentEditable || e.tagName === 'TEXTAREA' || e.tagName === 'INPUT'); return ed.length ? ed[ed.length - 1] : (v[0] || l[0]); })(list) || null;
   // a WHOLE word of the accessible name: "Ask" must not match "Task",
   // "stop" must not match "Deep research"; ChatGPT's composer button is
   // named only by its class, so a type=submit inside the composer counts
@@ -940,7 +940,7 @@ _PEAK_JS = """(args) => {
 
 _PASTE_JS = """(args) => {
   const list = [...document.querySelectorAll(args.box)];
-  const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0];
+  const ta = ((l) => { const v = l.filter(e => e.getBoundingClientRect().width > 0); const ed = v.filter(e => e.isContentEditable || e.tagName === 'TEXTAREA' || e.tagName === 'INPUT'); return ed.length ? ed[ed.length - 1] : (v[0] || l[0]); })(list);
   if (!ta) return -1;
   if (ta.isContentEditable) {                 // Claude's composer et al.
     ta.focus();
@@ -1040,7 +1040,7 @@ _CAP_RESET_JS = "() => { window.__wr_cap = window.__wr_cap || []; window.__wr_ca
 _CAP_GET_JS = "() => (window.__wr_cap || []).map(r => ({url: r.url, done: r.done, text: r.chunks.join('')}))"
 
 _TA_LEN_JS = """(sel) => { const list=[...document.querySelectorAll(sel)];
-  const t=list.find(e => e.getBoundingClientRect().width > 0) || list[0];
+  const t=((l) => { const v = l.filter(e => e.getBoundingClientRect().width > 0); const ed = v.filter(e => e.isContentEditable || e.tagName === 'TEXTAREA' || e.tagName === 'INPUT'); return ed.length ? ed[ed.length - 1] : (v[0] || l[0]); })(list);
   if(!t) return -1;
   if (t.isContentEditable) return (t.textContent||'').length;
   return (t.value || '').length; }"""
@@ -1828,7 +1828,7 @@ def _press_send(page, site: Site, log, wait: float = 12.0) -> str:
         page.wait_for_timeout(500)
     try:
         page.evaluate("""(sel) => { const l = [...document.querySelectorAll(sel)];
-            const e = l.find(x => x.getBoundingClientRect().width > 0) || l[0];
+            const e = ((l) => { const v = l.filter(e => e.getBoundingClientRect().width > 0); const ed = v.filter(e => e.isContentEditable || e.tagName === 'TEXTAREA' || e.tagName === 'INPUT'); return ed.length ? ed[ed.length - 1] : (v[0] || l[0]); })(l);
             if (e) e.focus(); }""", site.box)
         page.keyboard.press("Enter")
     except Exception:  # noqa: BLE001
@@ -1839,7 +1839,7 @@ def _press_send(page, site: Site, log, wait: float = 12.0) -> str:
 
 _COMPOSER_JS = r"""(sel) => {
   const list = [...document.querySelectorAll(sel)];
-  const ta = list.find(e => e.getBoundingClientRect().width > 0) || list[0]
+  const ta = ((l) => { const v = l.filter(e => e.getBoundingClientRect().width > 0); const ed = v.filter(e => e.isContentEditable || e.tagName === 'TEXTAREA' || e.tagName === 'INPUT'); return ed.length ? ed[ed.length - 1] : (v[0] || l[0]); })(list)
              || null;
   const btns = el => [...el.querySelectorAll('button,[role=button]')];
   let scope = document;
