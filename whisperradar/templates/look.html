@@ -42,7 +42,7 @@
 
   <div class="panel">
     {% if sites %}
-    <form class="row" method="post" action="/watched/{{ ch['channel_id'] }}/look/run">
+    <form class="row" id="lookform" method="post" action="/watched/{{ ch['channel_id'] }}/look/run">
       <label>Web chat (must read images)
         <select name="site">{% for s in sites %}<option value="{{ s.key }}">{{ s.name }}</option>{% endfor %}</select></label>
       {% for s in sites %}
@@ -68,17 +68,23 @@
         {% endif %}{% endfor %}
       </span>
       {% endfor %}
-      <label>Frames
+      <label>Frames to collect
         <input type="number" name="frames" value="{{ default_frames }}"
                min="{{ min_frames }}" max="{{ max_frames }}" style="width:70px"></label>
+      <label>Send to the chat
+        <input type="number" name="send" value="{{ send_count }}"
+               min="1" max="{{ max_send }}" style="width:60px"></label>
       <label style="flex-basis:100%">Hint for the chat (optional)
         <input type="text" name="hint" maxlength="600" style="width:100%"
                placeholder="e.g. the channel has a recurring cartoon narrator / protagonist"></label>
-      <button type="submit">{{ 'Get style & bible again' if look else 'Get style & bible' }}</button>
+      <button type="submit">{{ 'Collect new frames & ask again' if look else 'Get style & bible' }}</button>
     </form>
-    <p class="muted" style="margin:8px 0 0">Takes frames from this channel's most
-      viewed videos (downloaded at low resolution, then deleted), with a few
-      titles and transcript excerpts. Progress shows at the top of this page.</p>
+    <p class="muted" style="margin:8px 0 0">Collects up to {{ max_frames }} frames from
+      this channel's most viewed videos (downloaded at low resolution, then
+      deleted) and sends a random {{ send_count }} of them, with a few titles and
+      transcript excerpts. The collected frames are kept: use <b>Regenerate</b>
+      below to ask again with other or hand-picked frames, without downloading
+      anything. Progress shows at the top of this page.</p>
     {% else %}
     <p class="err">No web chat that can read images yet. Add one in
       <a href="/settings?tab=Web+chat+LLMs">Settings &gt; Web chat LLMs</a>
@@ -87,19 +93,31 @@
   </div>
 
   {% if look %}
-  <p class="muted">Made {{ look.at }} with {{ look.site }} from {{ look.frames }} frames.</p>
+  <p class="muted">Made {{ look.at }} with {{ look.site }} from {{ look.sent|length or look.frames }} of {{ look.frames }} collected frames.</p>
   <div class="panel">
-    <h2>Style guide <button class="ghost" type="button" onclick="cp('style')">copy</button></h2>
+    <h2>Style guide <button class="ghost" type="button" onclick="cp('style')">copy</button>
+      {% if sites %}<button type="submit" form="lookform" formaction="/watched/{{ ch['channel_id'] }}/look/regen" title="Ask again with the frames ticked below (none ticked = a new random selection)">Regenerate</button>{% endif %}</h2>
     <pre id="style">{{ look.style }}</pre>
   </div>
   <div class="panel">
-    <h2>Bible <button class="ghost" type="button" onclick="cp('bible')">copy</button></h2>
+    <h2>Bible <button class="ghost" type="button" onclick="cp('bible')">copy</button>
+      {% if sites %}<button type="submit" form="lookform" formaction="/watched/{{ ch['channel_id'] }}/look/regen" title="Ask again with the frames ticked below (none ticked = a new random selection)">Regenerate</button>{% endif %}</h2>
     <pre id="bible">{{ look.bible or "(the chat gave no separate bible - see the style guide)" }}</pre>
   </div>
   <div class="panel">
-    <h2>Frames used</h2>
+    <h2>Collected frames <span class="muted" id="picked"></span></h2>
+    <p class="muted" style="margin:0 0 8px">Ticked frames are the ones sent
+      when you press Regenerate (at most {{ max_send }}). The ticks start as the
+      frames sent last time. Nothing ticked = a new random selection.</p>
+    {% if sites %}
+    <p class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px">
+      <button class="ghost" type="button" onclick="pickRandom()">Tick random {{ send_count }}</button>
+      <button class="ghost" type="button" onclick="pickAll(false)">Untick all</button>
+      <button type="submit" form="lookform" formaction="/watched/{{ ch['channel_id'] }}/look/regen">Regenerate with these</button>
+    </p>
+    {% endif %}
     <div class="frames">
-      {% for f in look.files %}<a href="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" target="_blank"><img src="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" alt=""></a>{% endfor %}
+      {% for f in look.files %}<div class="fr"><label style="display:block"><input type="checkbox" class="pick" name="pick" value="{{ f }}" form="lookform"{% if f in look.sent %} checked{% endif %}> {{ f }}</label><a href="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" target="_blank"><img src="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" alt=""></a></div>{% endfor %}
     </div>
   </div>
   {% endif %}
@@ -108,9 +126,10 @@
 (function () {
   // the chosen chat's own settings sit right after it on the same line; the
   // last picks (chat, its settings, frames) are remembered in this browser
-  var K = 'wrwc:look';
+  var K = 'wrwc:look:v2';
   var site = document.querySelector('select[name=site]');
   var fr = document.querySelector('input[name=frames]');
+  var snd = document.querySelector('input[name=send]');
   if (!site) return;
   var extras = function () { return document.querySelectorAll('select[name^=wc_]'); };
   try {
@@ -118,6 +137,7 @@
     if (o.site && [].some.call(site.options, function (op) { return op.value === o.site; }))
       site.value = o.site;
     if (o.frames && fr) fr.value = o.frames;
+    if (o.send && snd) snd.value = o.send;
     extras().forEach(function (x) {
       if (o[x.name] !== undefined && [].some.call(x.options, function (op) { return op.value === o[x.name]; }))
         x.value = o[x.name];
@@ -133,7 +153,7 @@
   }
   function save() {
     try {
-      var o = {site: site.value, frames: fr && fr.value};
+      var o = {site: site.value, frames: fr && fr.value, send: snd && snd.value};
       extras().forEach(function (x) { o[x.name] = x.value; });
       localStorage.setItem(K, JSON.stringify(o));
     } catch (e) {}
@@ -165,6 +185,17 @@
   }
   if (running || location.search.indexOf('msg=') >= 0) tick();
 })();
+function picks(){ return [].slice.call(document.querySelectorAll('input.pick')); }
+function countPicked(){ var n = picks().filter(function (c) { return c.checked; }).length;
+  var el = document.getElementById('picked'); if (el) el.textContent = '(' + n + ' ticked)'; }
+function pickAll(v){ picks().forEach(function (c) { c.checked = v; }); countPicked(); }
+function pickRandom(){
+  var s = document.querySelector('input[name=send]'), n = parseInt(s && s.value, 10) || {{ send_count }};
+  var a = picks(); pickAll(false);
+  for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; }
+  a.slice(0, Math.min(n, a.length)).forEach(function (c) { c.checked = true; }); countPicked();
+}
+picks().forEach(function (c) { c.addEventListener('change', countPicked); }); countPicked();
 function cp(id){ navigator.clipboard.writeText(document.getElementById(id).textContent); }
 </script>
 </body>

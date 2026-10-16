@@ -188,6 +188,120 @@ class LookTests(unittest.TestCase):
         self.assertEqual(r.status_code, 302)
         self.assertIn("error=", r.headers["Location"])
 
+    def _kw(self):
+        return dict(download=lambda url, d: (d / "x.mp4", 600),
+                    grab=self._grab, thumbs=None)
+
+    def test_collects_a_big_pool_and_sends_a_random_15(self):
+        import random
+        tr = FakeTransport()
+        meta = channel_look.run(self.cfg, "UCrival", "chatgpt", tr,
+                                lambda m: None, n_frames=45,
+                                rng=random.Random(1), **self._kw())
+        got = channel_look.load(self.cfg, "UCrival")
+        self.assertEqual(len(got["files"]), 45)       # the whole pool is kept
+        self.assertEqual(len(tr.calls[0][2]), 15)     # 15 are sent
+        self.assertEqual(meta["frames"], 45)
+        self.assertEqual(sorted(Path(f).name for f in tr.calls[0][2]),
+                         got["sent"])
+
+    def test_pool_can_reach_fifty(self):
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=50, **self._kw())
+        self.assertEqual(len(channel_look.load(self.cfg, "UCrival")["files"]),
+                         50)
+
+    def test_choose_files(self):
+        pool = [f"f{i:02d}.jpg" for i in range(1, 41)]
+        self.assertEqual(len(channel_look.choose_files(pool)), 15)
+        self.assertEqual(channel_look.choose_files(pool, ["f03.jpg", "zz.jpg"]),
+                         ["f03.jpg"])
+        with self.assertRaises(ValueError):
+            channel_look.choose_files(pool, ["nope.jpg"])
+        with self.assertRaises(ValueError):
+            channel_look.choose_files(pool, pool[:19])
+        self.assertEqual(len(channel_look.choose_files(pool, None, 99)),
+                         channel_look.MAX_ATTACH)
+
+    def test_regenerate_uses_the_chosen_frames_without_downloading(self):
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=30, **self._kw())
+        tr = FakeTransport()
+        tr.ask = lambda site, prompt, files=(), **kw: (
+            tr.calls.append((site, prompt, list(files))) or
+            REPLY.replace("teal", "plum"))
+        meta = channel_look.regenerate(
+            self.cfg, "UCrival", "chatgpt", tr, lambda m: None,
+            selected=["f02.jpg", "f05.jpg", "f09.jpg"], hint="mascot")
+        self.assertEqual([Path(f).name for f in tr.calls[0][2]],
+                         ["f02.jpg", "f05.jpg", "f09.jpg"])
+        self.assertIn("mascot", tr.calls[0][1])
+        self.assertIn("Title 2", tr.calls[0][1])      # video context kept
+        got = channel_look.load(self.cfg, "UCrival")
+        self.assertEqual(got["sent"], ["f02.jpg", "f05.jpg", "f09.jpg"])
+        self.assertEqual(len(got["files"]), 30)       # pool untouched
+        self.assertEqual(meta["frames"], 30)
+
+    def test_regenerate_without_ticks_draws_new_random_ones(self):
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=30, **self._kw())
+        tr = FakeTransport()
+        channel_look.regenerate(self.cfg, "UCrival", "chatgpt", tr,
+                                lambda m: None, send_count=7)
+        self.assertEqual(len(tr.calls[0][2]), 7)
+
+    def test_failed_regenerate_keeps_the_saved_result(self):
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=20, **self._kw())
+        first = channel_look.load(self.cfg, "UCrival")
+
+        class Boom:
+            def ask(self, *a, **k):
+                raise RuntimeError("chat failed")
+        with self.assertRaises(RuntimeError):
+            channel_look.regenerate(self.cfg, "UCrival", "chatgpt", Boom(),
+                                    lambda m: None)
+        again = channel_look.load(self.cfg, "UCrival")
+        self.assertEqual((again["style"], again["sent"]),
+                         (first["style"], first["sent"]))
+
+    def test_regenerate_needs_collected_frames(self):
+        with self.assertRaises(RuntimeError):
+            channel_look.regenerate(self.cfg, "UCrival", "chatgpt",
+                                    FakeTransport(), lambda m: None)
+
+    def test_page_has_regenerate_and_frame_ticks(self):
+        channel_look.run(self.cfg, "UCrival", "chatgpt", FakeTransport(),
+                         lambda m: None, n_frames=20, **self._kw())
+        from whisperradar import webchat
+        client = create_app(self.cfg).test_client()   # loads saved sites
+        defs, _ = webchat.sanitize_sites([{
+            "key": "paidchat", "name": "Paid Chat", "paid": False,
+            "url": "https://example.com/", "box": "textarea", "reply": ".r"}])
+        webchat.set_custom_sites(defs)
+        webchat._UI["paidchat"] = {k: defs[0].get(k) for k in (
+            "key", "name", "models", "levels", "level_label", "toggles",
+            "paid")}
+        try:
+            html = client.get("/watched/UCrival/look").get_data(as_text=True)
+            self.assertIn("/look/regen", html)
+            self.assertIn('name="pick"', html)
+            self.assertIn('name="send"', html)
+            self.assertEqual(html.count('class="pick"'), 20)
+            self.assertEqual(html.count(" checked>"), 15)
+        finally:
+            webchat.set_custom_sites([])
+            webchat._UI.clear()
+
+    def test_regen_route_rejects_bad_requests(self):
+        client = create_app(self.cfg).test_client()
+        r = client.post("/watched/UCrival/look/regen", data={"site": "nope"})
+        self.assertEqual(r.status_code, 302)
+        self.assertIn("error=", r.headers["Location"])
+        r = client.post("/watched/UCrival/look/regen", data={
+            "site": "nope", "pick": [f"f{i}.jpg" for i in range(30)]})
+        self.assertIn("at%20most", r.headers["Location"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,7 @@ channels - copy it by hand from the page when you want to try it.
 from __future__ import annotations
 
 import json
+import random
 import re
 import shutil
 import subprocess
@@ -22,11 +23,14 @@ from typing import Callable
 from . import db
 
 MAX_ATTACH = 18                # images per message (Claude refuses > 20)
+SEND_COUNT = 15                # default: this many of the collected frames are sent
 THUMBS = 3                     # thumbnails of the first videos, as extras
-MAX_FRAMES = MAX_ATTACH - THUMBS
+MAX_POOL = 50                  # frames kept per channel (collected once, reused)
+MAX_FRAMES = MAX_POOL
 MIN_FRAMES = 5
-DEFAULT_FRAMES = 12
-MAX_VIDEOS = 8
+DEFAULT_FRAMES = 45            # video frames to collect (+ up to 3 thumbnails)
+MAX_VIDEOS = 12
+POOL_FILE = "pool.json"        # inside frames/: which video each frame came from
 EXCERPT_CHARS = 700
 STYLE_MARK = "=== STYLE GUIDE ==="
 BIBLE_MARK = "=== BIBLE ==="
@@ -50,6 +54,7 @@ def load(cfg, channel_id: str) -> dict | None:
         except OSError:
             meta[name] = ""
     meta["files"] = sorted(p.name for p in (d / "frames").glob("*.jpg"))
+    meta["sent"] = [n for n in meta.get("sent") or [] if n in meta["files"]]
     return meta
 
 
@@ -108,6 +113,56 @@ def split_counts(n_frames: int, n_videos: int) -> list[int]:
     n_videos = max(1, min(n_videos, n_frames))
     base, extra = divmod(n_frames, n_videos)
     return [base + (1 if i < extra else 0) for i in range(n_videos)]
+
+
+def choose_files(pool: list[str], selected=None, count: int = SEND_COUNT,
+                 rng=None) -> list[str]:
+    """Which collected frames go to the chat. `selected` (the user's ticks)
+    wins; names that are not in the pool are ignored. With none selected a
+    random `count` is drawn. Never more than MAX_ATTACH."""
+    names = sorted(pool)
+    if selected:
+        wanted = set(selected)
+        chosen = [n for n in names if n in wanted]
+        if not chosen:
+            raise ValueError("None of the selected frames exist any more")
+        if len(chosen) > MAX_ATTACH:
+            raise ValueError(f"Select at most {MAX_ATTACH} frames "
+                             f"(you selected {len(chosen)})")
+        return chosen
+    if not names:
+        raise ValueError("There are no collected frames to send")
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = SEND_COUNT
+    count = max(1, min(MAX_ATTACH, count))
+    return sorted((rng or random).sample(names, min(count, len(names))))
+
+
+def _read_pool(frames_dir: Path) -> dict:
+    try:
+        data = json.loads((frames_dir / POOL_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_pool(frames_dir: Path, videos: list[dict], frames: list[dict]):
+    (frames_dir / POOL_FILE).write_text(json.dumps({
+        "videos": [{"video_id": v.get("video_id"), "title": v.get("title")}
+                   for v in videos],
+        "frames": frames}, indent=1), encoding="utf-8")
+
+
+def videos_by_id(conn, ids: list[str]) -> list[dict]:
+    if not ids:
+        return []
+    q = ",".join("?" * len(ids))
+    rows = conn.execute(f"SELECT * FROM videos WHERE video_id IN ({q})",
+                        list(ids)).fetchall()
+    order = {v: i for i, v in enumerate(ids)}
+    return sorted((dict(r) for r in rows), key=lambda r: order[r["video_id"]])
 
 
 def download_low_res(url: str, out_dir: Path) -> tuple[Path, float | None]:
@@ -255,9 +310,35 @@ def parse_reply(reply: str) -> tuple[str, str]:
     return text.strip(), ""
 
 
+def _ask(transport, site, name, videos, frames_dir: Path, send: list[str],
+         hint: str, log) -> tuple[str, str]:
+    log(f"asking the web chat with {len(send)} frame(s)")
+    reply = transport.ask(site, build_prompt(name, videos, send, hint),
+                          files=[str(frames_dir / n) for n in send])
+    style, bible = parse_reply(reply)
+    if not style:
+        raise RuntimeError("The chat answered with nothing usable")
+    return style, bible
+
+
+def _save(d: Path, name, site, style, bible, pool_n, send, titles, extra=None):
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "style.md").write_text(style + "\n", encoding="utf-8")
+    (d / "bible.md").write_text((bible or "") + "\n", encoding="utf-8")
+    meta = {"channel": name, "site": site, "frames": pool_n,
+            "sent": list(send), "videos": list(titles),
+            "at": __import__("time").strftime("%Y-%m-%d %H:%M")}
+    meta.update(extra or {})
+    (d / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    return meta
+
+
 def run(cfg, channel_id: str, site: str, transport, log, n_frames=DEFAULT_FRAMES,
         download=download_low_res, grab=grab_frame, hint: str = "",
-        thumbs=fetch_thumbnails) -> dict:
+        thumbs=fetch_thumbnails, send_count: int = SEND_COUNT,
+        rng=None) -> dict:
+    """Collect a pool of frames (up to MAX_POOL), send a random `send_count`
+    of them to the chat, keep the pool + the answer."""
     n_frames = max(MIN_FRAMES, min(MAX_FRAMES, int(n_frames or DEFAULT_FRAMES)))
     conn = db.connect(cfg.db_path)
     try:
@@ -265,7 +346,7 @@ def run(cfg, channel_id: str, site: str, transport, log, n_frames=DEFAULT_FRAMES
         if ch is None:
             raise RuntimeError("Unknown watched channel")
         name, cid = ch["name"], ch["channel_id"]
-        n_videos = max(3, min(MAX_VIDEOS, -(-n_frames // 2)))
+        n_videos = max(3, min(MAX_VIDEOS, -(-n_frames // 4)))
         videos = pick_videos(conn, cid, n_videos)
     finally:
         conn.close()
@@ -282,29 +363,59 @@ def run(cfg, channel_id: str, site: str, transport, log, n_frames=DEFAULT_FRAMES
     if thumbs is not None:
         try:
             frames += thumbs(videos, frames_dir, log)[:max(
-                0, MAX_ATTACH - len(frames))]
+                0, MAX_POOL - len(frames))]
         except Exception as e:  # noqa: BLE001
             log(f"thumbnails skipped ({str(e)[:80]})")
-    frames = frames[:MAX_ATTACH]
+    frames = frames[:MAX_POOL]
     if len(frames) < 3:
         raise RuntimeError(f"Only {len(frames)} frame(s) could be taken - "
                            "check that yt-dlp and ffmpeg work")
-    log(f"asking the web chat with {len(frames)} frames")
-    reply = transport.ask(site, build_prompt(name, videos, frames, hint),
-                          files=[str(frames_dir / f["file"]) for f in frames])
-    style, bible = parse_reply(reply)
-    if not style:
-        raise RuntimeError("The chat answered with nothing usable")
-    d.mkdir(parents=True, exist_ok=True)
+    log(f"collected {len(frames)} frames")
+    _write_pool(frames_dir, videos, frames)
+    send = choose_files([f["file"] for f in frames], None, send_count, rng)
+    style, bible = _ask(transport, site, name, videos, frames_dir, send,
+                        hint, log)
     final = d / "frames"
+    d.mkdir(parents=True, exist_ok=True)
     if final.exists():
         shutil.rmtree(final, ignore_errors=True)
     frames_dir.rename(final)
-    (d / "style.md").write_text(style + "\n", encoding="utf-8")
-    (d / "bible.md").write_text((bible or "") + "\n", encoding="utf-8")
-    meta = {"channel": name, "site": site, "frames": len(frames),
-            "videos": [v["title"] for v in videos],
-            "at": __import__("time").strftime("%Y-%m-%d %H:%M")}
-    (d / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    meta = _save(d, name, site, style, bible, len(frames), send,
+                 [v["title"] for v in videos])
     log("saved style guide and bible with the watched channel")
+    return meta
+
+
+def regenerate(cfg, channel_id: str, site: str, transport, log,
+               selected=None, send_count: int = SEND_COUNT, hint: str = "",
+               rng=None) -> dict:
+    """Ask again with frames that are already collected - nothing is
+    downloaded. `selected` = the frames the user ticked; none ticked = a new
+    random `send_count`. The old answer stays if the chat fails."""
+    conn = db.connect(cfg.db_path)
+    try:
+        ch = db.get_channel(conn, channel_id)
+        if ch is None:
+            raise RuntimeError("Unknown watched channel")
+        name, cid = ch["name"], ch["channel_id"]
+        d = look_dir(cfg, cid)
+        frames_dir = d / "frames"
+        pool = sorted(p.name for p in frames_dir.glob("*.jpg"))
+        if not pool:
+            raise RuntimeError("No collected frames yet - use "
+                               "'Get style & bible' first")
+        pool_info = _read_pool(frames_dir)
+        videos = videos_by_id(conn, [v.get("video_id") for v in
+                                     pool_info.get("videos") or []
+                                     if v.get("video_id")])
+    finally:
+        conn.close()
+    send = choose_files(pool, selected, send_count, rng)
+    style, bible = _ask(transport, site, name, videos, frames_dir, send,
+                        hint, log)
+    old = load(cfg, cid) or {}
+    meta = _save(d, name, site, style, bible, len(pool), send,
+                 old.get("videos") or [v.get("title") for v in videos],
+                 {"regenerated": True})
+    log("saved the new style guide and bible")
     return meta

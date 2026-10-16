@@ -30,6 +30,8 @@ def register(app, cfg, sjob) -> None:
             default_frames=channel_look.DEFAULT_FRAMES,
             min_frames=channel_look.MIN_FRAMES,
             max_frames=channel_look.MAX_FRAMES,
+            send_count=channel_look.SEND_COUNT,
+            max_send=channel_look.MAX_ATTACH,
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.get("/watched/<key>/look/status")
@@ -49,25 +51,7 @@ def register(app, cfg, sjob) -> None:
         return send_from_directory(
             channel_look.look_dir(cfg, ch["channel_id"]) / "frames", name)
 
-    @app.post("/watched/<key>/look/run")
-    def look_run(key):
-        ch = _channel(key)
-        base = f"/watched/{quote(key)}/look"
-        if ch is None:
-            return redirect("/watched?error=Unknown+channel")
-        site = (request.form.get("site") or "").strip()
-        if site not in webchat.SITES:
-            return redirect(base + "?error=" + quote(
-                "Choose a web chat that can read images (add one in "
-                "Settings > Web chat LLMs)"))
-        if sjob.running:
-            return redirect(base + "?error=" + quote("A job is already running"))
-        try:
-            frames = int(request.form.get("frames") or
-                         channel_look.DEFAULT_FRAMES)
-        except ValueError:
-            frames = channel_look.DEFAULT_FRAMES
-        hint = (request.form.get("hint") or "").strip()[:600]
+    def _options():
         options = {}
         for s in webchat.custom_sites_ui():
             k = s["key"]
@@ -78,16 +62,76 @@ def register(app, cfg, sjob) -> None:
                 or None,
                 "toggles": {t["id"]: request.form.get(f"wc_{k}_{t['id']}")
                             == "on" for t in s.get("toggles") or []}}
+        return options
+
+    def _int(name, default):
+        try:
+            return int(request.form.get(name) or default)
+        except ValueError:
+            return default
+
+    def _start(ch, label, call, note):
+        """Shared by run/regen: web chat + transport + background job."""
+        base = f"/watched/{quote(ch['channel_id'])}/look"
+        site = (request.form.get("site") or "").strip()
+        if site not in webchat.SITES:
+            return redirect(base + "?error=" + quote(
+                "Choose a web chat that can read images (add one in "
+                "Settings > Web chat LLMs)"))
+        if sjob.running:
+            return redirect(base + "?error=" + quote("A job is already running"))
+        hint = (request.form.get("hint") or "").strip()[:600]
+        options = _options()
         _job = sjob._real()
-        cid = ch["channel_id"]
 
         def worker():
             with webstages.web_transport(cfg, sjob.log.append, options) as transport:
                 transport.set_stop(lambda: _job.cancel)
-                channel_look.run(cfg, cid, site, transport, sjob.log.append,
-                                 n_frames=frames, hint=hint)
+                call(site, transport, hint)
 
-        sjob.start(worker, f"style & bible ({ch['name']})")
-        return redirect(base + "?msg=" + quote(
-            "Started - it downloads a few videos at low resolution, takes "
-            "frames and asks the chat. This page reloads itself when the job is done."))
+        sjob.start(worker, f"{label} ({ch['name']})")
+        return redirect(base + "?msg=" + quote(note))
+
+    @app.post("/watched/<key>/look/run")
+    def look_run(key):
+        ch = _channel(key)
+        if ch is None:
+            return redirect("/watched?error=Unknown+channel")
+        frames = _int("frames", channel_look.DEFAULT_FRAMES)
+        send = _int("send", channel_look.SEND_COUNT)
+        cid = ch["channel_id"]
+
+        def call(site, transport, hint):
+            channel_look.run(cfg, cid, site, transport, sjob.log.append,
+                             n_frames=frames, hint=hint, send_count=send)
+
+        return _start(ch, "style & bible", call,
+                      "Started - it downloads some videos at low resolution, "
+                      "keeps up to 50 frames, sends a random selection to the "
+                      "chat. This page reloads itself when the job is done.")
+
+    @app.post("/watched/<key>/look/regen")
+    def look_regen(key):
+        """Ask again with the frames already collected (no download). The
+        ticked frames are sent; none ticked = a new random selection."""
+        ch = _channel(key)
+        if ch is None:
+            return redirect("/watched?error=Unknown+channel")
+        picked = request.form.getlist("pick")
+        send = _int("send", channel_look.SEND_COUNT)
+        cid = ch["channel_id"]
+        if len(picked) > channel_look.MAX_ATTACH:
+            return redirect(f"/watched/{quote(key)}/look?error=" + quote(
+                f"Select at most {channel_look.MAX_ATTACH} frames "
+                f"(you selected {len(picked)})"))
+
+        def call(site, transport, hint):
+            channel_look.regenerate(cfg, cid, site, transport,
+                                    sjob.log.append, selected=picked,
+                                    send_count=send, hint=hint)
+
+        return _start(ch, "style & bible (regenerate)", call,
+                      "Started - asking the chat again with "
+                      + (f"your {len(picked)} selected frames."
+                         if picked else f"{send} random frames.")
+                      + " This page reloads itself when done.")
