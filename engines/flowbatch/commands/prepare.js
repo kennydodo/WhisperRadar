@@ -49,7 +49,7 @@ export function uniqueRefs(job) {
   for (const item of job.items ?? []) {
     for (const ref of item.refs ?? []) {
       if (!ref || !ref.name || seen.has(ref.name)) continue;
-      seen.set(ref.name, { name: ref.name, path: ref.path ?? null });
+      seen.set(ref.name, { name: ref.name, path: ref.path ?? null, assetName: ref.assetName ?? null });
     }
   }
   return [...seen.values()];
@@ -68,6 +68,28 @@ export function uniqueRefs(job) {
 export async function resolveReferenceStatuses(driver, refs, { fileExists = fs.existsSync, record = null } = {}) {
   const results = [];
   for (const ref of refs) {
+    // The refs stage generated this image in THIS project and recorded the
+    // caption Flow gave it. Only CHECK that it is still there - never upload:
+    // an upload would put a second copy of the reference into the project.
+    // Not found = missing, and the caller regenerates just that reference.
+    if (ref.assetName) {
+      let found = false;
+      try {
+        found = await driver.galleryHasAsset(ref.assetName);
+      } catch (error) {
+        log.warn(`Could not check reference "${ref.name}": ${String(error?.message ?? error).split('\n')[0]}.`);
+      }
+      results.push({
+        name: ref.name,
+        kind: 'image',
+        status: found ? 'reused' : 'missing',
+        path: ref.path ?? null,
+        source: found ? 'gallery' : null,
+        generated: true,
+        assetName: ref.assetName,
+      });
+      continue;
+    }
     // The refs stage generated this image in THIS project and recorded it;
     // uploading the local copy again would duplicate the project asset and
     // cost the whole prepare time. Trust the record - the generation stage

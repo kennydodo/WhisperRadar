@@ -15,6 +15,8 @@ const KNOWN_TOP_LEVEL = new Set([
   'refMode',
   'refs',
   'refsGenerated',
+  'refAssets',
+  'recordAssetTitles',
   'defaults',
   'style',
   'stylePosition',
@@ -325,6 +327,17 @@ export function loadJob(jobPath, { settings, repairEncoding = false } = {}) {
     };
   });
 
+  // name -> the caption Flow gave a reference the refs stage generated in this
+  // project; such a reference is attached by that caption and never uploaded.
+  const refAssets =
+    raw.refAssets && typeof raw.refAssets === 'object' && !Array.isArray(raw.refAssets) ? raw.refAssets : {};
+  for (const item of items) {
+    for (const ref of item.refs) {
+      const caption = refAssets[ref.name];
+      if (typeof caption === 'string' && caption.trim()) ref.assetName = caption.trim();
+    }
+  }
+
   const outputsDir = fromRoot(raw.outputsDir ?? path.join('output', name));
 
   // Flow refuses over-long prompts with the same generic "unusual activity"
@@ -367,6 +380,8 @@ export function loadJob(jobPath, { settings, repairEncoding = false } = {}) {
     jobPath: absoluteJobPath,
     project: raw.project ?? settings?.generation?.project ?? null,
     projectUrl: raw.projectUrl ?? settings?.projectUrl ?? null,
+    recordAssetTitles: raw.recordAssetTitles === true,
+    refAssets,
     refsGenerated: raw.refsGenerated && typeof raw.refsGenerated === 'object' ? raw.refsGenerated : null,
     outputsDir,
     refMode: raw.refMode ?? defaults.refMode ?? null,

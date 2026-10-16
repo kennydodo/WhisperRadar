@@ -310,3 +310,22 @@ test('a missing job file and a non-object payload are rejected', (t) => {
   const array = writeJob(dir, 'array.json', '[1,2]');
   assert.throws(() => loadJob(array), /must contain a JSON object/);
 });
+
+test('refAssets gives a generated reference its Flow caption', (t) => {
+  const dir = makeTempDir();
+  t.after(() => removeDir(dir));
+  writeFile(dir, 'refs/CH_APES.png', 'x');
+  writeFile(dir, 'refs/BG.png', 'x');
+  const jobPath = writeJob(dir, 'job.json', {
+    name: 'caps',
+    refs: { CH_APES: 'refs/CH_APES.png', BG: 'refs/BG.png' },
+    refAssets: { CH_APES: 'Two apes sitting hunched' },
+    recordAssetTitles: true,
+    images: [{ file: 'S01_01.png', prompt: 'p', refs: ['CH_APES', 'BG'] }],
+  });
+  const job = loadJob(jobPath);
+  const [apes, bg] = job.items[0].refs;
+  assert.equal(apes.assetName, 'Two apes sitting hunched');
+  assert.equal(bg.assetName, undefined);
+  assert.equal(job.recordAssetTitles, true);
+});

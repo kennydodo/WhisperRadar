@@ -8,6 +8,7 @@ import { mimeForExtension, sniffImageExtension } from '../lib/image.js';
 import { log } from '../lib/log.js';
 import { GenerationError, TimeoutError } from '../lib/errors.js';
 import { SelectorSet } from './selectors.js';
+import { titleSearchTerm, titlesMatch } from './asset-titles.js';
 
 const REFERENCE_CONFIRM_MS = 20000;
 
@@ -850,7 +851,7 @@ export class FlowDriver {
     try {
       const search = await this.find('assetPickerSearch', { timeout: 8000, required: false });
       if (!search) return false;
-      await search.locator.fill(name);
+      await search.locator.fill(titleSearchTerm(name));
       await sleep(1800);
 
       let items = null;
@@ -875,8 +876,47 @@ export class FlowDriver {
         ).trim();
         if (!title) continue;
         if (title === name || title.replace(/\.[a-z0-9]+$/i, '') === name) return true;
+        // a generated image is listed under Flow's own (possibly truncated) caption
+        if (titlesMatch(title, name)) return true;
       }
       return false;
+    } finally {
+      await this.closeAssetLibrary();
+    }
+  }
+
+  /**
+   * Every title in the project's asset library (uploads by file name, generated
+   * images by Flow's caption), in library order. Opens and closes the library.
+   * Empty when the library cannot be read - callers treat that as "unknown".
+   */
+  async assetTitles() {
+    await this.openAssetLibrary();
+    try {
+      const search = await this.find('assetPickerSearch', { timeout: 8000, required: false });
+      if (search) {
+        await search.locator.fill('');
+        await sleep(1500);
+      }
+      for (const selector of this.selectors.candidates('assetPickerItem')) {
+        const items = this.page.locator(selector);
+        const count = await items.count().catch(() => 0);
+        if (count === 0) continue;
+        const titles = [];
+        for (let index = 0; index < count; index += 1) {
+          const title = (
+            (await items
+              .nth(index)
+              .locator('span.asset-title, .asset-title')
+              .first()
+              .innerText()
+              .catch(() => '')) ?? ''
+          ).trim();
+          if (title) titles.push(title);
+        }
+        return titles;
+      }
+      return [];
     } finally {
       await this.closeAssetLibrary();
     }
@@ -890,11 +930,11 @@ export class FlowDriver {
    * ("Maya.png") over the first fuzzy hit, so a name never attaches the wrong
    * asset when the project holds similarly named files.
    */
-  async attachExistingAsset(name) {
+  async attachExistingAsset(name, { strict = false } = {}) {
     await this.openAssetLibrary();
     const search = await this.find('assetPickerSearch', { timeout: 6000 });
     await search.locator.fill('');
-    await search.locator.fill(name);
+    await search.locator.fill(titleSearchTerm(name));
     await sleep(1800);
 
     let items = null;
@@ -924,12 +964,14 @@ export class FlowDriver {
       if (!title) continue;
       if (fuzzy < 0) fuzzy = index;
       const stem = title.replace(/\.[a-z0-9]+$/i, '');
-      if (title === name || stem === name) {
+      if (title === name || stem === name || titlesMatch(title, name)) {
         chosen = index;
         break;
       }
     }
-    if (chosen < 0) chosen = fuzzy;
+    // A caption lookup (strict) is never answered with "the first search hit":
+    // a wrong reference silently produces the wrong picture.
+    if (chosen < 0 && !strict) chosen = fuzzy;
     if (chosen < 0) {
       await this.page.keyboard.press('Escape').catch(() => {});
       return false;
@@ -994,6 +1036,17 @@ export class FlowDriver {
     );
 
     for (const ref of refs) {
+      // A reference the refs stage generated in this project is found by the
+      // caption Flow gave it, and is NEVER uploaded: the project already holds it.
+      if (ref.assetName) {
+        const attached = await this.attachExistingAsset(ref.assetName, { strict: true });
+        if (attached) {
+          log.debug(`Attached generated reference "${ref.name}" (asset "${ref.assetName}").`);
+        } else {
+          log.warn(`Generated reference "${ref.name}" (asset "${ref.assetName}") is not in the project; not uploading a copy.`);
+        }
+        continue;
+      }
       if (mode !== 'upload') {
         const attached = await this.attachExistingAsset(ref.name);
         if (attached) {

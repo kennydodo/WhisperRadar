@@ -136,3 +136,34 @@ test('a reference status entry matches the report contract shape', async () => {
   });
   assert.deepEqual(Object.keys(out[0]).sort(), ['kind', 'name', 'path', 'source', 'status']);
 });
+
+test('a generated ref is checked by its Flow caption and never uploaded', async () => {
+  const probed = [];
+  const driver = refDriver({
+    has: (name) => {
+      probed.push(name);
+      return name === 'Two apes sitting hunched';
+    },
+    onUpload: () => {
+      throw new Error('a generated reference must never be uploaded');
+    },
+  });
+  const out = await resolveReferenceStatuses(
+    driver,
+    [
+      { name: 'CH_APES', path: 'apes.png', assetName: 'Two apes sitting hunched' },
+      { name: 'CH_TRIBE', path: 'tribe.png', assetName: 'Four stick figures standing toge' },
+    ],
+    { fileExists: () => true },
+  );
+  assert.deepEqual(probed, ['Two apes sitting hunched', 'Four stick figures standing toge']);
+  assert.equal(out[0].status, 'reused');
+  assert.equal(out[0].source, 'gallery');
+  assert.equal(out[1].status, 'missing');
+  assert.equal(out[1].generated, true);
+});
+
+test('uniqueRefs carries the recorded caption', () => {
+  const refs = uniqueRefs({ items: [{ refs: [{ name: 'A', path: 'a.png', assetName: 'Two apes' }] }] });
+  assert.equal(refs[0].assetName, 'Two apes');
+});

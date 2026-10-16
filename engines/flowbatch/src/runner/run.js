@@ -9,6 +9,7 @@ import { GenerationError } from '../lib/errors.js';
 import { sniffImageExtension } from '../lib/image.js';
 import { engineLabel, loadUpscaleSettings, upscaleImage } from '../upscale/index.js';
 import { STATUS } from './state.js';
+import { uniqueNewTitle } from '../flow/asset-titles.js';
 
 function resolveGenSettings(item, settings) {
   const gen = settings.generation ?? {};
@@ -212,6 +213,10 @@ export async function runJob({ job, driver, state, settings, options }) {
           }
         }
 
+        // The refs stage records the caption Flow gives each generated image:
+        // the library's titles before this item, diffed against the titles after.
+        const titlesBefore = job.recordAssetTitles ? await driver.assetTitles().catch(() => null) : null;
+
         if (refMode === 'mention') {
           await driver.clearPrompt();
           await driver.typePrompt(item.prompt);
@@ -330,7 +335,16 @@ export async function runJob({ job, driver, state, settings, options }) {
           }
         }
 
-        state.update(item.id, { status: STATUS.done, files: saved, error: null });
+        let assetTitle = null;
+        if (job.recordAssetTitles && titlesBefore) {
+          const titlesAfter = await driver.assetTitles().catch(() => null);
+          assetTitle = titlesAfter ? uniqueNewTitle(titlesBefore, titlesAfter) : null;
+          if (assetTitle) log.info(`Flow named ${item.outputName}: "${assetTitle}"`);
+          else log.warn(`Could not tell which library title belongs to ${item.outputName}; the images stage will fall back to the older name check for it.`);
+          recordAssetTitle(job, item.outputName, assetTitle);
+        }
+
+        state.update(item.id, { status: STATUS.done, files: saved, error: null, assetTitle });
         state.save();
         succeeded = true;
         ok += 1;
@@ -450,4 +464,21 @@ export async function runJob({ job, driver, state, settings, options }) {
   log.raw(`  state  : ${path.relative(ROOT, state.filePath)}`);
 
   return { ok, failed, skipped: counts.skipped, results };
+}
+
+/**
+ * Merge one generated image's Flow caption into <job folder>/refs_titles.json
+ * ({ name: caption | null }), which the caller reads after the run. A null
+ * records "generated, caption unknown" so a stale caption is not kept.
+ */
+export function recordAssetTitle(job, name, title) {
+  const file = path.join(path.dirname(job.jobPath), 'refs_titles.json');
+  let map = {};
+  try {
+    map = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    /* first one */
+  }
+  map[name] = title ?? null;
+  fs.writeFileSync(file, `${JSON.stringify(map, null, 2)}\n`, 'utf8');
 }

@@ -1078,22 +1078,47 @@ REFS_GENERATED_MANIFEST = "refs_generated.json"
 REFS_PROJECT_RECORD = "refs_project.json"
 
 
-def _record_refs_project(pdir: Path, project_url, names) -> None:
-    """Merge the refs generated in THIS Flow project into the sidecar record."""
+def _record_refs_project(pdir: Path, project_url, names, titles=None) -> None:
+    """Merge the refs generated in THIS Flow project into the sidecar record:
+    their names, and the caption Flow gave each image (`titles`, name -> text;
+    a name whose caption could not be told loses any older caption). The images
+    stage finds a generated ref in the project by that caption and never
+    uploads it."""
     project_url = str(project_url or "").strip()
     if not project_url or not names:
         return
     record = _refs_project_record(pdir)
     if record.get("projectUrl") != project_url:
-        record = {"projectUrl": project_url, "names": []}
+        record = {"projectUrl": project_url, "names": [], "titles": {}}
     known = set(record.get("names") or [])
     known.update(str(n) for n in names)
     record["names"] = sorted(known)
+    kept = {str(k): str(v) for k, v in (record.get("titles") or {}).items()
+            if str(k) not in {str(n) for n in names}}
+    for name in names:
+        title = (titles or {}).get(name)
+        if isinstance(title, str) and title.strip():
+            kept[str(name)] = title.strip()
+    record["titles"] = dict(sorted(kept.items()))
     try:
         (pdir / REFS_PROJECT_RECORD).write_text(
-            json.dumps(record, indent=2) + "\n", encoding="utf-8")
+            json.dumps(record, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
     except OSError:
         pass
+
+
+REFS_TITLES_FILE = "refs_titles.json"
+
+
+def _read_refs_titles(pdir: Path) -> dict:
+    """{ref name: Flow's caption} written by FlowBatch during the refs run."""
+    try:
+        loaded = json.loads((pdir / REFS_TITLES_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): v for k, v in loaded.items()
+            if isinstance(v, str) and v.strip()} if isinstance(loaded, dict) else {}
 
 
 def _refs_project_record(pdir: Path) -> dict:
@@ -1257,6 +1282,9 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
         # `nameAssets` yet (load.js ignores it), so prepare still attaches the
         # local files - but now inside the SAME project the refs were made in.
         "nameAssets": True,
+        # FlowBatch records the caption Flow gives each generated image (it cannot
+        # be named): refs_titles.json beside this job, read back after the run
+        "recordAssetTitles": True,
         "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
                      "outputs": 1, "refMode": "reuse"},
         "images": [{"file": f"{name}.png", "prompt": r["prompt"]}
@@ -1342,7 +1370,8 @@ def _without_existing_refs(pdir: Path, refs: dict, log=None) -> dict:
 
 
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
-                       log=None, cancel=None, upscale: int | None = None) -> dict:
+                       log=None, cancel=None, upscale: int | None = None,
+                       force: bool = False) -> dict:
     """Render the missing reference images with FlowBatch, then place them
     so BOTH engines can use them: as files in the production's refs\\ (the
     Renderly API resolves names there) and with the shotlist's registry
@@ -1352,7 +1381,10 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
     Returns {generated: [names], missing: [names]} - nothing raises for a ref
     that could not be made; the caller reports it."""
     log = log or (lambda m: None)
-    refs = _without_existing_refs(pdir, refs, log)
+    if not force:
+        # `force` is for refs whose file exists locally but whose image is gone
+        # from the Flow project - the one case a second generation is wanted
+        refs = _without_existing_refs(pdir, refs, log)
     if not refs:
         return {"generated": [], "missing": []}
     if not flowbatch_ready(cfg):
@@ -1369,6 +1401,10 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
     cmd = _flowbatch_cmd(["generate", "--job", str(job_path),
                               "--output", str(pdir / "refs"),
                               "--no-color"])
+    if force:
+        # the job holds only the refs to remake; their old "done" state must not skip them
+        cmd.append("--no-resume")
+    (pdir / REFS_TITLES_FILE).unlink(missing_ok=True)
     url, _ = flow_project_url_for(cfg, pid)
     if not url:
         # First pass for this video: create the Flow project HERE and record it,
@@ -1420,7 +1456,8 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
             json.dumps(sorted(generated), indent=2) + "\n", encoding="utf-8")
         _update_ref_paths(pdir, generated)
         recorded_url, _ = flow_project_url_for(cfg, pid)
-        _record_refs_project(pdir, recorded_url, generated)
+        _record_refs_project(pdir, recorded_url, generated,
+                             _read_refs_titles(pdir))
         log(f"refs: {len(generated)} reference image(s) ready in refs\\ - "
             f"{', '.join(generated[:6])}")
     if missing:
@@ -1727,6 +1764,10 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
     if record.get("projectUrl") and record.get("names"):
         job["refsGenerated"] = {"projectUrl": str(record["projectUrl"]),
                                 "names": list(record["names"])}
+        # the caption Flow gave each generated ref: attached and checked by it,
+        # never uploaded. Only valid in the project the refs were made in.
+        if url and str(record["projectUrl"]) == url and record.get("titles"):
+            job["refAssets"] = dict(record["titles"])
     job_path = pid_dir / "flowbatch.json"
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
@@ -2069,6 +2110,35 @@ def _apply_prepare_report(cfg, pid_dir: Path, pid: int, job_path: Path,
             encoding="utf-8")
 
 
+def generated_refs_missing(report) -> list[str]:
+    """Refs the refs stage generated in this project that prepare could not
+    find there by their recorded caption (deleted from the project, say)."""
+    return [str(r.get("name")) for r in (report or {}).get("refs", [])
+            if isinstance(r, dict) and r.get("generated")
+            and str(r.get("status") or "").lower() == "missing"]
+
+
+def _regenerate_generated_refs(cfg, pid_dir: Path, pid: int, names: list[str],
+                               log=None, cancel=None) -> bool:
+    """Make again, inside the same project, ONLY the generated refs that are no
+    longer in it. Nothing is uploaded: the local copy is not sent to Flow."""
+    log = log or (lambda m: None)
+    used = shotlist_refs(pid_dir)
+    todo = {n: used[n] for n in names
+            if n in used and used[n].get("prompt")}
+    if not todo:
+        _safe_log(log, f"FlowBatch: {len(names)} generated reference(s) are "
+                       f"missing from the project but have no prompt to make "
+                       f"them again: {', '.join(names[:6])}")
+        return False
+    _safe_log(log, f"FlowBatch: {len(todo)} generated reference(s) are no "
+                   f"longer in the Flow project - generating just those "
+                   f"again: {', '.join(todo)}")
+    result = run_flowbatch_refs(cfg, pid_dir, pid, todo, log=log,
+                                cancel=cancel, force=True)
+    return bool(result.get("generated"))
+
+
 def _usable_flow_project(report) -> str:
     """The projectUrl from a prepare report, or "" when it is missing or a dead
     page - Flow redirects a deleted (or other-account) project to
@@ -2345,6 +2415,18 @@ def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
                                        new_project=True)
     _require_flow_project(report, had_stored=bool(stored))
     _apply_prepare_report(cfg, pid_dir, pid, job_path, report, log)
+    gone = generated_refs_missing(report)
+    if gone and _regenerate_generated_refs(cfg, pid_dir, pid, gone, log, cancel):
+        # the new images carry new captions: rebuild the job and check again
+        job_path, names = prepare_flowbatch_job(cfg, pid_dir, pid, project_url,
+                                                skip_motion=skip_motion)
+        report = run_flowbatch_prepare(cfg, pid_dir, job_path, log,
+                                       new_project=False)
+        _apply_prepare_report(cfg, pid_dir, pid, job_path, report, log)
+        still = generated_refs_missing(report)
+        if still:
+            _safe_log(log, f"FlowBatch: {len(still)} generated reference(s) are "
+                           f"still not in the project: {', '.join(still[:6])}")
     tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
                                   else upscale)
     from . import chrome_profile
