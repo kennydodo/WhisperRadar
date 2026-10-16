@@ -349,69 +349,6 @@ class RouteTests(Base):
             f"/studio/{self.pid}/webchat/bogus").headers["Location"])
 
 
-class MissingAttachmentTests(unittest.TestCase):
-    """A chat that answers `Missing: narration.txt` although the file chip was
-    on the page must not end the stage."""
-
-    class T:
-        def __init__(self, replies):
-            self.replies, self.calls = list(replies), []
-
-        def ask(self, site, prompt, files=(), new_chat=True, ready=None,
-                upload_settle=0.0):
-            self.calls.append({"files": list(files), "prompt": prompt,
-                               "settle": upload_settle})
-            return self.replies.pop(0)
-
-    def _build(self, files):
-        if files is None:
-            return "INLINE " + "N" * 70000
-        files.append({"name": "narration.txt", "text": "n\n", "about": "a"})
-        return "see narration.txt"
-
-    def test_missing_reply_detection(self):
-        self.assertTrue(ws._is_missing_reply("Missing: narration.txt"))
-        self.assertTrue(ws._is_missing_reply("  missing : a.txt, b.json\n"))
-        self.assertFalse(ws._is_missing_reply("Missing the point, the shots are"
-                                              " " + "x" * 500))
-        self.assertFalse(ws._is_missing_reply('{"pass": true}'))
-        self.assertFalse(ws._is_missing_reply(""))
-
-    def test_second_try_waits_longer_and_succeeds(self):
-        t = self.T(["Missing: narration.txt", "THE ANSWER"])
-        logs = []
-        r = ws._send(t, "zai", self._build, logs.append)
-        self.assertEqual(r, "THE ANSWER")
-        self.assertEqual(len(t.calls), 2)
-        self.assertEqual(t.calls[0]["settle"], 0.0)
-        self.assertGreater(t.calls[1]["settle"], 0)
-        self.assertEqual(len(t.calls[1]["files"]), 1)       # still attached
-        self.assertTrue(any("missing" in m for m in logs))
-
-    def test_falls_back_to_inline_text_after_two_misses(self):
-        t = self.T(["Missing: narration.txt", "Missing: narration.txt",
-                    "THE ANSWER"])
-        r = ws._send(t, "zai", self._build, lambda m: None)
-        self.assertEqual(r, "THE ANSWER")
-        self.assertEqual(len(t.calls), 3)
-        self.assertEqual(t.calls[2]["files"], [])
-        self.assertTrue(t.calls[2]["prompt"].startswith("INLINE"))
-
-    def test_no_retry_without_attachments_or_on_a_real_answer(self):
-        t = self.T(["Missing: something"])
-        self.assertEqual(ws._send(t, "zai", lambda f: "short", lambda m: None),
-                         "Missing: something")
-        self.assertEqual(len(t.calls), 1)
-        t = self.T(["ok"])
-        ws._send(t, "zai", self._build, lambda m: None)
-        self.assertEqual(len(t.calls), 1)
-
-    def test_extra_uploads_stay_on_the_inline_fallback(self):
-        t = self.T(["Missing: a", "Missing: a", "fine"])
-        ws._send(t, "zai", self._build, lambda m: None, uploads=["/x/i.png"])
-        self.assertEqual(t.calls[2]["files"], ["/x/i.png"])
-
-
 if __name__ == "__main__":
     unittest.main()
 

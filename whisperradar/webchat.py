@@ -1331,7 +1331,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
         log: Callable[[str], None] = lambda m: None,
         max_total: float = 4 * 3600, resume: bool = False,
         stop: Optional[Callable[[], bool]] = None,
-        gen_stuck: float = 240.0, upload_settle: float = 0.0) -> str:
+        gen_stuck: float = 240.0) -> str:
     """`timeout` is a STALL limit: seconds with no new text and no sign of
     thinking/writing. A reply that keeps going is waited for (up to
     `max_total`). `gen_stuck`: a page that still says "generating" while a
@@ -1381,7 +1381,7 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 big = sum(Path(str(f)).stat().st_size for f in files)
             except OSError:
                 big = 0
-            up_settle = max(min(15.0, 3.0 + big / 50000.0), upload_settle)
+            up_settle = min(15.0, 3.0 + big / 50000.0)
             try:
                 page.set_input_files(site.files, [str(f) for f in files])
                 _wait_for_uploads(page, files, clock, log, seen=seen,

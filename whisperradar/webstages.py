@@ -66,7 +66,7 @@ class WebTransport:
             self.options.setdefault(site, {}).update(opts or {})
 
     def ask(self, site: str, prompt: str, files=(), new_chat: bool = True,
-            ready=None, upload_settle: float = 0.0):
+            ready=None):
         if site not in webchat.BUILTIN_KEYS and (prompt or "").strip():
             # ChatGPT draws an image when a prompt talks about thumbnails and
             # then runs into the free plan's image limit
@@ -76,8 +76,6 @@ class WebTransport:
         extra = ({"ready_wait": JUDGE_READY_WAIT}
                  if ready in (_is_json_verdict, _is_script_verdict,
                               _is_shotlist_verdict) else {})
-        if upload_settle:
-            extra["upload_settle"] = upload_settle
         t0 = time.monotonic()
         try:
             reply = self.chat.ask(site, prompt, list(files), new_chat=new_chat,
@@ -183,28 +181,11 @@ def _send_in(transport, site: str, build, log, continuing: bool, ready=None):
                  ready=ready), False
 
 
-_MISSING_RE = re.compile(r"^\W*missing\s*:", re.I)
-
-
-def _is_missing_reply(reply: str) -> bool:
-    """The chat obeyed the REQUIRED FILES gate and said it cannot see / read
-    an attachment (`Missing: narration.txt`). Short on purpose: a real answer
-    that merely starts with the word is long."""
-    t = (reply or "").strip()
-    return bool(t) and len(t) < 400 and bool(_MISSING_RE.match(t))
-
-
 def _send(transport, site: str, build: Callable, log,
           new_chat: bool = True, ready=None, uploads=()):
     """Build the prompt inline; switch to attached files when it is too big.
     `uploads` are extra files (e.g. inspiration images) always attached
-    alongside the prompt.
-
-    A chat that answers `Missing: <file>` although the chip was on the page
-    (the site had not finished reading the upload, or cannot read it) gets the
-    same message once more with a longer wait after the upload; if it still
-    cannot read it, the file contents are sent inline instead of the run
-    stopping on a non-answer."""
+    alongside the prompt."""
     text = build(None)
     files = None
     if len(text) > INLINE_MAX_CHARS:
@@ -220,20 +201,8 @@ def _send(transport, site: str, build: Callable, log,
                 paths.append(str(p))
         log(f"{site}: sending {len(text):,} characters"
             + (f" + {len(paths)} attached file(s)" if paths else ""))
-        reply = transport.ask(site, text, paths, new_chat=new_chat,
-                              ready=ready)
-        if files and _is_missing_reply(reply):
-            log(f"{site}: says the attached file is missing ({reply.strip()[:80]})"
-                f" - sending again, waiting longer after the upload")
-            reply = transport.ask(site, text, paths, new_chat=new_chat,
-                                  ready=ready, upload_settle=25.0)
-            if _is_missing_reply(reply):
-                log(f"{site}: still cannot read the attachment - sending "
-                    f"the whole text inline instead")
-                inline = build(None)
-                reply = transport.ask(site, inline, list(uploads),
-                                      new_chat=new_chat, ready=ready)
-        return reply
+        return transport.ask(site, text, paths, new_chat=new_chat,
+                             ready=ready)
     finally:
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
