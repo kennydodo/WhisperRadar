@@ -175,11 +175,14 @@ class ShotlistLoopTests(Base):
         saved = json.loads((self.pdir / "shotlist.json").read_text("utf-8"))
         self.assertEqual(saved["style"], "fixed")
 
-    def test_local_code_faults_block_a_judge_pass(self):
+    def test_code_faults_go_back_without_a_judge_round(self):
         ok = {"faults": [], "shots": [], "detailed_ratio": 1, "pass": True}
         t = Fake(zai=[plan_json()], deepseek=[json.dumps(ok)])
         with self.assertRaises(ws.StageFailed):
             self.run_loop(t, rounds=1, local=["hold too long at cue 2"])
+        # the code faults are decided locally; the ~2.5 min judge round is
+        # never spent on a plan code already knows is broken
+        self.assertEqual([c["site"] for c in t.calls], ["zai"])
 
     def test_a_judge_that_never_answers_stops_with_the_plan_saved(self):
         t = Fake(zai=[plan_json()], deepseek=["nope", "still nope"])
@@ -561,3 +564,97 @@ class AutoRefreshTests(unittest.TestCase):
         self.assertIn("wasRunning = true;", run_block[:200])
         # only the user's own typing counts as an unsaved edit
         self.assertIn("e.isTrusted", html)
+
+
+class VerdictParseShapeTests(unittest.TestCase):
+    """A thinking judge that drafts a verdict in its reasoning and only emits
+    the real one at the end must be read from the LAST shaped object."""
+
+    def test_last_object_with_the_expected_shape_wins(self):
+        draft = '{"pass": false, "faults": ["oops"], "shots": [], "detailed_ratio": 0.5}'
+        real = '{"pass": true, "faults": [], "shots": [], "detailed_ratio": 1}'
+        reply = ("Thinking about it: I could write " + draft +
+                 " but after reviewing the plan, here is my verdict:\n\n" + real)
+        got = studio._parse_json_object(reply, want=("pass", "faults"))
+        self.assertTrue(got["pass"])
+        self.assertEqual(got["detailed_ratio"], 1)
+
+    def test_no_shape_hints_is_the_first_object_only(self):
+        reply = '{"score": 3} then {"score": 9} trailing prose with a } brace'
+        got = studio._parse_json_object(reply)
+        self.assertEqual(got, {"score": 3})
+
+    def test_stray_braces_in_prose_before_the_verdict_do_not_hide_it(self):
+        # the real bug shape: prose mentions JSON, verdict sits at the end
+        reply = ('Reviewing {the shots and cues} for {hard} faults.\n'
+                 '{"pass": true, "faults": [], "shots": [], "detailed_ratio": 1}')
+        got = studio._parse_json_object(reply, want=("pass", "faults"))
+        self.assertTrue(got.get("pass"))
+
+    def test_curly_quoted_final_verdict_beats_a_plain_draft(self):
+        # Claude's caught case: the want-scan must repair curly quotes too,
+        # or the shaped search matches nothing and the fallback hands back the
+        # DRAFT object as the verdict
+        draft = '{"pass": false, "faults": ["seen too early"], "shots": [], "detailed_ratio": 0.4}'
+        final = ('{“pass”: true, “faults”: [], “shots”: [], '
+                 '“detailed_ratio”: 1}')
+        got = studio._parse_json_object(draft + " on reflection:\n" + final,
+                                        want=("pass", "faults"))
+        self.assertTrue(got["pass"])
+        self.assertEqual(got["faults"], [])
+
+
+class CodeFirstRejectionTests(Base):
+    """Code faults return to the writer WITHOUT a judge round; a plan that
+    passes the code checks still reaches the judge."""
+
+    def test_faults_bring_the_writer_then_a_clean_plan_reaches_the_judge(self):
+        calls = {"n": 0}
+
+        def judge_prompt(cfg, pid, text, files):
+            # round 1 plan has a code fault, round 2 (corrected) does not
+            calls["n"] += 1
+            faults = [] if "fixed" in text else ["hold too long at cue 2"]
+            return ("JUDGE PROMPT", faults)
+
+        ok = json.dumps({"faults": [], "shots": [], "detailed_ratio": 1,
+                         "pass": True})
+        t = Fake(zai=[plan_json(), plan_json(style="fixed")], deepseek=[ok])
+        with mock.patch.object(ep, "shotlist_planner_prompt",
+                               return_value="PLAN PROMPT"), \
+             mock.patch.object(ep, "shotlist_judge_prompt",
+                               side_effect=judge_prompt):
+            out = ws.run_shotlist(self.cfg, self.pid, t, "zai", "deepseek",
+                                  log=lambda m: None)
+        self.assertEqual(out["style"], "fixed")
+        sites = [c["site"] for c in t.calls]
+        # the first exchange is code-only: no deepseek call before the fix
+        self.assertEqual(sites[:2], ["zai", "zai"])
+        self.assertEqual(sites[2], "deepseek")
+        self.assertIn("hold too long at cue 2", t.calls[1]["prompt"])
+
+
+class AskTimingTests(unittest.TestCase):
+    def test_ask_logs_the_round_trip_time(self):
+        seen = []
+
+        class Chat:
+            def ask(self, *a, **k):
+                return "a reply"
+
+        t = ws.WebTransport(Chat(), lambda m: seen.append(m))
+        out = t.ask("zai", "prompt")
+        self.assertEqual(out, "a reply")
+        self.assertTrue(any("reply of 7 chars after" in m and "zai" in m
+                            for m in seen), seen)
+
+    def test_a_failed_ask_logs_and_reraises(self):
+        class Chat:
+            def ask(self, *a, **k):
+                raise RuntimeError("boom")
+
+        seen = []
+        t = ws.WebTransport(Chat(), lambda m: seen.append(m))
+        with self.assertRaises(RuntimeError):
+            t.ask("zai", "p")
+        self.assertTrue(any("round trip failed" in m for m in seen), seen)

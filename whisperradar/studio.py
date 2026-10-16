@@ -3933,7 +3933,60 @@ def rating_prompt(*args, judge_direction: str = "", **kwargs) -> str:
             else text + "\n\n" + block)
 
 
-def _parse_json_object(text: str) -> dict:
+def _iter_json_objects(text: str):
+    """Yield every top-level balanced ``{...}`` substring (string-aware), in
+    order. A reasoning-model reply can put its final verdict AFTER prose that
+    mentions JSON (or shows a sample object while it thinks), so the caller
+    needs every candidate, not just the first."""
+    depth, in_str, esc, start = 0, False, False, -1
+    for i in range(len(text)):
+        ch = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    yield text[start:i + 1]
+
+
+def _json_candidate(cand: str):
+    """One balanced ``{...}`` substring through the same repair ladder as
+    _extract_json_object: raw control chars allowed, then a dropped trailing
+    comma, then curly quotes - returns the dict or None (never raises)."""
+    for attempt in (cand,
+                    re.sub(r",(\s*[}\]])", r"\1", cand),
+                    _repair_smart_quotes(cand)):
+        try:
+            data = json.loads(attempt, strict=False)
+        except ValueError:
+            continue
+        return data if isinstance(data, dict) else None
+    return None
+
+
+def _first_json_dict(text: str) -> dict:
+    """The first top-level balanced object that parses, or {}."""
+    for cand in _iter_json_objects(text):
+        data = _json_candidate(cand)
+        if data is not None:
+            return data
+    return {}
+
+
+def _parse_json_object(text: str, want: tuple = ()) -> dict:
     """Extract a judge's JSON verdict from its reply. Uses the same
     balanced-brace, string-aware scan as the shotlist planner's
     _extract_json_object - NOT a naive `re.search(r"\{.*\}")`, which used to
@@ -3945,12 +3998,27 @@ def _parse_json_object(text: str) -> dict:
     this higher {but the pacing dragged}") broke json.loads and threw the
     ENTIRE verdict away - including a perfectly good score - misreported as
     "the judge reply had no usable score" with no hint the score was ever
-    there."""
-    try:
-        data, _tail = _extract_json_object(text or "")
-    except RuntimeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+    there.
+
+    With `want` (the verdict's expected keys) the scan takes the LAST top-level
+    object that parses AND contains all of them: a thinking judge that shows a
+    sample verdict while reasoning and only emits the real one at the end is
+    then read correctly instead of grabbing its first, discarded draft. Every
+    candidate goes through the same repair ladder as the fallback (trailing
+    comma, curly quotes) - otherwise a curly-quoted final verdict after a
+    plain-ASCII draft would match nothing here and the fallback would hand
+    back the DRAFT as if it were the verdict. With no `want` this returns the
+    first balanced object that parses."""
+    text = text or ""
+    if want:
+        best = None
+        for cand in _iter_json_objects(text):
+            data = _json_candidate(cand)
+            if data is not None and all(k in data for k in want):
+                best = data
+        if best is not None:
+            return best
+    return _first_json_dict(text)
 
 
 def rate_script(cfg, title: str, genre: str, script: str, source: str,
@@ -3987,7 +4055,7 @@ def rate_script(cfg, title: str, genre: str, script: str, source: str,
         # strings with headroom.
         raw = llm_generate(cfg, prompt, provider=provider, max_tokens=2200,
                            temperature=temperature)
-        reply = _parse_json_object(raw)
+        reply = _parse_json_object(raw, want=("score", "criteria"))
     except Exception as exc:  # noqa: BLE001
         return {"score": None, "criteria": {}, "feedback": [],
                 "weak_spans": [], "error": str(exc)[:200]}
