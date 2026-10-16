@@ -24,6 +24,7 @@ import json
 import re
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -47,9 +48,12 @@ class StageFailed(RuntimeError):
 
 # ---- transport ----------------------------------------------------------------
 
-# what each site's mode switches default to when the run does not say
+# what each site's mode switches default to when the run does not say. The
+# DeepSeek web search is OFF by default: the facts are already in the plan and
+# research notes, and a web round-trip every judge call added ~30-60s to each
+# of the measured reviews. The Studio's web-chat form re-enables it per run.
 DEFAULT_OPTIONS = {"zai": {"thinking": "Low", "model": "flash"},
-                   "deepseek": {"deepthink": True, "search": True}}
+                   "deepseek": {"deepthink": True, "search": False}}
 
 
 NO_IMAGES_NOTE = ("\n\n(Reply with text only - do not create, draw or generate "
@@ -75,9 +79,23 @@ class WebTransport:
         extra = ({"ready_wait": JUDGE_READY_WAIT}
                  if ready in (_is_json_verdict, _is_script_verdict,
                               _is_shotlist_verdict) else {})
-        return self.chat.ask(site, prompt, list(files), new_chat=new_chat,
-                             options=self.options.get(site), ready=ready,
-                             log=self.log, **extra)
+        t0 = time.monotonic()
+        try:
+            reply = self.chat.ask(site, prompt, list(files), new_chat=new_chat,
+                                  options=self.options.get(site), ready=ready,
+                                  log=self.log, **extra)
+        except BaseException as exc:
+            self.log(f"{site}: round trip failed after "
+                     f"{time.monotonic() - t0:.0f}s ({type(exc).__name__})")
+            raise
+        # one line per exchange: a slow stage can be attributed to a site (or
+        # the model's capacity wait) from the production log alone - the dumps
+        # only record when a reply LANDED, never how long its ask took
+        self.log(f"{site}: reply of {len(reply or ''):,} chars after "
+                 f"{time.monotonic() - t0:.0f}s "
+                 f"(prompt {len(prompt or ''):,} chars, "
+                 f"{'new' if new_chat else 'same'} chat)")
+        return reply
 
     def set_stop(self, should_stop) -> None:
         """Let a wait for model capacity end when the user stops the run."""
@@ -537,7 +555,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                                 cfg, pid, script, title, None, None, None, f),
                             log, ready=_is_script_verdict)
             _dump(cfg, pid, f"script_judge_reply_round{rnd}", raw)
-            verdict = studio._parse_json_object(raw)
+            verdict = studio._parse_json_object(raw, want=("score",))
             if verdict:
                 judge_open = True
             try:
@@ -941,59 +959,83 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             local[:] = list(loc or [])
             return _plan_followup(text, f) if follow else prompt
 
-        log(f"round {rnd}: asking {judge} to review the whole plan"
-            + (" (same chat)" if judge_open else ""))
-        def send_judge():
-            nonlocal judge_cont
-            fresh = not (judge_open or judge_cont)
-            try:
-                return _send(transport, judge, build, log, new_chat=fresh,
-                             ready=_is_shotlist_verdict)
-            except webchat.ChatLost:
-                if judge_open or not judge_cont:
-                    raise
-                log(f"{judge}: the previous chat cannot be reopened - "
-                    f"starting a new one")
-                judge_cont = False
-                return _send(transport, judge, build, log, new_chat=True,
-                             ready=_is_shotlist_verdict)
+        # CODE CHECKS FIRST: the same mechanical checks the judge prompt
+        # carries (cue coverage, holds over the channel cap, motion mix, the
+        # animated-opening window, invented refs) run in the app for free.
+        # When code already knows the plan is broken, sending it to the judge
+        # wastes a ~2-3 minute browser round trip to hear the same thing back;
+        # the writer fixes the code faults immediately and the judge only sees
+        # a plan that could pass. A pre-check that itself errors falls through
+        # to the normal judge path rather than killing the run.
+        try:
+            _, pre = ep.shotlist_judge_prompt(cfg, pid, text, [])
+            pre = [str(x) for x in (pre or [])]
+        except (ep.PromptError, RuntimeError, ValueError):
+            pre = []
+        if pre:
+            log(f"round {rnd}: {len(pre)} code-check fault(s) - straight "
+                f"back to {writer} without a judge round")
+            verdict, faults, weak, fixes = None, pre, [], []
+            hard = list(pre)
+            last_problem = "; ".join(hard[:3])
+            badness = len(hard) * 3
+        else:
+            log(f"round {rnd}: asking {judge} to review the whole plan"
+                + (" (same chat)" if judge_open else ""))
+            def send_judge():
+                nonlocal judge_cont
+                fresh = not (judge_open or judge_cont)
+                try:
+                    return _send(transport, judge, build, log, new_chat=fresh,
+                                 ready=_is_shotlist_verdict)
+                except webchat.ChatLost:
+                    if judge_open or not judge_cont:
+                        raise
+                    log(f"{judge}: the previous chat cannot be reopened - "
+                        f"starting a new one")
+                    judge_cont = False
+                    return _send(transport, judge, build, log, new_chat=True,
+                                 ready=_is_shotlist_verdict)
 
-        raw = send_judge()
-        dump(f"judge_reply_round{rnd}", raw)
-        verdict = studio._parse_json_object(raw)
-        if not verdict:
-            log(f"{judge} gave no usable verdict - asking once more")
-            try:
-                raw = _nudge_judge(transport, judge, log, _is_shotlist_verdict)
-            except webchat.ChatLost:
-                raw = send_judge()
-            verdict = studio._parse_json_object(raw)
-        if verdict:
-            judge_open = True
-        if not verdict:
-            last_problem = f"{judge} never returned a usable verdict"
-            break
-        faults = [str(x) for x in (verdict.get("faults") or [])]
-        hard = local + [f for f in faults if f not in local]
-        weak = _weak_list(verdict)
-        fixes = [str(x) for x in (verdict.get("fixes") or [])]
-        passed = verdict.get("pass") is True and not hard
-        ratio = verdict.get("detailed_ratio")
-        log(f"round {rnd}: {len(hard)} fault(s), {len(weak)} weak shot(s), "
-            f"detailed {ratio} - " + ("PASSED" if passed else "not accepted"))
-        if passed:
-            gap = save_shotlist(
-                cfg, pid, data, f"web chat {writer}/{judge}: round {rnd}, "
-                f"{len(data.get('images') or [])} image(s)", advance=True)
-            if gap:
-                raise StageFailed("Shotlist saved but NOT accepted: " + gap)
-            log("shotlist saved; next stage unlocked")
-            return data
-        last_problem = "; ".join(hard[:3]) or (
-            f"{len(weak)} image prompt(s) still weak")
-        # a corrected plan can come back WORSE than the one before; keep the
-        # best one seen so a stop or a failure never saves the worst
-        badness = len(hard) * 3 + len(weak)
+            raw = send_judge()
+            dump(f"judge_reply_round{rnd}", raw)
+            verdict = studio._parse_json_object(raw, want=("pass", "faults"))
+            if not verdict:
+                log(f"{judge} gave no usable verdict - asking once more")
+                try:
+                    raw = _nudge_judge(transport, judge, log,
+                                       _is_shotlist_verdict)
+                except webchat.ChatLost:
+                    raw = send_judge()
+                verdict = studio._parse_json_object(
+                    raw, want=("pass", "faults"))
+            if verdict:
+                judge_open = True
+            if not verdict:
+                last_problem = f"{judge} never returned a usable verdict"
+                break
+            faults = [str(x) for x in (verdict.get("faults") or [])]
+            hard = local + [f for f in faults if f not in local]
+            weak = _weak_list(verdict)
+            fixes = [str(x) for x in (verdict.get("fixes") or [])]
+            passed = verdict.get("pass") is True and not hard
+            ratio = verdict.get("detailed_ratio")
+            log(f"round {rnd}: {len(hard)} fault(s), {len(weak)} weak shot(s), "
+                f"detailed {ratio} - "
+                + ("PASSED" if passed else "not accepted"))
+            if passed:
+                gap = save_shotlist(
+                    cfg, pid, data, f"web chat {writer}/{judge}: round {rnd}, "
+                    f"{len(data.get('images') or [])} image(s)", advance=True)
+                if gap:
+                    raise StageFailed("Shotlist saved but NOT accepted: " + gap)
+                log("shotlist saved; next stage unlocked")
+                return data
+            last_problem = "; ".join(hard[:3]) or (
+                f"{len(weak)} image prompt(s) still weak")
+            # a corrected plan can come back WORSE than the one before; keep the
+            # best one seen so a stop or a failure never saves the worst
+            badness = len(hard) * 3 + len(weak)
         if best is None or badness < best[0]:
             best = (badness, data, last_problem)
         log(f"best so far: {best[0]} (3 x faults + weak prompts), this "
