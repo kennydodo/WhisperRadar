@@ -343,6 +343,15 @@ class RouteTests(Base):
         script = self.client.get(f"/studio/{self.pid}?stage=script").data
         self.assertTrue(b"Save as research notes" in script)
 
+    def test_llm_boxes_have_margins_and_survive_the_auto_reload(self):
+        for stage in ("script", "shots"):
+            html = self.client.get(f"/studio/{self.pid}?stage={stage}").data
+            self.assertEqual(html.count(b'class="extbox" style="margin:14px 0"'),
+                             2, stage)           # external LLM + API LLM
+            # the page reloads itself when a job ends: open state is kept
+            self.assertIn(b"wr:extbox:", html, stage)
+            self.assertIn(b"sessionStorage", html, stage)
+
 
 class CustomProfileTests(Base):
     channel_fields = {"brief_motion": "custom", "brief_custom": json.dumps(

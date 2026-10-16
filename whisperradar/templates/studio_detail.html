@@ -430,7 +430,7 @@
         <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
       </form>
       {% endif %}
-      <details class="extbox" style="margin-top:10px">
+      <details class="extbox" style="margin:14px 0">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the script</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
           Builds copy-paste prompts from this channel's settings. Run the writer prompt in your own LLM, paste the result into the script box above and save; use the judge prompt to have another LLM score it. With a script in the box above, the judge prompt includes it. With the box empty, the prompt asks the LLM for a script.txt you attach yourself.
@@ -457,7 +457,7 @@
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
         <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
       </details>
-      <details class="extbox" style="margin-top:10px">
+      <details class="extbox" style="margin:14px 0">
         <summary style="cursor:pointer; font-weight:600">Use an API LLM for the script</summary>
         <div style="margin-top:8px">
       <div class="actions">
@@ -744,7 +744,7 @@
         <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
       </form>
       {% endif %}
-      <details class="extbox" style="margin-top:10px; margin-bottom:10px">
+      <details class="extbox" style="margin:14px 0">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the shotlist</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
           The planner prompt carries this channel's planning brief (motion profile, hold range, presentation), the narration, the visual style, the bible and the reference rules. Paste the JSON it returns into the shotlist box above and save. The judge prompt carries the channel's hard rules and audits the shotlist in the box above (with the box empty, it asks the LLM for a shotlist.json you attach yourself); the app's own code checks on it are shown here too.
@@ -762,7 +762,7 @@
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
         <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
       </details>
-      <details class="extbox" style="margin-top:10px; margin-bottom:10px">
+      <details class="extbox" style="margin:14px 0">
         <summary style="cursor:pointer; font-weight:600">Use an API LLM for the shotlist</summary>
         <div style="margin-top:8px">
       <div class="actions">
@@ -1648,6 +1648,39 @@
     var vo = document.getElementById('vstylecount');
     if (vt && vo) wrStyleCount({ value: vt.textContent, addEventListener: function () {} }, vo, LIMIT);
   })();
+</script>
+<script>
+// The page reloads itself when a background job finishes; the "external LLM" /
+// "API LLM" boxes (and a prompt already built in them) must survive that
+// instead of snapping shut.
+(function () {
+  var K = 'wr:extbox:{{ prod["id"] }}';
+  var boxes = [].slice.call(document.querySelectorAll('details.extbox'));
+  if (!boxes.length) return;
+  function read() {
+    try { return JSON.parse(sessionStorage.getItem(K) || '{}') || {}; } catch (e) { return {}; }
+  }
+  function save() {
+    var o = {};
+    boxes.forEach(function (d, i) {
+      var out = d.querySelector('.extout');
+      o[i] = {open: d.open, out: out ? out.value : ''};
+    });
+    try { sessionStorage.setItem(K, JSON.stringify(o)); } catch (e) {}
+  }
+  var o = read();
+  boxes.forEach(function (d, i) {
+    var st = o[i];
+    if (st) {
+      if (st.open) d.open = true;
+      var out = d.querySelector('.extout');
+      if (out && st.out && !out.value) out.value = st.out;
+    }
+    d.addEventListener('toggle', save);
+  });
+  window.addEventListener('beforeunload', save);
+  window.addEventListener('pagehide', save);
+})();
 </script>
 {% include "_webchat_extra.html" %}
 </body>
