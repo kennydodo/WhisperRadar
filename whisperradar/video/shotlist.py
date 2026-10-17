@@ -66,6 +66,7 @@ class ShotListEntry:
     reveal_layout: Optional[str] = None
     reveal_assets: Optional[list] = None
     sfx: Optional[list] = None
+    overlays: Optional[list] = None
 
 
 @dataclass
@@ -210,7 +211,8 @@ def parse(json_text: str, issues: list, master_prompt_max_chars: int = 0,
             reveal[0] if reveal else None,
             reveal[1] if reveal else None,
             reveal[2] if reveal else None,
-            _parse_sfx(shot, number, issues)))
+            _parse_sfx(shot, number, issues),
+            _parse_overlays(shot, number, issues)))
     return ShotListDocument(entries, prompts, style)
 
 
@@ -327,6 +329,88 @@ def _parse_sfx(shot: dict, number: int, issues: list):
     return names
 
 
+OVERLAY_POSITIONS = (
+    "top-left", "top-center", "top-right", "middle-left", "center", "middle-right",
+    "bottom-left", "bottom-center", "bottom-right")
+OVERLAY_ANIMS = ("none", "fade", "slide-up", "slide-down")
+OVERLAY_MAX_CHARS = 200
+
+
+def _parse_overlays(shot: dict, number: int, issues: list):
+    """`overlays`: text the renderer draws (own font/style) instead of text baked
+    into the image. Each item: {"text", "style"?, "position"?, "start"?, "end"?,
+    "anim"?}; start/end are seconds from the start of the shot (default: the whole
+    shot). A bad item is skipped with a warning, the shot is kept."""
+    element = shot.get("overlays")
+    if element is None:
+        return None
+    if isinstance(element, dict):
+        element = [element]
+    if not isinstance(element, list):
+        issues.append(m.ValidationIssue(
+            m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+            f'shotlist.json: shots[{number}] has an unusable "overlays" - use a list of '
+            '{"text": ..., "position": ...} items. No text is drawn for this shot.'))
+        return None
+    items: list = []
+    for index, item in enumerate(element, 1):
+        where = f'shots[{number}].overlays[{index}]'
+        if not isinstance(item, dict):
+            issues.append(m.ValidationIssue(
+                m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                f'shotlist.json: {where} must be an object with a "text". Skipped.'))
+            continue
+        text = item.get("text")
+        if not isinstance(text, str) or not text.strip():
+            issues.append(m.ValidationIssue(
+                m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                f'shotlist.json: {where} has no "text". Skipped.'))
+            continue
+        text = text.strip()
+        if len(text) > OVERLAY_MAX_CHARS:
+            issues.append(m.ValidationIssue(
+                m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                f'shotlist.json: {where} text is {len(text)} characters (limit '
+                f'{OVERLAY_MAX_CHARS}). Skipped.'))
+            continue
+        position = str(item.get("position") or "bottom-center").strip().lower()
+        if position not in OVERLAY_POSITIONS:
+            issues.append(m.ValidationIssue(
+                m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                f'shotlist.json: {where} position "{position}" is not one of '
+                f'{", ".join(OVERLAY_POSITIONS)}. Using bottom-center.'))
+            position = "bottom-center"
+        anim = str(item.get("anim") or "fade").strip().lower()
+        if anim not in OVERLAY_ANIMS:
+            issues.append(m.ValidationIssue(
+                m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                f'shotlist.json: {where} anim "{anim}" is not one of '
+                f'{", ".join(OVERLAY_ANIMS)}. Using fade.'))
+            anim = "fade"
+        times = []
+        for key in ("start", "end"):
+            value = item.get(key)
+            if value is None:
+                times.append(None)
+            elif isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                issues.append(m.ValidationIssue(
+                    m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                    f'shotlist.json: {where} "{key}" must be seconds from the start of the '
+                    'shot (a number >= 0). Using the shot\'s own limit.'))
+                times.append(None)
+            else:
+                times.append(float(value))
+        if times[0] is not None and times[1] is not None and times[1] <= times[0]:
+            issues.append(m.ValidationIssue(
+                m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                f'shotlist.json: {where} "end" must be after "start". Using the whole shot.'))
+            times = [None, None]
+        items.append({"text": text, "style": str(item.get("style") or "caption").strip().lower(),
+                      "position": position, "anim": anim,
+                      "start": times[0], "end": times[1]})
+    return items or None
+
+
 def _parse_motion(e):
     if isinstance(e, str):
         return mf.VisualMotion(e, None, None, None)
@@ -379,6 +463,7 @@ class _Planned:
     reveal_layout: Optional[str] = None
     reveal_assets: Optional[list] = None
     sfx: Optional[list] = None
+    overlays: Optional[list] = None
 
 
 def expand(document: ShotListDocument, subtitles: list, image_file_names: list,
@@ -467,7 +552,8 @@ def expand(document: ShotListDocument, subtitles: list, image_file_names: list,
             reveal_at_ms=reveal_at,
             reveal_layout=None if reveal_at is None else entry.reveal_layout,
             reveal_assets=reveal_assets,
-            sfx=entry.sfx))
+            sfx=entry.sfx,
+            overlays=entry.overlays))
 
     # 2. narration decides the order
     ordered = sorted(planned, key=lambda p: p.start_ms)
@@ -558,7 +644,8 @@ def expand(document: ShotListDocument, subtitles: list, image_file_names: list,
             reveal_at_ms=shot.reveal_at_ms,
             reveal_layout=shot.reveal_layout,
             reveal_assets=shot.reveal_assets,
-            sfx=shot.sfx))
+            sfx=shot.sfx,
+            overlays=shot.overlays))
 
     return mf.VisualManifest("1.0", mf.VisualManifestVideo(id="shotlist"), assets, shots)
 

@@ -123,8 +123,11 @@ def build(timeline, images, options, output_directory: str, preview_path: str) -
         concat_list_content=_build_concat_list(segments),
         concat_arguments=_build_concat_arguments(concat_path, rough),
         rough_path=rough,
-        mux_arguments=build_mux_arguments(rough, timeline.audio.file_path, preview_path,
-                                          timeline.sounds, timeline.fps),
+        mux_arguments=build_mux_arguments(
+            rough, timeline.audio.file_path, preview_path, timeline.sounds, timeline.fps,
+            overlays=getattr(timeline, "overlays", None), render=options.render,
+            text=options.text,
+            frame_size=(options.render.preview_width, options.render.preview_height)),
         preview_path=preview_path,
         total_frames=total)
 
@@ -496,23 +499,86 @@ def _build_concat_arguments(concat_list_path: str, rough_path: str) -> List[str]
 
 
 def build_mux_arguments(rough_path: str, audio_path: str, preview_path: str,
-                        sounds: Optional[Sequence] = None, fps: float = 30) -> List[str]:
+                        sounds: Optional[Sequence] = None, fps: float = 30,
+                        overlays: Optional[Sequence] = None, render=None, text=None,
+                        frame_size: Optional[tuple] = None) -> List[str]:
+    """Mux the narration (+ sound effects) onto the rough cut. With text overlays the
+    video is re-encoded once with the overlays on top (otherwise it is copied)."""
     usable = sorted((s for s in (sounds or []) if s.file_path and s.file_path.strip()),
                     key=lambda s: s.start_frame)
+    texts = [o for o in (overlays or []) if o.png_path and o.end_frame - o.start_frame >= 2]
     args = ["-hide_banner", "-loglevel", "error", "-y", "-i", rough_path, "-i", audio_path]
-    if not usable:
+    if not usable and not texts:
         args += ["-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
                  "-shortest", preview_path]
         return args
-    common = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
-    graph = [f"[1:a]{common}[n]"]
-    labels = "[n]"
-    for i, snd in enumerate(usable):
-        args += ["-i", snd.file_path]
-        delay_ms = int(round(snd.start_frame * 1000.0 / fps))
-        graph.append(f"[{i + 2}:a]{common},adelay={delay_ms}:all=1,volume={F(SOUND_GAIN)}[s{i}]")
-        labels += f"[s{i}]"
-    graph.append(f"{labels}amix=inputs={len(usable) + 1}:duration=first:dropout_transition=0:normalize=0[aout]")
-    args += ["-filter_complex", ";".join(graph), "-map", "0:v:0", "-map", "[aout]",
-             "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", preview_path]
+    graph: List[str] = []
+    next_input = 2
+    audio_map = "1:a:0"
+    if usable:
+        common = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
+        graph.append(f"[1:a]{common}[n]")
+        labels = "[n]"
+        for i, snd in enumerate(usable):
+            args += ["-i", snd.file_path]
+            delay_ms = int(round(snd.start_frame * 1000.0 / fps))
+            graph.append(f"[{next_input}:a]{common},adelay={delay_ms}:all=1,volume={F(SOUND_GAIN)}[s{i}]")
+            labels += f"[s{i}]"
+            next_input += 1
+        graph.append(f"{labels}amix=inputs={len(usable) + 1}:duration=first:dropout_transition=0:normalize=0[aout]")
+        audio_map = "[aout]"
+    video_map = "0:v:0"
+    codec = ["-c:v", "copy"]
+    if texts:
+        in_args, parts, video_label = _text_overlay_graph(texts, next_input, fps, text, frame_size)
+        args += in_args
+        graph += parts
+        video_map = f"[{video_label}]"
+        enc = getattr(render, "encoder", "") if render is not None else ""
+        resolved = (resolve_encoder(render) if render is not None and (
+            not enc or not enc.strip() or enc.strip().lower() == "auto") else (enc or "libx264"))
+        codec = (video_encoder_args(resolved, render.preview_preset, render.preview_crf,
+                                    render.preview_bframes)
+                 if render is not None else ["-c:v", "libx264", "-preset", "medium", "-crf", "18"])
+        codec += ["-pix_fmt", "yuv420p"]
+    args += ["-filter_complex", ";".join(graph), "-map", video_map, "-map", audio_map,
+             *codec, "-c:a", "aac", "-b:a", "192k", "-shortest", preview_path]
     return args
+
+
+TEXT_SLIDE_FRACTION = 0.035      # of the frame height, for the slide-up / slide-down entrance
+
+
+def _text_overlay_graph(overlays, first_input: int, fps: float, text, frame_size):
+    """(input args, filter parts, final video label): each overlay is a looped
+    transparent PNG, shifted to its start with -itsoffset, faded, and overlaid on
+    the video only between its frames."""
+    fade_default = float(getattr(text, "fade_seconds", 0.25)) if text is not None else 0.25
+    args: List[str] = []
+    parts: List[str] = []
+    previous = "0:v"
+    for k, ov in enumerate(overlays):
+        start = ov.start_frame / float(fps)
+        end = ov.end_frame / float(fps)
+        length = end - start
+        d = 0.0 if ov.anim == "none" else min(fade_default, length / 2.0)
+        idx = first_input + k
+        args += ["-loop", "1", "-framerate", F(fps), "-t", F(length), "-itsoffset", F(start),
+                 "-i", ov.png_path]
+        chain = "format=rgba"
+        if frame_size:
+            chain += f",scale={_i(frame_size[0])}:{_i(frame_size[1])}"
+        if d > 0:
+            chain += (f",fade=t=in:st={F(start)}:d={F(d)}:alpha=1"
+                      f",fade=t=out:st={F(end - d)}:d={F(d)}:alpha=1")
+        parts.append(f"[{idx}:v]{chain}[ov{k}]")
+        y = "0"
+        if ov.anim in ("slide-up", "slide-down") and d > 0:
+            height = frame_size[1] if frame_size else 1080
+            shift = int(round(height * TEXT_SLIDE_FRACTION)) * (1 if ov.anim == "slide-up" else -1)
+            y = f"'if(lt(t,{F(start + d)}),{_i(shift)}*(1-(t-{F(start)})/{F(d)}),0)'"
+        label = f"v{k}"
+        parts.append(f"[{previous}][ov{k}]overlay=x=0:y={y}:eof_action=pass:"
+                     f"enable='between(t,{F(start)},{F(end)})'[{label}]")
+        previous = label
+    return args, parts, previous

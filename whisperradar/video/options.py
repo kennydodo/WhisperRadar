@@ -123,6 +123,15 @@ class SoundOptions:
 
 
 @dataclass
+class TextOptions:
+    """Text the renderer draws over the pictures (shotlist `overlays`)."""
+    font: str = ""                  # font file (ttf/otf) or empty = look in fonts_dir, then the system
+    fonts_dir: str = ""             # folder with the channel's fonts (absolute, or relative to the project)
+    safe_margin_percent: float = 6.0
+    fade_seconds: float = 0.25
+
+
+@dataclass
 class ProjectOptions:
     schema_version: int = OPTIONS_SCHEMA_VERSION
     output: OutputOptions = field(default_factory=OutputOptions)
@@ -134,6 +143,7 @@ class ProjectOptions:
     scene_inference: SceneInferenceOptions = field(default_factory=SceneInferenceOptions)
     shotlist: ShotlistOptions = field(default_factory=ShotlistOptions)
     sound: SoundOptions = field(default_factory=SoundOptions)
+    text: TextOptions = field(default_factory=TextOptions)
     planner: str = "v2"
 
     def to_dict(self) -> dict:
@@ -182,6 +192,11 @@ class ProjectOptions:
         sl = self.shotlist
         if sl.master_prompt_max_chars < 0 or sl.prompt_max_chars < 0:
             errors.append("Shotlist prompt limits must not be negative (0 disables a limit).")
+        tx = self.text
+        if tx.safe_margin_percent < 0 or tx.safe_margin_percent > 30:
+            errors.append("Text safe margin must be between 0 and 30 percent.")
+        if tx.fade_seconds < 0 or tx.fade_seconds > 3:
+            errors.append("Text fade must be between 0 and 3 seconds.")
         if not is_pop_variant(self.sound.default_pop):
             errors.append(f'Unknown default pop sound "{self.sound.default_pop}".')
         r = self.render
