@@ -133,7 +133,10 @@ Two fixes, both from the Oct 15 code review; main tree untouched while productio
 - **Brief:** the 1500-character limit on the shotlist `style` is removed from `brief_template.md` (Flow's 2420 total still applies in code). Note `video.shotlist.master_prompt_max_chars` (ImgToVideo parity, default 1500) still WARNS on a longer style; set it to 0 in the video options to silence it.
 - Items 1.1 (HOLD_RULE section) and 1.3 (lean-plan help text) were already fixed on master.
 
-## 11. TODO (owner's call, 2026-10-17 - NOT implemented): tolerance on the ST hold
+## 11. DONE 2026-10-17 on branch feat/hold-tolerance (worktree D:\Repos\WhisperRadar-hold, NOT merged yet): tolerance on hold limits
+Implemented as a PERCENTAGE of the limit, applied in seconds (`briefs.hold_limit`): ST max hold +40% (5 s -> 7 s), per-shot max hold +20%, long-static floor +20% (`briefs.ST_HOLD_TOLERANCE`, `MAX_HOLD_TOLERANCE`, `STATIC_LONG_TOLERANCE`). The writer is still told the nominal limit. Tests: tests/test_hold_tolerance.py. Not applied to the skeleton branch (feat/skeleton-on-master) - its ST eligibility check still uses the nominal limit. Original note below.
+
+### (original note) tolerance on the ST hold
 An ST (static) shot has a maximum hold (`st_max_hold`, e.g. 5 s; brief default `ST_MAX_HOLD_SECONDS`). Today it is checked **strictly, in seconds**: `studio.py` (~5797) faults any ST shot with `h > st_max_hold`, and `static_long_hold` (~5784) is a separate strict floor. Wanted: a tolerance, so with 5 s a 6-7 s ST shot is still allowed.
 - Decision pending: tolerance as a **percentage** (scales with the channel's value: 5 s +40% = 7 s, 3 s +40% = 4.2 s) or fixed **seconds** (+2 s). The limit is always applied in seconds (`limit = st_max_hold * (1 + tol)`); only how it is *set* differs. A percentage looks like the better fit.
 - Places that use the limit: `studio.shotlist_pacing` (the fault above), `external_prompts._hard_rules` (~497-502; keep telling the writer the nominal 5 s, the tolerance only keeps the checker from failing near-misses), `skeleton.assign_motion` (ST eligible only if the draft shot is within the limit; the skeleton branch feat/skeleton-on-master), `briefs.py` (`st_max_hold` field and the custom-profile form `custom_st_hold`).

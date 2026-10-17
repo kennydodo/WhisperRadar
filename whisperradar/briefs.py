@@ -51,6 +51,21 @@ MIX_FLOOR_RATIO = 0.5
 # A share cap (ST, one code, a code group) is met when the share is at most the
 # cap plus this many percentage points: 10.05% against a ~10% cap is not a fault.
 SHARE_TOLERANCE = 0.02
+# A hold limit (seconds) is met when the hold is at most the limit plus this
+# share of it: with an ST maximum of 5 s, a 6-7 s ST shot passes. The writer is
+# still told the nominal limit; only the app's own check is lenient, so a
+# near-miss does not cost a whole re-plan round. Shares of shots have their own
+# tolerance above (SHARE_TOLERANCE).
+ST_HOLD_TOLERANCE = 0.40       # ST maximum hold
+MAX_HOLD_TOLERANCE = 0.20      # the channel's maximum hold per shot
+STATIC_LONG_TOLERANCE = 0.20   # the "long static hold is never acceptable" floor
+
+
+def hold_limit(seconds: float, tolerance: float) -> float:
+    """`seconds` plus the tolerated overshoot, in seconds."""
+    return float(seconds) * (1.0 + tolerance)
+
+
 MIX_MIN_SHOTS = 20
 MIX_MIN_ZOOM_SHOTS = 10
 
