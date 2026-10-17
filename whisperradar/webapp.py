@@ -3093,6 +3093,16 @@ def create_app(cfg) -> Flask:
         except (ValueError, OSError, sqlite3.Error, subprocess.SubprocessError) as exc:
             return redirect("/finished?error=" + quote(str(exc)))
 
+    @app.post("/studio/<int:pid>/gpt-pro/clear-error")
+    def studio_gpt_pro_clear_error(pid):
+        """Clear a failed GPT Pro job's error from the Finished page."""
+        try:
+            n = gpt_packaging.clear_error(cfg, pid)
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            return redirect("/finished?error=" + quote(str(exc)))
+        return redirect("/finished?msg=" + quote(
+            "GPT Pro error cleared" if n else "No GPT Pro error to clear"))
+
     def _gpt_worker_only(require_header=True):
         try:
             local = ipaddress.ip_address(request.remote_addr or "").is_loopback
@@ -5359,8 +5369,19 @@ def create_app(cfg) -> Flask:
                 "next": nxt,
                 "job": ({"kind": job.kind, "stage": job.stage}
                         if job else None)})
-        rows.sort(key=lambda r: (r["channel"].lower(), r["id"]))
-        return render_template("in_production.html", rows=rows,
+        sort = request.args.get("sort") or "channel"
+        stage_pos = {n: i for i, n in enumerate(db.STAGES)}
+        if sort == "stage":
+            rows.sort(key=lambda r: (stage_pos.get(r["stage"], 99),
+                                     r["channel"].lower(), r["id"]))
+        elif sort == "created":          # newest first
+            rows.sort(key=lambda r: (r["created"], r["id"]), reverse=True)
+        elif sort == "created_old":
+            rows.sort(key=lambda r: (r["created"], r["id"]))
+        else:
+            sort = "channel"
+            rows.sort(key=lambda r: (r["channel"].lower(), r["id"]))
+        return render_template("in_production.html", rows=rows, sort=sort,
                                any_running=any(r["job"] for r in rows),
                                msg=request.args.get("msg"),
                                error=request.args.get("error"))

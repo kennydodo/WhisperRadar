@@ -203,16 +203,11 @@ def set_channel_templates(cfg, own_channel_id: int, tids: list,
 
 
 def uses_template(t: dict, own_channel_id) -> bool:
-    """Does this channel use the template (builtins: always)?"""
-    try:
-        cid = int(own_channel_id)
-    except (TypeError, ValueError):
-        cid = None
-    if t["builtin"]:
-        return True
-    if t.get("optin"):
-        return cid in t["channels"]
-    return not t.get("channels") or cid in t["channels"]
+    """Every template (built-in or yours) is offered to every channel. Templates
+    used to be opt-in per channel, which hid the ones made earlier from
+    channels that were not ticked; the old `channels`/`optin` fields in
+    handover_templates.json are now ignored."""
+    return True
 
 
 def delete_user_template(cfg, tid: str) -> bool:
@@ -244,9 +239,7 @@ def get(cfg, tid: str | None) -> dict:
 
 
 def available_for(cfg, own_channel_id) -> list:
-    """Templates a channel uses: built-ins, templates the channel ticked,
-    and older templates with no channel list (every channel). No channel =
-    only the built-ins and the unrestricted older ones."""
+    """Templates offered to a channel: all of them (see uses_template)."""
     try:
         cid = int(own_channel_id) if own_channel_id not in (None, "") else None
     except (TypeError, ValueError):
