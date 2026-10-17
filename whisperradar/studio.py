@@ -5703,6 +5703,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
     by_index = {c["index"]: c for c in cues if isinstance(c, dict)}
     duration = _srt_seconds(cues[-1].get("end"))
     holds: list[tuple[float, str, str, int, int]] = []
+    overlay_shots: list = []
     for s in shots:
         rng = cue_range(s.get("cues"))
         if not rng:
@@ -5717,9 +5718,25 @@ def shotlist_pacing(data: dict, cues: list[dict],
         holds.append((_srt_seconds(last.get("end")) - _srt_seconds(first.get("start")),
                       motion,
                       str(s.get("asset") or "?"), rng[0], rng[1]))
+        if s.get("overlays"):
+            overlay_shots.append((holds[-1][2], holds[-1][0], s["overlays"]))
     if not holds:
         return [], []
     faults: list[str] = []
+    # text overlays must start and end inside their shot (seconds from its start)
+    for asset, hold, items in overlay_shots:
+        for n, it in enumerate(items if isinstance(items, list) else [items], 1):
+            if not isinstance(it, dict):
+                continue
+            t0, t1 = it.get("start"), it.get("end")
+            if (isinstance(t0, (int, float)) and not isinstance(t0, bool)
+                    and t0 >= hold - 0.1):
+                faults.append(f"{asset} overlays[{n}]: starts at {t0:g}s but the "
+                              f"shot only holds {hold:.1f}s")
+            elif (isinstance(t1, (int, float)) and not isinstance(t1, bool)
+                    and t1 > hold + 0.25):
+                faults.append(f"{asset} overlays[{n}]: ends at {t1:g}s but the "
+                              f"shot only holds {hold:.1f}s")
     # holds are checked against the limit plus a tolerance (briefs.*_TOLERANCE),
     # the planner is still told the nominal one
     long = sorted((h for h in holds
@@ -5987,6 +6004,69 @@ def shotlist_coverage_report(pdir: Path) -> dict | None:
             "faults": faults}
 
 
+def shotlist_overlay_faults(shots: list[dict]) -> list[str]:
+    """Text overlays (drawn by the renderer): each item needs a text and valid
+    style/position/anim; start/end are seconds from the shot start."""
+    from .video import shotlist as vs, text_overlays as vt
+    faults: list[str] = []
+    for s in shots:
+        if not isinstance(s, dict) or s.get("overlays") in (None, [], ""):
+            continue
+        asset = str(s.get("asset") or "?")
+        items = s["overlays"]
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            faults.append(f"{asset}: \"overlays\" must be a list of "
+                          f"{{\"text\": ..., \"position\": ...}} items")
+            continue
+        if len(items) > 2:
+            faults.append(f"{asset}: {len(items)} overlays - at most 2 per shot")
+        taken: list = []
+        for n, it in enumerate(items, 1):
+            where = f"{asset} overlays[{n}]"
+            if not isinstance(it, dict):
+                faults.append(f"{where}: must be an object with a \"text\"")
+                continue
+            text = it.get("text")
+            if not isinstance(text, str) or not text.strip():
+                faults.append(f"{where}: no \"text\"")
+            elif len(text.strip()) > vs.OVERLAY_MAX_CHARS:
+                faults.append(f"{where}: text is {len(text.strip())} characters "
+                              f"(limit {vs.OVERLAY_MAX_CHARS})")
+            pos = str(it.get("position") or "bottom-center").strip().lower()
+            if pos not in vs.OVERLAY_POSITIONS:
+                faults.append(f"{where}: position \"{pos}\" is not one of "
+                              f"{', '.join(vs.OVERLAY_POSITIONS)}")
+            sty = str(it.get("style") or "caption").strip().lower()
+            if sty not in vt.STYLES:
+                faults.append(f"{where}: style \"{sty}\" is not one of "
+                              f"{', '.join(vt.STYLES)}")
+            anim = str(it.get("anim") or "fade").strip().lower()
+            if anim not in vs.OVERLAY_ANIMS:
+                faults.append(f"{where}: anim \"{anim}\" is not one of "
+                              f"{', '.join(vs.OVERLAY_ANIMS)}")
+            t0, t1 = it.get("start"), it.get("end")
+            for key, val in (("start", t0), ("end", t1)):
+                if val is not None and (isinstance(val, bool)
+                                        or not isinstance(val, (int, float)) or val < 0):
+                    faults.append(f"{where}: \"{key}\" must be seconds from the "
+                                  f"start of the shot (a number >= 0)")
+            if (isinstance(t0, (int, float)) and isinstance(t1, (int, float))
+                    and not isinstance(t0, bool) and not isinstance(t1, bool)
+                    and t1 <= t0):
+                faults.append(f"{where}: \"end\" must be after \"start\"")
+            span = (float(t0) if isinstance(t0, (int, float)) and not isinstance(t0, bool) else 0.0,
+                    float(t1) if isinstance(t1, (int, float)) and not isinstance(t1, bool)
+                    else float("inf"))
+            for other_pos, other_span in taken:
+                if other_pos == pos and span[0] < other_span[1] and other_span[0] < span[1]:
+                    faults.append(f"{asset}: two overlays share the position "
+                                  f"\"{pos}\" at the same time")
+            taken.append((pos, span))
+    return faults
+
+
 def shotlist_structural_faults(data: dict, cue_count: int,
                                limit: int = 12) -> list[str]:
     """Objective faults in a shotlist - no LLM, so these must always be zero:
@@ -6004,6 +6084,7 @@ def shotlist_structural_faults(data: dict, cue_count: int,
     names = {str(i.get("file")) for i in images if i.get("file")}
     faults.extend(shotlist_reveal_faults(shots, names))
     faults.extend(shotlist_sfx_faults(shots))
+    faults.extend(shotlist_overlay_faults(shots))
     orphans = sorted({str(s.get("asset")) for s in shots if s.get("asset")}
                      - names)
     if orphans:

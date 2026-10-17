@@ -170,5 +170,60 @@ class MuxTests(unittest.TestCase):
             self.assertEqual(non_blue(frame(3.6)), 0)      # after it
 
 
+class BriefAndFaultTests(unittest.TestCase):
+    def test_brief_gets_the_overlay_section_only_for_channels_that_use_it(self):
+        from whisperradar import briefs
+        tpl = briefs.read_template(None)
+        off = briefs.render_brief(tpl.strip(), briefs.resolve_profile(None))
+        on = briefs.render_brief(tpl.strip(), briefs.resolve_profile(None, text_overlays=1))
+        self.assertNotIn("TEXT DRAWN BY THE RENDERER", off)
+        self.assertIn("TEXT DRAWN BY THE RENDERER", on)
+        self.assertLess(on.index("SECTION 7C"), on.index("## SECTION 8 "))
+        self.assertIn('"overlays"', on)
+
+    def test_structural_faults_check_overlays(self):
+        from whisperradar import studio
+        shot = lambda ov: {"shots": [{"cues": "1-1", "asset": "S01_01_SCN_ZI.png",
+                                     "scene": "S01", "motion": "ZI", "overlays": ov}],
+                           "images": [{"file": "S01_01_SCN_ZI.png", "prompt": "p"}]}
+        good = [{"text": "$1.8M", "style": "stat", "position": "top-center", "start": 0.2, "end": 2}]
+        self.assertEqual([f for f in studio.shotlist_structural_faults(shot(good), 1)
+                          if "overlay" in f], [])
+        bad = [{"text": "", "position": "up"},
+               {"text": "x", "style": "huge", "anim": "spin", "start": 3, "end": 1},
+               {"text": "y"}]
+        found = [f for f in studio.shotlist_structural_faults(shot(bad), 1) if "overlay" in f]
+        self.assertGreaterEqual(len(found), 6)
+        same = [{"text": "a", "position": "center"}, {"text": "b", "position": "center"}]
+        self.assertTrue([f for f in studio.shotlist_structural_faults(shot(same), 1)
+                         if "same time" in f])
+
+    def test_pacing_flags_an_overlay_outside_its_shot(self):
+        from whisperradar import studio
+        cues = [{"index": 1, "start": "00:00:00,000", "end": "00:00:04,000", "text": "a"}]
+        data = {"shots": [{"cues": "1-1", "asset": "a.png", "scene": "S01", "motion": "ZI",
+                           "overlays": [{"text": "x", "start": 1, "end": 9}]}],
+                "images": [{"file": "a.png", "prompt": "p"}]}
+        faults, _ = studio.shotlist_pacing(data, cues, 12.0)
+        self.assertTrue([f for f in faults if "overlays[1]" in f])
+
+    def test_channel_setting_reaches_the_effective_settings(self):
+        from whisperradar import db
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            conn = db.connect(Path(tmp.name) / "wr.db")
+            db.init_db(conn)
+            cid = db.create_own_channel(conn, "Ch", style="s", bible="b")
+            db.update_own_channel(conn, cid, brief_text_overlays=1)
+            row = conn.execute("select brief_text_overlays from own_channels where id=?", (cid,)).fetchone()
+            self.assertEqual(row[0], 1)
+            conn.close()
+        finally:
+            try:
+                tmp.cleanup()
+            except OSError:
+                pass
+
+
 if __name__ == "__main__":
     unittest.main()

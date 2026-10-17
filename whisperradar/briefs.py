@@ -144,6 +144,8 @@ class MotionProfile:
     reveal_strict: bool = False
     # the sound the plan uses for reveal items ("" = the built-in "pop")
     sfx: str = ""
+    # the renderer draws text itself (shotlist "overlays"): no text in the images
+    text_overlays: bool = False
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -908,7 +910,7 @@ def _resolve_motion(key, min_hold=None, max_hold=None,
 def resolve_profile(key, min_hold=None, max_hold=None,
                     default_max: float | None = None,
                     custom=None, types=None, reveal=None,
-                    sfx=None) -> MotionProfile:
+                    sfx=None, text_overlays=None) -> MotionProfile:
     """The channel's effective profile: its motion preset, the channel's own
     hold range (seconds), its shot-type spec (`types`, see
     normalize_types / effective_types) and whether reveal shots are allowed.
@@ -922,6 +924,8 @@ def resolve_profile(key, min_hold=None, max_hold=None,
         prof = replace(prof, reveal=True, reveal_strict=str(reveal) == "2")
     if sfx and str(sfx).strip() and str(sfx).strip() != "pop":
         prof = replace(prof, sfx=str(sfx).strip())
+    if text_overlays:
+        prof = replace(prof, text_overlays=True)
     return prof
 
 
@@ -1109,6 +1113,39 @@ def reveal_block(strict: bool = False, sfx: str = "") -> str:
     return text + (REVEAL_REQUIRED_RULE if strict else "")
 
 
+def text_overlay_block() -> str:
+    """For a channel whose renderer draws the text: the images carry NO readable
+    text and the shotlist says what to write, where and when (shot `overlays`)."""
+    return (
+        "## SECTION 7C — TEXT DRAWN BY THE RENDERER (overrides SECTION 8)\n\n"
+        "This channel's renderer writes the on-screen text itself, in the channel's own font. "
+        "So EVERY image prompt must produce an image with NO readable text at all - no words, "
+        "numbers, labels, percentages, titles, captions, letters, logos or signage, anywhere in "
+        "the picture (this replaces any text policy in the channel style). Show the idea with "
+        "icons, arrows, shapes and metaphor.\n\n"
+        "Words the viewer must read go in the shot instead, as `\"overlays\"`: a list of "
+        "`{\"text\": \"...\", \"style\": \"...\", \"position\": \"...\", \"start\": 0.5, "
+        "\"end\": 3.0, \"anim\": \"fade\"}`.\n"
+        "- `text`: the exact words (at most 200 characters, ideally under 40; use \\n for a line "
+        "break). Numbers, prices, percentages, names and short claims exactly as the narration "
+        "says them. Never invent figures.\n"
+        "- `style`: `stat` (a big number or short claim), `title` (a title line), `caption` "
+        "(a short sentence at the bottom), `label` (a small tag beside something in the image), "
+        "`lower-third` (a name or source strip).\n"
+        "- `position`: top-left, top-center, top-right, middle-left, center, middle-right, "
+        "bottom-left, bottom-center, bottom-right.\n"
+        "- `start` / `end`: seconds from the START OF THE SHOT (leave both out for the whole "
+        "shot); `end` must be after `start` and inside the shot's hold. Time a stat to the moment "
+        "the narrator says it.\n"
+        "- `anim`: `fade` (default), `slide-up`, `slide-down` or `none`.\n"
+        "Rules: use overlays only where the words add something the picture cannot - a number, a "
+        "name, a key term, a title; most shots have none. At most 2 per shot, and never two in "
+        "the same position at the same time. The image prompt of a shot with an overlay MUST "
+        "leave that position empty - say so in the prompt (for example \"keep the top third of "
+        "the frame empty, plain background\") and do not put the subject there. Do not repeat the "
+        "overlay words in the image prompt.\n")
+
+
 def sfx_block(sfx: str) -> str:
     """For a channel that has its own sound but no reveal shots: the plan may
     still name it on a shot (\"sfx\") and must use it instead of pop."""
@@ -1154,6 +1191,13 @@ def render_brief(template: str, profile: MotionProfile | None = None,
             text = text.replace("{{PRESENTATION}}", "")
     elif block:
         text = text.rstrip() + "\n\n" + block
+    if profile.text_overlays:
+        marker = "## SECTION 8 "
+        at = text.find(marker)
+        if at >= 0:
+            text = text[:at] + text_overlay_block() + "\n" + text[at:]
+        else:
+            text = text.rstrip() + "\n\n" + text_overlay_block()
     if profile.sfx and not profile.reveal:
         text = text.rstrip() + "\n\n" + sfx_block(profile.sfx)
     if profile.reveal:

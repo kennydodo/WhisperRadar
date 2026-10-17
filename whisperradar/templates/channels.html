@@ -489,6 +489,13 @@
                   <option value="2" {{ 'selected' if ch['brief_reveal'] == 2 else '' }}>required - every list of 2-4 items in the narration becomes a reveal</option>
                 </select>
               </label>
+              <label>text drawn by the renderer
+                <select name="brief_text_overlays" style="width:290px"
+                        title="Off: any text is part of the image. On: images are generated WITHOUT readable text and the shotlist says which text the renderer writes and where (own font and style; each shot may carry 'overlays').">
+                  <option value="">off - text (if any) is part of the image</option>
+                  <option value="1" {{ 'selected' if ch['brief_text_overlays'] else '' }}>on - images have no text; the renderer writes it</option>
+                </select>
+              </label>
               <label>sound effect
                 <input name="brief_sfx" list="sfx-names-{{ ch['id'] }}" style="width:200px"
                        value="{{ ch['brief_sfx'] or '' }}" placeholder="pop (default)"
