@@ -46,25 +46,46 @@ def style_of(name: str) -> dict:
     return STYLES.get((name or "").strip().lower(), STYLES[DEFAULT_STYLE])
 
 
+# The shared fonts folder: <repo>/fonts. Drop .ttf/.otf files there; every project and
+# channel can use them (by file name in `text.font`), and the first one is the default.
+SHARED_FONTS_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "fonts"))
+
+
+def shared_fonts() -> List[str]:
+    """Font files in the shared folder, sorted by name."""
+    out: List[str] = []
+    for pattern in ("*.ttf", "*.otf", "*.TTF", "*.OTF"):
+        out.extend(glob.glob(os.path.join(SHARED_FONTS_DIR, pattern)))
+    return sorted(set(out), key=lambda x: os.path.basename(x).lower())
+
+
 def find_font(options, folder: str) -> str:
-    """The font file to use: the configured one, else the first font in the fonts
-    folder, else a system font. "" = Pillow's built-in font (last resort)."""
+    """The font file to use. Order: the configured `text.font` (as a path, in the
+    project's fonts_dir, then in the shared fonts folder); else the first font of the
+    project's fonts_dir; else the first font of the shared folder; else a system font.
+    "" = Pillow's built-in font (last resort)."""
     t = options.text
+    fd = ""
+    if t.fonts_dir:
+        fd = t.fonts_dir if os.path.isabs(t.fonts_dir) else os.path.join(folder, t.fonts_dir)
     candidates: List[str] = []
     if t.font:
         candidates.append(t.font if os.path.isabs(t.font) else os.path.join(folder, t.font))
-        if t.fonts_dir:
-            fd = t.fonts_dir if os.path.isabs(t.fonts_dir) else os.path.join(folder, t.fonts_dir)
+        if fd:
             candidates.append(os.path.join(fd, t.font))
+        candidates.append(os.path.join(SHARED_FONTS_DIR, t.font))
     for c in candidates:
         if os.path.isfile(c):
             return c
-    if t.fonts_dir:
-        fd = t.fonts_dir if os.path.isabs(t.fonts_dir) else os.path.join(folder, t.fonts_dir)
+    if fd:
         for pattern in ("*.ttf", "*.otf"):
             found = sorted(glob.glob(os.path.join(fd, pattern)))
             if found:
                 return found[0]
+    shared = shared_fonts()
+    if shared:
+        return shared[0]
     windir = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows"
     for name in _WINDOWS_FONTS:
         p = os.path.join(windir, "Fonts", name)

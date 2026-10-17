@@ -73,6 +73,37 @@ class PlanTests(unittest.TestCase):
         self.assertEqual((back.overlays[0].start_frame, back.overlays[0].end_frame), (3, 30))
 
 
+class FontLookupTests(unittest.TestCase):
+    def _touch(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "wb").close()
+
+    def test_order_project_then_shared_folder_then_system(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            shared = os.path.join(tmp, "shared")
+            proj = os.path.join(tmp, "proj")
+            self._touch(os.path.join(shared, "B-Shared.ttf"))
+            self._touch(os.path.join(shared, "A-Shared.otf"))
+            self._touch(os.path.join(proj, "myfonts", "Mine.ttf"))
+            with mock.patch.object(text_overlays, "SHARED_FONTS_DIR", shared):
+                o = opt.ProjectOptions()
+                # nothing configured -> first shared font
+                self.assertEqual(os.path.basename(text_overlays.find_font(o, proj)), "A-Shared.otf")
+                # a file name that lives in the shared folder
+                o.text.font = "B-Shared.ttf"
+                self.assertEqual(os.path.basename(text_overlays.find_font(o, proj)), "B-Shared.ttf")
+                # the project's own fonts folder wins over the shared one
+                o.text.font, o.text.fonts_dir = "", "myfonts"
+                self.assertEqual(os.path.basename(text_overlays.find_font(o, proj)), "Mine.ttf")
+                # a missing configured font falls back instead of failing
+                o.text.font, o.text.fonts_dir = "Nope.ttf", ""
+                self.assertEqual(os.path.basename(text_overlays.find_font(o, proj)), "A-Shared.otf")
+
+    def test_repo_has_a_shared_fonts_folder(self):
+        self.assertTrue(os.path.isdir(text_overlays.SHARED_FONTS_DIR))
+
+
 class DrawTests(unittest.TestCase):
     def test_png_is_full_frame_and_transparent_outside_the_text(self):
         from PIL import Image
