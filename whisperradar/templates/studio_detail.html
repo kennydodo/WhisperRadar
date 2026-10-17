@@ -67,6 +67,8 @@
   .step.done .dot { background: var(--green); border-color: var(--green); color: #06280f; }
   .step.current .dot { border-color: var(--accent); color: var(--accent);
                        box-shadow: 0 0 0 3px rgba(79,140,255,.2); }
+  .step.skipped .dot { opacity: .45; border-style: dashed; }
+  .step.skipped .lbl { opacity: .6; text-decoration: line-through; }
   .step.sel .lbl { color: var(--text); font-weight: 600; }
   .step:not(:last-child)::after { content: ""; position: absolute; height: 2px;
       background: var(--border); top: 14px; left: calc(50% + 20px); width: calc(100% - 40px); }
@@ -328,8 +330,8 @@
   <div class="stepper">
     {% for s in stages %}
     {% set done = s in steps %}
-    <a class="step {{ 'done' if done else '' }} {{ 'current' if s == prod['stage'] else '' }} {{ 'sel' if s == stage }}"
-       href="/studio/{{ prod['id'] }}?stage={{ s }}">
+    <a class="step {{ 'done' if done else '' }} {{ 'current' if s == prod['stage'] else '' }} {{ 'sel' if s == stage }} {{ 'skipped' if s in skipped_stages else '' }}"
+       href="/studio/{{ prod['id'] }}?stage={{ s }}"{% if s in skipped_stages %} title="Skipped: {{ skipped_stages[s] }}"{% endif %}>
       <span class="dot">{{ loop.index }}</span>
       <span class="lbl">{{ STAGE_DISPLAY.get(s, s) }}</span>
     </a>
@@ -1322,19 +1324,24 @@
       // a job can start and finish between two polls - its seq bump gives
       // it away even when we never saw it running
       // (a LOWER seq is a restarted server, not a finished job)
+      // only THIS production's jobs count: the status is shared by the whole
+      // channel, so another production's job must not reload this page
+      const ours = !s.pid || s.pid === {{ prod['id'] }};
       if (s.seq !== lastSeq) {
-        if (s.seq > lastSeq && !s.running) wasRunning = true;
+        if (s.seq > lastSeq && !s.running && ours) wasRunning = true;
         lastSeq = s.seq;
       }
-      if (s.running) {
+      if (s.running && !ours) {
+        // someone else's job: leave this page alone
+        if (bar) bar.style.display = 'none';
+      } else if (s.running) {
         wasRunning = true;     // a job that began after this page loaded
         // auto-run is ONE long job: show each finished stage as it happens
         // (only when nothing typed on the page would be lost)
-        const ours = !s.pid || s.pid === {{ prod['id'] }};
         if (bar) {
           bar.style.display = '';
           bar.textContent = 'Working: ' + s.kind +
-            (ours && s.stage ? ' - stage: ' + s.stage : '') +
+            (s.stage ? ' - stage: ' + s.stage : '') +
             ' - this page updates when it finishes';
         }
         if (box) { box.style.display = ''; box.textContent = s.log.join('\n'); box.scrollTop = box.scrollHeight; }

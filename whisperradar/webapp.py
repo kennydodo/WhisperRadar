@@ -268,7 +268,10 @@ class _Job:
             self.kind = kind
             self.error = None
             self.seq += 1
-            self.pid = None
+            # the production this job was started for (the /studio/<pid>/...
+            # route), so a page reloads only for ITS OWN job finishing
+            self.pid = ((request.view_args or {}).get("pid")
+                        if has_request_context() else None) or None
             self.stage = None
             self.pipeline = False
             self.cancel = False
@@ -3650,8 +3653,19 @@ def create_app(cfg) -> Flask:
             "merge": bool(cfg.studio_merge_command) or
                      bool(cfg.imgtovideo_repo) or studio._python_video(cfg),
         }
+        # references / motion clips the shotlist does not need (or the channel
+        # has off): shown grayed out, and auto-run passes over them
+        skipped_stages = {}
+        try:
+            for e in autorun.build_plan(cfg, pid):
+                if (e["stage"] in ("refs", "motion") and e["action"] == "skip"
+                        and e["stage"] not in steps):
+                    skipped_stages[e["stage"]] = e["detail"]
+        except Exception:  # noqa: BLE001 - never break the page for a plan error
+            skipped_stages = {}
         page = render_template(
             "studio_detail.html", prod=prod, steps=steps, history=history,
+            skipped_stages=skipped_stages,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
             style_variant_eff=studio.style_variant(cfg, pid=pid),
