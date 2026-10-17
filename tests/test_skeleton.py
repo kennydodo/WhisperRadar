@@ -338,5 +338,49 @@ class RunTests(Base):
         self.assertTrue(any("whole shotlist" in m for m in self.log))
 
 
+class MasterIntegrationTests(unittest.TestCase):
+    """Things the skeleton must honour that the rest of the app added later:
+    the Flow prompt budget (style + prompt) and the frame density."""
+
+    def test_prompt_limit_follows_the_style_length(self):
+        self.assertEqual(sk.prompt_limit(""), 2400)
+        style = "x" * 1800
+        self.assertEqual(sk.prompt_limit(style),
+                         studio.FLOWBATCH_MAX_PROMPT_CHARS - 1801)
+        self.assertGreaterEqual(sk.prompt_limit("x" * 5000), 200)
+
+    def test_long_prompt_is_a_problem_with_a_long_style(self):
+        shots = [sk.Draft(n=1, first=1, last=1, seconds=3.0, text="a",
+                          motion="ZI")]
+        ans = sk.parse_reply("1 | SCN | - | " + "p" * 900)
+        prof = briefs.get_profile("standard")
+        short = sk.problems(shots, ans, prof, False, set())
+        long_ = sk.problems(shots, ans, prof, False, set(), style="s" * 1800)
+        self.assertEqual(short, [])
+        self.assertTrue(any("limit" in p for p in long_))
+
+    def test_density_reaches_the_rules(self):
+        prof = briefs.get_profile("standard")
+        plain = sk.rules_text(prof, False, [])
+        minimal = sk.rules_text(prof, False, [], density="minimal")
+        self.assertNotIn(studio.density_planner_block("minimal").strip(),
+                         plain)
+        self.assertIn(studio.density_planner_block("minimal").strip(),
+                      minimal)
+
+
+class WebChatDensityTests(Base):
+    """The web-chat planner and judge honour the frame density too (they used
+    to ignore it - only the API path passed it on)."""
+    channel_fields = {"visual_density": "minimal"}
+
+    def test_planner_and_judge_prompts_carry_the_density(self):
+        from whisperradar import external_prompts as ep
+        want = studio.density_planner_block("minimal").strip()
+        self.assertIn(want, ep.shotlist_planner_prompt(self.cfg, self.pid))
+        judge, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, "")
+        self.assertIn("FRAME DENSITY", judge)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -938,7 +938,11 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
     allow_refs = plan["allow_refs"]
     supplied = studio.find_supplied_refs(ctx["pdir"]) if allow_refs else []
     stems = {n.rsplit(".", 1)[0] for n in supplied}
-    rules = skeleton.rules_text(profile, allow_refs, supplied, note)
+    density = studio.visual_density(cfg, pid=pid)
+    style_text = ctx["visual_style"]
+    limit = skeleton.prompt_limit(style_text)
+    rules = skeleton.rules_text(profile, allow_refs, supplied, note,
+                                density=density, limit=limit)
     direction = db.stage_extra(ctx["prod"], "shots")
     batches = skeleton.chunks(shots)
     total = len(shots)
@@ -965,7 +969,8 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             nums = {s.n for s in batch}
             for attempt in range(2):
                 bad = [p for p in skeleton.problems(
-                           shots, ans, profile, allow_refs, stems, only=nums)]
+                           shots, ans, profile, allow_refs, stems, only=nums,
+                                        style=style_text)]
                 if not bad:
                     break
                 log(f"{writer}: part {i + 1} - {len(bad)} shot(s) to fix "
@@ -981,7 +986,8 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
                 ans.update(skeleton.parse_reply(fixed))
             else:
                 bad = skeleton.problems(shots, ans, profile, allow_refs,
-                                        stems, only=nums)
+                                        stems, only=nums,
+                                        style=style_text)
             if bad:
                 raise skeleton.SkeletonError(
                     f"part {i + 1} still has problems: {'; '.join(bad[:3])}")

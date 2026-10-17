@@ -299,7 +299,8 @@ HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no comme
 
 
 def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
-               animation_note: str = "") -> str:
+               animation_note: str = "", density: str = "",
+               limit: int = 2400) -> str:
     kinds = briefs.types_text(profile.types)
     parts = [
         "You are a visual director and image-prompt engineer for a "
@@ -348,7 +349,8 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
         "for a push in or pull out), and where the light comes from. No style "
         "language at all (palette, grade, 'cinematic', film grain, mood "
         "adjectives) - the channel style is added by the app. Each prompt "
-        "stays under 2400 characters. No two prompts may be identical.",
+        f"stays under {limit} characters. No two prompts may be identical."
+        + studio.density_planner_block(density),
         _section("8"),
         _section("11A"),
         _section("11B"),
@@ -517,11 +519,22 @@ def reuse_motion(own: str, target: str) -> str:
     return target
 
 
+def prompt_limit(style: str = "") -> int:
+    """Longest image prompt Flow takes with this style in front of it
+    (style + one space + prompt must stay within the Flow limit; a longer one
+    makes Flow drop the style from the images)."""
+    budget = studio.FLOWBATCH_MAX_PROMPT_CHARS - (
+        len((style or "").strip()) + 1 if (style or "").strip() else 0)
+    return max(200, min(2400, budget))
+
+
 def problems(shots: list[Draft], ans: Answers, profile, allow_refs: bool,
-             supplied_stems: set[str], only: set | None = None) -> list[str]:
+             supplied_stems: set[str], only: set | None = None,
+             style: str = "") -> list[str]:
     """What is still wrong with the answers, one line per problem, naming the
     shot number (so a fix request can be narrow). Empty = ready to assemble."""
     out: list[str] = []
+    limit = prompt_limit(style)
     by_n = {s.n: s for s in shots}
     motion_of: dict[int, str] = {}
     for s in shots:
@@ -543,9 +556,10 @@ def problems(shots: list[Draft], ans: Answers, profile, allow_refs: bool,
                                    f"nor defined with a REF line")
             elif a["refs"]:
                 out.append(f"shot {n}: refs are off for this channel")
-            if len(a["prompt"]) > 2400:
+            if len(a["prompt"]) > limit:
                 out.append(f"shot {n}: the prompt is {len(a['prompt'])} "
-                           f"characters (limit 2400)")
+                           f"characters (limit {limit} with the channel "
+                           f"style in front) - shorten it")
         elif n in ans.reuse:
             m = ans.reuse[n]
             if s.animate:
