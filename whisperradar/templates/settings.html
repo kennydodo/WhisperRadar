@@ -61,6 +61,14 @@
   .tabpanel { display: none; }
   .tabpanel.active { display: block; }
   .tabpanel > .panel { border-top-left-radius: 0; margin-top: 0; }
+  .tabpanel.sub-hidden { display: none; }
+  .subtabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0 14px; }
+  .subtab { background: transparent; border: 1px solid var(--border);
+            color: var(--muted); font-weight: 600; font-size: 12px;
+            padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+  .subtab:hover { color: var(--text); filter: none; }
+  .subtab.active { background: var(--panel); color: var(--text);
+                   border-color: var(--text); }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
 </head>
@@ -89,7 +97,11 @@
     {% for group_name, _spec in groups %}
     <button type="button" class="tab" data-tab="{{ group_name }}">{{ group_name }}</button>
     {% endfor %}
-    <button type="button" class="tab" data-tab="Web chat LLMs">Web chat LLMs</button>
+  </div>
+  <div class="subtabs" id="llm-subtabs" style="display:none">
+    <button type="button" class="subtab" data-sub="webchat">Web Chat LLM</button>
+    <button type="button" class="subtab" data-sub="api">API LLM</button>
+    <button type="button" class="subtab" data-sub="codex">Codex LLM</button>
   </div>
 
   <div class="tabpanel" data-tab="Tools">
@@ -245,7 +257,7 @@
         </div>
   {% endmacro %}
   {% for group_name, group_spec in groups %}
-  <div class="tabpanel" data-tab="{{ group_name }}">
+  <div class="tabpanel" data-tab="{{ group_name }}"{% if group_name == "LLM" %} data-sub="api"{% endif %}>
   <div class="panel">
     {% if group_name == "Auto Run" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
@@ -356,7 +368,7 @@
   })();
   </script>
 
-  <div class="tabpanel" data-tab="LLM">
+  <div class="tabpanel" data-tab="LLM" data-sub="api">
   <h2>Writing style</h2>
   <p class="help">
     Which style-guide format the style stage writes and the script stage follows.
@@ -482,6 +494,7 @@
   renderProviders();
   </script>
 {% include "_webchat_settings.html" %}
+{% include "_codex_settings.html" %}
 </div>
 
 <script>
@@ -490,30 +503,62 @@
       document.querySelectorAll('#settings-tabs .tab'));
     var panels = Array.prototype.slice.call(
       document.querySelectorAll('.tabpanel'));
+    var subs = Array.prototype.slice.call(
+      document.querySelectorAll('#llm-subtabs .subtab'));
+    var subBar = document.getElementById('llm-subtabs');
     if (!tabs.length || !panels.length) return;
     var KEY = 'wr-settings-tab';
+    var SKEY = 'wr-settings-sub';
+    var DEFAULT_SUB = 'webchat';
+    var curSub = DEFAULT_SUB;
+    // old links (?tab=Web+chat+LLMs) land on LLM > Web Chat LLM
+    var ALIAS = { 'Web chat LLMs': ['LLM', 'webchat'] };
 
-    function show(name, remember) {
+    function validSub(s) {
+      return subs.some(function (t) { return t.getAttribute('data-sub') === s; });
+    }
+
+    function show(name, remember, sub) {
+      if (ALIAS[name]) {
+        sub = sub || ALIAS[name][1];
+        name = ALIAS[name][0];
+      }
       var found = panels.some(function (p) {
         return p.getAttribute('data-tab') === name;
       });
       if (!found) { name = tabs[0].getAttribute('data-tab'); }
+      if (sub && validSub(sub)) { curSub = sub; }
+      var isLLM = (name === 'LLM');
+      if (subBar) { subBar.style.display = isLLM ? '' : 'none'; }
       panels.forEach(function (p) {
         p.classList.toggle('active', p.getAttribute('data-tab') === name);
+        var s = p.getAttribute('data-sub');
+        p.classList.toggle('sub-hidden', !!s && s !== curSub);
       });
       tabs.forEach(function (t) {
         t.classList.toggle('active', t.getAttribute('data-tab') === name);
       });
+      subs.forEach(function (t) {
+        t.classList.toggle('active', t.getAttribute('data-sub') === curSub);
+      });
       if (remember !== false) {
-        try { sessionStorage.setItem(KEY, name); } catch (e) {}
+        try {
+          sessionStorage.setItem(KEY, name);
+          sessionStorage.setItem(SKEY, curSub);
+        } catch (e) {}
       }
-      // keep ?tab= shareable without a reload
+      // keep ?tab= / ?sub= shareable without a reload
       try {
         var url = new URL(window.location);
         if (name === tabs[0].getAttribute('data-tab')) {
           url.searchParams.delete('tab');
         } else {
           url.searchParams.set('tab', name);
+        }
+        if (isLLM && curSub !== DEFAULT_SUB) {
+          url.searchParams.set('sub', curSub);
+        } else {
+          url.searchParams.delete('sub');
         }
         history.replaceState(null, '', url);
       } catch (e) {}
@@ -524,12 +569,22 @@
         show(t.getAttribute('data-tab'));
       });
     });
+    subs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        show('LLM', true, t.getAttribute('data-sub'));
+      });
+    });
 
-    var wanted = new URLSearchParams(window.location.search).get('tab');
+    var params = new URLSearchParams(window.location.search);
+    var wanted = params.get('tab');
+    var wantedSub = params.get('sub');
     if (!wanted) {
       try { wanted = sessionStorage.getItem(KEY); } catch (e) {}
     }
-    show(wanted || tabs[0].getAttribute('data-tab'), false);
+    if (!wantedSub) {
+      try { wantedSub = sessionStorage.getItem(SKEY); } catch (e) {}
+    }
+    show(wanted || tabs[0].getAttribute('data-tab'), false, wantedSub);
   })();
 </script>
 <script>
