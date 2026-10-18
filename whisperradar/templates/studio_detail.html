@@ -136,7 +136,7 @@
   {% if script_readiness and script_readiness.findings %}
   <section class="script-review" role="status" style="border:2px solid {{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else '#777' }};border-radius:8px;padding:14px;margin:12px 0">
     <strong style="color:{{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else 'var(--green)' }}">{{ '⚠ Script needs review before audio' if script_readiness.warning_count and not script_readiness.ignored else 'Script scan — warnings acknowledged' if script_readiness.ignored else 'Review complete — no unresolved warnings' if script_readiness.reviewed_count else 'Script scan — audience CTAs only' }}</strong>
-    <p>{{ script_readiness.warning_count }} unresolved warning(s). {{ script_readiness.reviewed_count or 0 }} scan flag(s) cleared by AI review. Confirmed false alarms no longer block audio; uncertain claims or missing evidence remain flagged.</p>
+    <p>{{ script_readiness.warning_count }} unresolved warning(s). {% if fix_enabled %}{{ script_readiness.reviewed_count or 0 }} scan flag(s) cleared by AI review. Confirmed false alarms no longer block audio; uncertain claims or missing evidence remain flagged.{% else %}Edit the script, or ignore the warnings for this version, to continue to audio.{% endif %}</p>
     {% if fix_enabled %}
     <div class="review-provider"><div><label for="script-fix-provider">Fix provider:</label>
       <select id="script-fix-provider" data-default="{{ fix_default }}" onchange="localStorage.setItem('wrScriptFixProvider',this.value)">
