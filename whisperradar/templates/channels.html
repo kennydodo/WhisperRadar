@@ -674,16 +674,8 @@
               <summary>Hand-over templates <span class="muted">what the judge passes to the writer</span></summary>
               <div class="muted" style="font-size:12px; margin:10px 0 6px">
                 Default for this channel's productions. A production can still pick its own.
-                Templates are made on <a href="/handover">Hand-over</a>; tick the ones this channel uses.
+                Templates are made on <a href="/handover">Hand-over</a>; every template is available to every channel.
               </div>
-              <input type="hidden" name="handover_listed" value="1">
-              {% if handover_all|length %}
-              <div style="margin:6px 0 10px">
-                {% for t in handover_all %}{% if not t['builtin'] %}
-                <label class="chk"><input type="checkbox" name="handover_use" value="{{ t['id'] }}" {{ 'checked' if handover_uses[ch['id']].get(t['id']) }}> {{ t['name'] }}</label>
-                {% endif %}{% endfor %}
-              </div>
-              {% endif %}
               <div class="inline">
                 {% for st in ('plan', 'script') %}
                 <label>{{ st|capitalize }}

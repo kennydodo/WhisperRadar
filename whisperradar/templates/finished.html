@@ -141,9 +141,13 @@
             {% elif item.thumbs %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge genre" title="Concepts exist - pick one">{{ item.thumbs.count }} thumbnails</a>
             {% else %}{% if item.row['status'] == 'published' %}<span class="muted off">no thumbnail</span>{% else %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="muted">no thumbnail</a>{% endif %}{% endif %}
             <form method="post" action="/studio/{{ item.row['id'] }}/gpt-pro/generate" style="margin-top:6px">
-              <button type="submit" class="ghost{{ ' off' if item.row['status'] != 'ready' else '' }}" {% if item.row['status'] != 'ready' or (item.gpt_job and item.gpt_job.status in ('queued', 'running')) %}disabled{% endif %}>{{ 'Generating with GPT Pro' if item.gpt_job and item.gpt_job.status == 'running' else ('Queued for GPT Pro' if item.gpt_job and item.gpt_job.status == 'queued' else 'Generate with GPT Pro') }}</button>
+              <button type="submit" class="ghost{{ ' off' if item.row['status'] != 'ready' else '' }}" {% if item.row['status'] != 'ready' or (item.gpt_job and item.gpt_job.status in ('queued', 'running')) %}disabled{% endif %}>{{ 'Generating with GPT Pro' if item.gpt_job and item.gpt_job.status == 'running' else ('Queued for GPT Pro' if item.gpt_job and item.gpt_job.status == 'queued' else ('Retry GPT Pro' if item.gpt_job and item.gpt_job.status == 'failed' else 'Generate with GPT Pro')) }}</button>
             </form>
-            {% if item.gpt_job %}<div class="muted" style="font-size:12px;margin-top:3px" title="{{ item.gpt_job.error or '' }}">GPT Pro: {{ item.gpt_job.status }}{% if item.gpt_job.error %}<br>{{ item.gpt_job.error }}{% endif %}</div>{% endif %}
+            {% if item.gpt_job %}<div class="muted" style="font-size:12px;margin-top:3px" title="{{ item.gpt_job.error or '' }}">GPT Pro: {{ item.gpt_job.status }}{% if item.gpt_job.error %}<br>{{ item.gpt_job.error }}{% endif %}</div>
+            {% if item.gpt_job.status == 'failed' %}
+            {% if item.thumbs %}<div class="muted" style="font-size:12px">{{ item.thumbs.count }} thumbnail(s) exist, so this error may be out of date.</div>{% endif %}
+            <form method="post" action="/studio/{{ item.row['id'] }}/gpt-pro/clear-error" style="margin-top:4px"><button type="submit" class="ghost" title="Remove this error. Use Generate with GPT Pro to try again.">Clear error</button></form>
+            {% endif %}{% endif %}
             {% if item.gpt_job and item.gpt_job.status == 'complete' %}<div style="font-size:12px"><a href="/studio/file/{{ item.row['id'] }}/title.txt" download>title</a> {% if item.has_titles_file %}&middot; <a href="/studio/file/{{ item.row['id'] }}/titles.txt" download>all titles</a>{% endif %} &middot; <a href="/studio/file/{{ item.row['id'] }}/description.txt" download>description</a></div>{% endif %}
           </td>
           <td class="actions">

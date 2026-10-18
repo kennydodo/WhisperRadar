@@ -77,6 +77,33 @@ class FinishedPageTests(unittest.TestCase):
         resp = self.client.get("/finished")
         self.assertIn(b"Ready One", resp.data)
 
+    def test_picked_channel_is_remembered_across_actions(self):
+        pa = self._make("From A", self.chan_a, status="ready")
+        self._make("From B", self.chan_b, status="ready")
+        self.client.get(f"/finished?channel={self.chan_a}")
+        # a bare /finished (where Mark published and the other actions land)
+        # stays on the channel that was picked
+        resp = self.client.get("/finished")
+        self.assertIn(b"From A", resp.data)
+        self.assertNotIn(b"From B", resp.data)
+        r = self.client.post(f"/studio/{pa}/publish", data={})
+        self.assertEqual(r.status_code, 302)
+        resp = self.client.get(r.headers["Location"])
+        self.assertIn(b"From A", resp.data)
+        self.assertNotIn(b"From B", resp.data)
+        # "All channels" (an empty ?channel=) clears it
+        resp = self.client.get("/finished?channel=")
+        self.assertIn(b"From A", resp.data)
+        self.assertIn(b"From B", resp.data)
+        resp = self.client.get("/finished")
+        self.assertIn(b"From B", resp.data)
+
+    def test_remembered_channel_that_no_longer_exists_is_ignored(self):
+        self._make("From A", self.chan_a, status="ready")
+        self.client.set_cookie("wr_finished_channel", "9999")
+        resp = self.client.get("/finished")
+        self.assertIn(b"From A", resp.data)
+
     def test_an_active_production_is_not_on_the_finished_page(self):
         self._make("Still Working", self.chan_a, status="active")
         resp = self.client.get("/finished")

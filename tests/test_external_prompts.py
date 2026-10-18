@@ -660,3 +660,24 @@ class RefsStageDiskImageTests(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DensityPromptTests(Base):
+    channel_fields = {"visual_density": "minimal"}
+
+    def test_browser_planner_and_reviewer_inherit_density(self):
+        for files in (None, []):
+            planner = ep.shotlist_planner_prompt(self.cfg, self.pid, files)
+            reviewer, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, "", files)
+            self.assertIn("VISUAL DENSITY: MINIMAL", planner)
+            self.assertIn("VISUAL DENSITY: MINIMAL", reviewer)
+            self.assertIn("too busy:", reviewer)
+
+    def test_production_override_is_used_by_both_prompts(self):
+        conn = db.connect(self.cfg.db_path)
+        db.update_production(conn, self.pid, visual_density="moderate")
+        conn.commit()
+        conn.close()
+        self.assertIn("VISUAL DENSITY: MODERATE", ep.shotlist_planner_prompt(self.cfg, self.pid))
+        reviewer, _ = ep.shotlist_judge_prompt(self.cfg, self.pid, "")
+        self.assertIn("VISUAL DENSITY: MODERATE", reviewer)

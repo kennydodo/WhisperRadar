@@ -418,20 +418,15 @@ class ChannelScope(unittest.TestCase):
     def tearDown(self):
         self.d.cleanup()
 
-    def test_scoped_template_only_offered_to_its_channel(self):
+    def test_every_template_is_offered_to_every_channel(self):
+        # templates used to be opt-in per channel; now all are visible everywhere
         tid = handover.save_user_template(self.cfg, "Only A", True, True, [],
                                           channels=[self.a])
         free = handover.save_user_template(self.cfg, "Everywhere", True, True, [])
-        ids_a = {t["id"] for t in handover.available_for(self.cfg, self.a)}
-        ids_b = {t["id"] for t in handover.available_for(self.cfg, self.b)}
-        ids_none = {t["id"] for t in handover.available_for(self.cfg, None)}
-        self.assertIn(tid, ids_a)
-        self.assertNotIn(tid, ids_b)
-        self.assertNotIn(tid, ids_none)
-        for ids in (ids_a, ids_b, ids_none):
-            self.assertNotIn(free, ids)   # nobody ticked it yet
-            self.assertIn("style", ids)
-            self.assertIn("full", ids)
+        for who in (self.a, self.b, None):
+            ids = {t["id"] for t in handover.available_for(self.cfg, who)}
+            for want in (tid, free, "style", "full"):
+                self.assertIn(want, ids)
 
     def test_channel_default_used_until_production_picks(self):
         tid = handover.save_user_template(self.cfg, "Only A", False, False, [],
@@ -445,18 +440,20 @@ class ChannelScope(unittest.TestCase):
         self.assertEqual(handover.effective_id(self.cfg, mine, "script"),
                          ("style", "production"))
 
-    def test_default_ignored_when_template_no_longer_offered(self):
+    def test_default_ignored_when_template_was_deleted(self):
         tid = handover.save_user_template(self.cfg, "Only A", False, False, [],
                                           channels=[self.a])
         handover.set_channel_default(self.cfg, self.a, "", tid)
-        handover.set_template_channels(self.cfg, tid, [self.b])
+        handover.delete_user_template(self.cfg, tid)
         self.assertEqual(handover.effective_id(self.cfg, self.prod, "script")[0],
                          "style")
 
-    def test_cannot_set_unavailable_default(self):
+    def test_any_template_can_be_a_channel_default(self):
         tid = handover.save_user_template(self.cfg, "Only A", False, False, [],
                                           channels=[self.a])
         handover.set_channel_default(self.cfg, self.b, "", tid)
+        self.assertEqual(handover.channel_defaults(self.cfg, self.b), {"script": tid})
+        handover.set_channel_default(self.cfg, self.b, "", "no-such-template")
         self.assertEqual(handover.channel_defaults(self.cfg, self.b), {})
 
 
