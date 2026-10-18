@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "visual_mode": "whiteboard",
+  "output": {"width": 1920, "height": 1080, "fps": 30.0},
+  "render": {
+    "preview_width": 1280,
+    "preview_height": 720,
+    "preview_preset": "veryfast",
+    "preview_crf": 28,
+    "preview_bframes": 0
+  },
+  "transitions": {"enabled": true, "kind": "crossfade", "scene_boundary_kind": "fade_black", "duration_seconds": 0.5}
+}

@@ -5939,5 +5939,7 @@ def create_app(cfg) -> Flask:
     handover_routes.register(app, cfg)
     from . import video_routes
     video_routes.register(app, cfg)
+    from . import explainer_routes
+    explainer_routes.register(app, cfg)
 
     return app

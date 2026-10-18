@@ -8,6 +8,11 @@ from pathlib import Path
 from . import models as m
 
 OPTIONS_SCHEMA_VERSION = 1
+# visual modes (doc 16.1): stable stored enum values
+VM_IMAGES = "images"
+VM_MOTION = "motion_graphics"
+VM_WHITEBOARD = "whiteboard"
+VISUAL_MODES = (VM_IMAGES, VM_MOTION, VM_WHITEBOARD)
 POP_VARIANTS = (
     ("pop_bubble", "Bubble - short rising pop"), ("pop_boop", "Boop - soft, rounded"),
     ("pop_drop", "Drop - falling water drop"), ("pop_blip", "Blip - tiny, clean"),
@@ -134,6 +139,10 @@ class ProjectOptions:
     scene_inference: SceneInferenceOptions = field(default_factory=SceneInferenceOptions)
     shotlist: ShotlistOptions = field(default_factory=ShotlistOptions)
     sound: SoundOptions = field(default_factory=SoundOptions)
+    # visual mode (doc 16.1): images (default, unchanged behavior),
+    # motion_graphics / whiteboard (explainer.json scenes). An explicit mode
+    # is never silently overridden by a sidecar's presence.
+    visual_mode: str = "images"
     planner: str = "v2"
 
     def to_dict(self) -> dict:
@@ -199,6 +208,9 @@ class ProjectOptions:
             errors.append("Supersample target width must be between 0 and 16384.")
         if self.planner not in ("v1", "v2"):
             errors.append('Planner must be "v1" or "v2".')
+        if self.visual_mode not in VISUAL_MODES:
+            errors.append("Visual mode must be one of "
+                          f"{', '.join(VISUAL_MODES)}.")
         if r.encoder not in ("auto", "libx264", "cpu", "h264_nvenc", "nvenc",
                              "h264_amf", "amf", "h264_qsv", "qsv"):
             errors.append("Encoder must be auto, libx264, h264_nvenc, h264_amf or h264_qsv.")
