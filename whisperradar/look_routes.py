@@ -110,6 +110,24 @@ def register(app, cfg, sjob) -> None:
                       "keeps up to 50 frames, sends a random selection to the "
                       "chat. This page reloads itself when the job is done.")
 
+    @app.post("/watched/<key>/look/writing")
+    def look_writing(key):
+        """Ask for the writing style again from the stored transcripts (no
+        download, no frames)."""
+        ch = _channel(key)
+        if ch is None:
+            return redirect("/watched?error=Unknown+channel")
+        cid = ch["channel_id"]
+
+        def call(site, transport, hint):
+            channel_look.regenerate_writing(cfg, cid, site, transport,
+                                            sjob.log.append, hint=hint)
+
+        return _start(ch, "writing style", call,
+                      "Started - asking the chat for the writing style from "
+                      "the transcripts of several videos. This page reloads "
+                      "itself when done.")
+
     @app.post("/watched/<key>/look/regen")
     def look_regen(key):
         """Ask again with the frames already collected (no download). The

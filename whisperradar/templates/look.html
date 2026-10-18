@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WhisperRadar &middot; Style &amp; bible</title>
+<title>WhisperRadar &middot; Style, bible &amp; writing style</title>
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
           --muted:#8b93a3; --accent:#4f8cff; --green:#3fb96f; --red:#e05c5c; }
@@ -33,9 +33,11 @@
 <div class="wrap">
   <p><a href="/watched">&larr; Watched channels</a></p>
   <h1>Style &amp; bible &middot; {{ ch["name"] }}</h1>
-  <p class="sub">A reference for the look this channel uses. It stays with this
-    watched channel only &mdash; nothing is copied into your own channels; copy
-    from here when you want to try it.</p>
+  <p class="sub">A reference for the look and the writing this channel uses. It
+    stays with this watched channel only &mdash; nothing is copied into your own
+    channels; copy from here when you want to try it. The <b>writing style</b>
+    (voice, pacing, hook, story layout, ...) is what a new channel of yours
+    needs when it is created.</p>
   {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
   <p class="msg" id="runnote" style="display:none"></p>
@@ -77,12 +79,14 @@
       <label style="flex-basis:100%">Hint for the chat (optional)
         <input type="text" name="hint" maxlength="600" style="width:100%"
                placeholder="e.g. the channel has a recurring cartoon narrator / protagonist"></label>
-      <button type="submit">{{ 'Collect new frames & ask again' if look else 'Get style & bible' }}</button>
+      <button type="submit">{{ 'Collect new frames & ask again' if look and look.files else 'Get style, bible & writing style' }}</button>
     </form>
     <p class="muted" style="margin:8px 0 0">Collects up to {{ max_frames }} frames from
       this channel's most viewed videos (downloaded at low resolution, then
       deleted) and sends a random {{ send_count }} of them, with a few titles and
-      transcript excerpts. The collected frames are kept: use <b>Regenerate</b>
+      transcript excerpts. A second message then asks for the <b>writing
+      style</b> from the transcripts of up to 6 of its most viewed videos
+      (videos without a stored transcript are skipped). The collected frames are kept: use <b>Regenerate</b>
       below to ask again with other or hand-picked frames, without downloading
       anything. Progress shows at the top of this page.</p>
     {% else %}
@@ -93,7 +97,19 @@
   </div>
 
   {% if look %}
-  <p class="muted">Made {{ look.at }} with {{ look.site }} from {{ look.sent|length or look.frames }} of {{ look.frames }} collected frames.</p>
+  {% if look.files %}<p class="muted">Made {{ look.at }} with {{ look.site }} from {{ look.sent|length or look.frames }} of {{ look.frames }} collected frames.</p>{% endif %}
+  <div class="panel">
+    <h2>Writing style <button class="ghost" type="button" onclick="cp('writing')">copy</button>
+      {% if sites %}<button type="submit" form="lookform" formaction="/watched/{{ ch['channel_id'] }}/look/writing" title="Ask again from the stored transcripts - nothing is downloaded">Regenerate writing style</button>{% endif %}</h2>
+    {% if look.writing_style %}
+    <p class="muted" style="margin:0">Made {{ look.writing_at }} from {{ look.writing_videos|length }} video transcript(s): how the channel sounds and how it lays out its stories. Paste it into the Writing style box when you create a channel.</p>
+    <pre id="writing">{{ look.writing_style }}</pre>
+    {% else %}
+    <p class="muted" style="margin:0">None yet. It needs stored transcripts of this channel's videos; press <b>Regenerate writing style</b> after some are transcribed.</p>
+    <pre id="writing" style="display:none"></pre>
+    {% endif %}
+  </div>
+  {% if look.style %}
   <div class="panel">
     <h2>Style guide <button class="ghost" type="button" onclick="cp('style')">copy</button>
       {% if sites %}<button type="submit" form="lookform" formaction="/watched/{{ ch['channel_id'] }}/look/regen" title="Ask again with the frames ticked below (none ticked = a new random selection)">Regenerate</button>{% endif %}</h2>
@@ -104,6 +120,8 @@
       {% if sites %}<button type="submit" form="lookform" formaction="/watched/{{ ch['channel_id'] }}/look/regen" title="Ask again with the frames ticked below (none ticked = a new random selection)">Regenerate</button>{% endif %}</h2>
     <pre id="bible">{{ look.bible or "(the chat gave no separate bible - see the style guide)" }}</pre>
   </div>
+  {% endif %}
+  {% if look.files %}
   <div class="panel">
     <h2>Collected frames <span class="muted" id="picked"></span></h2>
     <p class="muted" style="margin:0 0 8px">Ticked frames are the ones sent
@@ -120,6 +138,7 @@
       {% for f in look.files %}<div class="fr"><label style="display:block"><input type="checkbox" class="pick" name="pick" value="{{ f }}" form="lookform"{% if f in look.sent %} checked{% endif %}> {{ f }}</label><a href="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" target="_blank"><img src="/watched/{{ ch['channel_id'] }}/look/frame/{{ f }}" alt=""></a></div>{% endfor %}
     </div>
   </div>
+  {% endif %}
   {% endif %}
 </div>
 <script>
