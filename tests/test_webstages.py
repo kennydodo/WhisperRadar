@@ -690,3 +690,73 @@ class AskTimingTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             t.ask("zai", "p")
         self.assertTrue(any("round trip failed" in m for m in seen), seen)
+
+
+class AutoSplitAndDecidedFaultTests(unittest.TestCase):
+    def _cues(self, n, each=3.0):
+        def ts(x):
+            return f"00:{int(x // 60):02d}:{x % 60:06.3f}".replace(".", ",")
+        return [{"index": i, "start": ts((i - 1) * each), "end": ts(i * each),
+                 "text": f"cue {i}"} for i in range(1, n + 1)]
+
+    def test_long_shot_is_split_near_the_middle_and_keeps_picture(self):
+        data = {"shots": [{"cues": "1-6", "asset": "A.png", "scene": "S01", "motion": "ZI"},
+                          {"cues": "7-8", "asset": "B.png", "scene": "S01", "motion": "ST"}]}
+        n = ws._auto_split_long(data, self._cues(8), 14.4)
+        self.assertEqual(n, 1)                      # 1-6 holds 18s
+        self.assertEqual([s["cues"] for s in data["shots"]], ["1-3", "4-6", "7-8"])
+        self.assertEqual(data["shots"][1]["asset"], "A.png")
+
+    def test_shot_within_limit_is_left_alone(self):
+        data = {"shots": [{"cues": "1-4", "asset": "A.png", "scene": "S01", "motion": "ZI"}]}
+        self.assertEqual(ws._auto_split_long(data, self._cues(4), 14.4), 0)
+
+    def test_hold_faults_are_recognised_as_code_decided(self):
+        m = ws._CODE_DECIDED.match
+        self.assertTrue(m("MAXIMUM HOLD: S16_01 cues 75-82 hold 14s (>12s)"))
+        self.assertTrue(m("STATIC HOLD: S16_01 cues 83-86 is ST and holds 6s (>5s)"))
+        self.assertFalse(m("COVERAGE: cues 10-12 missing"))
+
+
+class ForceFilesTests(unittest.TestCase):
+    class _T:
+        def __init__(self):
+            self.calls = []
+
+        def ask(self, site, text, paths, new_chat=True, ready=None):
+            self.calls.append((site, text, list(paths)))
+            return "ok"
+
+    def _build(self, files):
+        if files is None:
+            return "inline prompt"
+        files.append({"name": "writing_style.md", "text": "STYLE", "about": "x"})
+        return "prompt with attachment"
+
+    def test_force_files_attaches_even_when_the_prompt_is_short(self):
+        t = self._T()
+        ws._send(t, "zai", self._build, lambda m: None, force_files=True)
+        site, text, paths = t.calls[0]
+        self.assertEqual(text, "prompt with attachment")
+        self.assertEqual(len(paths), 1)
+
+    def test_short_prompt_stays_inline_by_default(self):
+        t = self._T()
+        ws._send(t, "zai", self._build, lambda m: None)
+        self.assertEqual(t.calls[0][1:], ("inline prompt", []))
+
+    def test_inline_only_site_is_never_given_files(self):
+        t = self._T()
+        ws._send(t, "qwen", self._build, lambda m: None, force_files=True)
+        self.assertEqual(t.calls[0][1:], ("inline prompt", []))
+
+
+class FullStyleInlineTests(unittest.TestCase):
+    def test_style_limit_cuts_by_default_and_not_when_lifted(self):
+        long_style = "Hook pattern: " + ("x" * 7000) + " END-OF-GUIDE"
+        cut = studio.script_prompt("T", "g", "brief", style_guide=long_style,
+                                   target_words=1000)
+        full = studio.script_prompt("T", "g", "brief", style_guide=long_style,
+                                    target_words=1000, style_limit=10 ** 6)
+        self.assertNotIn("END-OF-GUIDE", cut)
+        self.assertIn("END-OF-GUIDE", full)

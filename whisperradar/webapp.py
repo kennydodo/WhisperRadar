@@ -4501,7 +4501,7 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
 
         from . import script_readiness
-        if script_readiness.pending(studio.prod_dir(cfg, pid)):
+        if script_readiness.pending(studio.prod_dir(cfg, pid), cfg):
             return _studio_url(pid, error="Script warnings need review before audio. Edit the script or ignore warnings for this version.")
         voice = (request.form.get("voice") or "").strip()[:300] or None
         if voice:

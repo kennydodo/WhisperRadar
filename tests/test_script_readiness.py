@@ -58,18 +58,30 @@ class ScanTests(unittest.TestCase):
 
 class WorkflowTests(Base):
     def test_manual_save_scans_and_acknowledgement_is_versioned(self):
+        __import__('whisperradar.cli_llm', fromlist=['save']).save(self.cfg, {'default': 'codex', 'codex_enabled': 'on', 'claude_enabled': 'on', 'show_fixes': 'on'})
         app = __import__("whisperradar.webapp", fromlist=["create_app"]).create_app(self.cfg)
         client = app.test_client()
         client.post(f"/studio/{self.pid}/script/save", data={"script": "Sponsored by Example."})
         report = sr.ensure(self.pdir)
-        self.assertTrue(sr.pending(self.pdir))
+        self.assertTrue(sr.pending(self.pdir, self.cfg))
         page = client.get(f"/studio/{self.pid}?stage=script")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"Ignore warnings for this version", page.data)
         client.post(f"/studio/{self.pid}/script/warnings/ignore", data={"script_hash": "old"})
-        self.assertTrue(sr.pending(self.pdir))
+        self.assertTrue(sr.pending(self.pdir, self.cfg))
         client.post(f"/studio/{self.pid}/script/warnings/ignore", data={"script_hash": report["script_hash"]})
-        self.assertFalse(sr.pending(self.pdir))
+        self.assertFalse(sr.pending(self.pdir, self.cfg))
+
+    def test_review_off_hides_the_box_and_does_not_hold_audio(self):
+        app = __import__("whisperradar.webapp", fromlist=["create_app"]).create_app(self.cfg)
+        client = app.test_client()
+        client.post(f"/studio/{self.pid}/script/save", data={"script": "Sponsored by Example."})
+        self.assertFalse(sr.review_enabled(self.cfg))
+        self.assertFalse(sr.pending(self.pdir, self.cfg))
+        self.assertTrue(sr.pending(self.pdir))            # the scan itself still runs
+        page = client.get(f"/studio/{self.pid}?stage=script")
+        self.assertNotIn(b"Script needs review before audio", page.data)
+        self.assertNotIn(b"Ignore warnings for this version", page.data)
 
     def test_browser_save_scans(self):
         from whisperradar.webstages import save_script
@@ -78,6 +90,7 @@ class WorkflowTests(Base):
 
     def test_audio_pauses_before_hook(self):
         from whisperradar import autorun
+        __import__('whisperradar.cli_llm', fromlist=['save']).save(self.cfg, {'default': 'codex', 'codex_enabled': 'on', 'claude_enabled': 'on', 'show_fixes': 'on'})
         (self.pdir / "script.md").write_text("A guaranteed result.", encoding="utf-8")
         self.cfg.studio_tts_command = "unused-command"
         with patch("whisperradar.studio.run_hook") as hook:

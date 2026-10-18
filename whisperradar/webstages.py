@@ -184,15 +184,18 @@ def _send_in(transport, site: str, build, log, continuing: bool, ready=None):
 
 
 def _send(transport, site: str, build: Callable, log,
-          new_chat: bool = True, ready=None, uploads=()):
-    """Build the prompt inline; switch to attached files when it is too big.
-    `uploads` are extra files (e.g. inspiration images) always attached
-    alongside the prompt."""
+          new_chat: bool = True, ready=None, uploads=(),
+          force_files: bool = False):
+    """Build the prompt inline; switch to attached files when it is too big
+    (or when `force_files` asks for it: a style guide longer than the inline
+    prompt can carry). `uploads` are extra files (e.g. inspiration images)
+    always attached alongside the prompt."""
     text = build(None)
     files = None
     # Qwen's page ignores files set on its upload input (nothing shows up and
     # the run stalls), so everything goes in the message itself
-    if len(text) > INLINE_MAX_CHARS and site not in INLINE_ONLY_SITES:
+    if ((len(text) > INLINE_MAX_CHARS or force_files)
+            and site not in INLINE_ONLY_SITES):
         files = []
         text = build(files)
     tmp, paths = None, list(uploads)
@@ -522,10 +525,21 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
 
     brief_text, _chat = ensure_brief(cfg, pid, transport, judge, log)
 
+    # a style guide over the inline limit is attached whole, never cut
+    attach_style = ep.style_needs_file(cfg, pid)
+    if attach_style:
+        size = len(ep._writing_style(ctx))
+        for who, what in ((writer, "writer"), (judge, "judge")):
+            log(f"the style guide is {size:,} characters: "
+                + (f"written in full into the {what}'s message ({who} takes "
+                   f"no attachments)" if who in INLINE_ONLY_SITES else
+                   f"attached as a file for the {what} ({who})"))
+
     reply = _send(transport, writer,
                   lambda f: ep.script_writer_prompt(cfg, pid, title, None,
-                                                    None, None, f), log,
-                  ready=long_enough)
+                                                    None, None, f,
+                                                    full_style=writer in INLINE_ONLY_SITES), log,
+                  ready=long_enough, force_files=attach_style)
     attempts = []
     rnd = 0
     judge_open = False          # the judge keeps ONE chat, like the writer
@@ -556,8 +570,10 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             else:
                 raw = _send(transport, judge,
                             lambda f: ep.script_judge_prompt(
-                                cfg, pid, script, title, None, None, None, f),
-                            log, ready=_is_script_verdict)
+                                cfg, pid, script, title, None, None, None, f,
+                                full_style=judge in INLINE_ONLY_SITES),
+                            log, ready=_is_script_verdict,
+                            force_files=attach_style)
             _dump(cfg, pid, f"script_judge_reply_round{rnd}", raw)
             verdict = studio._parse_json_object(raw, want=("score",))
             if verdict:

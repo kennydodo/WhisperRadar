@@ -918,7 +918,7 @@ def _run_audio(cfg, pid: int) -> None:
         if not script:
             raise RuntimeError("Write the script first")
         from . import script_readiness
-        if script_readiness.pending(pdir):
+        if script_readiness.pending(pdir, cfg):
             raise _Paused("Script warnings need review before audio. Open the production, edit the script or ignore warnings for this version, then Resume.")
         out = pdir / "audio.mp3"
         voice = _effective(cfg, pid)["voice"]

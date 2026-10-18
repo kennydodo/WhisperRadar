@@ -147,6 +147,20 @@ def acknowledge(folder, expected_hash):
     return True
 
 
-def pending(folder):
+def review_enabled(cfg) -> bool:
+    """The script review box (and its audio hold) follows Settings > LLM >
+    Codex & Claude Code > "Show Codex / Claude Code script fixes in Studio":
+    off = no box and no hold, on = both."""
+    if cfg is None:
+        return True
+    from . import cli_llm
+    return bool(cli_llm.load(cfg)["show_fixes"])
+
+
+def pending(folder, cfg=None):
+    """True while unresolved warnings hold the audio. Given `cfg`, the hold
+    only applies when the review is switched on in Settings."""
+    if cfg is not None and not review_enabled(cfg):
+        return False
     report = ensure(folder)
     return bool(report and report["warning_count"] and not report["ignored"])
