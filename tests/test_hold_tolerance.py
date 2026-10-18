@@ -43,7 +43,7 @@ class HoldToleranceTests(unittest.TestCase):
 
     def test_st_hold_within_tolerance_passes(self):
         prof = _profile(5.0)
-        for hold in (5, 6, 7):
+        for hold in (5, 6):
             self.assertEqual(
                 [f for f in _one(hold, "ST", profile=prof)
                  if "ST shots hold longer" in f], [], hold)
@@ -74,3 +74,28 @@ class HoldToleranceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChannelToleranceTests(unittest.TestCase):
+    """The channel's custom motion box sets the tolerances; 0 means strict."""
+
+    def _prof(self, **tol):
+        spec = {"allowed": ["ST", "ZI", "ZO"], "st_max_hold": 5, **tol}
+        return briefs.custom_profile(spec)
+
+    def test_empty_fields_use_the_standard_tolerances(self):
+        prof = self._prof()
+        self.assertEqual((prof.max_hold_tol, prof.st_hold_tol, prof.static_hold_tol),
+                         (0.2, 0.2, 0.2))
+
+    def test_percent_values_are_stored_as_shares_and_zero_is_kept(self):
+        prof = self._prof(tol_max="10", tol_st="0", tol_static="30")
+        self.assertEqual((prof.max_hold_tol, prof.st_hold_tol, prof.static_hold_tol),
+                         (0.1, 0.0, 0.3))
+
+    def test_strict_st_tolerance_flags_a_six_second_still(self):
+        loose, strict = self._prof(), self._prof(tol_st="0")
+        flag = lambda p: [f for f in _one(6, "ST", profile=p)
+                          if "ST shots hold longer" in f]
+        self.assertEqual(flag(loose), [])
+        self.assertEqual(len(flag(strict)), 1)

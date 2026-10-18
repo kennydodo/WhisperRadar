@@ -417,7 +417,7 @@ class CustomChannelTests(_ChannelCase):
                 ("script_min_rating", "Quality gates"),
                 ("shotlist_min_alignment", "Quality gates")):
             self.assertEqual(where.get(name), title, name)
-        self.assertTrue("</details>" in edit and edit.count("<details") == 7)
+        self.assertTrue("</details>" in edit and edit.count("<details class=\"grp\"") == 7)
 
     def test_the_groups_keep_their_contents_off_the_border(self):
         page = self.client.get("/my-channels").get_data(as_text=True)

@@ -496,8 +496,11 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         "ASSETS: every shot's \"asset\" has a matching entry in "
         "\"images\" (by \"file\"); no two image prompts are identical.",
         f"MAXIMUM HOLD: no shot holds longer than {cap:g}s. A shot's hold "
-        f"is the sum of the (Ns) durations of the cues in its range. A shot "
-        f"over {cap:g}s is a hard fault whether or not it has motion.",
+        f"is the time from the start of its first cue to the end of its last "
+        f"cue. A shot over {briefs.hold_limit(cap, profile.max_hold_tol):.1f}s "
+        f"(the {cap:g}s limit plus the accepted tolerance) is a hard fault "
+        f"whether or not it has motion. Holds up to that are NOT faults: do "
+        f"not report them.",
     ]
     if profile.min_hold:
         lines.append(
@@ -511,11 +514,15 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
                      f"channel; any other motion code is a fault.")
     motion = []
     if profile.static_long_hold is not None:
+        floor = briefs.hold_limit(profile.static_long_hold,
+                                  profile.static_hold_tol)
         motion.append(f"a static (ST) shot is never acceptable at "
                       f"{profile.static_long_hold:g}s or more")
     if profile.st_max_hold is not None:
-        motion.append(f"an ST shot may not hold longer than "
-                      f"{profile.st_max_hold:g}s")
+        top = briefs.hold_limit(profile.st_max_hold, profile.st_hold_tol)
+        motion.append(f"an ST shot may not hold longer than {top:.1f}s "
+                      f"({profile.st_max_hold:g}s plus the accepted "
+                      f"tolerance; up to that is NOT a fault)")
     if profile.st_max_share is not None:
         motion.append(f"ST may be at most {profile.st_max_share:.0%} of shots")
     if profile.code_max_share is not None:
