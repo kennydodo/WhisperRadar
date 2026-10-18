@@ -28,7 +28,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import autorun, db, external_prompts as ep, handover, studio, webchat
+from . import (autorun, db, external_prompts as ep, handover, skeleton, studio,
+               webchat)
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
@@ -916,11 +917,99 @@ def _recovery_prompt(cfg, pid: int, plan_text: str, feedback: str):
     return build
 
 
+def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
+                   writer: str, log, dump, continuing: bool) -> dict:
+    """The shotlist built the cheap way: the app cuts the narration into
+    numbered draft shots (cue ranges, lengths, camera motion), the writer
+    answers with one short line per shot in chunks inside ONE chat - a new
+    image with its prompt, or "REUSE n" - and the app assembles the JSON.
+    Raises SkeletonError when this flow cannot be used or gives up; the
+    caller then asks for the whole JSON as before."""
+    eff, profile, cues = ctx["eff"], plan["profile"], plan["cues"]
+    why = skeleton.unsupported_reason(eff, profile)
+    if why:
+        raise skeleton.SkeletonError(why)
+    note = ep._animation_note(eff, cues)
+    anim_last = 0
+    if note:
+        from . import motion
+        anim_last = motion.window_last_cue(
+            cues, eff["animate_seconds"], studio._srt_seconds)
+    shots = skeleton.build(cues, profile, plan["max_hold"], anim_last)
+    if not shots:
+        raise skeleton.SkeletonError("no shots could be drafted")
+    allow_refs = plan["allow_refs"]
+    supplied = studio.find_supplied_refs(ctx["pdir"]) if allow_refs else []
+    stems = {n.rsplit(".", 1)[0] for n in supplied}
+    density = studio.visual_density(cfg, pid=pid)
+    style_text = ctx["visual_style"]
+    limit = skeleton.prompt_limit(style_text)
+    rules = skeleton.rules_text(profile, allow_refs, supplied, note,
+                                density=density, limit=limit)
+    direction = db.stage_extra(ctx["prod"], "shots")
+    batches = skeleton.chunks(shots)
+    total = len(shots)
+    log(f"{writer}: the app drafted {total} shots from {len(cues)} cues - "
+        f"asking for the pictures in {len(batches)} part(s) of up to "
+        f"{skeleton.CHUNK_SIZE} shots")
+    ans = skeleton.Answers()
+    for i, batch in enumerate(batches):
+        ready = (lambda t, b=batch: skeleton.covers(t, b))
+        try:
+            if i == 0:
+                reply, _ = _send_in(
+                    transport, writer,
+                    lambda f: skeleton.first_prompt(
+                        rules, ctx["visual_style"], ctx["bible"], direction,
+                        batch, total),
+                    log, continuing, ready=ready)
+            else:
+                reply = _send(transport, writer,
+                              lambda f: skeleton.next_prompt(batch, total),
+                              log, new_chat=False, ready=ready)
+            dump(f"skeleton_reply_{i + 1}", reply)
+            ans.update(skeleton.parse_reply(reply))
+            nums = {s.n for s in batch}
+            for attempt in range(2):
+                bad = [p for p in skeleton.problems(
+                           shots, ans, profile, allow_refs, stems, only=nums,
+                                        style=style_text)]
+                if not bad:
+                    break
+                log(f"{writer}: part {i + 1} - {len(bad)} shot(s) to fix "
+                    f"({bad[0]})")
+                fixed = _send(
+                    transport, writer, lambda f: skeleton.fix_prompt(
+                        bad, [s for s in batch
+                              if f"shot {s.n}:" in " ".join(bad)]),
+                    log, new_chat=False,
+                    ready=lambda t: bool(skeleton.parse_reply(t).answered()
+                                         or skeleton.parse_reply(t).refs))
+                dump(f"skeleton_reply_{i + 1}_fix{attempt + 1}", fixed)
+                ans.update(skeleton.parse_reply(fixed))
+            else:
+                bad = skeleton.problems(shots, ans, profile, allow_refs,
+                                        stems, only=nums,
+                                        style=style_text)
+            if bad:
+                raise skeleton.SkeletonError(
+                    f"part {i + 1} still has problems: {'; '.join(bad[:3])}")
+        except webchat.ChatLost as exc:
+            raise skeleton.SkeletonError(f"the chat was lost ({exc})") from exc
+        log(f"{writer}: part {i + 1}/{len(batches)} done "
+            f"({len(ans.new)} image(s), {len(ans.reuse)} reused so far)")
+    data = skeleton.assemble(shots, ans, ctx["visual_style"], supplied,
+                             allow_refs, profile)
+    dump("plan_reply_1", json.dumps(data, ensure_ascii=False, indent=1))
+    return data
+
+
 def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                  judge: str = "deepseek", rounds: int | None = MAX_ROUNDS,
                  log: Callable[[str], None] = print,
                  should_stop: Callable[[], bool] = lambda: False,
-                 resume: bool = False, same_chats: bool = False) -> dict:
+                 resume: bool = False, same_chats: bool = False,
+                 use_skeleton: bool = False) -> dict:
     ctx = ep._context(cfg, pid)
     plan = ep._plan_inputs(cfg, pid, ctx)
     cues = plan["cues"]
@@ -937,11 +1026,22 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     else:
         if resume:
             log("no readable saved plan - asking the writer as usual")
-        reply, w_cont = _send_in(
-            transport, writer,
-            lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
-            writer in kept, ready=_has_json)
-        data = _collect_plan(transport, writer, reply, log, dump)
+        tried = False
+        if use_skeleton:
+            tried = True
+            try:
+                data = _skeleton_plan(cfg, pid, ctx, plan, transport, writer,
+                                      log, dump, writer in kept)
+            except skeleton.SkeletonError as exc:
+                data = None
+                log(f"line-by-line plan not used ({exc}) - asking for the "
+                    f"whole shotlist as before")
+        if data is None:
+            reply, w_cont = _send_in(
+                transport, writer,
+                lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
+                writer in kept and not tried, ready=_has_json)
+            data = _collect_plan(transport, writer, reply, log, dump)
     log(f"{writer}: plan received ({len(data.get('shots') or [])} shots, "
         f"{len(data.get('images') or [])} images)")
 
@@ -1130,13 +1230,13 @@ def script_job(cfg, pid: int, writer: str, judge: str, log,
 def shotlist_job(cfg, pid: int, writer: str, judge: str, log,
                  should_stop: Callable[[], bool] = lambda: False,
                  options: dict | None = None, resume: bool = False,
-                 same_chats: bool = True) -> None:
+                 same_chats: bool = True, use_skeleton: bool = True) -> None:
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
         try:
             run_shotlist(cfg, pid, t, writer, judge, log=log,
                          should_stop=should_stop, resume=resume,
-                         same_chats=same_chats)
+                         same_chats=same_chats, use_skeleton=use_skeleton)
         finally:
             save_chats(cfg, pid, t)
