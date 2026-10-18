@@ -331,40 +331,26 @@ def _merge_pause_reason(cfg, pid: int, with_stills: bool = False) -> str | None:
 
 
 def _run_style(cfg, pid: int, provider: str | None = None) -> None:
+    """Stage 1 does not generate anything: the channel has ONE fixed writing
+    style, saved once on the channel, and every production just loads it."""
     conn = _connect(cfg)
     try:
         prod = db.get_production(conn, pid)
         if not prod:
             return
-        source_text = _source_transcript_text(cfg, pid)
-        word_count = len(re.findall(r"\w+", source_text))
-        if source_text:
-            prompt = studio.style_prompt(prod["title"], prod["genre"],
-                                         source_text,
-                                         extra_direction=db.stage_extra(
-                                             prod, "style"),
-                                         variant=studio.style_variant(
-                                             conn=conn, pid=pid))
-        else:
-            # no source to analyse: write it from the title, the channel and
-            # the creator's direction instead of pausing
-            eff = settings.for_production(conn, prod)
-            prompt = studio.style_prompt_from_scratch(
-                prod["title"], prod["genre"],
-                channel=eff.get("own_channel_name") or "",
-                channel_notes=settings.row_get(eff.get("own_channel"),
-                                           "description") or "",
-                extra_direction=db.stage_extra(prod, "style"),
-                variant=studio.style_variant(conn=conn, pid=pid))
-        text = studio.llm_generate(cfg, prompt, provider=provider)
-        if not text:
-            raise RuntimeError("LLM returned an empty style guide")
         pdir = studio.prod_dir(cfg, pid)
+        if studio.find_writing_style(pdir):
+            return
+        text = studio.channel_writing_style(conn, prod)
+        if not text:
+            raise _Paused(
+                "this channel has no writing style yet - open the writing "
+                "style stage, paste the channel's writing style and save. It "
+                "is stored on the channel and loaded for every video")
+        pdir.mkdir(parents=True, exist_ok=True)
         (pdir / "writing_style.md").write_text(text + "\n", encoding="utf-8")
         db.add_step(conn, pid, "style", "auto",
-                    detail=(f"{provider}, source ~{word_count} words"
-                            if source_text else
-                            f"{provider}, from title/channel (no source)"))
+                    detail="loaded from the channel's saved writing style")
     finally:
         conn.close()
 
@@ -2254,22 +2240,26 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
     {stage, action: 'skip'|'run'|'pause', detail}."""
     pdir = studio.prod_dir(cfg, pid)
     wait = source_prep.state(cfg, pid)
-    if wait and not (stage == "style" and studio.find_writing_style(pdir)):
+    if wait and stage != "style":
         # nothing to compare with or take points from until it is there
         return {"stage": stage, "action": "pause", "detail": wait["text"]}
     if stage == "style":
         if studio.find_writing_style(pdir):
             return {"stage": stage, "action": "skip",
                     "detail": "writing style guide already exists"}
-        provider = _default_provider(cfg, pid)
-        if not _source_transcript_text(cfg, pid):
+        conn = _connect(cfg)
+        try:
+            has_channel_style = bool(studio.channel_writing_style(
+                conn, db.get_production(conn, pid)))
+        finally:
+            conn.close()
+        if has_channel_style:
             return {"stage": stage, "action": "run",
-                    "detail": f"style guide via LLM "
-                              f"({studio.llm_label(cfg, provider)}) from the "
-                              f"title and channel - no source transcript"}
-        return {"stage": stage, "action": "run",
-                "detail": f"style guide via LLM "
-                          f"({studio.llm_label(cfg, provider)})"}
+                    "detail": "load the channel's saved writing style "
+                              "(nothing is generated)"}
+        return {"stage": stage, "action": "pause",
+                "detail": "this channel has no writing style yet - paste it "
+                          "in the writing style stage"}
     if stage == "script":
         if studio.find_script(pdir):
             return {"stage": stage, "action": "skip",

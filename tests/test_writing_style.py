@@ -48,19 +48,34 @@ class WritingStyleTests(unittest.TestCase):
             autorun.stage_action(self.cfg, self.pid, "style")["action"],
             "skip")
 
-    def test_run_style_writes_writing_style_not_art_style(self):
+    def _channel_prod(self, writing_style=None):
+        conn = db.connect(self.cfg.db_path)
+        try:
+            chan = db.create_own_channel(conn, "C", writing_style=writing_style) \
+                if writing_style else db.create_own_channel(conn, "C")
+            db.update_production(conn, self.pid, own_channel_id=chan)
+        finally:
+            conn.close()
+
+    def test_run_style_loads_the_channel_style_and_never_generates(self):
         (self.pdir / "style.md").write_text("Art style: watercolor\n",
                                             encoding="utf-8")
-        with mock.patch.object(autorun, "_source_transcript_text",
-                               return_value="some transcript words"), \
-             mock.patch.object(studio, "llm_generate",
-                               return_value="## Voice & Tone\ncalm"):
+        self._channel_prod("## Voice & Tone\ncalm")
+        with mock.patch.object(studio, "llm_generate") as llm:
             autorun._run_style(self.cfg, self.pid, provider="x")
+        llm.assert_not_called()
         self.assertIn("Voice & Tone",
                       (self.pdir / "writing_style.md").read_text("utf-8"))
         self.assertEqual((self.pdir / "style.md").read_text("utf-8").strip(),
                          "Art style: watercolor")
 
+    def test_run_style_pauses_when_the_channel_has_no_style(self):
+        self._channel_prod()
+        with mock.patch.object(studio, "llm_generate") as llm:
+            with self.assertRaises(autorun._Paused):
+                autorun._run_style(self.cfg, self.pid, provider="x")
+        llm.assert_not_called()
+        self.assertIsNone(studio.find_writing_style(self.pdir))
 
 if __name__ == "__main__":
     unittest.main()

@@ -357,6 +357,30 @@ def find_writing_style(pid_dir: Path) -> Path | None:
     return p if p.exists() else None
 
 
+def channel_writing_style(conn, prod) -> str:
+    """The FIXED writing style saved on the production's own channel ('' when
+    the channel has none or the production has no channel). Stage 1 loads it
+    into writing_style.md instead of generating one per video."""
+    from . import db, settings
+
+    oc_id = settings.row_get(prod, "own_channel_id") if prod is not None else None
+    if not oc_id:
+        return ""
+    own = db.get_own_channel(conn, oc_id)
+    return (settings.row_get(own, "writing_style") or "").strip()
+
+
+def channel_writing_style_for(cfg, prod) -> str:
+    from . import db
+
+    conn = db.connect(cfg.db_path)
+    try:
+        db.init_db(conn)
+        return channel_writing_style(conn, prod)
+    finally:
+        conn.close()
+
+
 def find_source_transcript(pid_dir: Path) -> Path | None:
     p = pid_dir / "source_transcript.txt"
     return p if p.exists() else None
@@ -392,6 +416,15 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
     pdir = prod_dir(cfg, prod["id"])
     eff = settings.for_production(conn, prod)
 
+    # the channel's fixed WRITING style goes straight into stage 1
+    seeded_ws = False
+    ws = channel_writing_style(conn, prod)
+    if ws and not (pdir / "writing_style.md").exists():
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "writing_style.md").write_text(ws + "\n", encoding="utf-8")
+        seeded_ws = True
+        log("loaded writing_style.md from the channel's saved writing style")
+
     bible_dir: Path | None = None
     refs_dir: Path | None = None
     if eff["bible_dir"] or eff["refs_dir"] or eff["bible"] or eff["style"]:
@@ -401,7 +434,8 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
         if eff["refs_dir"]:
             refs_dir = Path(eff["refs_dir"]).expanduser()
     else:
-        return {"bible": False, "style": False, "refs": 0, "source": ""}
+        return {"bible": False, "style": False, "refs": 0, "source": "",
+                "writing_style": seeded_ws}
 
     # a single seed folder keeps the refs in a refs\ subfolder
     if refs_dir is None and bible_dir is not None \
@@ -456,7 +490,8 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
             log(f"seeded {copied_refs} ref image(s) from {refs_dir}")
 
     return {"bible": copied_bible, "style": copied_style,
-            "refs": copied_refs, "source": source}
+            "refs": copied_refs, "source": source,
+            "writing_style": seeded_ws}
 
 
 def find_images(pid_dir: Path) -> list[Path]:

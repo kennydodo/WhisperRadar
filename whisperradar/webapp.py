@@ -2290,6 +2290,13 @@ def create_app(cfg) -> Flask:
         if not name:
             return redirect("/my-channels?error="
                             + quote("Channel name is required"))
+        writing_style = textfiles.normalize_newlines(
+            request.form.get("writing_style") or "").strip()
+        if not writing_style:
+            return redirect("/my-channels?error=" + quote(
+                "A writing style is required for a new channel - research it "
+                "outside WhisperRadar (or build it from the style and bible "
+                "research) and paste it in the Writing style box"))
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -2297,7 +2304,7 @@ def create_app(cfg) -> Flask:
                 return redirect("/my-channels?error=" + quote(
                     f"A channel named '{name}' already exists"))
             oc_id = db.create_own_channel(
-                conn, name,
+                conn, name, writing_style=writing_style,
                 description=(request.form.get("description") or "").strip(),
                 genre=(request.form.get("genre") or "").strip() or "general",
                 youtube_handle=(request.form.get("youtube_handle") or "").strip(),
@@ -3792,6 +3799,7 @@ def create_app(cfg) -> Flask:
             default_engine=studio.effective_engine(eff["engine"],
                                                    eff["render_mode"]),
             own_channel_name=eff["own_channel_name"],
+            channel_ws=studio.channel_writing_style_for(cfg, prod),
             flow_project_url_default=(eff["flow_project_url"]
                                       or cfg.flowbatch_project_url or ""),
             flowbatch_ready=studio.flowbatch_ready(cfg),
@@ -4344,13 +4352,22 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
-            # the writing guide is per production; it does not touch the
-            # channel's art style or the style_override flag
-            db.add_step(conn, pid, "style", "manual")
+            # the channel keeps ONE writing style: what is saved here becomes
+            # the channel's style for this and every later video. (The art
+            # style and the style_override flag are not touched.)
+            _prod = db.get_production(conn, pid)
+            oc_id = _prod["own_channel_id"] if _prod is not None else None
+            if oc_id:
+                db.update_own_channel(conn, oc_id, writing_style=text)
+            db.add_step(conn, pid, "style", "manual",
+                        detail=("saved as the channel's writing style" if oc_id
+                                else "this production only (no channel)"))
             autorun._advance(cfg, pid, "style")
         finally:
             conn.close()
-        return _studio_url(pid, msg="Writing style guide saved")
+        return _studio_url(pid, msg=("Writing style saved on the channel - "
+                                     "every video now uses it" if oc_id
+                                     else "Writing style guide saved"))
 
     @app.post("/studio/<int:pid>/script/generate")
     def studio_script_generate(pid):

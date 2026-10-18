@@ -25,7 +25,8 @@ class InProductionTests(unittest.TestCase):
         self.cfg.studio_dir = Path(self.tmp.name) / "studio"
         self.conn = db.connect(self.cfg.db_path)
         db.init_db(self.conn)
-        self.chan = db.create_own_channel(self.conn, "Channel A")
+        self.chan = db.create_own_channel(self.conn, "Channel A",
+                                          writing_style="Calm voice.")
         self.client = create_app(self.cfg).test_client()
 
     def tearDown(self):

@@ -313,7 +313,7 @@
                           'refs': 'references', 'motion': 'motion clips',
                           'merge': 'merge & export'} %}
   {% set RESET_BLURB = {
-    'style': 'everything re-runs, starting from a fresh writing style guide',
+    'style': 'everything re-runs, starting from the saved channel writing style',
     'script': 'also deletes the subtitles and shotlist (a new script is generated; kept audio will no longer match it)',
     'audio': 'deletes the audio - you will need to upload or regenerate it (subtitles/shotlist/images are also cleared, since they were timed to it)',
     'srt': 'deletes the subtitles and shotlist, then re-transcribes from the kept audio',
@@ -460,12 +460,12 @@
       {% if style %}
       <div class="artifact">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-          <span style="font-weight:600; color:var(--green)">Writing style guide - how the script sounds, extracted from the source video; used only for the script</span>
+          <span style="font-weight:600; color:var(--green)">Writing style guide - how every script{% if own_channel_name %} for {{ own_channel_name }}{% endif %} sounds; used only for the script{% if channel_ws %} (the channel's saved style){% endif %}</span>
         </div>
         <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:340px; overflow-y:auto">{{ style_text }}</pre>
       </div>
       {% else %}
-      <div class="muted" style="margin-bottom:8px">No writing style guide yet. Generate one from the source transcript's writing style, or write your own below - it is passed to the LLM for the script only.</div>
+      <div class="warn" style="margin-bottom:8px">No writing style yet. {% if own_channel_name %}Paste it below and save: it is stored on the channel <b>{{ own_channel_name }}</b> and loaded automatically for every video from now on. Nothing is generated.{% else %}This production has no channel, so it is saved for this production only.{% endif %}</div>
       {% endif %}
       <div class="muted" style="font-size:12px; margin-bottom:8px"><b>Writing style</b> = how the script sounds (voice, pacing, hook, structure, CTA). It is not the <b>visual style</b> - how the images look - which is set on the channel (My Channels &gt; Style, bible &amp; references) and used at the shotlist stage.</div>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/style-variant" style="margin-bottom:8px; gap:6px; align-items:center">
@@ -478,30 +478,27 @@
           </select>
         </label>
       </form>
-      <div class="actions">
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/generate">
-          <button type="submit" class="green" {{ 'disabled' if job.running or not llm_ready else '' }}
-                  title="{{ ('Analyze the source transcript and extract its writing style' if source_tr else 'No source transcript: the style is written from the title, the channel and the direction box below') if llm_ready and not job.running else ('A job is already running' if job.running else 'Needs a configured LLM') }}">
-            {{ 'Working...' if job.running else ('Generate writing style guide from source' if source_tr else 'Generate writing style guide (no source: from title and channel)') }}
-          </button>
+      <details style="margin-top:10px" {{ '' if style else 'open' }}>
+        <summary style="cursor:pointer; font-weight:600; margin-bottom:8px">{{ 'Override writing style' if style else 'Add the writing style' }}</summary>
+        <form method="post" action="/studio/{{ prod['id'] }}/style/save"
+              {% if channel_ws %}onsubmit="return wrConfirmSubmit(this, 'Replace the channel writing style? This updates the style saved on the channel, and every future video will use it.')"{% endif %}>
+          <textarea name="style" placeholder="Paste the writing style (markdown) - voice, pacing, hook, structure, CTA. It is used for the script only...">{{ style_text }}</textarea>
+          <div class="actions">
+            <button type="submit">{{ "Save as the channel's writing style" if own_channel_name else 'Save writing style guide' }}</button>
+          </div>
         </form>
-      </div>
-      <form method="post" action="/studio/{{ prod['id'] }}/style/save">
-        <textarea name="style" placeholder="Write or paste your own writing style guide (markdown) - voice, pacing, hook, structure, CTA. It is used for the script only...">{{ style_text }}</textarea>
-        <div class="actions">
-          <button type="submit">Save writing style guide</button>
-        </div>
-      </form>
-      <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/save" enctype="multipart/form-data" style="margin-top:10px">
-        <input type="file" name="style_file" accept=".txt,.md">
-        <button type="submit" class="secondary">Upload style file</button>
-      </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/style/save" enctype="multipart/form-data" style="margin-top:10px"
+              {% if channel_ws %}onsubmit="return wrConfirmSubmit(this, 'Replace the channel writing style? This updates the style saved on the channel, and every future video will use it.')"{% endif %}>
+          <input type="file" name="style_file" accept=".txt,.md">
+          <button type="submit" class="secondary">Upload style file</button>
+        </form>
+      </details>
 
     {% elif stage == "script" %}
       {% if style %}
       <div class="artifact">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-          <span style="font-weight:600; color:var(--green)">Writing style guide the LLM follows (extracted from the source video)</span>
+          <span style="font-weight:600; color:var(--green)">Writing style guide the LLM follows (the channel's saved writing style)</span>
           <a class="muted" style="font-size:12px" href="/studio/{{ prod['id'] }}?stage=style">edit at style stage</a>
         </div>
         <pre class="copyable" style="margin:0; font-size:12px; white-space:pre-wrap; max-height:320px; overflow-y:auto">{{ style_text }}</pre>

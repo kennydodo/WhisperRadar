@@ -34,10 +34,15 @@ class SourceWaitTests(unittest.TestCase):
 
     def test_no_transcript_means_the_pipeline_pauses_on_every_stage(self):
         self.assertIsNotNone(source_prep.state(self.cfg, self.pid))
-        for stage in ("style", "script", "audio"):
+        for stage in ("script", "audio"):
             e = autorun.stage_action(self.cfg, self.pid, stage)
             self.assertEqual(e["action"], "pause", stage)
             self.assertIn("source transcript", e["detail"])
+        # stage 1 loads the channel's fixed writing style: it never waits for
+        # (or reads) the source, and with no style saved it asks for one
+        e = autorun.stage_action(self.cfg, self.pid, "style")
+        self.assertEqual(e["action"], "pause")
+        self.assertIn("writing style", e["detail"])
 
     def test_running_job_reads_as_waiting_and_failure_as_error(self):
         source_prep._active.add("v1")

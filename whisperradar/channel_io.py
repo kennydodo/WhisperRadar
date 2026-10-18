@@ -38,7 +38,8 @@ _FLOAT = {"script_min_rating": (1.0, 10.0), "script_max_overlap": (0.0, 1.0),
 _JSON = {"watched_channels", "brief_custom", "brief_types"}
 _PROVIDER = {"producer_llm_provider", "script_judge_provider",
              "shotlist_judge_provider"}
-_MULTILINE = {"style", "bible", "brief_presentation", "description"}
+_MULTILINE = {"style", "bible", "writing_style", "brief_presentation",
+              "description"}
 
 
 def exportable_fields() -> list[str]:

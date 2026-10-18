@@ -1,8 +1,7 @@
-"""The writing-style stage no longer needs a source transcript.
+"""The from-scratch writing-style prompt (kept for the prompt builders).
 
-With a source video it still analyses that narration. Without one, the guide
-is written from the title, the channel and the creator's direction, the
-button is available, and auto-run runs the stage instead of pausing.
+Stage 1 itself no longer generates a style: it loads the channel's fixed
+writing style (see test_channel_writing_style.py).
 
 Run: python -m unittest discover -s tests
 """
@@ -50,35 +49,6 @@ class StyleWithoutSourceTests(unittest.TestCase):
                     "## Voice & Tone"):
             self.assertIn(bit, p)
         self.assertNotIn("TRANSCRIPT TO ANALYZE", p)
-
-    def test_auto_run_plans_the_style_stage_instead_of_pausing(self):
-        entry = autorun.stage_action(self.cfg, self.pid, "style")
-        self.assertEqual(entry["action"], "run")
-
-    def test_stage_writes_the_guide_without_a_source(self):
-        seen = {}
-
-        def fake(cfg, prompt, provider=None, **kw):
-            seen["prompt"] = prompt
-            return "## Voice & Tone\nwarm"
-
-        with mock.patch.object(studio, "llm_generate", fake):
-            autorun._run_style(self.cfg, self.pid, provider="x")
-        self.assertIn("Calm Habits", seen["prompt"])
-        self.assertIn("Gentle Japanese living tips", seen["prompt"])
-        pdir = studio.prod_dir(self.cfg, self.pid)
-        self.assertTrue((pdir / "writing_style.md").exists())
-
-    def test_button_is_not_disabled_for_lack_of_a_source(self):
-        client = create_app(self.cfg).test_client()
-        with mock.patch.object(studio, "provider_ready", return_value=True), \
-                mock.patch.object(studio, "providers",
-                                  return_value=[{"name": "x", "label": "x"}]):
-            html = client.get(f"/studio/{self.pid}?stage=style").get_data(
-                as_text=True)
-        i = html.index("/style/generate")
-        button = html[i:html.index("</button>", i)]
-        self.assertNotIn("disabled", button)
 
 
 if __name__ == "__main__":
