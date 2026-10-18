@@ -502,8 +502,9 @@
               </label>
             </div>
             {% set cs = (ch['brief_custom'] | fromjson) if ch['brief_custom'] else {} %}
-            <div class="custom-motion" style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px; {{ '' if ch['brief_motion'] == 'custom' else 'display:none' }}">
-              <div class="muted" style="font-size:12px; margin-bottom:6px">
+            <details class="custom-motion" open style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px; {{ '' if ch['brief_motion'] == 'custom' else 'display:none' }}">
+              <summary style="cursor:pointer; font-weight:600">Custom motion</summary>
+              <div class="muted" style="font-size:12px; margin:6px 0">
                 Custom motion - the planner may only use the ticked codes, and the shotlist review checks the same limits.
                 Empty = the standard limit. Canvas sizes follow the ticked codes.
               </div>
@@ -541,6 +542,24 @@
                 </label>
               </div>
               <div class="muted" style="font-size:12px; margin-top:2px">Empty ST boxes use the standard (10% share, 5 s hold).</div>
+              <div class="muted" style="font-size:12px; margin:8px 0 2px">
+                Hold tolerance (%) - how far over a hold limit the shotlist check, the shot drafting and the judge still accept.
+                Empty = the standard (20 for all three); 0 = strict, no leniency.
+              </div>
+              <div class="inline">
+                <label>max hold
+                  <input type="number" name="custom_tol_max" min="0" max="200" step="any" style="width:72px"
+                         value="{{ '%g' % (cs.get('tol_max') * 100) if cs.get('tol_max') is not none else '' }}" placeholder="20">
+                </label>
+                <label>ST hold
+                  <input type="number" name="custom_tol_st" min="0" max="200" step="any" style="width:72px"
+                         data-codes="ST" value="{{ '%g' % (cs.get('tol_st') * 100) if cs.get('tol_st') is not none else '' }}" placeholder="20">
+                </label>
+                <label>long static
+                  <input type="number" name="custom_tol_static" min="0" max="200" step="any" style="width:72px"
+                         data-codes="ST" value="{{ '%g' % (cs.get('tol_static') * 100) if cs.get('tol_static') is not none else '' }}" placeholder="20">
+                </label>
+              </div>
               <script>
                 (function () {
                   var box = document.currentScript.closest('.custom-motion');
@@ -593,7 +612,7 @@
                 <textarea name="custom_rules" style="min-height:60px; width:100%"
                           placeholder="e.g. Use ZI on every character beat, ZO when a list is revealed, PU/PD only for before/after comparisons.">{{ cs.get('rules') or '' }}</textarea>
               </label>
-            </div>
+            </details>
             <script>
               (function () {
                 var form = document.currentScript.closest('form');
@@ -625,8 +644,9 @@
             </div>
             {% set bt = ch['brief_types'] | typesjson %}
             <input type="hidden" name="types_form" value="1">
-            <div class="custom-motion" style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px">
-              <div class="muted" style="font-size:12px; margin-bottom:6px">
+            <details class="type-limits" open style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px">
+              <summary style="cursor:pointer; font-weight:600">Diagrams, infographics and the host</summary>
+              <div class="muted" style="font-size:12px; margin:6px 0">
                 <b>Diagrams, infographics and the host</b> - how much of the video each shot type may take
                 (percent of ALL shots; empty = the global default in Settings &gt; Brief defaults, 0 = never used).
                 The shotlist review treats a breach as a hard fault.
@@ -661,7 +681,7 @@
                 </label>
                 {% endfor %}
               </div>
-            </div>
+            </details>
             <div class="inline" style="margin-top:8px">
               <label style="flex:1 1 90%">presentation - who is on screen, and when (optional)
                 <textarea name="brief_presentation" style="min-height:70px"

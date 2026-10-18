@@ -5759,7 +5759,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
     # holds are checked against the limit plus a tolerance (briefs.*_TOLERANCE),
     # the planner is still told the nominal one
     long = sorted((h for h in holds
-                   if h[0] > briefs.hold_limit(cap, briefs.MAX_HOLD_TOLERANCE)
+                   if h[0] > briefs.hold_limit(cap, prof.max_hold_tol)
                    + 1e-9), reverse=True)
     if long:
         SHOWN_CAP = 30
@@ -5823,7 +5823,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
                 f"{prof.allowed[0]}.png).")
     if prof.static_long_hold is not None:
         static_floor = briefs.hold_limit(prof.static_long_hold,
-                                         briefs.STATIC_LONG_TOLERANCE)
+                                         prof.static_hold_tol)
         static_long = [(h, a) for h, m, a, _f, _l in holds
                        if m == "ST" and h >= static_floor]
         if static_long:
@@ -5837,7 +5837,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
                       f"{prof.st_max_share:.0%}) - ST is the exception, not "
                       f"the default")
     if prof.st_max_hold is not None:
-        st_limit = briefs.hold_limit(prof.st_max_hold, briefs.ST_HOLD_TOLERANCE)
+        st_limit = briefs.hold_limit(prof.st_max_hold, prof.st_hold_tol)
         st_long = [(h, a) for h, a in st if h > st_limit + 1e-9]
         if st_long:
             faults.append(f"ST shots hold longer than {prof.st_max_hold:g}s: "

@@ -101,9 +101,9 @@ class MotionTests(unittest.TestCase):
         prof = briefs.get_profile("standard")
         prof = prof.__class__(**{**prof.__dict__, "st_max_hold": 5.0,
                                  "static_long_hold": None})
-        for sec in (3.0, 5.0, 6.0, 6.9):          # up to 5 s + 40%
+        for sec in (3.0, 5.0, 5.9):               # up to 5 s + 20%
             self.assertTrue(sk.st_fits(sec, prof), sec)
-        for sec in (7.0, 7.5, 9.0):
+        for sec in (6.0, 7.0, 9.0):
             self.assertFalse(sk.st_fits(sec, prof), sec)
         prof = prof.__class__(**{**prof.__dict__, "st_max_hold": None,
                                  "static_long_hold": 10.0})

@@ -254,10 +254,10 @@ def st_fits(seconds: float, profile) -> bool:
     the check that judges its result. Shots are CUT to the nominal limit (see
     build) - the tolerance only widens who is eligible."""
     if profile.st_max_hold is not None and seconds + 0.05 > briefs.hold_limit(
-            profile.st_max_hold, briefs.ST_HOLD_TOLERANCE):
+            profile.st_max_hold, profile.st_hold_tol):
         return False
     if profile.static_long_hold is not None and seconds >= briefs.hold_limit(
-            profile.static_long_hold, briefs.STATIC_LONG_TOLERANCE):
+            profile.static_long_hold, profile.static_hold_tol):
         return False
     return True
 

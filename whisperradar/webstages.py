@@ -1260,7 +1260,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             # no new chat. The app cuts over-long shots itself; anything else
             # is reported instead of restarting the work from the beginning.
             n = _auto_split_long(data, cues, briefs.hold_limit(
-                plan["max_hold"], briefs.MAX_HOLD_TOLERANCE))
+                plan["max_hold"], plan["profile"].max_hold_tol))
             if not n:
                 last_problem = "; ".join(hard[:3])
                 log(f"faults the app cannot fix itself: {last_problem}")

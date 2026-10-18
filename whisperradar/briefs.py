@@ -52,11 +52,11 @@ MIX_FLOOR_RATIO = 0.5
 # cap plus this many percentage points: 10.05% against a ~10% cap is not a fault.
 SHARE_TOLERANCE = 0.02
 # A hold limit (seconds) is met when the hold is at most the limit plus this
-# share of it: with an ST maximum of 5 s, a 6-7 s ST shot passes. The writer is
+# share of it: with an ST maximum of 5 s, a 6 s ST shot passes. The writer is
 # still told the nominal limit; only the app's own check is lenient, so a
 # near-miss does not cost a whole re-plan round. Shares of shots have their own
 # tolerance above (SHARE_TOLERANCE).
-ST_HOLD_TOLERANCE = 0.40       # ST maximum hold
+ST_HOLD_TOLERANCE = 0.20       # ST maximum hold
 MAX_HOLD_TOLERANCE = 0.20      # the channel's maximum hold per shot
 STATIC_LONG_TOLERANCE = 0.20   # the "long static hold is never acceptable" floor
 
@@ -144,6 +144,11 @@ class MotionProfile:
     reveal_strict: bool = False
     # the sound the plan uses for reveal items ("" = the built-in "pop")
     sfx: str = ""
+    # how far over each hold limit the checks still pass (a share of the
+    # limit); the channel's custom motion box sets them, 0 = strict
+    max_hold_tol: float = MAX_HOLD_TOLERANCE
+    st_hold_tol: float = ST_HOLD_TOLERANCE
+    static_hold_tol: float = STATIC_LONG_TOLERANCE
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -445,6 +450,18 @@ def _secs(value):
     return round(min(300.0, max(1.0, v)), 2) if v > 0 else None
 
 
+def _tol(value):
+    """A hold tolerance as a 0-1 share from a PERCENT (0 = strict, empty =
+    None = the standard tolerance)."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(min(200.0, max(0.0, v)) / 100.0, 4)
+
+
 def normalize_custom(spec) -> dict | None:
     """A clean custom spec from stored JSON / a dict, or None if unusable.
 
@@ -472,6 +489,9 @@ def normalize_custom(spec) -> dict | None:
         "code_max_share": _frac(spec.get("code_max_share")),
         **{key: _frac(spec.get(key)) for key in CODE_GROUPS},
         "rules": str(spec.get("rules") or "").strip(),
+        "tol_max": _tol(spec.get("tol_max")),
+        "tol_st": _tol(spec.get("tol_st")),
+        "tol_static": _tol(spec.get("tol_static")),
     }
 
 
@@ -572,6 +592,9 @@ def custom_profile(spec) -> MotionProfile:
     allowed = tuple(spec["allowed"])
     moving = [c for c in allowed if c != "ST"]
     has_st = "ST" in allowed
+    tols = {name: spec[key] for name, key in (
+        ("max_hold_tol", "tol_max"), ("st_hold_tol", "tol_st"),
+        ("static_hold_tol", "tol_static")) if spec.get(key) is not None}
     if allowed == ("ST",):                    # all-static = the Static preset
         base = replace(STATIC, key=CUSTOM_KEY, label=CUSTOM_LABEL,
                        description=CUSTOM_DESCRIPTION)
@@ -581,7 +604,7 @@ def custom_profile(spec) -> MotionProfile:
                                         "channel (follow them):\n"
                                         + spec["rules"])
             base = replace(base, slots=slots)
-        return base
+        return replace(base, **tols)
     st_share, cap, overrides, groups = _caps(spec)
     st_hold = (spec["st_max_hold"] or ST_MAX_HOLD_SECONDS) if has_st else None
     not_allowed = [c for c in MOTION_CODES if c not in allowed]
@@ -666,7 +689,7 @@ def custom_profile(spec) -> MotionProfile:
         st_max_hold=st_hold,
         static_long_hold=STATIC_LONG_HOLD_SECONDS if has_st else None,
         code_max_share=cap, code_share_overrides=overrides,
-        group_caps=groups, slots=slots)
+        group_caps=groups, slots=slots, **tols)
 
 
 _RANGE_HOLD_RULE = (

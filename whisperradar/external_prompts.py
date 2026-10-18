@@ -497,7 +497,7 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         "\"images\" (by \"file\"); no two image prompts are identical.",
         f"MAXIMUM HOLD: no shot holds longer than {cap:g}s. A shot's hold "
         f"is the time from the start of its first cue to the end of its last "
-        f"cue. A shot over {briefs.hold_limit(cap, briefs.MAX_HOLD_TOLERANCE):.1f}s "
+        f"cue. A shot over {briefs.hold_limit(cap, profile.max_hold_tol):.1f}s "
         f"(the {cap:g}s limit plus the accepted tolerance) is a hard fault "
         f"whether or not it has motion. Holds up to that are NOT faults: do "
         f"not report them.",
@@ -515,12 +515,12 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
     motion = []
     if profile.static_long_hold is not None:
         floor = briefs.hold_limit(profile.static_long_hold,
-                                  briefs.STATIC_LONG_TOLERANCE)
+                                  profile.static_hold_tol)
         motion.append(f"a static (ST) shot is never acceptable at "
                       f"{floor:.1f}s or more ({profile.static_long_hold:g}s "
                       f"plus the accepted tolerance; shorter is NOT a fault)")
     if profile.st_max_hold is not None:
-        top = briefs.hold_limit(profile.st_max_hold, briefs.ST_HOLD_TOLERANCE)
+        top = briefs.hold_limit(profile.st_max_hold, profile.st_hold_tol)
         motion.append(f"an ST shot may not hold longer than {top:.1f}s "
                       f"({profile.st_max_hold:g}s plus the accepted "
                       f"tolerance; up to that is NOT a fault)")

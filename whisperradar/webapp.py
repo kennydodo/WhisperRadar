@@ -2343,6 +2343,9 @@ def create_app(cfg) -> Flask:
                     "pan_max_share": form.get("custom_pan_share"),
                     "tilt_max_share": form.get("custom_tilt_share"),
                     "rules": form.get("custom_rules"),
+                    "tol_max": form.get("custom_tol_max"),
+                    "tol_st": form.get("custom_tol_st"),
+                    "tol_static": form.get("custom_tol_static"),
                 })
                 problem = briefs.custom_error(spec)
                 if spec and not problem:
