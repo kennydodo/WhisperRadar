@@ -3014,7 +3014,19 @@ def create_app(cfg) -> Flask:
 
         # every channel by default; ?channel=<id> narrows to one
         # (0 = productions with no channel)
-        scope = request.args.get("channel", type=int)
+        # The picked channel is remembered in a cookie: Mark published, Retry,
+        # Clear error and the other actions redirect back to a bare /finished,
+        # which would otherwise fall back to every channel. An explicit
+        # ?channel= (empty = "All channels") always wins and updates the cookie.
+        remembered = "channel" in request.args
+        raw_scope = (request.args.get("channel") if remembered
+                     else request.cookies.get("wr_finished_channel"))
+        try:
+            scope = int(raw_scope) if raw_scope not in (None, "") else None
+        except ValueError:
+            scope = None
+        if scope not in (None, 0) and scope not in own_by_id:
+            scope = None                      # that channel is gone
         rows = [p for p in db.list_productions(conn)
                 if p["status"] in ("ready", "published")
                 and (scope is None or (p["own_channel_id"] or 0) == scope)]
@@ -3065,14 +3077,20 @@ def create_app(cfg) -> Flask:
             return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
                             if (v or v == 0) and v != "" and v != "all")
 
-        return render_template(
+        resp = make_response(render_template(
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
             status_filter=status_filter, ready_count=ready_count,
             published_count=published_count, due_results=due_results,
             scope=scope,
             channel_options=[{"id": c["id"], "name": c["name"]}
                              for c in own_channels if c["active"]],
-            msg=request.args.get("msg"), error=request.args.get("error"))
+            msg=request.args.get("msg"), error=request.args.get("error")))
+        if scope is None:
+            resp.delete_cookie("wr_finished_channel")
+        else:
+            resp.set_cookie("wr_finished_channel", str(scope),
+                            max_age=60 * 60 * 24 * 365, samesite="Lax")
+        return resp
 
     @app.get("/gpt-pro/queue")
     def gpt_pro_queue_page():
