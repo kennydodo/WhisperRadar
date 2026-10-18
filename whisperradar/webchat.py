@@ -1106,6 +1106,7 @@ _CONTINUE_JS = """(labels) => {
   // the reply text itself
   const tiny=[...document.querySelectorAll('div,span,a')]
     .filter(x=>x.offsetParent!==null && x.children.length<=2)
+    .filter(x=>!x.closest('p,li,h1,h2,h3,h4,h5,h6,pre,code,blockquote,td,th,.markdown,.ds-markdown,.prose,[data-message-author-role]'))
     .filter(x=>{const t=(x.innerText||'').trim().toLowerCase();
                 return t && t.length<40 && labels.some(l=>t===l);})
     .sort((p,q)=>p.querySelectorAll('*').length-q.querySelectorAll('*').length);
@@ -1134,6 +1135,7 @@ _CONTINUE_INFO_JS = """(labels) => {
     kind = 'plain element';
     list = [...document.querySelectorAll('div,span,a')]
       .filter(x => vis(x) && x.children.length <= 2)
+      .filter(x => !x.closest('p,li,h1,h2,h3,h4,h5,h6,pre,code,blockquote,td,th,.markdown,.ds-markdown,.prose,[data-message-author-role]'))
       .filter(x => { const t = lab(x); return t && t.length < 40 &&
                                        labels.some(l => t === l); })
       .sort((p, q) => p.querySelectorAll('*').length - q.querySelectorAll('*').length);
@@ -1718,8 +1720,12 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 except Exception:  # noqa: BLE001
                     pass
         if done_waiting:
+            # a reply that already passes the completeness check needs no
+            # Continue (and a word "continue" in its text is not a button)
+            complete = bool(ready is not None
+                            and ready(clean_reply(last_text)))
             clicked = (_press_continue(page, site, log, continues, cdiag)
-                       if continues < continue_max else "")
+                       if continues < continue_max and not complete else "")
             if clicked:
                 continues += 1
                 log(f"{site.name}: clicked '{clicked}' ({continues})")
