@@ -5720,7 +5720,11 @@ def shotlist_pacing(data: dict, cues: list[dict],
     if not holds:
         return [], []
     faults: list[str] = []
-    long = sorted((h for h in holds if h[0] > cap), reverse=True)
+    # holds are checked against the limit plus a tolerance (briefs.*_TOLERANCE),
+    # the planner is still told the nominal one
+    long = sorted((h for h in holds
+                   if h[0] > briefs.hold_limit(cap, briefs.MAX_HOLD_TOLERANCE)
+                   + 1e-9), reverse=True)
     if long:
         SHOWN_CAP = 30
         lines = []
@@ -5782,8 +5786,10 @@ def shotlist_pacing(data: dict, cues: list[dict],
                 f"file name with the same code (e.g. S01_03_SCN_"
                 f"{prof.allowed[0]}.png).")
     if prof.static_long_hold is not None:
+        static_floor = briefs.hold_limit(prof.static_long_hold,
+                                         briefs.STATIC_LONG_TOLERANCE)
         static_long = [(h, a) for h, m, a, _f, _l in holds
-                       if m == "ST" and h >= prof.static_long_hold]
+                       if m == "ST" and h >= static_floor]
         if static_long:
             faults.append("a long STATIC hold is never acceptable: " + ", ".join(
                 f"{a} ({h:.0f}s, ST)" for h, a in static_long[:4]))
@@ -5795,7 +5801,8 @@ def shotlist_pacing(data: dict, cues: list[dict],
                       f"{prof.st_max_share:.0%}) - ST is the exception, not "
                       f"the default")
     if prof.st_max_hold is not None:
-        st_long = [(h, a) for h, a in st if h > prof.st_max_hold]
+        st_limit = briefs.hold_limit(prof.st_max_hold, briefs.ST_HOLD_TOLERANCE)
+        st_long = [(h, a) for h, a in st if h > st_limit + 1e-9]
         if st_long:
             faults.append(f"ST shots hold longer than {prof.st_max_hold:g}s: "
                           + ", ".join(f"{a} ({h:.1f}s)" for h, a in st_long[:4])

@@ -51,11 +51,13 @@ def _context(cfg, pid: int) -> dict:
         studio.seed_production(cfg, conn, prod)
         prod = db.get_production(conn, pid)
         eff = settings.for_production(conn, prod)
+        density = studio.visual_density(conn=conn, pid=pid)
         style_guide, _s, bible, _b = autorun.style_bible(cfg, conn, prod, pdir)
     finally:
         conn.close()
     return {"prod": prod, "pdir": pdir, "eff": eff,
-            "visual_style": style_guide or "", "bible": bible or ""}
+            "visual_style": style_guide or "", "bible": bible or "",
+            "density": density}
 
 
 def _read(path) -> str:
@@ -458,7 +460,7 @@ def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
         bible=bible, supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
         pacing_note=pacing, allow_refs=plan["allow_refs"],
         animation_note=_animation_note(eff, plan["cues"]),
-        density=studio.visual_density(cfg, pid=pid))
+        density=ctx["density"])
     if not bible.strip():
         # the brief's bible gate otherwise makes the LLM ask for one
         text += ("\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE: this channel "
@@ -627,10 +629,8 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
              + studio.shotlist_pacing(data, cues, plan["max_hold"],
                                       plan["profile"])[0])
     rules = _hard_rules(plan, eff, ctx, n)
-    audit = _alignment_rules(ctx["visual_style"])
-    # frame density (channel / production setting): the judge rejects a prompt
-    # that is busier than the chosen level, same as the API review chain
-    audit += studio.density_audit_block(studio.visual_density(cfg, pid=pid))
+    audit = (_alignment_rules(ctx["visual_style"])
+             + studio.density_audit_block(ctx["density"]))
     # animated opening (channel setting): the app's own free check needs an
     # "ai_motion" line on every shot in the window; the judge also grades how
     # well each of those stills will animate

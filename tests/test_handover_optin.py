@@ -1,10 +1,12 @@
-import tempfile, unittest
+import json, tempfile, unittest
 from pathlib import Path
 from types import SimpleNamespace
 from whisperradar import handover
 
 
-class OptInTests(unittest.TestCase):
+class AllChannelsTests(unittest.TestCase):
+    """Hand-over templates are visible to every channel (no per-channel opt-in)."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -13,27 +15,17 @@ class OptInTests(unittest.TestCase):
     def ids(self, cid):
         return {t["id"] for t in handover.available_for(self.cfg, cid)}
 
-    def test_new_template_is_listed_but_used_by_no_channel(self):
+    def test_new_template_is_offered_to_every_channel(self):
         tid = handover.save_user_template(self.cfg, "Mine", True, True, [])
-        self.assertIn(tid, handover.all_templates(self.cfg))
-        self.assertNotIn(tid, self.ids(1))
+        for cid in (1, 2, None):
+            self.assertIn(tid, self.ids(cid))
 
-    def test_channel_opts_in_and_out(self):
-        tid = handover.save_user_template(self.cfg, "Mine", True, True, [])
-        handover.set_channel_templates(self.cfg, 1, [tid], [1, 2])
-        self.assertIn(tid, self.ids(1))
-        self.assertNotIn(tid, self.ids(2))
-        handover.set_channel_templates(self.cfg, 1, [], [1, 2])
-        self.assertNotIn(tid, self.ids(1))
-
-    def test_older_template_for_every_channel_stays_until_unticked(self):
-        import json
+    def test_older_template_with_a_channel_list_is_still_offered_to_other_channels(self):
+        # the reported bug: a template saved for channels [3, 4] was hidden elsewhere
         handover.template_path(self.cfg).write_text(json.dumps(
-            {"old": {"name": "Old", "channels": []}}), encoding="utf-8")
-        self.assertIn("old", self.ids(1))
-        handover.set_channel_templates(self.cfg, 1, [], [1, 2])
-        self.assertNotIn("old", self.ids(1))
-        self.assertIn("old", self.ids(2))
+            {"old": {"name": "Old", "channels": [3, 4], "optin": True}}), encoding="utf-8")
+        for cid in (1, 3, 4, 9, None):
+            self.assertIn("old", self.ids(cid))
 
 
 if __name__ == "__main__":

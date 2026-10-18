@@ -89,6 +89,16 @@ def latest_for(cfg, pids):
     return {row["production_id"]: _public(row) for row in rows}
 
 
+def clear_error(cfg, pid):
+    """Forget a production's FAILED jobs (the error line on the Finished page).
+    Queued, running and completed jobs are left alone. Returns how many went."""
+    with _LOCK, _connect(cfg) as conn:
+        _expire(conn)
+        cur = conn.execute("DELETE FROM gpt_packaging_jobs "
+                           "WHERE production_id=? AND status='failed'", (pid,))
+        return cur.rowcount
+
+
 def queue_status(cfg):
     """Job history for the user queue page; never expose worker claim tokens."""
     with _LOCK, _connect(cfg) as conn:

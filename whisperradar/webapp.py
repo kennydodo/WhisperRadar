@@ -3014,7 +3014,19 @@ def create_app(cfg) -> Flask:
 
         # every channel by default; ?channel=<id> narrows to one
         # (0 = productions with no channel)
-        scope = request.args.get("channel", type=int)
+        # The picked channel is remembered in a cookie: Mark published, Retry,
+        # Clear error and the other actions redirect back to a bare /finished,
+        # which would otherwise fall back to every channel. An explicit
+        # ?channel= (empty = "All channels") always wins and updates the cookie.
+        remembered = "channel" in request.args
+        raw_scope = (request.args.get("channel") if remembered
+                     else request.cookies.get("wr_finished_channel"))
+        try:
+            scope = int(raw_scope) if raw_scope not in (None, "") else None
+        except ValueError:
+            scope = None
+        if scope not in (None, 0) and scope not in own_by_id:
+            scope = None                      # that channel is gone
         rows = [p for p in db.list_productions(conn)
                 if p["status"] in ("ready", "published")
                 and (scope is None or (p["own_channel_id"] or 0) == scope)]
@@ -3065,14 +3077,20 @@ def create_app(cfg) -> Flask:
             return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
                             if (v or v == 0) and v != "" and v != "all")
 
-        return render_template(
+        resp = make_response(render_template(
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
             status_filter=status_filter, ready_count=ready_count,
             published_count=published_count, due_results=due_results,
             scope=scope,
             channel_options=[{"id": c["id"], "name": c["name"]}
                              for c in own_channels if c["active"]],
-            msg=request.args.get("msg"), error=request.args.get("error"))
+            msg=request.args.get("msg"), error=request.args.get("error")))
+        if scope is None:
+            resp.delete_cookie("wr_finished_channel")
+        else:
+            resp.set_cookie("wr_finished_channel", str(scope),
+                            max_age=60 * 60 * 24 * 365, samesite="Lax")
+        return resp
 
     @app.get("/gpt-pro/queue")
     def gpt_pro_queue_page():
@@ -3092,6 +3110,16 @@ def create_app(cfg) -> Flask:
                 ". The local Codex worker starts immediately; no scheduled task is needed."))
         except (ValueError, OSError, sqlite3.Error, subprocess.SubprocessError) as exc:
             return redirect("/finished?error=" + quote(str(exc)))
+
+    @app.post("/studio/<int:pid>/gpt-pro/clear-error")
+    def studio_gpt_pro_clear_error(pid):
+        """Clear a failed GPT Pro job's error from the Finished page."""
+        try:
+            n = gpt_packaging.clear_error(cfg, pid)
+        except (ValueError, OSError, sqlite3.Error) as exc:
+            return redirect("/finished?error=" + quote(str(exc)))
+        return redirect("/finished?msg=" + quote(
+            "GPT Pro error cleared" if n else "No GPT Pro error to clear"))
 
     def _gpt_worker_only(require_header=True):
         try:
@@ -5359,8 +5387,19 @@ def create_app(cfg) -> Flask:
                 "next": nxt,
                 "job": ({"kind": job.kind, "stage": job.stage}
                         if job else None)})
-        rows.sort(key=lambda r: (r["channel"].lower(), r["id"]))
-        return render_template("in_production.html", rows=rows,
+        sort = request.args.get("sort") or "channel"
+        stage_pos = {n: i for i, n in enumerate(db.STAGES)}
+        if sort == "stage":
+            rows.sort(key=lambda r: (stage_pos.get(r["stage"], 99),
+                                     r["channel"].lower(), r["id"]))
+        elif sort == "created":          # newest first
+            rows.sort(key=lambda r: (r["created"], r["id"]), reverse=True)
+        elif sort == "created_old":
+            rows.sort(key=lambda r: (r["created"], r["id"]))
+        else:
+            sort = "channel"
+            rows.sort(key=lambda r: (r["channel"].lower(), r["id"]))
+        return render_template("in_production.html", rows=rows, sort=sort,
                                any_running=any(r["job"] for r in rows),
                                msg=request.args.get("msg"),
                                error=request.args.get("error"))

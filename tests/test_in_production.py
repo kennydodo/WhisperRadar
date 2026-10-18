@@ -144,5 +144,32 @@ class InProductionTests(unittest.TestCase):
         self.assertEqual(ran, ["style"])
 
 
+    def test_sort_dropdown_orders_by_channel_stage_and_created(self):
+        other = db.create_own_channel(self.conn, "Aardvark Channel")
+        a = self._make("Row A")                     # Channel A
+        b = self._make("Row B")
+        c = self._make("Row C")
+        db.update_production(self.conn, c, own_channel_id=other)
+        db.update_production(self.conn, a, stage="images")
+        db.update_production(self.conn, b, stage="script")
+        db.update_production(self.conn, c, stage="audio")
+        self.conn.execute("UPDATE productions SET created_at=? WHERE id=?", ("2026-10-01 10:00:00", a))
+        self.conn.execute("UPDATE productions SET created_at=? WHERE id=?", ("2026-10-03 10:00:00", b))
+        self.conn.execute("UPDATE productions SET created_at=? WHERE id=?", ("2026-10-02 10:00:00", c))
+        self.conn.commit()
+
+        def order(q):
+            html = self.client.get("/in-production" + q).get_data(as_text=True)
+            pos = {t: html.index(t) for t in ("Row A", "Row B", "Row C")}
+            return [t[-1] for t in sorted(pos, key=pos.get)]
+
+        self.assertIn('name="sort"', self.client.get("/in-production").get_data(as_text=True))
+        self.assertEqual(order(""), ["C", "A", "B"])                    # channel name, then id
+        self.assertEqual(order("?sort=stage"), ["B", "C", "A"])        # script, audio, images
+        self.assertEqual(order("?sort=created"), ["B", "C", "A"])      # newest first
+        self.assertEqual(order("?sort=created_old"), ["A", "C", "B"])
+        self.assertEqual(order("?sort=nonsense"), ["C", "A", "B"])
+
+
 if __name__ == "__main__":
     unittest.main()

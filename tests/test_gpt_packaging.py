@@ -250,6 +250,26 @@ class GPTPackagingTests(unittest.TestCase):
                 gp.complete(self.cfg, job["id"], job["claim_token"], result)
             self.assertFalse((self.pdir / "titles.txt").exists())
 
+    def test_failed_error_can_be_cleared_from_the_finished_page(self):
+        job = self.job()
+        gp.fail(self.cfg, job["id"], job["claim_token"], "Image tool unavailable")
+        html = self.client.get("/finished").get_data(as_text=True)
+        self.assertIn("Image tool unavailable", html)
+        self.assertIn(f"/studio/{self.pid}/gpt-pro/clear-error", html)
+        self.assertIn("Retry GPT Pro", html)
+        r = self.client.post(f"/studio/{self.pid}/gpt-pro/clear-error")
+        self.assertEqual(r.status_code, 302)
+        html = self.client.get("/finished").get_data(as_text=True)
+        self.assertNotIn("Image tool unavailable", html)
+        self.assertNotIn("clear-error", html)
+        self.assertIsNone(gp.latest(self.cfg, self.pid))
+        self.assertTrue(self.job())                   # and it can be started again
+
+    def test_clearing_never_touches_active_or_complete_jobs(self):
+        queued = gp.queue(self.cfg, self.pid)
+        self.assertEqual(gp.clear_error(self.cfg, self.pid), 0)
+        self.assertEqual(gp.latest(self.cfg, self.pid)["id"], queued["id"])
+
     def test_failed_and_abandoned_jobs_can_be_retried_explicitly(self):
         job = self.job()
         gp.fail(self.cfg, job["id"], job["claim_token"], "Image tool unavailable")

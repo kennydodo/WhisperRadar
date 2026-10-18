@@ -35,6 +35,8 @@ whisper:
 # live in the database, managed in the dashboard under Settings > LLM
 # providers and Settings > LLM (default LLM).
 studio:
+  # Video engine for the merge stage: python = in-repo port, csharp = ImgToVideo.Cli.
+  video_engine: python
   # Target script length in words. null = match the source transcript's
   # length automatically; set a number to force a fixed target (e.g. 1200).
   script_words: null
