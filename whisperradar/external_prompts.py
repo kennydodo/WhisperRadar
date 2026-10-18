@@ -514,11 +514,16 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
                      f"channel; any other motion code is a fault.")
     motion = []
     if profile.static_long_hold is not None:
+        floor = briefs.hold_limit(profile.static_long_hold,
+                                  briefs.STATIC_LONG_TOLERANCE)
         motion.append(f"a static (ST) shot is never acceptable at "
-                      f"{profile.static_long_hold:g}s or more")
+                      f"{floor:.1f}s or more ({profile.static_long_hold:g}s "
+                      f"plus the accepted tolerance; shorter is NOT a fault)")
     if profile.st_max_hold is not None:
-        motion.append(f"an ST shot may not hold longer than "
-                      f"{profile.st_max_hold:g}s")
+        top = briefs.hold_limit(profile.st_max_hold, briefs.ST_HOLD_TOLERANCE)
+        motion.append(f"an ST shot may not hold longer than {top:.1f}s "
+                      f"({profile.st_max_hold:g}s plus the accepted "
+                      f"tolerance; up to that is NOT a fault)")
     if profile.st_max_share is not None:
         motion.append(f"ST may be at most {profile.st_max_share:.0%} of shots")
     if profile.code_max_share is not None:

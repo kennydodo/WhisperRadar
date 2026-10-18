@@ -101,6 +101,13 @@ def draft_shots(cues: list[dict], max_hold: float, min_hold: float | None = None
     def secs(c):
         return (studio._srt_seconds(c["end"]) - studio._srt_seconds(c["start"]))
 
+    def span(group: list[dict]) -> float:
+        """A shot's hold as the checks measure it: from the start of its
+        first cue to the end of its last, gaps between cues included (the
+        sum of the cue lengths undercounts it by up to a second)."""
+        return (studio._srt_seconds(group[-1]["end"])
+                - studio._srt_seconds(group[0]["start"]))
+
     def limit(first_cue: int) -> float:
         return min(cap, ANIM_MAX_HOLD) if first_cue <= anim_last_cue else cap
 
@@ -115,13 +122,13 @@ def draft_shots(cues: list[dict], max_hold: float, min_hold: float | None = None
                      and c["index"] > anim_last_cue)
         lim = min(limit(cur[0]["index"]) if cur else limit(c["index"]),
                   short_cap if short and short_cap else cap)
-        if cur and dur + d > lim:
+        if cur and span(cur + [c]) > lim:
             groups.append(cur)
             cur, dur = [], 0.0
             short = (bool(short_every) and len(groups) % short_every == 0
                      and c["index"] > anim_last_cue)
         cur.append(c)
-        dur += d
+        dur = span(cur)
         nxt = cues[i + 1] if i + 1 < len(cues) else None
         if nxt is None:
             break
@@ -142,13 +149,13 @@ def draft_shots(cues: list[dict], max_hold: float, min_hold: float | None = None
     # a lone short tail joins the shot before it when that stays within limits
     if len(groups) > 1 and len(groups[-1]) == 1:
         merged = groups[-2] + groups[-1]
-        if sum(secs(c) for c in merged) <= limit(merged[0]["index"]):
+        if span(merged) <= limit(merged[0]["index"]):
             groups[-2:] = [merged]
     out = []
     for n, g in enumerate(groups, 1):
         out.append(Draft(
             n=n, first=g[0]["index"], last=g[-1]["index"],
-            seconds=round(sum(secs(c) for c in g), 1),
+            seconds=round(span(g), 1),
             text=" ".join(c["text"] for c in g),
             animate=g[0]["index"] <= anim_last_cue))
     return out
