@@ -2,6 +2,8 @@
   <h2>Codex &amp; Claude Code</h2>
   <p class="help">Use your signed-in CLI accounts for script warning reviews and targeted fixes. No configured API fallback. Model requests run online and use your account limits.</p>
   <form id="cli-llm-settings" method="post" action="/settings/cli-llm/save">
+    <label><input type="checkbox" name="show_fixes" {{ 'checked' if cli_llms.config.show_fixes else '' }}> Show Codex / Claude Code script fixes in Studio (off by default)</label>
+    <p class="help">When off, the Studio script review only lists the warnings: no fix provider picker, no &ldquo;Fix&rdquo; buttons and no fix previews.</p>
     <label for="cli-default">Default fix provider</label>
     <select id="cli-default" name="default">
       <option value="codex" {{ 'selected' if cli_llms.config.default == 'codex' else '' }}>GPT Codex</option>

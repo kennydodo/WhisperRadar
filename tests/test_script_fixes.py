@@ -180,6 +180,8 @@ class FixTests(unittest.TestCase):
 class FixRouteTests(Base):
     def test_no_change_review_explains_remaining_flags_and_hides_accept(self):
         from whisperradar.webapp import create_app
+        from whisperradar import cli_llm
+        cli_llm.save(self.cfg, {'default': 'codex', 'codex_enabled': 'on', 'claude_enabled': 'on', 'show_fixes': 'on'})
         (self.pdir / 'script.md').write_text('Always succeeds.\n', encoding='utf-8')
         report = sr.ensure(self.pdir)
         sr._write(self.pdir / sf.FILE, {'id': 'no-edits', 'status': 'ready', 'provider': 'codex',
@@ -199,6 +201,8 @@ class FixRouteTests(Base):
 
     def test_controls_preview_and_accept_routes(self):
         from whisperradar.webapp import create_app
+        from whisperradar import cli_llm
+        cli_llm.save(self.cfg, {'default': 'codex', 'codex_enabled': 'on', 'claude_enabled': 'on', 'show_fixes': 'on'})
         client = create_app(self.cfg).test_client()
         script = self.pdir / 'script.md'
         script.write_text('Always succeeds.\nUnchanged.\n', encoding='utf-8')

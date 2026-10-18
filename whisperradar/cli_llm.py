@@ -11,7 +11,7 @@ NAMES = {"codex": "GPT Codex", "claude": "Claude Code"}
 
 
 def load(cfg):
-    result = {"default": "codex", "codex": {"enabled": True, "path": "", "model": ""},
+    result = {"default": "codex", "show_fixes": False, "codex": {"enabled": True, "path": "", "model": ""},
               "claude": {"enabled": True, "path": "", "model": ""}}
     if cfg is None:
         return result
@@ -21,6 +21,7 @@ def load(cfg):
             stored = json.loads(db.get_setting(conn, KEY) or "{}")
         except (ValueError, TypeError):
             stored = {}
+        result["show_fixes"] = stored.get("show_fixes") is True
         if stored.get("default") in NAMES:
             result["default"] = stored["default"]
         for name in NAMES:
@@ -36,6 +37,7 @@ def save(cfg, form):
     if form.get("default") not in NAMES:
         raise ValueError("Choose Codex or Claude Code as the default.")
     data["default"] = form["default"]
+    data["show_fixes"] = form.get("show_fixes") == "on"
     for name in NAMES:
         path = form.get(name + "_path", "").strip().strip('"')
         model = form.get(name + "_model", "").strip()

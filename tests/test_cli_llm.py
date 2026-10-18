@@ -18,6 +18,21 @@ class CliSettingsTests(Base):
         self.assertIn(b'Check Claude Code connection', page.data)
         self.assertNotIn(b'Codex LLM settings will appear', page.data)
 
+    def test_studio_fixes_are_off_by_default_and_switchable(self):
+        from whisperradar.webapp import create_app
+        self.assertFalse(cli_llm.load(self.cfg)['show_fixes'])
+        page = create_app(self.cfg).test_client().get('/settings?tab=LLM&sub=codex')
+        self.assertIn(b'name="show_fixes"', page.data)
+        self.assertNotIn(b'name="show_fixes" checked', page.data)
+        client = create_app(self.cfg).test_client()
+        # off: the fix route refuses without starting anything
+        r = client.post('/studio/1/script/warnings/fix', data={'script_hash': 'x', 'selection': 'all'})
+        self.assertIn(r.status_code, (302, 404))
+        cli_llm.save(self.cfg, {'default': 'codex', 'codex_enabled': 'on', 'claude_enabled': 'on', 'show_fixes': 'on'})
+        self.assertTrue(cli_llm.load(self.cfg)['show_fixes'])
+        cli_llm.save(self.cfg, {'default': 'codex', 'codex_enabled': 'on', 'claude_enabled': 'on'})
+        self.assertFalse(cli_llm.load(self.cfg)['show_fixes'])
+
     def test_save_persists_both_and_validates(self):
         cli_llm.save(self.cfg, {'default': 'claude', 'codex_enabled': 'on', 'claude_enabled': 'on',
                                'codex_model': 'test-codex', 'claude_model': 'sonnet'})

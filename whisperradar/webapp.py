@@ -3734,8 +3734,9 @@ def create_app(cfg) -> Flask:
         from . import cli_llm
         fix_providers = {name: bool(cli_llm.resolve(cfg, name)) for name in cli_llm.NAMES}
         fix_default = cli_llm.load(cfg)["default"]
+        fix_enabled = cli_llm.load(cfg)["show_fixes"]
         page = render_template(
-            "studio_detail.html", script_readiness=readiness, fix_preview=fix_preview,
+            "studio_detail.html", script_readiness=readiness, fix_preview=fix_preview, fix_enabled=fix_enabled,
             fix_providers=fix_providers, fix_default=fix_default, prod=prod, steps=steps, history=history,
             skipped_stages=skipped_stages,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
@@ -4254,6 +4255,8 @@ def create_app(cfg) -> Flask:
         try:
             if not db.get_production(conn, pid):
                 return redirect("/studio?error=Unknown+production")
+            if not cli_llm.load(cfg)["show_fixes"]:
+                return _studio_url(pid, error="Script fixes are turned off. Turn them on in Settings > LLM > Codex & Claude Code.")
             script_fixes.start(studio.prod_dir(cfg, pid), request.form.get("script_hash", ""),
                                request.form.get("selection", ""), request.form.get("fix_provider") or cli_llm.load(cfg)["default"], cfg, pid)
         except ValueError as exc:
