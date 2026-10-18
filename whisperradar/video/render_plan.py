@@ -85,9 +85,14 @@ def build(timeline, images, options, output_directory: str, preview_path: str) -
     total = 0
     join_count = 0
     for i, clip in enumerate(clips):
-        size = dims.get(clip.file_path)
-        if size is None or size[0] <= 0 or size[1] <= 0:
-            raise RuntimeError(f'No usable dimensions for image "{clip.file_path}"; cannot render.')
+        if getattr(clip, "explainer_clip", False):
+            # Prepared clips are their own size reference; the encode size is
+            # the render options' preview dims, not an image dimension.
+            size = (options.render.preview_width, options.render.preview_height)
+        else:
+            size = dims.get(clip.file_path)
+            if size is None or size[0] <= 0 or size[1] <= 0:
+                raise RuntimeError(f'No usable dimensions for image "{clip.file_path}"; cannot render.')
         cut_in_frames = cuts[i - 1][0] if i > 0 else 0
         cut_out_frames, cut_out_kind = cuts[i] if i < len(cuts) else (0, "none")
         piece_start = transition_cuts.head_trim(cut_in_frames, options)
@@ -103,9 +108,12 @@ def build(timeline, images, options, output_directory: str, preview_path: str) -
 
         if cut_out_frames > 0:
             nxt = clips[i + 1]
-            nsize = dims.get(nxt.file_path)
-            if nsize is None or nsize[0] <= 0 or nsize[1] <= 0:
-                raise RuntimeError(f'No usable dimensions for image "{nxt.file_path}"; cannot render.')
+            if getattr(nxt, "explainer_clip", False):
+                nsize = (options.render.preview_width, options.render.preview_height)
+            else:
+                nsize = dims.get(nxt.file_path)
+                if nsize is None or nsize[0] <= 0 or nsize[1] <= 0:
+                    raise RuntimeError(f'No usable dimensions for image "{nxt.file_path}"; cannot render.')
             join_count += 1
             join_path = os.path.join(output_directory, f"join_{join_count:04d}.mp4")
             segments.append(SegmentCommand(
@@ -147,7 +155,10 @@ def _source_input_arguments(file_path: str, options) -> List[str]:
 
 
 def _clip_input_arguments(clip, options) -> List[str]:
-    """Input of a clip: its AI video when it has one, else the looped still."""
+    """Input of a clip: its AI video when it has one, else the looped still.
+    Explainer clips are PREPARED videos - a plain video input of file_path."""
+    if getattr(clip, "explainer_clip", False):
+        return ["-i", clip.file_path]
     if getattr(clip, "video_path", None):
         return ["-i", clip.video_path]
     return _source_input_arguments(clip.file_path, options)
@@ -222,7 +233,23 @@ def _viewport_size_changes(clip) -> bool:
             or abs(clip.start_viewport.height - clip.end_viewport.height) > 0.01)
 
 
+def _build_explainer_chain(clip, piece_start, piece_count, options) -> str:
+    """Filter chain for a PREPARED explainer clip: frame-exact silent video.
+
+    Plain normalize (scale/crop to the encode size) + cut the piece range.
+    NO zoompan, NO motion.fit, NO tpad - the clip already has exactly the
+    frames the scene timing asked for."""
+    r = options.render
+    fps = float(options.output.fps)
+    return (f"scale={r.preview_width}:{r.preview_height}:force_original_aspect_ratio=increase,"
+            f"crop={r.preview_width}:{r.preview_height},setsar=1,"
+            f"trim=start_frame={_i(piece_start)}:end_frame={_i(piece_start + piece_count)},"
+            "setpts=PTS-STARTPTS,format=yuv420p")
+
+
 def _build_side_chain(clip, sw, sh, piece_start, piece_count, options) -> str:
+    if getattr(clip, "explainer_clip", False):
+        return _build_explainer_chain(clip, piece_start, piece_count, options)
     if getattr(clip, "video_path", None):
         return _build_video_chain(clip, piece_start, piece_count, options)
     out_aspect = options.output.width / options.output.height

@@ -268,6 +268,9 @@ class VideoClip:
     reveal: Optional[RevealInfo] = None
     # AI image-to-video clip that replaces the still's pan/zoom (animated opening)
     video_path: Optional[str] = None
+    # Explicit explainer source kind: file_path is a PREPARED silent graphics
+    # clip (out/explainer). Never receives motion/zoompan/reveal treatment.
+    explainer_clip: bool = False
 
     def to_dict(self) -> dict:
         d: dict = {"file_path": self.file_path, "scene_id": self.scene_id}
@@ -290,6 +293,8 @@ class VideoClip:
             d["reveal"] = self.reveal.to_dict()
         if self.video_path:
             d["video_path"] = self.video_path
+        if self.explainer_clip:
+            d["explainer_clip"] = True
         return d
 
     @staticmethod
@@ -309,7 +314,8 @@ class VideoClip:
             transition=None if tr is None else TransitionIn(
                 tr.get("kind", "none"), int(tr.get("duration_frames", 0))),
             reveal=None if rv is None else RevealInfo.from_dict(rv),
-            video_path=d.get("video_path") or None)
+            video_path=d.get("video_path") or None,
+            explainer_clip=bool(d.get("explainer_clip", False)))
 
 
 @dataclass

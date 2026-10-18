@@ -1,0 +1,114 @@
+﻿{
+  "schema_version": 2,
+  "style": "whiteboard",
+  "canvas": {"width": 1920, "height": 1080},
+  "scenes": [
+    {
+      "id": "income",
+      "shot_id": "S01_01",
+      "cue_range": [1, 5],
+      "objects": [
+        {"id": "hw_title", "type": "handwriting", "text": "Where does the surplus go?",
+         "box": [0.10, 0.08, 0.62, 0.14]},
+        {"id": "person", "type": "stroke_asset", "asset": "builtin:person",
+         "box": [0.10, 0.32, 0.16, 0.42]},
+        {"id": "bill", "type": "stroke_asset", "asset": "builtin:bill",
+         "box": [0.34, 0.34, 0.22, 0.18]},
+        {"id": "hw_600", "type": "handwriting", "text": "$600 a month",
+         "box": [0.36, 0.55, 0.24, 0.12]},
+        {"id": "hw_450", "type": "handwriting", "text": "bills $450",
+         "box": [0.66, 0.55, 0.24, 0.12]},
+        {"id": "piggy", "type": "stroke_asset", "asset": "builtin:piggy_bank",
+         "box": [0.74, 0.26, 0.16, 0.20]},
+        {"id": "hw_150", "type": "handwriting", "text": "$150 left",
+         "box": [0.70, 0.78, 0.24, 0.12]}
+      ],
+      "events": [
+        {"target": "hw_title", "action": "draw_strokes", "at": {"cue": 1, "edge": "start"}, "duration_ms": 3800},
+        {"target": "person", "action": "draw_strokes", "at": {"cue": 1, "edge": "start"}, "duration_ms": 2000},
+        {"target": "bill", "action": "draw_strokes", "at": {"cue": 2, "edge": "start"}, "duration_ms": 1500},
+        {"target": "hw_600", "action": "draw_strokes", "at": {"cue": 2, "edge": "start"}, "duration_ms": 2100},
+        {"target": "hw_450", "action": "draw_strokes", "at": {"cue": 3, "edge": "start"}, "duration_ms": 1500},
+        {"target": "piggy", "action": "draw_strokes", "at": {"cue": 4, "edge": "start"}, "duration_ms": 1600},
+        {"target": "hw_150", "action": "draw_strokes", "at": {"cue": 4, "edge": "start"}, "duration_ms": 1400},
+        {"target": "person", "action": "erase", "at": {"cue": 5, "edge": "start"}, "duration_ms": 600}
+      ]
+    },
+    {
+      "id": "jobs",
+      "shot_id": "S02_01",
+      "cue_range": [6, 9],
+      "objects": [
+        {"id": "hw_job", "type": "handwriting", "text": "Give every dollar a job",
+         "box": [0.12, 0.08, 0.60, 0.14]},
+        {"id": "coin", "type": "stroke_asset", "asset": "builtin:coin_stack",
+         "box": [0.44, 0.30, 0.12, 0.22]},
+        {"id": "arrow_left", "type": "stroke_asset", "asset": "builtin:arrow_right",
+         "box": [0.16, 0.55, 0.18, 0.12], "style": "accent"},
+        {"id": "arrow_right", "type": "stroke_asset", "asset": "builtin:arrow_right",
+         "box": [0.66, 0.55, 0.18, 0.12], "style": "accent"},
+        {"id": "bank", "type": "stroke_asset", "asset": "builtin:bank",
+         "box": [0.10, 0.68, 0.18, 0.24]},
+        {"id": "hw_debt", "type": "handwriting", "text": "debt first",
+         "box": [0.09, 0.55, 0.22, 0.10]},
+        {"id": "hw_save", "type": "handwriting", "text": "savings",
+         "box": [0.68, 0.55, 0.20, 0.10]},
+        {"id": "tree", "type": "stroke_asset", "asset": "builtin:tree",
+         "box": [0.66, 0.68, 0.18, 0.26]}
+      ],
+      "events": [
+        {"target": "hw_job", "action": "draw_strokes", "at": {"cue": 6, "edge": "start"}, "duration_ms": 3300},
+        {"target": "coin", "action": "draw_strokes", "at": {"cue": 6, "edge": "start"}, "duration_ms": 1400},
+        {"target": "hw_debt", "action": "draw_strokes", "at": {"cue": 7, "edge": "start"}, "duration_ms": 2000},
+        {"target": "arrow_left", "action": "draw_strokes", "at": {"cue": 7, "edge": "start"}, "duration_ms": 700},
+        {"target": "bank", "action": "draw_strokes", "at": {"cue": 7, "edge": "start"}, "duration_ms": 1600},
+        {"target": "hw_save", "action": "draw_strokes", "at": {"cue": 8, "edge": "start"}, "duration_ms": 1400},
+        {"target": "arrow_right", "action": "draw_strokes", "at": {"cue": 8, "edge": "start"}, "duration_ms": 700},
+        {"target": "tree", "action": "draw_strokes", "at": {"cue": 8, "edge": "start"}, "duration_ms": 1500},
+        {"target": "coin", "action": "erase", "at": {"cue": 9, "edge": "start"}, "duration_ms": 500}
+      ]
+    },
+    {
+      "id": "later",
+      "shot_id": "S03_01",
+      "cue_range": [10, 12],
+      "objects": [
+        {"id": "hw_later", "type": "handwriting", "text": "Six months later",
+         "box": [0.12, 0.08, 0.45, 0.14]},
+        {"id": "chart_down", "type": "stroke_asset", "asset": "builtin:chart_down",
+         "box": [0.14, 0.30, 0.30, 0.34]},
+        {"id": "hw_paid", "type": "handwriting", "text": "card paid off",
+         "box": [0.16, 0.70, 0.30, 0.12]},
+        {"id": "chart_up", "type": "stroke_asset", "asset": "builtin:chart_up",
+         "box": [0.56, 0.30, 0.30, 0.34]},
+        {"id": "hw_fund", "type": "handwriting", "text": "3/4 full",
+         "box": [0.60, 0.70, 0.24, 0.12]}
+      ],
+      "events": [
+        {"target": "hw_later", "action": "draw_strokes", "at": {"cue": 10, "edge": "start"}, "duration_ms": 2900},
+        {"target": "chart_down", "action": "draw_strokes", "at": {"cue": 10, "edge": "start"}, "duration_ms": 1700},
+        {"target": "hw_paid", "action": "draw_strokes", "at": {"cue": 11, "edge": "start"}, "duration_ms": 2400},
+        {"target": "chart_up", "action": "draw_strokes", "at": {"cue": 11, "edge": "start"}, "duration_ms": 1700},
+        {"target": "hw_fund", "action": "draw_strokes", "at": {"cue": 12, "edge": "start"}, "duration_ms": 960}
+      ]
+    },
+    {
+      "id": "closing",
+      "shot_id": "S04_01",
+      "cue_range": [13, 14],
+      "objects": [
+        {"id": "hw_close", "type": "handwriting", "text": "Two jobs:",
+         "box": [0.24, 0.22, 0.40, 0.16]},
+        {"id": "hw_close2", "type": "handwriting", "text": "debt falls, savings grow",
+         "box": [0.20, 0.44, 0.58, 0.16]},
+        {"id": "check", "type": "stroke_asset", "asset": "builtin:check",
+         "box": [0.44, 0.66, 0.12, 0.16], "style": "accent"}
+      ],
+      "events": [
+        {"target": "hw_close", "action": "draw_strokes", "at": {"cue": 13, "edge": "start"}, "duration_ms": 1500},
+        {"target": "hw_close2", "action": "draw_strokes", "at": {"cue": 13, "edge": "start"}, "duration_ms": 3900},
+        {"target": "check", "action": "draw_strokes", "at": {"cue": 14, "edge": "start"}, "duration_ms": 700}
+      ]
+    }
+  ]
+}

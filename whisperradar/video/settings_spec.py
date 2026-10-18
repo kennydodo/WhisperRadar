@@ -36,9 +36,13 @@ CHOICES = {
     "render.encoder": ["auto", "libx264", "h264_nvenc", "h264_amf", "h264_qsv"],
     "sound.default_pop": [p[0] for p in opt.POP_VARIANTS],
     "planner": ["v1", "v2"],
+    "visual_mode": list(opt.VISUAL_MODES),
 }
 HELP = {
     "output.fps": "Frames per second of the final video.",
+    "visual_mode": "images = stills/clips (default). motion_graphics or "
+                   "whiteboard = the production is an explainer: scenes come "
+                   "from explainer.json anchored to subtitles.srt.",
     "timing.min_image_seconds": "No image is held shorter than this when the narration allows.",
     "timing.preferred_image_seconds": "The hold the planner aims for.",
     "timing.max_image_seconds": "The longest an image is held.",

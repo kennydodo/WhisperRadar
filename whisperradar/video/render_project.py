@@ -42,6 +42,8 @@ def images_from_timeline(timeline: m.Timeline) -> List[m.ImageInfo]:
 
     for scene in timeline.scenes:
         for clip in scene.clips:
+            if getattr(clip, "explainer_clip", False):
+                continue   # prepared clips are videos; no image inventory needed
             add(clip.file_path)
             if clip.reveal is not None:
                 add(clip.reveal.source_path)
@@ -103,6 +105,8 @@ def attach_motion_clips(timeline: m.Timeline, folder: str) -> int:
         for clip in scene.clips:
             if clip.reveal is not None or not clip.file_path:
                 continue
+            if getattr(clip, "explainer_clip", False):
+                continue   # prepared graphics clips never take AI videos
             if window and fps and clip.start_frame / fps >= window - 1e-6:
                 skipped_window += 1
                 continue

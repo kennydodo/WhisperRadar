@@ -46,7 +46,41 @@ def plan_project(project_folder, audio_seconds: Optional[float] = None,
         from .ffprobe import ffprobe_duration_seconds
         audio_seconds = ffprobe_duration_seconds(inventory.audio_file_path, options.render.ffprobe_path)
 
-    planned = edit_planner.plan(inventory, audio_seconds, options)
+    # Visual mode decides the planner (doc 16.1). An explicit mode is never
+    # silently overridden by a sidecar's presence. Migration for existing
+    # sidecar-only projects (no visual_mode stored): a sidecar with no images
+    # keeps working through the explainer planner; sidecar + images stays on
+    # the image planner with an INFO note.
+    from . import explainer_planner
+    has_sidecar = explainer_planner.has_explainer(folder)
+    has_images = bool(inventory.all_images)
+    mode = getattr(options, "visual_mode", "images")
+    issues_extra: list = []
+    if mode == "images" and has_sidecar:
+        if has_images:
+            issues_extra.append(m.ValidationIssue(
+                m.INFO, "EXPLAINER_SIDECAR_IGNORED",
+                "explainer.json exists but visual_mode is images - it is "
+                "ignored (explicit mode wins)."))
+            inventory.issues = list(inventory.issues) + issues_extra
+            planned = edit_planner.plan(inventory, audio_seconds, options)
+        else:
+            # sidecar-only project predating visual_mode: keep it working
+            planned = explainer_planner.plan(inventory, audio_seconds,
+                                             options, folder)
+    elif mode == "images":
+        planned = edit_planner.plan(inventory, audio_seconds, options)
+    else:
+        if not has_sidecar:
+            return PlanProjectResult(False, issues=[
+                m.ValidationIssue(
+                    m.ERROR, "EXPLAINER_MODE_WITHOUT_SIDECAR",
+                    f"visual_mode is {mode} but explainer.json is missing - "
+                    "add one via the Explainer panel, or switch visual_mode "
+                    "back to images.")],
+                inventory=inventory)
+        planned = explainer_planner.plan(inventory, audio_seconds, options,
+                                         folder, visual_mode=mode)
     if planned.timeline is None or not planned.success:
         return PlanProjectResult(False, issues=planned.issues, inventory=inventory)
 

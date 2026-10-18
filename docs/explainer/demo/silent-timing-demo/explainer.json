@@ -1,0 +1,104 @@
+﻿{
+  "schema_version": 1,
+  "theme": "finance_dark",
+  "canvas": {"width": 1920, "height": 1080},
+  "scenes": [
+    {
+      "id": "budget",
+      "shot_id": "S01_01",
+      "cue_range": [1, 5],
+      "objects": [
+        {"id": "title", "type": "text", "text": "Where does the surplus go?",
+         "box": [0.08, 0.10, 0.84, 0.14], "style": "heading"},
+        {"id": "income", "type": "counter", "from": 0, "to": 600,
+         "format": "currency_usd", "box": [0.10, 0.42, 0.22, 0.10], "style": "stat"},
+        {"id": "bills", "type": "counter", "from": 0, "to": 450,
+         "format": "currency_usd", "box": [0.44, 0.42, 0.22, 0.10], "style": "stat"},
+        {"id": "minus", "type": "label", "text": "minus",
+         "box": [0.345, 0.44, 0.08, 0.07], "style": "muted"},
+        {"id": "equals", "type": "label", "text": "leaves",
+         "box": [0.68, 0.44, 0.10, 0.07], "style": "muted"},
+        {"id": "surplus", "type": "counter", "from": 0, "to": 150,
+         "format": "currency_usd", "box": [0.80, 0.42, 0.12, 0.10], "style": "stat"}
+      ],
+      "events": [
+        {"target": "title", "action": "fade_in", "at": {"cue": 1, "edge": "start"}, "duration_ms": 400},
+        {"target": "income", "action": "count", "at": {"cue": 1, "edge": "start"}, "duration_ms": 700},
+        {"target": "minus", "action": "fade_in", "at": {"cue": 1, "edge": "start"}, "duration_ms": 250},
+        {"target": "bills", "action": "count", "at": {"cue": 1, "edge": "start"}, "duration_ms": 700},
+        {"target": "equals", "action": "fade_in", "at": {"cue": 1, "edge": "start"}, "duration_ms": 250},
+        {"target": "surplus", "action": "count", "at": {"cue": 1, "edge": "start"}, "duration_ms": 900}
+      ]
+    },
+    {
+      "id": "split",
+      "shot_id": "S02_01",
+      "cue_range": [6, 9],
+      "objects": [
+        {"id": "split_title", "type": "text", "text": "Give every dollar a job",
+         "box": [0.08, 0.10, 0.84, 0.14], "style": "heading"},
+        {"id": "route", "type": "path",
+         "points": [[0.5, 0.30], [0.5, 0.42], [0.30, 0.42], [0.30, 0.55]],
+         "arrow": true, "box": [0.0, 0.0, 1.0, 1.0], "style": "accent"},
+        {"id": "route2", "type": "path",
+         "points": [[0.5, 0.30], [0.5, 0.42], [0.70, 0.42], [0.70, 0.55]],
+         "arrow": true, "box": [0.0, 0.0, 1.0, 1.0], "style": "accent"},
+        {"id": "debt", "type": "label", "text": "debt first",
+         "box": [0.18, 0.58, 0.24, 0.10], "style": "heading"},
+        {"id": "savings", "type": "label", "text": "savings",
+         "box": [0.58, 0.58, 0.24, 0.10], "style": "heading"},
+        {"id": "debt_blocks", "type": "blocks", "columns": 3, "rows": 1,
+         "count": 3, "filled": 3, "box": [0.20, 0.70, 0.20, 0.09]},
+        {"id": "save_blocks", "type": "blocks", "columns": 3, "rows": 1,
+         "count": 3, "filled": 3, "box": [0.60, 0.70, 0.20, 0.09]}
+      ],
+      "events": [
+        {"target": "split_title", "action": "fade_in", "at": {"cue": 6, "edge": "start"}, "duration_ms": 350},
+        {"target": "route", "action": "draw", "at": {"cue": 6, "edge": "start"}, "duration_ms": 600},
+        {"target": "route2", "action": "draw", "at": {"cue": 6, "edge": "start"}, "duration_ms": 600},
+        {"target": "debt", "action": "fade_in", "at": {"cue": 6, "edge": "start"}, "duration_ms": 250},
+        {"target": "savings", "action": "fade_in", "at": {"cue": 6, "edge": "start"}, "duration_ms": 250},
+        {"target": "debt_blocks", "action": "reveal", "at": {"cue": 6, "edge": "start"}, "duration_ms": 900},
+        {"target": "save_blocks", "action": "reveal", "at": {"cue": 6, "edge": "start"}, "duration_ms": 900}
+      ]
+    },
+    {
+      "id": "outcome",
+      "shot_id": "S03_01",
+      "cue_range": [10, 12],
+      "objects": [
+        {"id": "out_title", "type": "text", "text": "Six months later",
+         "box": [0.08, 0.10, 0.84, 0.14], "style": "heading"},
+        {"id": "card_balance", "type": "bar", "fraction": 0.85, "direction": "horizontal",
+         "box": [0.12, 0.40, 0.50, 0.08], "style": "positive"},
+        {"id": "card_label", "type": "label", "text": "card paid off",
+         "box": [0.12, 0.32, 0.30, 0.07], "style": "muted"},
+        {"id": "emergency", "type": "bar", "fraction": 0.75, "direction": "horizontal",
+         "box": [0.12, 0.62, 0.50, 0.08], "style": "positive"},
+        {"id": "em_label", "type": "label", "text": "emergency fund",
+         "box": [0.12, 0.54, 0.34, 0.07], "style": "muted"}
+      ],
+      "events": [
+        {"target": "out_title", "action": "fade_in", "at": {"cue": 10, "edge": "start"}, "duration_ms": 350},
+        {"target": "card_label", "action": "fade_in", "at": {"cue": 10, "edge": "start"}, "duration_ms": 200},
+        {"target": "card_balance", "action": "grow", "at": {"cue": 10, "edge": "start"}, "duration_ms": 800},
+        {"target": "em_label", "action": "fade_in", "at": {"cue": 10, "edge": "start"}, "duration_ms": 200},
+        {"target": "emergency", "action": "grow", "at": {"cue": 10, "edge": "start"}, "duration_ms": 1000}
+      ]    },
+    {
+      "id": "closing",
+      "shot_id": "S04_01",
+      "cue_range": [13, 14],
+      "objects": [
+        {"id": "close_card", "type": "callout",
+         "text": "150 a month, two jobs: debt falls, savings grow",
+         "box": [0.16, 0.34, 0.68, 0.32], "style": "body"}
+      ],
+      "events": [
+        {"target": "close_card", "action": "slide",
+         "at": {"cue": 13, "edge": "start"}, "duration_ms": 500,
+         "direction": "up", "offset_px": 64}
+      ]
+    }
+  ]
+}

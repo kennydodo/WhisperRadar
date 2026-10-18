@@ -1,0 +1,1 @@
+You earn six hundred dollars a month, and bills take four fifty. That leaves one hundred and fifty dollars of surplus, every single month. Give every dollar a job: most of it attacks debt first, and the rest builds savings. Six months later, the credit card is nearly gone, and the emergency fund is three quarters full. A small surplus, given two jobs, changes everything.
