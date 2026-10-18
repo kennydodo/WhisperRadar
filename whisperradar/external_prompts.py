@@ -483,8 +483,11 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         "ASSETS: every shot's \"asset\" has a matching entry in "
         "\"images\" (by \"file\"); no two image prompts are identical.",
         f"MAXIMUM HOLD: no shot holds longer than {cap:g}s. A shot's hold "
-        f"is the sum of the (Ns) durations of the cues in its range. A shot "
-        f"over {cap:g}s is a hard fault whether or not it has motion.",
+        f"is the time from the start of its first cue to the end of its last "
+        f"cue. A shot over {briefs.hold_limit(cap, briefs.MAX_HOLD_TOLERANCE):.1f}s "
+        f"(the {cap:g}s limit plus the accepted tolerance) is a hard fault "
+        f"whether or not it has motion. Holds up to that are NOT faults: do "
+        f"not report them.",
     ]
     if profile.min_hold:
         lines.append(

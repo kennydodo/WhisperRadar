@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import (autorun, db, external_prompts as ep, handover, skeleton, studio,
+from . import (autorun, briefs, db, external_prompts as ep, handover, skeleton, studio,
                webchat)
 
 # Above this the prompt is split into attached files (external_prompts' files
@@ -1004,6 +1004,41 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
     return data
 
 
+# faults the app's own code checks already decide (with the tolerance): when
+# those checks came back clean, the judge's arithmetic on them is wrong
+_CODE_DECIDED = re.compile(r"^\s*(MAXIMUM HOLD|STATIC HOLD)\b", re.I)
+
+
+def _auto_split_long(data: dict, cues: list[dict], limit: float) -> int:
+    """Split every shot held longer than `limit` seconds in two at the cue
+    nearest its middle; both halves keep the picture and motion. Returns how
+    many shots were split. Used instead of asking the writer to rewrite a
+    plan it has never seen as JSON (line-by-line flow)."""
+    by_index = {c["index"]: c for c in cues}
+    out, split = [], 0
+    for shot in data.get("shots") or []:
+        rng = studio.cue_range(shot.get("cues")) if isinstance(shot, dict) else None
+        if not rng or rng[0] not in by_index or rng[1] not in by_index:
+            out.append(shot)
+            continue
+        a, b = rng
+        start = studio._srt_seconds(by_index[a]["start"])
+        hold = studio._srt_seconds(by_index[b]["end"]) - start
+        if hold <= limit + 1e-9 or b <= a:
+            out.append(shot)
+            continue
+        mid = start + hold / 2
+        at = min((c for c in range(a + 1, b + 1) if c in by_index),
+                 key=lambda c: abs(studio._srt_seconds(by_index[c]["start"]) - mid))
+        first, second = dict(shot), dict(shot)
+        first["cues"] = str(a) if at - 1 == a else f"{a}-{at - 1}"
+        second["cues"] = str(at) if at == b else f"{at}-{b}"
+        out += [first, second]
+        split += 1
+    data["shots"] = out
+    return split
+
+
 def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                  judge: str = "deepseek", rounds: int | None = MAX_ROUNDS,
                  log: Callable[[str], None] = print,
@@ -1020,6 +1055,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     kept = (adopt_chats(cfg, pid, transport, {writer, judge}, log)
             if same_chats else set())
     data = _saved_plan(cfg, pid) if resume else None
+    skeleton_plan = False       # the writer only ever saw numbered shots
     if data is not None:
         log(f"reusing the plan from the saved {writer} replies "
             f"(the writer is not asked again)")
@@ -1032,6 +1068,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             try:
                 data = _skeleton_plan(cfg, pid, ctx, plan, transport, writer,
                                       log, dump, writer in kept)
+                skeleton_plan = True
             except skeleton.SkeletonError as exc:
                 data = None
                 log(f"line-by-line plan not used ({exc}) - asking for the "
@@ -1119,10 +1156,21 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                 last_problem = f"{judge} never returned a usable verdict"
                 break
             faults = [str(x) for x in (verdict.get("faults") or [])]
+            # the code checks above came back clean (with the tolerance), so
+            # the judge's own hold arithmetic is the thing that is wrong
+            dropped = [f for f in faults if _CODE_DECIDED.match(f)]
+            if dropped:
+                faults = [f for f in faults if f not in dropped]
+                log(f"ignored {len(dropped)} hold fault(s) from {judge}: the "
+                    f"app's own check (with tolerance) found none")
             hard = local + [f for f in faults if f not in local]
             weak = _weak_list(verdict)
             fixes = [str(x) for x in (verdict.get("fixes") or [])]
-            passed = verdict.get("pass") is True and not hard
+            if dropped:
+                fixes = [x for x in fixes if not re.match(
+                    r"\s*(split|fix static)", x, re.I)]
+            passed = (verdict.get("pass") is True
+                      or (bool(dropped) and not faults and not weak)) and not hard
             ratio = verdict.get("detailed_ratio")
             log(f"round {rnd}: {len(hard)} fault(s), {len(weak)} weak shot(s), "
                 f"detailed {ratio} - "
@@ -1171,6 +1219,11 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                                         studio.parse_shotlist_patch(t)))
             except webchat.ChatLost:
                 got = None
+            if got is None and skeleton_plan:
+                raise StageFailed(
+                    f"The {writer} chat is gone, so the line-by-line plan "
+                    f"cannot be continued (a new chat would start from the "
+                    f"beginning). Open the chat again or rerun the shotlist.")
             if got is None:
                 log(f"the {writer} chat is gone - starting a new one with "
                     f"the plan and the points to fix")
@@ -1186,6 +1239,17 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                 log(f"patch check: {len(unknown)} unknown key(s), "
                     f"{len(missing)} asset(s) not answered")
             data = studio.apply_shotlist_patch(data, good)
+        elif skeleton_plan:
+            # the writer never saw this plan as JSON: no rewrite request and
+            # no new chat. The app cuts over-long shots itself; anything else
+            # is reported instead of restarting the work from the beginning.
+            n = _auto_split_long(data, cues, briefs.hold_limit(
+                plan["max_hold"], briefs.MAX_HOLD_TOLERANCE))
+            if not n:
+                last_problem = "; ".join(hard[:3])
+                log(f"faults the app cannot fix itself: {last_problem}")
+                break
+            log(f"the app split {n} over-long shot(s) itself - checking again")
         else:
             log(f"sending the faults back to {writer} for a corrected plan")
             prev = data
