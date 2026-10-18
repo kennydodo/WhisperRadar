@@ -3863,7 +3863,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "",
                   niche_block: str = "", earlier: list | None = None,
-                  guard: bool = True) -> str:
+                  guard: bool = True, style_limit: int = 6000) -> str:
     """`guard` False = the hand-over template lets the judge speak about the
     original to the writer (see handover.py).
     `source` is the writer's BRIEF (topic + keywords); `original` is the
@@ -3967,7 +3967,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"BRIEF AND KEYWORDS GIVEN TO THE WRITER:\n{brief or '(none)'}\n\n"
         f"ORIGINAL (for tone, style, hook, flow and ending ONLY):\n"
         f"{orig or '(none)'}\n\n"
-        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:6000]}\n\n"
+        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:style_limit]}\n\n"
         f"{direction_block}"
         f"SCRIPT:\n{script or ''}\n\n"
         f"Reply with ONLY a JSON object:\n"
@@ -4458,7 +4458,8 @@ def beat_word_table(style_guide: str, target_words: int) -> str:
 def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = 1200,
                   variation: str = "", extra_direction: str = "",
-                  style_variant: str | None = None) -> str:
+                  style_variant: str | None = None,
+                  style_limit: int = 6000) -> str:
     facts = (source_text or "").strip()[:4000]      # a ~100-word brief
     if facts:
         facts_block = ("BRIEF (what the video is about, and the KEYWORDS you "
@@ -4473,7 +4474,7 @@ def script_prompt(title: str, genre: str, source_text: str,
         if style_variant == "classic":
             style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
 hook pattern, structure, and CTA style all come from it):
-{style[:6000]}"""
+{style[:style_limit]}"""
         else:
             table = beat_word_table(style, target_words)
             lead = ("Its Structure section is a TIME BEAT pattern: the ROLE of\n"
@@ -4488,7 +4489,7 @@ hook pattern, structure, and CTA style all come from it):
             style_block = f"""STYLE GUIDE (match its tone, pacing, rhythm, hook pattern
 and CTA style exactly. {lead} It is a rhythm to follow, never the
 story: do not reuse the reference video's topic, examples or order of ideas):
-{style[:6000]}""" + (f"""
+{style[:style_limit]}""" + (f"""
 
 TIME BEATS FOR THIS SCRIPT (about {target_words} words in total):
 {table}""" if table else "")

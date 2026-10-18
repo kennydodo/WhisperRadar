@@ -133,7 +133,7 @@
     {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
   </h1>
   <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a> &middot; <a href="/studio/{{ prod['id'] }}/shorts" style="font-size:13px">Shorts</a></div>
-  {% if script_readiness and script_readiness.findings %}
+  {% if fix_enabled and script_readiness and script_readiness.findings %}
   <section class="script-review" role="status" style="border:2px solid {{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else '#777' }};border-radius:8px;padding:14px;margin:12px 0">
     <strong style="color:{{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else 'var(--green)' }}">{{ '⚠ Script needs review before audio' if script_readiness.warning_count and not script_readiness.ignored else 'Script scan — warnings acknowledged' if script_readiness.ignored else 'Review complete — no unresolved warnings' if script_readiness.reviewed_count else 'Script scan — audience CTAs only' }}</strong>
     <p>{{ script_readiness.warning_count }} unresolved warning(s). {% if fix_enabled %}{{ script_readiness.reviewed_count or 0 }} scan flag(s) cleared by AI review. Confirmed false alarms no longer block audio; uncertain claims or missing evidence remain flagged.{% else %}Edit the script, or ignore the warnings for this version, to continue to audio.{% endif %}</p>
@@ -577,6 +577,8 @@
       </details>
       <form method="post" action="/studio/{{ prod['id'] }}/script/save">
         <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
+        <div class="muted" data-counter-for="script" style="font-size:12px;margin-top:4px"></div>
+        <script>(function(){var t=document.currentScript.parentNode.querySelector('textarea[name="script"]'),o=document.querySelector('[data-counter-for="script"]');if(!t||!o)return;function u(){var v=t.value||'',w=(v.trim().match(/\S+/g)||[]).length;o.textContent=w.toLocaleString()+' words · '+v.length.toLocaleString()+' characters';}t.addEventListener('input',u);u();})();</script>
         {% if steps.get("script") and "WARNING" in (steps["script"]["detail"] or "") %}
         <div class="warn">High overlap with the source transcript - rewrite flagged parts before publishing.</div>
         {% endif %}
@@ -881,6 +883,8 @@
       </details>
       <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
         <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
+        <div class="muted" data-counter-for="shotlist" style="font-size:12px;margin-top:4px"></div>
+        <script>(function(){var t=document.currentScript.parentNode.querySelector('textarea[name="shotlist"]'),o=document.querySelector('[data-counter-for="shotlist"]');if(!t||!o)return;function u(){var v=t.value||'',w=(v.trim().match(/\S+/g)||[]).length;o.textContent=w.toLocaleString()+' words · '+v.length.toLocaleString()+' characters';}t.addEventListener('input',u);u();})();</script>
         <div id="shotcount" class="muted" style="font-size:12px; margin-top:3px"></div>
         <div class="actions">
           <button type="submit" {{ 'disabled' if job.running else '' }}>Save shotlist</button>

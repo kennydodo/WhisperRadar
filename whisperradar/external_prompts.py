@@ -71,6 +71,16 @@ def _writing_style(ctx) -> str:
     return _read(studio.find_writing_style(ctx["pdir"]))
 
 
+# the inline prompts carry at most this much of the style guide
+STYLE_INLINE_MAX = 6000
+
+
+def style_needs_file(cfg, pid: int) -> bool:
+    """True when the production's style guide is longer than an inline
+    prompt carries - it then goes to the chat as an attached file, whole."""
+    return len(_writing_style(_context(cfg, pid)).strip()) > STYLE_INLINE_MAX
+
+
 def save_notes(cfg, pid: int, text: str) -> int:
     """Persist pasted research notes as the production's notes (kept as-is by
     the built-in stages too). Returns the word count."""
@@ -228,7 +238,8 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
                          style_guide: str | None = None,
                          notes: str | None = None,
                          files: list | None = None,
-                         variation: str = "") -> str:
+                         variation: str = "",
+                         full_style: bool = False) -> str:
     ctx = _context(cfg, pid)
     eff, prod = ctx["eff"], ctx["prod"]
     style = (style_guide if style_guide is not None
@@ -245,6 +256,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
         style_variant=studio.style_variant(cfg, pid=pid),
+        style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
         extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
     lo, hi = _length_window(int(target_words))
@@ -276,7 +288,8 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                         style_guide: str | None = None,
                         notes: str | None = None,
                         target_words: int | None = None,
-                        files: list | None = None) -> str:
+                        files: list | None = None,
+                        full_style: bool = False) -> str:
     script = (script or "").strip()
     # no script in the box: the prompt asks for the user's own script file
     # instead (it cannot be measured here, and the LLM must ask if missing)
@@ -308,7 +321,7 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
         original=(_ORIG_TOKEN if (files is not None and source.strip())
                   else source),
         niche_block=studio.judge_niche_block(cfg, prod["genre"]),
-        guard=guard,
+        guard=guard, style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
         judge_direction=handover.instruction(cfg, prod, "script_judge"))
     if files is not None:
         text = _swap_blocks(
