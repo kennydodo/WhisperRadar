@@ -228,13 +228,8 @@ def assign_motion(shots: list[Draft], profile) -> None:
             continue
         eligible = []
         for c in targets:
-            if c == "ST":
-                if (profile.st_max_hold is not None
-                        and s.seconds + 0.05 > profile.st_max_hold):
-                    continue
-                if (profile.static_long_hold is not None
-                        and s.seconds >= profile.static_long_hold):
-                    continue
+            if c == "ST" and not st_fits(s.seconds, profile):
+                continue
             eligible.append(c)
         if not eligible:
             eligible = [c for c in targets if c != "ST"] or list(targets)
@@ -243,6 +238,21 @@ def assign_motion(shots: list[Draft], profile) -> None:
         s.motion = best
         counts[best] = counts.get(best, 0) + 1
         prev = best
+
+
+def st_fits(seconds: float, profile) -> bool:
+    """May a shot of this length be the static ST code? The limits carry the
+    same tolerance as the code checks (briefs.hold_limit): with an ST maximum
+    of 5 s a 6-7 s shot still qualifies, so the planner is not stricter than
+    the check that judges its result. Shots are CUT to the nominal limit (see
+    build) - the tolerance only widens who is eligible."""
+    if profile.st_max_hold is not None and seconds + 0.05 > briefs.hold_limit(
+            profile.st_max_hold, briefs.ST_HOLD_TOLERANCE):
+        return False
+    if profile.static_long_hold is not None and seconds >= briefs.hold_limit(
+            profile.static_long_hold, briefs.STATIC_LONG_TOLERANCE):
+        return False
+    return True
 
 
 def build(cues: list[dict], profile, max_hold: float,
@@ -606,12 +616,7 @@ def _final_motion(shots: list[Draft], ans: Answers, motion_of: dict,
             counts[s.motion] = counts.get(s.motion, 0) + 1
 
     def st_ok(c: str, s: Draft) -> bool:
-        if c != "ST":
-            return True
-        if profile.st_max_hold is not None and s.seconds + 0.05 > profile.st_max_hold:
-            return False
-        return not (profile.static_long_hold is not None
-                    and s.seconds >= profile.static_long_hold)
+        return c != "ST" or st_fits(s.seconds, profile)
 
     # ST is scarce - it only fits on short holds - so it is planned first:
     # spread evenly over the shots that can take it

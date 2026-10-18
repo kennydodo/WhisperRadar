@@ -92,8 +92,36 @@ class MotionTests(unittest.TestCase):
                 self.assertTrue(all(s.motion in prof.allowed for s in shots),
                                 key)
             if prof.st_max_hold is not None:
-                self.assertTrue(all(s.seconds <= prof.st_max_hold
-                                    for s in shots if s.motion == "ST"), key)
+                self.assertTrue(all(
+                    s.seconds <= briefs.hold_limit(prof.st_max_hold,
+                                                   briefs.ST_HOLD_TOLERANCE)
+                    for s in shots if s.motion == "ST"), key)
+
+    def test_st_eligibility_carries_the_hold_tolerance(self):
+        prof = briefs.get_profile("standard")
+        prof = prof.__class__(**{**prof.__dict__, "st_max_hold": 5.0,
+                                 "static_long_hold": None})
+        for sec in (3.0, 5.0, 6.0, 6.9):          # up to 5 s + 40%
+            self.assertTrue(sk.st_fits(sec, prof), sec)
+        for sec in (7.0, 7.5, 9.0):
+            self.assertFalse(sk.st_fits(sec, prof), sec)
+        prof = prof.__class__(**{**prof.__dict__, "st_max_hold": None,
+                                 "static_long_hold": 10.0})
+        self.assertTrue(sk.st_fits(11.0, prof))     # 10 s floor + 20% = 12 s
+        self.assertFalse(sk.st_fits(12.0, prof))
+
+    def test_assign_motion_puts_st_on_a_shot_within_tolerance_only(self):
+        prof = briefs.get_profile("standard")
+        prof = prof.__class__(**{**prof.__dict__, "st_max_hold": 5.0,
+                                 "static_long_hold": None})
+        cues = make_cues(60, lo=6.0, hi=6.5)       # every shot is ~6 s: over 5, within 7
+        shots = sk.build(cues, prof, 12.0)
+        for s in shots:
+            if s.motion == "ST":
+                self.assertLessEqual(s.seconds, 7.0)
+        long_cues = make_cues(60, lo=8.0, hi=8.5)  # beyond the tolerance
+        shots = sk.build(long_cues, prof, 12.0)
+        self.assertFalse([s for s in shots if s.motion == "ST"])
 
 
 class ParseTests(unittest.TestCase):
