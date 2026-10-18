@@ -34,6 +34,13 @@ are reported as failed after a server restart and can be retried.
 
 ## Providers
 
+Settings > LLM > Codex & Claude Code configures both CLIs: enabled state, executable path
+(blank means auto-detect), optional model override, default fix provider, and subscription sign-in
+checks. Checks use the CLI's auth-status command and never generate content or store account emails.
+Save settings before checking connection. Each card shows a PowerShell sign-in command.
+Script fixes read these settings and confirm subscription auth before generating; API credentials
+are removed from the child environment. Models default to each CLI's default when left blank.
+
 - Codex: `codex exec`, read-only sandbox, ephemeral session, structured JSON schema.
   User configuration is skipped for this invocation; saved CLI authentication is reused.
 - Claude Code: print mode with structured JSON, no tools, no MCP servers, no saved session.

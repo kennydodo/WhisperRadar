@@ -1,4 +1,37 @@
 <div class="tabpanel" data-tab="LLM" data-sub="codex">
-  <h2>Codex LLM</h2>
-  <p class="help">Codex LLM settings will appear here.</p>
+  <h2>Codex &amp; Claude Code</h2>
+  <p class="help">Use your signed-in CLI accounts for script warning reviews and targeted fixes. No configured API fallback. Model requests run online and use your account limits.</p>
+  <form id="cli-llm-settings" method="post" action="/settings/cli-llm/save">
+    <label for="cli-default">Default fix provider</label>
+    <select id="cli-default" name="default">
+      <option value="codex" {{ 'selected' if cli_llms.config.default == 'codex' else '' }}>GPT Codex</option>
+      <option value="claude" {{ 'selected' if cli_llms.config.default == 'claude' else '' }}>Claude Code</option>
+    </select>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;margin:18px 0">
+    {% for entry in cli_llms.entries %}
+      <section class="panel" style="min-width:0;overflow-wrap:anywhere">
+        <h3>{{ entry.name }}</h3>
+        <label><input type="checkbox" name="{{ entry.key }}_enabled" {{ 'checked' if entry.enabled else '' }}> Enabled for script fixes</label>
+        <p>{{ 'Installed' if entry.detected else 'Not detected on this PC' }}</p>
+        {% if entry.detected %}<p class="muted" style="font-size:12px;overflow-wrap:anywhere">{{ entry.detected }}</p>{% endif %}
+        <label class="field" for="cli-{{ entry.key }}-path">Executable path (blank = auto-detect)</label>
+        <input id="cli-{{ entry.key }}-path" name="{{ entry.key }}_path" value="{{ entry.path }}" style="width:100%" placeholder="Auto-detect on this PC">
+        <label class="field" for="cli-{{ entry.key }}-model" style="margin-top:12px">Model (blank = CLI default)</label>
+        <input id="cli-{{ entry.key }}-model" name="{{ entry.key }}_model" value="{{ entry.model }}" style="width:100%" placeholder="Use CLI default model">
+        {% if not entry.detected and entry.key == 'claude' %}<p class="help">Install: <code>winget install Anthropic.ClaudeCode</code></p>{% endif %}
+        <p class="help">Sign in from PowerShell:</p><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ entry.login_command }}</pre>
+        <p>{{ entry.check.message if entry.check else 'Sign-in has not been checked. Save changes, then check connection below.' }}</p>
+      </section>
+    {% endfor %}
+    </div>
+    <button type="submit">Save CLI settings</button>
+  </form>
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0">
+    {% for entry in cli_llms.entries %}
+    <form method="post" action="/settings/cli-llm/{{ entry.key }}/check" style="margin:0">
+      <button type="submit">Check {{ entry.name }} connection</button>
+    </form>
+    {% endfor %}
+  </div>
+  <p class="help">Connection checks inspect sign-in only; they do not generate content. Paths and logins belong to this PC. Models apply to script fixes; this panel does not change your API or web-chat generation providers.</p>
 </div>

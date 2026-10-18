@@ -1902,6 +1902,7 @@ def create_app(cfg) -> Flask:
 
     @app.get("/settings")
     def settings_page():
+        from . import cli_llm
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -1918,7 +1919,7 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return render_template(
-            "settings.html", values=values, spec=settings.SPEC,
+            "settings.html", cli_llms=cli_llm.view(cfg), values=values, spec=settings.SPEC,
             groups=settings.grouped_spec(),
             apply_all_keys=db.APPLY_ALL_FIELDS,
             override_counts=override_counts,
@@ -1935,6 +1936,33 @@ def create_app(cfg) -> Flask:
             services=services.MANAGER.status_cached(cfg),
             flowbatch_ready=studio.flowbatch_ready(cfg),
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/settings/cli-llm/save")
+    def settings_cli_llm_save():
+        from . import cli_llm
+        try:
+            cli_llm.save(cfg, request.form)
+        except ValueError as exc:
+            return redirect("/settings?tab=LLM&sub=codex&error=" + quote(str(exc)))
+        return redirect("/settings?tab=LLM&sub=codex&msg=CLI+settings+saved")
+
+    @app.post("/settings/cli-llm/<provider>/check")
+    def settings_cli_llm_check(provider):
+        from . import cli_llm
+        if provider not in cli_llm.NAMES:
+            abort(404)
+        result = cli_llm.check(cfg, provider)
+        conn = db.connect(cfg.db_path)
+        try:
+            try:
+                checks = json.loads(db.get_setting(conn, "cli_llm_checks") or "{}")
+            except (ValueError, TypeError):
+                checks = {}
+            checks[provider] = result
+            db.set_setting(conn, "cli_llm_checks", json.dumps(checks))
+        finally:
+            conn.close()
+        return redirect("/settings?tab=LLM&sub=codex&msg=" + quote(cli_llm.NAMES[provider] + ": " + result["message"]))
 
     @app.post("/services/<name>/<action>")
     def services_control(name, action):
@@ -3696,10 +3724,12 @@ def create_app(cfg) -> Flask:
         readiness = script_readiness.ensure(pdir)
         from . import script_fixes
         fix_preview = script_fixes.load(pdir)
-        fix_providers = script_fixes.available()
+        from . import cli_llm
+        fix_providers = {name: bool(cli_llm.resolve(cfg, name)) for name in cli_llm.NAMES}
+        fix_default = cli_llm.load(cfg)["default"]
         page = render_template(
             "studio_detail.html", script_readiness=readiness, fix_preview=fix_preview,
-            fix_providers=fix_providers, prod=prod, steps=steps, history=history,
+            fix_providers=fix_providers, fix_default=fix_default, prod=prod, steps=steps, history=history,
             skipped_stages=skipped_stages,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
@@ -4211,13 +4241,13 @@ def create_app(cfg) -> Flask:
 
     @app.post("/studio/<int:pid>/script/warnings/fix")
     def studio_script_warning_fix(pid):
-        from . import script_fixes
+        from . import script_fixes, cli_llm
         conn = db.connect(cfg.db_path)
         try:
             if not db.get_production(conn, pid):
                 return redirect("/studio?error=Unknown+production")
             script_fixes.start(studio.prod_dir(cfg, pid), request.form.get("script_hash", ""),
-                               request.form.get("selection", ""), request.form.get("fix_provider", "codex"), cfg, pid)
+                               request.form.get("selection", ""), request.form.get("fix_provider") or cli_llm.load(cfg)["default"], cfg, pid)
         except ValueError as exc:
             return _studio_url(pid, error=str(exc))
         finally:

@@ -12,7 +12,7 @@ from tests.test_external_prompts import Base
 
 class FixTests(unittest.TestCase):
     def setUp(self):
-        available = patch.object(sf, 'available', return_value={'codex': True, 'claude': True})
+        available = patch('whisperradar.cli_llm.resolve', return_value='fake-cli.exe')
         available.start()
         self.addCleanup(available.stop)
         self.tmp = tempfile.TemporaryDirectory()
@@ -106,7 +106,7 @@ class FixTests(unittest.TestCase):
                                              (self.report['script_hash'], 'all', 'invalid')]:
             with self.assertRaises(ValueError):
                 sf.start(self.folder, hashed, selection, provider, None, 1)
-        with patch.object(sf, 'available', return_value={'codex': False, 'claude': False}):
+        with patch('whisperradar.cli_llm.resolve', return_value=None):
             with self.assertRaises(ValueError):
                 sf.start(self.folder, self.report['script_hash'], 'all', 'claude', None, 1)
 
@@ -148,7 +148,7 @@ class FixTests(unittest.TestCase):
                     self.assertEqual(cmd[cmd.index('--tools') + 1], '')
                 from types import SimpleNamespace
                 return SimpleNamespace(returncode=0, stdout=json.dumps({'structured_output': self.result()}))
-            with patch.object(sf.shutil, 'which', return_value='fake-cli.exe'), patch.object(sf.subprocess, 'run', side_effect=run):
+            with patch.object(sf.shutil, 'which', return_value='fake-cli.exe'), patch('whisperradar.cli_llm.check', return_value={'signed_in': True}), patch.object(sf.subprocess, 'run', side_effect=run):
                 self.assertEqual(sf._invoke(provider, 'source prompt', None, 1), self.result())
 
     def test_old_api_selection_is_rejected_without_calling_provider(self):
@@ -205,7 +205,7 @@ class FixRouteTests(Base):
         report = sr.ensure(self.pdir)
         result = {'changes': [{'line': 1, 'original': 'Always succeeds.',
                               'replacement': 'May succeed.', 'reason': '<unsafe>'}], 'notes': 'Review this.'}
-        with patch.object(sf, 'available', return_value={'codex': True, 'claude': False}), patch.object(sf, '_invoke', return_value=result):
+        with patch('whisperradar.cli_llm.resolve', return_value='fake-cli.exe'), patch.object(sf, '_invoke', return_value=result):
             response = client.post(f'/studio/{self.pid}/script/warnings/fix', data={
                 'script_hash': report['script_hash'], 'selection': '0', 'fix_provider': 'codex'})
             self.assertEqual(response.status_code, 302)

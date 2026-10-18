@@ -138,10 +138,10 @@
     <strong style="color:{{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else 'var(--green)' }}">{{ '⚠ Script needs review before audio' if script_readiness.warning_count and not script_readiness.ignored else 'Script scan — warnings acknowledged' if script_readiness.ignored else 'Review complete — no unresolved warnings' if script_readiness.reviewed_count else 'Script scan — audience CTAs only' }}</strong>
     <p>{{ script_readiness.warning_count }} unresolved warning(s). {{ script_readiness.reviewed_count or 0 }} scan flag(s) cleared by AI review. Confirmed false alarms no longer block audio; uncertain claims or missing evidence remain flagged.</p>
     <div class="review-provider"><div><label for="script-fix-provider">Fix provider:</label>
-      <select id="script-fix-provider" onchange="localStorage.setItem('wrScriptFixProvider',this.value)">
+      <select id="script-fix-provider" data-default="{{ fix_default }}" onchange="localStorage.setItem('wrScriptFixProvider',this.value)">
         <option value="codex" selected {% if not fix_providers.codex %}disabled{% endif %}>Codex CLI{{ ' (not on PATH)' if not fix_providers.codex else '' }}</option>
         <option value="claude" {% if not fix_providers.claude %}disabled{% endif %}>Claude Code{{ ' (not on PATH)' if not fix_providers.claude else '' }}</option>
-      </select></div><p class="muted">Uses your selected CLI account online. Proposed edits require your acceptance. Facts and calculations are not independently verified.</p></div>
+      </select><a href="/settings?tab=LLM&amp;sub=codex" style="display:block;margin-top:6px">Manage CLI providers</a></div><p class="muted">Uses your selected CLI account online. Proposed edits require your acceptance. Facts and calculations are not independently verified.</p></div>
     {% if not fix_providers.codex and not fix_providers.claude %}<p role="alert">Install and sign in to Codex CLI or Claude Code on this PC before requesting fixes.</p>{% endif %}
     <script>
     document.addEventListener('DOMContentLoaded', function () {
@@ -149,8 +149,8 @@
       const saved = localStorage.getItem('wrScriptFixProvider');
       if (Array.from(choice.options).some(o => o.value === saved && !o.disabled)) choice.value = saved;
       if (!saved || !Array.from(choice.options).some(o => o.value === saved && !o.disabled)) {
-        choice.value = 'codex';
-        localStorage.setItem('wrScriptFixProvider', 'codex');
+        choice.value = choice.dataset.default || 'codex';
+        localStorage.setItem('wrScriptFixProvider', choice.value);
       }
       document.querySelectorAll('form.script-fix-form').forEach(form => {
         form.addEventListener('submit', () => { form.elements.fix_provider.value = choice.value; });

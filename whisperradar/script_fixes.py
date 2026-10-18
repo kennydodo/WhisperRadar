@@ -79,11 +79,15 @@ def _load(folder):
 
 
 def _invoke(provider, prompt, cfg, pid):
+    from . import cli_llm
     if provider not in ("codex", "claude"):
         raise ValueError("Script fixes support only Codex CLI or Claude Code. Refresh and choose one.")
-    exe = executable(provider)
+    exe = cli_llm.resolve(cfg, provider)
     if provider not in ("codex", "claude") or not exe:
         raise ValueError(f"{provider} CLI is not installed/on PATH. Install it and sign in on this PC, then retry.")
+    auth = cli_llm.check(cfg, provider)
+    if not auth["signed_in"]:
+        raise ValueError(f"{provider}: subscription sign-in could not be confirmed. Check Settings > LLM > Codex & Claude Code. No API fallback was used.")
     # Scratch cwd avoids loading production/repository instructions. Pass all source via stdin.
     with tempfile.TemporaryDirectory(prefix="wr-script-fix-") as tmp:
         root = Path(tmp)
@@ -97,9 +101,12 @@ def _invoke(provider, prompt, cfg, pid):
             cmd = [exe, "-p", "--output-format", "json", "--json-schema", json.dumps(SCHEMA),
                    "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
                    "--no-session-persistence"]
+        model = cli_llm.load(cfg)[provider]["model"]
+        if model:
+            cmd += ["--model", model]
         options = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
         result = subprocess.run(cmd, input=prompt, text=True, encoding="utf-8", errors="replace",
-                                capture_output=True, cwd=tmp, timeout=300, **options)
+                                capture_output=True, cwd=tmp, timeout=300, env=cli_llm.environment(), **options)
         if result.returncode:
             # Do not expose raw provider logs, which may contain account details or source text.
             raise RuntimeError(f"{provider} exited with code {result.returncode}. Check CLI login and usage limits, then retry.")
@@ -142,7 +149,8 @@ def start(folder, expected_hash, selection, provider, cfg, pid):
             raise ValueError("The script changed. Refresh and review the current warnings.")
         if provider not in ("codex", "claude"):
             raise ValueError("Script fixes support only Codex CLI or Claude Code. Refresh and choose one.")
-        if not available()[provider]:
+        from . import cli_llm
+        if not cli_llm.resolve(cfg, provider):
             raise ValueError(f"{provider} CLI is not installed/on PATH. Install and sign in on this PC first.")
         findings = [dict(f, finding=i) for i, f in enumerate(report["findings"])]
         if selection == "all":
