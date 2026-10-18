@@ -410,8 +410,11 @@ def _collect_plan(transport, site: str, reply: str, log,
 # ---- saving (the same steps as the Studio's own save routes) -----------------------
 
 def save_script(cfg, pid: int, text: str, detail: str, advance: bool) -> None:
+    from . import textfiles
     pdir = studio.prod_dir(cfg, pid)
-    (pdir / "script.md").write_text(text.strip() + "\n", encoding="utf-8")
+    textfiles.write_text(pdir / "script.md", text.strip() + "\n")
+    from . import script_readiness
+    script_readiness.ensure(pdir)
     conn = db.connect(cfg.db_path)
     db.init_db(conn)
     try:

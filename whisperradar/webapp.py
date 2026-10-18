@@ -37,6 +37,7 @@ from flask import (
 )
 
 from . import external_prompts
+from . import textfiles
 from . import motion
 from . import handover
 from . import source_prep
@@ -3585,7 +3586,7 @@ def create_app(cfg) -> Flask:
             if not path:
                 return ""
             try:
-                return path.read_text(encoding="utf-8")
+                return textfiles.read_text(path)
             except OSError:
                 return ""
 
@@ -3691,8 +3692,14 @@ def create_app(cfg) -> Flask:
                     skipped_stages[e["stage"]] = e["detail"]
         except Exception:  # noqa: BLE001 - never break the page for a plan error
             skipped_stages = {}
+        from . import script_readiness
+        readiness = script_readiness.ensure(pdir)
+        from . import script_fixes
+        fix_preview = script_fixes.load(pdir)
+        fix_providers = script_fixes.available()
         page = render_template(
-            "studio_detail.html", prod=prod, steps=steps, history=history,
+            "studio_detail.html", script_readiness=readiness, fix_preview=fix_preview,
+            fix_providers=fix_providers, prod=prod, steps=steps, history=history,
             skipped_stages=skipped_stages,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
@@ -4188,6 +4195,68 @@ def create_app(cfg) -> Flask:
     def _script_overlap(prod, script_text: str) -> float:
         return studio.overlap_ratio(script_text, _source_transcript(prod))
 
+    @app.get("/studio/<int:pid>/script/warnings/fix/status")
+    def studio_script_fix_status(pid):
+        from . import script_fixes
+        conn = db.connect(cfg.db_path)
+        try:
+            if not db.get_production(conn, pid):
+                return jsonify({"status": "missing"}), 404
+            job = script_fixes.load(studio.prod_dir(cfg, pid))
+            response = jsonify({"status": job["status"] if job else "missing"})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        finally:
+            conn.close()
+
+    @app.post("/studio/<int:pid>/script/warnings/fix")
+    def studio_script_warning_fix(pid):
+        from . import script_fixes
+        conn = db.connect(cfg.db_path)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/studio?error=Unknown+production")
+            script_fixes.start(studio.prod_dir(cfg, pid), request.form.get("script_hash", ""),
+                               request.form.get("selection", ""), request.form.get("fix_provider", "codex"), cfg, pid)
+        except ValueError as exc:
+            return _studio_url(pid, error=str(exc))
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Generating a fix preview. Refresh to check progress; your script has not changed.")
+
+    @app.post("/studio/<int:pid>/script/warnings/decide")
+    def studio_script_fix_decide(pid):
+        from . import script_fixes
+        conn = db.connect(cfg.db_path)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/studio?error=Unknown+production")
+            action = request.form.get("action")
+            if action not in ("accept", "reject"):
+                raise ValueError("Choose Accept or Reject.")
+            script_fixes.decide(studio.prod_dir(cfg, pid), request.form.get("job_id", ""), action == "accept")
+            if action == "accept":
+                db.add_step(conn, pid, "script", "manual", detail="Accepted targeted script fixes; backup saved and script rescanned")
+        except ValueError as exc:
+            return _studio_url(pid, error=str(exc))
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Fixes applied and script rescanned. Existing audio/assets were not regenerated." if action == "accept" else "Fix preview rejected; script unchanged.")
+
+    @app.post("/studio/<int:pid>/script/warnings/ignore")
+    def studio_script_warnings_ignore(pid):
+        from . import script_readiness
+        conn = db.connect(cfg.db_path)
+        try:
+            if not db.get_production(conn, pid):
+                return redirect("/studio?error=Unknown+production")
+            pdir = studio.prod_dir(cfg, pid)
+            if not script_readiness.acknowledge(pdir, request.form.get("script_hash", "")):
+                return _studio_url(pid, error="The script changed. Review its current warnings first.")
+        finally:
+            conn.close()
+        return _studio_url(pid, msg="Warnings ignored for this script version. You can generate audio or Resume.")
+
     @app.post("/studio/<int:pid>/script/save")
     def studio_script_save(pid):
         conn = db.connect(cfg.db_path)
@@ -4203,7 +4272,10 @@ def create_app(cfg) -> Flask:
                 text = f.read().decode("utf-8", "ignore").strip()
             if not text:
                 return _studio_url(pid, error="Nothing to save")
-            (pdir / "script.md").write_text(text + "\n", encoding="utf-8")
+            text = textfiles.normalize_newlines(text)
+            textfiles.write_text(pdir / "script.md", text + "\n")
+            from . import script_readiness
+            script_readiness.ensure(pdir)
             ratio = _script_overlap(prod, text)
             warn = " | WARNING: high overlap with source" if ratio > 0.2 else ""
             db.add_step(conn, pid, "script", "manual",
@@ -4378,6 +4450,9 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
 
+        from . import script_readiness
+        if script_readiness.pending(studio.prod_dir(cfg, pid)):
+            return _studio_url(pid, error="Script warnings need review before audio. Edit the script or ignore warnings for this version.")
         voice = (request.form.get("voice") or "").strip()[:300] or None
         if voice:
             conn = db.connect(cfg.db_path)
@@ -4567,7 +4642,7 @@ def create_app(cfg) -> Flask:
                                error="A version needs a name and content")
         dest = _version_path(studio.prod_dir(cfg, pid), kind, stage, name)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text + "\n", encoding="utf-8")
+        textfiles.write_text(dest, text + "\n")
         return _studio_url(pid, msg=f"Version '{name}' saved")
 
     @app.post("/studio/<int:pid>/versions/load")
@@ -4581,13 +4656,14 @@ def create_app(cfg) -> Flask:
         f = _version_path(studio.prod_dir(cfg, pid), kind, stage, name)
         if kind not in ("script", "direction") or not name or not f.exists():
             return _studio_url(pid, error="Version not found")
-        text = f.read_text(encoding="utf-8")
+        text = textfiles.read_text(f)
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
             if kind == "script":
-                (studio.prod_dir(cfg, pid) / "script.md").write_text(
-                    text, encoding="utf-8")
+                textfiles.write_text(studio.prod_dir(cfg, pid) / "script.md", text)
+                from . import script_readiness
+                script_readiness.ensure(studio.prod_dir(cfg, pid))
                 db.add_step(conn, pid, "script", "manual",
                             detail=f"loaded version '{name}'")
                 autorun._advance(cfg, pid, "script")
@@ -4829,7 +4905,7 @@ def create_app(cfg) -> Flask:
     @app.post("/studio/<int:pid>/shotlist/save")
     def studio_shotlist_save(pid):
         pdir = studio.prod_dir(cfg, pid)
-        text = (request.form.get("shotlist") or "").strip()
+        text = textfiles.normalize_newlines(request.form.get("shotlist") or "").strip()
         if not text:
             return _studio_url(pid, error="Nothing to save")
         try:
@@ -4837,7 +4913,7 @@ def create_app(cfg) -> Flask:
         except ValueError as exc:
             return _studio_url(
                 pid, error=f"Invalid JSON: {quote(str(exc)[:120])}")
-        (pdir / "shotlist.json").write_text(text + "\n", encoding="utf-8")
+        textfiles.write_text(pdir / "shotlist.json", text + "\n")
         # Saved, but not accepted as the finished stage while a narration cue
         # has no shot (a plan cut off at cue 460 of 521 looks complete).
         gap = autorun.coverage_gap(pdir)

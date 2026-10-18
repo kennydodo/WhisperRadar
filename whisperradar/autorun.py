@@ -842,7 +842,10 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         if script_path.exists():
             stamp = time.strftime("%Y%m%d-%H%M%S")
             shutil.copy(script_path, auto_dir / f"auto-{stamp}.md")
-        script_path.write_text(text + "\n", encoding="utf-8")
+        from . import textfiles
+        textfiles.write_text(script_path, text + "\n")
+    from . import script_readiness
+    script_readiness.ensure(pdir)
     # Persist the judge's per-attempt scores, criteria and feedback (plus the
     # baseline's, when rated, so it's visible why it won or lost). Without
     # this the only trace of WHY a draft was rejected is the log line, and a
@@ -928,6 +931,9 @@ def _run_audio(cfg, pid: int) -> None:
         script = studio.find_script(pdir)
         if not script:
             raise RuntimeError("Write the script first")
+        from . import script_readiness
+        if script_readiness.pending(pdir):
+            raise _Paused("Script warnings need review before audio. Open the production, edit the script or ignore warnings for this version, then Resume.")
         out = pdir / "audio.mp3"
         voice = _effective(cfg, pid)["voice"]
         # Hand the TTS hook the AI33 key resolved from Settings > LLM (or

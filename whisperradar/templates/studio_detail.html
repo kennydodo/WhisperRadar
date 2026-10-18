@@ -96,6 +96,13 @@
   audio, video { width: 100%; border-radius: 8px; }
   label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
   .warn { color: var(--amber); font-size: 12px; margin-top: 6px; }
+  .script-review { min-width:0; max-width:100%; overflow-wrap:anywhere; }
+  .script-review .review-provider { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:14px 0; }
+  .script-review .review-provider .muted { flex:1 1 250px; margin:0; }
+  .script-review .review-actions { display:flex; flex-wrap:wrap; gap:10px; margin:14px 0 0; align-items:center; }
+  .script-review .review-actions form { margin:0; }
+  .script-review .review-notes { white-space:pre-wrap; overflow-wrap:anywhere; max-width:100%; }
+  .script-review pre, .script-review blockquote { white-space:pre-wrap; overflow-wrap:anywhere; margin:10px 0; }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
 </head>
@@ -126,6 +133,97 @@
     {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
   </h1>
   <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a> &middot; <a href="/studio/{{ prod['id'] }}/shorts" style="font-size:13px">Shorts</a></div>
+  {% if script_readiness and script_readiness.findings %}
+  <section class="script-review" role="status" style="border:2px solid {{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else '#777' }};border-radius:8px;padding:14px;margin:12px 0">
+    <strong style="color:{{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else 'var(--green)' }}">{{ '⚠ Script needs review before audio' if script_readiness.warning_count and not script_readiness.ignored else 'Script scan — warnings acknowledged' if script_readiness.ignored else 'Review complete — no unresolved warnings' if script_readiness.reviewed_count else 'Script scan — audience CTAs only' }}</strong>
+    <p>{{ script_readiness.warning_count }} unresolved warning(s). {{ script_readiness.reviewed_count or 0 }} scan flag(s) cleared by AI review. Confirmed false alarms no longer block audio; uncertain claims or missing evidence remain flagged.</p>
+    <div class="review-provider"><div><label for="script-fix-provider">Fix provider:</label>
+      <select id="script-fix-provider" onchange="localStorage.setItem('wrScriptFixProvider',this.value)">
+        <option value="codex" selected {% if not fix_providers.codex %}disabled{% endif %}>Codex CLI{{ ' (not on PATH)' if not fix_providers.codex else '' }}</option>
+        <option value="claude" {% if not fix_providers.claude %}disabled{% endif %}>Claude Code{{ ' (not on PATH)' if not fix_providers.claude else '' }}</option>
+      </select></div><p class="muted">Uses your selected CLI account online. Proposed edits require your acceptance. Facts and calculations are not independently verified.</p></div>
+    {% if not fix_providers.codex and not fix_providers.claude %}<p role="alert">Install and sign in to Codex CLI or Claude Code on this PC before requesting fixes.</p>{% endif %}
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const choice = document.getElementById('script-fix-provider');
+      const saved = localStorage.getItem('wrScriptFixProvider');
+      if (Array.from(choice.options).some(o => o.value === saved && !o.disabled)) choice.value = saved;
+      if (!saved || !Array.from(choice.options).some(o => o.value === saved && !o.disabled)) {
+        choice.value = 'codex';
+        localStorage.setItem('wrScriptFixProvider', 'codex');
+      }
+      document.querySelectorAll('form.script-fix-form').forEach(form => {
+        form.addEventListener('submit', () => { form.elements.fix_provider.value = choice.value; });
+      });
+    });
+    </script>
+    <details><summary>View flagged passages and reasons ({{ script_readiness.findings|length }})</summary>
+    {% for item in script_readiness.findings %}
+      <div style="border-top:1px solid #777;padding:10px 0"><b>{{ item.category }}</b> — {{ item.severity }} · line {{ item.line }}
+      <blockquote style="white-space:pre-wrap">{{ item.passage }}</blockquote><p>{{ item.reason }}</p>
+      {% if item.review_reason %}<p style="color:var(--green)">Reviewed: {{ item.review_reason }}</p>{% endif %}
+      <form class="script-fix-form" method="post" action="/studio/{{ prod['id'] }}/script/warnings/fix">
+        <input type="hidden" name="script_hash" value="{{ script_readiness.script_hash }}">
+        <input type="hidden" name="selection" value="{{ loop.index0 }}">
+        <input type="hidden" name="fix_provider" value="codex">
+        <button {% if fix_preview and fix_preview.status == 'running' %}disabled{% endif %}>Fix this — preview</button>
+      </form></div>
+    {% endfor %}</details>
+    <p><a href="/studio/{{ prod['id'] }}?stage=script">Edit script</a> — save your edits to rescan automatically.</p>
+    <div class="review-actions">
+    {% if script_readiness.warning_count %}
+    <form class="script-fix-form" method="post" action="/studio/{{ prod['id'] }}/script/warnings/fix">
+      <input type="hidden" name="script_hash" value="{{ script_readiness.script_hash }}">
+      <input type="hidden" name="selection" value="all">
+      <input type="hidden" name="fix_provider" value="codex">
+      <button {% if fix_preview and fix_preview.status == 'running' %}disabled{% endif %}>Fix all warnings — preview</button>
+    </form>
+    {% endif %}
+    {% if script_readiness.warning_count and not script_readiness.ignored %}
+    <form method="post" action="/studio/{{ prod['id'] }}/script/warnings/ignore">
+      <input type="hidden" name="script_hash" value="{{ script_readiness.script_hash }}">
+      <button type="submit" class="secondary">Ignore warnings for this version</button>
+    </form>
+    {% endif %}
+    </div>
+  </section>
+  {% endif %}
+  {% if fix_preview %}
+  <section class="script-review" style="border:1px solid #777;border-radius:8px;padding:14px;margin:12px 0">
+    <strong>{% if fix_preview.status == 'ready' and not fix_preview.changes %}Review completed — no edits proposed{% elif fix_preview.status == 'ready' %}Proposed edits ready for your review{% elif fix_preview.status == 'applied' %}Changes saved and script rescanned{% else %}Script fix: {{ fix_preview.status }}{% endif %} ({{ 'Codex CLI' if fix_preview.provider == 'codex' else 'Claude Code' if fix_preview.provider == 'claude' else fix_preview.provider }})</strong>
+    {% if fix_preview.status == 'running' %}
+      <p>Generating proposed changes. Your script is unchanged. This can take several minutes.</p>
+      <a href="/studio/{{ prod['id'] }}?stage=script">Refresh fix status</a>
+      <script>
+      (function pollScriptFix() {
+        setTimeout(async () => {
+          try {
+            const response = await fetch('/studio/{{ prod["id"] }}/script/warnings/fix/status', {cache:'no-store'});
+            if (response.ok && (await response.json()).status !== 'running') { location.reload(); return; }
+          } catch (_) { /* Manual refresh remains available if the connection drops. */ }
+          pollScriptFix();
+        }, 5000);
+      })();
+      </script>
+    {% elif fix_preview.status == 'failed' %}<p role="alert">{{ fix_preview.error }}</p>
+    {% elif fix_preview.status == 'ready' %}
+      {% if fix_preview.stale %}<p role="alert">The script changed. This preview cannot be applied; generate a new fix.</p>{% endif %}
+      {% for change in fix_preview.changes %}
+        <details open><summary>Line {{ change.line }}: {{ change.reason }}</summary>
+          <p>Before</p><pre style="white-space:pre-wrap">{{ change.original }}</pre>
+          <p>Proposed</p><pre style="white-space:pre-wrap">{{ change.replacement or '(Remove this line)' }}</pre>
+        </details>
+      {% else %}<p>The review succeeded, but the AI proposed no edits. Your script is unchanged; there is nothing to accept. The remaining scan flags still need your judgement or supporting evidence.</p>{% endfor %}
+      <details {% if not fix_preview.changes %}open{% endif %}><summary>Reviewer explanation</summary><p class="review-notes">{{ fix_preview.notes }}</p></details>
+      <form class="review-actions" method="post" action="/studio/{{ prod['id'] }}/script/warnings/decide">
+        <input type="hidden" name="job_id" value="{{ fix_preview.id }}">
+        {% if fix_preview.changes %}<button name="action" value="accept" {% if fix_preview.stale %}disabled{% endif %}>Accept changes</button>{% endif %}
+        <button class="secondary" name="action" value="reject">{{ 'Reject preview' if fix_preview.changes else 'Dismiss review' }}</button>
+      </form>
+      {% if fix_preview.changes %}<p class="muted">Accept saves a backup and rescans. If audio already exists, regenerate it after accepting script changes.</p>{% endif %}
+    {% endif %}
+  </section>
+  {% endif %}
   <div class="sub">
     <span class="badge genre">{{ prod["genre"] }}</span>
     {% if own_channel_name %}
