@@ -7,6 +7,17 @@
     and close it when you are done. The new LLM then appears in every Writer / Judge dropdown.
     Tick <b>Paid account</b> only for a plan that lets you choose the model: then <b>Find models</b> reads the site's model menu and the models show up in the run forms. Free accounts have nothing to choose, so no model control is shown; <b>Test</b> sends it one word.
   </p>
+  <div class="panel">
+    <b>Separate DeepSeek accounts</b>
+    <p class="help">Sign into a different account in each window. Each has its own login and chat history.
+      Select DeepSeek — Writer account as Writer and DeepSeek — Judge account as Judge in the run forms.</p>
+    <form method="post" action="/settings/webchat-sites/deepseek_writer/login" style="display:inline">
+      <button type="submit" class="secondary">Sign in to DeepSeek — Writer account</button>
+    </form>
+    <form method="post" action="/settings/webchat-sites/deepseek_judge/login" style="display:inline">
+      <button type="submit" class="secondary">Sign in to DeepSeek — Judge account</button>
+    </form>
+  </div>
   <form method="post" action="/settings/webchat-sites" id="wc-form">
     <input type="hidden" name="webchat_json" id="wc-json">
     <div id="wc-editor"></div>

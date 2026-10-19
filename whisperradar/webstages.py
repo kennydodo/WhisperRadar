@@ -52,7 +52,9 @@ class StageFailed(RuntimeError):
 
 # what each site's mode switches default to when the run does not say
 DEFAULT_OPTIONS = {"zai": {"thinking": "Low", "model": "flash"},
-                   "deepseek": {"deepthink": True, "search": True}}
+                   "deepseek": {"deepthink": True, "search": True},
+                   **{key: {"deepthink": True, "search": True}
+                      for key in webchat.DEEPSEEK_ACCOUNTS}}
 
 
 NO_IMAGES_NOTE = ("\n\n(Reply with text only - do not create, draw or generate "
