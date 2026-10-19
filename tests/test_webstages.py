@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tests.test_external_prompts import Base  # noqa: E402
-from whisperradar import db, external_prompts as ep, studio, webstages as ws  # noqa: E402
+from whisperradar import briefs, db, external_prompts as ep, studio, webstages as ws  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
 
 
@@ -715,7 +715,45 @@ class AutoSplitAndDecidedFaultTests(unittest.TestCase):
         m = ws._CODE_DECIDED.match
         self.assertTrue(m("MAXIMUM HOLD: S16_01 cues 75-82 hold 14s (>12s)"))
         self.assertTrue(m("STATIC HOLD: S16_01 cues 83-86 is ST and holds 6s (>5s)"))
+        self.assertTrue(m("MAXIMUM ST HOLD: S08_01_CMP_ZO.png, shot cues 61-63, is ST and holds 5s, over the 4.8s limit"))
+        self.assertTrue(m("MAXIMUM STATIC HOLD: S01_02 holds 6s"))
+        # any label in front, as the judge actually wrote them
+        self.assertTrue(m("MOTION MIX: shot S10_02_CMP_ZI.png (cues 61-63) is ST and holds 5s, over the 4.8s limit for a static shot."))
+        self.assertTrue(m("MOTION MIX: shot S10_16_CU_ST.png (cues 145-147) is ST and holds 5s, over the 4.8s limit for a static shot."))
+        self.assertTrue(m("PACING: S03_01 cues 9-12 holds 13s which exceeds the 12s maximum limit"))
+        # the exact prod-40 phrasing: "holding", "cap"
+        self.assertTrue(m("S27_06_CMP_ST.png cues 126-128 is a static ST shot holding 6.0s, exceeding the 5.0s ST hold cap."))
+        # not hold arithmetic: these stay faults
+        self.assertFalse(m("MOTION MIX: ST is 20% of shots (cap ~10%) - vary the motion codes"))
+        self.assertFalse(m("MOTION MIX: PU/PD together are 37% of shots (cap ~30%)"))
         self.assertFalse(m("COVERAGE: cues 10-12 missing"))
+
+    def test_false_hold_fault_is_measured_not_matched(self):
+        from dataclasses import replace
+        cues = self._cues(3, each=3.0)           # cues 126-style: sums lie
+        cues[0]["end"] = cues[0]["start"][:7] + "1.680"
+        cues[1]["end"] = cues[1]["start"][:7] + "4.420"
+        cues[1]["start"] = cues[0]["end"]
+        cues[2]["start"] = cues[1]["end"]
+        cues[2]["end"] = cues[2]["start"][:7] + "4.680"
+        prof = replace(briefs.STANDARD, st_max_hold=5.0, st_hold_tol=0.0)
+        data = {"shots": [{"cues": "1-3", "asset": "S27_06_CMP_ST.png",
+                           "scene": "S27", "motion": "ST"}]}
+        # the exact prod-40 fault: judge summed rounded durations -> 6.0s
+        fault = ("S27_06_CMP_ST.png cues 1-3 is a static ST shot holding "
+                 "6.0s, exceeding the 5.0s ST hold cap.")
+        self.assertTrue(ws._CODE_DECIDED.match(fault))
+        self.assertTrue(ws._false_hold_fault(fault, data, cues, prof))
+        # a REAL over-limit hold stays a fault even in the same phrasing
+        cues[2]["end"] = cues[2]["start"][:7] + "9.000"
+        self.assertFalse(ws._false_hold_fault(fault, data, cues, prof))
+        # an unnamed / ambiguous fault is never dropped on a guess
+        self.assertFalse(ws._false_hold_fault(
+            "a static shot holds 6.0s, exceeding the 5.0s ST hold cap",
+            data, cues, prof))
+        # non-hold faults are untouched
+        self.assertFalse(ws._false_hold_fault(
+            "COVERAGE: cues 10-12 missing", data, cues, prof))
 
 
 class ForceFilesTests(unittest.TestCase):
