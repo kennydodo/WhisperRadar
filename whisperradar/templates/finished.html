@@ -169,6 +169,7 @@
                   onsubmit="return wrConfirmSubmit(this, 'Re-enable this source video so it can be used for another production?')">
               <input type="hidden" name="video_id" value="{{ item.row['source_video_id'] }}">
               <input type="hidden" name="action" value="reenable">
+              <input type="hidden" name="next" value="/finished">
               <button type="submit" class="ghost" title="Make the source video available again for a new production">reenable source</button>
             </form>
             {% endif %}

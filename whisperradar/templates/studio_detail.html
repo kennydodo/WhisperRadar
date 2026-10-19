@@ -132,6 +132,13 @@
   <h1>{{ prod["title"] }}
     {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
   </h1>
+  <details style="margin:-4px 0 8px">
+    <summary class="muted" style="font-size:13px;cursor:pointer">Rename title</summary>
+    <form method="post" action="/studio/{{ prod['id'] }}/rename" style="margin-top:6px">
+      <input type="text" name="title" value="{{ prod['title'] }}" maxlength="300" required style="width:min(520px,90%)">
+      <button type="submit">Save title</button>
+    </form>
+  </details>
   <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a> &middot; <a href="/studio/{{ prod['id'] }}/shorts" style="font-size:13px">Shorts</a></div>
   {% if fix_enabled and script_readiness and script_readiness.findings %}
   <section class="script-review" role="status" style="border:2px solid {{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else '#777' }};border-radius:8px;padding:14px;margin:12px 0">
