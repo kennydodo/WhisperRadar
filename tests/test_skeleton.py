@@ -509,6 +509,48 @@ class GroupingTests(unittest.TestCase):
         self.assertEqual(len({s['asset'] for s in data['shots']}),1)
         self.assertEqual(studio.shotlist_structural_faults(data,20),[])
 
+    def test_grouping_reply_can_mark_main_beats(self):
+        groups, beats = sk.parse_grouping("1-4\nBEAT 5-8\n9-12\nbeat 13-20")
+        self.assertEqual(groups, [(1, 4), (5, 8), (9, 12), (13, 20)])
+        self.assertEqual(beats, {5, 13})
+        self.assertEqual(sk.parse_groups("1-4\nBEAT 5-8"), [(1, 4), (5, 8)])
+        # plain parse ignores a BEAT that trails a bare single cue
+        self.assertEqual(sk.parse_groups("5"), [(5, 5)])
+
+    def test_group_prompts_ask_for_beat_markers(self):
+        text = sk.group_prompt("T", "g", self.cues, 12)
+        self.assertIn("MAIN BEAT", text)
+        self.assertIn("`BEAT 45-48`", text)
+        self.assertIn("MAIN BEAT", sk.group_judge_prompt(self.cues, [(1, 10)], 12))
+        self.assertIn("keep those markers", sk.group_judge_prompt(self.cues, [(1, 10)], 12))
+
+    def test_grouping_beat_markers_become_scenes(self):
+        shots, pictures = sk.regroup(self.cues, [(1, 6), (7, 12), (13, 20)],
+                                     self.prof, 12)
+        self.assertEqual(len(pictures), 3)
+        ans = sk.expand(pictures, answer_all(pictures, every=99))
+        # beat markers on the second and third groups: three scenes
+        ordered = [7, 13]
+        scenes = {m: 1 + sum(1 for s in ordered if s <= p.first)
+                  for p in pictures for m in p.members}
+        data = sk.assemble(shots, ans, 'STYLE', [], False, self.prof,
+                           scenes=scenes)
+        self.assertEqual({s['scene'] for s in data['shots']},
+                         {'S01', 'S02', 'S03'})
+        self.assertEqual(len({s['asset'] for s in data['shots']}), 3)
+        for p, scene in zip(pictures, ('S01', 'S02', 'S03')):
+            member_assets = [s['asset'] for s in data['shots']
+                             if int(str(s['cues']).split('-')[0]) >= p.first
+                             and int(str(s['cues']).split('-')[-1]) <= p.last]
+            self.assertTrue(all(a.startswith(scene + '_')
+                                for a in member_assets), member_assets)
+        self.assertEqual(studio.shotlist_structural_faults(data, 20), [])
+        # without scenes the writer's own BEAT lines decide (unchanged)
+        ans2 = sk.expand(pictures, answer_all(pictures, every=99))
+        ans2.beats = {7}
+        data2 = sk.assemble(shots, ans2, 'STYLE', [], False, self.prof)
+        self.assertEqual({s['scene'] for s in data2['shots']}, {'S01', 'S02'})
+
     def test_local_coverage_and_duration_repair(self):
         for ranges in [[],[(4,8),(7,12)],[(20,1)],[(1,20)]]:
             result,errors=sk.repair_groups(self.cues,ranges,4)

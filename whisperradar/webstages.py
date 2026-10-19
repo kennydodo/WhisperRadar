@@ -998,7 +998,7 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             if should_stop():
                 raise StageFailed("Cue grouping stopped by user")
             dump("skeleton_groups_1", reply)
-            written = skeleton.parse_groups(reply)
+            written, beat_starts = skeleton.parse_grouping(reply)
             left_out = skeleton.uncovered_share(grouping_cues, written)
             if left_out > skeleton.REPAIR_MAX_SHARE:
                 raise StageFailed(
@@ -1022,7 +1022,7 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             dump("skeleton_groups_judge_1", raw)
             if should_stop():
                 raise StageFailed("Cue grouping stopped by user")
-            judged = skeleton.parse_groups(raw)
+            judged, judged_beats = skeleton.parse_grouping(raw)
             judge_bad = skeleton.group_problems(grouping_cues, judged, beat_cap)
             if judge_bad:
                 log(f"grouping: the judge's list is not usable ({judge_bad[0]}) - "
@@ -1030,11 +1030,31 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             else:
                 changed = len(set(judged) - set(groups))
                 groups = judged
+                if judged_beats:
+                    beat_starts = judged_beats
                 log(f"grouping: the judge's list changed {changed} group(s)"
                     if changed else "grouping: the judge approved the groups")
+            # main beats come from the grouping's BEAT markers; without any
+            # marker the scenes fall back to the writer's own BEAT lines in
+            # the picture replies (the old optional-instruction behaviour)
+            starts = {a for a, _b in groups}
+            beat_starts = {s for s in beat_starts if s in starts}
             dump("skeleton_groups_applied", "\n".join(f"{a}-{b}" for a, b in groups))
             shots, pictures = skeleton.regroup(cues, groups, profile,
                                                plan["max_hold"], anim_last)
+            picture_scenes = None
+            if beat_starts:
+                ordered = sorted(beat_starts)
+                # every picture belongs to the chapter of the last BEAT
+                # marker at or before it; the first chapter starts at the
+                # first picture (count + 1)
+                scene_of_picture = {
+                    p.n: 1 + sum(1 for s in ordered if s <= p.first)
+                    for p in pictures}
+                picture_scenes = {m: sc for p in pictures
+                                  for m in p.members
+                                  for sc in (scene_of_picture[p.n],)}
+                log(f"main beats: {len(ordered)} scene(s) from the grouping")
             grouped = True
             rules = skeleton.rules_text(profile, allow_refs, supplied, note,
                                         density=density, limit=limit,
@@ -1105,7 +1125,8 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
     if grouped:
         ans = skeleton.expand(pictures, ans)
     data = skeleton.assemble(shots, ans, ctx["visual_style"], supplied,
-                             allow_refs, profile)
+                             allow_refs, profile,
+                             scenes=picture_scenes if grouped else None)
     dump("plan_reply_1", json.dumps(data, ensure_ascii=False, indent=1))
     return data
 
