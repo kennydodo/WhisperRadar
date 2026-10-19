@@ -376,20 +376,32 @@ GROUPING = True
 BEAT_MAX_FACTOR = 1.0            # a beat (one picture) holds at most the channel's max hold
 
 _GROUP_LINE = re.compile(
-    r"^[\s>*`#\-•]*\**\s*(?:GROUP\s*)?(\d+)(?:\s*[-–—]\s*(\d+))?\s*\**"
+    r"^[\s>*`#\-•]*\**\s*(?:GROUP\s*)?(?:(BEAT)\s+)?"
+    r"(\d+)(?:\s*[-–—]\s*(\d+))?\s*\**"
     r"\s*(?:[:|].*)?$", re.I)
+
+
+def parse_grouping(text: str) -> tuple[list[tuple[int, int]], set[int]]:
+    """((first, last) per group line, cue numbers of groups that start a new
+    MAIN BEAT). A line may be prefixed with `BEAT` to mark it as the first
+    picture of a new chapter of the video; unmarked lines continue the
+    current one."""
+    groups: list[tuple[int, int]] = []
+    beat_starts: set[int] = set()
+    for line in (text or "").splitlines():
+        m = _GROUP_LINE.match(line.strip())
+        if m:
+            a = int(m.group(2))
+            groups.append((a, int(m.group(3)) if m.group(3) else a))
+            if m.group(1):
+                beat_starts.add(a)
+    return groups, beat_starts
 
 
 def parse_groups(text: str) -> list[tuple[int, int]]:
     """The (first, last) cue numbers of every group line in a reply, in the
     order given."""
-    out = []
-    for line in (text or "").splitlines():
-        m = _GROUP_LINE.match(line.strip())
-        if m:
-            a = int(m.group(1))
-            out.append((a, int(m.group(2)) if m.group(2) else a))
-    return out
+    return parse_grouping(text)[0]
 
 
 def groupable(cues: list[dict], anim_last_cue: int = 0) -> list[dict]:
@@ -559,7 +571,12 @@ def group_prompt(title: str, genre: str, cues: list[dict], cap: float,
         f"- A beat holds at most {limit:g} seconds of narration (the app "
         f"measures it and cuts any longer beat itself). Follow meaning for "
         f"where a beat ends; there is no target count.\n"
-        + (f"- {hold_note}\n" if hold_note else "\n")
+        f"- A MAIN BEAT is a chapter of the video, several beats long (hook, "
+        f"problem, mechanism, evidence, solution, conclusion - roughly 8-14 "
+        f"per video). Prefix the line of the group that STARTS a new main "
+        f"beat with `BEAT`: `BEAT 45-48`. Unmarked lines continue the "
+        f"current main beat; the first group starts the first one."
+        + (f"\n- {hold_note}\n" if hold_note else "\n")
         + grouping_brief() + "\n\n"
         + GROUPING_ONLY + "\n\n"
         + ("CREATOR DIRECTION (follow it):\n" + direction.strip() + "\n\n"
@@ -651,8 +668,10 @@ def group_judge_prompt(cues: list[dict], groups: list[tuple[int, int]],
             "If the grouping is already good, repeat it unchanged. Cues are "
             "indivisible: a cue may end one sentence and start another, so "
             "accept a reasonable boundary when a perfect cut would split a "
-            "cue. Reply with ONLY the group lines - no JSON, no commentary, "
-            "no image prompts.\n\n"
+            "cue. A group whose line is prefixed `BEAT` starts a new MAIN "
+            "BEAT (a chapter of the video): keep those markers, and move one "
+            "when a chapter boundary lands elsewhere. Reply with ONLY the "
+            "group lines - no JSON, no commentary, no image prompts.\n\n"
             + grouping_brief() + "\n\n" + GROUPING_ONLY
             + f"\nMaximum picture-group span: {cap * BEAT_MAX_FACTOR:g}s. "
             "Each group is one picture and must not run past that span.\n"
@@ -717,7 +736,12 @@ def _ref_subject_rule(template_text: str | None = None) -> str:
     return m.group(0) if m else ""
 
 
-_REPLY_FORMAT = """\
+_REPLY_BEAT_BULLET = (
+    "- To start a new MAIN BEAT (hook, problem, mechanism, evidence, "
+    "solution...) put a line `BEAT <n>` before the line of the shot that "
+    "begins it. Shot 1 always starts the first beat. Beats are semantic "
+    "sections, not scene changes - usually a handful per video.\n")
+_REPLY_FORMAT = f"""\
 HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no commentary, no summary). One line per shot, in order, using the shot's own number:
 
   <n> | <TYPE> | <refs or -> | <image prompt>          a NEW image
@@ -725,9 +749,20 @@ HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no comme
 
 - TYPE is one of SCN, CU, INF, CMP, PROC, HYB, OVR. refs are names from the reference list, comma-separated (the first is the dominant subject), or `-` for none.
 - A shot flagged ANIMATE gets its movement note at the end of its line: `... | <image prompt> || <ANIMATE note>`; a flagged shot is never a REUSE.
-- To start a new MAIN BEAT (hook, problem, mechanism, evidence, solution...) put a line `BEAT <n>` before the line of the shot that begins it. Shot 1 always starts the first beat. Beats are semantic sections, not scene changes - usually a handful per video.
-- To invent a reference that is not in the list, add a line `REF <CH_/BG_/OBJ_NAME> | <what it looks like>` (before it is first used).
+{_REPLY_BEAT_BULLET}- To invent a reference that is not in the list, add a line `REF <CH_/BG_/OBJ_NAME> | <what it looks like>` (before it is first used).
 - Answer EVERY shot of the batch. Do not renumber, merge or skip shots; the cue ranges and the camera motion are fixed by the app."""
+
+_REPLY_FORMAT_GROUPED = f"""\
+HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no commentary, no summary). One line per picture, in order, using the picture's own number:
+
+  <n> | <TYPE> | <refs or -> | <image prompt>          a NEW image
+  <n> | REUSE <m>                                      the same picture as the earlier picture <m>
+
+- TYPE is one of SCN, CU, INF, CMP, PROC, HYB, OVR. refs are names from the reference list, comma-separated (the first is the dominant subject), or `-` for none.
+- A shot flagged ANIMATE gets its movement note at the end of its line: `... | <image prompt> || <ANIMATE note>`; a flagged shot is never a REUSE.
+- The MAIN BEATS (scenes) were already decided in the grouping step: do not write `BEAT <n>` lines, they would be ignored.
+- To invent a reference that is not in the list, add a line `REF <CH_/BG_/OBJ_NAME> | <what it looks like>` (before it is first used).
+- Answer EVERY picture of the batch. Do not renumber, merge or skip pictures; the cue ranges and the camera motion are fixed by the app."""
 
 
 _PICTURE_INTRO = (
@@ -754,7 +789,8 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
                animation_note: str = "", density: str = "",
                limit: int = 2400, grouped: bool = False,
                template_text: str | None = None,
-               cues: list[dict] | None = None) -> str:
+               cues: list[dict] | None = None,
+               beats_from_grouping: bool = False) -> str:
     kinds = briefs.types_text(profile.types)
     parts = [
         _PICTURE_INTRO if grouped else
@@ -848,7 +884,11 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
             "CREATOR'S OWN MOTION RULES (the app already fixed each shot's "
             "code; follow these where they shape what the image shows):\n"
             + getattr(profile, "custom_rules", "").strip())
-    parts.append(_REPLY_FORMAT)
+    # in the grouped flow the scenes come from the grouping's BEAT markers,
+    # so the reply format drops the writer's own BEAT-line instruction - it
+    # only applies to the ungrouped flow (and the markerless fallback)
+    parts.append(_REPLY_FORMAT_GROUPED
+                 if grouped and beats_from_grouping else _REPLY_FORMAT)
     return "\n\n".join(p for p in parts if p)
 
 
@@ -1156,9 +1196,13 @@ def _final_motion(shots: list[Draft], ans: Answers, motion_of: dict,
 
 def assemble(shots: list[Draft], ans: Answers, style: str,
              supplied_refs: list[str], allow_refs: bool,
-             profile=None) -> dict:
+             profile=None, scenes: dict[int, int] | None = None) -> dict:
     """The shotlist JSON structure, built from the draft shots and the LLM's
-    answers. Call `problems` first - this assumes they are clean."""
+    answers. Call `problems` first - this assumes they are clean.
+
+    `scenes` maps shot number to 1-based main beat (scene), decided by the
+    grouping step's BEAT markers; when it is left out the scenes follow the
+    writer's own `BEAT <n>` lines in the picture replies (ungrouped flow)."""
     stems_set = {n.rsplit(".", 1)[0] for n in supplied_refs}
     final_motion: dict[int, str] = {}
     if profile is not None:
@@ -1166,10 +1210,13 @@ def assemble(shots: list[Draft], ans: Answers, style: str,
     else:
         for s in shots:
             final_motion[s.n] = s.motion
-    beats = sorted(set(ans.beats) | {1})
-    scene_of = {}
-    for s in shots:
-        scene_of[s.n] = sum(1 for b in beats if b <= s.n)
+    if scenes:
+        scene_of = {s.n: int(scenes.get(s.n, 1)) for s in shots}
+    else:
+        beats = sorted(set(ans.beats) | {1})
+        scene_of = {}
+        for s in shots:
+            scene_of[s.n] = sum(1 for b in beats if b <= s.n)
     sub: dict[int, int] = {}
     file_of: dict[int, str] = {}
     motion_of: dict[int, str] = {}
