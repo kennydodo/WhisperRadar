@@ -1,5 +1,6 @@
 """Shotlist skeleton: the app drafts the shots, the writer answers with lines,
 the app assembles the JSON (no browser, no network)."""
+import collections
 import json
 import random
 import re
@@ -546,6 +547,54 @@ class GroupingTests(unittest.TestCase):
         scenes = {m: 1 + sum(1 for s in sorted(beats) if s <= p.first)
                   for p in pictures for m in p.members}
         self.assertEqual(scenes[pictures[0].members[0]], 1)
+
+    def test_repair_moving_a_marker_snaps_it_forward(self):
+        # a repair merged 5-8 into 1-8: the marker on cue 5 must survive at
+        # the next group start (9), not disappear without a message
+        markers, moved = sk.snap_beat_starts({5, 17},
+                                             [(1, 8), (9, 12), (13, 16), (17, 20)])
+        self.assertEqual(markers, {9, 17})
+        self.assertEqual(moved, 1)
+        # a marker that stays on its own group start is not "moved"
+        markers, moved = sk.snap_beat_starts({9, 17},
+                                             [(1, 8), (9, 12), (13, 16), (17, 20)])
+        self.assertEqual(markers, {9, 17})
+        self.assertEqual(moved, 0)
+        # a marker that snaps onto the first group is chapter 1: dropped,
+        # not moved (chapter 1 is implicit, nothing re-anchored)
+        markers, moved = sk.snap_beat_starts({1, 9}, [(1, 8), (9, 20)])
+        self.assertEqual(markers, {9})
+        self.assertEqual(moved, 0)
+
+    def test_scene_cap_splits_a_run_that_swallowed_the_video(self):
+        groups = [(1, 4), (5, 8), (9, 12), (13, 16), (17, 20)]
+        shots, pictures = sk.regroup(self.cues, groups, self.prof, 12)
+        # the writer marked nothing: one scene holds every shot (S13_01...54)
+        scene_of = {s.n: 1 for s in shots}
+        # every picture is a NEW image, so the cap has boundaries to split at
+        ans = sk.expand(pictures, answer_all(pictures, every=99))
+        capped = sk._cap_scene_size(shots, scene_of, ans, cap=3)
+        runs = collections.Counter(capped.values())
+        # scenes relabel 1..K in narration order; every split lands on a
+        # NEW-image boundary (a run may end past the cap on a reuse tail -
+        # the next boundary is where the split happens). What must never
+        # come back is the S13_01...54 shape: one scene holding everything.
+        seq = [capped[s.n] for s in shots]
+        self.assertEqual(seq, sorted(seq))
+        self.assertEqual(len(runs), 3)
+        for sc in sorted(set(seq))[:-1]:
+            last = max(s.n for s in shots if capped[s.n] == sc)
+            nxt = next(s for s in shots if s.n == last + 1)
+            self.assertIn(nxt.n, ans.new,
+                          f"scene {sc} split away from a reuse shot")
+        # a single picture reused across a long run cannot split: no image
+        # boundary means one scene keeps its asset under one label
+        ans2 = sk.expand(pictures, answer_all(pictures, every=99))
+        ans2.new = {k: v for k, v in ans2.new.items() if k == 1}
+        ans2.reuse = {s.n: 1 for s in shots if s.n != 1}
+        scene_of = {s.n: 1 for s in shots}
+        capped2 = sk._cap_scene_size(shots, scene_of, ans2, cap=3)
+        self.assertEqual(set(capped2.values()), {1})
 
     def test_grouping_beat_markers_become_scenes(self):
         shots, pictures = sk.regroup(self.cues, [(1, 6), (7, 12), (13, 20)],
