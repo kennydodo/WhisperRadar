@@ -139,7 +139,7 @@ class ExternalJudgeTests(unittest.TestCase):
                "generate_references": False, "shotlist_min_alignment": 0.8}
         plan = {"cues": cues, "profile": mock.Mock(reveal=False), "max_hold": 12,
                 "min_align": 0.8, "narration": "1: x (4s)"}
-        ctx = {"eff": eff, "visual_style": "", "bible": ""}
+        ctx = {"eff": eff, "visual_style": "", "bible": "", "density": ""}
         with mock.patch.object(ep, "_context", return_value=ctx), \
              mock.patch.object(ep, "_plan_inputs", return_value=plan), \
              mock.patch.object(ep, "_hard_rules", return_value="RULES"), \

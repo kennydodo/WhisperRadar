@@ -517,7 +517,8 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         floor = briefs.hold_limit(profile.static_long_hold,
                                   profile.static_hold_tol)
         motion.append(f"a static (ST) shot is never acceptable at "
-                      f"{profile.static_long_hold:g}s or more")
+                      f"{floor:.1f}s or more ({profile.static_long_hold:g}s "
+                      f"plus the accepted tolerance; shorter is NOT a fault)")
     if profile.st_max_hold is not None:
         top = briefs.hold_limit(profile.st_max_hold, profile.st_hold_tol)
         motion.append(f"an ST shot may not hold longer than {top:.1f}s "

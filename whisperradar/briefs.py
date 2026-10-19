@@ -452,14 +452,21 @@ def _secs(value):
 
 def _tol(value):
     """A hold tolerance as a 0-1 share from a PERCENT (0 = strict, empty =
-    None = the standard tolerance)."""
+    None = the standard tolerance).
+
+    Idempotent like _frac: a value over 1 is a percent (30 -> 0.3), a value
+    of 1 or less is already a share (0.3 stays 0.3) - the spec is normalized
+    once before it is saved and again when the profile is resolved, so the
+    second pass must not shrink it again."""
     if value is None or str(value).strip() == "":
         return None
     try:
         v = float(value)
     except (TypeError, ValueError):
         return None
-    return round(min(200.0, max(0.0, v)) / 100.0, 4)
+    if v > 1:                       # typed as a percentage
+        v = v / 100.0
+    return round(min(2.0, max(0.0, v)), 4)
 
 
 def normalize_custom(spec) -> dict | None:
