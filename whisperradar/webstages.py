@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import autorun, db, external_prompts as ep, handover, studio, webchat
+from . import autorun, briefs, db, external_prompts as ep, handover, studio, webchat
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
