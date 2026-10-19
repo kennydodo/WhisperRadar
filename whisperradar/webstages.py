@@ -1123,6 +1123,18 @@ _CODE_DECIDED = re.compile(
     r"\b(?:over|exceed\w*|above|>)\b[^;]*?\b(?:limit|cap|maximum)\b)", re.I)
 
 
+# The pre-check runs the app's whole mechanical battery (coverage, assets,
+# holds with tolerance, motion mix and codes) BEFORE the judge sees the plan
+# - a judge round only happens when all of that is clean. So a judge fault
+# carrying one of these labels re-derives what the code already measured.
+# Prod 40: deepseek returned seven in a row ("COVERAGE: shot with cues
+# 488-491 is followed by 492-496, but ... No—checking order: ..."), each
+# answering its own question, none true - the app's check found nothing.
+_MECHANICAL_LABELS = re.compile(
+    r"^\s*(?:COVERAGE|ASSETS|MAXIMUM (?:ST |STATIC )?HOLD|STATIC HOLD"
+    r"|ST HOLD|MOTION MIX|MOTION CODES)\b", re.I)
+
+
 def _false_hold_fault(fault: str, data: dict, cues: list[dict],
                       profile) -> bool:
     """True when a judge fault blames a shot's hold length the app measures
@@ -1321,12 +1333,13 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             # the judge's own hold arithmetic is the thing that is wrong:
             # recognise the phrasings and re-measure the shot the fault names
             dropped = [f for f in faults if _CODE_DECIDED.match(f)
-                       or _false_hold_fault(f, data, cues, plan["profile"])]
+                       or _false_hold_fault(f, data, cues, plan["profile"])
+                       or _MECHANICAL_LABELS.match(f)]
             if dropped:
                 faults = [f for f in faults if f not in dropped]
-                log(f"ignored {len(dropped)} hold fault(s) from {judge}: "
-                    f"the app measures the shot(s) within the limit "
-                    f"(with tolerance)")
+                log(f"ignored {len(dropped)} judge fault(s): the app's own "
+                    f"checks (with tolerance) measure the plan clean, and a "
+                    f"mechanical category re-derived here cannot beat that")
             hard = local + [f for f in faults if f not in local]
             weak = _weak_list(verdict)
             fixes = [str(x) for x in (verdict.get("fixes") or [])]
