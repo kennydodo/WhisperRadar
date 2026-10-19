@@ -1332,6 +1332,19 @@
   </div>
 
   {% if stage == "script" %}
+  <div class="panel">
+    <h2 style="margin-top:0">Target words &mdash; script stage</h2>
+    <div class="muted" style="font-size:12px; margin-bottom:6px">
+      How long the script should be. The writer and the judge are both told this number
+      (accepted between 80% and 115% of it). Empty = automatic: the original video's
+      length, or 1200 words when there is no original. A number here is used as typed,
+      even when it is longer than the original.</div>
+    <form class="inline" method="post" action="/studio/{{ prod['id'] }}/script-words">
+      <input type="number" name="script_words" min="100" max="20000" step="50"
+             value="{{ script_words or '' }}" placeholder="automatic" style="width:140px">
+      <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save target</button>
+    </form>
+  </div>
   {% set hshow = ["script"] %}{% include "_handover_panel.html" %}
   {% endif %}
 

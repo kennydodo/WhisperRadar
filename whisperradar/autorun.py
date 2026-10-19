@@ -599,8 +599,9 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         _log_line("no writing style guide (run the style stage first) - "
                   "writing without one")
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
-    target_words = studio.script_target_words(cfg.studio_script_words,
-                                              source_words)
+    target_words = studio.script_target_words(
+        cfg.studio_script_words, source_words,
+        explicit=studio.script_words_override(prod))
     script_path = pdir / "script.md"
     auto_dir = pdir / "versions" / "script"
     auto_dir.mkdir(parents=True, exist_ok=True)

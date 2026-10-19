@@ -185,8 +185,14 @@ def _target_words(cfg, pid: int, target_words) -> int:
     if target_words:
         return int(target_words)
     source = autorun._source_transcript_text(cfg, pid)
+    conn = db.connect(cfg.db_path)
+    try:
+        explicit = studio.script_words_override(db.get_production(conn, pid))
+    finally:
+        conn.close()
     return studio.script_target_words(
-        cfg.studio_script_words, len(re.findall(r"\w+", source or "")))
+        cfg.studio_script_words, len(re.findall(r"\w+", source or "")),
+        explicit=explicit)
 
 
 def _length_window(target: int) -> tuple[int, int]:

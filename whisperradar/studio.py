@@ -3090,10 +3090,23 @@ def script_max_tokens(words: int) -> int:
     return int(max(0, words) * 1.6) + 200
 
 
-def script_target_words(setting: int | None, source_words: int) -> int:
+def script_words_override(prod) -> int | None:
+    """The word count typed in the script stage's "Target words" box for this
+    production (kept in stage_extras under "script_words"), or None."""
+    from . import db
+    raw = re.sub(r"[^\d]", "", db.stage_extra(prod, "script_words") or "")
+    return int(raw) if raw and int(raw) > 0 else None
+
+
+def script_target_words(setting: int | None, source_words: int,
+                        explicit: int | None = None) -> int:
     """The written script is never planned LONGER than the transcript it is
     based on - a longer target only makes generation slower without adding
-    substance. An explicit `studio.script_words` still wins when it is shorter."""
+    substance. An explicit `studio.script_words` still wins when it is shorter.
+    A number typed for THIS production (`explicit`) is the creator's choice and
+    is used as it is, longer than the source or not."""
+    if explicit:
+        return int(explicit)
     wanted = int(setting or 0) or source_words or 1200
     cap = source_words or wanted
     return min(wanted, cap)
