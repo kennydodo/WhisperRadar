@@ -1114,12 +1114,45 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
 # those checks came back clean, the judge's arithmetic on them is wrong
 # Whatever label the judge puts in front ("MAXIMUM HOLD", "MAXIMUM ST HOLD",
 # "MOTION MIX: ... is ST and holds 5s, over the 4.8s limit"), a fault that
-# does hold-length arithmetic ("holds N s ... over/exceeds ... limit") is one
-# the app's own check already decided.
+# does hold-length arithmetic ("holds/holding N s ... over/exceeds ...
+# limit/cap") is one the app's own check already decided. Judges have
+# phrased it both ways.
 _CODE_DECIDED = re.compile(
     r"^\s*(?:(?:MAXIMUM (?:ST |STATIC )?HOLD|STATIC HOLD|ST HOLD)\b"
-    r"|.*?\bholds?\s+\d+(?:\.\d+)?\s*s\b[^;]*?"
-    r"\b(?:over|exceeds?|above|>)\b[^;]*?\blimit\b)", re.I)
+    r"|.*?\bhold(?:s|ing)?\s+\d+(?:\.\d+)?\s*s\b[^;]*?"
+    r"\b(?:over|exceed\w*|above|>)\b[^;]*?\b(?:limit|cap|maximum)\b)", re.I)
+
+
+def _false_hold_fault(fault: str, data: dict, cues: list[dict],
+                      profile) -> bool:
+    """True when a judge fault blames a shot's hold length the app measures
+    under the limit - the judge summed rounded narration durations instead
+    of the cue span (once: 1.68 + 2.74 + 0.26 = 4.68s read as "holding 6.0s,
+    exceeding the 5.0s ST hold cap"). The app's own measurement decides: a
+    fault that cites a real over-limit hold stays (the return is False), a
+    fault that cites a shot the app measures within its limit is dropped."""
+    m = re.search(r"\bhold(?:s|ing)?\s+(\d+(?:\.\d+)?)\s*s\b", fault, re.I)
+    if not m:
+        return False
+    shots = [s for s in (data.get("shots") or [])
+             if isinstance(s, dict) and s.get("asset")
+             and str(s["asset"]) in fault]
+    if len(shots) != 1:                      # no / several candidates: unsure
+        return False
+    rng = studio.cue_range(shots[0].get("cues"))
+    by_index = {c["index"]: c for c in cues}
+    if not rng or rng[0] not in by_index or rng[1] not in by_index:
+        return False
+    span = (studio._srt_seconds(by_index[rng[1]]["end"])
+            - studio._srt_seconds(by_index[rng[0]]["start"]))
+    motion = (shots[0].get("motion") or "").upper()
+    if motion == "ST" and profile.st_max_hold is not None:
+        limit = briefs.hold_limit(profile.st_max_hold, profile.st_hold_tol)
+    elif profile.max_hold is not None:
+        limit = briefs.hold_limit(profile.max_hold, profile.max_hold_tol)
+    else:
+        return False
+    return span <= limit + 1e-9
 
 
 def _auto_split_long(data: dict, cues: list[dict], limit: float) -> int:
@@ -1285,12 +1318,15 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                 break
             faults = [str(x) for x in (verdict.get("faults") or [])]
             # the code checks above came back clean (with the tolerance), so
-            # the judge's own hold arithmetic is the thing that is wrong
-            dropped = [f for f in faults if _CODE_DECIDED.match(f)]
+            # the judge's own hold arithmetic is the thing that is wrong:
+            # recognise the phrasings and re-measure the shot the fault names
+            dropped = [f for f in faults if _CODE_DECIDED.match(f)
+                       or _false_hold_fault(f, data, cues, plan["profile"])]
             if dropped:
                 faults = [f for f in faults if f not in dropped]
-                log(f"ignored {len(dropped)} hold fault(s) from {judge}: the "
-                    f"app's own check (with tolerance) found none")
+                log(f"ignored {len(dropped)} hold fault(s) from {judge}: "
+                    f"the app measures the shot(s) within the limit "
+                    f"(with tolerance)")
             hard = local + [f for f in faults if f not in local]
             weak = _weak_list(verdict)
             fixes = [str(x) for x in (verdict.get("fixes") or [])]

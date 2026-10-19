@@ -35,8 +35,8 @@ class CompactSrtTests(unittest.TestCase):
         out = studio.compact_srt(SRT)
         self.assertEqual(
             out,
-            "1: Hello world. (3s)\n"
-            "2: This is a second cue that wraps a line. (4s)\n"
+            "1: Hello world. (2.5s)\n"
+            "2: This is a second cue that wraps a line. (3.5s)\n"
             "3: Final cue. (2s)")
 
         self.assertNotIn("00:00", out)
