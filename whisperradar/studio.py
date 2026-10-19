@@ -3896,6 +3896,15 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"Measured 5-gram overlap with the original: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
         f"HOW TO JUDGE:\n"
+        f"- REPETITION AND QUALIFICATIONS. Check for repeated meaning, not "
+        f"just repeated wording. Each section must add a distinct mechanism, "
+        f"consequence, or action. Preserve brief callbacks that add a new "
+        f"interpretation. State a necessary qualification where it matters "
+        f"most; flag repeated caveats unless they change the advice. In "
+        f"feedback, identify the overlapping SCRIPT passages and what to "
+        f"merge or cut, and reflect material padding in structure and pacing "
+        f"scores. Do not demand removal of a useful callback or a qualification "
+        f"needed to avoid misleading the viewer.\n"
         f"- AUDIT FIRST, SCORE SECOND. Before scoring, audit every material "
         f"claim in the script: each statistic, figure, calculation, law, "
         f"study, date and cause-and-effect statement. The writer researched "
@@ -4535,9 +4544,14 @@ Rules:
   place or personal figures, make up NEW ones. Never reuse a character name,
   company name or scenario detail from an earlier script of this channel.
 - State each idea ONCE, where it best belongs, then move on. Before writing a
-  sentence, check whether the script has already made this point - if so, cut the
-  new one rather than restating it "one more time" for emphasis. A script that
-  circles back to summarize what it already explained is padding, not pacing.
+  sentence, check for repeated meaning, not just repeated wording. Each section
+  must add a distinct mechanism, consequence, or action. Merge or cut passages
+  that make the same point without adding anything. Preserve brief callbacks
+  that add a new interpretation; repeating an explanation is padding, not pacing.
+- State a necessary qualification where it matters most. Avoid repeating the
+  same caveat across sections unless it changes the advice. Keep qualifications
+  needed to avoid misleading the viewer, but do not turn each example into a
+  disclaimer or repeat the same exception in different words.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words - this is a real target, not a ceiling. If you are
   running short, do NOT pad by repeating a point already made; instead go deeper
