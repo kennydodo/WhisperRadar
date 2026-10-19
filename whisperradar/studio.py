@@ -3905,6 +3905,15 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"merge or cut, and reflect material padding in structure and pacing "
         f"scores. Do not demand removal of a useful callback or a qualification "
         f"needed to avoid misleading the viewer.\n"
+        f"- SCENE PURPOSE. For narrative scripts, compare scenes by their "
+        f"dramatic purpose, not just their setting or wording. Flag scenes "
+        f"that establish the same problem and reach the same conclusion "
+        f"without changing the stakes, relationship, or understanding. "
+        f"Identify both passages in feedback and recommend a merge or cut. "
+        f"After a scene demonstrates an idea, flag narration that merely "
+        f"explains it again; retain interpretation that adds something the "
+        f"audience could not infer. A callback, emotional resolution, and "
+        f"thematic payoff may share one scene, not three separate endings.\n"
         f"- AUDIT FIRST, SCORE SECOND. Before scoring, audit every material "
         f"claim in the script: each statistic, figure, calculation, law, "
         f"study, date and cause-and-effect statement. The writer researched "
@@ -4552,6 +4561,13 @@ Rules:
   same caveat across sections unless it changes the advice. Keep qualifications
   needed to avoid misleading the viewer, but do not turn each example into a
   disclaimer or repeat the same exception in different words.
+- In a narrative, give each scene a distinct dramatic purpose. If two scenes
+  establish the same problem and reach the same conclusion without changing
+  the stakes, relationship, or understanding, merge them or cut one. After a
+  scene clearly demonstrates an idea, do not explain it again unless the
+  interpretation adds something the audience could not infer. A callback,
+  emotional resolution, and thematic payoff may happen in one scene; do not
+  write a separate conclusion for each.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
 - About {target_words} words - this is a real target, not a ceiling. If you are
   running short, do NOT pad by repeating a point already made; instead go deeper
