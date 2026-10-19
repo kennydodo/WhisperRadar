@@ -1007,6 +1007,10 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             groups, bad = skeleton.repair_groups(grouping_cues, written, beat_cap)
             if bad:
                 raise StageFailed("Cue grouping needs attention: " + "; ".join(bad[:3]))
+            beat_starts, moved = skeleton.snap_beat_starts(beat_starts, groups)
+            if moved:
+                log(f"grouping: the repair moved {moved} chapter marker(s) - "
+                    f"snapped to the nearest group start")
             if groups != written:
                 log(f"grouping: the app repaired the writer's groups "
                     f"({len(set(groups) - set(written))} group(s) changed, "
@@ -1031,6 +1035,12 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
                 changed = len(set(judged) - set(groups))
                 groups = judged
                 if judged_beats:
+                    judged_beats, moved = skeleton.snap_beat_starts(
+                        judged_beats, groups)
+                    if moved:
+                        log(f"grouping: the judge moved {moved} chapter "
+                            f"marker(s) off a group start - snapped to the "
+                            f"nearest group start")
                     beat_starts = judged_beats
                 log(f"grouping: the judge's list changed {changed} group(s)"
                     if changed else "grouping: the judge approved the groups")
@@ -1061,8 +1071,20 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
                 log(f"main beats: {len(ordered) + 1} scene(s) from the "
                     f"grouping")
             else:
-                log("grouping gave no chapter markers - scenes follow the "
-                    "writer's BEAT lines in the picture replies")
+                # no markers: the old BEAT-line instruction in the picture
+                # prompt is what produced S13_01...S13_54, so the app splits
+                # the pictures into even chapters instead and the picture
+                # prompt keeps its "do not write BEAT lines" rule
+                chunk = max(1, skeleton.MAX_SUBBEATS_PER_SCENE)
+                picture_scenes = {}
+                for p in pictures:
+                    sc = 1 + (p.n - 1) // chunk
+                    for m in p.members:
+                        picture_scenes[m] = sc
+                n_scenes = 1 + (len(pictures) - 1) // chunk
+                log(f"no chapter markers in the grouping - the app split the "
+                    f"{len(pictures)} pictures into {n_scenes} even scene(s) "
+                    f"(writer BEAT lines are not asked for)")
             grouped = True
             rules = skeleton.rules_text(profile, allow_refs, supplied, note,
                                         density=density, limit=limit,

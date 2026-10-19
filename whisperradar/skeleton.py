@@ -652,6 +652,55 @@ def repair_groups(cues, groups, cap):
     return result,group_problems(cues,result,cap)
 
 
+def snap_beat_starts(markers: set[int], groups: list[tuple[int, int]]
+                     ) -> tuple[set[int], int]:
+    """Markers re-anchored to the final group starts: a chapter begins at
+    the first group that starts at or after the marked cue, so a repair or
+    a judge correction that moved a marked boundary keeps its chapter
+    instead of dropping it. Returns (markers, moved count); a marker that
+    lands on the first group is dropped there (chapter 1 is implicit)."""
+    starts = sorted(a for a, _b in groups)
+    if not starts:
+        return set(), len(markers)
+    out: set[int] = set()
+    moved = 0
+    for s in markers:
+        nxt = next((a for a in starts if a >= s), None)
+        if nxt is None or nxt == starts[0]:
+            continue                    # chapter 1 is implicit
+        out.add(nxt)
+        moved += 1 if nxt != s else 0
+    return out, moved
+
+
+# a scene holding more sub-beats than this (and no image boundary inside to
+# split at) is a writer that stopped marking - split it mechanically rather
+# than ship S13_01...S13_54
+MAX_SUBBEATS_PER_SCENE = 30
+
+
+def _cap_scene_size(shots: list[Draft], scene_of: dict[int, int],
+                    ans: "Answers",
+                    cap: int = MAX_SUBBEATS_PER_SCENE) -> dict[int, int]:
+    """scene_of with every run of more than `cap` shots in one scene split
+    at the shot that starts a NEW image (so filenames keep their scene).
+    Scenes with no image boundary inside are left alone - splitting one
+    picture's reuse run would put one asset under two scene labels."""
+    out: dict[int, int] = {}
+    scene, run, last_writer = None, 0, None
+    for s in shots:
+        boundary = s.n in ans.new
+        if scene_of[s.n] != last_writer:
+            scene, run = scene_of[s.n], 0     # the writer's own boundary
+        elif boundary and run >= cap:
+            scene += 1                        # mechanical split under the cap
+            run = 0
+        last_writer = scene_of[s.n]
+        out[s.n] = scene
+        run += 1
+    return out
+
+
 def group_judge_prompt(cues: list[dict], groups: list[tuple[int, int]],
                        cap: float, direction: str = "",
                        hold_note: str = "") -> str:
@@ -1217,6 +1266,16 @@ def assemble(shots: list[Draft], ans: Answers, style: str,
         scene_of = {}
         for s in shots:
             scene_of[s.n] = sum(1 for b in beats if b <= s.n)
+    # a chapter that swallowed the video (S13_01...S13_54) is worse than a
+    # mechanical split: cap every scene's sub-beat count, splitting at image
+    # boundaries only, then relabel the scenes 1..K in narration order
+    scene_of = _cap_scene_size(shots, scene_of, ans)
+    renumber = {}
+    for s in shots:
+        sc = scene_of[s.n]
+        if sc not in renumber:
+            renumber[sc] = len(renumber) + 1
+        scene_of[s.n] = renumber[sc]
     sub: dict[int, int] = {}
     file_of: dict[int, str] = {}
     motion_of: dict[int, str] = {}
