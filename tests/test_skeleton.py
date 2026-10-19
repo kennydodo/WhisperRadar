@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from tests.test_external_prompts import Base  # noqa: E402
-from whisperradar import briefs, skeleton as sk, studio, webstages as ws  # noqa: E402
+from whisperradar import briefs, db, skeleton as sk, studio, webstages as ws  # noqa: E402
 
 
 def _ts(x):
@@ -278,92 +278,310 @@ class PromptTests(unittest.TestCase):
 
 
 class SupportTests(unittest.TestCase):
-    def test_channels_with_reveals_sfx_or_presentation_use_the_old_flow(self):
+    def test_reveal_and_sfx_select_legacy_flow(self):
+        from dataclasses import replace
         prof = briefs.get_profile("standard")
-        self.assertEqual(sk.unsupported_reason({}, prof), "")
-        self.assertIn("presentation",
-                      sk.unsupported_reason({"brief_presentation": "x"}, prof))
+        self.assertEqual(sk.unsupported_reason({"brief_presentation": "No INF"}, prof), "")
+        self.assertIn("reveal", sk.unsupported_reason({}, replace(prof, reveal=True)))
+        self.assertIn("sound", sk.unsupported_reason({}, replace(prof, sfx="ding")))
 
 
 class RunTests(Base):
-    """run_shotlist with the skeleton on, against a writer that follows the
-    line format."""
-
     def setUp(self):
         super().setUp()
         self.log = []
-        blocks = []
-        for c in make_cues(60):
-            blocks.append(f"{c['index']}\n{c['start'].replace('.', ',')} --> "
-                          f"{c['end'].replace('.', ',')}\n{c['text']}\n")
-        (self.pdir / "subtitles.srt").write_text("\n".join(blocks), "utf-8")
+        cues = make_cues(60)
+        (self.pdir / "subtitles.srt").write_text("\n".join(
+            f"{c['index']}\n{c['start']} --> {c['end']}\n{c['text']}\n" for c in cues), "utf-8")
 
     class Writer:
         def __init__(self):
             self.calls = []
-
-        def adopt(self, site, url):
-            pass
-
-        def urls(self):
-            return {}
-
+            self.groups = ""
+            self.reject = 0
+        def adopt(self, site, url): pass
+        def urls(self): return {}
         def ask(self, site, prompt, files=(), new_chat=True, ready=None):
-            self.calls.append({"site": site, "prompt": prompt,
-                               "new_chat": new_chat, "files": list(files)})
+            self.calls.append((site, prompt, new_chat))
             if site == "deepseek":
-                return json.dumps({"faults": [], "shots": [],
-                                   "detailed_ratio": 1, "pass": True})
-            out = []
-            for m in re.finditer(r"^(\d+) \| cues [\d-]+ \| [\d.]+s \| "
-                                 r"(\w+)( \| ANIMATE)? \| ", prompt, re.M):
-                n = int(m.group(1))
-                if m.group(3):
-                    out.append(f"{n} | SCN | - | opening picture {n} || "
-                               f"slow push in")
-                elif n % 2 == 0:
-                    out.append(f"{n} | REUSE {n - 1}")
-                else:
-                    out.append(f"{n} | SCN | - | picture {n} of the story")
-            return "\n".join(out)
+                if "grouping judge" in prompt:
+                    ranges=[(int(a),int(b)) for a,b in re.findall(r"^GROUP (\d+)-(\d+):",prompt,re.M)]
+                    if self.reject:
+                        self.reject -= 1
+                        a,b=ranges[0]
+                        mid=(a+b)//2
+                        ranges=[(a,mid),(mid+1,b)]+ranges[1:]
+                    return "\n".join(f"{a}-{b}" for a,b in ranges)
+                return json.dumps({"faults": [], "shots": [], "detailed_ratio": 1, "pass": True})
+            if "you ONLY decide how" in prompt:
+                rows = [(int(m[1]), float(m[2])) for m in re.finditer(
+                    r"^(\d+) \| ([\d.]+)s \|", prompt, re.M)]
+                out, start, total = [], rows[0][0], 0
+                for n, sec in rows:
+                    if total and total + sec > 20:
+                        out.append(f"{start}-{n-1}");start,total=n,0
+                    total += sec
+                out.append(f"{start}-{rows[-1][0]}")
+                self.groups="\n".join(out)
+                return self.groups
+            if "Not accepted yet:" in prompt: return self.groups
+            return "\n".join(f"{m[1]} | SCN | - | A person beside basket number {m[1]} on white." for m in re.finditer(
+                r"^(\d+) \| cues [\d-]+ \| [\d.]+s(?: \(.*?\))? \|", prompt, re.M))
 
-    def test_plan_is_built_from_lines_and_saved(self):
-        t = self.Writer()
-        data = ws.run_shotlist(self.cfg, self.pid, t, "zai", "deepseek",
-                               rounds=2, log=self.log.append,
-                               use_skeleton=True)
-        saved = json.loads((self.pdir / "shotlist.json").read_text("utf-8"))
-        self.assertEqual(saved["shots"], data["shots"])
-        writer_calls = [c for c in t.calls if c["site"] == "zai"]
-        self.assertTrue(writer_calls)
-        # nothing was attached and the narration never went as a file
-        self.assertTrue(all(not c["files"] for c in t.calls))
-        self.assertFalse(any("narration.txt" in c["prompt"]
-                             for c in writer_calls))
-        # after the first part the writer chat is continued, not restarted
-        self.assertTrue(all(not c["new_chat"] for c in writer_calls[1:]))
-        self.assertTrue(any("drafted" in m for m in self.log))
+    def test_short_brief_is_inline_for_grouping_writer_and_judge(self):
+        class Capture(self.Writer):
+            def __init__(self):
+                super().__init__();self.seen=[]
+            def ask(self,site,prompt,files=(),new_chat=True,ready=None):
+                if 'you ONLY decide how' in prompt or 'grouping judge' in prompt:
+                    self.seen.append((site,prompt,list(files)))
+                return super().ask(site,prompt,files,new_chat,ready)
+        t=Capture()
+        ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                       log=self.log.append,use_skeleton=True)
+        self.assertEqual(len(t.seen),2)
+        for site,prompt,files in t.seen:
+            self.assertEqual(files,[])
+            self.assertIn('HOW TO GROUP',prompt)
+            self.assertIn('CUE GROUPING ONLY',prompt)
+            self.assertNotIn('SECTION',prompt)
+            self.assertNotIn('grouping_brief.md',prompt)
 
-    def test_unusable_answers_fall_back_to_the_whole_json_flow(self):
-        class Bad(self.Writer):
-            def ask(self, site, prompt, files=(), new_chat=True, ready=None):
-                if site == "zai" and "drafted" not in prompt and \
-                        "SHOTS 1-" in prompt or (site == "zai" and
-                                                 "Not accepted" in prompt):
-                    self.calls.append({"site": site, "prompt": prompt,
-                                       "new_chat": new_chat,
-                                       "files": list(files)})
-                    return "sorry, I cannot do that"
-                return super().ask(site, prompt, files, new_chat, ready)
+    def test_presentation_reaches_grouping_judge_and_picture_writer(self):
+        conn=db.connect(self.cfg.db_path)
+        db.update_own_channel(conn,self.chan,brief_presentation="No INF; show the protagonist")
+        conn.commit();conn.close()
+        t=self.Writer()
+        ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                       log=self.log.append,use_skeleton=True)
+        for idx in [0,1,2]:
+            self.assertIn('No INF; show the protagonist',t.calls[idx][1])
+        self.assertFalse(any('whole shotlist as before' in x for x in self.log))
 
-        t = Bad()
-        try:
-            ws.run_shotlist(self.cfg, self.pid, t, "zai", "deepseek",
-                            rounds=1, log=self.log.append, use_skeleton=True)
-        except Exception:
-            pass
-        self.assertTrue(any("not used" in m for m in self.log))
-        self.assertTrue(any("whole shotlist" in m for m in self.log))
+    def test_skeleton_error_does_not_silently_start_full_planner(self):
+        from unittest import mock
+        t=self.Writer()
+        with mock.patch.object(ws,'_skeleton_plan',side_effect=sk.SkeletonError('bad pictures')):
+            with self.assertRaisesRegex(ws.StageFailed,'full-shotlist planner was not started'):
+                ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                               log=self.log.append,use_skeleton=True)
+        self.assertEqual(t.calls,[])
+
+    def test_complete_group_review_picture_flow(self):
+        t=self.Writer()
+        data=ws.run_shotlist(self.cfg,self.pid,t,"zai","deepseek",rounds=1,
+                            log=self.log.append,use_skeleton=True)
+        self.assertIn("CUES 1-60",t.calls[0][1])
+        self.assertIn("grouping judge",t.calls[1][1])
+        self.assertIn("The app applied your grouping",t.calls[2][1])
+        self.assertFalse(t.calls[2][2])
+        self.assertLess(len(data['images']),len(data['shots']))
+        self.assertEqual(studio.shotlist_structural_faults(data,60),[])
+
+    def test_judge_list_replaces_the_writers_groups_without_writer_roundtrip(self):
+        t=self.Writer();t.reject=1
+        data=ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                            log=self.log.append,use_skeleton=True)
+        calls=[c for c in t.calls if c[0]=='deepseek']
+        self.assertEqual(sum('grouping judge' in c[1] for c in calls),1)
+        self.assertTrue(calls[0][2])
+        self.assertTrue(all(not c[2] for c in calls[1:]))
+        self.assertTrue(any("the judge's list changed" in x for x in self.log))
+        self.assertFalse(any('Not accepted yet:' in c[1] for c in t.calls))
+        self.assertEqual(studio.shotlist_structural_faults(data,60),[])
+
+    def test_approved_groups_are_logged_as_approved(self):
+        t=self.Writer()
+        ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                       log=self.log.append,use_skeleton=True)
+        self.assertTrue(any('the judge approved the groups' in x for x in self.log))
+
+    def test_adopted_judge_chat_is_continued_from_first_group_review(self):
+        from unittest import mock
+        t=self.Writer()
+        with mock.patch.object(ws,'adopt_chats',return_value={'zai','deepseek'}):
+            ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                           log=self.log.append,use_skeleton=True,same_chats=True)
+        self.assertTrue(all(not c[2] for c in t.calls if c[0]=='deepseek'))
+
+    def test_unusable_judge_list_keeps_the_writers_groups(self):
+        for reply in ('1-999', 'Looks fine to me.', '1-5\n6-10'):
+            class BadJudge(self.Writer):
+                def ask(inner,site,prompt,files=(),new_chat=True,ready=None):
+                    if site=='deepseek' and 'grouping judge' in prompt:
+                        inner.calls.append((site,prompt,new_chat))
+                        return reply
+                    return super().ask(site,prompt,files,new_chat,ready)
+            self.log.clear()
+            t=BadJudge()
+            data=ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                                log=self.log.append,use_skeleton=True)
+            self.assertEqual(sum('grouping judge' in c[1] for c in t.calls),1,reply)
+            self.assertTrue(any("keeping the writer's grouping" in x for x in self.log),reply)
+            self.assertTrue(any('The app applied your grouping' in c[1] for c in t.calls),reply)
+            self.assertEqual(studio.shotlist_structural_faults(data,60),[])
+
+    def test_small_gaps_are_repaired_and_logged(self):
+        class Gappy(self.Writer):
+            def ask(inner,site,prompt,files=(),new_chat=True,ready=None):
+                reply=super().ask(site,prompt,files,new_chat,ready)
+                if 'you ONLY decide how' in prompt:
+                    lines=reply.split("\n")
+                    a,b=lines[0].split("-")
+                    lines[0]=f"{a}-{int(b)-1}"        # one cue left out
+                    inner.groups="\n".join(lines)
+                    return inner.groups
+                return reply
+        t=Gappy()
+        data=ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                            log=self.log.append,use_skeleton=True)
+        self.assertTrue(any("the app repaired the writer's groups" in x for x in self.log))
+        self.assertEqual(studio.shotlist_structural_faults(data,60),[])
+
+    def test_a_grouping_that_leaves_out_many_cues_fails_before_the_judge(self):
+        class Lazy(self.Writer):
+            def ask(inner,site,prompt,files=(),new_chat=True,ready=None):
+                if 'you ONLY decide how' in prompt:
+                    inner.calls.append((site,prompt,new_chat))
+                    return "1-5"
+                return super().ask(site,prompt,files,new_chat,ready)
+        t=Lazy()
+        with self.assertRaisesRegex(ws.StageFailed,'left .* of the cues out'):
+            ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                            log=self.log.append,use_skeleton=True)
+        self.assertFalse(any('grouping judge' in c[1] for c in t.calls))
+
+    def test_judge_hold_arithmetic_is_ignored_under_any_label(self):
+        faults=["MOTION MIX: shot S01_01_SCN_ZI.png (cues 1-3) is ST and holds 5s, over the 4.8s limit for a static shot.",
+                "MAXIMUM ST HOLD: S01_02_SCN_ZO.png, shot cues 4-6, is ST and holds 5s, over the 4.8s limit for static shots."]
+        class FalseHold(self.Writer):
+            def ask(inner,site,prompt,files=(),new_chat=True,ready=None):
+                if site=='deepseek' and 'grouping judge' not in prompt:
+                    inner.calls.append((site,prompt,new_chat))
+                    return json.dumps({"faults":faults,"shots":[],"detailed_ratio":1.0,"pass":False,
+                        "fixes":["Change the motion of cues 1-3 from ST to ZO."]})
+                return super().ask(site,prompt,files,new_chat,ready)
+        t=FalseHold()
+        data=ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                            log=self.log.append,use_skeleton=True)
+        self.assertTrue(any('ignored 2 hold fault(s)' in x for x in self.log))
+        self.assertEqual(studio.shotlist_structural_faults(data,60),[])
+
+    def test_stop_after_judge_prevents_picture_generation(self):
+        t=self.Writer()
+        with self.assertRaisesRegex(ws.StageFailed,'stopped by user'):
+            ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
+                            log=self.log.append,use_skeleton=True,
+                            should_stop=lambda: len(t.calls)>=2)
+        self.assertEqual(len(t.calls),2)
+
+
+
+class GroupingTests(unittest.TestCase):
+    def setUp(self):
+        self.cues=make_cues(20,lo=2,hi=2)
+        self.prof=briefs.STANDARD
+    def test_coverage_rejects_gaps_overlap_unknown_and_reverse(self):
+        for groups in [[],[(1,19)],[(1,10),(10,20)],[(1,10),(12,20)],[(20,1)],[(1,21)]]:
+            self.assertTrue(sk.group_problems(self.cues,groups,100),groups)
+        self.assertEqual(sk.group_problems(self.cues,[(1,20)],100),[])
+        self.assertTrue(sk.group_problems(self.cues,[(1,20)],12))
+    def test_long_group_reuses_picture_across_camera_shots(self):
+        shots,pictures=sk.regroup(self.cues,[(1,10),(11,20)],self.prof,12)
+        self.assertEqual(len(pictures),2)
+        self.assertGreater(len(shots),2)
+        ans=sk.expand(pictures,answer_all(pictures,every=99))
+        data=sk.assemble(shots,ans,'STYLE',[],False,self.prof)
+        self.assertEqual(len(data['images']),2)
+        self.assertEqual(studio.shotlist_structural_faults(data,20),[])
+        self.assertEqual(pictures[0].text,' '.join(c['text'] for c in self.cues[:10]))
+    def test_animated_opening_is_separate(self):
+        shots,pictures=sk.regroup(self.cues,[(5,12),(13,20)],self.prof,12,4)
+        self.assertEqual(sk.groupable(self.cues,4)[0]['index'],5)
+        self.assertTrue(all(p.last<=4 and len(p.members)==1 for p in pictures if p.animate))
+        self.assertEqual([i for s in shots for i in range(s.first,s.last+1)],list(range(1,21)))
+    def test_reuse_of_an_earlier_picture_maps_to_correct_shots(self):
+        shots,pictures=sk.regroup(self.cues,[(1,10),(11,20)],self.prof,12)
+        ans=answer_all(pictures,every=99)
+        ans.new.pop(2);ans.reuse[2]=1
+        data=sk.assemble(shots,sk.expand(pictures,ans),'STYLE',[],False,self.prof)
+        self.assertEqual(len(data['images']),1)
+        self.assertEqual(len({s['asset'] for s in data['shots']}),1)
+        self.assertEqual(studio.shotlist_structural_faults(data,20),[])
+
+    def test_local_coverage_and_duration_repair(self):
+        for ranges in [[],[(4,8),(7,12)],[(20,1)],[(1,20)]]:
+            result,errors=sk.repair_groups(self.cues,ranges,4)
+            self.assertEqual(errors,[])
+            self.assertEqual(sk.group_problems(self.cues,result,4),[])
+        result,errors=sk.repair_groups(self.cues,[(1,999)],12)
+        self.assertTrue(errors)
+
+    def test_judge_sees_actual_grouped_text_and_returns_a_complete_list(self):
+        text=sk.group_judge_prompt(self.cues,[(1,10),(11,20)],12)
+        self.assertIn('GROUP 1-10:',text)
+        self.assertIn('[1] '+self.cues[0]['text'],text)
+        self.assertIn('Cues are indivisible',text)
+        self.assertIn('COMPLETE corrected list',text)
+        self.assertNotIn('"replace"',text)
+        self.assertNotIn('JSON}',text)
+        self.assertNotIn('\nCUES:\n',text)
+
+    def test_short_brief_and_direction_reach_both_roles(self):
+        for text in [sk.group_prompt('T','g',self.cues,12,direction='Keep comparisons together'),
+                     sk.group_judge_prompt(self.cues,[(1,20)],12,'Keep comparisons together')]:
+            self.assertIn('HOW TO GROUP',text)
+            self.assertIn('Keep comparisons together',text)
+            self.assertIn('number phrase',text)
+            self.assertNotIn('THE TWO FAILURES',text)
+            self.assertNotIn('NEW vs REUSE',text)
+            self.assertNotIn('SECTION',text)
+            self.assertNotIn('asset',text.split('CUES')[0].lower().replace('camera shots',''))
+        self.assertLess(len(sk.grouping_brief()),1700)
+
+    def test_uncovered_share(self):
+        self.assertEqual(sk.uncovered_share(self.cues,[(1,20)]),0.0)
+        self.assertAlmostEqual(sk.uncovered_share(self.cues,[(1,10)]),0.5)
+        self.assertAlmostEqual(sk.uncovered_share(self.cues,[(1,9),(11,20)]),0.05)
+        self.assertEqual(sk.uncovered_share(self.cues,[]),1.0)
+
+    def test_pan_and_tilt_share_counts_shots_not_pictures(self):
+        from dataclasses import replace
+        cues=make_cues(240,lo=2,hi=2)
+        prof=replace(briefs.STANDARD,group_caps=((("PU","PD"),0.30),))
+        for size in (3,6,12):
+            groups=[(i,min(i+size-1,240)) for i in range(1,241,size)]
+            shots,pictures=sk.regroup(cues,groups,prof,12.0)
+            ans=sk.expand(pictures,answer_all(pictures,every=99))
+            data=sk.assemble(shots,ans,'S',[],False,prof)
+            n=len(data['shots'])
+            tilt=sum(1 for s in data['shots'] if s['motion'] in ('PU','PD'))
+            self.assertLessEqual(tilt/n,0.31,(size,tilt,n))
+            self.assertGreaterEqual(tilt/n,0.15,(size,tilt,n))
+
+    def test_refs_off_rule_overrides_attachment_wording_in_the_bible(self):
+        prof=briefs.STANDARD
+        for grouped in (False,True):
+            off=sk.rules_text(prof,False,[],grouped=grouped)
+            self.assertIn('never mention an attachment',off)
+            self.assertIn('attached reference',off)
+            self.assertIn('same as picture 1',off)
+            on=sk.rules_text(prof,True,['CH_A.png'],grouped=grouped)
+            self.assertNotIn('never mention an attachment',on)
+
+    def test_picture_rules_and_batches_speak_of_pictures(self):
+        prof=briefs.STANDARD
+        shots,pictures=sk.regroup(self.cues,[(1,10),(11,20)],prof,12)
+        grouped=sk.rules_text(prof,False,[],grouped=True)
+        plain=sk.rules_text(prof,False,[])
+        self.assertIn('numbered PICTURES',grouped)
+        self.assertNotIn('Prefer several shots per image',grouped)
+        self.assertNotIn('numbered PICTURES',plain)
+        self.assertIn('Prefer several shots per image',plain)
+        block=sk.batch_block(pictures,len(pictures),first=True)
+        self.assertTrue(block.startswith('PICTURES 1-2 of 2'))
+        self.assertIn('one line per picture',block)
+        self.assertTrue(sk.batch_block(shots[:2],len(shots),first=True).startswith('SHOTS 1-2'))
 
 
 class MasterIntegrationTests(unittest.TestCase):

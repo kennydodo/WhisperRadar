@@ -25,6 +25,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import briefs, studio
 
@@ -42,18 +43,27 @@ class SkeletonError(RuntimeError):
     to the whole-JSON flow."""
 
 
+class SkeletonUnsupported(SkeletonError):
+    """This channel (or chat setup) cannot run the skeleton flow at all -
+    the whole-JSON flow plans it instead. Raised before any chat is opened."""
+
+
 # ---- is it usable? ------------------------------------------------------------
 
 def unsupported_reason(eff: dict, profile) -> str:
     """Why this channel needs the whole-JSON flow ("" = the skeleton works).
-    Reveal shots, sound effects and a presentation brief change the shape of
-    shots in ways the line format does not carry."""
+    Reveal shots and sound effects change the shape of shots in ways the
+    line format does not carry yet (a presentation brief is fine: it only
+    says who is on screen). Text-drawn overlays (the shotlist "overlays"
+    field) need the whole-JSON writer's SECTION 7C too: the skeleton's line
+    format carries no overlays, so a plan made here would silently lose the
+    channel's on-image text."""
     if getattr(profile, "reveal", False):
         return "the channel uses reveal shots"
     if getattr(profile, "sfx", ""):
         return "the channel uses sound effects"
-    if (eff.get("brief_presentation") or "").strip():
-        return "the channel has a presentation brief"
+    if eff.get("brief_text_overlays"):
+        return "the channel draws text overlays (the renderer writes them)"
     return ""
 
 
@@ -68,6 +78,7 @@ class Draft:
     text: str
     motion: str = ""
     animate: bool = False       # starts inside the animated opening
+    members: list = field(default_factory=list)   # picture: its shot numbers
 
     @property
     def cues(self) -> str:
@@ -81,8 +92,10 @@ def _ends_sentence(text: str) -> bool:
 
 def draft_shots(cues: list[dict], max_hold: float, min_hold: float | None = None,
                 anim_last_cue: int = 0, short_every: int = 0,
-                short_hold: float = 3.5, short_cap: float = 0.0) -> list[Draft]:
-    """Cut the cues into consecutive draft shots.
+                short_hold: float = 3.5, short_cap: float = 0.0,
+                breaks: set | None = None) -> list[Draft]:
+    """Cut the cues into consecutive draft shots (a cue number in `breaks`
+    always ends a shot: the end of a beat).
 
     A shot closes at a sentence end once it holds about `target` seconds (and
     at least two cues), or earlier when the next cue starts with a number (a
@@ -132,6 +145,10 @@ def draft_shots(cues: list[dict], max_hold: float, min_hold: float | None = None
         nxt = cues[i + 1] if i + 1 < len(cues) else None
         if nxt is None:
             break
+        if breaks and c["index"] in breaks:
+            groups.append(cur)
+            cur, dur = [], 0.0
+            continue
         goal = min(target, limit(cur[0]["index"]))
         if short:
             close = dur >= min(goal, short_hold)
@@ -147,7 +164,8 @@ def draft_shots(cues: list[dict], max_hold: float, min_hold: float | None = None
     if cur:
         groups.append(cur)
     # a lone short tail joins the shot before it when that stays within limits
-    if len(groups) > 1 and len(groups[-1]) == 1:
+    if len(groups) > 1 and len(groups[-1]) == 1 and not (
+            breaks and groups[-2][-1]["index"] in breaks):
         merged = groups[-2] + groups[-1]
         if span(merged) <= limit(merged[0]["index"]):
             groups[-2:] = [merged]
@@ -247,6 +265,68 @@ def assign_motion(shots: list[Draft], profile) -> None:
         prev = best
 
 
+def assign_picture_motion(pictures: list[Draft], profile,
+                          shots: list[Draft]) -> None:
+    """The camera move of every picture (it is the move of the picture's first
+    shot), in place.
+
+    Error diffusion like assign_motion, but every picture counts as many
+    shots as it carries. A pan or tilt needs its own bigger canvas, and the
+    later shots of a picture can only use codes on that same canvas, so a
+    pan/tilt picture with three shots is three pan/tilt shots in the mix:
+    counting pictures instead of shots overshoots the share. The pan and tilt
+    codes compete as ONE class (so a short video still gets its share), and a
+    single code stays within its own cap."""
+    allowed = list(profile.allowed or briefs.MOTION_CODES)
+    targets = _targets(profile)
+    flat = ("ST", "ZI", "ZO")
+    pans = [c for c in targets if c not in flat]
+    pan_target = sum(targets[c] for c in pans)
+    zoom = [c for c in briefs.ZOOM_CODES if c in allowed]
+    counts = {c: 0 for c in targets}
+    pan_count, done, anim_turn, prev = 0, 0, 0, ""
+
+    def cap_of(c: str) -> float:
+        cap = profile.code_share_overrides.get(c, profile.code_max_share)
+        return 1.0 if cap is None else cap
+
+    for p in pictures:
+        w = max(1, len(p.members))
+        first = shots[p.members[0] - 1] if p.members else p
+        if p.animate and zoom:
+            move = zoom[anim_turn % len(zoom)]
+            anim_turn += 1
+        else:
+            def score(c: str) -> float:
+                return (targets[c] * (done + w) - counts.get(c, 0)
+                        - (0.4 if c == prev else 0.0))
+            flat_ok = [c for c in flat if c in targets and not (
+                c == "ST" and (w > 1 or not st_fits(first.seconds, profile)))]
+            # the class may run one shot past its share, or is below 60% of
+            # it; one code stays within its own cap (same slack)
+            pan_open = (pan_count + w <= pan_target * (done + w) + 1.0
+                        or pan_count < 0.6 * pan_target * (done + w))
+            pan_ok = [c for c in pans if pan_open and counts.get(c, 0) + w
+                      <= cap_of(c) * (done + w) + 1.0]
+            best_flat = max(flat_ok, key=score) if flat_ok else ""
+            pan_score = (pan_target * (done + w) - pan_count
+                         - (0.4 if prev in pans else 0.0))
+            if pan_ok and (not best_flat or pan_score > score(best_flat)):
+                move = max(pan_ok, key=score)
+            elif best_flat:
+                move = best_flat
+            else:
+                move = max([c for c in targets if c != "ST"] or list(targets),
+                           key=score)
+        p.motion = move
+        first.motion = move
+        counts[move] = counts.get(move, 0) + w
+        if move in pans:
+            pan_count += w
+        done += w
+        prev = move
+
+
 def st_fits(seconds: float, profile) -> bool:
     """May a shot of this length be the static ST code? The limits carry the
     same tolerance as the code checks (briefs.hold_limit): with an ST maximum
@@ -262,42 +342,354 @@ def st_fits(seconds: float, profile) -> bool:
     return True
 
 
-def build(cues: list[dict], profile, max_hold: float,
-          anim_last_cue: int = 0) -> list[Draft]:
+def _short_params(profile) -> tuple[int, float, float]:
+    """(short_every, short_hold, short_cap) for draft_shots: how often a
+    short shot is cut so a channel that wants ST shots has holds to put them
+    on."""
     short_every, short_hold, short_cap = 0, 3.5, 0.0
     st_share = dict(briefs.mix_targets(profile)).get(("ST",))
     if st_share and profile.st_max_hold:
         short_every = max(2, int(round(1.0 / st_share)) - 2)
         short_hold = min(3.5, profile.st_max_hold * 0.7)
         short_cap = max(1.0, profile.st_max_hold - 0.1)
+    return short_every, short_hold, short_cap
+
+
+def build(cues: list[dict], profile, max_hold: float,
+          anim_last_cue: int = 0) -> list[Draft]:
+    short_every, short_hold, short_cap = _short_params(profile)
     shots = draft_shots(cues, max_hold, profile.min_hold, anim_last_cue,
                         short_every, short_hold, short_cap)
     assign_motion(shots, profile)
     return shots
 
 
+# ---- 2b. grouping by the LLM ----------------------------------------------------
+
+# The LLM first GROUPS the numbered CUES into beats (a reply of short
+# "first-last" lines); the app checks them (every cue once, in order, no
+# runaway beat), cuts every long beat into camera shots of the same picture
+# (the later shots simply REUSE the beat's image), and only then asks for the
+# pictures - one per beat. Off, or any trouble = the app's own draft shots go
+# to the picture step as they are.
+GROUPING = True
+BEAT_MAX_FACTOR = 1.0            # a beat (one picture) holds at most the channel's max hold
+
+_GROUP_LINE = re.compile(
+    r"^[\s>*`#\-•]*\**\s*(?:GROUP\s*)?(\d+)(?:\s*[-–—]\s*(\d+))?\s*\**"
+    r"\s*(?:[:|].*)?$", re.I)
+
+
+def parse_groups(text: str) -> list[tuple[int, int]]:
+    """The (first, last) cue numbers of every group line in a reply, in the
+    order given."""
+    out = []
+    for line in (text or "").splitlines():
+        m = _GROUP_LINE.match(line.strip())
+        if m:
+            a = int(m.group(1))
+            out.append((a, int(m.group(2)) if m.group(2) else a))
+    return out
+
+
+def groupable(cues: list[dict], anim_last_cue: int = 0) -> list[dict]:
+    """The cues the writer groups: all but the animated opening, whose shots
+    the app keeps apart (each needs its own animated picture)."""
+    return [c for c in cues if c["index"] > anim_last_cue]
+
+
+def _cue_span(by_index: dict, first: int, last: int) -> float:
+    return (studio._srt_seconds(by_index[last]["end"])
+            - studio._srt_seconds(by_index[first]["start"]))
+
+
+def group_problems(cues: list[dict], groups: list[tuple[int, int]],
+                   cap: float) -> list[str]:
+    """What is wrong with the LLM's grouping of `cues` (empty = fine): every
+    cue in exactly one group, in order, and no beat longer than
+    BEAT_MAX_FACTOR x the channel's maximum hold (measured start to end)."""
+    if not cues:
+        return []
+    by_index = {c["index"]: c for c in cues}
+    order = [c["index"] for c in cues]
+    pos = {i: p for p, i in enumerate(order)}
+    problems: list[str] = []
+    if not groups:
+        return ["no group lines were found"]
+    limit = float(cap) * BEAT_MAX_FACTOR
+    expected = 0                          # position of the next cue to cover
+    for a, b in groups:
+        if b < a:
+            problems.append(f"group {a}-{b} runs backwards")
+            continue
+        if a not in pos or b not in pos:
+            problems.append(f"group {a}-{b} is outside cues "
+                            f"{order[0]}-{order[-1]}")
+            continue
+        if pos[a] != expected:
+            want = order[expected] if expected < len(order) else order[-1]
+            problems.append(
+                f"group {a}-{b} should start at cue {want} (every cue in "
+                f"exactly one group, in order)")
+        expected = max(expected, pos[b] + 1)
+        span = _cue_span(by_index, a, b)
+        if span > limit + 1e-9:
+            problems.append(f"group {a}-{b} holds {span:.0f}s - a beat may "
+                            f"hold at most {limit:.0f}s, split it")
+    if expected != len(order):
+        problems.append(f"the groups end at cue "
+                        f"{order[min(expected, len(order)) - 1]} but the last "
+                        f"cue is {order[-1]}")
+    return problems
+
+
+def regroup(cues: list[dict], groups: list[tuple[int, int]], profile,
+            max_hold: float, anim_last_cue: int = 0
+            ) -> tuple[list[Draft], list[Draft]]:
+    """(shots, pictures) once the beats are known.
+
+    `shots` are the final shots: every beat cut at its sentence ends into
+    shots of at most the maximum hold (short ones where the channel wants ST
+    shots), the animated opening kept as the app drafted it. `pictures` is
+    what the writer is asked for - ONE entry per beat (the animated shots one
+    each), numbered 1..P, covering the whole beat; `members` lists the shot
+    numbers behind it, the first being the shot that carries the new picture
+    and the others reusing it."""
+    breaks = {b for _a, b in groups}
+    if anim_last_cue:
+        breaks.add(anim_last_cue)
+    short_every, short_hold, short_cap = _short_params(profile)
+    shots = draft_shots(cues, max_hold, profile.min_hold, anim_last_cue,
+                        short_every, short_hold, short_cap, breaks=breaks)
+    assign_motion(shots, profile)
+    starts = {a for a, _b in groups}
+    by_index = {c["index"]: c for c in cues}
+    pictures: list[Draft] = []
+    for s in shots:
+        if s.animate or s.first in starts or not pictures:
+            pictures.append(Draft(
+                n=len(pictures) + 1, first=s.first, last=s.last,
+                seconds=s.seconds, text=s.text, motion=s.motion,
+                animate=s.animate, members=[s.n]))
+        else:
+            p = pictures[-1]
+            p.members.append(s.n)
+            p.last = s.last
+            p.text = f"{p.text} {s.text}"
+            p.seconds = round(_cue_span(by_index, p.first, s.last), 1)
+    # Picture canvases are chosen after grouping, counted per SHOT: every
+    # shot on a pan/tilt picture is a pan/tilt too, so a picture counts as
+    # many shots as it carries.
+    assign_picture_motion(pictures, profile, shots)
+    return shots, pictures
+
+
+def expand(pictures: list[Draft], ans: "Answers") -> "Answers":
+    """The writer's answers (by picture number) as answers by shot number:
+    the picture's first shot carries the new image or the reuse, every later
+    shot of the beat reuses it."""
+    out = Answers()
+    first = {p.n: p.members[0] for p in pictures}
+    for p in pictures:
+        if p.n in ans.new:
+            out.new[first[p.n]] = ans.new[p.n]
+        elif p.n in ans.reuse:
+            out.reuse[first[p.n]] = first[ans.reuse[p.n]]
+        for m in p.members[1:]:
+            out.reuse[m] = first[p.n]
+    out.beats = {first[b] for b in ans.beats if b in first}
+    out.refs = dict(ans.refs)
+    return out
+
+
+def _cue_line(c: dict) -> str:
+    secs = (studio._srt_seconds(c["end"]) - studio._srt_seconds(c["start"]))
+    return f"{c['index']} | {secs:.1f}s | {c['text']}"
+
+
+GROUPING_ONLY = (
+    "CURRENT TASK: CUE GROUPING ONLY. Do not write a shotlist, image "
+    "prompts, filenames, references, camera moves or JSON; character "
+    "details are handled later.")
+
+
+def group_prompt(title: str, genre: str, cues: list[dict], cap: float,
+                 anim_last_cue: int = 0, direction: str = "") -> str:
+    first, last = cues[0]["index"], cues[-1]["index"]
+    limit = float(cap) * BEAT_MAX_FACTOR
+    anim = ""
+    if anim_last_cue:
+        anim = (f" Cues 1-{anim_last_cue} are the animated opening: the app "
+                f"handles them itself, so they are not listed - start at "
+                f"{first}.")
+    return (
+        "You are the story editor for a YouTube video"
+        + (f" titled \"{title}\"" if title else "")
+        + (f" ({genre})" if genre else "")
+        + ". The narration is cut into numbered CUES (line: cue number | "
+        "length | narration). In this step you ONLY decide how the cues "
+        "GROUP into BEATS: a beat is one developing idea that gets ONE "
+        "picture, so a beat never runs longer than the limit below: a longer "
+        "idea becomes consecutive beats. Do not write image prompts yet.\n\n"
+        "RULES:\n"
+        f"- Reply with one group per line, as first-last cue numbers: `1-4`, "
+        f"`5`, `6-12`. Every cue belongs to exactly one group, in order, "
+        f"none missing or repeated, starting at {first} and ending at "
+        f"{last}.{anim}\n"
+        f"- A beat holds at most {limit:g} seconds of narration (the app "
+        f"measures it and cuts any longer beat itself). Follow meaning for "
+        f"where a beat ends; there is no target count.\n\n"
+        + grouping_brief() + "\n\n"
+        + GROUPING_ONLY + "\n\n"
+        + ("CREATOR DIRECTION (follow it):\n" + direction.strip() + "\n\n"
+           if direction.strip() else "")
+        +
+        "- Answer with ONLY the group lines - no commentary, no prompts.\n\n"
+        f"CUES {first}-{last}:\n" + "\n".join(_cue_line(c) for c in cues))
+
+
+def grouping_brief() -> str:
+    """The grouping rules in a few lines, written for this step only (the
+    picture step has its own rules)."""
+    return (
+        "HOW TO GROUP (the narration decides, not the clock):\n"
+        "- Start a NEW beat when a number, statistic or price arrives; a "
+        "second character, object or place enters; the narration pivots "
+        "(problem to evidence, question to answer, claim to example, "
+        "description to instruction); the action changes; or a list of "
+        "parallel items ends and the payoff begins.\n"
+        "- KEEP one beat while the same idea continues or is rephrased. List "
+        "items and the parts of one thing (legs, eyes, arms) belong "
+        "together; one sentence that belongs to a larger idea is not a beat "
+        "of its own.\n"
+        "- A cue is never split, and a sentence that runs across two cues "
+        "stays in one beat. Do not break a number phrase just because the "
+        "next cue starts with a number.\n"
+        "- One cue per beat is a failure unless that cue is a whole idea; so "
+        "is one beat that joins unrelated ideas.\n"
+        "- Follow meaning for where a beat ends, not a target count; but one "
+        "beat never runs past the length limit - a longer idea becomes "
+        "consecutive beats.")
+
+
+# the writer may leave out at most this share of the cues; the app patches
+# small gaps, a grouping with many is sent back as a failure
+REPAIR_MAX_SHARE = 0.10
+
+
+def uncovered_share(cues: list[dict], groups: list[tuple[int, int]]) -> float:
+    """The share of `cues` that no group names."""
+    if not cues:
+        return 0.0
+    have = {c["index"] for c in cues}
+    covered: set[int] = set()
+    for lo, hi in groups:
+        lo, hi = (lo, hi) if lo <= hi else (hi, lo)
+        covered.update(i for i in have if lo <= i <= hi)
+    return 1.0 - len(covered) / len(have)
+
+
+def repair_groups(cues, groups, cap):
+    """Fix ordered coverage and overlong spans locally, preserving boundaries."""
+    if not cues: return [], []
+    first,last=cues[0]["index"],cues[-1]["index"]
+    by_index={c["index"]:c for c in cues}
+    covered=[];cursor=first
+    for lo,hi in sorted(tuple(sorted(g)) for g in groups):
+        if lo<first or hi>last:
+            return groups,[f"range {lo}-{hi} is outside available cues {first}-{last}"]
+        if lo>cursor:covered.append((cursor,lo-1))
+        lo=max(lo,cursor)
+        if hi>=lo:covered.append((lo,hi));cursor=hi+1
+    if cursor<=last:covered.append((cursor,last))
+    result=[];limit=cap*BEAT_MAX_FACTOR
+    for lo,hi in covered:
+        while _cue_span(by_index,lo,hi)>limit:
+            fits=[i for i in range(lo,hi+1) if _cue_span(by_index,lo,i)<=limit]
+            if not fits:return groups,[f"cue {lo} alone exceeds the duration limit"]
+            ends=[i for i in fits if _ends_sentence(by_index[i]["text"])]
+            end=ends[-1] if ends else fits[-1]
+            result.append((lo,end));lo=end+1
+        result.append((lo,hi))
+    return result,group_problems(cues,result,cap)
+
+
+def group_judge_prompt(cues: list[dict], groups: list[tuple[int, int]],
+                       cap: float, direction: str = "") -> str:
+    """One review: the judge returns the COMPLETE corrected list of groups
+    (the same line format the writer used), which the app checks itself."""
+    first, last = cues[0]["index"], cues[-1]["index"]
+    text = ("You are the grouping judge. A writer grouped the narration cues "
+            "into beats (one picture each). Check the grouping against the "
+            "rules below using the EXACT cue text, and reply with the "
+            f"COMPLETE corrected list of groups: one first-last cue range per "
+            f"line, every cue exactly once, in order, from {first} to {last}. "
+            "Change a boundary only for a material problem - unrelated ideas "
+            "joined, one idea fragmented, a pivot cut too early or too late. "
+            "If the grouping is already good, repeat it unchanged. Cues are "
+            "indivisible: a cue may end one sentence and start another, so "
+            "accept a reasonable boundary when a perfect cut would split a "
+            "cue. Reply with ONLY the group lines - no JSON, no commentary, "
+            "no image prompts.\n\n"
+            + grouping_brief() + "\n\n" + GROUPING_ONLY
+            + f"\nMaximum picture-group span: {cap * BEAT_MAX_FACTOR:g}s. "
+            "Each group is one picture and must not run past that span.\n")
+    if direction.strip():
+        text += "CREATOR DIRECTION:\n" + direction.strip() + "\n"
+    for a, b in groups:
+        text += f"\nGROUP {a}-{b}:\n" + "\n".join(
+            f"[{c['index']}] {c['text']}" for c in cues if a <= c["index"] <= b) + "\n"
+    return text
+
+
+def group_fix_prompt(problems: list[str]) -> str:
+    return ("Not accepted yet:\n- " + "\n- ".join(problems)
+            + "\n\nReply again with the COMPLETE list of groups (every cue, "
+            "first-last per line, nothing else), fixing these.")
+
+
 # ---- 3. prompts ---------------------------------------------------------------
 
 def shot_line(s: Draft) -> str:
     flag = " | ANIMATE" if s.animate else ""
-    return (f"{s.n} | cues {s.cues} | {s.seconds:g}s | {s.motion}{flag} | "
-            f"{s.text}")
+    cams = (f" (the app cuts it into {len(s.members)} camera shots of this "
+            f"picture)" if len(s.members) > 1 else "")
+    return (f"{s.n} | cues {s.cues} | {s.seconds:g}s{cams} | {s.motion}"
+            f"{flag} | {s.text}")
 
 
 def chunks(shots: list[Draft], size: int = CHUNK_SIZE) -> list[list[Draft]]:
     return [shots[i:i + size] for i in range(0, len(shots), size)]
 
 
-def _section(name: str) -> str:
+def _template(cfg) -> str:
+    """The raw brief template this channel plans with: the custom manifest
+    brief when one is configured (the same file the whole-JSON flow renders),
+    else the built-in template. Raises SkeletonUnsupported when the custom
+    template is missing (the whole-JSON flow reports it the same way)."""
+    if cfg.studio_manifest_brief:
+        p = Path(cfg.studio_manifest_brief)
+        path = p if p.is_absolute() else cfg.base_dir / p
+        if not path.exists():
+            raise SkeletonUnsupported(
+                f"studio.manifest_brief points at {path}, which does not "
+                "exist - fix or clear it in config.yaml")
+        return Path(path).read_text(encoding="utf-8")
+    return briefs.TEMPLATE_PATH.read_text(encoding="utf-8")
+
+
+def _section(name: str, template_text: str | None = None) -> str:
     """One `## SECTION ...` block of the brief template, verbatim."""
-    text = briefs.TEMPLATE_PATH.read_text(encoding="utf-8")
+    text = template_text if template_text is not None \
+        else briefs.TEMPLATE_PATH.read_text(encoding="utf-8")
     m = re.search(r"^## SECTION " + re.escape(name) + r"\b.*?(?=^## |\Z)", text,
                   re.S | re.M)
     return m.group(0).strip() if m else ""
 
 
-def _ref_subject_rule() -> str:
-    text = briefs.TEMPLATE_PATH.read_text(encoding="utf-8")
+def _ref_subject_rule(template_text: str | None = None) -> str:
+    text = template_text if template_text is not None \
+        else briefs.TEMPLATE_PATH.read_text(encoding="utf-8")
     m = re.search(r"^\*\*A reference prompt describes ONLY.*?$", text, re.M)
     return m.group(0) if m else ""
 
@@ -315,17 +707,40 @@ HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no comme
 - Answer EVERY shot of the batch. Do not renumber, merge or skip shots; the cue ranges and the camera motion are fixed by the app."""
 
 
+_PICTURE_INTRO = (
+    "You are a visual director and image-prompt engineer for a "
+    "high-retention YouTube channel. The app has already grouped the "
+    "narration into numbered PICTURES (cue range, length and camera motion "
+    "are fixed); where a picture runs long the app cuts it into camera shots "
+    "of that same picture itself. Your only job is the pictures: write the "
+    "image prompt for each picture, or REUSE an earlier picture when the "
+    "narration clearly returns to it.")
+
+_PICTURE_REUSE = (
+    "WHEN TO USE A NEW IMAGE AND WHEN TO REUSE:\n"
+    "- Every picture below is one developing idea and normally gets its OWN "
+    "image. Compose it to carry the WHOLE narration shown, since the app may "
+    "cut it into several camera shots of this one picture.\n"
+    "- REUSE an earlier picture only when the narration clearly returns to "
+    "that same idea or visual (a callback, a recurring comparison, a list "
+    "revisited). Never reuse when the concept changed, and never create an "
+    "image just to pad variety.")
+
+
 def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
                animation_note: str = "", density: str = "",
-               limit: int = 2400) -> str:
+               limit: int = 2400, grouped: bool = False,
+               template_text: str | None = None) -> str:
     kinds = briefs.types_text(profile.types)
     parts = [
+        _PICTURE_INTRO if grouped else
         "You are a visual director and image-prompt engineer for a "
         "high-retention YouTube channel. The app has already cut the "
         "narration into numbered SHOTS (cue range, length and camera motion "
         "are fixed). Your only job is the pictures: for each shot, decide "
         "whether the narration needs a NEW image or REUSES an earlier one, "
         "and write the image prompt for each new image.",
+        _PICTURE_REUSE if grouped else
         "WHEN TO USE A NEW IMAGE AND WHEN TO REUSE - the narration decides:\n"
         "- A genuinely different visual idea starts a new image: a number, "
         "statistic or price arrives; a second character, object or location "
@@ -368,18 +783,22 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
         "adjectives) - the channel style is added by the app. Each prompt "
         f"stays under {limit} characters. No two prompts may be identical."
         + studio.density_planner_block(density),
-        _section("8"),
-        _section("11A"),
-        _section("11B"),
-        _section("11C"),
+        _section("8", template_text),
+        _section("11A", template_text),
+        _section("11B", template_text),
+        _section("11C", template_text),
     ]
     if not allow_refs:
         parts.append(
             "REFERENCES ARE OFF for this channel: write no refs and no REF "
-            "lines. With no reference image to carry anything, EVERY image "
-            "prompt must be fully self-contained: re-describe recurring "
-            "characters and objects in full each time they appear (look, "
-            "wardrobe, the exact prop) so they stay consistent.")
+            "lines, and never mention an attachment: if the bible says to "
+            "write \"the protagonist from the attached reference\" or to "
+            "attach a character file, that does not apply here - there is no "
+            "reference image. With no reference image to carry anything, "
+            "EVERY image prompt must be fully self-contained: re-describe "
+            "recurring characters and objects in full each time they appear "
+            "(look, wardrobe, the exact prop) so they stay consistent, and "
+            "never point to another picture (\"same as picture 1\").")
     else:
         listing = ("\n".join(f"- {n.rsplit('.', 1)[0]}" for n in supplied_refs)
                    if supplied_refs else "(none supplied)")
@@ -398,7 +817,7 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
             "(names: CH_ characters, BG_ backgrounds, OBJ_ objects, CAPS and "
             "digits joined by underscores, e.g. CH_MAYA, BG_BATHROOM_01), at "
             "most 20 for the whole video - invent only what the story "
-            "genuinely reuses.\n" + _ref_subject_rule())
+            "genuinely reuses.\n" + _ref_subject_rule(template_text))
     if animation_note:
         parts.append(animation_note.strip())
     parts.append(_REPLY_FORMAT)
@@ -406,7 +825,8 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
 
 
 def first_prompt(rules: str, style: str, bible: str, direction: str,
-                 batch: list[Draft], total: int) -> str:
+                 batch: list[Draft], total: int,
+                 grouped: bool = False) -> str:
     blocks = [rules,
               "CHANNEL VISUAL STYLE (the app adds it to every prompt - do not "
               "repeat it in the prompts):\n"
@@ -420,14 +840,23 @@ def first_prompt(rules: str, style: str, bible: str, direction: str,
                       "Do not ask for one - plan without it.")
     if (direction or "").strip():
         blocks.append("CREATOR DIRECTION (follow it):\n" + direction.strip())
+    if grouped:
+        blocks.append("The app applied your grouping: every beat below is now "
+                      "ONE picture, numbered from 1. Where a beat runs long "
+                      "the app cuts it into camera shots of that same "
+                      "picture itself - you write ONE picture for the whole "
+                      "beat (compose it to carry the whole narration shown) "
+                      "and never answer for the camera shots. Now write the "
+                      "pictures.")
     blocks.append(batch_block(batch, total, first=True))
     return "\n\n---\n\n".join(blocks)
 
 
 def batch_block(batch: list[Draft], total: int, first: bool = False) -> str:
-    head = (f"SHOTS {batch[0].n}-{batch[-1].n} of {total} "
+    unit = "picture" if batch[0].members else "shot"
+    head = (f"{unit.upper()}S {batch[0].n}-{batch[-1].n} of {total} "
             f"(line: number | cue range | length | camera motion | narration):")
-    tail = ("\n\nAnswer with one line per shot above, "
+    tail = (f"\n\nAnswer with one line per {unit} above, "
             f"{batch[0].n} to {batch[-1].n}."
             + ("" if first else
                " Same rules, style and bible as in this chat; you can see "

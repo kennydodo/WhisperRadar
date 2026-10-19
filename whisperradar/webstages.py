@@ -170,18 +170,19 @@ def adopt_chats(cfg, pid: int, transport, sites, log) -> set:
     return out
 
 
-def _send_in(transport, site: str, build, log, continuing: bool, ready=None):
+def _send_in(transport, site: str, build, log, continuing: bool, ready=None,
+             force_files: bool = False):
     """_send in the saved chat when `continuing`; a chat that cannot be
     reopened falls back to a new one. Returns (reply, still_continuing)."""
     if continuing:
         try:
             return _send(transport, site, build, log, new_chat=False,
-                         ready=ready), True
+                         ready=ready, force_files=force_files), True
         except webchat.ChatLost:
             log(f"{site}: the previous chat cannot be reopened - starting a "
                 f"new one")
     return _send(transport, site, build, log, new_chat=True,
-                 ready=ready), False
+                 ready=ready, force_files=force_files), False
 
 
 def _send(transport, site: str, build: Callable, log,
@@ -934,17 +935,19 @@ def _recovery_prompt(cfg, pid: int, plan_text: str, feedback: str):
 
 
 def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
-                   writer: str, log, dump, continuing: bool) -> dict:
-    """The shotlist built the cheap way: the app cuts the narration into
-    numbered draft shots (cue ranges, lengths, camera motion), the writer
-    answers with one short line per shot in chunks inside ONE chat - a new
-    image with its prompt, or "REUSE n" - and the app assembles the JSON.
-    Raises SkeletonError when this flow cannot be used or gives up; the
-    caller then asks for the whole JSON as before."""
+                   writer: str, log, dump, continuing: bool, judge: str = "",
+                   should_stop: Callable[[], bool] = lambda: False,
+                   judge_state: dict | None = None) -> dict:
+    """Group raw narration cues, get semantic approval, then write pictures.
+
+    The app expands each picture into timed camera shots and assembles JSON.
+    Unsupported modes may use the legacy planner; rejected groupings stop.
+    """
     eff, profile, cues = ctx["eff"], plan["profile"], plan["cues"]
     why = skeleton.unsupported_reason(eff, profile)
     if why:
-        raise skeleton.SkeletonError(why)
+        raise skeleton.SkeletonUnsupported(why)
+    template_text = skeleton._template(cfg)
     note = ep._animation_note(eff, cues)
     anim_last = 0
     if note:
@@ -961,18 +964,100 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
     style_text = ctx["visual_style"]
     limit = skeleton.prompt_limit(style_text)
     rules = skeleton.rules_text(profile, allow_refs, supplied, note,
-                                density=density, limit=limit)
-    direction = db.stage_extra(ctx["prod"], "shots")
-    batches = skeleton.chunks(shots)
-    total = len(shots)
-    log(f"{writer}: the app drafted {total} shots from {len(cues)} cues - "
-        f"asking for the pictures in {len(batches)} part(s) of up to "
-        f"{skeleton.CHUNK_SIZE} shots")
+                                density=density, limit=limit,
+                                template_text=template_text)
+    # the presentation text gets the same framing the brief gives it (it only
+    # decides WHO is on screen; the bible supplies the named characters), so
+    # the line-by-line writer reads it exactly like the whole-JSON writer
+    direction = "\n\n".join(x.strip() for x in (
+        briefs.presentation_block(eff.get("brief_presentation") or ""),
+        db.stage_extra(ctx["prod"], "shots"))
+        if x.strip())
+    # a beat (one picture) may hold what a shot may: the channel's max hold
+    # with its tolerance, the same limit the code checks use
+    beat_cap = briefs.hold_limit(plan["max_hold"], profile.max_hold_tol)
+    judge_state = judge_state if judge_state is not None else {}
+    # Group raw cues by meaning, review them, then ask for pictures.
+    chat_open, grouped = False, False
+    pictures = shots
+    grouping_cues = skeleton.groupable(cues, anim_last)
+    if skeleton.GROUPING and grouping_cues:
+        if not judge or judge == writer:
+            raise skeleton.SkeletonUnsupported(
+                "cue grouping needs a separate judge chat "
+                "(writer and judge are the same site)")
+        try:
+            reply, _ = _send_in(
+                transport, writer,
+                lambda f: skeleton.group_prompt(
+                    ctx["prod"]["title"], ctx["prod"]["genre"], grouping_cues,
+                    plan["max_hold"], anim_last, direction),
+                log, continuing, ready=lambda t: bool(skeleton.parse_groups(t)))
+            chat_open = True
+            if should_stop():
+                raise StageFailed("Cue grouping stopped by user")
+            dump("skeleton_groups_1", reply)
+            written = skeleton.parse_groups(reply)
+            left_out = skeleton.uncovered_share(grouping_cues, written)
+            if left_out > skeleton.REPAIR_MAX_SHARE:
+                raise StageFailed(
+                    f"Cue grouping needs attention: the writer left "
+                    f"{left_out:.0%} of the cues out of its groups")
+            groups, bad = skeleton.repair_groups(grouping_cues, written, beat_cap)
+            if bad:
+                raise StageFailed("Cue grouping needs attention: " + "; ".join(bad[:3]))
+            if groups != written:
+                log(f"grouping: the app repaired the writer's groups "
+                    f"({len(set(groups) - set(written))} group(s) changed, "
+                    f"{left_out:.0%} of the cues were not covered)")
+            raw, _ = _send_in(
+                transport, judge,
+                lambda f: skeleton.group_judge_prompt(
+                    grouping_cues, groups, plan["max_hold"], direction),
+                log, bool(judge_state.get("continuing")),
+                ready=lambda t: bool(skeleton.parse_groups(t)))
+            judge_state["continuing"] = True
+            dump("skeleton_groups_judge_1", raw)
+            if should_stop():
+                raise StageFailed("Cue grouping stopped by user")
+            judged = skeleton.parse_groups(raw)
+            judge_bad = skeleton.group_problems(grouping_cues, judged, beat_cap)
+            if judge_bad:
+                log(f"grouping: the judge's list is not usable ({judge_bad[0]}) - "
+                    f"keeping the writer's grouping")
+            else:
+                changed = len(set(judged) - set(groups))
+                groups = judged
+                log(f"grouping: the judge's list changed {changed} group(s)"
+                    if changed else "grouping: the judge approved the groups")
+            dump("skeleton_groups_applied", "\n".join(f"{a}-{b}" for a, b in groups))
+            shots, pictures = skeleton.regroup(cues, groups, profile,
+                                               plan["max_hold"], anim_last)
+            grouped = True
+            rules = skeleton.rules_text(profile, allow_refs, supplied, note,
+                                        density=density, limit=limit,
+                                        grouped=True,
+                                        template_text=template_text)
+            log(f"{writer}: grouped {len(grouping_cues)} cues into "
+                f"{len(groups)} picture groups; {len(shots)} camera shots")
+        except webchat.ChatLost as exc:
+            raise StageFailed("Chat lost during cue grouping; no unreviewed grouping was used") from exc
+    batches = skeleton.chunks(pictures)
+    total = len(pictures)
+    log(f"{writer}: asking for the pictures - {total} pictures, "
+        f"{len(shots)} camera shots in {len(batches)} part(s)")
     ans = skeleton.Answers()
     for i, batch in enumerate(batches):
         ready = (lambda t, b=batch: skeleton.covers(t, b))
         try:
-            if i == 0:
+            if i == 0 and chat_open:
+                reply = _send(
+                    transport, writer,
+                    lambda f: skeleton.first_prompt(
+                        rules, ctx["visual_style"], ctx["bible"], direction,
+                        batch, total, grouped),
+                    log, new_chat=False, ready=ready)
+            elif i == 0:
                 reply, _ = _send_in(
                     transport, writer,
                     lambda f: skeleton.first_prompt(
@@ -988,7 +1073,7 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             nums = {s.n for s in batch}
             for attempt in range(2):
                 bad = [p for p in skeleton.problems(
-                           shots, ans, profile, allow_refs, stems, only=nums,
+                           pictures, ans, profile, allow_refs, stems, only=nums,
                                         style=style_text)]
                 if not bad:
                     break
@@ -1004,7 +1089,7 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
                 dump(f"skeleton_reply_{i + 1}_fix{attempt + 1}", fixed)
                 ans.update(skeleton.parse_reply(fixed))
             else:
-                bad = skeleton.problems(shots, ans, profile, allow_refs,
+                bad = skeleton.problems(pictures, ans, profile, allow_refs,
                                         stems, only=nums,
                                         style=style_text)
             if bad:
@@ -1014,6 +1099,8 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             raise skeleton.SkeletonError(f"the chat was lost ({exc})") from exc
         log(f"{writer}: part {i + 1}/{len(batches)} done "
             f"({len(ans.new)} image(s), {len(ans.reuse)} reused so far)")
+    if grouped:
+        ans = skeleton.expand(pictures, ans)
     data = skeleton.assemble(shots, ans, ctx["visual_style"], supplied,
                              allow_refs, profile)
     dump("plan_reply_1", json.dumps(data, ensure_ascii=False, indent=1))
@@ -1022,7 +1109,14 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
 
 # faults the app's own code checks already decide (with the tolerance): when
 # those checks came back clean, the judge's arithmetic on them is wrong
-_CODE_DECIDED = re.compile(r"^\s*(MAXIMUM HOLD|STATIC HOLD)\b", re.I)
+# Whatever label the judge puts in front ("MAXIMUM HOLD", "MAXIMUM ST HOLD",
+# "MOTION MIX: ... is ST and holds 5s, over the 4.8s limit"), a fault that
+# does hold-length arithmetic ("holds N s ... over/exceeds ... limit") is one
+# the app's own check already decided.
+_CODE_DECIDED = re.compile(
+    r"^\s*(?:(?:MAXIMUM (?:ST |STATIC )?HOLD|STATIC HOLD|ST HOLD)\b"
+    r"|.*?\bholds?\s+\d+(?:\.\d+)?\s*s\b[^;]*?"
+    r"\b(?:over|exceeds?|above|>)\b[^;]*?\blimit\b)", re.I)
 
 
 def _auto_split_long(data: dict, cues: list[dict], limit: float) -> int:
@@ -1071,6 +1165,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     kept = (adopt_chats(cfg, pid, transport, {writer, judge}, log)
             if same_chats else set())
     data = _saved_plan(cfg, pid) if resume else None
+    grouping_judge_state = {"continuing": judge in kept}
     skeleton_plan = False       # the writer only ever saw numbered shots
     if data is not None:
         log(f"reusing the plan from the saved {writer} replies "
@@ -1083,12 +1178,25 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             tried = True
             try:
                 data = _skeleton_plan(cfg, pid, ctx, plan, transport, writer,
-                                      log, dump, writer in kept)
+                                      log, dump, writer in kept, judge, should_stop,
+                                      grouping_judge_state)
                 skeleton_plan = True
             except skeleton.SkeletonError as exc:
-                data = None
-                log(f"line-by-line plan not used ({exc}) - asking for the "
-                    f"whole shotlist as before")
+                # a channel the skeleton cannot plan (reveal, sound effects,
+                # text overlays, same writer and judge, a missing custom
+                # brief) always falls back to the whole-JSON flow; a failure
+                # MID-run only falls back on a reveal channel (its legacy
+                # behaviour) - otherwise the run stops rather than paying for
+                # a second full plan after the first one already did work
+                if isinstance(exc, skeleton.SkeletonUnsupported) \
+                        or getattr(plan["profile"], "reveal", False):
+                    data = None
+                    log(f"line-by-line plan not used ({exc}) - asking for "
+                        f"the whole shotlist as before")
+                else:
+                    raise StageFailed(
+                        f"Skeleton planning could not complete: {exc}. "
+                        "The full-shotlist planner was not started.") from exc
         if data is None:
             reply, w_cont = _send_in(
                 transport, writer,
@@ -1100,7 +1208,8 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
 
     last_problem = ""
     judge_open = False          # the judge keeps ONE chat, like the writer
-    judge_cont = judge in kept  # ...and may start in the previous stage's
+    # Send full image-review instructions, but retain the grouping chat.
+    judge_cont = bool(grouping_judge_state.get("continuing"))
     best = None                     # (badness, data, problem): the plan to keep
     rnd = 0
     prev_text, same_run = None, 0   # the writer handing back the SAME plan
@@ -1184,7 +1293,8 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             fixes = [str(x) for x in (verdict.get("fixes") or [])]
             if dropped:
                 fixes = [x for x in fixes if not re.match(
-                    r"\s*(split|fix static)", x, re.I)]
+                    r"\s*(split|fix static|(change|switch)\b.*\bfrom ST\b)",
+                    x, re.I)]
             passed = (verdict.get("pass") is True
                       or (bool(dropped) and not faults and not weak)) and not hard
             ratio = verdict.get("detailed_ratio")

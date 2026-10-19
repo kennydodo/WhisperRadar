@@ -715,7 +715,17 @@ class AutoSplitAndDecidedFaultTests(unittest.TestCase):
         m = ws._CODE_DECIDED.match
         self.assertTrue(m("MAXIMUM HOLD: S16_01 cues 75-82 hold 14s (>12s)"))
         self.assertTrue(m("STATIC HOLD: S16_01 cues 83-86 is ST and holds 6s (>5s)"))
+        self.assertTrue(m("MAXIMUM ST HOLD: S08_01_CMP_ZO.png, shot cues 61-63, is ST and holds 5s, over the 4.8s limit"))
+        self.assertTrue(m("MAXIMUM STATIC HOLD: S01_02 holds 6s"))
+        # any label in front, as the judge actually wrote them
+        self.assertTrue(m("MOTION MIX: shot S10_02_CMP_ZI.png (cues 61-63) is ST and holds 5s, over the 4.8s limit for a static shot."))
+        self.assertTrue(m("MOTION MIX: shot S10_16_CU_ST.png (cues 145-147) is ST and holds 5s, over the 4.8s limit for a static shot."))
+        self.assertTrue(m("PACING: S03_01 cues 9-12 holds 13s which exceeds the 12s maximum limit"))
+        # not hold arithmetic: these stay faults
+        self.assertFalse(m("MOTION MIX: ST is 20% of shots (cap ~10%) - vary the motion codes"))
+        self.assertFalse(m("MOTION MIX: PU/PD together are 37% of shots (cap ~30%)"))
         self.assertFalse(m("COVERAGE: cues 10-12 missing"))
+        self.assertFalse(m("REFERENCES OFF: 55 of the 60 image prompts say attached reference"))
 
 
 class ForceFilesTests(unittest.TestCase):
