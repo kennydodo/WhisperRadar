@@ -527,6 +527,62 @@ class GroupingTests(unittest.TestCase):
         self.assertNotIn('JSON}',text)
         self.assertNotIn('\nCUES:\n',text)
 
+    def test_creator_rules_reach_the_picture_writer_only(self):
+        from dataclasses import replace
+        prof = replace(briefs.STANDARD,
+                       custom_rules="keep the presenter visible throughout the move")
+        rules = sk.rules_text(prof, False, [])
+        self.assertIn("CREATOR'S OWN MOTION RULES", rules)
+        self.assertIn("keep the presenter visible throughout the move", rules)
+        self.assertIn("already fixed each shot's code", rules)
+        # a grouping prompt stays meaning-only: no rules text there
+        gprompt = sk.group_prompt("T", "g", self.cues, 12,
+                                  hold_note=sk.hold_range_note(prof, self.cues))
+        self.assertNotIn("CREATOR'S OWN MOTION RULES", gprompt)
+        self.assertNotIn("keep the presenter visible", gprompt)
+        # channels without rules are unchanged
+        self.assertNotIn("CREATOR'S OWN MOTION RULES",
+                         sk.rules_text(briefs.STANDARD, False, []))
+
+    def test_custom_rules_field_survives_resolve(self):
+        spec = briefs.normalize_custom({
+            "allowed": ["ST", "ZI", "ZO"],
+            "rules": "keep the presenter visible throughout the move"})
+        prof = briefs.custom_profile(spec)
+        self.assertEqual(prof.custom_rules,
+                         "keep the presenter visible throughout the move")
+        self.assertIn("keep the presenter visible",
+                      prof.slots["MOTION_SECTION"])
+        # the standard profile has none
+        self.assertEqual(briefs.STANDARD.custom_rules, "")
+
+    def test_slow_paced_range_reaches_writer_and_grouping(self):
+        from dataclasses import replace
+        slow = replace(briefs.STANDARD, min_hold=10.0, max_hold=14.0)
+        cues = make_cues(40, lo=2.0, hi=2.0)     # ~2 s per cue
+        rules = sk.rules_text(slow, False, [], cues=cues)
+        self.assertIn("PICTURES CARRY SHOTS", rules)
+        self.assertIn("slow-paced", rules)
+        self.assertIn("10-14s", rules)            # the channel's hold window
+        self.assertIn("5-7 shots", rules)          # window / ~2 s per cue
+        note = sk.hold_range_note(slow, cues)
+        self.assertIn("slow-paced", note)
+        self.assertIn("ceiling, not a target", note)
+        gprompt = sk.group_prompt("T", "g", cues, 14, hold_note=note)
+        self.assertIn("ceiling, not a target", gprompt)
+        jprompt = sk.group_judge_prompt(cues, [(1, 10)], 14, hold_note=note)
+        self.assertIn("ceiling, not a target", jprompt)
+        # a standard (fast) channel keeps the old fixed heuristic and no note
+        self.assertIn("two or three shots",
+                      sk.rules_text(briefs.STANDARD, False, [], cues=cues))
+        self.assertEqual(sk.hold_range_note(briefs.STANDARD, cues), "")
+
+    def test_hold_range_note_needs_both_ends(self):
+        from dataclasses import replace
+        self.assertEqual(sk.hold_range_note(briefs.STANDARD), "")
+        self.assertEqual(sk.hold_range_note(
+            replace(briefs.STANDARD, min_hold=8.0)), "")
+
     def test_short_brief_and_direction_reach_both_roles(self):
         for text in [sk.group_prompt('T','g',self.cues,12,direction='Keep comparisons together'),
                      sk.group_judge_prompt(self.cues,[(1,20)],12,'Keep comparisons together')]:

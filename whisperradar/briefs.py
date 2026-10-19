@@ -149,6 +149,11 @@ class MotionProfile:
     max_hold_tol: float = MAX_HOLD_TOLERANCE
     st_hold_tol: float = ST_HOLD_TOLERANCE
     static_hold_tol: float = STATIC_LONG_TOLERANCE
+    # the custom motion box's free-text rules; the whole-JSON writer reads
+    # them in the brief's motion section, the skeleton's rules_text shows
+    # them beside its own camera block (composition guidance - the code
+    # itself is already chosen by the app there)
+    custom_rules: str = ""
 
     def slot_values(self) -> dict[str, str]:
         values = dict(STANDARD_SLOTS)
@@ -604,7 +609,8 @@ def custom_profile(spec) -> MotionProfile:
         ("static_hold_tol", "tol_static")) if spec.get(key) is not None}
     if allowed == ("ST",):                    # all-static = the Static preset
         base = replace(STATIC, key=CUSTOM_KEY, label=CUSTOM_LABEL,
-                       description=CUSTOM_DESCRIPTION)
+                       description=CUSTOM_DESCRIPTION,
+                       custom_rules=spec["rules"])
         if spec["rules"]:
             slots = dict(base.slots)
             slots["MOTION_SECTION"] += ("\n\nCreator's own rules for this "
@@ -696,7 +702,7 @@ def custom_profile(spec) -> MotionProfile:
         st_max_hold=st_hold,
         static_long_hold=STATIC_LONG_HOLD_SECONDS if has_st else None,
         code_max_share=cap, code_share_overrides=overrides,
-        group_caps=groups, slots=slots, **tols)
+        group_caps=groups, slots=slots, custom_rules=spec["rules"], **tols)
 
 
 _RANGE_HOLD_RULE = (

@@ -513,8 +513,28 @@ GROUPING_ONLY = (
     "details are handled later.")
 
 
+def hold_range_note(profile, cues: list[dict] | None = None) -> str:
+    """The channel's own hold window as one grouping line ("" = the standard
+    fast pacing, where meaning alone decides). A slow-paced channel's beats
+    are MEANT to be long: without the window the writer splits every idea at
+    a sentence end and the channel gets far more images than it wants."""
+    if not (getattr(profile, "min_hold", None)
+            and getattr(profile, "max_hold", None)):
+        return ""
+    cue = max(0.5, _mean_cue(cues) or 4.0)
+    lo = max(2, int(math.floor(profile.min_hold / cue)))
+    hi = max(lo, int(math.ceil(profile.max_hold / cue)))
+    return (f"This channel is slow-paced: a shot normally holds "
+            f"{profile.min_hold:g}-{profile.max_hold:g}s of narration, so "
+            f"KEEP one beat while the idea keeps developing and prefer "
+            f"fewer, longer beats (a picture on this narration commonly "
+            f"carries about {lo}-{hi} cues). The limit above is a ceiling, "
+            f"not a target.")
+
+
 def group_prompt(title: str, genre: str, cues: list[dict], cap: float,
-                 anim_last_cue: int = 0, direction: str = "") -> str:
+                 anim_last_cue: int = 0, direction: str = "",
+                 hold_note: str = "") -> str:
     first, last = cues[0]["index"], cues[-1]["index"]
     limit = float(cap) * BEAT_MAX_FACTOR
     anim = ""
@@ -538,7 +558,8 @@ def group_prompt(title: str, genre: str, cues: list[dict], cap: float,
         f"{last}.{anim}\n"
         f"- A beat holds at most {limit:g} seconds of narration (the app "
         f"measures it and cuts any longer beat itself). Follow meaning for "
-        f"where a beat ends; there is no target count.\n\n"
+        f"where a beat ends; there is no target count.\n"
+        + (f"- {hold_note}\n" if hold_note else "\n")
         + grouping_brief() + "\n\n"
         + GROUPING_ONLY + "\n\n"
         + ("CREATOR DIRECTION (follow it):\n" + direction.strip() + "\n\n"
@@ -615,7 +636,8 @@ def repair_groups(cues, groups, cap):
 
 
 def group_judge_prompt(cues: list[dict], groups: list[tuple[int, int]],
-                       cap: float, direction: str = "") -> str:
+                       cap: float, direction: str = "",
+                       hold_note: str = "") -> str:
     """One review: the judge returns the COMPLETE corrected list of groups
     (the same line format the writer used), which the app checks itself."""
     first, last = cues[0]["index"], cues[-1]["index"]
@@ -633,7 +655,8 @@ def group_judge_prompt(cues: list[dict], groups: list[tuple[int, int]],
             "no image prompts.\n\n"
             + grouping_brief() + "\n\n" + GROUPING_ONLY
             + f"\nMaximum picture-group span: {cap * BEAT_MAX_FACTOR:g}s. "
-            "Each group is one picture and must not run past that span.\n")
+            "Each group is one picture and must not run past that span.\n"
+            + (f"\n{hold_note}\n" if hold_note else ""))
     if direction.strip():
         text += "CREATOR DIRECTION:\n" + direction.strip() + "\n"
     for a, b in groups:
@@ -730,7 +753,8 @@ _PICTURE_REUSE = (
 def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
                animation_note: str = "", density: str = "",
                limit: int = 2400, grouped: bool = False,
-               template_text: str | None = None) -> str:
+               template_text: str | None = None,
+               cues: list[dict] | None = None) -> str:
     kinds = briefs.types_text(profile.types)
     parts = [
         _PICTURE_INTRO if grouped else
@@ -753,8 +777,7 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
         "belongs to a larger visual idea. Never reuse when the concept "
         "clearly changed, and never create an image just because a cue began "
         "or to pad variety.\n"
-        "- Prefer several shots per image: most pictures should carry two or "
-        "three shots of one developing idea.",
+        + _picture_span_text(profile, _mean_cue(cues)),
         "CAMERA MOTION CODES (the app fixed one per shot). A pan or tilt "
         "(PL, PR, PU, PD, PV) is binding - compose the image for it. ST, ZI "
         "and ZO share one canvas and the app may swap between them to balance "
@@ -820,8 +843,44 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
             "genuinely reuses.\n" + _ref_subject_rule(template_text))
     if animation_note:
         parts.append(animation_note.strip())
+    if getattr(profile, "custom_rules", ""):
+        parts.append(
+            "CREATOR'S OWN MOTION RULES (the app already fixed each shot's "
+            "code; follow these where they shape what the image shows):\n"
+            + getattr(profile, "custom_rules", "").strip())
     parts.append(_REPLY_FORMAT)
     return "\n\n".join(p for p in parts if p)
+
+
+def _picture_span_text(profile, mean_cue: float = 4.0) -> str:
+    """The shots-per-picture guidance for the writer: the fixed 'two or
+    three' heuristic by default; on a slow-paced channel (a minimum hold is
+    set) the range follows the channel's own hold window against the
+    narration's average cue length, so the writer does not over-split beats
+    into more images than the channel wants."""
+    if profile.min_hold and profile.max_hold:
+        cue = max(0.5, mean_cue or 4.0)
+        lo = max(2, int(math.floor(profile.min_hold / cue)))
+        hi = max(lo, int(math.ceil(profile.max_hold / cue)))
+        return (
+            "- PICTURES CARRY SHOTS: the app splits every picture into "
+            f"camera shots itself. On this slow-paced channel a picture "
+            f"normally carries {lo}-{hi} shots of one developing idea "
+            f"(its beats hold {profile.min_hold:g}-{profile.max_hold:g}s "
+            f"of narration at about {cue:.1f}s per cue); do not split an "
+            "idea into several pictures just because it runs long.")
+    return ("- Prefer several shots per image: most pictures should carry "
+            "two or three shots of one developing idea.")
+
+
+def _mean_cue(cues: list[dict] | None) -> float:
+    """The average cue length in seconds (4 s when nothing is known): the
+    rough size of one sentence of narration. Cue timestamps are SRT strings,
+    the same format the grouping lines show."""
+    secs = [studio._srt_seconds(c.get("end")) - studio._srt_seconds(c.get("start"))
+            for c in (cues or [])]
+    secs = [s for s in secs if s > 0]
+    return sum(secs) / len(secs) if secs else 4.0
 
 
 def first_prompt(rules: str, style: str, bible: str, direction: str,

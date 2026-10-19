@@ -965,7 +965,7 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
     limit = skeleton.prompt_limit(style_text)
     rules = skeleton.rules_text(profile, allow_refs, supplied, note,
                                 density=density, limit=limit,
-                                template_text=template_text)
+                                template_text=template_text, cues=cues)
     # the presentation text gets the same framing the brief gives it (it only
     # decides WHO is on screen; the bible supplies the named characters), so
     # the line-by-line writer reads it exactly like the whole-JSON writer
@@ -991,7 +991,8 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
                 transport, writer,
                 lambda f: skeleton.group_prompt(
                     ctx["prod"]["title"], ctx["prod"]["genre"], grouping_cues,
-                    plan["max_hold"], anim_last, direction),
+                    plan["max_hold"], anim_last, direction,
+                    hold_note=skeleton.hold_range_note(profile, cues)),
                 log, continuing, ready=lambda t: bool(skeleton.parse_groups(t)))
             chat_open = True
             if should_stop():
@@ -1013,7 +1014,8 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             raw, _ = _send_in(
                 transport, judge,
                 lambda f: skeleton.group_judge_prompt(
-                    grouping_cues, groups, plan["max_hold"], direction),
+                    grouping_cues, groups, plan["max_hold"], direction,
+                    hold_note=skeleton.hold_range_note(profile, cues)),
                 log, bool(judge_state.get("continuing")),
                 ready=lambda t: bool(skeleton.parse_groups(t)))
             judge_state["continuing"] = True
@@ -1037,7 +1039,8 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             rules = skeleton.rules_text(profile, allow_refs, supplied, note,
                                         density=density, limit=limit,
                                         grouped=True,
-                                        template_text=template_text)
+                                        template_text=template_text,
+                                        cues=cues)
             log(f"{writer}: grouped {len(grouping_cues)} cues into "
                 f"{len(groups)} picture groups; {len(shots)} camera shots")
         except webchat.ChatLost as exc:
