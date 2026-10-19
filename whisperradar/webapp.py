@@ -5750,6 +5750,10 @@ def create_app(cfg) -> Flask:
                 "deepthink": (form.get("deepseek_deepthink")
                               or "on") != "off",
                 "search": True}}      # web search is always on
+        for key in webchat.DEEPSEEK_ACCOUNTS:
+            opts_all[key] = {
+                "deepthink": (form.get(f"{key}_deepthink") or "on") != "off",
+                "search": True}
         # remember them: Auto Run runs with the settings used last
         if not remember:
             return opts_all

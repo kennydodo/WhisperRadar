@@ -285,7 +285,11 @@ class RouteOptionTests(Base):
             opts = job.call_args.args[6]
         self.assertEqual(opts, {"zai": {"thinking": "Max", "model": "5.3"},
                                 "deepseek": {"deepthink": False,
-                                             "search": True}})
+                                             "search": True},
+                                "deepseek_writer": {"deepthink": True,
+                                                    "search": True},
+                                "deepseek_judge": {"deepthink": True,
+                                                   "search": True}})
 
     def test_bad_values_fall_back_to_the_defaults(self):
         c = create_app(self.cfg).test_client()
