@@ -633,7 +633,10 @@ _GENERIC_SEND_JS = """() => {
   const att = x => [x.getAttribute('aria-label'), x.getAttribute('title'),
       x.getAttribute('data-testid'), x.id, (x.innerText || '').trim()];
   const send = word('send|submit|ask|generate');
-  const no = word('stop|continue|up arrow|model|deep|research');
+  const no = word('stop|continue|up arrow|model|deep|research|voice|microphone|mic|dictate|dictation|record|recording');
+  const usable = b => !b.disabled && b.getAttribute('aria-disabled') !== 'true'
+      && b.getBoundingClientRect().width > 0
+      && !att(b).some(v => v && no.test(v));
   const btns = el => [...el.querySelectorAll('button,[role=button]')];
   let scope = document;
   if (ta) {
@@ -648,13 +651,14 @@ _GENERIC_SEND_JS = """() => {
       scope = (el && i < 8) ? el : document;
     }
   }
-  const cands = [...scope.querySelectorAll('button,[role=button]')].filter(
-      b => !b.disabled && b.getAttribute('aria-disabled') !== 'true');
+  const cands = [...scope.querySelectorAll('button,[role=button]')].filter(usable);
   let b = cands.find(x => att(x).some(v => v && send.test(v) && !no.test(v)));
   if (!b && ta && ta.closest('form'))
     b = [...ta.closest('form').querySelectorAll('button[type=submit]')]
-        .find(x => !x.disabled && !att(x).some(v => v && no.test(v)));
-  if (!b) b = cands[cands.length - 1];
+        .find(usable);
+  // No arbitrary last-button fallback: it may be voice input while Send
+  // is disabled or the composer is still loading. Let _press_send retry
+  // and then use its Enter-in-the-editor fallback instead.
   if (!b) return false;
   b.click(); return true; }"""
 
