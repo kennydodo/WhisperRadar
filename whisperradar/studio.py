@@ -5395,8 +5395,12 @@ def compact_srt(srt_text: str) -> str:
         return (srt_text or "").strip()
     lines = []
     for c in cues:
-        dur = int(_srt_seconds(c["end"]) - _srt_seconds(c["start"]) + 0.5)
-        lines.append(f"{c['index']}: {c['text']} ({max(1, dur)}s)")
+        # one decimal: a judge that sums the per-cue lengths once added
+        # "(2s)+(3s)+(1s)" = 6s for a shot that really held 1.68+2.74+0.26 =
+        # 4.68s and false-faulted a clean plan - whole-second rounding
+        # drifts up to ~1s per cue
+        dur = round(_srt_seconds(c["end"]) - _srt_seconds(c["start"]), 1)
+        lines.append(f"{c['index']}: {c['text']} ({max(0.1, dur):g}s)")
     return "\n".join(lines)
 
 

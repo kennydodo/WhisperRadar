@@ -464,7 +464,7 @@ class RunTests(Base):
         t=FalseHold()
         data=ws.run_shotlist(self.cfg,self.pid,t,'zai','deepseek',rounds=1,
                             log=self.log.append,use_skeleton=True)
-        self.assertTrue(any('ignored 2 hold fault(s)' in x for x in self.log))
+        self.assertTrue(any('ignored 2 judge fault(s)' in x for x in self.log))
         self.assertEqual(studio.shotlist_structural_faults(data,60),[])
 
     def test_stop_after_judge_prevents_picture_generation(self):
