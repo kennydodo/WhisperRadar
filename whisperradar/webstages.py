@@ -1039,6 +1039,10 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
             # the picture replies (the old optional-instruction behaviour)
             starts = {a for a, _b in groups}
             beat_starts = {s for s in beat_starts if s in starts}
+            # the first group starts the first chapter implicitly - writers
+            # sometimes mark it anyway, which would count as a second
+            # chapter and start the files at S02
+            beat_starts.discard(groups[0][0])
             dump("skeleton_groups_applied", "\n".join(f"{a}-{b}" for a, b in groups))
             shots, pictures = skeleton.regroup(cues, groups, profile,
                                                plan["max_hold"], anim_last)
@@ -1054,13 +1058,18 @@ def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
                 picture_scenes = {m: sc for p in pictures
                                   for m in p.members
                                   for sc in (scene_of_picture[p.n],)}
-                log(f"main beats: {len(ordered)} scene(s) from the grouping")
+                log(f"main beats: {len(ordered) + 1} scene(s) from the "
+                    f"grouping")
+            else:
+                log("grouping gave no chapter markers - scenes follow the "
+                    "writer's BEAT lines in the picture replies")
             grouped = True
             rules = skeleton.rules_text(profile, allow_refs, supplied, note,
                                         density=density, limit=limit,
                                         grouped=True,
                                         template_text=template_text,
-                                        cues=cues)
+                                        cues=cues,
+                                        beats_from_grouping=bool(picture_scenes))
             log(f"{writer}: grouped {len(grouping_cues)} cues into "
                 f"{len(groups)} picture groups; {len(shots)} camera shots")
         except webchat.ChatLost as exc:

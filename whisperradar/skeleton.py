@@ -736,7 +736,12 @@ def _ref_subject_rule(template_text: str | None = None) -> str:
     return m.group(0) if m else ""
 
 
-_REPLY_FORMAT = """\
+_REPLY_BEAT_BULLET = (
+    "- To start a new MAIN BEAT (hook, problem, mechanism, evidence, "
+    "solution...) put a line `BEAT <n>` before the line of the shot that "
+    "begins it. Shot 1 always starts the first beat. Beats are semantic "
+    "sections, not scene changes - usually a handful per video.\n")
+_REPLY_FORMAT = f"""\
 HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no commentary, no summary). One line per shot, in order, using the shot's own number:
 
   <n> | <TYPE> | <refs or -> | <image prompt>          a NEW image
@@ -744,9 +749,20 @@ HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no comme
 
 - TYPE is one of SCN, CU, INF, CMP, PROC, HYB, OVR. refs are names from the reference list, comma-separated (the first is the dominant subject), or `-` for none.
 - A shot flagged ANIMATE gets its movement note at the end of its line: `... | <image prompt> || <ANIMATE note>`; a flagged shot is never a REUSE.
-- To start a new MAIN BEAT (hook, problem, mechanism, evidence, solution...) put a line `BEAT <n>` before the line of the shot that begins it. Shot 1 always starts the first beat. Beats are semantic sections, not scene changes - usually a handful per video.
-- To invent a reference that is not in the list, add a line `REF <CH_/BG_/OBJ_NAME> | <what it looks like>` (before it is first used).
+{_REPLY_BEAT_BULLET}- To invent a reference that is not in the list, add a line `REF <CH_/BG_/OBJ_NAME> | <what it looks like>` (before it is first used).
 - Answer EVERY shot of the batch. Do not renumber, merge or skip shots; the cue ranges and the camera motion are fixed by the app."""
+
+_REPLY_FORMAT_GROUPED = f"""\
+HOW TO ANSWER - plain text lines, nothing else (no JSON, no code block, no commentary, no summary). One line per picture, in order, using the picture's own number:
+
+  <n> | <TYPE> | <refs or -> | <image prompt>          a NEW image
+  <n> | REUSE <m>                                      the same picture as the earlier picture <m>
+
+- TYPE is one of SCN, CU, INF, CMP, PROC, HYB, OVR. refs are names from the reference list, comma-separated (the first is the dominant subject), or `-` for none.
+- A shot flagged ANIMATE gets its movement note at the end of its line: `... | <image prompt> || <ANIMATE note>`; a flagged shot is never a REUSE.
+- The MAIN BEATS (scenes) were already decided in the grouping step: do not write `BEAT <n>` lines, they would be ignored.
+- To invent a reference that is not in the list, add a line `REF <CH_/BG_/OBJ_NAME> | <what it looks like>` (before it is first used).
+- Answer EVERY picture of the batch. Do not renumber, merge or skip pictures; the cue ranges and the camera motion are fixed by the app."""
 
 
 _PICTURE_INTRO = (
@@ -773,7 +789,8 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
                animation_note: str = "", density: str = "",
                limit: int = 2400, grouped: bool = False,
                template_text: str | None = None,
-               cues: list[dict] | None = None) -> str:
+               cues: list[dict] | None = None,
+               beats_from_grouping: bool = False) -> str:
     kinds = briefs.types_text(profile.types)
     parts = [
         _PICTURE_INTRO if grouped else
@@ -867,7 +884,11 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
             "CREATOR'S OWN MOTION RULES (the app already fixed each shot's "
             "code; follow these where they shape what the image shows):\n"
             + getattr(profile, "custom_rules", "").strip())
-    parts.append(_REPLY_FORMAT)
+    # in the grouped flow the scenes come from the grouping's BEAT markers,
+    # so the reply format drops the writer's own BEAT-line instruction - it
+    # only applies to the ungrouped flow (and the markerless fallback)
+    parts.append(_REPLY_FORMAT_GROUPED
+                 if grouped and beats_from_grouping else _REPLY_FORMAT)
     return "\n\n".join(p for p in parts if p)
 
 

@@ -524,6 +524,29 @@ class GroupingTests(unittest.TestCase):
         self.assertIn("MAIN BEAT", sk.group_judge_prompt(self.cues, [(1, 10)], 12))
         self.assertIn("keep those markers", sk.group_judge_prompt(self.cues, [(1, 10)], 12))
 
+    def test_reply_format_drops_beat_lines_when_grouping_decided_scenes(self):
+        rules_grouped = sk.rules_text(self.prof, False, [], grouped=True,
+                                      beats_from_grouping=True)
+        self.assertIn("do not write `BEAT <n>` lines", rules_grouped)
+        self.assertNotIn("put a line `BEAT <n>`", rules_grouped)
+        # ungrouped keeps the writer's own BEAT-line instruction
+        self.assertIn("put a line `BEAT <n>`", sk.rules_text(self.prof, False, []))
+        # grouped without markers (fallback) keeps it too
+        self.assertIn("put a line `BEAT <n>`",
+                      sk.rules_text(self.prof, False, [], grouped=True))
+
+    def test_marker_on_the_first_group_does_not_skip_s01(self):
+        # prod 43 replay: a writer sometimes marks the first group; the first
+        # chapter starts implicitly and the marker must not count again
+        groups, beats = sk.parse_grouping("BEAT 1-8\n9-16\nBEAT 17-25\n26-40")
+        self.assertIn(1, beats)
+        beats.discard(groups[0][0])
+        self.assertEqual(beats, {17})
+        shots, pictures = sk.regroup(self.cues, groups, self.prof, 12)
+        scenes = {m: 1 + sum(1 for s in sorted(beats) if s <= p.first)
+                  for p in pictures for m in p.members}
+        self.assertEqual(scenes[pictures[0].members[0]], 1)
+
     def test_grouping_beat_markers_become_scenes(self):
         shots, pictures = sk.regroup(self.cues, [(1, 6), (7, 12), (13, 20)],
                                      self.prof, 12)
