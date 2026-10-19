@@ -2756,6 +2756,9 @@ def create_app(cfg) -> Flask:
                 return _back(request, error="Unknown action")
         finally:
             conn.close()
+        nxt = request.form.get("next") or ""
+        if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
+            return redirect(nxt + ("&" if "?" in nxt else "?") + "msg=" + quote("Done"))
         return _back(request, msg="Done")
 
     @app.post("/videos/delete")
@@ -3306,6 +3309,21 @@ def create_app(cfg) -> Flask:
             return {"started": True}, 200
         return redirect("/finished?msg=" + quote(
             "Reading results in the background - refresh in a minute"))
+
+    @app.post("/studio/<int:pid>/rename")
+    def studio_rename(pid):
+        title = " ".join((request.form.get("title") or "").split())
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            if not db.get_production(conn, pid):
+                abort(404)
+            if not title:
+                return redirect(f"/studio/{pid}?error=" + quote("Title can't be empty"))
+            db.update_production(conn, pid, title=title[:300])
+        finally:
+            conn.close()
+        return redirect(f"/studio/{pid}?msg=" + quote("Title renamed"))
 
     @app.post("/studio/<int:pid>/unpublish")
     def studio_unpublish(pid):
