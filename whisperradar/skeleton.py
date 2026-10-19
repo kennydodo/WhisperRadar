@@ -404,6 +404,43 @@ def parse_groups(text: str) -> list[tuple[int, int]]:
     return parse_grouping(text)[0]
 
 
+# a trailing shot shorter than this reads as a flicker, not a beat: the
+# mechanical cut left a 0.3s one-word tail behind its neighbour (cue 298,
+# "demand.") - fold it back instead of spending an image boundary on it
+SUBSECOND_TAIL = 1.0
+
+
+def _merge_subsecond_tails(shots: list[Draft], by_index: dict,
+                           protected_starts: set[int]) -> int:
+    """Fold a trailing shot shorter than SUBSECOND_TAIL seconds back into
+    the shot before it. The cut exists only because the cap or a sentence
+    end split there; a one-word flicker is not a visual beat. A shot that
+    STARTS a picture (in `protected_starts`) is the writer's semantic
+    boundary and is never folded; the fold keeps the neighbour's motion, so
+    both must share a canvas family. In place; returns folds made."""
+    if len(shots) < 2:
+        return 0
+    folded = 0
+    i = 1
+    while i < len(shots):
+        s, prev = shots[i], shots[i - 1]
+        span = _cue_span(by_index, s.first, s.last)
+        if span >= SUBSECOND_TAIL or s.first in protected_starts:
+            i += 1
+            continue
+        if not ({s.motion, prev.motion} <= {"ZI", "ZO", "ST"}
+                or s.motion == prev.motion):
+            i += 1
+            continue
+        prev.last = s.last
+        prev.text = f"{prev.text} {s.text}"
+        prev.seconds = round(_cue_span(by_index, prev.first, prev.last), 1)
+        del shots[i]
+        folded += 1
+        # do not advance: the merged shot may itself now be a tail
+    return folded
+
+
 def groupable(cues: list[dict], anim_last_cue: int = 0) -> list[dict]:
     """The cues the writer groups: all but the animated opening, whose shots
     the app keeps apart (each needs its own animated picture)."""
@@ -475,7 +512,10 @@ def regroup(cues: list[dict], groups: list[tuple[int, int]], profile,
                         short_every, short_hold, short_cap, breaks=breaks)
     assign_motion(shots, profile)
     starts = {a for a, _b in groups}
+    if anim_last_cue:
+        starts.add(anim_last_cue + 1)     # first shot after the opening
     by_index = {c["index"]: c for c in cues}
+    _merge_subsecond_tails(shots, by_index, starts)
     pictures: list[Draft] = []
     for s in shots:
         if s.animate or s.first in starts or not pictures:
@@ -603,6 +643,11 @@ def grouping_brief() -> str:
         "- A cue is never split, and a sentence that runs across two cues "
         "stays in one beat. Do not break a number phrase just because the "
         "next cue starts with a number.\n"
+        "- When the last cue of an idea ends MID-SENTENCE (\"They are\" / "
+        "\"Food\"), extend the picture through the cue that completes the "
+        "thought - a picture that ends on an unfinished phrase reads as a "
+        "cut in the middle of the sentence. Finish the thought first, then "
+        "change the picture.\n"
         "- One cue per beat is a failure unless that cue is a whole idea; so "
         "is one beat that joins unrelated ideas.\n"
         "- Follow meaning for where a beat ends, not a target count; but one "

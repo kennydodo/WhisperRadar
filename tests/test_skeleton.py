@@ -482,6 +482,34 @@ class GroupingTests(unittest.TestCase):
     def setUp(self):
         self.cues=make_cues(20,lo=2,hi=2)
         self.prof=briefs.STANDARD
+
+    def test_subsecond_tail_folds_into_the_previous_shot(self):
+        # prod 40 cue 298: "demand." = a 0.34s ST flicker after a ZI shot
+        cues = make_cues(10, lo=2, hi=2)
+        cues[9]['end'] = cues[9]['start'][:7] + '4.340'   # cue 10 = 0.34s
+        shots, pictures = sk.regroup(cues, [(1, 5), (6, 10)],
+                                     self.prof, 12.0)
+        self.assertFalse(any(s.last == 10 and s.first == 10
+                             for s in shots), [(s.n, s.cues) for s in shots])
+        merged = next(s for s in shots if s.last == 10)
+        self.assertGreater(merged.seconds, 1.0)
+        # the writer's picture boundary is respected: the fold happens inside
+        # the group the tail belongs to
+        self.assertEqual([p.last for p in pictures][-1], 10)
+
+    def test_picture_start_tails_are_protected(self):
+        # a sub-second shot that STARTS a picture is the writer's boundary
+        cues = make_cues(10, lo=2, hi=2)
+        cues[9]['end'] = cues[9]['start'][:7] + '4.340'
+        shots, pictures = sk.regroup(cues, [(1, 9), (10, 10)],
+                                     self.prof, 12.0)
+        self.assertTrue(any(p.first == 10 and p.last == 10
+                            for p in pictures))
+
+    def test_grouping_brief_prefers_completed_thoughts(self):
+        self.assertIn("completes the", sk.grouping_brief())
+        self.assertIn("They are", sk.grouping_brief())
+
     def test_coverage_rejects_gaps_overlap_unknown_and_reverse(self):
         for groups in [[],[(1,19)],[(1,10),(10,20)],[(1,10),(12,20)],[(20,1)],[(1,21)]]:
             self.assertTrue(sk.group_problems(self.cues,groups,100),groups)
