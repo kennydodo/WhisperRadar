@@ -755,6 +755,30 @@ class AutoSplitAndDecidedFaultTests(unittest.TestCase):
         self.assertFalse(ws._false_hold_fault(
             "COVERAGE: cues 10-12 missing", data, cues, prof))
 
+    def test_mechanical_labels_drop_when_the_app_check_is_clean(self):
+        m = ws._MECHANICAL_LABELS.match
+        # the exact prod-40 rambling: each one answers its own question
+        self.assertTrue(m("COVERAGE: shot with cues 488-491 is followed by "
+                          "492-496, but cue 487-491's range overlaps with the "
+                          "preceding 484-486? No—checking order: 484-486, "
+                          "487-491, 492-496 is contiguous.; ASSETS: ..."))
+        self.assertTrue(m("ASSETS: shot with cues 586-588 references asset "
+                          "S01_01_SCN_ZI.png with scene S25, but there is "
+                          "only one image prompt entry for that file; that is "
+                          "allowed (same asset reused)."))
+        self.assertTrue(m("MOTION MIX: ST is 20% of shots (cap ~10%) - vary "
+                          "the motion codes"))
+        self.assertTrue(m("MOTION CODES: PL is not allowed on this channel"))
+        self.assertTrue(m("MAXIMUM HOLD: S16_01 cues 75-82 hold 14s (>12s)"))
+        # categories the app does NOT fully check stay with the judge
+        self.assertFalse(m("MINIMUM HOLD: 40% of shots hold under 8s"))
+        self.assertFalse(m("REFERENCES OFF: 55 of the 60 image prompts say "
+                           "attached reference"))
+        self.assertFalse(m("PROMPT QUALITY: the infographic never shows the "
+                           "mechanism"))
+        # weak-prompt and other prose without a mechanical label is untouched
+        self.assertFalse(m("The comparison shot reads as wallpaper"))
+
 
 class ForceFilesTests(unittest.TestCase):
     class _T:

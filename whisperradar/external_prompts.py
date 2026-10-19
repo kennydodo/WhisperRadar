@@ -726,5 +726,9 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
         f'{plan["min_align"]:g}>, "fixes": ["<the most useful changes, in '
         'order>", ...]}\n'
         "In \"shots\" list ONLY the weak or missing shots (an ok shot is "
-        "simply left out), so the reply stays short.")
+        "simply left out), so the reply stays short. In \"faults\" list only "
+        "real hard-rule violations you are certain of: never list something "
+        "you checked and found to be fine, never ask questions or show your "
+        "verification trail - the app re-measures hold and coverage claims "
+        "and discards faults its own numbers contradict.")
     return prompt, local
