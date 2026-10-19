@@ -251,6 +251,17 @@
     {% if source_video %}
     <span class="muted">| inspired by</span>
     <a href="{{ source_video['url'] }}" target="_blank">{{ source_video["title"][:60] }}</a>
+    {% else %}
+    <details style="display:inline-block">
+      <summary class="muted" style="cursor:pointer">| no source video - attach</summary>
+      <form class="inline" method="post" action="/studio/{{ prod['id'] }}/source" style="margin-top:6px">
+        <input name="source" list="attach-sources" placeholder="title, video id or YouTube link" style="min-width:320px">
+        <datalist id="attach-sources">
+          {% for v in attach_sources %}<option value="{{ v['title'] }}">{{ v['channel_name'] }}</option>{% endfor %}
+        </datalist>
+        <button type="submit" class="secondary">Attach source</button>
+      </form>
+    </details>
     {% endif %}
   </div>
 
