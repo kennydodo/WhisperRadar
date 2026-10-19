@@ -313,6 +313,20 @@
     var active = -1;  // index into the currently rendered matches
     var matches = [];
 
+    // typed text but no video picked: attach the exact-title match, or stop
+    // instead of silently creating the production without its source
+    if (search.form) search.form.addEventListener('submit', function (e) {
+      var q = search.value.trim().toLowerCase();
+      if (value.value || !q) return;
+      var hit = all.filter(function (v) {
+        return !v.used && v.text.trim().toLowerCase() === q;
+      });
+      if (hit.length === 1) { value.value = hit[0].id; return; }
+      e.preventDefault();
+      if (hint) hint.textContent = 'Pick the video from the list (or clear the box to start without a source).';
+      search.focus();
+    });
+
     // Populate the channel-narrowing dropdown from the monitored channels
     // actually present in the transcript list, so picking one first cuts
     // a long list down before typing a word to search within it.

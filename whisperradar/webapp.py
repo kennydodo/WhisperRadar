@@ -3433,6 +3433,18 @@ def create_app(cfg) -> Flask:
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
+            auto_source = False
+            if not source:
+                # picked from the title but the hidden id did not get set:
+                # a transcribed video whose title is exactly this one
+                rows = conn.execute(
+                    "SELECT video_id FROM videos WHERE status = 'transcribed'"
+                    " AND lower(trim(title)) = lower(?)", (title,)).fetchall()
+                if len(rows) == 1 and not db.source_in_channel(
+                        conn, rows[0]["video_id"],
+                        int(own_channel) if own_channel else 0):
+                    source = rows[0]["video_id"]
+                    auto_source = True
             if source:
                 taken = db.source_in_channel(
                     conn, source, int(own_channel) if own_channel else 0)
@@ -3501,6 +3513,8 @@ def create_app(cfg) -> Flask:
             if seeded["refs"]:
                 bits.append(f"{seeded['refs']} ref image(s)")
             msg = (f"?msg={quote('Seeded ' + ' + '.join(bits) + ' from ' + seeded['source'])}")
+        if auto_source and not msg:
+            msg = "?msg=" + quote("Attached the source video with this title")
         return redirect(f"/studio/{pid}{msg}")
 
     AFTER_SOURCE_FILE = "autorun_after_source.json"
@@ -3627,6 +3641,8 @@ def create_app(cfg) -> Flask:
             history = db.step_history(conn, pid)
             source_video = (db.get_video(conn, prod["source_video_id"])
                             if prod["source_video_id"] else None)
+            attach_sources = ([] if source_video else db.get_videos(
+                conn, status="transcribed", limit=500))
         finally:
             conn.close()
         source_wait = source_prep.state(cfg, pid)
@@ -3794,7 +3810,8 @@ def create_app(cfg) -> Flask:
             brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
-            source_video=source_video, llm_ready=llm_ready,
+            source_video=source_video, attach_sources=attach_sources,
+            llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
             instructions={k: db.stage_extra(prod, k)
@@ -4135,6 +4152,56 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return _studio_url(pid, msg=f"Production assigned to '{ch['name']}'")
+
+    @app.post("/studio/<int:pid>/source")
+    def studio_attach_source(pid):
+        """Attach (or replace) the original source video of a production.
+        The box takes a video id, a YouTube link, or the exact title."""
+        raw = (request.form.get("source") or "").strip()
+        if not raw:
+            return _studio_url(pid, error="Pick or paste a source video")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return _studio_url(pid, error="Unknown production")
+            vid = None
+            m = re.search(r"(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{11})", raw)
+            cands = [m.group(1)] if m else []
+            cands.append(raw)
+            for c in cands:
+                if db.get_video(conn, c):
+                    vid = c
+                    break
+            if not vid:
+                rows = conn.execute(
+                    "SELECT video_id FROM videos WHERE lower(trim(title)) = "
+                    "lower(?)", (raw,)).fetchall()
+                if len(rows) == 1:
+                    vid = rows[0]["video_id"]
+                elif rows:
+                    return _studio_url(
+                        pid, error="More than one video has that title - "
+                                   "paste its link instead")
+            if not vid:
+                return _studio_url(pid, error="No video found for that")
+            taken = db.source_in_channel(conn, vid, prod["own_channel_id"] or 0)
+            if taken and taken["id"] != pid:
+                return _studio_url(
+                    pid, error=f"That video already has a production in this "
+                               f"channel: #{taken['id']} {taken['title'][:60]}")
+            db.update_production(conn, pid, source_video_id=vid)
+            row = db.get_video(conn, vid)
+        finally:
+            conn.close()
+        if source_prep.sync_transcript(cfg, pid):
+            note = "transcript copied"
+        else:
+            source_prep.start_background(cfg, vid, sjob.log.append)
+            note = "fetching its transcript in the background"
+        return _studio_url(
+            pid, msg=f"Source attached: {row['title'][:60]} ({note})")
 
     @app.post("/studio/<int:pid>/seed")
     def studio_seed(pid):
