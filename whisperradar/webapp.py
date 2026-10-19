@@ -3845,6 +3845,7 @@ def create_app(cfg) -> Flask:
             own_channels=own_channels,
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
+            script_words=studio.script_words_override(prod),
             bible_text=bible_text,
             batch_sheet=(pdir / "shotlist.json").exists(),
             thumb_count=len(thumbnails.load_thumbs(pdir).get("concepts", [])),
@@ -4720,6 +4721,35 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return _studio_url(pid, msg=f"Direction for '{stage}' saved")
+
+    @app.post("/studio/<int:pid>/script-words")
+    def studio_script_words_save(pid):
+        """The target length of this production's script (empty = automatic)."""
+        raw = re.sub(r"[^\d]", "", request.form.get("script_words") or "")
+        value = int(raw) if raw else 0
+        if value and not 100 <= value <= 20000:
+            return _studio_url(pid, error="Target words must be 100-20000")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            if not prod:
+                return _studio_url(pid, error="Unknown production")
+            try:
+                data = json.loads(prod["stage_extras"] or "{}")
+            except (ValueError, TypeError):
+                data = {}
+            data = data if isinstance(data, dict) else {}
+            if value:
+                data["script_words"] = str(value)
+            else:
+                data.pop("script_words", None)
+            db.update_production(conn, pid, stage_extras=json.dumps(data))
+        finally:
+            conn.close()
+        return _studio_url(pid, msg=(
+            f"Script target set to {value} words" if value
+            else "Script target back to automatic"))
 
     @app.post("/studio/<int:pid>/bible/save")
     def studio_bible_save(pid):
