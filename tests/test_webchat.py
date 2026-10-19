@@ -565,7 +565,7 @@ class ExtractJsonTests(unittest.TestCase):
 
 class SitesTests(unittest.TestCase):
     def test_known_sites(self):
-        self.assertEqual(set(wc.SITES), {"zai", "deepseek"})
+        self.assertEqual(set(wc.SITES), {"zai", "deepseek", *wc.DEEPSEEK_ACCOUNTS})
 
     def test_unknown_site_is_a_clear_error(self):
         chat = wc.WebChat("/tmp/none")

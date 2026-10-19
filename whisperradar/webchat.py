@@ -24,7 +24,7 @@ import subprocess
 import time
 from urllib.parse import urljoin
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -227,7 +227,13 @@ DEEPSEEK = Site(
     sent_js="""() => /\\/chat\\/s\\//.test(location.pathname)""",
     prepare=_deepseek_prepare)
 
-SITES = {s.key: s for s in (ZAI, DEEPSEEK)}
+# Separate identities keep cookies, browser connections and saved chats isolated.
+DEEPSEEK_ACCOUNTS = ("deepseek_writer", "deepseek_judge")
+DEEPSEEK_WRITER = replace(DEEPSEEK, key=DEEPSEEK_ACCOUNTS[0],
+                          name="DeepSeek — Writer account")
+DEEPSEEK_JUDGE = replace(DEEPSEEK, key=DEEPSEEK_ACCOUNTS[1],
+                         name="DeepSeek — Judge account")
+SITES = {s.key: s for s in (ZAI, DEEPSEEK, DEEPSEEK_WRITER, DEEPSEEK_JUDGE)}
 BUILTIN_KEYS = tuple(SITES)
 # Sites whose "new chat" page is unreliable after a send (Qwen falls back to
 # the empty start page): ONE chat is created and every later ask continues it.
@@ -1195,7 +1201,7 @@ DIAG_DIR = Path("data") / "logs"
 def _continue_methods(site) -> tuple:
     # DeepSeek's Continue ignored a script click on some runs: start there with
     # a real mouse click. The other chats keep the script click first.
-    return ("mouse", "script") if site.key == "deepseek" else ("script", "mouse")
+    return ("mouse", "script") if site.key in ("deepseek", *DEEPSEEK_ACCOUNTS) else ("script", "mouse")
 
 
 def _press_continue(page, site, log, n: int, diag: dict) -> str:
@@ -2147,7 +2153,8 @@ def _balanced_end(s: str, start: int, opener: str, closer: str):
 # open. A run then attaches to it. If no such Chrome is listening, WebChat
 # launches its own as before.
 
-CDP_PORTS = {"zai": 9222, "deepseek": 9223}
+CDP_PORTS = {"zai": 9222, "deepseek": 9223,
+             "deepseek_writer": 9224, "deepseek_judge": 9225}
 
 
 def cdp_endpoint(key: str) -> str:

@@ -99,10 +99,3 @@ class ChannelToleranceTests(unittest.TestCase):
                           if "ST shots hold longer" in f]
         self.assertEqual(flag(loose), [])
         self.assertEqual(len(flag(strict)), 1)
-
-    def test_the_skeleton_follows_the_channel_tolerance(self):
-        from whisperradar import skeleton
-        self.assertTrue(skeleton.st_fits(5.9, self._prof()))
-        self.assertFalse(skeleton.st_fits(6.5, self._prof()))
-        self.assertTrue(skeleton.st_fits(6.5, self._prof(tol_st="40")))
-        self.assertFalse(skeleton.st_fits(5.9, self._prof(tol_st="10")))

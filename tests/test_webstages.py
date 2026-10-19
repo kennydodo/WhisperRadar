@@ -285,7 +285,11 @@ class RouteOptionTests(Base):
             opts = job.call_args.args[6]
         self.assertEqual(opts, {"zai": {"thinking": "Max", "model": "5.3"},
                                 "deepseek": {"deepthink": False,
-                                             "search": True}})
+                                             "search": True},
+                                "deepseek_writer": {"deepthink": True,
+                                                    "search": True},
+                                "deepseek_judge": {"deepthink": True,
+                                                   "search": True}})
 
     def test_bad_values_fall_back_to_the_defaults(self):
         c = create_app(self.cfg).test_client()
@@ -727,7 +731,6 @@ class AutoSplitAndDecidedFaultTests(unittest.TestCase):
         self.assertFalse(m("MOTION MIX: ST is 20% of shots (cap ~10%) - vary the motion codes"))
         self.assertFalse(m("MOTION MIX: PU/PD together are 37% of shots (cap ~30%)"))
         self.assertFalse(m("COVERAGE: cues 10-12 missing"))
-        self.assertFalse(m("REFERENCES OFF: 55 of the 60 image prompts say attached reference"))
 
     def test_false_hold_fault_is_measured_not_matched(self):
         from dataclasses import replace

@@ -28,8 +28,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import (autorun, briefs, db, external_prompts as ep, handover, skeleton, studio,
-               webchat)
+from . import autorun, briefs, db, external_prompts as ep, handover, studio, webchat
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
@@ -53,7 +52,9 @@ class StageFailed(RuntimeError):
 
 # what each site's mode switches default to when the run does not say
 DEFAULT_OPTIONS = {"zai": {"thinking": "Low", "model": "flash"},
-                   "deepseek": {"deepthink": True, "search": True}}
+                   "deepseek": {"deepthink": True, "search": True},
+                   **{key: {"deepthink": True, "search": True}
+                      for key in webchat.DEEPSEEK_ACCOUNTS}}
 
 
 NO_IMAGES_NOTE = ("\n\n(Reply with text only - do not create, draw or generate "
@@ -170,19 +171,18 @@ def adopt_chats(cfg, pid: int, transport, sites, log) -> set:
     return out
 
 
-def _send_in(transport, site: str, build, log, continuing: bool, ready=None,
-             force_files: bool = False):
+def _send_in(transport, site: str, build, log, continuing: bool, ready=None):
     """_send in the saved chat when `continuing`; a chat that cannot be
     reopened falls back to a new one. Returns (reply, still_continuing)."""
     if continuing:
         try:
             return _send(transport, site, build, log, new_chat=False,
-                         ready=ready, force_files=force_files), True
+                         ready=ready), True
         except webchat.ChatLost:
             log(f"{site}: the previous chat cannot be reopened - starting a "
                 f"new one")
     return _send(transport, site, build, log, new_chat=True,
-                 ready=ready, force_files=force_files), False
+                 ready=ready), False
 
 
 def _send(transport, site: str, build: Callable, log,
@@ -934,234 +934,6 @@ def _recovery_prompt(cfg, pid: int, plan_text: str, feedback: str):
     return build
 
 
-def _skeleton_plan(cfg, pid: int, ctx: dict, plan: dict, transport,
-                   writer: str, log, dump, continuing: bool, judge: str = "",
-                   should_stop: Callable[[], bool] = lambda: False,
-                   judge_state: dict | None = None) -> dict:
-    """Group raw narration cues, get semantic approval, then write pictures.
-
-    The app expands each picture into timed camera shots and assembles JSON.
-    Unsupported modes may use the legacy planner; rejected groupings stop.
-    """
-    eff, profile, cues = ctx["eff"], plan["profile"], plan["cues"]
-    why = skeleton.unsupported_reason(eff, profile)
-    if why:
-        raise skeleton.SkeletonUnsupported(why)
-    template_text = skeleton._template(cfg)
-    note = ep._animation_note(eff, cues)
-    anim_last = 0
-    if note:
-        from . import motion
-        anim_last = motion.window_last_cue(
-            cues, eff["animate_seconds"], studio._srt_seconds)
-    shots = skeleton.build(cues, profile, plan["max_hold"], anim_last)
-    if not shots:
-        raise skeleton.SkeletonError("no shots could be drafted")
-    allow_refs = plan["allow_refs"]
-    supplied = studio.find_supplied_refs(ctx["pdir"]) if allow_refs else []
-    stems = {n.rsplit(".", 1)[0] for n in supplied}
-    density = studio.visual_density(cfg, pid=pid)
-    style_text = ctx["visual_style"]
-    limit = skeleton.prompt_limit(style_text)
-    rules = skeleton.rules_text(profile, allow_refs, supplied, note,
-                                density=density, limit=limit,
-                                template_text=template_text, cues=cues)
-    # the presentation text gets the same framing the brief gives it (it only
-    # decides WHO is on screen; the bible supplies the named characters), so
-    # the line-by-line writer reads it exactly like the whole-JSON writer
-    direction = "\n\n".join(x.strip() for x in (
-        briefs.presentation_block(eff.get("brief_presentation") or ""),
-        db.stage_extra(ctx["prod"], "shots"))
-        if x.strip())
-    # a beat (one picture) may hold what a shot may: the channel's max hold
-    # with its tolerance, the same limit the code checks use
-    beat_cap = briefs.hold_limit(plan["max_hold"], profile.max_hold_tol)
-    judge_state = judge_state if judge_state is not None else {}
-    # Group raw cues by meaning, review them, then ask for pictures.
-    chat_open, grouped = False, False
-    pictures = shots
-    grouping_cues = skeleton.groupable(cues, anim_last)
-    if skeleton.GROUPING and grouping_cues:
-        if not judge or judge == writer:
-            raise skeleton.SkeletonUnsupported(
-                "cue grouping needs a separate judge chat "
-                "(writer and judge are the same site)")
-        try:
-            reply, _ = _send_in(
-                transport, writer,
-                lambda f: skeleton.group_prompt(
-                    ctx["prod"]["title"], ctx["prod"]["genre"], grouping_cues,
-                    plan["max_hold"], anim_last, direction,
-                    hold_note=skeleton.hold_range_note(profile, cues)),
-                log, continuing, ready=lambda t: bool(skeleton.parse_groups(t)))
-            chat_open = True
-            if should_stop():
-                raise StageFailed("Cue grouping stopped by user")
-            dump("skeleton_groups_1", reply)
-            written, beat_starts = skeleton.parse_grouping(reply)
-            left_out = skeleton.uncovered_share(grouping_cues, written)
-            if left_out > skeleton.REPAIR_MAX_SHARE:
-                raise StageFailed(
-                    f"Cue grouping needs attention: the writer left "
-                    f"{left_out:.0%} of the cues out of its groups")
-            groups, bad = skeleton.repair_groups(grouping_cues, written, beat_cap)
-            if bad:
-                raise StageFailed("Cue grouping needs attention: " + "; ".join(bad[:3]))
-            beat_starts, moved = skeleton.snap_beat_starts(beat_starts, groups)
-            if moved:
-                log(f"grouping: the repair moved {moved} chapter marker(s) - "
-                    f"snapped to the nearest group start")
-            if groups != written:
-                log(f"grouping: the app repaired the writer's groups "
-                    f"({len(set(groups) - set(written))} group(s) changed, "
-                    f"{left_out:.0%} of the cues were not covered)")
-            raw, _ = _send_in(
-                transport, judge,
-                lambda f: skeleton.group_judge_prompt(
-                    grouping_cues, groups, plan["max_hold"], direction,
-                    hold_note=skeleton.hold_range_note(profile, cues)),
-                log, bool(judge_state.get("continuing")),
-                ready=lambda t: bool(skeleton.parse_groups(t)))
-            judge_state["continuing"] = True
-            dump("skeleton_groups_judge_1", raw)
-            if should_stop():
-                raise StageFailed("Cue grouping stopped by user")
-            judged, judged_beats = skeleton.parse_grouping(raw)
-            judge_bad = skeleton.group_problems(grouping_cues, judged, beat_cap)
-            if judge_bad:
-                log(f"grouping: the judge's list is not usable ({judge_bad[0]}) - "
-                    f"keeping the writer's grouping")
-            else:
-                changed = len(set(judged) - set(groups))
-                groups = judged
-                if judged_beats:
-                    judged_beats, moved = skeleton.snap_beat_starts(
-                        judged_beats, groups)
-                    if moved:
-                        log(f"grouping: the judge moved {moved} chapter "
-                            f"marker(s) off a group start - snapped to the "
-                            f"nearest group start")
-                    beat_starts = judged_beats
-                log(f"grouping: the judge's list changed {changed} group(s)"
-                    if changed else "grouping: the judge approved the groups")
-            # main beats come from the grouping's BEAT markers; without any
-            # marker the scenes fall back to the writer's own BEAT lines in
-            # the picture replies (the old optional-instruction behaviour)
-            starts = {a for a, _b in groups}
-            beat_starts = {s for s in beat_starts if s in starts}
-            # the first group starts the first chapter implicitly - writers
-            # sometimes mark it anyway, which would count as a second
-            # chapter and start the files at S02
-            beat_starts.discard(groups[0][0])
-            dump("skeleton_groups_applied", "\n".join(f"{a}-{b}" for a, b in groups))
-            shots, pictures = skeleton.regroup(cues, groups, profile,
-                                               plan["max_hold"], anim_last)
-            picture_scenes = None
-            if beat_starts:
-                ordered = sorted(beat_starts)
-                # every picture belongs to the chapter of the last BEAT
-                # marker at or before it; the first chapter starts at the
-                # first picture (count + 1)
-                scene_of_picture = {
-                    p.n: 1 + sum(1 for s in ordered if s <= p.first)
-                    for p in pictures}
-                picture_scenes = {m: sc for p in pictures
-                                  for m in p.members
-                                  for sc in (scene_of_picture[p.n],)}
-                log(f"main beats: {len(ordered) + 1} scene(s) from the "
-                    f"grouping")
-            else:
-                # no markers: the old BEAT-line instruction in the picture
-                # prompt is what produced S13_01...S13_54, so the app splits
-                # the pictures into even chapters instead and the picture
-                # prompt keeps its "do not write BEAT lines" rule
-                chunk = max(1, skeleton.MAX_SUBBEATS_PER_SCENE)
-                picture_scenes = {}
-                for p in pictures:
-                    sc = 1 + (p.n - 1) // chunk
-                    for m in p.members:
-                        picture_scenes[m] = sc
-                n_scenes = 1 + (len(pictures) - 1) // chunk
-                log(f"no chapter markers in the grouping - the app split the "
-                    f"{len(pictures)} pictures into {n_scenes} even scene(s) "
-                    f"(writer BEAT lines are not asked for)")
-            grouped = True
-            rules = skeleton.rules_text(profile, allow_refs, supplied, note,
-                                        density=density, limit=limit,
-                                        grouped=True,
-                                        template_text=template_text,
-                                        cues=cues,
-                                        beats_from_grouping=bool(picture_scenes))
-            log(f"{writer}: grouped {len(grouping_cues)} cues into "
-                f"{len(groups)} picture groups; {len(shots)} camera shots")
-        except webchat.ChatLost as exc:
-            raise StageFailed("Chat lost during cue grouping; no unreviewed grouping was used") from exc
-    batches = skeleton.chunks(pictures)
-    total = len(pictures)
-    log(f"{writer}: asking for the pictures - {total} pictures, "
-        f"{len(shots)} camera shots in {len(batches)} part(s)")
-    ans = skeleton.Answers()
-    for i, batch in enumerate(batches):
-        ready = (lambda t, b=batch: skeleton.covers(t, b))
-        try:
-            if i == 0 and chat_open:
-                reply = _send(
-                    transport, writer,
-                    lambda f: skeleton.first_prompt(
-                        rules, ctx["visual_style"], ctx["bible"], direction,
-                        batch, total, grouped),
-                    log, new_chat=False, ready=ready)
-            elif i == 0:
-                reply, _ = _send_in(
-                    transport, writer,
-                    lambda f: skeleton.first_prompt(
-                        rules, ctx["visual_style"], ctx["bible"], direction,
-                        batch, total),
-                    log, continuing, ready=ready)
-            else:
-                reply = _send(transport, writer,
-                              lambda f: skeleton.next_prompt(batch, total),
-                              log, new_chat=False, ready=ready)
-            dump(f"skeleton_reply_{i + 1}", reply)
-            ans.update(skeleton.parse_reply(reply))
-            nums = {s.n for s in batch}
-            for attempt in range(2):
-                bad = [p for p in skeleton.problems(
-                           pictures, ans, profile, allow_refs, stems, only=nums,
-                                        style=style_text)]
-                if not bad:
-                    break
-                log(f"{writer}: part {i + 1} - {len(bad)} shot(s) to fix "
-                    f"({bad[0]})")
-                fixed = _send(
-                    transport, writer, lambda f: skeleton.fix_prompt(
-                        bad, [s for s in batch
-                              if f"shot {s.n}:" in " ".join(bad)]),
-                    log, new_chat=False,
-                    ready=lambda t: bool(skeleton.parse_reply(t).answered()
-                                         or skeleton.parse_reply(t).refs))
-                dump(f"skeleton_reply_{i + 1}_fix{attempt + 1}", fixed)
-                ans.update(skeleton.parse_reply(fixed))
-            else:
-                bad = skeleton.problems(pictures, ans, profile, allow_refs,
-                                        stems, only=nums,
-                                        style=style_text)
-            if bad:
-                raise skeleton.SkeletonError(
-                    f"part {i + 1} still has problems: {'; '.join(bad[:3])}")
-        except webchat.ChatLost as exc:
-            raise skeleton.SkeletonError(f"the chat was lost ({exc})") from exc
-        log(f"{writer}: part {i + 1}/{len(batches)} done "
-            f"({len(ans.new)} image(s), {len(ans.reuse)} reused so far)")
-    if grouped:
-        ans = skeleton.expand(pictures, ans)
-    data = skeleton.assemble(shots, ans, ctx["visual_style"], supplied,
-                             allow_refs, profile,
-                             scenes=picture_scenes if grouped else None)
-    dump("plan_reply_1", json.dumps(data, ensure_ascii=False, indent=1))
-    return data
-
-
 # faults the app's own code checks already decide (with the tolerance): when
 # those checks came back clean, the judge's arithmetic on them is wrong
 # Whatever label the judge puts in front ("MAXIMUM HOLD", "MAXIMUM ST HOLD",
@@ -1253,8 +1025,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                  judge: str = "deepseek", rounds: int | None = MAX_ROUNDS,
                  log: Callable[[str], None] = print,
                  should_stop: Callable[[], bool] = lambda: False,
-                 resume: bool = False, same_chats: bool = False,
-                 use_skeleton: bool = False) -> dict:
+                 resume: bool = False, same_chats: bool = False) -> dict:
     ctx = ep._context(cfg, pid)
     plan = ep._plan_inputs(cfg, pid, ctx)
     cues = plan["cues"]
@@ -1265,51 +1036,23 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
     kept = (adopt_chats(cfg, pid, transport, {writer, judge}, log)
             if same_chats else set())
     data = _saved_plan(cfg, pid) if resume else None
-    grouping_judge_state = {"continuing": judge in kept}
-    skeleton_plan = False       # the writer only ever saw numbered shots
     if data is not None:
         log(f"reusing the plan from the saved {writer} replies "
             f"(the writer is not asked again)")
     else:
         if resume:
             log("no readable saved plan - asking the writer as usual")
-        tried = False
-        if use_skeleton:
-            tried = True
-            try:
-                data = _skeleton_plan(cfg, pid, ctx, plan, transport, writer,
-                                      log, dump, writer in kept, judge, should_stop,
-                                      grouping_judge_state)
-                skeleton_plan = True
-            except skeleton.SkeletonError as exc:
-                # a channel the skeleton cannot plan (reveal, sound effects,
-                # text overlays, same writer and judge, a missing custom
-                # brief) always falls back to the whole-JSON flow; a failure
-                # MID-run only falls back on a reveal channel (its legacy
-                # behaviour) - otherwise the run stops rather than paying for
-                # a second full plan after the first one already did work
-                if isinstance(exc, skeleton.SkeletonUnsupported) \
-                        or getattr(plan["profile"], "reveal", False):
-                    data = None
-                    log(f"line-by-line plan not used ({exc}) - asking for "
-                        f"the whole shotlist as before")
-                else:
-                    raise StageFailed(
-                        f"Skeleton planning could not complete: {exc}. "
-                        "The full-shotlist planner was not started.") from exc
-        if data is None:
-            reply, w_cont = _send_in(
-                transport, writer,
-                lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
-                writer in kept and not tried, ready=_has_json)
-            data = _collect_plan(transport, writer, reply, log, dump)
+        reply, w_cont = _send_in(
+            transport, writer,
+            lambda f: ep.shotlist_planner_prompt(cfg, pid, f), log,
+            writer in kept, ready=_has_json)
+        data = _collect_plan(transport, writer, reply, log, dump)
     log(f"{writer}: plan received ({len(data.get('shots') or [])} shots, "
         f"{len(data.get('images') or [])} images)")
 
     last_problem = ""
     judge_open = False          # the judge keeps ONE chat, like the writer
-    # Send full image-review instructions, but retain the grouping chat.
-    judge_cont = bool(grouping_judge_state.get("continuing"))
+    judge_cont = judge in kept  # ...and may start in the previous stage's
     best = None                     # (badness, data, problem): the plan to keep
     rnd = 0
     prev_text, same_run = None, 0   # the writer handing back the SAME plan
@@ -1395,12 +1138,7 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             hard = local + [f for f in faults if f not in local]
             weak = _weak_list(verdict)
             fixes = [str(x) for x in (verdict.get("fixes") or [])]
-            if dropped:
-                fixes = [x for x in fixes if not re.match(
-                    r"\s*(split|fix static|(change|switch)\b.*\bfrom ST\b)",
-                    x, re.I)]
-            passed = (verdict.get("pass") is True
-                      or (bool(dropped) and not faults and not weak)) and not hard
+            passed = verdict.get("pass") is True and not hard
             ratio = verdict.get("detailed_ratio")
             log(f"round {rnd}: {len(hard)} fault(s), {len(weak)} weak shot(s), "
                 f"detailed {ratio} - "
@@ -1449,11 +1187,6 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                                         studio.parse_shotlist_patch(t)))
             except webchat.ChatLost:
                 got = None
-            if got is None and skeleton_plan:
-                raise StageFailed(
-                    f"The {writer} chat is gone, so the line-by-line plan "
-                    f"cannot be continued (a new chat would start from the "
-                    f"beginning). Open the chat again or rerun the shotlist.")
             if got is None:
                 log(f"the {writer} chat is gone - starting a new one with "
                     f"the plan and the points to fix")
@@ -1469,17 +1202,6 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
                 log(f"patch check: {len(unknown)} unknown key(s), "
                     f"{len(missing)} asset(s) not answered")
             data = studio.apply_shotlist_patch(data, good)
-        elif skeleton_plan:
-            # the writer never saw this plan as JSON: no rewrite request and
-            # no new chat. The app cuts over-long shots itself; anything else
-            # is reported instead of restarting the work from the beginning.
-            n = _auto_split_long(data, cues, briefs.hold_limit(
-                plan["max_hold"], plan["profile"].max_hold_tol))
-            if not n:
-                last_problem = "; ".join(hard[:3])
-                log(f"faults the app cannot fix itself: {last_problem}")
-                break
-            log(f"the app split {n} over-long shot(s) itself - checking again")
         else:
             log(f"sending the faults back to {writer} for a corrected plan")
             prev = data
@@ -1524,13 +1246,13 @@ def script_job(cfg, pid: int, writer: str, judge: str, log,
 def shotlist_job(cfg, pid: int, writer: str, judge: str, log,
                  should_stop: Callable[[], bool] = lambda: False,
                  options: dict | None = None, resume: bool = False,
-                 same_chats: bool = True, use_skeleton: bool = True) -> None:
+                 same_chats: bool = True) -> None:
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
         try:
             run_shotlist(cfg, pid, t, writer, judge, log=log,
                          should_stop=should_stop, resume=resume,
-                         same_chats=same_chats, use_skeleton=use_skeleton)
+                         same_chats=same_chats)
         finally:
             save_chats(cfg, pid, t)

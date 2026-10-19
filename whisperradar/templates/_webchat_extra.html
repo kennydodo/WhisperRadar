@@ -13,6 +13,16 @@
     deepseek: [['DeepThink', 'deepseek_deepthink', [['on', 'On'], ['off', 'Off']], "DeepSeek's DeepThink switch"],
 ]
   };
+  var ACCOUNTS = [
+    {key: 'deepseek_writer', name: 'DeepSeek — Writer account'},
+    {key: 'deepseek_judge', name: 'DeepSeek — Judge account'}
+  ];
+  ACCOUNTS.forEach(function (account) {
+    var name = account.key + '_deepthink';
+    BUILTIN[account.key] = [name];
+    BUILTIN_CTRLS[account.key] = [['DeepThink', name,
+      [['on', 'On'], ['off', 'Off']], account.name + ' DeepThink switch']];
+  });
   function sel(name, items, title) {
     var s = document.createElement('select'); s.name = name; s.title = title || '';
     items.forEach(function (it) { s.add(new Option(it[1], it[0])); });
@@ -23,7 +33,7 @@
     l.appendChild(el); return l;
   }
   document.querySelectorAll('select[name=writer], select[name=judge], select[name=autorun_writer], select[name=autorun_judge]').forEach(function (s) {
-    SITES.forEach(function (site) {
+    ACCOUNTS.concat(SITES).forEach(function (site) {
       if (![].some.call(s.options, function (o) { return o.value === site.key; })) {
         s.add(new Option(site.name, site.key));
       }
@@ -66,7 +76,8 @@
       grp.style.cssText = 'display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap';
       var tag = document.createElement('span'); tag.className = 'muted';
       tag.style.fontSize = '12px';
-      tag.textContent = (key === 'zai' ? 'z.ai' : 'DeepSeek') + ':';
+      var account = ACCOUNTS.find(function (a) { return a.key === key; });
+      tag.textContent = (account ? account.name : (key === 'zai' ? 'z.ai' : 'DeepSeek')) + ':';
       grp.appendChild(tag);
       BUILTIN_CTRLS[key].forEach(function (c) {
         if (!form.querySelector('select[name=' + c[1] + ']'))
@@ -191,6 +202,10 @@
       if (o.deepseek) {
         set('deepseek_deepthink', o.deepseek.deepthink === false ? 'off' : 'on');
       }
+      ACCOUNTS.forEach(function (account) {
+        var c = o[account.key];
+        if (c) set(account.key + '_deepthink', c.deepthink === false ? 'off' : 'on');
+      });
       SITES.forEach(function (site) {
         var c = o[site.key]; if (!c) return;
         set('wc_' + site.key + '_model', c.model || '');
