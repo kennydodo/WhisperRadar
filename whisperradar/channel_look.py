@@ -324,11 +324,34 @@ def parse_reply(reply: str) -> tuple[str, str]:
     return text.strip(), ""
 
 
+def style_guide_ready(text: str) -> bool:
+    """A COMPLETE writing-style guide: the first and the last required
+    sections are both present (case-insensitive - the chat renders markdown
+    headers without the ## marks) and the body is guide-sized. Lets the
+    web-chat wait skip the 240 s stuck-generating timer when ChatGPT's flag
+    sticks after the text is done (the style fetch is the longest prompt in
+    the app, so this saves minutes)."""
+    t = (text or "").lower()
+    return ("voice & tone" in t and "things to avoid" in t
+            and len(t.strip()) >= 2000)
+
+
+def _bible_ready(text: str) -> bool:
+    """Both marker lines of the frames-based look reply are in, and the bible
+    part (the last block) is non-trivial."""
+    t = str(text or "")
+    s, b = t.find(STYLE_MARK), t.find(BIBLE_MARK)
+    if s < 0 or b < 0:
+        return False
+    return len(t[b:].strip()) >= 250
+
+
 def _ask(transport, site, name, videos, frames_dir: Path, send: list[str],
          hint: str, log) -> tuple[str, str]:
     log(f"asking the web chat with {len(send)} frame(s)")
     reply = transport.ask(site, build_prompt(name, videos, send, hint),
-                          files=[str(frames_dir / n) for n in send])
+                          files=[str(frames_dir / n) for n in send],
+                          ready=_bible_ready)
     style, bible = parse_reply(reply)
     if not style:
         raise RuntimeError("The chat answered with nothing usable")
@@ -431,7 +454,8 @@ def _ask_writing(cfg, transport, site, name, genre, videos, hint, log) -> str:
                             studio.style_variant(cfg=cfg))
     log(f"asking the web chat for the writing style from {len(videos)} "
         "video transcript(s)")
-    reply = str(transport.ask(site, prompt) or "").strip()
+    reply = str(transport.ask(site, prompt, ready=style_guide_ready)
+                or "").strip()
     if not reply:
         raise RuntimeError("The chat answered the writing style with nothing "
                            "usable")
