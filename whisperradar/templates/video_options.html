@@ -42,17 +42,6 @@
   {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
 
-  <form method="get" class="panel">
-    <label>Applies to
-      <select name="channel" onchange="this.form.submit()">
-        <option value="">Everything (global)</option>
-        {% for c in own_channels %}
-        <option value="{{ c.id }}" {% if scope == c.id|string %}selected{% endif %}>Channel: {{ c.name }}</option>
-        {% endfor %}
-      </select>
-    </label>
-  </form>
-
   <form method="post" action="/video-options/save">
     <input type="hidden" name="channel" value="{{ scope }}">
     {% for g in groups %}

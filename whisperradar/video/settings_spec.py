@@ -52,6 +52,14 @@ HELP = {
     "motion.static_every_min_shots": "A still shot comes back at least every this many shots...",
     "motion.static_every_max_shots": "...and at most every this many.",
     "motion.motion_duration_ms": "0 = the whole shot.",
+    "transitions.cut_percent": "Share of the cuts inside a scene that are a hard cut (no transition). "
+                               "The three shares are scaled to add up to 100.",
+    "transitions.crossfade_percent": "Share of the cuts inside a scene that use the transition kind above (crossfade).",
+    "transitions.slide_left_percent": "Share of the cuts inside a scene that slide left. Only shots that also "
+                                      "zoom or pan get a slide, never a still shot.",
+    "transitions.slide_right_percent": "Share of the cuts inside a scene that slide right.",
+    "transitions.slide_up_percent": "Share of the cuts inside a scene that slide up.",
+    "transitions.slide_down_percent": "Share of the cuts inside a scene that slide down.",
     "transitions.alignment": "late = the transition ends on the cue, centered = straddles it.",
     "render.preview_bframes": "Keep at 0 for previews (more B-frames made the zoom shimmer).",
     "render.encoder": "auto picks NVENC / AMF / QSV when present, else libx264.",

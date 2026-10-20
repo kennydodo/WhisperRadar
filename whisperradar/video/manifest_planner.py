@@ -8,6 +8,7 @@ from typing import Optional
 
 from . import models as m
 from . import reveal_paths
+from . import transition_mix
 from .motion_engine import MotionEngine
 from .netfmt import fixed, general, optional, signed
 from .options import MotionOptions, ProjectOptions
@@ -268,6 +269,13 @@ def plan(manifest, images, options: ProjectOptions, audio_frames: int, overrides
         timeline.scenes.append(m.Scene(scene_id, group[0].start_frame,
                                        group[-1].start_frame + group[-1].duration_frames, group))
 
+    mix = transition_mix.apply(timeline, options)
+    if mix["cut"] or mix["slide"]:
+        issues.append(_issue(
+            m.INFO, "TRANSITION_MIX",
+            f"Transition mix over {mix['candidates']} cut(s) inside scenes: "
+            f"{mix['cut']} hard cut, {mix['soft']} {options.transitions.kind}, {mix['slide']} slide."))
+
     coverage = _build_coverage(manifest, assets_by_id, clips, audio_frames, fps, missing_assets, issues)
     return ManifestPlanResult(timeline, coverage, issues)
 
@@ -429,10 +437,12 @@ def _apply_transitions(clips, shots, fps, options, overrides):
 
         editor_cut = overrides.cut_for(incoming.file_path)
         if editor_cut is not None:
+            incoming.transition_fixed = True
             editor_frames = round(options.transitions.duration_seconds * fps)
             incoming_tr = (None if editor_cut == "none" or editor_frames < 2
                            else m.TransitionIn(editor_cut, editor_frames))
         elif transition is not None and ttype != "CUT":
+            incoming.transition_fixed = True
             if ttype == "CROSSFADE" and frames >= 2:
                 incoming_tr = m.TransitionIn("crossfade", frames)
             elif ttype == "DIP" and frames >= 2:
@@ -604,6 +614,7 @@ def _expand_reveals(clips, reveals, fps, options, issues):
                 motion=clip.motion, motion_source=clip.motion_source, image_type=clip.image_type,
                 easing=clip.easing, start_viewport=clip.start_viewport, end_viewport=clip.end_viewport,
                 motion_duration_frames=clip.motion_duration_frames, transition=clip.transition,
+                transition_fixed=clip.transition_fixed,
                 reveal=m.RevealInfo(
                     layout=layout, count=count, visible=visible, base_shot_id=clip.shot_id,
                     source_path=clip.file_path if sources is None else None,

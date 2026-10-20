@@ -271,6 +271,10 @@ class VideoClip:
     # Explicit explainer source kind: file_path is a PREPARED silent graphics
     # clip (out/explainer). Never receives motion/zoompan/reveal treatment.
     explainer_clip: bool = False
+    # Planning-time marker (not saved): this clip's incoming transition was
+    # chosen by hand (editor cut) or by the shotlist, so the transition mix
+    # leaves it alone.
+    transition_fixed: bool = False
 
     def to_dict(self) -> dict:
         d: dict = {"file_path": self.file_path, "scene_id": self.scene_id}

@@ -78,6 +78,16 @@ class TransitionOptions:
     alignment: str = m.LATE
     duration_seconds: float = 0.5
     reveal_fade_seconds: float = 0.25
+    # The mix of the cuts INSIDE a scene (the values are scaled to add up to
+    # 100): how many are a hard cut, a crossfade (transitions.kind) or a slide
+    # in each direction. Defaults: every cut keeps the transition kind above,
+    # as always.
+    cut_percent: float = 0.0
+    crossfade_percent: float = 100.0
+    slide_left_percent: float = 0.0
+    slide_right_percent: float = 0.0
+    slide_up_percent: float = 0.0
+    slide_down_percent: float = 0.0
 
 
 @dataclass
@@ -172,6 +182,12 @@ class ProjectOptions:
         if mo.static_every_min_shots < 1 or mo.static_every_min_shots > mo.static_every_max_shots:
             errors.append("Static cadence must satisfy 1 <= min shots <= max shots.")
         tr = self.transitions
+        mix = (tr.cut_percent, tr.crossfade_percent, tr.slide_left_percent,
+               tr.slide_right_percent, tr.slide_up_percent, tr.slide_down_percent)
+        if min(mix) < 0:
+            errors.append("Transition mix percentages cannot be negative.")
+        elif sum(mix) <= 0:
+            errors.append("Transition mix: at least one transition must be above 0.")
         if tr.enabled and tr.duration_seconds <= 0:
             errors.append("Transition duration must be positive when transitions are enabled.")
         n = self.naming

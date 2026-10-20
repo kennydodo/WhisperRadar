@@ -9,6 +9,7 @@ from . import manifest_planner
 from . import models as m
 from . import scene_inference
 from . import timing_engine
+from . import transition_mix
 from .motion_engine import MotionContext, MotionDecision, MotionEngine
 from .netfmt import fixed
 from .options import ProjectOptions
@@ -67,6 +68,12 @@ def plan(inventory: ProjectInventory, audio_duration_seconds: float,
     timeline = _assemble_timeline(inventory, timing, audio_duration_seconds, options, issues)
     if not verify_coverage(timeline, audio_duration_seconds, issues):
         return PlanningResult(False, None, issues)
+    mix = transition_mix.apply(timeline, options)
+    if mix["cut"] or mix["slide"]:
+        issues.append(_issue(
+            m.INFO, "TRANSITION_MIX",
+            f"Transition mix over {mix['candidates']} cut(s) inside scenes: "
+            f"{mix['cut']} hard cut, {mix['soft']} {options.transitions.kind}, {mix['slide']} slide."))
     return PlanningResult(True, timeline, issues)
 
 
@@ -275,6 +282,8 @@ def _assemble_timeline(inventory, timing, audio_seconds, options, issues) -> m.T
             else:
                 clip = _make_clip(timed, image.name.type, final, easing, plan_.start, plan_.end, None)
 
+            if inventory.overrides.cut_for(timed.file_path) is not None:
+                clip.transition_fixed = True
             scene_clips.append(clip)
             previous = effective_motion
             previous_scene_id = scene.scene_id
