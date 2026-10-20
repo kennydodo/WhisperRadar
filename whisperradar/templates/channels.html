@@ -185,7 +185,7 @@
         <td>{{ ch["name"] }}
           {% if ch["description"] %}<div class="muted" style="font-size:12px">{{ ch["description"] }}</div>{% endif %}
           <div class="muted mono" style="font-size:11px">
-            {{ ch["default_engine"] or "inherit" }} &middot; {{ ch["default_render_mode"] or "inherit" }} &middot; upscale {{ ch["default_upscale"] if ch["default_upscale"] is not none else "inherit" }}
+            {{ ch["default_engine"] or "inherit" }} &middot; {{ ch["default_render_mode"] or "inherit" }}
             {%- if ch["default_voice"] %} &middot; {{ ch["default_voice"] }}{% endif %}
             {%- if ch["per_day"] is not none %} &middot; {{ ch["per_day"] }}/day{% endif %}
             {%- if ch["run_window_start"] and ch["run_window_end"] %} &middot; runs {{ ch["run_window_start"] }}-{{ ch["run_window_end"] }}{% endif %}
@@ -350,32 +350,6 @@
                   {% if ch['default_render_mode'] and ch['default_render_mode'] not in ['flow', 'api'] %}
                   <option value="{{ ch['default_render_mode'] }}" selected>{{ ch['default_render_mode'] }} (saved)</option>
                   {% endif %}
-                </select>
-              </label>
-              <label>upscale
-                <select name="default_upscale">
-                  <option value="">inherit</option>
-                  {% set cur_up = 2 if ch['default_upscale'] == 3 else ch['default_upscale'] %}
-                  {% for opt, lbl in upscale_labels.items() %}
-                  <option value="{{ opt }}" {{ 'selected' if cur_up == opt else '' }}>{{ lbl }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>render resolution
-                <select name="render_resolution" data-global="{{ global_render_resolution }}">
-                  <option value="">inherit</option>
-                  {% for r in render_resolutions %}
-                  <option value="{{ r }}" {{ 'selected' if ch['render_resolution'] == r else '' }}>{{ render_resolution_labels[r] }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label class="flow-native-level" style="display:none">upscale level (Flow native)
-                <select name="flow_native_upscale"
-                        title="Flow native downloads the stills at 1376x768; one local Real-ESRGAN pass then upscales them to this level (both engines, no Renderly backend)">
-                  <option value="">inherit</option>
-                  {% for t in native_tiers %}
-                  <option value="{{ t }}" {{ 'selected' if ch['flow_native_upscale'] == t else '' }}>{{ native_tier_labels[t] }}</option>
-                  {% endfor %}
                 </select>
               </label>
               <label>missing references
@@ -1035,44 +1009,6 @@
         });
         ctl.insertAdjacentElement('afterend', b);
       });
-    });
-  })();
-</script>
-<script>
-  // Render resolution and Upscale tier are one decision: changing either moves
-  // the other; "inherit" on one makes the other inherit too.
-  (function () {
-    var R2U = {'1080p': '1', '2k': '2', '4k': '4', 'flow-native': '0', '': ''};
-    var U2R = {'1': '1080p', '2': '2k', '4': '4k', '0': 'flow-native', '': ''};
-    document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
-      var res = form.querySelector('select[name="render_resolution"]');
-      var up = form.querySelector('select[name="default_upscale"]');
-      if (!res || !up) return;
-      res.addEventListener('change', function () {
-        if (R2U[res.value] !== undefined) up.value = R2U[res.value];
-      });
-      up.addEventListener('change', function () {
-        if (U2R[up.value] !== undefined) res.value = U2R[up.value];
-        res.dispatchEvent(new Event('change'));
-      });
-    });
-  })();
-</script>
-<script>
-  // The Flow native upscale level only means something when the channel's
-  // resolved Render resolution (its own pick, else the global one) is Flow native.
-  (function () {
-    function sync(form) {
-      var sel = form.querySelector('select[name="render_resolution"]');
-      var box = form.querySelector('.flow-native-level');
-      if (!sel || !box) return;
-      var res = sel.value || sel.getAttribute('data-global') || '';
-      box.style.display = (res === 'flow-native') ? '' : 'none';
-    }
-    document.querySelectorAll('form[action="/my-channels/edit"]').forEach(function (form) {
-      sync(form);
-      var sel = form.querySelector('select[name="render_resolution"]');
-      if (sel) sel.addEventListener('change', function () { sync(form); });
     });
   })();
 </script>

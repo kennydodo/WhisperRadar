@@ -276,17 +276,10 @@ class ImgToVideoTests(_Base):
 
 
 class PageTests(_Base):
-    def test_channel_dropdown_has_no_tier_3(self):
+    def test_channel_page_has_no_resolution_or_upscale_pickers(self):
         html = self.client.get("/my-channels").get_data(as_text=True)
-        self.assertIn("2 - 2K 2560x1440", html)
-        self.assertIn("4 - 4K 3840x2160", html)
-        self.assertNotIn('<option value="3"', html.split('name="default_upscale"')[1][:900])
-
-    def test_a_legacy_3_shows_as_2_selected(self):
-        db.update_own_channel(self.conn, self.oc, default_upscale=3)
-        html = self.client.get("/my-channels").get_data(as_text=True)
-        seg = html.split('name="default_upscale"')[1][:900]
-        self.assertRegex(seg, r'<option value="2" selected>')
+        self.assertNotIn('name="default_upscale"', html)
+        self.assertNotIn('name="render_resolution"', html)
 
     def test_settings_dropdown_has_no_tier_3_and_is_synced(self):
         html = self.client.get("/settings").get_data(as_text=True)
@@ -295,10 +288,9 @@ class PageTests(_Base):
         self.assertIn("1 - HD 1920x1080", seg)
         self.assertIn("var R2U", html)
 
-    def test_the_sync_script_is_on_both_pages(self):
-        for url in ("/settings", "/my-channels"):
-            html = self.client.get(url).get_data(as_text=True)
-            self.assertIn("'flow-native': '0'", html, url)
+    def test_the_sync_script_is_on_the_settings_page(self):
+        html = self.client.get("/settings").get_data(as_text=True)
+        self.assertIn("'flow-native': '0'", html)
 
 
 class ApplyAllStillWorks(_Base):

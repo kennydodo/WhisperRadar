@@ -112,7 +112,8 @@ class FlowNativeLevelSaveTests(unittest.TestCase):
         conn.close()
 
     def test_pages_render_the_picker(self):
-        self.assertIn(b"flow_native_upscale", self.client.get("/my-channels").data)
+        # the channel page no longer carries these pickers (global Settings only)
+        self.assertNotIn(b'name="flow_native_upscale"', self.client.get("/my-channels").data)
         self.assertIn(b"flow_native_upscale", self.client.get("/settings").data)
 
 
