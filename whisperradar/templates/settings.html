@@ -93,7 +93,6 @@
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
   <div class="tabs" id="settings-tabs">
-    <button type="button" class="tab" data-tab="Tools">Tools</button>
     {% for group_name, _spec in groups %}
     <button type="button" class="tab" data-tab="{{ group_name }}">{{ group_name }}</button>
     {% endfor %}
@@ -102,58 +101,6 @@
     <button type="button" class="subtab" data-sub="webchat">Web Chat LLM</button>
     <button type="button" class="subtab" data-sub="api">API LLM</button>
     <button type="button" class="subtab" data-sub="codex">Codex &amp; Claude Code</button>
-  </div>
-
-  <div class="tabpanel" data-tab="Tools">
-  <div class="panel">
-    <div class="muted" style="font-size:12px; margin-bottom:10px">
-      The Renderly API lives in this repo (engines\renderly-api). Start and
-      stop it here instead of keeping a console window open - WhisperRadar
-      only ever stops a service it started itself. The <b>FlowBatch</b> engine
-      needs no service at all: it is a CLI that drives its own browser.
-    </div>
-    {% macro svc(name, label, up, port, note) %}
-    <div class="inline" style="justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border)">
-      <div>
-        <b>{{ label }}</b>
-        <span class="mono muted" style="font-size:12px">:{{ port }}</span>
-        {% if up is none %}<span class="badge warn">checking</span>
-        {% elif up %}<span class="badge on">running</span>
-        {% else %}<span class="badge off">stopped</span>{% endif %}
-        <div class="muted" style="font-size:12px">{{ note }}</div>
-      </div>
-      <div style="white-space:nowrap">
-        <form method="post" action="/services/{{ name }}/start" style="display:inline">
-          <button type="submit" class="secondary" {{ 'disabled' if up else '' }}>Start</button>
-        </form>
-        <form method="post" action="/services/{{ name }}/stop" style="display:inline">
-          <button type="submit" class="ghost" {{ 'disabled' if not up else '' }}>Stop</button>
-        </form>
-      </div>
-    </div>
-    {% endmacro %}
-    {{ svc("renderly", "Renderly backend", services.renderly, "8022",
-           "Gemini image API, imports and upscaling - needed by the Renderly engine") }}
-    <div class="inline" style="justify-content:space-between; padding:6px 0">
-      <div>
-        <b>FlowBatch</b>
-        <span class="muted mono" style="font-size:12px">no port</span>
-        {% if flowbatch_ready %}<span class="badge on">installed</span>
-        {% else %}<span class="badge off">not configured</span>{% endif %}
-        <div class="muted" style="font-size:12px">
-          Flow CLI (engines\flowbatch in this repo). Spawns its own
-          browser per batch; nothing to keep running.
-        </div>
-      </div>
-      <div></div>
-    </div>
-    <div style="margin-top:16px">
-      <button type="submit" form="settings-form">Save settings</button>
-      <span class="muted" style="font-size:12px; margin-left:10px">
-        saves every tab, not just this one
-      </span>
-    </div>
-  </div>
   </div>
 
   <script>
