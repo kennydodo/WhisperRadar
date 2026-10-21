@@ -514,6 +514,11 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
             f"to hold {profile.min_hold:g}-{cap:g}s. More than "
             f"{briefs.MIN_HOLD_MAX_SHORT_SHARE:.0%} of the shots (the last "
             f"one is exempt) holding under {profile.min_hold:g}s is a fault.")
+    if briefs._allows(profile, "PU") or briefs._allows(profile, "PD"):
+        lines.append(
+            "TILT LANDING: every PU/PD shot should carry a numeric \"land\" (0-100, how far "
+            "down the picture its main subject sits). A PU with land above 45, a PD with land "
+            "below 55, or a PU/PD without land is a fault: say which shots.")
     if profile.allowed:
         only = "/".join(profile.allowed)
         lines.append(f"MOTION CODES: only {only} is allowed on this "

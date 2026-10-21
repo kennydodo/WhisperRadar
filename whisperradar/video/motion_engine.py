@@ -8,6 +8,8 @@ from typing import Optional
 from . import models as m
 from .options import MotionOptions, OutputOptions
 
+# a PU/PD "land" must leave at least this share of the full tilt, or it is ignored
+LAND_MIN_TRAVEL = 0.25
 MIN_TRAVEL_PIXELS = 32
 AUTO_POOL = (m.STATIC, m.ZOOM_IN, m.ZOOM_OUT, m.PAN_LEFT, m.PAN_RIGHT)
 
@@ -136,7 +138,8 @@ class MotionEngine:
 
     def plan_clip(self, motion: str, source: str, pan_right: bool,
                   image_width: int, image_height: int,
-                  duration_seconds: Optional[float] = None) -> ClipMotionPlan:
+                  duration_seconds: Optional[float] = None,
+                  land: Optional[float] = None) -> ClipMotionPlan:
         warnings: list = []
         out_aspect = self._output.width / self._output.height
         image_aspect = image_width / image_height
@@ -207,6 +210,18 @@ class MotionEngine:
             if source == m.EXPLICIT_CODE:
                 start_y = spare_y if motion == m.PAN_UP else 0
                 end_y = 0 if motion == m.PAN_UP else spare_y
+                if land is not None:
+                    # the shotlist says where the subject sits (percent down the
+                    # picture): the tilt ends with that point centred, not on the edge
+                    want = min(max(land, 0.0), 100.0) / 100.0 * image_height - fit_height / 2.0
+                    want = min(max(want, 0.0), spare_y)
+                    if abs(want - start_y) >= LAND_MIN_TRAVEL * spare_y:
+                        end_y = want
+                    else:
+                        warnings.append(
+                            f"land {land:g} leaves almost no {_motion_name(motion)} travel "
+                            "(the subject sits where the move starts); sweeping the whole "
+                            "picture instead.")
             else:
                 travel = self._paced_travel(self._output.height,
                                             fit_height / self._output.height,

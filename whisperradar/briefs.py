@@ -72,6 +72,18 @@ MIX_MIN_ZOOM_SHOTS = 10
 # ---- slot texts: the STANDARD preset, extracted verbatim from the brief ----
 # (tests/test_brief_profiles.py proves the default render equals the
 # original brief, so these cannot drift from it unnoticed)
+# PU/PD shots say where their subject sits so the tilt can end on it, not on the
+# picture's edge (shot field `land`, read by the video planner).
+LAND_RULE = (
+    "- `land` (optional, only on PU and PD shots; a sibling of `motion`, e.g. "
+    "`\"motion\": \"PD\", \"land\": 80`): how far down the picture the shot's main subject sits, "
+    "0 = top edge, 100 = bottom edge - the thing the viewer should be looking at when the tilt stops. "
+    "The tilt ends with that point in the middle of the frame instead of on the picture's edge, so a "
+    "tilt never lands on empty wall, floor or sky. PU travels upward, so its `land` is in the upper "
+    "half (0-45); PD travels downward, so its `land` is in the lower half (55-100). Compose the image so "
+    "the subject really sits there, and give `land` on every PU/PD shot."
+)
+
 STANDARD_SLOTS: dict[str, str] = {
     "HOLD_RULE": (
         "A hold that runs long must carry motion — a long hold on a static frame is never acceptable (ST is only for short holds, Section 7) — and no hold may exceed the channel's maximum (PACING MATH block)."),
@@ -157,6 +169,8 @@ class MotionProfile:
         mx = _num(self.max_hold) if self.max_hold else ""
         out = {k: v.replace("[[MIN]]", mn).replace("[[MAX]]", mx)
                for k, v in values.items()}
+        if "MOTION_FIELD_RULE" in out and (_allows(self, "PU") or _allows(self, "PD")):
+            out["MOTION_FIELD_RULE"] = out["MOTION_FIELD_RULE"].rstrip() + "\n" + LAND_RULE
         mix = mix_text(self)
         if mix and "MOTION_SECTION" in out:
             out["MOTION_SECTION"] = out["MOTION_SECTION"].rstrip() + "\n\n" + mix

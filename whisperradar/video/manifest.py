@@ -44,6 +44,9 @@ class VisualMotion:
     start_scale: Optional[float] = None
     end_scale: Optional[float] = None
     duration_ms: Optional[int] = None
+    # PU/PD only: how far down the picture (0 = top edge, 100 = bottom edge) the
+    # shot's subject sits. The tilt ends there instead of at the picture's edge.
+    land: Optional[float] = None
 
 
 @dataclass

@@ -203,7 +203,7 @@ def parse(json_text: str, issues: list, master_prompt_max_chars: int = 0,
         reveal = _parse_reveal(shot, number, issues)
         entries.append(ShotListEntry(
             _get_string(shot, "shot_id"), first_cue, last_cue, asset_el.strip(),
-            _parse_motion(shot.get("motion")),
+            _parse_motion(shot.get("motion"), shot.get("land")),
             _parse_transition(shot.get("transition")),
             _parse_framing(shot.get("framing")),
             _get_string(shot, "scene"),
@@ -327,14 +327,22 @@ def _parse_sfx(shot: dict, number: int, issues: list):
     return names
 
 
-def _parse_motion(e):
+def _parse_land(v):
+    """`land` on a PU/PD shot: percent down the picture, 0-100. Anything else is ignored."""
+    if _is_num(v) and not isinstance(v, bool) and 0 <= v <= 100:
+        return float(v)
+    return None
+
+
+def _parse_motion(e, land=None):
     if isinstance(e, str):
-        return mf.VisualMotion(e, None, None, None)
+        return mf.VisualMotion(e, None, None, None, _parse_land(land))
     if isinstance(e, dict):
         t = _get_string(e, "type")
         return mf.VisualMotion("STATIC" if t is None else t,
                                _get_number(e, "start_scale"), _get_number(e, "end_scale"),
-                               _get_long(e, "duration_ms"))
+                               _get_long(e, "duration_ms"),
+                               _parse_land(land if land is not None else e.get("land")))
     return None
 
 

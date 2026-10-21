@@ -475,7 +475,8 @@ def _resolve_viewports(shot, asset, motion, motion_source, image, options, issue
     if motion not in (m.STATIC, m.ZOOM_IN, m.ZOOM_OUT):
         pan = MotionEngine(options.motion, options.output).plan_clip(
             motion, motion_source, motion != m.PAN_LEFT, image.width, image.height,
-            duration_seconds=duration_seconds)
+            duration_seconds=duration_seconds,
+            land=getattr(getattr(shot, "motion", None), "land", None))
         for w in pan.warnings:
             issues.append(_issue(
                 m.WARNING, "VIEWPORT",
