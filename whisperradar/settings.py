@@ -327,6 +327,17 @@ SPEC: list[dict] = [
                 "one-image-per-cue is a fault.",
     },
     {
+        "key": "narration_speed", "type": "float", "default": 1.0,
+        "min": 0.5, "max": 2.0,
+        "label": "Narration speed",
+        "help": "1.0 = as the voice engine made it. Above 1 speeds the narration up, "
+                "below 1 slows it down (ffmpeg, the pitch stays). It is applied "
+                "right after the voice is generated, so the subtitles and the "
+                "video follow it; the untouched original is kept next to it. "
+                "Narration sounds natural between about 0.9 and 1.15. A channel can "
+                "set its own value.",
+    },
+    {
         "key": "script_min_rating", "type": "float", "default": 8.5,
         "min": 1.0, "max": 10.0,
         "label": "Script: minimum rating",
@@ -615,7 +626,7 @@ GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Production & images", [
         "default_engine", "default_render_mode", "default_upscale",
-        "images_chunk_size", "images_stop_on_failure",
+        "narration_speed", "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",
         "images_still_busy_wait_minutes", "images_throttle_wait_minutes",
         "images_delay_seconds", "chrome_efficiency_off", "generate_references",
@@ -751,6 +762,8 @@ def for_production(conn, prod) -> dict:
     return {
         "voice": (row_get(prod, "voice") or row_get(own, "default_voice")
                   or None),
+        "narration_speed": float(row_get(own, "narration_speed",
+                                         glob["narration_speed"]) or 1.0),
         "engine": row_get(own, "default_engine", glob["default_engine"]),
         "render_mode": (row_get(prod, "render_mode")
                         or row_get(own, "default_render_mode")

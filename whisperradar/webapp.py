@@ -2510,7 +2510,8 @@ def create_app(cfg) -> Flask:
                 fields["candidate_window_days"] = None
         # script quality gate overrides
         for key, lo, hi in (("script_min_rating", 1.0, 10.0),
-                            ("script_max_overlap", 0.0, 1.0)):
+                            ("script_max_overlap", 0.0, 1.0),
+                            ("narration_speed", 0.5, 2.0)):
             if key in request.form:
                 raw = (request.form.get(key) or "").strip()
                 try:

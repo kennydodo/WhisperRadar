@@ -317,6 +317,13 @@
                   {% endif %}
                 </select>
               </label>
+              <label>narration speed (0.5-2)
+                <input type="number" step="0.01" min="0.5" max="2"
+                       name="narration_speed"
+                       value="{{ ch['narration_speed'] if ch['narration_speed'] is not none else '' }}"
+                       placeholder="inherit" style="width:110px"
+                       title="1.0 = as the voice engine made it. Applied with ffmpeg right after the voice is generated (the pitch stays). Natural range: about 0.9-1.15.">
+              </label>
               <label>image engine
                 <select name="default_engine" class="engine-select">
                   <option value="">inherit</option>

@@ -24,7 +24,7 @@ from collections import Counter
 
 from pathlib import Path
 
-from . import ai33, briefs, db, handover, motion, services, settings, source_prep, studio, transcribe
+from . import ai33, briefs, db, handover, motion, narration_speed, services, settings, source_prep, studio, transcribe
 from . import plan as packplan
 from .cli import format_duration
 
@@ -935,8 +935,14 @@ def _run_audio(cfg, pid: int) -> None:
         audio = studio.find_audio(pdir)
         if not audio:
             raise RuntimeError("TTS produced no audio file")
+        speed = _effective(cfg, pid).get("narration_speed") or 1.0
+        speed_note = ""
+        if narration_speed.is_change(speed):
+            narration_speed.apply(audio, speed, fresh=True)
+            speed_note = f", speed {speed:g}x"
         db.add_step(conn, pid, "audio", "auto",
-                    detail=audio.name + (f", voice {voice}" if voice else ""))
+                    detail=audio.name + (f", voice {voice}" if voice else "")
+                    + speed_note)
     finally:
         conn.close()
 

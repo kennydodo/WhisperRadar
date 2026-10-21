@@ -245,6 +245,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("style", "TEXT"),
                          ("bible", "TEXT"),
                          ("script_min_rating", "REAL"),
+                         # narration speed (ffmpeg atempo after the voice is made); NULL = inherit
+                         ("narration_speed", "REAL"),
                          ("script_max_overlap", "REAL"),
                          ("script_max_attempts", "INTEGER"),
                          ("script_judge_provider", "TEXT"),
@@ -1149,7 +1151,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 _OWN_CHANNEL_FIELDS = {
     "name", "description", "genre", "youtube_handle", "active",
     "handover_default", "video_options",
-    "default_voice", "default_engine", "default_render_mode",
+    "default_voice", "default_engine", "default_render_mode", "narration_speed",
     "default_upscale", "bible_dir", "refs_dir", "style", "bible",
     "flow_project_url", "style_variant", "visual_density", "writing_style",
     "autorun_enabled", "per_day", "topic_pick",
@@ -1232,7 +1234,7 @@ def update_own_channel(conn, oc_id: int, **fields) -> None:
 APPLY_ALL_FIELDS = frozenset({
     "autorun_enabled", "candidate_window_days", "default_engine",
     "default_render_mode", "default_upscale", "flow_native_upscale",
-    "generate_references", "per_day", "producer_llm_provider",
+    "generate_references", "narration_speed", "per_day", "producer_llm_provider",
     "render_resolution", "render_target", "run_window_end",
     "run_window_start", "script_judge_provider", "script_max_attempts",
     "script_max_overlap", "script_min_rating", "shotlist_judge_provider",
