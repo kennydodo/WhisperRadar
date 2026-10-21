@@ -432,7 +432,8 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
         eff.get("brief_max_hold"),
         default_max=eff["shotlist_max_hold_seconds"],
         custom=eff.get("brief_custom"), types=eff.get("brief_types"),
-        reveal=eff.get("brief_reveal"), sfx=eff.get("brief_sfx"))
+        reveal=eff.get("brief_reveal"), sfx=eff.get("brief_sfx"),
+        text_overlays=eff.get("brief_text_overlays"))
     max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
     total_s = studio._srt_seconds(cues[-1]["end"])
     return {"srt_text": srt_text, "cues": cues, "profile": profile,
@@ -508,6 +509,13 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         f"whether or not it has motion. Holds up to that are NOT faults: do "
         f"not report them.",
     ]
+    if profile.text_overlays:
+        lines.append(
+            "TEXT: this channel's renderer draws the text. An image prompt that "
+            "asks for readable text (words, numbers, labels, captions) is a "
+            "fault - it belongs in the shot's \"overlays\" (text, style, "
+            "position, optional start/end seconds from the shot start, anim). "
+            "An overlay must have a position the image prompt keeps empty.")
     if profile.min_hold:
         lines.append(
             f"MINIMUM HOLD: this is a slow-paced channel - shots are meant "

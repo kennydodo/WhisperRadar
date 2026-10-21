@@ -262,6 +262,7 @@ def plan(manifest, images, options: ProjectOptions, audio_frames: int, overrides
     timeline.project_name = v.title if v.title is not None else (v.id if v.id is not None else "manifest")
     final_clips = _expand_reveals([c[0] for c in clips], reveals, fps, options, issues)
     timeline.sounds.extend(_build_sounds(final_clips, shots_list))
+    timeline.overlays.extend(_build_overlays(final_clips, shots_list, fps))
     groups: dict = {}
     for c in final_clips:
         groups.setdefault(c.scene_id, []).append(c)
@@ -645,6 +646,39 @@ def _build_sounds(clips, shots) -> list:
         index = min(clip.reveal.visible - 1, len(names) - 1) if clip.reveal is not None else 0
         sounds.append(m.SoundEffect(name=names[index], start_frame=clip.start_frame))
     return sounds
+
+
+def _build_overlays(clips, shots, fps) -> list:
+    """Text overlays on the final timeline: each shot's `overlays` are placed
+    relative to the shot's own start (a reveal shot's steps count as one shot)."""
+    by_shot: dict = {}
+    for s in shots:
+        if s.overlays and s.shot_id not in by_shot:
+            by_shot[s.shot_id] = s.overlays
+    result: list = []
+    if not by_shot:
+        return result
+    span: dict = {}
+    for clip in clips:
+        sid = clip.reveal.base_shot_id if clip.reveal is not None and clip.reveal.base_shot_id is not None \
+            else clip.shot_id
+        if sid is None or sid not in by_shot:
+            continue
+        first, last = span.get(sid, (clip.start_frame, clip.start_frame + clip.duration_frames))
+        span[sid] = (min(first, clip.start_frame),
+                     max(last, clip.start_frame + clip.duration_frames))
+    for sid, (first, last) in span.items():
+        for item in by_shot[sid]:
+            start = first + (0 if item.get("start") is None else int(round(item["start"] * fps)))
+            end = last if item.get("end") is None else min(last, first + int(round(item["end"] * fps)))
+            if end - start < 2:
+                continue
+            result.append(m.TextOverlay(
+                text=item["text"], style=item.get("style") or "caption",
+                position=item.get("position") or "bottom-center",
+                start_frame=start, end_frame=end, anim=item.get("anim") or "fade"))
+    result.sort(key=lambda o: (o.start_frame, o.end_frame))
+    return result
 
 
 def _build_coverage(manifest, assets_by_id, clips, audio_frames, fps, missing_assets, issues):

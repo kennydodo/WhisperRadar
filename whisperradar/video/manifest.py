@@ -74,6 +74,7 @@ class VisualShot:
     reveal_layout: Optional[str] = None
     reveal_assets: Optional[list] = None
     sfx: Optional[list] = None
+    overlays: Optional[list] = None
 
 
 @dataclass

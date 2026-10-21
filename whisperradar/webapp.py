@@ -2396,6 +2396,10 @@ def create_app(cfg) -> Flask:
             fields["brief_reveal"] = (
                 2 if level == "2" else
                 1 if level in ("1", "on", "true") else None)
+        if "brief_text_overlays" in form:
+            fields["brief_text_overlays"] = (
+                1 if (form.get("brief_text_overlays") or "").strip().lower()
+                in ("1", "on", "true") else None)
         if "brief_sfx" in form:
             name = (form.get("brief_sfx") or "").strip()
             fields["brief_sfx"] = (
@@ -3806,7 +3810,8 @@ def create_app(cfg) -> Flask:
                 custom=eff.get("brief_custom"),
                 types=eff.get("brief_types"),
                 reveal=eff.get("brief_reveal"),
-                sfx=eff.get("brief_sfx")),
+                sfx=eff.get("brief_sfx"),
+                text_overlays=eff.get("brief_text_overlays")),
             brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],

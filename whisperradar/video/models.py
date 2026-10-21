@@ -352,6 +352,26 @@ class SoundEffect:
                 "start_frame": self.start_frame, "duration_frames": self.duration_frames}
 
 
+@dataclass
+class TextOverlay:
+    """Text the renderer draws over the picture (not baked into the image).
+
+    `png_path` is a full-frame transparent PNG made by text_overlays.resolve;
+    the frames are on the final timeline (the shot's start plus its offsets)."""
+    text: str = ""
+    style: str = "caption"
+    position: str = "bottom-center"
+    start_frame: int = 0
+    end_frame: int = 0
+    anim: str = "fade"
+    png_path: str = ""
+
+    def to_dict(self) -> dict:
+        return {"text": self.text, "style": self.style, "position": self.position,
+                "start_frame": self.start_frame, "end_frame": self.end_frame,
+                "anim": self.anim, "png_path": self.png_path}
+
+
 TIMELINE_SCHEMA_VERSION = 3
 
 
@@ -364,9 +384,10 @@ class Timeline:
     audio: AudioTrack = field(default_factory=AudioTrack)
     scenes: list = field(default_factory=list)
     sounds: list = field(default_factory=list)
+    overlays: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "schema_version": self.schema_version, "project_name": self.project_name,
             "resolution": {"width": self.resolution.width, "height": self.resolution.height},
             "fps": self.fps,
@@ -374,6 +395,9 @@ class Timeline:
                       "duration_frames": self.audio.duration_frames},
             "scenes": [s.to_dict() for s in self.scenes],
             "sounds": [s.to_dict() for s in self.sounds]}
+        if self.overlays:                     # absent when empty: ImgToVideo timeline parity
+            d["overlays"] = [o.to_dict() for o in self.overlays]
+        return d
 
     @staticmethod
     def from_dict(d: dict) -> "Timeline":
@@ -395,4 +419,9 @@ class Timeline:
                         Resolution(int(res.get("width", 1920)), int(res.get("height", 1080))),
                         float(d.get("fps", 30.0)),
                         AudioTrack(au.get("file_path", ""), int(au.get("duration_frames", 0))),
-                        scenes, sounds)
+                        scenes, sounds,
+                        [TextOverlay(x.get("text", ""), x.get("style", "caption"),
+                                     x.get("position", "bottom-center"),
+                                     int(x.get("start_frame", 0)), int(x.get("end_frame", 0)),
+                                     x.get("anim", "fade"), x.get("png_path", ""))
+                         for x in d.get("overlays", [])])
