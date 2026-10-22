@@ -215,11 +215,6 @@
         <td style="text-align:right; white-space:nowrap">
           <button type="button" class="ghost" onclick="toggleEdit({{ ch['id'] }})"
                   title="Edit this channel and its production defaults (voice, image engine, render mode, upscale, auto-run, caps, seed folders, Flow project)">edit / defaults</button>
-          <form class="row" method="post" action="/my-channels/sync" style="display:inline">
-            <input type="hidden" name="id" value="{{ ch['id'] }}">
-            <button type="submit" class="ghost"
-                    style="color:var(--accent);border-color:var(--accent)">sync</button>
-          </form>
           <a class="btn ghost" href="/my-channels/export?id={{ ch['id'] }}"
              title="Save this channel's settings as a JSON file">save</a>
           <form class="row" method="post" action="/my-channels/state" style="display:inline">
