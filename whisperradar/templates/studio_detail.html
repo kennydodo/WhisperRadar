@@ -852,7 +852,9 @@
         </div>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/elements" style="gap:8px; align-items:center; flex-wrap:wrap"
               onsubmit="return wrConfirmSubmit(this, 'List the recurring characters, places and objects of the script in a web chat? A browser window opens.')">
-          <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          </div>
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>{{ 'List elements again' if elements_text else 'List elements in web chat' }}</button>
         </form>
       </div>
@@ -869,9 +871,13 @@
         </div>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/beats" style="gap:8px; align-items:center; flex-wrap:wrap"
               onsubmit="return wrConfirmSubmit(this, 'Plan the shots from the script (beats) in a web chat? This replaces shotlist.json when it passes. A browser window opens.')">
-          <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
-          <label><input type="checkbox" name="quality_judge"> Review visual quality after code checks</label>
-          <label>Reviewer <select name="judge"><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          </div>
+          <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <label><input type="checkbox" name="quality_judge"> Review visual quality after code checks</label>
+            <label>Reviewer <select name="judge"><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          </div>
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Plan beats in web chat</button>
         </form>
       </div>
