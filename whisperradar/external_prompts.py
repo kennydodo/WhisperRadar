@@ -485,6 +485,10 @@ def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
         # the brief's bible gate otherwise makes the LLM ask for one
         text += ("\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE: this channel "
                  "has none. Do not ask for one - plan without it.")
+    # the elements step (optional): recurring characters / places / objects,
+    # each with one fixed look
+    from . import elements
+    text += elements.planner_block(elements.load_text(ctx["pdir"]))
     if files is not None:
         files.extend(out_files)
         text = _gate(out_files) + text

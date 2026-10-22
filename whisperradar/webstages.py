@@ -1323,6 +1323,58 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
 
 # ---- entry points the web app calls --------------------------------------------------
 
+def run_elements(cfg, pid: int, transport, writer: str = "zai",
+                 log: Callable[[str], None] = print) -> list[dict]:
+    """Ask the writer chat for the production's element list (recurring
+    characters, places, objects with one fixed look) and save it as
+    elements.json / elements.md. One retry when the reply has no usable list."""
+    from . import elements
+    ctx = ep._context(cfg, pid)
+    pdir = ctx["pdir"]
+    script = ""
+    try:
+        script = (pdir / "script.md").read_text(encoding="utf-8")
+    except OSError:
+        pass
+    if not script.strip():
+        raise StageFailed("There is no script yet - write the script first.")
+    reply = _send(transport, writer,
+                  lambda f: elements.prompt(script, ctx["visual_style"]), log,
+                  ready=_has_json)
+    _dump(cfg, pid, "elements_reply_1", reply)
+    found = elements.parse(reply)
+    if not found:
+        log(f"{writer}: no usable element list in the reply - asking once more")
+        reply = transport.ask(
+            writer,
+            "That was not the JSON I asked for. Reply with ONLY the JSON object "
+            '{"elements": [{"name": ..., "kind": "character|place|object", '
+            '"description": ...}]} in one ```json block, as text in this chat '
+            "(no file, no download).", (), new_chat=False, ready=_has_json)
+        _dump(cfg, pid, "elements_reply_2", reply)
+        found = elements.parse(reply)
+    if not found:
+        raise StageFailed(f"{writer} never gave a readable element list. The raw "
+                          f"replies are in the production's webchat_debug folder.")
+    elements.save(pdir, found)
+    log(f"{len(found)} element(s) saved to elements.md: "
+        + ", ".join(e["name"] for e in found[:12])
+        + (" ..." if len(found) > 12 else ""))
+    return found
+
+
+def elements_job(cfg, pid: int, writer: str, judge: str, log,
+                 should_stop: Callable[[], bool] = lambda: False,
+                 options: dict | None = None) -> None:
+    with web_transport(cfg, log, options) as t:
+        log(f"settings: {t.options}")
+        t.set_stop(should_stop)
+        try:
+            run_elements(cfg, pid, t, writer, log)
+        finally:
+            save_chats(cfg, pid, t)
+
+
 def script_job(cfg, pid: int, writer: str, judge: str, log,
                should_stop: Callable[[], bool] = lambda: False,
                options: dict | None = None) -> None:
