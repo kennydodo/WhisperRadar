@@ -3713,6 +3713,9 @@ def create_app(cfg) -> Flask:
             except ValueError:
                 pass
         cue_count = len([b for b in srt_text.split("\n\n") if b.strip()])
+        from . import elements as _elements
+        elements_text = _elements.load_text(pdir)
+        elements_count = elements_text.count("\n- ") + (1 if elements_text.startswith("- ") else 0)
         images = [i.name for i in studio.find_images(pdir)]
         final = studio.find_final(pdir)
         preview = studio.find_preview(pdir)
@@ -3859,6 +3862,7 @@ def create_app(cfg) -> Flask:
             plan_exists=(pdir / "packaging_plan.json").exists(),
             direction_versions=_version_names(pdir, "direction", stage),
             shotlist_count=shotlist_count, cue_count=cue_count,
+            elements_text=elements_text, elements_count=elements_count,
             msg=request.args.get("msg"), error=request.args.get("error"),
             channel_locked=bool(prod["own_channel_id"]),
         )
@@ -5025,7 +5029,7 @@ def create_app(cfg) -> Flask:
         """Run the script or shotlist stage in web chats (webstages.py): a
         writer chat and a judge chat, the judge's feedback going back to the
         writer. Uses the external-LLM prompts; the API loop is not involved."""
-        if stage not in ("script", "shots"):
+        if stage not in ("script", "shots", "elements"):
             return _studio_url(pid, error="Unknown web-chat stage")
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
@@ -5042,8 +5046,8 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         log = sjob.log.append
-        run = (webstages.script_job if stage == "script"
-               else webstages.shotlist_job)
+        run = {"script": webstages.script_job, "elements": webstages.elements_job
+               }.get(stage, webstages.shotlist_job)
 
         job = sjob._real()
         options = _chat_options(request.form)
@@ -5053,14 +5057,14 @@ def create_app(cfg) -> Flask:
         same_chats = request.form.get("same_chats") == "on"
 
         def worker():
-            if stage == "script":
+            if stage in ("script", "elements"):
                 run(cfg, pid, writer, judge, log, lambda: job.cancel,
                     options)
             else:
                 run(cfg, pid, writer, judge, log, lambda: job.cancel,
                     options, resume, same_chats)
 
-        label = ("script" if stage == "script" else "shotlist")
+        label = {"script": "script", "elements": "elements"}.get(stage, "shotlist")
         sjob.start(worker, f"{label} in web chat ({writer} writes, "
                            f"{judge} judges)")
         return _studio_url(pid, msg=f"Web-chat {label} run started - a "

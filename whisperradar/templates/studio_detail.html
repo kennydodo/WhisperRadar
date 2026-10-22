@@ -840,6 +840,23 @@
         <br>Planning brief: <b>{{ brief_profile.label }}</b>{% if brief_profile.max_hold %} (holds {% if brief_profile.min_hold %}{{ '%g' % brief_profile.min_hold }}-{% else %}up to {% endif %}{{ '%g' % brief_profile.max_hold }}s){% endif %}{% if brief_presentation %}, with a presentation note{% endif %}
         (set per channel on <a href="/my-channels">My Channels</a>).
       </div>
+      <div style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px">
+          <b>Step 1 &middot; Elements</b>
+          <span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">optional</span>
+          {% if elements_text %}<span style="font-size:11px; color:var(--green); border:1px solid var(--green); border-radius:10px; padding:1px 8px">{{ elements_count }} elements ready &middot; the planner will use them</span>
+          {% else %}<span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">none yet &middot; the planner works the old way</span>{% endif %}
+        </div>
+        <div class="muted" style="font-size:12px; margin-bottom:8px">
+          A chat reads the script and lists the recurring characters, places and objects, each with one fixed look, so every image describes them the same way. Skip this step to plan exactly as before.
+        </div>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/elements" style="gap:8px; align-items:center; flex-wrap:wrap"
+              onsubmit="return wrConfirmSubmit(this, 'List the recurring characters, places and objects of the script in a web chat? A browser window opens.')">
+          <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>{{ 'List elements again' if elements_text else 'List elements in web chat' }}</button>
+        </form>
+      </div>
+      <div style="font-weight:600; margin:14px 0 4px">Step 2 &middot; Shotlist</div>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/shots" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
             onsubmit="return wrConfirmSubmit(this, 'Run the shotlist in web chats? A browser window opens and the chats are driven for you.')">
         <span class="muted" style="font-size:12px">No API - drive chat sites:</span>
