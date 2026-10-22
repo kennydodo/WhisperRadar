@@ -9,6 +9,11 @@ from whisperradar.video.options import TextOptions, TransitionOptions
 
 
 class FindTests(unittest.TestCase):
+    def test_alignment_space_before_a_decimal_point_is_removed(self):
+        self.assertEqual(["$3.42 a day"], av.find_values("Coffee costs $3 .42 a day"))
+        self.assertEqual(["$102.50"], av.find_values("added $102 .50 on"))
+        self.assertEqual(["0.01%"], av.find_values("a ratio of 0 .01 %"))
+
     def test_alignment_spaces_inside_money_are_removed(self):
         self.assertEqual(["$43,680", "$100,000"], av.find_values("$43 ,680 and $100 ,000"))
     def test_values_as_spoken(self):
@@ -29,6 +34,12 @@ class FindTests(unittest.TestCase):
 
 
 class BuildTests(unittest.TestCase):
+    def test_decimal_split_across_cues_is_reconstructed(self):
+        items = av.build([(0, 2, "it costs $3"), (2, 3, ".42."), (3, 5, "a day")], 0, 5)
+        self.assertEqual(items[0]["text"], "$3.42")
+        items = av.build([(0, 2, "a ratio of 0"), (2, 3, ".01"), (3, 4, "%"), (4, 6, "is low.")], 0, 6)
+        self.assertEqual(items[0]["text"], "0.01%")
+
     def test_split_amount_and_unit_are_reconstructed(self):
         items = av.build([(0, 3, "A total of $43"), (3, 4, ",680 for 30"),
                           (4, 7, "years.")], 0, 7)

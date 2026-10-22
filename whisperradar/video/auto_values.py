@@ -56,6 +56,12 @@ def prepare_cues(cues):
             if out[j][2]:
                 break
             j += 1
+        decimal = re.match(r"\s*\.(\d+)", out[j][2]) if j < len(out) else None
+        if decimal:                      # "$3" | ".42." - a decimal split by the alignment
+            out[i][2] = out[i][2].rstrip() + "." + decimal.group(1)
+            out[j][2] = out[j][2][decimal.end():].lstrip()
+            if not out[j][2]:
+                j += 1
         if j < len(out):
             unit = re.match(r"\s*(%|years?\b|months?\b|weeks?\b|days?\b|percent\b)", out[j][2], re.I)
             if unit:
@@ -70,6 +76,7 @@ def find_values(text: str) -> List[str]:
     longest one."""
     # Alignment commonly inserts spaces inside a comma-separated amount.
     text = re.sub(r"(?<=\d)\s*,\s*(?=\d{3}\b)", ",", text)
+    text = re.sub(r"(?<=\d)\s+\.(?=\d)", ".", text)       # "$3 .42" -> "$3.42"
     spans: list = []
     for rx in _PATTERNS:
         for mt in rx.finditer(text):
