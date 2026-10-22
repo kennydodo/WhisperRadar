@@ -166,17 +166,17 @@ class PacingTests(unittest.TestCase):
         self.assertNotIn("more of the same kind", text)
 
     def test_a_very_long_offender_list_is_capped_with_a_count(self):
-        cues = _cues(400, 10)  # 4000s, room for every shot's cue range
+        cues = _cues(1200, 10)  # room for every shot's cue range
         data = _shots([(f"S01_{i:03d}_SCN_ZI.png", i * 6 + 1, i * 6 + 6, "ZI")
-                       for i in range(1, 41)])  # 40 shots over the 12s cap
+                       for i in range(1, 101)])  # 100 shots over the 12s cap
         faults, _ = studio.shotlist_pacing(data, cues)
         text = "\n".join(faults)
-        self.assertIn("40 shot(s) hold longer than", text)
-        self.assertIn("...and 10 more of the same kind", text)
-        # exactly 30 of the 40 offenders are actually named (tie-break order
+        self.assertIn("98 shot(s) hold longer than", text)
+        self.assertIn("...and 18 more of the same kind", text)
+        # exactly 80 of the 100 offenders are actually named (tie-break order
         # between equal-length holds isn't the point of this test)
         named = len(re.findall(r"S01_\d{3}_SCN_ZI\.png cues", text))
-        self.assertEqual(named, 30)
+        self.assertEqual(named, 80)
 
 
 class FeedbackTests(unittest.TestCase):

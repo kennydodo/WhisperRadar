@@ -271,3 +271,30 @@ class ReviewShotlistJudgeFailureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StyleTooLongTests(unittest.TestCase):
+    def _data(self, style_len, prompt_len, n=5):
+        return {"style": "s" * style_len,
+                "images": [{"file": f"a{i}_ZI.png", "prompt": "p" * prompt_len}
+                           for i in range(n)],
+                "shots": [{"asset": f"a{i}_ZI.png", "cues": str(i + 1), "motion": "ZI"}
+                          for i in range(n)]}
+
+    def _faults(self, data):
+        from whisperradar import studio
+        return [f for f in studio.shotlist_structural_faults(data, 5)
+                if "Flow" in f]
+
+    def test_a_style_that_eats_the_budget_is_named_not_the_prompts(self):
+        faults = self._faults(self._data(2818, 600))
+        self.assertEqual(len(faults), 1)
+        self.assertIn("top-level \"style\" field is 2818", faults[0])
+        self.assertIn("Rewrite", faults[0])
+        self.assertNotIn("Shorten ONLY", faults[0])
+
+    def test_a_normal_style_still_names_the_long_prompts(self):
+        faults = self._faults(self._data(1200, 1500))
+        self.assertEqual(len(faults), 1)
+        self.assertIn("Shorten ONLY those prompts", faults[0])
+        self.assertIn("a0_ZI.png", faults[0])

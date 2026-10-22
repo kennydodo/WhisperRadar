@@ -1046,6 +1046,8 @@ FLOWBATCH_TIERS = {0: "off", 1: "1k", 2: "2k", 3: "2k", 4: "4k"}
 # Flow refuses prompts over roughly 2450 characters with the SAME message it
 # uses for rate limiting, so the job-wide style is only sent when it fits.
 FLOWBATCH_MAX_PROMPT_CHARS = 2420
+# a style that leaves less than this per prompt is itself the problem
+STYLE_TOO_LONG_BUDGET = 300
 
 # Per-shot aspect-ratio override for FlowBatch jobs (src/jobs/load.js already
 # reads item.aspectRatio, this just needed to be sent). Keyed by the motion
@@ -5327,7 +5329,12 @@ def shotlist_fix_prompt(data: dict, faults: list[str], weak: list[dict],
         "new asset, and for every existing asset whose prompt you rewrite "
         "(same file name replaces it).\n"
         "An image that no shot uses any more is dropped automatically. "
-        "Return an empty list for a key you do not need.")
+        "Return an empty list for a key you do not need."
+        + ("\n- \"style\": ONLY because a fault above names the top-level style "
+           "field: the rewritten style text (a string). Return the shots and "
+           "images lists empty if nothing else is wrong." if
+           any('"style" field' in str(f) for f in faults) else "")
+        + "\nPut the JSON in this chat message as text (no file, no download).")
 
 
 def parse_shotlist_fix(text: str) -> dict:
@@ -5341,8 +5348,12 @@ def parse_shotlist_fix(text: str) -> dict:
     images = data.get("images") or []
     if not isinstance(shots, list) or not isinstance(images, list):
         raise RuntimeError("fix reply has no shots/images lists")
-    return {"shots": [x for x in shots if isinstance(x, dict)],
-            "images": [x for x in images if isinstance(x, dict)]}
+    out = {"shots": [x for x in shots if isinstance(x, dict)],
+           "images": [x for x in images if isinstance(x, dict)]}
+    style = data.get("style")
+    if isinstance(style, str) and style.strip():
+        out["style"] = style.strip()      # only asked for when a fault names the style
+    return out
 
 
 def apply_shotlist_fix(data: dict, fix: dict) -> tuple[dict, set[str], str]:
@@ -5357,7 +5368,11 @@ def apply_shotlist_fix(data: dict, fix: dict) -> tuple[dict, set[str], str]:
              if x.get("asset") and cue_range(x.get("cues"))]
     reply_images = [x for x in fix.get("images") or []
                     if x.get("file") and str(x.get("prompt") or "").strip()]
+    style = str(fix.get("style") or "").strip()
     if not reply and not reply_images:
+        if style and style != str(data.get("style") or "").strip():
+            new["style"] = style
+            return new, {"style"}, f"rewrote the style ({len(style)} characters)"
         return data, set(), "the fix changed nothing"
     covered: list[tuple[int, int]] = [cue_range(x["cues"]) for x in reply]
 
@@ -5387,6 +5402,9 @@ def apply_shotlist_fix(data: dict, fix: dict) -> tuple[dict, set[str], str]:
     new["images"] = images
     changed = ({str(x["asset"]) for x in reply}
                | {str(x["file"]) for x in reply_images})
+    if style and style != str(data.get("style") or "").strip():
+        new["style"] = style
+        changed.add("style")
     summary = (f"replaced {len(removed)} shot(s) with {len(reply)}, "
                f"wrote {len(reply_images)} image prompt(s)"
                + (f", dropped {len(gone)} unused image(s)" if gone else ""))
@@ -5863,7 +5881,7 @@ def shotlist_pacing(data: dict, cues: list[dict],
         (h for h in holds
          if h[0] > briefs.hold_limit(cap, prof.max_hold_tol) + 1e-9), reverse=True)
     if long:
-        SHOWN_CAP = 30
+        SHOWN_CAP = 80
         lines = []
         for hold, _motion, asset, first, last in long[:SHOWN_CAP]:
             midpoint = _srt_seconds(by_index[first]["start"]) + hold / 2
@@ -6235,14 +6253,30 @@ def shotlist_structural_faults(data: dict, cue_count: int,
     budget, over = prompts_over_budget(data)
     if over:
         style_len = len((data.get("style") or "").strip())
-        faults.append(
-            f"{len(over)} image prompt(s) are too long for Flow (limit "
-            f"{FLOWBATCH_MAX_PROMPT_CHARS} for style + prompt"
-            + (f"; the {style_len}-char style leaves {budget} per prompt"
-               if style_len else "")
-            + f"): {over_budget_text(budget, over, 6)}. Shorten ONLY those "
-            f"prompts - cut composition boilerplate and anything the style "
-            f"already says")
+        if style_len and budget < STYLE_TOO_LONG_BUDGET:
+            # the style itself eats the budget: no single prompt can be cut to
+            # fit, the top-level "style" field is what has to shrink
+            target = max(600, min(1400, FLOWBATCH_MAX_PROMPT_CHARS
+                                  - STYLE_TOO_LONG_BUDGET - 300))
+            faults.append(
+                f"the shotlist's top-level \"style\" field is {style_len} characters. "
+                f"Flow takes the style and ONE image prompt together (limit "
+                f"{FLOWBATCH_MAX_PROMPT_CHARS}), so this style leaves only "
+                f"{max(budget, 0)} per prompt and {len(over)} prompt(s) cannot fit. Rewrite "
+                f"the \"style\" field as a compact version of the channel style in at most "
+                f"{target} characters (keep palette, line and rendering rules, drop "
+                f"examples and repetition) - the \"style\" field is yours to shorten. "
+                f"Do NOT shorten the individual prompts for this: fixing this one field "
+                f"fixes all of them")
+        else:
+            faults.append(
+                f"{len(over)} image prompt(s) are too long for Flow (limit "
+                f"{FLOWBATCH_MAX_PROMPT_CHARS} for style + prompt"
+                + (f"; the {style_len}-char style leaves {budget} per prompt"
+                   if style_len else "")
+                + f"): {over_budget_text(budget, over, 40)}. Shorten ONLY those "
+                f"prompts - cut composition boilerplate and anything the style "
+                f"already says")
 
     # Reference registry: the names are the contract with Flow, so a bad or
     # undeclared name must fail here rather than become "reference not found,
