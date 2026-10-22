@@ -22,7 +22,7 @@ STYLES = {
     "caption": {"size": 5.2, "color": (255, 255, 255), "outline": 0.10, "shadow": True,
                 "box": None, "bold": True, "max_width": 0.80},
     # a big number or short claim
-    "stat": {"size": 11.0, "color": (255, 214, 10), "outline": 0.08, "shadow": True,
+    "stat": {"size": 11.0, "color": (255, 255, 255), "outline": 0.08, "shadow": True,
              "box": None, "bold": True, "max_width": 0.80},
     # a title card line
     "title": {"size": 9.0, "color": (255, 255, 255), "outline": 0.08, "shadow": True,
