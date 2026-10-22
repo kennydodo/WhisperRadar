@@ -21,9 +21,9 @@ GROUP_TITLES = {
     "output": "Output", "timing": "Shot length", "motion": "Motion",
     "transitions": "Transitions", "naming": "File naming",
     "render": "Render and encoder", "scene_inference": "Scene detection",
-    "shotlist": "Shotlist limits", "sound": "Sound", "": "Planner",
+    "shotlist": "Shotlist limits", "sound": "Sound", "text": "Text overlays", "": "Planner",
 }
-GROUP_ORDER = ["output", "timing", "motion", "transitions", "render", "sound",
+GROUP_ORDER = ["output", "timing", "motion", "transitions", "render", "sound", "text",
                "scene_inference", "shotlist", "naming", ""]
 _PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium",
             "slow", "slower", "veryslow"]

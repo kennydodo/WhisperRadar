@@ -851,6 +851,8 @@ def for_production(conn, prod) -> dict:
         "brief_reveal": min(2, int(row_get(own, "brief_reveal") or 0)),
         # the channel's sound effect for reveal shots (default "pop")
         "brief_sfx": row_get(own, "brief_sfx") or "",
+        # the renderer draws text (shotlist "overlays"): no text inside images
+        "brief_text_overlays": 1 if row_get(own, "brief_text_overlays") else 0,
         # hold range (s) over the preset; None = the preset's / the global max
         "brief_min_hold": row_get(own, "brief_min_hold"),
         "brief_max_hold": row_get(own, "brief_max_hold"),

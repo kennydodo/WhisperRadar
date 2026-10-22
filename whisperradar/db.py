@@ -273,6 +273,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          # the channel's sound effect name for reveal shots
                          # (NULL = "pop")
                          ("brief_sfx", "TEXT"),
+                         # 1 = the renderer draws text itself (shotlist "overlays"):
+                         # images are made WITHOUT readable text
+                         ("brief_text_overlays", "INTEGER"),
                          # hold range (seconds) laid over the motion preset
                          ("brief_min_hold", "REAL"),
                          ("brief_max_hold", "REAL"),
@@ -1163,7 +1166,7 @@ _OWN_CHANNEL_FIELDS = {
     "shotlist_judge_provider", "render_target", "render_resolution",
     "generate_references", "flow_native_upscale", "brief_motion", "brief_presentation",
     "animate_enabled", "animate_seconds", "animate_model",
-    "brief_reveal", "brief_sfx", "brief_min_hold", "brief_max_hold", "brief_custom", "brief_types",
+    "brief_reveal", "brief_sfx", "brief_text_overlays", "brief_min_hold", "brief_max_hold", "brief_custom", "brief_types",
     "watched_channels",
     "renderly_channel_id", "renderly_channel_name",
 }

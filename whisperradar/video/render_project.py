@@ -9,7 +9,7 @@ import shutil
 import threading
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from . import imaging, reveal_images, sound_effects, timeline_json
+from . import imaging, reveal_images, sound_effects, text_overlays, timeline_json
 from . import models as m
 from . import options as options_mod
 from .ffmpeg_runner import FfmpegRunner
@@ -178,6 +178,7 @@ def render_final(project_folder: str, preview: bool,
         attach_motion_clips(timeline, folder)
         issues = sound_effects.resolve(timeline, folder, runner, options.render.ffprobe_path,
                                        options.sound.default_pop, cancel_event=cancel_event)
+        issues = list(issues) + text_overlays.resolve(timeline, folder, options)
         if issue_sink is not None:
             for i in issues:
                 issue_sink(i)
