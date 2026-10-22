@@ -138,10 +138,11 @@ class ShotlistLoopTests(Base):
                  deepseek=[json.dumps({"faults": [], "shots": [],
                                        "detailed_ratio": 1, "pass": True})])
         self.run_loop(t)
-        self.assertEqual([(c["site"], c["prompt"], c["new_chat"])
-                          for c in t.calls[:2]],
-                         [("zai", "PLAN PROMPT", True),
-                          ("zai", "continue", False)])
+        self.assertEqual([(c["site"], c["new_chat"]) for c in t.calls[:2]],
+                         [("zai", True), ("zai", False)])
+        self.assertEqual(t.calls[0]["prompt"], "PLAN PROMPT")
+        self.assertEqual(t.calls[1]["prompt"], ws.CONTINUE_MESSAGE)
+        self.assertIn("do not check for them", ws.CONTINUE_MESSAGE)
 
     def test_weak_prompts_go_back_as_a_patch_and_are_applied(self):
         weak = {"faults": [], "pass": False, "detailed_ratio": 0.5,
@@ -444,6 +445,32 @@ class JoinAndResumeTests(Base):
         data = ws._plan_from_text(joined)
         self.assertEqual(len(data["images"]), 2)
         self.assertEqual(data["images"][1]["prompt"], "two two two")
+
+    def test_a_cut_before_the_file_name_is_finished_is_dropped(self):
+        # the real case: the chat was cut at `{ "file":` / `{ "file": "b_S`
+        for stub in ('{ "file":', '{ "file": "b_S'):
+            first = ('{"shots": [{"asset": "a_ST.png", "cues": "1-2"}],'
+                     ' "images": [{"file": "a_ST.png", "prompt": "one"},\n    ' + stub)
+            tail = ('{ "file": "b_ST.png", "prompt": "two two two" }\n  ]\n}')
+            data = ws._plan_from_text(ws._join_chunks(first, tail))
+            self.assertEqual([i["file"] for i in data["images"]],
+                             ["a_ST.png", "b_ST.png"], stub)
+
+    def test_a_chunk_that_carries_on_inside_an_entry_is_not_cut(self):
+        first = '{"images": [{"file": "a_ST.png", "prompt": "one'
+        tail = 'two"}]}'
+        self.assertEqual(ws._join_chunks(first, tail), first + "\n" + tail)
+
+    def test_the_replies_that_stalled_a_real_run_now_join(self):
+        # three replies cut inside an entry, each restarting it
+        parts = ['{"shots": [], "images": [\n  { "file": "a_ST.png", "prompt": "1" },\n  { "file":',
+                 '{ "file": "b_ST.png", "prompt": "2" },\n  { "file": "c_S',
+                 '{ "file": "c_ST.png", "prompt": "3" }\n]}']
+        body = ws._json_chunk(parts[0], True)
+        for p in parts[1:]:
+            body = ws._join_chunks(body, ws._json_chunk(p, False))
+        self.assertEqual([i["file"] for i in json.loads(body)["images"]],
+                         ["a_ST.png", "b_ST.png", "c_ST.png"])
 
     def test_a_plain_continuation_is_just_appended(self):
         self.assertEqual(ws._join_chunks('{"a": [1,', '2]}'),

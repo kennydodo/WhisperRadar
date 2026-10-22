@@ -414,7 +414,7 @@ OUTPUT RULES FOR THIS CHAT (you are being used outside the app; these keep the f
 1. Reply with the shotlist JSON in ONE fenced ```json code block - valid JSON, double quotes, no comments, no trailing commas, no text inside the block that is not JSON. Write nothing after the JSON - no image batch sheet, no text copy of the prompts, no summary.
 2. If you approach your output limit: stop after the last COMPLETE entry (never mid-token or mid-string), and end the message. When I reply "continue", output ONLY the remaining content, picking up at the exact next entry with no repetition, no commentary and no second "style" field, in a new ```json block that continues the same document, and finish every cue through the last one, closing every bracket cleanly. Keep going on each "continue" until the last cue is covered and the JSON is closed.
 3. Every cue from 1 to the last must be covered exactly once. A message that ends before the final cue is a hard failure.
-4. If this chat can create a file or artifact for the reply, name it exactly `shotlist.json` (JSON only inside it); otherwise just use the code block."""
+4. Put the JSON in the chat message itself, as text. Do NOT create a file, canvas, artifact, document or download link for it, and never answer with only a file name or a link: the reply is read as text and anything in a file cannot be read."""
 
 
 def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:

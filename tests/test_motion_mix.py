@@ -92,8 +92,8 @@ class BriefText(unittest.TestCase):
         # once in the motion section and once in the checklist
         self.assertEqual(text.count("Aim for this mix"), 2)
 
-    def test_planner_asks_for_a_file_named_shotlist_json(self):
-        self.assertIn("`shotlist.json`", _SHOTLIST_OUTPUT_RULES)
+    def test_planner_is_told_to_reply_in_the_chat_not_a_file(self):
+        self.assertIn("Do NOT create a file", _SHOTLIST_OUTPUT_RULES)
 
 
 class Gate(unittest.TestCase):
