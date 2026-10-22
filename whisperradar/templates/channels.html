@@ -332,6 +332,16 @@
                   {% endfor %}
                 </select>
               </label>
+              {% if flow_accounts_enabled %}
+              <label>Flow account
+                <select name="flow_account">
+                  <option value="">inherit (Settings)</option>
+                  {% for account in ['1', '2'] %}
+                  <option value="{{ account }}" {{ 'selected' if ch['flow_account'] == account else '' }}>Flow Account {{ account }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% endif %}
               <label>writing style format
                 <select name="style_variant">
                   <option value="">inherit (Settings)</option>

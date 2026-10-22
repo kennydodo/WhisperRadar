@@ -321,6 +321,19 @@
 
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+        {% if flow_accounts_enabled %}
+        <form method="post" action="/studio/{{ prod['id'] }}/flow-account">
+          <label>Flow account
+            <select name="flow_account" {{ 'disabled' if job.running else '' }}>
+              {% for account in ['1', '2'] %}
+              <option value="{{ account }}" {{ 'selected' if production_flow_account(prod) == account else '' }}>Flow Account {{ account }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button {{ 'disabled' if job.running else '' }}>Save Flow account</button>
+          <span class="muted">Choose before the first Flow job. Existing projects keep their account.</span>
+        </form>
+        {% endif %}
   {% if source_wait %}<div class="banner {{ 'err' if source_wait.state == 'error' else 'job' }}">Source: {{ source_wait.text }}.
     {% if source_wait.state != 'waiting' %}<form method="post" action="/studio/{{ prod['id'] }}/source/fetch" style="display:inline"><button type="submit">{{ 'Try again' if source_wait.state == 'error' else 'Get the transcript' }}</button></form>{% else %}Click Auto-run now and it starts by itself when the text is ready; you can keep using the app meanwhile.{% endif %}</div>{% endif %}
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}

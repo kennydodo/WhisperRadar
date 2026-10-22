@@ -70,7 +70,9 @@ function stripComments(value) {
 export function loadUpscaleSettings() {
   const base = stripComments(readJson(CONFIG_FILE, { required: false }));
   const local = stripComments(readJson(LOCAL_FILE, { required: false }));
-  return { ...UPSCALE_DEFAULTS, ...base, ...local };
+  const override = process.env.FLOWBATCH_UPSCALE_TIER;
+  return { ...UPSCALE_DEFAULTS, ...base, ...local,
+    ...(['off', ...TIER_NAMES].includes(override) ? { tier: override } : {}) };
 }
 
 /** Persist a change so the choice survives restarts. */

@@ -238,6 +238,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN handover TEXT")
     _migrate_own_channels(conn)
     for column, decl in (("flow_project_url", "TEXT"),
+                         ("flow_account", "TEXT"),
                          ("run_window_start", "TEXT"),
                          ("run_window_end", "TEXT"),
                          ("candidate_window_days", "INTEGER"),
@@ -1152,6 +1153,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 # monitored competitor/source channels) so the two never mix.
 
 _OWN_CHANNEL_FIELDS = {
+    "flow_account",
     "name", "description", "genre", "youtube_handle", "active",
     "handover_default", "video_options",
     "default_voice", "default_engine", "default_render_mode", "narration_speed",

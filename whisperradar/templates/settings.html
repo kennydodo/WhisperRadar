@@ -132,7 +132,7 @@
   </script>
   <form method="post" action="/settings/save" id="settings-form">
   {% macro field(entry, values, providers) %}
-        <div class="fieldwrap" id="wrap-{{ entry.key }}">
+        <div class="fieldwrap" id="wrap-{{ entry.key }}" {% if entry.key == 'flow_default_account' and not flow_accounts_enabled %}hidden{% endif %}>
           {% if entry.type == 'bool' %}
             <div class="checkrow">
               <input type="hidden" name="{{ entry.key }}" value="0">
@@ -297,7 +297,24 @@
   {% endfor %}
   </form>
 
+  {% if flow_accounts_enabled %}
+  <div class="tabpanel" data-tab="Production &amp; images"><div class="panel">
+    <h2>Flow accounts</h2>
+    <p class="muted">Account 1 uses your existing login. Sign in to a different Google account in Account 2. Each account handles one browser job at a time. Enable this feature while no Flow job is running.</p>
+    {% for account in ['1', '2'] %}
+    <form method="post" action="/flow-accounts/{{ account }}/login" style="margin-bottom:10px">
+      <button>Sign in to Flow Account {{ account }}</button>
+      <span>{{ flow_login_status.get(account, '') }}</span>
+    </form>
+    {% endfor %}
+  </div></div>
+  {% endif %}
   <script>
+  (function () {
+    var enabled = document.getElementById('f-flow_multi_account');
+    var defaults = document.getElementById('wrap-flow_default_account');
+    if (enabled && defaults) enabled.addEventListener('change', function () { defaults.hidden = !enabled.checked; });
+  })();
   // Render resolution and Upscale tier are one decision: changing either moves
   // the other (the resolution wins server side if they ever disagree).
   (function () {

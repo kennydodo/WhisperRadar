@@ -24,7 +24,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import briefs, motion
+from . import briefs, motion, flow_accounts
 
 log = logging.getLogger("whisperradar")
 
@@ -1127,6 +1127,9 @@ def flow_project_url_for(cfg, pid: int,
             conn.close()
     except Exception as exc:  # noqa: BLE001 - never block generation on this
         log.debug("could not read the production's Flow project: %s", exc)
+    active = getattr(flow_accounts.LOCAL, "active", None)
+    if active and active[1] == "2":
+        return None, "none"  # The legacy global project belongs to Account 1.
     url = (cfg.flowbatch_project_url or "").strip() or None
     return url, "config" if url else "none"
 
@@ -1431,6 +1434,7 @@ def _without_existing_refs(pdir: Path, refs: dict, log=None) -> dict:
     return kept
 
 
+@flow_accounts.isolated
 def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
                        log=None, cancel=None, upscale: int | None = None,
                        force: bool = False) -> dict:
@@ -1841,6 +1845,9 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
 
 
 def _flowbatch_cmd(args: list[str]) -> list[str]:
+    flags = flow_accounts.command_flags()
+    if flags and args and args[0] != "upscale":
+        args = [*args, *flags, "--upscale-tier", getattr(flow_accounts.LOCAL, "tier", "off")]
     return ["node", "src/cli.js", *args]
 
 
@@ -1851,6 +1858,9 @@ def set_flowbatch_tier(cfg, upscale: int) -> str | None:
     if not d:
         return None
     tier = FLOWBATCH_TIERS.get(int(upscale or 0), "off")
+    if getattr(flow_accounts.LOCAL, "active", None) and not getattr(flow_accounts.LOCAL, "legacy", False):
+        flow_accounts.LOCAL.tier = tier
+        return tier
     try:
         subprocess.run(_flowbatch_cmd(["upscale", "--set-tier", tier]),
                        cwd=str(d), capture_output=True, text=True, timeout=120)
@@ -2025,6 +2035,7 @@ def _read_json_retry(path: Path, attempts: int = 3, delay: float = 1.5):
     return None
 
 
+@flow_accounts.isolated
 def run_flowbatch_prepare(cfg, pid_dir: Path, job_path: Path,
                               log=None, new_project: bool = False) -> dict:
     """Ask FlowBatch to create-or-open this production's Flow project and
@@ -2383,6 +2394,7 @@ def _flowbatch_stream(cmd: list[str], repo, log, cancel,
     return proc.returncode or 0, tail
 
 
+@flow_accounts.isolated
 def run_flowbatch_recover(cfg, pid_dir: Path, pid: int,
                           upscale: int | None = None, log=None,
                           cancel=None,
@@ -2452,6 +2464,7 @@ def run_flowbatch_recover(cfg, pid_dir: Path, pid: int,
     return {"recovered": adopted, "still_missing": still_missing}
 
 
+@flow_accounts.isolated
 def run_imagegen_flowbatch(cfg, pid_dir: Path, pid: int,
                                upscale: int | None = None, log=None,
                                cancel=None, project_url: str | None = None,
@@ -2880,6 +2893,7 @@ def image_size_warning(cfg, pid: int, sample: int = 8) -> str:
             f"resolution / Upscale tier)")
 
 
+@flow_accounts.isolated
 def run_motion_flowbatch(cfg, pid_dir: Path, pid: int, clips: list[dict],
                          model: str, log=None, cancel=None,
                          project_url: str | None = None) -> dict:

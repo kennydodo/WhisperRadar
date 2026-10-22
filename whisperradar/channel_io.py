@@ -136,6 +136,8 @@ def _clean(key, value, known_watched, provider_names, notes, label):
                          "so it inherits")
             return None
         return value
+    if key == "flow_account":
+        return value if value in ("1", "2") else _bad(notes, label, key, value)
     if key == "render_target":
         value = value.lower()
         return value if value in studio.RENDER_TARGETS else _bad(

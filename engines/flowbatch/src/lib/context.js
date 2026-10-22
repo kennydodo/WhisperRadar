@@ -10,6 +10,16 @@ export function buildContext(flags = {}) {
   const configDir = path.join(ROOT, 'config');
   const settings = loadSettings(configDir);
   const selectors = loadSelectors(configDir);
+  if (typeof flags['runtime-dir'] === 'string') {
+    const runtime = path.resolve(flags['runtime-dir']);
+    for (const key of ['stateDir', 'debugDir', 'discoverDir', 'downloadsDir', 'outputDir', 'refsDir']) {
+      settings.dirs[key] = path.join(runtime, key);
+    }
+  }
+  if (flags['upscale-tier'] !== undefined) {
+    if (!['off', '1k', '2k', '4k'].includes(flags['upscale-tier'])) throw new Error('Invalid upscale tier');
+    process.env.FLOWBATCH_UPSCALE_TIER = flags['upscale-tier'];
+  }
 
   if (flags.headless !== undefined) settings.browser.headless = Boolean(flags.headless);
   if (typeof flags.channel === 'string') settings.browser.channel = flags.channel;
