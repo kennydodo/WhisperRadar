@@ -41,6 +41,21 @@ MAX_ROUNDS = None
 SOFT_ROUNDS = 6          # an uncapped loop stops here and takes the best
 SOFT_MARGIN = 1.0        # ... if it has no blocker and is within this of the bar
 MAX_CONTINUES = 8
+
+# A follow-up message carries no attachment, and the prompt tells the chat to
+# answer "Missing: <file>" when a required file is not attached to the message
+# it is reading - so say plainly that the files are already in this chat.
+CONTINUE_MESSAGE = (
+    "continue - this is the same task, not a new one: the attached files are "
+    "already in this chat, do not check for them again. Output ONLY the "
+    "remaining JSON as text in this chat (no file, no download), starting at "
+    "the next entry after the last complete one, and close every bracket.")
+# the chat answered with a file / download / prose instead of the JSON itself
+PASTE_MESSAGE = (
+    "I cannot open files or downloads from this chat. Paste the complete "
+    "shotlist JSON here as text in ONE ```json code block - not as a file, "
+    "canvas, artifact or download link. The attached files are already in "
+    "this chat; do not check for them again.")
 _CHROME_LINES = {"json", "copy", "download", "copy code", "code"}
 
 
@@ -326,6 +341,14 @@ def _join_chunks(body: str, chunk: str) -> str:
             cut = body.rfind("{", 0, hits[-1].start() + 1)
             if cut != -1:
                 return body[:cut].rstrip() + "\n" + chunk
+    # the cut can fall before the entry's file name is finished (`{ "file":` or
+    # `{ "file": "S09_13_PRO`), so the name cannot be matched: a reply that
+    # starts a new entry while the text so far ends inside an unclosed one is
+    # a restart of that entry - drop the half entry
+    if chunk.startswith("{"):
+        last = body.rfind("{")
+        if last != -1 and webchat._balanced_end(body, last, "{", "}") is None:
+            return body[:last].rstrip() + "\n" + chunk
     return body + "\n" + chunk
 
 
@@ -402,8 +425,8 @@ def _collect_plan(transport, site: str, reply: str, log,
         log(f"{site}: no complete shotlist in the reply yet "
             f"({len(body):,} characters read) - sending 'continue' "
             f"({i + 1}/{MAX_CONTINUES})")
-        reply = transport.ask(site, "continue", (), new_chat=False,
-                              ready=_has_json)
+        reply = transport.ask(site, CONTINUE_MESSAGE if "{" in body else PASTE_MESSAGE,
+                              (), new_chat=False, ready=_has_json)
         dump(f"{tag}_{i + 2}", reply)
         body = _join_chunks(body, _json_chunk(reply, False))
     raise StageFailed(
