@@ -3210,7 +3210,7 @@ def create_app(cfg) -> Flask:
         except (ValueError, OSError, sqlite3.Error) as exc:
             error = str(exc)
         return render_template("gpt_worker.html", job=job, result=result, error=error,
-            csrf_token=csrf,
+            csrf_token=csrf, packaging_brief=gpt_packaging.PACKAGING_BRIEF,
             context_json=json.dumps(job["context"], ensure_ascii=False, indent=2) if job else "")
 
     @app.post("/gpt-pro/jobs/claim")

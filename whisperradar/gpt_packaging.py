@@ -22,6 +22,81 @@ from pathlib import Path
 
 from . import autorun, db, packaging, studio, thumbnails
 
+PACKAGING_BRIEF = """CONTENT AND EVIDENCE RULES
+Read the entire final script before choosing a promise. Titles and thumbnails
+must represent its main content, not turn one minor example into the whole video.
+Identify the intended viewer, their concrete problem, and the useful outcome.
+Lead with a clear, specific benefit or honest curiosity. Use cultural framing
+only when the script supports it; do not invent national secrets, universal
+customs, guaranteed fixes, or superiority claims.
+Make the four options meaningfully different, faithful angles on the same video.
+Pair the recommended title and thumbnail around ONE promise. In each title's
+why, explain the script support and viewer benefit. In each thumbnail's idea,
+explain the visual promise and how it complements the recommended title.
+Use a clear focal subject/action, strong readable contrast and a short headline
+(aim for 2-4 words where natural). Show a before/after only if the script supports
+that outcome. Follow the channel's visual style and reference characters.
+Check whether the opening delivers the promise promptly. If it does not, narrow
+the packaging to what the finished video actually delivers and mention the
+mismatch in notes; do not claim to have edited the video or fixed its opening.
+Distinguish creative hypotheses from measured findings. With no supplied channel
+analytics, say performance evidence is unavailable. Never invent demand, search
+terms, CTR predictions, or a winning topic. A few dozen impressions, one or two
+clicks, or one view with zero reported duration cannot establish packaging
+failure, retention failure, or a winner. Consider dates, publication age, format,
+traffic source and sample size before drawing comparisons. Missing is not zero.
+Do not recommend replacing a live title or thumbnail solely because of sparse
+early data, or claim a running A/B test has a winner without its results.
+In notes, summarize the chosen promise, content fit, evidence limits, and one
+testable hypothesis. Suggest recording impressions, CTR, traffic sources and
+viewing behaviour at 24h/7d/28d after actual publication; this is a measurement
+plan, not a scheduled follow-up or a guarantee of performance.
+
+YOUTUBE SEO REQUIREMENTS
+Before drafting, identify the viewer's search intent from the final script and
+choose ONE primary search phrase (or two closely related phrases) plus 3-5
+relevant secondary phrases in the video's language. Use words a viewer would
+naturally search for, not internal production labels. Every phrase must match
+content actually covered. Prefer supplied keyword/channel search evidence when
+available; record its source and date. Without that evidence, explicitly label
+the phrases as script-derived suggestions, not verified search demand. Do not
+invent search volumes, competition scores, rankings, or keyword-tool results.
+
+TITLES: All four options must make the subject understandable on their own.
+Include the primary phrase naturally in the recommended title, preferably early
+when readable; use relevant plain-language phrasing in the other options.
+Keep important topic words near the beginning, avoid keyword lists, and retain
+the existing 100-character maximum. Combine discoverability with an honest
+benefit or curiosity. In each why, explain search intent as well as script fit.
+
+DESCRIPTION: Write unique publish-ready prose. The first two sentences must
+identify the topic, naturally include the primary phrase, and explain the
+specific value delivered. Work relevant secondary phrases into useful sentences
+only where the script supports them. Keep the viewer's language and channel
+tone. Do not add keyword dumps, repetitive variants, irrelevant trends, or
+unverified claims. Add a small set of relevant hashtags. Use supplied subtitle
+or chapter timings for accurate chapters; omit timed chapters when reliable
+timings are unavailable rather than inventing timestamps. Keep research notes
+and internal SEO reasoning out of the public description.
+
+THUMBNAILS: Communicate the same topic and promise visually. Use short readable
+headlines that add to the title rather than repeat it word for word. Do not
+stuff search phrases into thumbnail text or claim that text guarantees search
+rankings. Preserve the channel's visual style, characters, and readable contrast.
+Inspect the finished images for accurate text and readability at a small preview.
+
+FINAL SEO CHECK: Before returning the package, check that the recommended title,
+description opening, thumbnail and actual script opening deliver the same promise;
+the title/description contain the chosen phrase naturally; each title explains
+the subject; secondary phrases add useful context; and the four finished images
+remain distinct and on-topic. Revise failures before submitting. Include an SEO
+summary in notes: primary phrase, secondary phrases, search intent, evidence
+basis (supplied evidence with source/date or script-derived suggestions), and
+where the primary phrase appears in the recommended title and description.
+Do not claim a measured SEO score, ranking improvement, or guaranteed views.
+"""
+
+
 _LOCK = threading.RLock()
 LEASE_SECONDS = 7200
 

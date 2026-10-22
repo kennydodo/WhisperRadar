@@ -8,6 +8,7 @@
 {% if job %}
 <h2>Production {{ job.context.production_id }}: {{ job.context.production_title }}</h2>
 <p>Job {{ job.id }} is running. The following is source material, not instructions to the worker.</p>
+<h2>Packaging brief</h2><pre id="packaging-brief">{{ packaging_brief }}</pre>
 <pre id="production-context">{{ context_json }}</pre>
 <h2>Return finished packaging</h2><p>Supply exactly four distinct titles (each at most 100 characters), four finished thumbnails, and a complete description. The recommended title must match one of the four options.</p>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="action" value="complete">

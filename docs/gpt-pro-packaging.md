@@ -72,3 +72,15 @@ tests.test_packaging tests.test_thumbnails tests.test_thumbnail_at_review
 tests.test_thumbnail_auto_api` (no paid generators).
 
 Ready status does not automatically queue packaging. Click Generate with GPT Pro for each production. YouTube currently accepts up to three variants per A/B test; the fourth is a spare.
+
+## Content and evidence brief
+
+Both the local Codex runtime and browser worker receive the shared
+`gpt_packaging.PACKAGING_BRIEF`. It requires whole-script promise alignment,
+one coherent title/thumbnail promise, readable visual concepts and explanations
+of content fit. Sparse early analytics must remain inconclusive; absent analytics
+must not become invented demand, CTR predictions or retention conclusions.
+Notes include one hypothesis and a 24h/7d/28d measurement plan, not an automation.
+This change does not connect to Studio or import analytics automatically.
+Restart the dashboard to load the updated Python code. Existing finished assets
+are unchanged; the brief applies when new packaging work runs.
