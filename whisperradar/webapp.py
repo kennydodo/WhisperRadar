@@ -5029,7 +5029,7 @@ def create_app(cfg) -> Flask:
         """Run the script or shotlist stage in web chats (webstages.py): a
         writer chat and a judge chat, the judge's feedback going back to the
         writer. Uses the external-LLM prompts; the API loop is not involved."""
-        if stage not in ("script", "shots", "elements"):
+        if stage not in ("script", "shots", "elements", "beats"):
             return _studio_url(pid, error="Unknown web-chat stage")
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
@@ -5046,8 +5046,8 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         log = sjob.log.append
-        run = {"script": webstages.script_job, "elements": webstages.elements_job
-               }.get(stage, webstages.shotlist_job)
+        run = {"script": webstages.script_job, "elements": webstages.elements_job,
+               "beats": webstages.beats_job}.get(stage, webstages.shotlist_job)
 
         job = sjob._real()
         options = _chat_options(request.form)
@@ -5057,14 +5057,14 @@ def create_app(cfg) -> Flask:
         same_chats = request.form.get("same_chats") == "on"
 
         def worker():
-            if stage in ("script", "elements"):
+            if stage in ("script", "elements", "beats"):
                 run(cfg, pid, writer, judge, log, lambda: job.cancel,
                     options)
             else:
                 run(cfg, pid, writer, judge, log, lambda: job.cancel,
                     options, resume, same_chats)
 
-        label = {"script": "script", "elements": "elements"}.get(stage, "shotlist")
+        label = {"script": "script", "elements": "elements", "beats": "beats"}.get(stage, "shotlist")
         sjob.start(worker, f"{label} in web chat ({writer} writes, "
                            f"{judge} judges)")
         return _studio_url(pid, msg=f"Web-chat {label} run started - a "

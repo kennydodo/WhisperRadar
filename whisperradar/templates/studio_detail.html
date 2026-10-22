@@ -856,7 +856,21 @@
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>{{ 'List elements again' if elements_text else 'List elements in web chat' }}</button>
         </form>
       </div>
-      <div style="font-weight:600; margin:14px 0 4px">Step 2 &middot; Shotlist</div>
+      <div style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px">
+          <b>Step 2 &middot; Plan from the script (beats)</b>
+          <span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">new way</span>
+        </div>
+        <div class="muted" style="font-size:12px; margin-bottom:8px">
+          The writer reads the narration (no cue numbers) and returns beats: one image each, with the first words of the narration where it begins. The app finds those words in the subtitles, so every cue is covered once, then runs the usual code checks and saves shotlist.json (the old one is kept as shotlist_before_beats.json). No judge round. Uses elements.md when it exists. Replaces the shotlist run below.
+        </div>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/beats" style="gap:8px; align-items:center; flex-wrap:wrap"
+              onsubmit="return wrConfirmSubmit(this, 'Plan the shots from the script (beats) in a web chat? This replaces shotlist.json when it passes. A browser window opens.')">
+          <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Plan beats in web chat</button>
+        </form>
+      </div>
+      <div style="font-weight:600; margin:14px 0 4px">Or the old way &middot; Shotlist with a judge</div>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/shots" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
             onsubmit="return wrConfirmSubmit(this, 'Run the shotlist in web chats? A browser window opens and the chats are driven for you.')">
         <span class="muted" style="font-size:12px">No API - drive chat sites:</span>

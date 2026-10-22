@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import autorun, briefs, db, external_prompts as ep, handover, studio, webchat
+from . import autorun, beats as beatsmod, briefs, db, external_prompts as ep, handover, studio, webchat
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
@@ -1373,6 +1373,144 @@ def elements_job(cfg, pid: int, writer: str, judge: str, log,
             run_elements(cfg, pid, t, writer, log)
         finally:
             save_chats(cfg, pid, t)
+
+
+# ---- beats (script-first planning) ---------------------------------------------------
+
+BEATS_CONTINUE = (
+    "continue - same task. Output ONLY the remaining beats as more entries "
+    "({...}, {...}) in a new ```json block, as text in this chat (no file), starting at "
+    "the next beat after the last complete one, then close the list and the object "
+    "with ] }.")
+BEATS_MAX_ROUNDS = 12
+
+
+def _collect_beats(transport, site: str, reply: str, log, dump, allowed) -> dict:
+    """The beats object from a reply, sending 'continue' only while the JSON is
+    really cut off."""
+    dump("beats_reply_1", reply)
+    body = _json_chunk(reply, True)
+    for i in range(MAX_CONTINUES + 1):
+        got = beatsmod.parse(body, allowed)
+        if got:
+            return got
+        if i == MAX_CONTINUES:
+            break
+        log(f"{site}: no complete beat list in the reply yet ({len(body):,} characters "
+            f"read) - sending 'continue' ({i + 1}/{MAX_CONTINUES})")
+        if "{" in body:
+            message = BEATS_CONTINUE
+        elif _ASKS_FOR_BIBLE.search(body):
+            message = BIBLE_MESSAGE
+        else:
+            message = PASTE_MESSAGE
+        reply = transport.ask(site, message, (), new_chat=False, ready=_has_json)
+        dump(f"beats_reply_{i + 2}", reply)
+        body = _join_chunks(body, _json_chunk(reply, False))
+    raise StageFailed(f"{site} never gave a readable beat list ({len(body):,} characters "
+                      f"read). The raw replies are in the production's webchat_debug folder.")
+
+
+def run_beats(cfg, pid: int, transport, writer: str = "zai",
+              log: Callable[[str], None] = print,
+              should_stop: Callable[[], bool] = lambda: False) -> dict:
+    """Plan the video from the NARRATION: the writer returns beats (one image
+    each, with the first words of the narration they begin at); the app finds
+    those words in the subtitles, so every cue is covered once by construction,
+    builds shotlist.json and runs the usual code checks. Faults go back to the
+    writer as small per-beat fixes. No judge round (the code checks are the
+    gate)."""
+    ctx = ep._context(cfg, pid)
+    plan = ep._plan_inputs(cfg, pid, ctx)
+    cues, profile, pdir = plan["cues"], plan["profile"], ctx["pdir"]
+    cap, tol = plan["max_hold"], profile.max_hold_tol
+    allowed = list(profile.allowed or briefs.MOTION_CODES)
+    from . import elements
+
+    def dump(name: str, text: str) -> None:
+        _dump(cfg, pid, name, text)
+
+    # the narration is what the audio says (the subtitles), so a quote of it always
+    # matches; script.md can be a newer draft than the audio
+    narration = "\n".join(c["text"] for c in cues)
+    max_words = beatsmod.words_per_beat(cap, tol, narration, plan["total_s"])
+    elements_md = elements.load_text(pdir)
+    log(f"{len(cues)} cues, {len(narration.split())} words; a beat is asked to stay under "
+        f"about {max_words} words ({cap:g}s limit + {tol:.0%} tolerance); "
+        + (f"elements.md used" if elements_md else "no elements.md"))
+    reply = _send(transport, writer,
+                  lambda f: beatsmod.prompt(narration, elements_md, ctx["visual_style"],
+                                            ctx["bible"], allowed, cap, max_words),
+                  log, ready=_has_json)
+    got = _collect_beats(transport, writer, reply, log, dump, allowed)
+    beats, style = got["beats"], got["style"] or ctx["visual_style"]
+    log(f"{writer}: {len(beats)} beat(s) received")
+
+    prev_faults, same = None, 0
+    for rnd in range(1, BEATS_MAX_ROUNDS + 1):
+        if should_stop():
+            raise StageFailed("Stopped by you.")
+        starts, ranges, faults = beatsmod.check(beats, cues, allowed, cap, tol)
+        data, names = beatsmod.build_shotlist(beats, ranges, style)
+        if not faults:
+            try:
+                _, loc = ep.shotlist_judge_prompt(
+                    cfg, pid, json.dumps(data, ensure_ascii=False, indent=1), [])
+                faults = [str(x) for x in (loc or [])]
+            except (ep.PromptError, RuntimeError, ValueError) as e:
+                log(f"code checks could not run: {e}")
+        beatsmod.save(pdir, beats, ranges, names, style)
+        if not faults:
+            old = pdir / "shotlist.json"
+            if old.exists():
+                shutil.copyfile(old, pdir / "shotlist_before_beats.json")
+            gap = save_shotlist(cfg, pid, data,
+                                f"web chat {writer}: {len(beats)} beats from the script, "
+                                f"round {rnd}", advance=True)
+            log(f"round {rnd}: no faults - shotlist saved ({len(data['shots'])} shots)"
+                + (f"; coverage gap: {gap}" if gap else "; next stage unlocked"))
+            return data
+        log(f"round {rnd}: {len(faults)} fault(s): " + " | ".join(f[:140] for f in faults[:3]))
+        key = "\n".join(faults)
+        same = same + 1 if key == prev_faults else 0
+        prev_faults = key
+        if same >= 2:
+            break
+        msg = beatsmod.fix_prompt(faults, beats, ranges, cues, names, allowed, cap)
+        got_fix = None
+        for attempt in (1, 2):
+            fixed = transport.ask(writer, msg if attempt == 1 else
+                                  "That was not the JSON I asked for. Reply with ONLY the "
+                                  '{"replace": [...]} object in one ```json block, as text.',
+                                  (), new_chat=False, ready=_has_json)
+            dump(f"beats_fix_round{rnd}_{attempt}", fixed)
+            got_fix = beatsmod.parse_fix(fixed, allowed)
+            if got_fix:
+                break
+        if not got_fix:
+            log(f"{writer} gave no usable fix")
+            break
+        before = len(beats)
+        beats = beatsmod.apply_fix(beats, got_fix)
+        if got_fix["style"]:
+            style = got_fix["style"]
+        log(f"fix applied: {len(got_fix['replace'])} beat(s) replaced, {before} -> {len(beats)} beats")
+    raise StageFailed(
+        f"The beat plan did not pass the code checks. beats.json holds the last try; "
+        f"shotlist.json was not changed. Still wrong: {(prev_faults or '')[:300]}")
+
+
+def beats_job(cfg, pid: int, writer: str, judge: str, log,
+              should_stop: Callable[[], bool] = lambda: False,
+              options: dict | None = None) -> None:
+    with web_transport(cfg, log, options) as t:
+        log(f"settings: {t.options}")
+        t.set_stop(should_stop)
+        try:
+            run_beats(cfg, pid, t, writer, log, should_stop)
+        finally:
+            save_chats(cfg, pid, t)
+
 
 
 def script_job(cfg, pid: int, writer: str, judge: str, log,
