@@ -327,6 +327,43 @@ class SendTests(unittest.TestCase):
         self.assertEqual(seen["files"], ["hi"])
 
 
+class BibleQuestionTests(unittest.TestCase):
+    def test_a_request_for_the_bible_is_answered_and_the_plan_is_read(self):
+        sent = []
+
+        class T:
+            def ask(self, site, prompt, files=(), new_chat=True, ready=None):
+                sent.append(prompt)
+                return "```json\n" + plan_json() + "\n```"
+
+        data = ws._collect_plan(
+            T(), "chatgpt",
+            "Please provide the character/reference bible, or explicitly confirm "
+            "that the channel has no reference bible.", lambda m: None)
+        self.assertEqual(sent, [ws.BIBLE_MESSAGE])
+        self.assertIn("shots", data)
+
+
+class InlineOnlyTests(unittest.TestCase):
+    def test_chatgpt_never_gets_attached_files(self):
+        seen = {}
+
+        def build(files):
+            if files is None:
+                return "x" * (ws.INLINE_MAX_CHARS + 1)
+            files.append({"name": "narration.txt", "text": "hi", "about": ""})
+            return "see file"
+
+        class T:
+            def ask(self, site, prompt, files=(), new_chat=True, ready=None):
+                seen["len"], seen["files"] = len(prompt), list(files)
+                return "ok"
+
+        ws._send(T(), "chatgpt", build, lambda m: None)
+        self.assertEqual(seen["files"], [])
+        self.assertEqual(seen["len"], ws.INLINE_MAX_CHARS + 1)
+
+
 class RouteTests(Base):
     def test_buttons_are_on_the_script_and_shotlist_pages(self):
         c = create_app(self.cfg).test_client()
@@ -864,3 +901,83 @@ class FeedbackWordingTests(unittest.TestCase):
     def test_feedback_with_a_verdict_names_the_reviewer(self):
         text = ws._plan_feedback([], [], [], {"pass": False, "faults": ["x"]}, [])
         self.assertIn("The reviewer found problems", text)
+
+
+class FixInPlaceTests(unittest.TestCase):
+    """The writer is asked for a DELTA (only the shots / images that change)
+    and the app applies it; a reply it cannot use falls back to the old way."""
+
+    DATA = {"style": "flat",
+            "shots": [{"asset": "a_ZI.png", "cues": "1-4", "motion": "ZI"},
+                      {"asset": "b_ZO.png", "cues": "5-6", "motion": "ZO"}],
+            "images": [{"file": "a_ZI.png", "prompt": "a long hold"},
+                       {"file": "b_ZO.png", "prompt": "the rest"}]}
+    CUES = [{"index": i, "start": "00:00:00,000", "end": "00:00:03,000",
+             "text": f"cue {i}"} for i in range(1, 7)]
+    PLAN = {"max_hold": 12.0, "allow_refs": False}
+    CTX = {"visual_style": "flat", "bible": ""}
+
+    def run_fix(self, replies, faults=("1 shot(s) hold longer than 14.4s: a_ZI.png",)):
+        asked = []
+
+        class T:
+            def ask(self, site, prompt, files=(), new_chat=True, ready=None):
+                asked.append(prompt)
+                return replies.pop(0)
+
+        with mock.patch.object(ws, "_dump"):
+            out = ws._fix_in_place(None, 1, T(), "zai", self.DATA, list(faults), [],
+                                   self.CUES, self.PLAN, self.CTX, lambda m: None,
+                                   lambda n, t: None, 1)
+        return out, asked
+
+    def test_only_the_changed_shots_come_back_and_are_applied(self):
+        delta = {"shots": [{"asset": "a1_ZI.png", "cues": "1-2", "motion": "ZI"},
+                           {"asset": "a2_ZO.png", "cues": "3-4", "motion": "ZO"}],
+                 "images": [{"file": "a1_ZI.png", "prompt": "first half"},
+                            {"file": "a2_ZO.png", "prompt": "second half"}]}
+        out, asked = self.run_fix(["```json\n" + json.dumps(delta) + "\n```"])
+        self.assertEqual([s["asset"] for s in out["shots"]],
+                         ["a1_ZI.png", "a2_ZO.png", "b_ZO.png"])
+        by = {i["file"]: i["prompt"] for i in out["images"]}
+        self.assertEqual(by["b_ZO.png"], "the rest")      # untouched, copied by the app
+        self.assertNotIn("a_ZI.png", by)                  # the replaced image is dropped
+        self.assertIn("a_ZI.png", asked[0])               # the fault reached the writer
+        self.assertIn("no file, no download", asked[0])
+
+    def test_a_cut_off_reply_is_continued(self):
+        delta = json.dumps({"shots": [{"asset": "a1_ZI.png", "cues": "1-4", "motion": "ZI"}],
+                            "images": [{"file": "a1_ZI.png", "prompt": "shorter"}]})
+        cut = delta.index('"images"')
+        out, asked = self.run_fix(["```json\n" + delta[:cut], delta[cut:]])
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(asked[1], ws.CONTINUE_MESSAGE)
+        self.assertEqual({i["file"] for i in out["images"]}, {"a1_ZI.png", "b_ZO.png"})
+
+    def test_an_unusable_or_empty_reply_gives_none(self):
+        self.assertIsNone(self.run_fix(["sorry, I cannot do that"])[0])
+        self.assertIsNone(self.run_fix(['{"shots": [], "images": []}'])[0])
+
+    def test_a_rewritten_style_is_applied_when_a_fault_names_it(self):
+        out, asked = self.run_fix(
+            ['{"shots": [], "images": [], "style": "compact style"}'],
+            faults=('the shotlist\'s top-level "style" field is 2818 characters.',))
+        self.assertEqual(out["style"], "compact style")
+        self.assertEqual(len(out["shots"]), 2)
+        self.assertIn('"style": ONLY because a fault above names', asked[0])
+
+
+class FixLoopFallbackTests(Base):
+    def test_the_whole_plan_is_asked_for_when_the_delta_is_unusable(self):
+        def judge_prompt(cfg, pid, text, files):
+            return ("JUDGE PROMPT", [] if "fixed" in text else ["hold too long at cue 2"])
+
+        ok = json.dumps({"faults": [], "shots": [], "detailed_ratio": 1, "pass": True})
+        t = Fake(zai=[plan_json(), "I cannot do a partial fix", plan_json(style="fixed")],
+                 deepseek=[ok])
+        with mock.patch.object(ep, "shotlist_planner_prompt", return_value="PLAN PROMPT"), \
+             mock.patch.object(ep, "shotlist_judge_prompt", side_effect=judge_prompt):
+            out = ws.run_shotlist(self.cfg, self.pid, t, "zai", "deepseek",
+                                  log=lambda m: None)
+        self.assertEqual(out["style"], "fixed")
+        self.assertEqual([c["site"] for c in t.calls[:3]], ["zai", "zai", "zai"])

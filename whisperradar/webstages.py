@@ -33,8 +33,11 @@ from . import autorun, briefs, db, external_prompts as ep, handover, studio, web
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
 INLINE_MAX_CHARS = 60000
-# sites that cannot take attachments from the automation: never switch to files
-INLINE_ONLY_SITES = frozenset({"qwen"})
+# sites that cannot take attachments from the automation: never switch to files.
+# ChatGPT: the attached narration.txt was not seen by the chat (it answered
+# "Missing: narration.txt" on every run), while the same prompt pasted into the
+# message worked - so its prompts always go in the message itself.
+INLINE_ONLY_SITES = frozenset({"qwen", "chatgpt"})
 # None = no limit: the loop runs until the judge passes the work (or you stop
 # it). Only an explicit `rounds=` caps it.
 MAX_ROUNDS = None
@@ -50,6 +53,14 @@ CONTINUE_MESSAGE = (
     "already in this chat, do not check for them again. Output ONLY the "
     "remaining JSON as text in this chat (no file, no download), starting at "
     "the next entry after the last complete one, and close every bracket.")
+# the chat asked for the reference bible (the brief's "bible gate") although the
+# prompt says the channel has none
+BIBLE_MESSAGE = (
+    "This channel has NO reference bible, and the inputs above say so - do not ask for "
+    "one again. Plan without a bible now, using the narration, the visual style and "
+    "any elements listed in the inputs, and reply with the COMPLETE shotlist JSON in "
+    "ONE ```json block, as text in this chat.")
+_ASKS_FOR_BIBLE = re.compile(r"\bbible\b", re.I)
 # the chat answered with a file / download / prose instead of the JSON itself
 PASTE_MESSAGE = (
     "I cannot open files or downloads from this chat. Paste the complete "
@@ -425,8 +436,13 @@ def _collect_plan(transport, site: str, reply: str, log,
         log(f"{site}: no complete shotlist in the reply yet "
             f"({len(body):,} characters read) - sending 'continue' "
             f"({i + 1}/{MAX_CONTINUES})")
-        reply = transport.ask(site, CONTINUE_MESSAGE if "{" in body else PASTE_MESSAGE,
-                              (), new_chat=False, ready=_has_json)
+        if "{" in body:
+            message = CONTINUE_MESSAGE
+        elif _ASKS_FOR_BIBLE.search(body):
+            message = BIBLE_MESSAGE
+        else:
+            message = PASTE_MESSAGE
+        reply = transport.ask(site, message, (), new_chat=False, ready=_has_json)
         dump(f"{tag}_{i + 2}", reply)
         body = _join_chunks(body, _json_chunk(reply, False))
     raise StageFailed(
@@ -938,6 +954,50 @@ def _corrected_plan(transport, writer: str, prev: dict, reply: str,
     return data
 
 
+def _fix_in_place(cfg, pid: int, transport, writer: str, data: dict, hard: list,
+                  weak: list, cues: list, plan: dict, ctx: dict, log, dump,
+                  rnd: int) -> dict | None:
+    """Ask the writer for a DELTA - only the shots and images that change - and
+    apply it in code, so the writer never has to re-send (and quietly repeat)
+    the whole plan. Returns the corrected plan, or None when the writer's reply
+    is not usable or changes nothing (the caller then asks for the whole plan,
+    as before)."""
+    cue_text = {c["index"]: c["text"] for c in cues}
+    prompt = studio.shotlist_fix_prompt(
+        data, list(hard), list(weak), cue_text, len(cues), plan["max_hold"],
+        style_guide=ctx["visual_style"], bible=ctx["bible"],
+        allow_refs=plan["allow_refs"])
+    try:
+        reply = transport.ask(writer, prompt, (), new_chat=False,
+                              ready=_has_json)
+    except webchat.ChatLost:
+        return None                  # the caller starts a new chat with the plan
+    tag = f"fix_round{rnd}"
+    dump(f"{tag}_1", reply)
+    body = _json_chunk(reply, True)
+    fix = None
+    for i in range(MAX_CONTINUES + 1):
+        try:
+            fix = studio.parse_shotlist_fix(body)
+            break
+        except RuntimeError as exc:
+            if i == MAX_CONTINUES or "{" not in body:
+                log(f"{writer}: the fix reply is not usable ({str(exc)[:100]})")
+                return None
+            log(f"{writer}: the fix reply is cut off - sending 'continue' "
+                f"({i + 1}/{MAX_CONTINUES})")
+            more = transport.ask(writer, CONTINUE_MESSAGE, (), new_chat=False,
+                                 ready=_has_json)
+            dump(f"{tag}_{i + 2}", more)
+            body = _join_chunks(body, _json_chunk(more, False))
+    new, changed, summary = studio.apply_shotlist_fix(data, fix)
+    if not changed:
+        log(f"{writer}: the fix changed nothing")
+        return None
+    log(f"{writer}: fix applied in place - {summary}")
+    return new
+
+
 def _recovery_prompt(cfg, pid: int, plan_text: str, feedback: str):
     """A fresh writer chat that continues the work: the original planner
     prompt, the plan so far, and the reviewer's points."""
@@ -1232,6 +1292,12 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
         else:
             log(f"sending the faults back to {writer} for a corrected plan")
             prev = data
+            fixed = _fix_in_place(cfg, pid, transport, writer, data, hard, weak,
+                                  cues, plan, ctx, log, dump, rnd)
+            if fixed is not None:
+                data = fixed
+                continue
+            log(f"asking {writer} for the whole corrected plan instead")
             try:
                 reply = transport.ask(
                     writer, _plan_feedback(hard, weak, fixes, verdict, local),
