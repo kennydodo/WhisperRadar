@@ -9,6 +9,8 @@ from whisperradar.video.options import TextOptions, TransitionOptions
 
 
 class FindTests(unittest.TestCase):
+    def test_alignment_spaces_inside_money_are_removed(self):
+        self.assertEqual(["$43,680", "$100,000"], av.find_values("$43 ,680 and $100 ,000"))
     def test_values_as_spoken(self):
         self.assertEqual(["170 kilograms"], av.find_values("Estimated around 170 kilograms, it was big."))
         self.assertEqual(["four times"], av.find_values("The tiger can weigh four times as much."))
@@ -27,6 +29,17 @@ class FindTests(unittest.TestCase):
 
 
 class BuildTests(unittest.TestCase):
+    def test_split_amount_and_unit_are_reconstructed(self):
+        items = av.build([(0, 3, "A total of $43"), (3, 4, ",680 for 30"),
+                          (4, 7, "years.")], 0, 7)
+        self.assertEqual(items[0]["text"], "$43,680")
+        self.assertEqual(items[1]["text"], "30 years")
+
+    def test_three_values_in_one_cue_are_not_silently_dropped(self):
+        items = av.build([(0, 6, "$520 for 84 months is $43,680.")], 0, 6)
+        self.assertIn("$520", items[0]["text"])
+        self.assertIn("84 months", items[0]["text"])
+        self.assertIn("$43,680", items[0]["text"])
     CUES = [(10.0, 12.0, "In 1940 the Act passed,"), (12.0, 14.0, "and it changed everything."),
             (14.0, 16.0, "Then $200 a month for 7% a year.")]
 

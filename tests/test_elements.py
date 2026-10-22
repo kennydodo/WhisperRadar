@@ -68,6 +68,16 @@ if __name__ == "__main__":
 
 
 class WebChatJobTests(unittest.TestCase):
+    def test_elements_follow_recorded_narration_and_save_provenance(self):
+        ws, pdir, asked, t = self._run([REPLY], script="A completely different newer script.")
+        (pdir / "subtitles.srt").write_text(
+            "1\n00:00:00,000 --> 00:00:04,000\nMarcus walked into the recorded bank.\n", encoding="utf-8")
+        messages = []
+        ws.run_elements(None, 1, t, "zai", log=messages.append)
+        self.assertIn("Marcus walked into the recorded bank.", asked[0][2])
+        self.assertNotIn("different newer script", asked[0][2])
+        self.assertTrue(any("mismatch" in m for m in messages))
+        self.assertEqual(json.loads((pdir / "elements_source.json").read_text())["source"], "subtitles")
     """run_elements with a fake chat transport: saves the list, retries once."""
 
     def _run(self, replies, script="Marcus walks into the bank."):

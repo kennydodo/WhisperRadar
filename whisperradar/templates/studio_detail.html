@@ -861,12 +861,17 @@
           <b>Step 2 &middot; Plan from the script (beats)</b>
           <span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">new way</span>
         </div>
+        {% for warning in source_warnings %}
+        <p role="alert" class="muted">{{ warning }}</p>
+        {% endfor %}
         <div class="muted" style="font-size:12px; margin-bottom:8px">
-          The writer reads the narration (no cue numbers) and returns beats: one image each, with the first words of the narration where it begins. The app finds those words in the subtitles, so every cue is covered once, then runs the usual code checks and saves shotlist.json (the old one is kept as shotlist_before_beats.json). No judge round. Uses elements.md when it exists. Replaces the shotlist run below.
+          The writer reads the narration (no cue numbers) and returns beats: one image each, with the first words of the narration where it begins. The app finds those words in the subtitles, checks the plan, and saves shotlist.json when it passes (the old one is kept as shotlist_before_beats.json). Enable the optional quality review for a second look at visual detail after the code checks pass. Uses elements.md when it exists.
         </div>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/beats" style="gap:8px; align-items:center; flex-wrap:wrap"
               onsubmit="return wrConfirmSubmit(this, 'Plan the shots from the script (beats) in a web chat? This replaces shotlist.json when it passes. A browser window opens.')">
           <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <label><input type="checkbox" name="quality_judge"> Review visual quality after code checks</label>
+          <label>Reviewer <select name="judge"><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Plan beats in web chat</button>
         </form>
       </div>

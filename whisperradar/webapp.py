@@ -3715,6 +3715,16 @@ def create_app(cfg) -> Flask:
         cue_count = len([b for b in srt_text.split("\n\n") if b.strip()])
         from . import elements as _elements
         elements_text = _elements.load_text(pdir)
+        from . import planning_audit
+        source_warnings = []
+        source_srt = studio.find_srt(pdir)
+        if source_srt:
+            try:
+                source_narration = "\n".join(c["text"] for c in studio.parse_srt_cues(
+                    source_srt.read_text(encoding="utf-8-sig")))
+                source_warnings = planning_audit.source_report(pdir, source_narration)["warnings"]
+            except (OSError, ValueError):
+                source_warnings = ["Could not compare the script and recorded narration."]
         elements_count = elements_text.count("\n- ") + (1 if elements_text.startswith("- ") else 0)
         images = [i.name for i in studio.find_images(pdir)]
         final = studio.find_final(pdir)
@@ -3862,7 +3872,7 @@ def create_app(cfg) -> Flask:
             plan_exists=(pdir / "packaging_plan.json").exists(),
             direction_versions=_version_names(pdir, "direction", stage),
             shotlist_count=shotlist_count, cue_count=cue_count,
-            elements_text=elements_text, elements_count=elements_count,
+            elements_text=elements_text, elements_count=elements_count, source_warnings=source_warnings,
             msg=request.args.get("msg"), error=request.args.get("error"),
             channel_locked=bool(prod["own_channel_id"]),
         )
@@ -5038,6 +5048,9 @@ def create_app(cfg) -> Flask:
         judge = (request.form.get("judge") or "deepseek").strip()
         if writer not in webchat.SITES or judge not in webchat.SITES:
             return _studio_url(pid, error="Unknown chat site")
+        if (stage == "beats" and request.form.get("quality_judge") == "on"
+                and writer == judge):
+            return _studio_url(pid, error="Choose a different chat site/account for the quality reviewer")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -5051,6 +5064,9 @@ def create_app(cfg) -> Flask:
 
         job = sjob._real()
         options = _chat_options(request.form)
+
+        if stage == "beats":
+            options["beats_quality_judge"] = request.form.get("quality_judge") == "on"
 
         resume = (stage != "script"
                   and request.form.get("resume_plan") == "on")

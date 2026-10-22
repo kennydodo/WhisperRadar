@@ -1336,8 +1336,19 @@ def run_elements(cfg, pid: int, transport, writer: str = "zai",
         script = (pdir / "script.md").read_text(encoding="utf-8")
     except OSError:
         pass
+    from . import planning_audit
+    element_source = "script"
+    srt = studio.find_srt(pdir)
+    if srt:
+        narration = "\n".join(c["text"] for c in studio.parse_srt_cues(srt.read_text(encoding="utf-8-sig")))
+        if narration.strip():
+            for warning in planning_audit.source_report(pdir, narration)["warnings"]:
+                log("WARNING: " + warning)
+            script = narration
+            element_source = "subtitles"
+            log("Elements use the recorded subtitle narration so they match the image plan.")
     if not script.strip():
-        raise StageFailed("There is no script yet - write the script first.")
+        raise StageFailed("There is no script or subtitle narration yet - write the script first.")
     reply = _send(transport, writer,
                   lambda f: elements.prompt(script, ctx["visual_style"]), log,
                   ready=_has_json)
@@ -1357,6 +1368,9 @@ def run_elements(cfg, pid: int, transport, writer: str = "zai",
         raise StageFailed(f"{writer} never gave a readable element list. The raw "
                           f"replies are in the production's webchat_debug folder.")
     elements.save(pdir, found)
+    (pdir / "elements_source.json").write_text(json.dumps({
+        "fingerprint": planning_audit.fingerprint(script), "source": element_source
+    }, indent=2), encoding="utf-8")
     log(f"{len(found)} element(s) saved to elements.md: "
         + ", ".join(e["name"] for e in found[:12])
         + (" ..." if len(found) > 12 else ""))
@@ -1413,7 +1427,8 @@ def _collect_beats(transport, site: str, reply: str, log, dump, allowed) -> dict
 
 def run_beats(cfg, pid: int, transport, writer: str = "zai",
               log: Callable[[str], None] = print,
-              should_stop: Callable[[], bool] = lambda: False) -> dict:
+              should_stop: Callable[[], bool] = lambda: False,
+              quality_judge: str | None = None) -> dict:
     """Plan the video from the NARRATION: the writer returns beats (one image
     each, with the first words of the narration they begin at); the app finds
     those words in the subtitles, so every cue is covered once by construction,
@@ -1426,32 +1441,79 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
     cap, tol = plan["max_hold"], profile.max_hold_tol
     allowed = list(profile.allowed or briefs.MOTION_CODES)
     from . import elements
+    from . import planning_audit
+    from datetime import datetime, timezone
+    from uuid import uuid4
+    if quality_judge == writer:
+        raise StageFailed("Choose a different chat site/account for the quality judge.")
+    run_dir = pdir / "webchat_debug" / "beats_runs" / (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ_") + uuid4().hex[:8])
+    run_dir.mkdir(parents=True, exist_ok=True)
 
     def dump(name: str, text: str) -> None:
         _dump(cfg, pid, name, text)
+        (run_dir / (name + ".txt")).write_text(text, encoding="utf-8")
 
     # the narration is what the audio says (the subtitles), so a quote of it always
     # matches; script.md can be a newer draft than the audio
     narration = "\n".join(c["text"] for c in cues)
+    source = planning_audit.source_report(pdir, narration)
+    for warning in source["warnings"]:
+        log("WARNING: " + warning)
+    auto_numbers, renderer_text = planning_audit.number_mode(cfg, ctx)
+    log(f"Numerical coverage: automatic renderer values {'on' if auto_numbers else 'off'}; "
+        f"renderer text {'enabled' if renderer_text else 'disabled'}.")
+    log(f"Full beats diagnostics: {run_dir}")
+    judge_open = False
     max_words = beatsmod.words_per_beat(cap, tol, narration, plan["total_s"])
     elements_md = elements.load_text(pdir)
+    channel_context = ep.planning_context_prompt(
+        cfg, ctx, plan, "Read the NARRATION below; beats use exact opening words instead of cue numbers.")
+    supplied = {Path(f).stem: f"refs/{f}" for f in studio.find_supplied_refs(pdir)}
+    if not plan["allow_refs"]:
+        supplied = {}
+    animation_note = ep._animation_note(ctx.get("eff", {}), cues)
+    if animation_note:
+        from . import motion
+        last = motion.window_last_cue(cues, ctx["eff"]["animate_seconds"], studio._srt_seconds)
+        boundary = next((c["text"] for c in cues if int(c["index"]) == last), "")
+        animation_note = animation_note.replace(
+            f"cues 1-{last} ONLY", f"the narration from its beginning through: {boundary!r}")
+        animation_note = animation_note.replace(
+            f"Shots after cue {last}", "Beats beginning after that narration")
     log(f"{len(cues)} cues, {len(narration.split())} words; a beat is asked to stay under "
         f"about {max_words} words ({cap:g}s limit + {tol:.0%} tolerance); "
         + (f"elements.md used" if elements_md else "no elements.md"))
-    reply = _send(transport, writer,
-                  lambda f: beatsmod.prompt(narration, elements_md, ctx["visual_style"],
-                                            ctx["bible"], allowed, cap, max_words),
-                  log, ready=_has_json)
+    def build_beats_prompt(files):
+        text = beatsmod.prompt(narration, elements_md, ctx["visual_style"],
+                               ctx["bible"], allowed, cap, max_words,
+                               animation_note=animation_note, channel_context=channel_context)
+        dump("beats_prompt", text)
+        return text
+    reply = _send(transport, writer, build_beats_prompt, log, ready=_has_json)
     got = _collect_beats(transport, writer, reply, log, dump, allowed)
     beats, style = got["beats"], got["style"] or ctx["visual_style"]
+    plan_meta = beatsmod.metadata(got)
     log(f"{writer}: {len(beats)} beat(s) received")
 
     prev_faults, same = None, 0
-    for rnd in range(1, BEATS_MAX_ROUNDS + 1):
+    for rnd in range(1, BEATS_MAX_ROUNDS + 2):
         if should_stop():
             raise StageFailed("Stopped by you.")
-        starts, ranges, faults = beatsmod.check(beats, cues, allowed, cap, tol)
-        data, names = beatsmod.build_shotlist(beats, ranges, style)
+        if supplied:
+            plan_meta.setdefault("refs", {}).update(supplied)
+            for name in supplied:
+                plan_meta.get("refPrompts", {}).pop(name, None)
+        starts, ranges, faults = beatsmod.check(beats, cues, allowed, cap, tol,
+                                              allow_reveal=profile.reveal)
+        data, names = beatsmod.build_shotlist(beats, ranges, style, plan_meta, cues)
+        if not plan["allow_refs"] and studio.shotlist_uses_refs(data):
+            faults.append("References are disabled for this channel: remove refs/refPrompts "
+                          "registries and refs on every beat and reveal image.")
+        numbers = planning_audit.numerical_report(data, cues, auto=auto_numbers,
+                                                  overlays_enabled=renderer_text)
+        faults.extend(numbers["faults"])
+        pacing = planning_audit.pacing_report(data, cues, profile)
         if not faults:
             try:
                 _, loc = ep.shotlist_judge_prompt(
@@ -1459,7 +1521,57 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
                 faults = [str(x) for x in (loc or [])]
             except (ep.PromptError, RuntimeError, ValueError) as e:
                 log(f"code checks could not run: {e}")
-        beatsmod.save(pdir, beats, ranges, names, style)
+                faults.append(f"Code checks could not run: {e}")
+        verdict = None
+        judge_unavailable = False
+        if not faults and quality_judge:
+            if should_stop():
+                raise StageFailed("Stopped by you.")
+            log(f"round {rnd}: code checks passed; asking {quality_judge} for a quality review")
+            judge_prompt, _ = ep.shotlist_judge_prompt(
+                cfg, pid, json.dumps(data, ensure_ascii=False, indent=1), [])
+            judge_prompt += ("\nReview visual specificity, concrete props, financial comparisons and ONE "
+                             "depictable moment per still. Check current channel rules. Automatic numeric "
+                             "overlays are already audited by code; do not demand duplicate baked-in text.\n"
+                             + json.dumps(numbers, ensure_ascii=False))
+            dump(f"beats_checks_round{rnd}", json.dumps({
+                "round": rnd, "source": source, "pacing": pacing, "numbers": numbers,
+                "faults": faults, "status": "awaiting_quality_review"}, ensure_ascii=False, indent=2))
+            dump(f"beats_judge_prompt_round{rnd}", judge_prompt)
+            raw = _send(transport, quality_judge, lambda f: judge_prompt, log,
+                        new_chat=not judge_open, ready=_is_shotlist_verdict)
+            dump(f"beats_judge_round{rnd}", raw)
+            verdict = studio._parse_json_object(raw, want=("pass", "faults"))
+            if not verdict:
+                raw = _nudge_judge(transport, quality_judge, log, _is_shotlist_verdict)
+                dump(f"beats_judge_round{rnd}_retry", raw)
+                verdict = studio._parse_json_object(raw, want=("pass", "faults"))
+            if not verdict or not isinstance(verdict.get("faults"), list):
+                faults.append("Quality judge returned no usable verdict; retry the review.")
+                judge_unavailable = True
+            else:
+                judge_open = True
+                faults.extend(str(f) for f in verdict.get("faults", []))
+                weak = _weak_list(verdict)
+                ratio = verdict.get("detailed_ratio")
+                passed = (verdict.get("pass") is True and not faults
+                          and isinstance(ratio, (int, float)) and ratio >= plan["min_align"])
+                if not passed:
+                    faults.extend(f"{w.get('asset')}: {w.get('reason', '')}; "
+                                  + "; ".join(w.get("missing") or []) for w in weak)
+                    if not faults:
+                        faults.append("Quality review did not pass: " + "; ".join(
+                            str(x) for x in verdict.get("fixes", [])))
+        report = {"round": rnd, "source": source, "pacing": pacing, "numbers": numbers,
+                  "faults": faults, "quality_verdict": verdict,
+                  "status": "needs_correction" if faults else "checks_passed"}
+        dump(f"beats_checks_round{rnd}", json.dumps(report, ensure_ascii=False, indent=2))
+        for warning in pacing["warnings"]:
+            log("WARNING: " + warning)
+        beatsmod.save(pdir, beats, ranges, names, style, plan_meta)
+        if judge_unavailable:
+            raise StageFailed("Quality judge returned no usable verdict; previous shotlist preserved. "
+                              f"See {run_dir} for the full replies.")
         if not faults:
             old = pdir / "shotlist.json"
             if old.exists():
@@ -1469,32 +1581,51 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
                                 f"round {rnd}", advance=True)
             log(f"round {rnd}: no faults - shotlist saved ({len(data['shots'])} shots)"
                 + (f"; coverage gap: {gap}" if gap else "; next stage unlocked"))
+            dump("beats_result", json.dumps({"status": "accepted" if not gap else "not_advanced",
+                                              "round": rnd, "coverage_gap": gap}, indent=2))
             return data
         log(f"round {rnd}: {len(faults)} fault(s): " + " | ".join(f[:140] for f in faults[:3]))
         key = "\n".join(faults)
         same = same + 1 if key == prev_faults else 0
         prev_faults = key
-        if same >= 2:
+        if same >= 2 or rnd > BEATS_MAX_ROUNDS:
             break
-        msg = beatsmod.fix_prompt(faults, beats, ranges, cues, names, allowed, cap)
+        msg = beatsmod.fix_prompt(faults, beats, ranges, cues, names, allowed, cap,
+                                 plan_meta=plan_meta,
+                                 channel_context=channel_context + animation_note)
         got_fix = None
         for attempt in (1, 2):
-            fixed = transport.ask(writer, msg if attempt == 1 else
-                                  "That was not the JSON I asked for. Reply with ONLY the "
-                                  '{"replace": [...]} object in one ```json block, as text.',
+            dump(f"beats_fix_prompt_round{rnd}_{attempt}", msg)
+            fixed = transport.ask(writer, msg,
                                   (), new_chat=False, ready=_has_json)
             dump(f"beats_fix_round{rnd}_{attempt}", fixed)
             got_fix = beatsmod.parse_fix(fixed, allowed)
             if got_fix:
-                break
+                try:
+                    updated = beatsmod.apply_fix(beats, got_fix)
+                except ValueError as e:
+                    log(f"fix rejected: {e}")
+                    msg = f"Your correction was rejected: {e}\n\n" + msg
+                    got_fix = None
+                else:
+                    break
+            else:
+                msg = 'Reply with ONLY the {"replace": [...]} JSON object.\n\n' + msg
         if not got_fix:
             log(f"{writer} gave no usable fix")
             break
         before = len(beats)
-        beats = beatsmod.apply_fix(beats, got_fix)
+        beats = updated
+        for key, entries in beatsmod.metadata(got_fix).items():
+            if entries:
+                plan_meta.setdefault(key, {}).update(entries)
+            else:
+                plan_meta[key] = {}
         if got_fix["style"]:
             style = got_fix["style"]
         log(f"fix applied: {len(got_fix['replace'])} beat(s) replaced, {before} -> {len(beats)} beats")
+    dump("beats_result", json.dumps({"status": "failed", "round": rnd,
+                                      "last_faults": prev_faults}, ensure_ascii=False, indent=2))
     raise StageFailed(
         f"The beat plan did not pass the code checks. beats.json holds the last try; "
         f"shotlist.json was not changed. Still wrong: {(prev_faults or '')[:300]}")
@@ -1503,11 +1634,14 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
 def beats_job(cfg, pid: int, writer: str, judge: str, log,
               should_stop: Callable[[], bool] = lambda: False,
               options: dict | None = None) -> None:
+    options = dict(options or {})
+    quality = bool(options.pop("beats_quality_judge", False))
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
         try:
-            run_beats(cfg, pid, t, writer, log, should_stop)
+            run_beats(cfg, pid, t, writer, log, should_stop,
+                      quality_judge=judge if quality else None)
         finally:
             save_chats(cfg, pid, t)
 

@@ -374,8 +374,11 @@ def _finish_overlays(items, first_cue, last_cue, by_index, shot_start_s, shot_en
                 it["end"] = round(min(b.end_seconds, shot_end_s) - shot_start_s, 3)
         out.append(it)
     if text_options is not None and getattr(text_options, "auto_values", False):
-        cues = [(by_index[c].start_seconds, by_index[c].end_seconds, by_index[c].text)
-                for c in range(first_cue, last_cue + 1) if c in by_index]
+        indices = sorted(by_index)
+        prepared = dict(zip(indices, auto_values.prepare_cues([
+            (by_index[c].start_seconds, by_index[c].end_seconds, by_index[c].text)
+            for c in indices])))
+        cues = [prepared[c] for c in range(first_cue, last_cue + 1) if c in prepared]
         have = {re.sub(r"\W+", "", (o.get("text") or "")).lower() for o in out}
         for it in auto_values.build(cues, shot_start_s, shot_end_s,
                                     style=text_options.auto_style,

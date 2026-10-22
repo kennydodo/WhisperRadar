@@ -40,10 +40,36 @@ _PATTERNS = [
 _SENTENCE_END = re.compile(r"[.!?…][\"')\]]*\s*$")
 
 
+def prepare_cues(cues):
+    """Join an aligned number split across cues without changing its timestamp."""
+    out = [list(c) for c in cues]
+    for i in range(len(out) - 1):
+        if not re.search(r"\d\s*$", out[i][2]):
+            continue
+        j = i + 1
+        while j < len(out):
+            fragment = re.match(r"\s*,\s*(\d{3})(?!\d)", out[j][2])
+            if not fragment:
+                break
+            out[i][2] = out[i][2].rstrip() + "," + fragment.group(1)
+            out[j][2] = out[j][2][fragment.end():].lstrip()
+            if out[j][2]:
+                break
+            j += 1
+        if j < len(out):
+            unit = re.match(r"\s*(%|years?\b|months?\b|weeks?\b|days?\b|percent\b)", out[j][2], re.I)
+            if unit:
+                out[i][2] = out[i][2].rstrip() + " " + unit.group(1)
+                out[j][2] = out[j][2][unit.end():].lstrip()
+    return [tuple(c) for c in out]
+
+
 def find_values(text: str) -> List[str]:
     """The values in one cue's text, in the order they are said, each shown as
     spoken ("170 kilograms", "$240,000", "1940"). Overlapping matches keep the
     longest one."""
+    # Alignment commonly inserts spaces inside a comma-separated amount.
+    text = re.sub(r"(?<=\d)\s*,\s*(?=\d{3}\b)", ",", text)
     spans: list = []
     for rx in _PATTERNS:
         for mt in rx.finditer(text):
@@ -73,6 +99,7 @@ def build(cues: list, shot_start: float, shot_end: float, *, style: str = "stat"
           max_seconds: float = 8.0) -> list:
     """cues = [(start_s, end_s, text), ...] of the shot, in order. Overlay items
     (seconds from the shot's start) for every cue that says a value."""
+    cues = prepare_cues(cues)
     items: list = []
     last_cue_idx = len(cues) - 1
     for i, (cs, ce, text) in enumerate(cues):
@@ -89,7 +116,7 @@ def build(cues: list, shot_start: float, shot_end: float, *, style: str = "stat"
         end = min(max(end, start + min_seconds), start + max_seconds, shot_end)
         if end - start < 0.4:
             continue
-        items.append({"text": "\n".join(vals[:2]), "style": style, "position": position,
+        items.append({"text": "\n".join(vals), "style": style, "position": position,
                       "anim": "fade", "start": round(start - shot_start, 3),
                       "end": round(end - shot_start, 3), "auto": True})
     # one value at a time in a position: an earlier one ends when the next begins

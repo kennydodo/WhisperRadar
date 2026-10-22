@@ -453,15 +453,26 @@ def _animation_note(eff: dict, cues: list) -> str:
         seconds, motion.window_last_cue(cues, seconds, studio._srt_seconds))
 
 
+def planning_context_prompt(cfg, ctx: dict, plan: dict, narration: str,
+                            animation_note: str = "") -> str:
+    """The common channel brief and inputs, shared by shotlists and beats."""
+    eff, profile = ctx["eff"], plan["profile"]
+    brief = studio.load_manifest_brief(
+        cfg, profile, eff.get("brief_presentation") or "")
+    pacing = briefs.pacing_note(profile, plan["total_s"], len(plan["cues"]),
+                               plan["max_hold"], plan["min_align"])
+    return studio.shotlist_prompt(
+        brief, narration, ctx["visual_style"],
+        extra_direction=db.stage_extra(ctx["prod"], "shots"),
+        bible=ctx["bible"], supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
+        pacing_note=pacing, allow_refs=plan["allow_refs"],
+        animation_note=animation_note, density=ctx["density"])
+
+
 def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
     ctx = _context(cfg, pid)
     eff = ctx["eff"]
     plan = _plan_inputs(cfg, pid, ctx)
-    profile = plan["profile"]
-    brief = studio.load_manifest_brief(
-        cfg, profile, eff.get("brief_presentation") or "")
-    pacing = briefs.pacing_note(profile, plan["total_s"], len(plan["cues"]),
-                                plan["max_hold"], plan["min_align"])
     bible = ctx["bible"]
     # The brief is already chosen for this channel, so it goes in the prompt
     # itself and nothing about it has to be attached. Only the narration (the
@@ -474,13 +485,8 @@ def shotlist_planner_prompt(cfg, pid: int, files: list | None = None) -> str:
                   "\"N: text (Ns)\" - read all of it")
         narration = (f"in the attached {NARRATION_FILE} (read all of it; "
                      f"one line per cue).")
-    text = studio.shotlist_prompt(
-        brief, narration, ctx["visual_style"],
-        extra_direction=db.stage_extra(ctx["prod"], "shots"),
-        bible=bible, supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
-        pacing_note=pacing, allow_refs=plan["allow_refs"],
-        animation_note=_animation_note(eff, plan["cues"]),
-        density=ctx["density"])
+    text = planning_context_prompt(cfg, ctx, plan, narration,
+                                   _animation_note(eff, plan["cues"]))
     if not bible.strip():
         # the brief's bible gate otherwise makes the LLM ask for one
         text += ("\n\nINPUT 3 - CHARACTER / REFERENCE BIBLE: this channel "
