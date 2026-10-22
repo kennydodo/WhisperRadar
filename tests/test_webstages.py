@@ -853,3 +853,14 @@ class FullStyleInlineTests(unittest.TestCase):
                                     target_words=1000, style_limit=10 ** 6)
         self.assertNotIn("END-OF-GUIDE", cut)
         self.assertIn("END-OF-GUIDE", full)
+
+
+class FeedbackWordingTests(unittest.TestCase):
+    def test_code_only_feedback_says_no_reviewer_was_called(self):
+        text = ws._plan_feedback(["1 shot(s) hold longer than 14.4s"], [], [], None, [])
+        self.assertIn("no reviewer was called", text)
+        self.assertNotIn("The reviewer found problems", text)
+
+    def test_feedback_with_a_verdict_names_the_reviewer(self):
+        text = ws._plan_feedback([], [], [], {"pass": False, "faults": ["x"]}, [])
+        self.assertIn("The reviewer found problems", text)

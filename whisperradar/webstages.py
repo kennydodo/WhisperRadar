@@ -878,7 +878,11 @@ def _plan_feedback(faults: list[str], weak: list[dict], fixes: list[str],
     """What goes back to the writer. With the judge's `verdict` the writer
     gets it VERBATIM (the JSON, as you would paste it by hand); without one
     (recovery, tests) the points are listed from `faults` / `weak` / `fixes`."""
-    lines = ["The reviewer found problems with your shotlist."]
+    # without a verdict no reviewer was called: the app's own code checks found
+    # the problems, and the writer is told so
+    lines = ["The reviewer found problems with your shotlist." if verdict else
+             "The app's own automatic checks (no reviewer was called) found "
+             "problems with your shotlist."]
     if verdict:
         if local:
             lines.append("Rule checks run by code on your plan (fix these "
