@@ -508,17 +508,20 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         f"whether or not it has motion. Holds up to that are NOT faults: do "
         f"not report them.",
     ]
+    if profile.per_cue:       # a cue cannot be split, so a long cue is not a fault here
+        lines = [ln for ln in lines if not ln.startswith("MAXIMUM HOLD")]
     if profile.min_hold:
         lines.append(
             f"MINIMUM HOLD: this is a slow-paced channel - shots are meant "
             f"to hold {profile.min_hold:g}-{cap:g}s. More than "
             f"{briefs.MIN_HOLD_MAX_SHORT_SHARE:.0%} of the shots (the last "
             f"one is exempt) holding under {profile.min_hold:g}s is a fault.")
-    if briefs._allows(profile, "PU") or briefs._allows(profile, "PD"):
+    if any(briefs._allows(profile, c) for c in ("PU", "PD", "PL", "PR")):
         lines.append(
-            "TILT LANDING: every PU/PD shot should carry a numeric \"land\" (0-100, how far "
-            "down the picture its main subject sits). A PU with land above 45, a PD with land "
-            "below 55, or a PU/PD without land is a fault: say which shots.")
+            "PAN LANDING: every PU/PD/PL/PR shot should carry a numeric \"land\" (0-100: how far "
+            "down - PU/PD - or across - PL/PR - the picture its main subject sits). A PU or PL with "
+            "land above 45, a PD or PR with land below 55, or a pan or tilt without land is a "
+            "fault: say which shots.")
     if profile.allowed:
         only = "/".join(profile.allowed)
         lines.append(f"MOTION CODES: only {only} is allowed on this "
@@ -567,10 +570,18 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
     kinds = briefs.types_text(profile.types)
     if kinds:
         lines.append(kinds)
-    lines.append(
-        f"FRAGMENTATION: more than {studio.FRAGMENTATION_SHARE:.0%} of "
-        f"the shots spanning a single cue is a fault - images should change "
-        f"when the idea changes, not at every cue.")
+    if profile.per_cue:
+        lines.append(
+            "EVERY CUE: this channel gives every cue its own shot and its own "
+            "new image. Exactly one shot per cue, every \"cues\" a single "
+            "number, no image used twice. Shots spanning several cues, a reused "
+            "image, or a missing cue is a fault; one image per cue is NOT "
+            "fragmentation here.")
+    else:
+        lines.append(
+            f"FRAGMENTATION: more than {studio.FRAGMENTATION_SHARE:.0%} of "
+            f"the shots spanning a single cue is a fault - images should change "
+            f"when the idea changes, not at every cue.")
     if not plan["allow_refs"]:
         lines.append(
             "REFERENCES ARE OFF for this channel: the shotlist must have "

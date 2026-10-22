@@ -181,6 +181,18 @@ class MotionEngine:
                 # decelerating to rest)
                 start_x = 0 if motion == m.PAN_RIGHT else spare_x
                 end_x = spare_x if motion == m.PAN_RIGHT else 0
+                if land is not None:
+                    # the shotlist says where the subject sits (percent across the
+                    # picture): the pan ends with that point centred, not on the edge
+                    want = min(max(land, 0.0), 100.0) / 100.0 * image_width - fit_width / 2.0
+                    want = min(max(want, 0.0), spare_x)
+                    if abs(want - start_x) >= LAND_MIN_TRAVEL * spare_x:
+                        end_x = want
+                    else:
+                        warnings.append(
+                            f"land {land:g} leaves almost no {_motion_name(motion)} travel "
+                            "(the subject sits where the move starts); sweeping the whole "
+                            "picture instead.")
             else:
                 travel = self._paced_travel(self._output.width,
                                             fit_width / self._output.width,

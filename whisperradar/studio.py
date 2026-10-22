@@ -5758,6 +5758,32 @@ def shotlist_reveal_faults(shots: list[dict],
     return faults
 
 
+def _every_cue_faults(shots: list, cues: list) -> list[str]:
+    """The "every cue" brief: one shot per cue, each with its own image."""
+    out: list[str] = []
+    multi = []
+    for s in shots:
+        r = cue_range(s.get("cues"))
+        if r and r[0] != r[1]:
+            multi.append(f"{s.get('asset')} (cues {r[0]}-{r[1]})")
+    if multi:
+        out.append(f"{len(multi)} shot(s) span several cues, but this channel gives EVERY cue "
+                   f"its own shot and its own new image - split each into one shot per cue, "
+                   f"each with its own image and filename: " + ", ".join(multi[:30])
+                   + (f" ...and {len(multi) - 30} more" if len(multi) > 30 else ""))
+    if len(shots) != len(cues):
+        out.append(f"the plan has {len(shots)} shots for {len(cues)} cues - this channel needs "
+                   f"exactly one shot per cue.")
+    used: dict = {}
+    for s in shots:
+        used.setdefault(str(s.get("asset") or ""), []).append(s)
+    reused = [a for a, v in used.items() if a and len(v) > 1]
+    if reused:
+        out.append(f"{len(reused)} image(s) are used by more than one shot - every cue needs its "
+                   f"own new image: " + ", ".join(reused[:30]))
+    return out
+
+
 def shotlist_pacing(data: dict, cues: list[dict],
                     max_hold_seconds: float = SHOT_MAX_HOLD_DEFAULT,
                     profile: "briefs.MotionProfile | None" = None
@@ -5805,9 +5831,10 @@ def shotlist_pacing(data: dict, cues: list[dict],
     faults: list[str] = []
     # holds are checked against the limit plus a tolerance (briefs.*_TOLERANCE),
     # the planner is still told the nominal one
-    long = sorted((h for h in holds
-                   if h[0] > briefs.hold_limit(cap, prof.max_hold_tol)
-                   + 1e-9), reverse=True)
+    # an "every cue" channel gives each cue its own shot: a long cue cannot be split
+    long = [] if prof.per_cue else sorted(
+        (h for h in holds
+         if h[0] > briefs.hold_limit(cap, prof.max_hold_tol) + 1e-9), reverse=True)
     if long:
         SHOWN_CAP = 30
         lines = []
@@ -5949,7 +5976,9 @@ def shotlist_pacing(data: dict, cues: list[dict],
                             sorted(short)[:5]))
     one_cue = sum(1 for s in shots
                   if (r := cue_range(s.get("cues"))) and r[0] == r[1])
-    if one_cue / len(holds) > FRAGMENTATION_SHARE:
+    if prof.per_cue:
+        faults.extend(_every_cue_faults(shots, cues))
+    elif one_cue / len(holds) > FRAGMENTATION_SHARE:
         faults.append(f"{one_cue} of {len(holds)} shots span a single cue - "
                       f"changing images more often than the ideas change is "
                       f"fragmentation; group the cues that develop one idea")

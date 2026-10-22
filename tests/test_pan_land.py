@@ -61,3 +61,37 @@ class BriefTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HorizontalTests(unittest.TestCase):
+    WIDE = (2880, 1296)
+
+    def _plan(self, motion, land):
+        eng = MotionEngine(MotionOptions(), OutputOptions(width=1376, height=768))
+        return eng.plan_clip(motion, m.EXPLICIT_CODE, motion != m.PAN_LEFT, *self.WIDE,
+                             duration_seconds=4.0, land=land)
+
+    def test_pr_without_land_sweeps_edge_to_edge(self):
+        p = self._plan(m.PAN_RIGHT, None)
+        self.assertEqual(0, p.start.x)
+        self.assertAlmostEqual(self.WIDE[0] - p.start.width, p.end.x)
+
+    def test_pr_land_ends_with_the_subject_centred(self):
+        p = self._plan(m.PAN_RIGHT, 55)
+        self.assertAlmostEqual(0.55 * self.WIDE[0], p.end.x + p.end.width / 2, places=3)
+        self.assertLess(p.end.x, self.WIDE[0] - p.end.width)
+
+    def test_pl_land_ends_with_the_subject_centred(self):
+        p = self._plan(m.PAN_LEFT, 45)
+        self.assertAlmostEqual(0.45 * self.WIDE[0], p.end.x + p.end.width / 2, places=3)
+        self.assertGreater(p.end.x, 0)
+
+    def test_land_against_the_direction_is_ignored_with_a_warning(self):
+        p = self._plan(m.PAN_RIGHT, 10)
+        self.assertAlmostEqual(self.WIDE[0] - p.start.width, p.end.x)
+        self.assertTrue(p.warnings)
+
+    def test_brief_asks_for_land_on_horizontal_pans_too(self):
+        rule = briefs.STANDARD.slot_values()["MOTION_FIELD_RULE"]
+        self.assertIn("PU, PD, PL and PR", rule)
+        self.assertIn("how far ACROSS", rule)

@@ -75,13 +75,14 @@ MIX_MIN_ZOOM_SHOTS = 10
 # PU/PD shots say where their subject sits so the tilt can end on it, not on the
 # picture's edge (shot field `land`, read by the video planner).
 LAND_RULE = (
-    "- `land` (optional, only on PU and PD shots; a sibling of `motion`, e.g. "
-    "`\"motion\": \"PD\", \"land\": 80`): how far down the picture the shot's main subject sits, "
-    "0 = top edge, 100 = bottom edge - the thing the viewer should be looking at when the tilt stops. "
-    "The tilt ends with that point in the middle of the frame instead of on the picture's edge, so a "
-    "tilt never lands on empty wall, floor or sky. PU travels upward, so its `land` is in the upper "
-    "half (0-45); PD travels downward, so its `land` is in the lower half (55-100). Compose the image so "
-    "the subject really sits there, and give `land` on every PU/PD shot."
+    "- `land` (optional, only on PU, PD, PL and PR shots; a sibling of `motion`, e.g. "
+    "`\"motion\": \"PD\", \"land\": 80`): where in the picture the shot's main subject sits - the thing "
+    "the viewer should be looking at when the move stops. For PU/PD it is how far DOWN the picture "
+    "(0 = top edge, 100 = bottom edge); for PL/PR it is how far ACROSS (0 = left edge, 100 = right edge). "
+    "The move ends with that point in the middle of the frame instead of on the picture's edge, so it "
+    "never lands on empty wall, floor, sky or background. PU travels up, so its `land` is in the upper "
+    "half (0-45); PD travels down (55-100); PL travels left (0-45); PR travels right (55-100). Compose the "
+    "image so the subject really sits there, and give `land` on every pan or tilt shot."
 )
 
 STANDARD_SLOTS: dict[str, str] = {
@@ -148,6 +149,8 @@ class MotionProfile:
     min_hold: float | None = None
     max_hold: float | None = None
     slots: dict = field(default_factory=dict)
+    # one shot and one new image for EVERY narration cue (brief_every_cue.py)
+    per_cue: bool = False
     # shot-type caps + host-in-frame shares (see normalize_types); None = none
     types: dict | None = None
     # the channel lets the plan use reveal shots (see reveal_block)
@@ -169,7 +172,7 @@ class MotionProfile:
         mx = _num(self.max_hold) if self.max_hold else ""
         out = {k: v.replace("[[MIN]]", mn).replace("[[MAX]]", mx)
                for k, v in values.items()}
-        if "MOTION_FIELD_RULE" in out and (_allows(self, "PU") or _allows(self, "PD")):
+        if "MOTION_FIELD_RULE" in out and any(_allows(self, c) for c in ("PU", "PD", "PL", "PR")):
             out["MOTION_FIELD_RULE"] = out["MOTION_FIELD_RULE"].rstrip() + "\n" + LAND_RULE
         mix = mix_text(self)
         if mix and "MOTION_SECTION" in out:
@@ -407,9 +410,22 @@ DOCUMENTARY = MotionProfile(
             "ZI and ZO carry most shots (neither above ~55%); each of PL/PR/PU/PD/PV stays at ~10% of shots or less; ST is ~5% of shots at most, only on ~1–2-cue holds. Every other shot carries motion that matches its composition and canvas. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - sparingly, never on the last shot."),
     })
 
+EVERY_CUE = replace(
+    STANDARD, key="every_cue",
+    label="Every cue - one new image per narration cue",
+    description="Every narration cue gets its own shot and its own new image, "
+                "no grouping and no reuse. A video has as many images as it "
+                "has cues (several times more than a normal plan).",
+    per_cue=True,
+    slots={
+        "HOLD_RULE": ("This channel changes the image at EVERY cue: each cue "
+                      "is its own shot, however short or long it is."),
+        "CHECK_HOLD": ("every shot covers exactly one cue."),
+    })
+
 MOTION_PRESETS: dict[str, MotionProfile] = {
     p.key: p for p in (STANDARD, STATIC, LONG_HOLDS, FLOW_SAFE, ZOOMS_ONLY,
-                       FAST_PACED, DOCUMENTARY)}
+                       FAST_PACED, DOCUMENTARY, EVERY_CUE)}
 
 
 def get_profile(key) -> MotionProfile:
@@ -1190,6 +1206,9 @@ def render_brief(template: str, profile: MotionProfile | None = None,
             "the built-in template or add the slots (see brief_template.md)")
     block = presentation_block(presentation)
     text = template
+    if profile.per_cue:
+        from . import brief_every_cue
+        text = brief_every_cue.apply(text)
     if "PRESENTATION" in present:
         if block:
             text = text.replace("{{PRESENTATION}}", block)
@@ -1226,6 +1245,14 @@ def pacing_note(profile: MotionProfile | None, total_s: float, n_cues: int,
     without it a planner that cannot see durations under-plans (e.g. 34 shots
     for ~960s) and the review fails after a very expensive generation."""
     profile = profile or STANDARD
+    if profile.per_cue and n_cues > 0:
+        return (f"the narration runs ~{total_s:.0f}s across {n_cues} cues (the "
+                f"(Ns) suffix on each line is that cue's length in seconds). "
+                f"This channel changes the image at every cue: the plan is "
+                f"judged on exactly {n_cues} shots, one per cue (every `cues` "
+                f"a single number, 1 to {n_cues} in order), each with its own "
+                f"new image and unique filename, and detailed prompts on at "
+                f"least {min_align:.0%} of shots.")
     if not (max_hold > 0 and total_s > 0):
         return ""
     min_shots = int(total_s / max_hold) + (1 if total_s % max_hold else 0)
