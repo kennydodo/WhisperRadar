@@ -8,6 +8,9 @@ Only the cuts INSIDE a scene take part. Left alone: the first shot, the cut at
 a scene boundary (scene_boundary_kind), a cut the editor set by hand, a
 transition the shotlist asked for, and reveal steps.
 
+A slide never repeats the direction of the slide before it (a slide up is never
+followed by another slide up) as long as more than one direction has a share.
+
 The "crossfade" share keeps whatever transitions.kind already put there. Only
 the cut and slide shares change a clip. Slides go on shots that also move
 (never a still shot) and are not placed back to back unless the slides add up
@@ -53,6 +56,8 @@ def apply(timeline, options) -> dict:
     frames = round(tr.duration_seconds * timeline.fps)
     assigned = {k: 0 for k in _KINDS}
     last_slide = -10
+    last_kind = None
+    several = sum(1 for k in SLIDE_KINDS if want[k] > 0) > 1
     n = 0
     for i, clip in enumerate(clips):
         if (i == 0 or clip.scene_id != clips[i - 1].scene_id
@@ -69,6 +74,8 @@ def apply(timeline, options) -> dict:
                     continue
                 if i - last_slide == 1 and slide_share <= 0.5:
                     continue
+                if several and k == last_kind:
+                    continue            # never the same slide direction twice in a row
             choice = k
             break
         assigned[choice] += 1
@@ -77,6 +84,7 @@ def apply(timeline, options) -> dict:
         elif choice in SLIDE_KINDS:
             clip.transition = m.TransitionIn(choice, frames)
             last_slide = i
+            last_kind = choice
     counts.update(cut=assigned["cut"], soft=assigned["soft"],
                   slide=sum(assigned[k] for k in SLIDE_KINDS), candidates=n)
     counts["by_kind"] = {k: assigned[k] for k in SLIDE_KINDS}

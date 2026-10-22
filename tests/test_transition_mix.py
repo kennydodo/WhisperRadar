@@ -169,3 +169,33 @@ class FilenameFlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoRepeatTests(unittest.TestCase):
+    def test_the_same_slide_direction_never_follows_itself(self):
+        o = ProjectOptions()
+        o.transitions.crossfade_percent = 20
+        o.transitions.slide_left_percent = o.transitions.slide_right_percent = 20
+        o.transitions.slide_up_percent = o.transitions.slide_down_percent = 20
+        tl = _timeline(n_scenes=3, per_scene=40)
+        tm.apply(tl, o)
+        slides = [k for k in _kinds(tl) if k and k.startswith("slide")]
+        self.assertGreater(len(slides), 20)
+        for a, b in zip(slides, slides[1:]):
+            self.assertNotEqual(a, b)
+
+    def test_two_directions_alternate_and_a_single_direction_is_still_allowed(self):
+        o = ProjectOptions()
+        o.transitions.crossfade_percent = 0
+        o.transitions.slide_up_percent = o.transitions.slide_right_percent = 50
+        tl = _timeline(n_scenes=1, per_scene=30)
+        tm.apply(tl, o)
+        slides = [k for k in _kinds(tl) if k and k.startswith("slide")]
+        for a, b in zip(slides, slides[1:]):
+            self.assertNotEqual(a, b)
+        only_up = ProjectOptions()
+        only_up.transitions.crossfade_percent = 50
+        only_up.transitions.slide_up_percent = 50
+        tl2 = _timeline(n_scenes=1, per_scene=30)
+        tm.apply(tl2, only_up)
+        self.assertTrue(any(k == "slide_up" for k in _kinds(tl2)))
