@@ -343,6 +343,53 @@ OVERLAY_ANIMS = ("none", "fade", "slide-up", "slide-down")
 OVERLAY_MAX_CHARS = 200
 
 
+def _parse_overlay_cue(v):
+    """An overlay's `cue`: 14, "14", "14-15" -> (first, last), else None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return (v, v) if v >= 1 else None
+    if isinstance(v, str):
+        mt = re.fullmatch(r"\s*(\d+)\s*(?:-\s*(\d+))?\s*", v)
+        if mt:
+            a, b = int(mt.group(1)), int(mt.group(2) or mt.group(1))
+            if 1 <= a <= b:
+                return (a, b)
+    return None
+
+
+def _finish_overlays(items, first_cue, last_cue, by_index, shot_start_s, shot_end_s, text_options):
+    """The shot's overlay items with their times settled: an item that names its
+    `cue` is shown for exactly that cue (seconds from the shot start); with
+    text.auto_values on, the numbers/years/amounts the narration says are added."""
+    from . import auto_values
+    out: list = []
+    for it in items or []:
+        it = dict(it)
+        cue = it.pop("cue", None)
+        if cue is not None:
+            a, b = by_index.get(cue[0]), by_index.get(cue[1])
+            if a is not None and b is not None and first_cue <= cue[0] and cue[1] <= last_cue:
+                it["start"] = round(max(a.start_seconds, shot_start_s) - shot_start_s, 3)
+                it["end"] = round(min(b.end_seconds, shot_end_s) - shot_start_s, 3)
+        out.append(it)
+    if text_options is not None and getattr(text_options, "auto_values", False):
+        cues = [(by_index[c].start_seconds, by_index[c].end_seconds, by_index[c].text)
+                for c in range(first_cue, last_cue + 1) if c in by_index]
+        have = {re.sub(r"\W+", "", (o.get("text") or "")).lower() for o in out}
+        for it in auto_values.build(cues, shot_start_s, shot_end_s,
+                                    style=text_options.auto_style,
+                                    position=text_options.auto_position,
+                                    min_seconds=text_options.auto_min_seconds,
+                                    max_seconds=text_options.auto_max_seconds):
+            key = re.sub(r"\W+", "", it["text"]).lower()
+            if key in have:
+                continue                    # the writer already shows this value
+            it.pop("auto", None)
+            out.append(it)
+    return out or None
+
+
 def _parse_overlays(shot: dict, number: int, issues: list):
     """`overlays`: text the renderer draws (own font/style) instead of text baked
     into the image. Each item: {"text", "style"?, "position"?, "start"?, "end"?,
@@ -412,9 +459,15 @@ def _parse_overlays(shot: dict, number: int, issues: list):
                 m.WARNING, "SHOTLIST_OVERLAY_INVALID",
                 f'shotlist.json: {where} "end" must be after "start". Using the whole shot.'))
             times = [None, None]
+        cue = _parse_overlay_cue(item.get("cue"))
+        if item.get("cue") is not None and cue is None:
+            issues.append(m.ValidationIssue(
+                m.WARNING, "SHOTLIST_OVERLAY_INVALID",
+                f'shotlist.json: {where} "cue" must be a cue number or a range like "14-15". '
+                'Using the start/end seconds (or the whole shot).'))
         items.append({"text": text, "style": str(item.get("style") or "caption").strip().lower(),
                       "position": position, "anim": anim,
-                      "start": times[0], "end": times[1]})
+                      "start": times[0], "end": times[1], "cue": cue})
     return items or None
 
 
@@ -475,7 +528,7 @@ class _Planned:
 
 
 def expand(document: ShotListDocument, subtitles: list, image_file_names: list,
-           transitions, issues: list) -> Optional[mf.VisualManifest]:
+           transitions, issues: list, text_options=None) -> Optional[mf.VisualManifest]:
     entries = document.shots
     if not entries:
         issues.append(m.ValidationIssue(m.ERROR, "SHOTLIST_EMPTY",
@@ -561,7 +614,8 @@ def expand(document: ShotListDocument, subtitles: list, image_file_names: list,
             reveal_layout=None if reveal_at is None else entry.reveal_layout,
             reveal_assets=reveal_assets,
             sfx=entry.sfx,
-            overlays=entry.overlays))
+            overlays=_finish_overlays(entry.overlays, entry.first_cue, entry.last_cue, by_index,
+                                      start_ms / 1000.0, end_ms / 1000.0, text_options)))
 
     # 2. narration decides the order
     ordered = sorted(planned, key=lambda p: p.start_ms)

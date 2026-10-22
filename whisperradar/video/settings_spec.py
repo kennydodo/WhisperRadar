@@ -37,8 +37,19 @@ CHOICES = {
     "sound.default_pop": [p[0] for p in opt.POP_VARIANTS],
     "planner": ["v1", "v2"],
     "visual_mode": list(opt.VISUAL_MODES),
+    "text.auto_style": ["caption", "stat", "title", "label", "lower-third"],
+    "text.auto_position": ["top-left", "top-center", "top-right", "middle-left", "center",
+                           "middle-right", "bottom-left", "bottom-center", "bottom-right"],
 }
 HELP = {
+    "text.auto_values": "Show the numbers, years and amounts the narration says on screen "
+                        "(found in the subtitles, no LLM). Each appears when its cue starts and "
+                        "goes when the sentence is over. A channel whose brief has 'text drawn "
+                        "by the renderer' turns this on by itself unless you set it here.",
+    "text.auto_style": "Look of the automatic value text (stat = big number).",
+    "text.auto_position": "Where the automatic value text sits.",
+    "text.auto_min_seconds": "An automatic value stays on screen at least this long.",
+    "text.auto_max_seconds": "An automatic value never stays longer than this.",
     "output.fps": "Frames per second of the final video.",
     "visual_mode": "images = stills/clips (default). motion_graphics or "
                    "whiteboard = the production is an explainer: scenes come "

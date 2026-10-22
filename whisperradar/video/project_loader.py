@@ -106,7 +106,7 @@ def _load_manifest_for_planner(project_folder, options, subtitles, issues):
 
         manifest = shotlist.expand(document, subtitles,
                                    _enumerate_image_file_names(project_folder, options.naming),
-                                   options.transitions, issues)
+                                   options.transitions, issues, options.text)
         if manifest is None:
             return _load_visual_manifest(project_folder, issues)
 

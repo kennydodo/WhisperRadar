@@ -2774,6 +2774,16 @@ def apply_video_options(cfg, pid: int) -> None:
             except (IndexError, KeyError):
                 oc = None
             values = settings_spec.effective(conn, oc)
+            # a channel whose renderer draws the text also shows the narration's
+            # numbers/years/amounts, unless that was set explicitly
+            if "text.auto_values" not in values and oc not in (None, ""):
+                own = db.get_own_channel(conn, oc)
+                try:
+                    wants = bool(own["brief_text_overlays"]) if own is not None else False
+                except (IndexError, KeyError):
+                    wants = False
+                if wants:
+                    values = {**values, "text.auto_values": True}
         finally:
             conn.close()
         changed = settings_spec.apply_to_project(prod_dir(cfg, pid), values)

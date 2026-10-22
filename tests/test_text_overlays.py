@@ -29,7 +29,7 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(issues, [])
         self.assertEqual(items, [{"text": "$1,000 -> $1.8M", "style": "stat",
                                   "position": "top-center", "anim": "fade",
-                                  "start": None, "end": None}])
+                                  "start": None, "end": None, "cue": None}])
 
     def test_single_object_is_a_list(self):
         items, _ = _issues({"overlays": {"text": "Hi"}})

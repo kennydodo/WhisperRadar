@@ -144,6 +144,16 @@ class TextOptions:
     fonts_dir: str = ""             # folder with the channel's fonts (absolute, or relative to the project)
     safe_margin_percent: float = 6.0
     fade_seconds: float = 0.25
+    # Numbers, years and amounts the narration says are shown on screen by the
+    # renderer, found locally in the SRT (video/auto_values.py): they appear with
+    # the cue that says them and go when the sentence is over. Off = only the
+    # shotlist's own overlays. A channel whose brief has "text drawn by the
+    # renderer" turns it on for its productions unless set here.
+    auto_values: bool = False
+    auto_style: str = "stat"
+    auto_position: str = "top-right"
+    auto_min_seconds: float = 2.0
+    auto_max_seconds: float = 8.0
 
 
 @dataclass
