@@ -600,6 +600,14 @@ SPEC: list[dict] = [
     },
 ]
 
+SPEC.extend([
+    {"key": "flow_multi_account", "type": "bool", "default": False,
+     "label": "Enable multiple Flow accounts",
+     "help": "Opt in to two isolated Flow sessions. One browser job per account; different accounts can run in parallel. Off preserves the legacy session."},
+    {"key": "flow_default_account", "type": "choice", "default": "1",
+     "choices": ["1", "2"], "choice_labels": {"1": "Flow Account 1 (existing login)", "2": "Flow Account 2"},
+     "label": "Default Flow account", "help": "Used for new, unassigned productions only when multiple accounts are enabled. Existing projects keep their original account."},
+])
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 
 # The settings page renders these groups in order; a key missing from every
@@ -625,6 +633,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "shotlist_judge_provider", "shotlist_judge_temperature",
     ]),
     ("Production & images", [
+        "flow_multi_account", "flow_default_account",
         "default_engine", "default_render_mode", "default_upscale",
         "narration_speed", "images_chunk_size", "images_stop_on_failure",
         "images_max_consecutive_failures", "images_resume_wait_minutes",

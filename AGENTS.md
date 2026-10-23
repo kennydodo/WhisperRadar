@@ -1816,3 +1816,15 @@ ChatGPT's paid model choice is a "Thinking effort" pill that opens a popover wit
 - Mixed mode (explainer scenes beside image/AI shots) is NOT built: shotlist.json is C#-parity strict, so a per-shot marker needs a schema decision first.
 - Tests: tests/test_explainer_{contract,render,pipeline,page,compose,whiteboard}.py. Golden fixtures untouched; full suite green on the branch.
 
+## Codex packaging SEO requirements (2026-10-21)
+The user requested SEO for finished titles, descriptions and thumbnails. The
+shared gpt_packaging.PACKAGING_BRIEF now requires a primary search phrase,
+secondary phrases, search intent, natural title/description placement, readable
+complementary thumbnail headlines, accurate timed chapters only with timing
+evidence, and a final consistency check. codex_worker.run_job explicitly invokes
+that process. The existing notes field records the SEO rationale and evidence
+basis, separate from the public description. The local Codex worker and browser
+worker page both receive the shared brief. This adds no paid tools or automatic
+keyword research: absent supplied keyword evidence, label phrases script-derived;
+never invent volume, competition, rankings, or measured performance. This is
+Finish/GPT packaging only, not the hook-only Plan. Existing outputs are unchanged.

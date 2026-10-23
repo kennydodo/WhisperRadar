@@ -87,7 +87,7 @@ const COMMANDS = {
   },
 };
 
-const GLOBAL_VALUE_FLAGS = ['log-level'];
+const GLOBAL_VALUE_FLAGS = ['log-level', 'runtime-dir', 'upscale-tier'];
 
 const HELP = `FlowBatch — Playwright batch image generator for Google Flow
 
@@ -164,6 +164,8 @@ Common options
   --no-color                            Disable coloured output
   --channel <name>                      Browser channel, e.g. chrome or msedge
   --profile <dir>                       Use a different browser profile (rotates the Google session)
+  --runtime-dir <dir>                   Isolate state, downloads and debug output
+  --upscale-tier <off|1k|2k|4k>          Override upscale for this process only
   --headless                            Run without a visible window (not recommended for login)
   --url <url>                           Override the Flow URL
 

@@ -36,7 +36,7 @@ from flask import (
     session,
 )
 
-from . import external_prompts
+from . import external_prompts, flow_accounts
 from . import textfiles
 from . import motion
 from . import handover
@@ -55,7 +55,7 @@ from . import codex_worker
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
 from . import youtube_api
-from . import webchat, webstages
+from . import webchat, webstages, human_review
 from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, remote,
                scheduler, services, settings, studio)
 from .cli import _slugify, format_duration
@@ -480,6 +480,66 @@ def format_views(value) -> str:
 
 def create_app(cfg) -> Flask:
     app = Flask(__name__)
+    flow_login_status = {}
+
+    @app.context_processor
+    def _flow_account_context():
+        return {"flow_accounts_enabled": flow_accounts.enabled(cfg),
+                "flow_login_status": dict(flow_login_status),
+                "production_flow_account": lambda prod: flow_accounts.selection(
+                    cfg, Path(prod["work_dir"]) if prod["work_dir"] else cfg.studio_dir / str(prod["id"]), prod["id"])}
+
+    @app.post("/flow-accounts/<account>/login")
+    def flow_account_login(account):
+        if not flow_accounts.enabled(cfg):
+            abort(400, "Enable multiple Flow accounts in image settings first")
+        try:
+            flow_accounts.valid(account)
+            repo = studio.flowbatch_dir(cfg)
+            if not studio.flowbatch_ready(cfg):
+                raise ValueError("FlowBatch is not installed")
+            flow_accounts.require_supported_engine(cfg)
+            lock = flow_accounts.lease(cfg, account, wait=False)
+            lock.__enter__()
+        except (ValueError, RuntimeError) as exc:
+            return redirect("/settings?tab=Production+%26+images&error=" + quote(str(exc)))
+        flow_login_status[account] = "Opening sign-in window"
+
+        def login():
+            try:
+                logfile = flow_accounts.root(cfg) / account / "login.log"
+                with logfile.open("w", encoding="utf-8") as output:
+                    result = subprocess.run(["node", "src/cli.js", "login",
+                        *flow_accounts.account_flags(cfg, account)], cwd=str(repo),
+                        stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT)
+                flow_login_status[account] = ("Sign-in complete" if result.returncode == 0
+                                               else "Sign-in failed; see " + str(logfile))
+            except Exception as exc:
+                flow_login_status[account] = "Sign-in failed: " + str(exc)
+            finally:
+                lock.__exit__(None, None, None)
+        try:
+            threading.Thread(target=login, daemon=True).start()
+        except Exception:
+            lock.__exit__(None, None, None)
+            raise
+        return redirect("/settings?tab=Production+%26+images&msg=" + quote(
+            f"Flow Account {account}: sign in in the browser window. Refresh this page for status."))
+
+    @app.post("/studio/<int:pid>/flow-account")
+    def production_flow_account_save(pid):
+        conn = db.connect(cfg.db_path)
+        try:
+            if db.get_production(conn, pid) is None:
+                abort(404)
+        finally:
+            conn.close()
+        try:
+            flow_accounts.choose(cfg, studio.prod_dir(cfg, pid), pid,
+                                 request.form.get("flow_account", ""))
+        except (ValueError, RuntimeError) as exc:
+            return redirect(f"/studio/{pid}?error=" + quote(str(exc)))
+        return redirect(f"/studio/{pid}?msg=Flow+account+saved")
     from . import channel_discovery
     channel_discovery.register(app, cfg)
     remote.install(app, cfg)    # password gate for anything not local (phone access)
@@ -2497,6 +2557,11 @@ def create_app(cfg) -> Flask:
             fields["active"] = 1 if request.form.get("active") in ("1", "on",
                                                                   "true") else 0
         # per-channel production defaults; empty means "inherit the global"
+        if "flow_account" in request.form and flow_accounts.enabled(cfg):
+            raw = request.form.get("flow_account", "")
+            if raw not in ("", "1", "2"):
+                abort(400, "Invalid Flow account")
+            fields["flow_account"] = raw or None
         for key in ("default_voice", "bible_dir", "refs_dir",
                     "flow_project_url"):
             if key in request.form:
@@ -3230,7 +3295,7 @@ def create_app(cfg) -> Flask:
         except (ValueError, OSError, sqlite3.Error) as exc:
             error = str(exc)
         return render_template("gpt_worker.html", job=job, result=result, error=error,
-            csrf_token=csrf,
+            csrf_token=csrf, packaging_brief=gpt_packaging.PACKAGING_BRIEF,
             context_json=json.dumps(job["context"], ensure_ascii=False, indent=2) if job else "")
 
     @app.post("/gpt-pro/jobs/claim")
@@ -3850,6 +3915,7 @@ def create_app(cfg) -> Flask:
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
             source_video=source_video, attach_sources=attach_sources,
+            human_review=human_review.load(pdir),
             llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
@@ -3878,8 +3944,9 @@ def create_app(cfg) -> Flask:
                                                    eff["render_mode"]),
             own_channel_name=eff["own_channel_name"],
             channel_ws=studio.channel_writing_style_for(cfg, prod),
-            flow_project_url_default=(eff["flow_project_url"]
-                                      or cfg.flowbatch_project_url or ""),
+            flow_project_url_default=(eff["flow_project_url"] or
+                ("" if flow_accounts.enabled(cfg) and flow_accounts.selection(cfg, pdir, pid) == "2"
+                 else cfg.flowbatch_project_url) or ""),
             flowbatch_ready=studio.flowbatch_ready(cfg),
             own_channels=own_channels,
             script_versions=_version_names(pdir, "script"),
@@ -5106,6 +5173,41 @@ def create_app(cfg) -> Flask:
         return _studio_url(pid, msg=f"Web-chat {label} run started - a "
                                     f"browser window will open")
 
+    @app.post("/studio/<int:pid>/human-review")
+    def studio_human_review(pid):
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        writer = (request.form.get("writer") or "zai").strip()
+        reviewer = (request.form.get("judge") or "deepseek").strip()
+        if writer not in webchat.SITES or reviewer not in webchat.SITES:
+            return _studio_url(pid, error="Unknown chat site")
+        try:
+            rounds = int(request.form.get("rounds", "3"))
+        except ValueError:
+            rounds = 0
+        if rounds not in (3, 4, 5):
+            return _studio_url(pid, error="Choose 3, 4 or 5 revision rounds")
+        conn = db.connect(cfg.db_path)
+        try:
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        if not prod:
+            return redirect("/studio?error=Unknown+production")
+        script = studio.find_script(studio.prod_dir(cfg, pid))
+        if not script or not script.read_text(encoding="utf-8").strip():
+            return _studio_url(pid, error="Save a script before starting human-language review")
+        options = _chat_options(request.form, remember=False)
+        job = sjob._real()
+
+        def worker():
+            human_review.job(cfg, pid, writer, reviewer, rounds,
+                             job.log.append, lambda: job.cancel, options)
+
+        if not sjob.start(worker, f"Human-language review in web chat ({reviewer} reviews, {writer} revises)"):
+            return _studio_url(pid, error="A job is already running")
+        return _studio_url(pid, msg="Human-language review started")
+
     @app.post("/studio/<int:pid>/webchat-stop")
     def studio_webchat_stop(pid):
         """Stop a web-chat run after its current round (the loop has no round
@@ -5113,6 +5215,8 @@ def create_app(cfg) -> Flask:
         if not sjob.running or "web chat" not in str(sjob.kind or ""):
             return _studio_url(pid, error="No web-chat run is going")
         sjob.cancel = True
+        if "Human-language review" in str(sjob.kind or ""):
+            return _studio_url(pid, msg="Stopping human-language review after the current reply; drafts are kept and the saved script stays unchanged")
         if "shotlist" not in str(sjob.kind or ""):
             return _studio_url(pid, msg="Stopping after the current chat reply - "
                                         "your saved shotlist is not changed")

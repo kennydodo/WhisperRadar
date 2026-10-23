@@ -321,6 +321,19 @@
 
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
+        {% if flow_accounts_enabled %}
+        <form method="post" action="/studio/{{ prod['id'] }}/flow-account">
+          <label>Flow account
+            <select name="flow_account" {{ 'disabled' if job.running else '' }}>
+              {% for account in ['1', '2'] %}
+              <option value="{{ account }}" {{ 'selected' if production_flow_account(prod) == account else '' }}>Flow Account {{ account }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button {{ 'disabled' if job.running else '' }}>Save Flow account</button>
+          <span class="muted">Choose before the first Flow job. Existing projects keep their account.</span>
+        </form>
+        {% endif %}
   {% if source_wait %}<div class="banner {{ 'err' if source_wait.state == 'error' else 'job' }}">Source: {{ source_wait.text }}.
     {% if source_wait.state != 'waiting' %}<form method="post" action="/studio/{{ prod['id'] }}/source/fetch" style="display:inline"><button type="submit">{{ 'Try again' if source_wait.state == 'error' else 'Get the transcript' }}</button></form>{% else %}Click Auto-run now and it starts by itself when the text is ready; you can keep using the app meanwhile.{% endif %}</div>{% endif %}
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
@@ -543,8 +556,13 @@
       </form>
       {% if job.running and 'web chat' in (job.kind or '') %}
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:6px">
+        {% if 'Human-language review' in (job.kind or '') %}
+        <button type="submit" class="ghost">■ Stop human-language review</button>
+        <span class="muted" style="font-size:12px">Stops after the current reply; keeps drafts and leaves the saved script unchanged.</span>
+        {% else %}
         <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">■ Stop web-chat run</button>
         <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
+        {% endif %}
       </form>
       {% endif %}
       <details class="extbox" style="margin:14px 0">
@@ -592,6 +610,29 @@
         {% endif %}
       </div>
         </div>
+      </details>
+      <details class="artifact" style="margin:14px 0" open>
+        <summary style="font-weight:600; cursor:pointer">Human-language review</summary>
+        <p class="muted">Run after your writer and judge finish. Reviews natural spoken language, then sends specific findings to a revision writer. Stops early when ready. The last revision is reviewed too. Your saved script is replaced only after approval; original and intermediate drafts are kept. This does not certify factual accuracy. If audio or shots already exist, check them against the revised script.</p>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/human-review" style="gap:8px; flex-wrap:wrap">
+          <label>Reviewer <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
+          <label>Revision writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
+          <label>Maximum revision rounds <select name="rounds"><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not script_text else '' }}>Start human-language review</button>
+        </form>
+        {% if human_review %}
+        <p><strong>{{ {'ready':'Ready — saved script updated', 'outdated':'Approval outdated — script changed', 'running':'Review running', 'stopped':'Stopped — saved script unchanged', 'failed':'Review failed', 'limit_reached':'Review limit reached — unresolved issues remain', 'conflict':'Saved script changed — candidate kept separately'}.get(human_review.status, human_review.status) }}</strong>
+          · {{ human_review.revisions }} revisions · {{ human_review.reviews }} reviews</p>
+        <p>{{ human_review.summary }}</p>
+        {% for issue in human_review.issues %}
+        <div class="warn"><q>{{ issue.passage }}</q><br>{{ issue.problem }}<br>{{ issue.suggestion }}</div>
+        {% endfor %}
+        <p><a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/original.txt" target="_blank">Original script</a>
+          · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/result.json" target="_blank">Review report</a>
+          {% if human_review.status != 'running' %} · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/latest.txt" target="_blank">Latest candidate</a>{% endif %}
+          {% for n in range(1, human_review.revisions + 1) %} · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/revision-{{ n }}.txt" target="_blank">Revision {{ n }}</a>
+          <button type="button" class="ghost" data-copy-revision="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/revision-{{ n }}.txt" aria-label="Copy revision {{ n }}" style="padding:3px 8px;font-size:12px">Copy</button>{% endfor %}</p>
+        {% endif %}
       </details>
       <form method="post" action="/studio/{{ prod['id'] }}/script/save">
         <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
@@ -1678,6 +1719,21 @@
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
       else fallback();
     }
+    document.querySelectorAll('[data-copy-revision]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+        try {
+          var response = await fetch(btn.dataset.copyRevision);
+          if (!response.ok) throw new Error('Revision unavailable');
+          copyText(await response.text(), btn);
+        } catch (e) {
+          btn.textContent = 'Retry copy';
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
     document.querySelectorAll('textarea, pre.copyable').forEach(function (el) {
       if (el.dataset.copyReady) return;
       el.dataset.copyReady = '1';

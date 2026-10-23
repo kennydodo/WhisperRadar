@@ -148,6 +148,10 @@ def apply(cfg, engine: str, say=None) -> str | None:
     if engine != "flowbatch":
         return None
     repo = studio.flowbatch_dir(cfg)
+    from . import flow_accounts
+    active = getattr(flow_accounts.LOCAL, "active", None)
+    if active:
+        return turn_off_efficiency_mode(flow_accounts.profile(cfg, active[1]))
     profile = flowbatch_profile(repo) if repo else None
     if profile is None:
         return None
