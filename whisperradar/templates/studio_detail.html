@@ -630,7 +630,8 @@
         <p><a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/original.txt" target="_blank">Original script</a>
           · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/result.json" target="_blank">Review report</a>
           {% if human_review.status != 'running' %} · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/latest.txt" target="_blank">Latest candidate</a>{% endif %}
-          {% for n in range(1, human_review.revisions + 1) %} · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/revision-{{ n }}.txt" target="_blank">Revision {{ n }}</a>{% endfor %}</p>
+          {% for n in range(1, human_review.revisions + 1) %} · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/revision-{{ n }}.txt" target="_blank">Revision {{ n }}</a>
+          <button type="button" class="ghost" data-copy-revision="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/revision-{{ n }}.txt" aria-label="Copy revision {{ n }}" style="padding:3px 8px;font-size:12px">Copy</button>{% endfor %}</p>
         {% endif %}
       </details>
       <form method="post" action="/studio/{{ prod['id'] }}/script/save">
@@ -1666,6 +1667,21 @@
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fallback);
       else fallback();
     }
+    document.querySelectorAll('[data-copy-revision]').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+        try {
+          var response = await fetch(btn.dataset.copyRevision);
+          if (!response.ok) throw new Error('Revision unavailable');
+          copyText(await response.text(), btn);
+        } catch (e) {
+          btn.textContent = 'Retry copy';
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
     document.querySelectorAll('textarea, pre.copyable').forEach(function (el) {
       if (el.dataset.copyReady) return;
       el.dataset.copyReady = '1';
