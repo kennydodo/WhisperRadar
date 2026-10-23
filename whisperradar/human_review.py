@@ -107,6 +107,15 @@ def _quoted_in_script(passage, script):
     return passage.translate(table) in script.translate(table)
 
 
+def extract_revision(reply):
+    matches = re.findall(
+        r'^BEGIN_FINAL_SCRIPT[ \t]*\r?\n(.*?)\r?\nEND_FINAL_SCRIPT[ \t]*(?=\r?\n|$)',
+        reply or '', re.S | re.M)
+    if not matches or not matches[-1].strip():
+        raise ValueError('Writer did not return a complete script between the requested boundaries.')
+    return matches[-1].strip()
+
+
 def prompt(role, title, style, script, review=None, files=None):
     rules = (
         'Assess natural spoken English, not whether AI wrote this. No AI-detector scores. '
@@ -132,8 +141,10 @@ def prompt(role, title, style, script, review=None, files=None):
         task = (
             'You are the revision writer. ' + rules +
             'Address the reviewer findings with targeted edits. Return the COMPLETE revised '
-            'script as plain text only, without preamble, analysis, headings about the revision, '
-            'change log, downloads or missing sections. Preserve unaffected passages.'
+            'script between these two exact standalone lines: BEGIN_FINAL_SCRIPT and '
+            'END_FINAL_SCRIPT. Put ONLY the narration between those lines, never reasoning '
+            'or analysis. No preamble, headings about the revision, change log, downloads '
+            'or missing sections. Preserve unaffected passages.'
         )
     parts = {'title.txt': title, 'writing_style.md': style, 'current_script.txt': script}
     if review is not None:
@@ -226,7 +237,18 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
                 'writer', ctx['prod']['title'], ep._writing_style(ctx), current,
                 verdict, files), log, new_chat=True)
             (folder / f'writer-{index + 1}.txt').write_text(reply, encoding='utf-8')
-            revised = ws._clean_script(reply)
+            try:
+                revised = extract_revision(reply)
+            except ValueError:
+                log('Writer response needs script boundaries; requesting the final narration only.')
+                reply = transport.ask(writer,
+                    'Paste the COMPLETE final revised narration from your last answer between '
+                    'the exact standalone lines BEGIN_FINAL_SCRIPT and END_FINAL_SCRIPT. '
+                    'Do not include thinking, analysis, notes or UI labels between those lines. '
+                    'Do not change the script again; only return it in the requested format.',
+                    new_chat=False)
+                (folder / f'writer-{index + 1}-format-correction.txt').write_text(reply, encoding='utf-8')
+                revised = extract_revision(reply)
             if not revised or len(revised.split()) < len(current.split()) * 0.7:
                 raise ValueError('Writer returned an empty or substantially incomplete script; saved script unchanged.')
             current = revised

@@ -11,6 +11,10 @@ ORIGINAL = 'You can put money aside each month. Start with an amount you can aff
 REVISED = 'Put a little money aside each month. Start with an amount you can afford.'
 
 
+def marked(script):
+    return 'BEGIN_FINAL_SCRIPT\n' + script + '\nEND_FINAL_SCRIPT'
+
+
 def verdict(ready=False, passage='You can put money aside each month.'):
     return json.dumps(dict(decision='READY' if ready else 'NEEDS_REVISION',
                           summary='Natural aloud.' if ready else 'Tighten the phrasing.',
@@ -34,7 +38,7 @@ class HumanReviewTests(Base):
         c = db.connect(self.cfg.db_path)
         before = db.get_production(c,self.pid)['stage']
         c.close()
-        t = Fake(deepseek=[verdict(),verdict(True)], zai=[REVISED])
+        t = Fake(deepseek=[verdict(),verdict(True)], zai=[marked(REVISED)])
         out = self.run_review(t)
         self.assertEqual(out['status'],'ready')
         self.assertEqual([x['site'] for x in t.calls],['deepseek','zai','deepseek'])
@@ -56,7 +60,7 @@ class HumanReviewTests(Base):
         self.assertEqual(len(t.calls),1)
 
     def test_limit_includes_final_review_and_keeps_original(self):
-        t = Fake(deepseek=[verdict()]*4, zai=[ORIGINAL]*3)
+        t = Fake(deepseek=[verdict()]*4, zai=[marked(ORIGINAL)]*3)
         result = self.run_review(t,rounds=3)
         self.assertEqual(result['status'],'limit_reached')
         self.assertEqual(result['reviews'],4)
@@ -64,16 +68,16 @@ class HumanReviewTests(Base):
         self.assertEqual(self.script(),ORIGINAL)
 
     def test_approval_at_last_review_is_accepted(self):
-        t = Fake(deepseek=[verdict()]*3+[verdict(True)],zai=[ORIGINAL]*3)
+        t = Fake(deepseek=[verdict()]*3+[verdict(True)],zai=[marked(ORIGINAL)]*3)
         self.assertEqual(self.run_review(t)['status'],'ready')
 
     def test_five_round_limit(self):
-        t = Fake(deepseek=[verdict()]*6,zai=[ORIGINAL]*5)
+        t = Fake(deepseek=[verdict()]*6,zai=[marked(ORIGINAL)]*5)
         result = self.run_review(t,rounds=5)
         self.assertEqual((result['status'],result['reviews'],result['revisions']),('limit_reached',6,5))
 
     def test_stop_after_writer_preserves_revision_but_not_live_script(self):
-        t = Fake(deepseek=[verdict()],zai=[REVISED])
+        t = Fake(deepseek=[verdict()],zai=[marked(REVISED)])
         result = self.run_review(t,should_stop=lambda:len(t.calls)>=2)
         self.assertEqual(result['status'],'stopped')
         self.assertEqual(result['revisions'],1)
@@ -122,7 +126,7 @@ class HumanReviewTests(Base):
 
     def test_incomplete_writer_fails_without_replacing_script(self):
         with self.assertRaises(ValueError):
-            self.run_review(Fake(deepseek=[verdict()],zai=['Done.']))
+            self.run_review(Fake(deepseek=[verdict()],zai=[marked('Done.')]))
         self.assertEqual(self.script(),ORIGINAL)
 
     def test_repeated_runs_preserve_history(self):
@@ -132,7 +136,7 @@ class HumanReviewTests(Base):
         self.assertTrue((self.pdir/'human_review'/a['run_id']/'original.txt').exists())
 
     def test_same_site_roles_start_isolated_chats(self):
-        t = Fake(zai=[verdict(),REVISED,verdict(True)])
+        t = Fake(zai=[verdict(),marked(REVISED),verdict(True)])
         result = hr.run(self.cfg,self.pid,t,'zai','zai',log=lambda _:None)
         self.assertEqual(result['status'],'ready')
         self.assertTrue(all(c['new_chat'] for c in t.calls))
@@ -180,7 +184,7 @@ class HumanReviewTests(Base):
         review = hr.parse_review(reply)
         self.assertEqual(review['decision'],'NEEDS_REVISION')
         self.assertIn('"put money"', review['issues'][0]['problem'])
-        t = Fake(deepseek=[reply,verdict(True)],zai=[REVISED])
+        t = Fake(deepseek=[reply,verdict(True)],zai=[marked(REVISED)])
         self.assertEqual(self.run_review(t)['status'],'ready')
         self.assertIn('Fix phrasing.',t.calls[1]['prompt'])
 
@@ -190,7 +194,7 @@ class HumanReviewTests(Base):
             hr.parse_review(verdict(True)+'\n{"decision":"NEEDS_REVISION"')
 
     def test_one_format_correction_then_pass_to_writer(self):
-        t = Fake(deepseek=['Malformed response',verdict(),verdict(True)],zai=[REVISED])
+        t = Fake(deepseek=['Malformed response',verdict(),verdict(True)],zai=[marked(REVISED)])
         result = self.run_review(t)
         self.assertEqual(result['status'],'ready')
         self.assertEqual([c['site'] for c in t.calls],['deepseek','deepseek','zai','deepseek'])
@@ -204,7 +208,7 @@ class HumanReviewTests(Base):
         reply = ('Claude responded: {"decision":"NEEDS_REVISION","summary":"Preview...\n'
                  'Thinking about source sentences.\n'+body+'\nReply\nClaude finished the response')
         self.assertEqual(hr.parse_review(reply)['decision'],'NEEDS_REVISION')
-        t = Fake(deepseek=[reply,verdict(True)],zai=[REVISED])
+        t = Fake(deepseek=[reply,verdict(True)],zai=[marked(REVISED)])
         self.assertEqual(self.run_review(t)['status'],'ready')
 
     def test_quote_typography_matches_but_paraphrase_does_not(self):
@@ -230,3 +234,18 @@ class HumanReviewTests(Base):
             self.assertIsNone(hr._recover_review_fields(text))
         with self.assertRaises(ValueError):
             hr.parse_review('{"decision":"NEEDS_REVISION","summary":"OK","issues":[]}')
+
+    def test_writer_reasoning_and_ui_are_not_part_of_revision(self):
+        reply = 'Thought for 43 seconds\nWe need revise.\n' + marked(REVISED) + '\nDeepThink\nSearch'
+        t = Fake(deepseek=[verdict(),verdict(True)],zai=[reply])
+        self.run_review(t)
+        self.assertEqual(self.script().strip(),REVISED)
+        self.assertNotIn('We need revise.',t.calls[2]['prompt'])
+
+    def test_missing_writer_boundaries_get_one_format_retry(self):
+        t = Fake(deepseek=[verdict(),verdict(True)],zai=['Thought for 43 seconds\nWe need revise.',marked(REVISED)])
+        self.assertEqual(self.run_review(t)['status'],'ready')
+        self.assertEqual([c['site'] for c in t.calls],['deepseek','zai','zai','deepseek'])
+        self.assertFalse(t.calls[2]['new_chat'])
+        with self.assertRaises(ValueError):
+            hr.extract_revision('BEGIN_FINAL_SCRIPT\nIncomplete script')
