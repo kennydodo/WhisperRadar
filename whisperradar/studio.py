@@ -5907,12 +5907,15 @@ def shotlist_pacing(data: dict, cues: list[dict],
                 f"but most cues are shorter), so splitting every long hold drives "
                 f"the real count WELL ABOVE {floor} - do not "
                 f"stop near that number. ")
+        top = briefs.hold_limit(cap, prof.max_hold_tol)
         listed_desc = ("every shot over the maximum" if not omitted
                        else f"the {len(lines)} worst of {len(long)} (the rest "
                             "follow the identical rule)")
         faults.append(
-            f"{len(long)} shot(s) hold longer than the {cap:.0f}s maximum. Split "
-            f"EVERY one of them at a meaning boundary (a number, statistic or "
+            f"{len(long)} shot(s) hold longer than {top:.1f}s (the {cap:.0f}s "
+            f"maximum plus the accepted tolerance). Shots at or under "
+            f"{top:.1f}s are fine: leave them exactly as they are. Split "
+            f"EVERY listed one at a meaning boundary (a number, statistic or "
             f"price arrives; a second character, object or location enters; the "
             f"narration pivots; the action changes; a list ends and the payoff "
             f"begins) so no image holds longer than {cap:.0f}s. {count_note}"

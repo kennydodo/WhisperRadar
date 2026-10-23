@@ -123,7 +123,7 @@ class PacingTests(unittest.TestCase):
                        for i in range(1, 21)])  # 20 shots of 60s
         faults, warnings = studio.shotlist_pacing(data, cues)
         self.assertEqual(warnings, [])
-        self.assertTrue(any("longer than the 12s maximum" in f for f in faults),
+        self.assertTrue(any("longer than 14.4s (the 12s maximum plus the accepted tolerance)" in f for f in faults),
                         faults)
 
     def test_dense_plans_are_legal_when_every_hold_is_short(self):
