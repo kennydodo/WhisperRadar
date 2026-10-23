@@ -1423,7 +1423,7 @@ def _collect_beats(transport, site: str, reply: str, log, dump, allowed) -> dict
             message = PASTE_MESSAGE
         reply = transport.ask(site, message, (), new_chat=False, ready=_has_json)
         dump(f"beats_reply_{i + 2}", reply)
-        body = _join_chunks(body, _json_chunk(reply, False))
+        body = beatsmod.join_continuation(body, _json_chunk(reply, False))
     raise StageFailed(f"{site} never gave a readable beat list ({len(body):,} characters "
                       f"read). The raw replies are in the production's webchat_debug folder.")
 
@@ -1531,17 +1531,22 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
             if should_stop():
                 raise StageFailed("Stopped by you.")
             log(f"round {rnd}: code checks passed; asking {quality_judge} for a quality review")
-            judge_prompt, _ = ep.shotlist_judge_prompt(
-                cfg, pid, json.dumps(data, ensure_ascii=False, indent=1), [])
-            judge_prompt += ("\nReview visual specificity, concrete props, financial comparisons and ONE "
+            judge_note = ("\nReview visual specificity, concrete props, financial comparisons and ONE "
                              "depictable moment per still. Check current channel rules. Automatic numeric "
                              "overlays are already audited by code; do not demand duplicate baked-in text.\n"
-                             + json.dumps(numbers, ensure_ascii=False))
+                          + json.dumps(numbers, ensure_ascii=False))
+            def build_beats_judge(files):
+                # None means inline; a list must be populated with the files
+                # that the prompt names. _send decides which mode to deliver.
+                prompt, _ = ep.shotlist_judge_prompt(
+                    cfg, pid, json.dumps(data, ensure_ascii=False, indent=1), files)
+                prompt += judge_note
+                dump(f"beats_judge_prompt_round{rnd}", prompt)
+                return prompt
             dump(f"beats_checks_round{rnd}", json.dumps({
                 "round": rnd, "source": source, "pacing": pacing, "numbers": numbers,
                 "faults": faults, "status": "awaiting_quality_review"}, ensure_ascii=False, indent=2))
-            dump(f"beats_judge_prompt_round{rnd}", judge_prompt)
-            raw = _send(transport, quality_judge, lambda f: judge_prompt, log,
+            raw = _send(transport, quality_judge, build_beats_judge, log,
                         new_chat=not judge_open, ready=_is_shotlist_verdict)
             dump(f"beats_judge_round{rnd}", raw)
             verdict = studio._parse_json_object(raw, want=("pass", "faults"))

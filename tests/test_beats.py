@@ -33,6 +33,29 @@ def beat(sw, scene=1, typ="SCN", motion="ZI", prompt="A drawing."):
 
 
 class ParseTests(unittest.TestCase):
+    def test_wrapped_continuation_keeps_original_beats_and_style(self):
+        first = '{"style":"original","refs":{"CH_A":"refs/CH_A.png"},"beats":[' + json.dumps(beat("You can sit in a")) + ',{"starts_with":"But crocodile meat is a","scene":'
+        rest = json.dumps({"beats": [beat("But crocodile meat is a"), beat("It is the industry behind")]})
+        got = beats.parse(beats.join_continuation(first, rest))
+        self.assertEqual(len(got["beats"]), 3)
+        self.assertEqual(got["beats"][0]["starts_with"], "You can sit in a")
+        self.assertEqual(got["style"], "original")
+        self.assertEqual(got["refs"], {"CH_A": "refs/CH_A.png"})
+
+    def test_three_wrapped_chunks_keep_every_complete_entry(self):
+        first = '{"beats":[' + json.dumps(beat("You can sit in a")) + ',{"starts_with":'
+        second = '{"beats":[' + json.dumps(beat("But crocodile meat is a")) + ',{"starts_with":'
+        third = json.dumps({"beats": [beat("It is the industry behind")]})
+        got = beats.parse(beats.join_continuation(beats.join_continuation(first, second), third))
+        self.assertEqual([b["starts_with"] for b in got["beats"]],
+                         ["You can sit in a", "But crocodile meat is a", "It is the industry behind"])
+
+    def test_restarted_last_complete_beat_is_not_duplicated(self):
+        first = '{"beats":[' + json.dumps(beat("You can sit in a")) + ',{"starts_with":'
+        rest = json.dumps({"beats": [beat("You can sit in a"), beat("But crocodile meat is a")]})
+        got = beats.parse(beats.join_continuation(first, rest))
+        self.assertEqual(len(got["beats"]), 2)
+
     def test_complete_object_is_read(self):
         reply = "json\nCopy\n```json\n" + json.dumps({"style": "flat", "beats": [
             {"starts_with": "You can sit in a", "scene": 1, "type": "scn", "motion": "zi", "prompt": "A man."},
@@ -53,6 +76,12 @@ class ParseTests(unittest.TestCase):
 
 
 class MappingTests(unittest.TestCase):
+    def test_a_tail_only_plan_cannot_stretch_its_first_shot_over_the_intro(self):
+        starts, faults = beats.find_starts([beat("It is the industry behind")], make_cues())
+        self.assertEqual(starts, [0])
+        self.assertIn("plan starts late", faults[0])
+        self.assertIn("You can sit in a", faults[0])
+
     def test_unique_two_word_quote_matches(self):
         starts, faults = beats.find_starts(
             [beat("You can"), beat("But crocodile")], make_cues())
@@ -154,6 +183,32 @@ class HoldAndBuildTests(unittest.TestCase):
 
 
 class FixTests(unittest.TestCase):
+    def test_range_merge_removes_both_colliding_beats(self):
+        cues = make_cues()
+        old = [beat("You can sit in a"), beat("restaurant in Louisiana and"),
+               beat("But crocodile meat is a"), beat("It is the industry behind")]
+        fix = beats.parse_fix(json.dumps({"replace": [{"beat": 1, "through": 2,
+            "with": [beat("You can sit in a", prompt="One restaurant scene.")]}]}))
+        merged = beats.apply_fix(old, fix)
+        self.assertEqual(len(merged), 3)
+        starts, faults = beats.find_starts(merged, cues)
+        self.assertEqual(faults, [])
+        self.assertEqual(beats.cue_ranges(starts, len(cues))[1], [])
+
+    def test_overlapping_merge_ranges_are_rejected_without_mutation(self):
+        old = [beat("a b c"), beat("d e f"), beat("g h i")]
+        fix = {"replace": [(1, [old[0]]), (2, [old[1]])], "through": {1: 2, 2: 3}}
+        with self.assertRaises(ValueError):
+            beats.apply_fix(old, fix)
+        self.assertEqual(len(old), 3)
+
+    def test_disjoint_merges_use_numbers_before_any_edits(self):
+        old = [beat(f"quote {n} here") for n in range(6)]
+        fix = {"replace": [(1, [old[0]]), (4, [old[3]])], "through": {1: 2, 4: 6}}
+        merged = beats.apply_fix(old, fix)
+        self.assertEqual([b['starts_with'] for b in merged],
+                         [old[0]['starts_with'], old[2]['starts_with'], old[3]['starts_with']])
+
     def test_motion_only_fix_keeps_refs_animation_and_overlays(self):
         original = dict(beat("You can sit in a"), refs=["CH_FRIEDA"],
                         ai_motion="Slow push in; she turns.",
@@ -277,6 +332,57 @@ class ChannelContextTests(unittest.TestCase):
 
 
 class RunBeatsTests(unittest.TestCase):
+    def test_colliding_beats_can_be_merged_and_then_saved(self):
+        raw = [beat("You can sit in a"), beat("restaurant in Louisiana and"),
+               beat("But crocodile meat is a"), beat("It is the industry behind")]
+        fix = json.dumps({"replace": [{"beat": 1, "through": 2,
+                                       "with": [beat("You can sit in a")]}]})
+        ws, pdir, asked, saved, t = self._setup([self._reply(raw), fix])
+        ws.run_beats(None, 1, t, "zai", log=lambda m: None)
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(len(saved[0]["shots"]), 3)
+        self.assertIn('"through"', asked[1])
+
+    def _check_judge_delivery(self, site, limit, attached):
+        raw = [beat("You can sit in a"), beat("But crocodile meat is a"),
+               beat("It is the industry behind")]
+        verdict = json.dumps({"pass": True, "faults": [], "shots": [], "detailed_ratio": 1.0})
+        ws, pdir, asked, saved, t = self._setup([self._reply(raw), verdict])
+        original_ask = t.ask
+        def builder(cfg, pid, text, files=None):
+            if files is None:
+                return "INLINE NARRATION: actual narration\nSHOTLIST JSON: " + text, []
+            files.extend([{"name": "narration.txt", "text": "actual narration"},
+                          {"name": "shotlist.json", "text": text}])
+            return "Read the attached narration.txt and shotlist.json.", []
+        def receive(who, prompt, files=(), **kwargs):
+            if who == site:
+                if attached:
+                    self.assertEqual({Path(f).name for f in files}, {"narration.txt", "shotlist.json"})
+                    content = {Path(f).name: Path(f).read_text(encoding="utf-8") for f in files}
+                    self.assertEqual(content["narration.txt"], "actual narration")
+                    self.assertEqual(len(json.loads(content["shotlist.json"])["shots"]), 3)
+                else:
+                    self.assertFalse(files)
+                    self.assertIn("INLINE NARRATION: actual narration", prompt)
+                    self.assertIn('"shots":', prompt)
+                    self.assertNotIn("Read the attached", prompt)
+            return original_ask(who, prompt, files, **kwargs)
+        with mock.patch.object(ws.ep, "shotlist_judge_prompt", side_effect=builder), \
+             mock.patch.object(ws, "INLINE_MAX_CHARS", limit), \
+             mock.patch.object(t, "ask", side_effect=receive):
+            ws.run_beats(None, 1, t, "zai", log=lambda m: None, quality_judge=site)
+        self.assertEqual(len(saved), 1)
+
+    def test_quality_judge_receives_inline_narration_and_shotlist(self):
+        self._check_judge_delivery("deepseek_judge", 1000000, False)
+
+    def test_large_quality_review_attaches_both_real_files(self):
+        self._check_judge_delivery("deepseek_judge", 1, True)
+
+    def test_inline_only_judge_keeps_both_inputs_when_over_threshold(self):
+        self._check_judge_delivery("chatgpt", 1, False)
+
     def test_quality_judge_cannot_replace_its_own_writer_chat(self):
         ws, pdir, asked, saved, t = self._setup([])
         with self.assertRaisesRegex(ws.StageFailed, "different chat"):

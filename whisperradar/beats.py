@@ -75,7 +75,10 @@ def prompt(script: str, elements_md: str, style: str, bible: str,
         "split where the idea, the subject or the example changes. Do not make beats "
         "shorter than one sentence unless the sentence itself changes the picture.\n"
         "- You do NOT count or write subtitle cue numbers. The app works those out "
-        "from `starts_with`.",
+        "from `starts_with`. The opening quote is ONLY a location marker, not the "
+        "length of a beat. A beat normally covers a complete developing visual idea "
+        "across several narration lines. Do not cut the story into 5-8-word fragments "
+        "or make a new image for each subtitle line.",
         "EACH BEAT HAS:\n"
         '- "starts_with": see above.\n'
         '- "scene": a whole number; beats of one part of the story share it, and it only '
@@ -230,6 +233,50 @@ def parse(reply: str, allowed=None) -> dict | None:
     return {"style": str(obj.get("style") or "").strip(), "beats": beats, **metadata(obj)}
 
 
+def join_continuation(body: str, chunk: str) -> str:
+    """Keep the original prefix when a continuation restarts its beats wrapper."""
+    decoder = json.JSONDecoder()
+
+    def parts(text):
+        match = re.search(r'"beats"\s*:\s*\[', text)
+        start = match.end() if match else 0
+        prefix = text[:start] if match else ""
+        items = []
+        pos = start
+        while pos < len(text):
+            while pos < len(text) and (text[pos].isspace() or text[pos] == ','):
+                pos += 1
+            if pos == len(text) or text[pos] == ']':
+                return prefix, items, pos, pos < len(text)
+            try:
+                item, end = decoder.raw_decode(text, pos)
+            except ValueError:
+                return prefix, items, pos, False
+            if not isinstance(item, dict) or "starts_with" not in item:
+                return prefix, items, pos, False
+            items.append(item)
+            pos = end
+        return prefix, items, pos, False
+
+    prefix, old, _, _ = parts(body)
+    _, new, tail, closed = parts(chunk)
+    if not prefix or not new:
+        return body + "\n" + chunk
+    # A writer may restart the last complete beat as well as the cut-off one.
+    anchor = tokens(str(new[0].get("starts_with", "")))
+    for i in range(len(old) - 1, -1, -1):
+        if tokens(str(old[i].get("starts_with", ""))) == anchor:
+            old = old[:i]
+            break
+    merged = prefix + "\n" + ",\n".join(json.dumps(b, ensure_ascii=False) for b in old + new)
+    if closed:
+        # Preserve registries or other top-level fields following the final list.
+        return merged + chunk[tail:]
+    # A further continuation starts after the last complete entry. Keep a comma
+    # so the next entry can be appended without discarding the accumulated list.
+    return merged + ",\n" + chunk[tail:]
+
+
 # ---- finding the beats in the subtitles ------------------------------------------------
 
 def tokens(text: str) -> list[str]:
@@ -280,6 +327,12 @@ def find_starts(beats: list[dict], cues: list[dict]) -> tuple[list[int], list[st
                 f"beat {n}: its \"starts_with\" ({b['starts_with'][:70]!r}) was not found in "
                 f"the narration after beat {n - 1}. Copy the first {QUOTE_WORDS} words of "
                 f"where the beat begins exactly as written in the script.")
+            continue
+        if n == 1 and found != 0:
+            starts.append(0)
+            faults.append(f'beat 1: the plan starts late. Its starts_with must begin with '
+                          f'the narration opening: {" ".join(cues[0]["text"].split()[:QUOTE_WORDS])!r}. '
+                          'Restore the missing opening beats; do not stretch a later image over them.')
             continue
         starts.append(stream[found][1])
         cursor = found + 1
@@ -495,6 +548,7 @@ def fix_prompt(faults: list[str], beats, ranges, cues, names, allowed, cap_s: fl
         "\n\nReply with ONLY one JSON object in one ```json block, as text in this chat "
         "(no file, no download):\n"
         '{"replace": [{"beat": <current number>, "original_starts_with": "<current quote>", '
+        '"through": <last current beat number being replaced; omit for a single beat>, '
         '"with": [<beat>, <beat>, ...]}], "style": "<only if '
         'the problem is the style>"}\n'
         'Each <beat> is {"starts_with", "scene", "type", "motion", "prompt"} like before. '
@@ -508,7 +562,11 @@ def fix_prompt(faults: list[str], beats, ranges, cues, names, allowed, cap_s: fl
         "keeps the original starts_with, the next ones start at the exact narration words "
         "where the picture changes (copied exactly, at least "
         f"{QUOTE_WORDS} words). To fix a motion or a prompt, give one beat. Allowed motion "
-        f"codes: {', '.join(allowed)}. Do not resend the whole list.")
+        f"codes: {', '.join(allowed)}. To MERGE beats 6 and 7, use beat: 6, through: 7, "
+        "with: [ONE combined beat]. This removes both old entries. Keep the first "
+        "beat's opening quote and combine the visual idea into one depictable image. "
+        "Do not return a second replacement for any beat inside that range. All numbers "
+        "refer to the current list BEFORE any changes. Do not resend the whole list.")
 
 
 def parse_fix(reply: str, allowed=None) -> dict | None:
@@ -518,11 +576,13 @@ def parse_fix(reply: str, allowed=None) -> dict | None:
     out = []
     targets = {}
     provided = {}
+    through = {}
     for r in obj["replace"]:
         if not isinstance(r, dict):
             continue
         try:
             n = int(r.get("beat"))
+            end = int(r.get("through", n))
         except (TypeError, ValueError):
             continue
         with_ = r.get("with")
@@ -537,20 +597,22 @@ def parse_fix(reply: str, allowed=None) -> dict | None:
         if new:
             out.append((n, new))
             targets[n] = str(r.get("original_starts_with") or "")
+            through[n] = end
             provided[n] = [set(raw) for raw in with_ if isinstance(raw, dict)
                            and _clean_beat(raw, None, allowed)]
     if not out and not metadata(obj) and not str(obj.get("style") or "").strip():
         return None
-    return {"replace": out, "targets": targets, "provided": provided,
+    return {"replace": out, "targets": targets, "provided": provided, "through": through,
             "style": str(obj.get("style") or "").strip(), **metadata(obj)}
 
 
 def apply_fix(beats: list[dict], fix: dict) -> list[dict]:
     seen = set()
     for n, repl in fix["replace"]:
-        if n in seen or not 1 <= n <= len(beats):
-            raise ValueError(f"Invalid or duplicate beat number {n}; use the current index.")
-        seen.add(n)
+        end = fix.get("through", {}).get(n, n)
+        if not 1 <= n <= end <= len(beats) or seen.intersection(range(n, end + 1)):
+            raise ValueError(f"Invalid or overlapping beat range {n}-{end}; use the current index.")
+        seen.update(range(n, end + 1))
         old = tokens(beats[n - 1]["starts_with"])
         target = tokens(fix.get("targets", {}).get(n, ""))
         first = tokens(repl[0]["starts_with"])
@@ -560,8 +622,9 @@ def apply_fix(beats: list[dict], fix: dict) -> list[dict]:
                              "use the current index and original_starts_with.")
     new = list(beats)
     for n, repl in sorted(fix["replace"], key=lambda x: -x[0]):
+        end = fix.get("through", {}).get(n, n)
         if 1 <= n <= len(new):
-            if len(repl) == 1:
+            if len(repl) == 1 and end == n:
                 # A motion/prompt correction must not silently detach its references,
                 # animation or overlays. Explicit null/[] still clears a field.
                 original = beats[n - 1]
@@ -571,7 +634,7 @@ def apply_fix(beats: list[dict], fix: dict) -> list[dict]:
                     if k not in fields and k in original:
                         replacement[k] = original[k]
                 repl = [replacement]
-            new[n - 1:n] = repl
+            new[n - 1:end] = repl
     return new
 
 
