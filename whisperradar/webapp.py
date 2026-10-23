@@ -55,7 +55,7 @@ from . import codex_worker
 from . import insights, results as results_mod, thumbnails
 from . import topics as topics_mod
 from . import youtube_api
-from . import webchat, webstages
+from . import webchat, webstages, human_review
 from . import (ai33, autorun, briefs, channel_io, db, pipeline, producer, remote,
                scheduler, services, settings, studio)
 from .cli import _slugify, format_duration
@@ -3882,6 +3882,7 @@ def create_app(cfg) -> Flask:
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
             source_video=source_video, attach_sources=attach_sources,
+            human_review=human_review.load(pdir),
             llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
@@ -5132,6 +5133,41 @@ def create_app(cfg) -> Flask:
         return _studio_url(pid, msg=f"Web-chat {label} run started - a "
                                     f"browser window will open")
 
+    @app.post("/studio/<int:pid>/human-review")
+    def studio_human_review(pid):
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        writer = (request.form.get("writer") or "zai").strip()
+        reviewer = (request.form.get("judge") or "deepseek").strip()
+        if writer not in webchat.SITES or reviewer not in webchat.SITES:
+            return _studio_url(pid, error="Unknown chat site")
+        try:
+            rounds = int(request.form.get("rounds", "3"))
+        except ValueError:
+            rounds = 0
+        if rounds not in (3, 4, 5):
+            return _studio_url(pid, error="Choose 3, 4 or 5 revision rounds")
+        conn = db.connect(cfg.db_path)
+        try:
+            prod = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        if not prod:
+            return redirect("/studio?error=Unknown+production")
+        script = studio.find_script(studio.prod_dir(cfg, pid))
+        if not script or not script.read_text(encoding="utf-8").strip():
+            return _studio_url(pid, error="Save a script before starting human-language review")
+        options = _chat_options(request.form, remember=False)
+        job = sjob._real()
+
+        def worker():
+            human_review.job(cfg, pid, writer, reviewer, rounds,
+                             job.log.append, lambda: job.cancel, options)
+
+        if not sjob.start(worker, f"Human-language review in web chat ({reviewer} reviews, {writer} revises)"):
+            return _studio_url(pid, error="A job is already running")
+        return _studio_url(pid, msg="Human-language review started")
+
     @app.post("/studio/<int:pid>/webchat-stop")
     def studio_webchat_stop(pid):
         """Stop a web-chat run after its current round (the loop has no round
@@ -5139,6 +5175,8 @@ def create_app(cfg) -> Flask:
         if not sjob.running or "web chat" not in str(sjob.kind or ""):
             return _studio_url(pid, error="No web-chat run is going")
         sjob.cancel = True
+        if "Human-language review" in str(sjob.kind or ""):
+            return _studio_url(pid, msg="Stopping human-language review after the current reply; drafts are kept and the saved script stays unchanged")
         return _studio_url(pid, msg="Stopping after the current round - the "
                                     "best result so far will be saved")
 
