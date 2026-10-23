@@ -11,8 +11,10 @@ login profiles and transport are reused; there are no API calls.
 
 The reviewer returns exact passages, language problems and suggested fixes.
 The writer receives those findings, the full latest script and writing style.
-Each reply uses a new chat with full context, keeping roles isolated even when
-both use the same site. Prior findings are included in subsequent reviews.
+The reviewer and revision writer each keep one separate chat throughout the
+run. Later rounds and format corrections continue in that role's existing
+conversation, even when both roles use the same site. Chat URLs are preserved
+per role in the run report. Prior findings are included in subsequent reviews.
 
 The process stops early on READY. A final review follows the last permitted
 revision, so three revision rounds allow up to four reviews. If issues remain,

@@ -42,7 +42,7 @@ class HumanReviewTests(Base):
         out = self.run_review(t)
         self.assertEqual(out['status'],'ready')
         self.assertEqual([x['site'] for x in t.calls],['deepseek','zai','deepseek'])
-        self.assertTrue(all(x['new_chat'] for x in t.calls))
+        self.assertEqual([x['new_chat'] for x in t.calls],[True,True,False])
         self.assertIn(ORIGINAL,t.calls[1]['prompt'])
         self.assertIn(REVISED,t.calls[2]['prompt'])
         self.assertEqual(self.script().strip(),REVISED)
@@ -135,11 +135,30 @@ class HumanReviewTests(Base):
         self.assertNotEqual(a['run_id'],b['run_id'])
         self.assertTrue((self.pdir/'human_review'/a['run_id']/'original.txt').exists())
 
-    def test_same_site_roles_start_isolated_chats(self):
-        t = Fake(zai=[verdict(),marked(REVISED),verdict(True)])
+    def test_same_site_roles_keep_separate_persistent_chats(self):
+        class RoleChats(Fake):
+            current = None
+            sequence = 0
+
+            def ask(self, site, *args, new_chat=True, **kw):
+                if new_chat:
+                    self.sequence += 1
+                    self.current = f'https://chat.z.ai/c/role-{self.sequence}'
+                reply = super().ask(site,*args,new_chat=new_chat,**kw)
+                self.calls[-1]['url'] = self.current
+                return reply
+
+            def urls(self):
+                return {'zai':self.current}
+
+            def adopt(self,site,url):
+                self.current = url
+
+        t = RoleChats(zai=[verdict(),marked(REVISED),verdict(passage=REVISED),marked(ORIGINAL),verdict(True)])
         result = hr.run(self.cfg,self.pid,t,'zai','zai',log=lambda _:None)
         self.assertEqual(result['status'],'ready')
-        self.assertTrue(all(c['new_chat'] for c in t.calls))
+        self.assertEqual([c['new_chat'] for c in t.calls],[True,True,False,False,False])
+        self.assertEqual([c['url'] for c in t.calls],['https://chat.z.ai/c/role-1','https://chat.z.ai/c/role-2','https://chat.z.ai/c/role-1','https://chat.z.ai/c/role-2','https://chat.z.ai/c/role-1'])
 
     def test_page_renders_result_and_downloads(self):
         result = self.run_review(Fake(deepseek=[verdict(True)]))

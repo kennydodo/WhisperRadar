@@ -172,7 +172,7 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
     folder.mkdir(parents=True)
     (folder / 'original.txt').write_text(original, encoding='utf-8')
     state = dict(status='running', run_id=run_id, writer=writer, reviewer=reviewer,
-                 max_rounds=rounds, revisions=0, reviews=0, summary='', issues=[])
+                 max_rounds=rounds, revisions=0, reviews=0, summary='', issues=[], chats={})
 
     def persist():
         text = json.dumps(state, ensure_ascii=False, indent=2)
@@ -183,6 +183,27 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
         tmp.replace(pdir / 'human_review.json')
 
     persist()
+    started = set()
+
+    def send(role, site, build=None, text=None):
+        continuing = role in started
+        url = state['chats'].get(role)
+        adopt = getattr(transport, 'adopt', None)
+        if continuing and url and callable(adopt):
+            adopt(site, url)
+        elif continuing and writer == reviewer:
+            raise ValueError('Cannot reopen the separate role chat; stopping to preserve its context.')
+        if build is not None:
+            reply = ws._send(transport, site, build, log, new_chat=not continuing)
+        else:
+            reply = transport.ask(site, text, new_chat=not continuing)
+        started.add(role)
+        urls = getattr(transport, 'urls', None)
+        if callable(urls) and urls().get(site):
+            state['chats'][role] = urls()[site]
+            persist()
+        return reply
+
     prior = None
     try:
         for index in range(rounds + 1):
@@ -190,10 +211,11 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
                 state.update(status='stopped', summary='Stopped; saved script unchanged.')
                 break
             log(f'Human-language review {index + 1}; {index}/{rounds} revisions used')
-            # Fresh complete context per exchange also isolates roles on the same site.
-            reply = ws._send(transport, reviewer, lambda files: prompt(
+            # Each role retains its own conversation across every round,
+            # including when both roles use the same site's browser profile.
+            reply = send('reviewer', reviewer, build=lambda files: prompt(
                 'reviewer', ctx['prod']['title'], ep._writing_style(ctx), current,
-                prior, files), log, new_chat=True)
+                prior, files))
             (folder / f'review-{index + 1}.txt').write_text(reply, encoding='utf-8')
             for formatting_attempt in range(2):
                 try:
@@ -215,7 +237,7 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
                         'Every passage must be copied exactly from the current script already '
                         'provided in this chat. Each issue requires passage, problem, suggestion.'
                     )
-                    reply = transport.ask(reviewer, correction, new_chat=False)
+                    reply = send('reviewer', reviewer, text=correction)
                     (folder / f'review-{index + 1}-format-correction.txt').write_text(reply, encoding='utf-8')
             state.update(reviews=index + 1, summary=verdict['summary'], issues=verdict['issues'])
             persist()
@@ -233,20 +255,19 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
             if index == rounds:
                 state.update(status='limit_reached')
                 break
-            reply = ws._send(transport, writer, lambda files: prompt(
+            reply = send('writer', writer, build=lambda files: prompt(
                 'writer', ctx['prod']['title'], ep._writing_style(ctx), current,
-                verdict, files), log, new_chat=True)
+                verdict, files))
             (folder / f'writer-{index + 1}.txt').write_text(reply, encoding='utf-8')
             try:
                 revised = extract_revision(reply)
             except ValueError:
                 log('Writer response needs script boundaries; requesting the final narration only.')
-                reply = transport.ask(writer,
+                reply = send('writer', writer, text=
                     'Paste the COMPLETE final revised narration from your last answer between '
                     'the exact standalone lines BEGIN_FINAL_SCRIPT and END_FINAL_SCRIPT. '
                     'Do not include thinking, analysis, notes or UI labels between those lines. '
-                    'Do not change the script again; only return it in the requested format.',
-                    new_chat=False)
+                    'Do not change the script again; only return it in the requested format.')
                 (folder / f'writer-{index + 1}-format-correction.txt').write_text(reply, encoding='utf-8')
                 revised = extract_revision(reply)
             if not revised or len(revised.split()) < len(current.split()) * 0.7:
