@@ -4,6 +4,7 @@ from unittest import mock
 from tests.test_external_prompts import Base
 from tests.test_webstages import Fake
 from whisperradar import db, human_review as hr
+from whisperradar import webchat, webstages
 from whisperradar.webapp import create_app, _Job
 
 
@@ -268,3 +269,51 @@ class HumanReviewTests(Base):
         self.assertFalse(t.calls[2]['new_chat'])
         with self.assertRaises(ValueError):
             hr.extract_revision('BEGIN_FINAL_SCRIPT\nIncomplete script')
+
+    def test_completion_requires_current_turn_and_complete_answer(self):
+        ready = hr.completion_check('reviewer','REPLY_COMPLETE_current')
+        self.assertTrue(ready(verdict(True)+'\nREPLY_COMPLETE_current'))
+        self.assertFalse(ready(verdict(True)+'\nREPLY_COMPLETE_previous'))
+        self.assertFalse(ready('{"decision":"READY"\nREPLY_COMPLETE_current'))
+        writer = hr.completion_check('writer','REPLY_COMPLETE_current')
+        self.assertTrue(writer(marked(REVISED)+'\nREPLY_COMPLETE_current'))
+        self.assertFalse(writer('BEGIN_FINAL_SCRIPT\npartial\nREPLY_COMPLETE_current'))
+
+    def test_ready_in_hidden_block_does_not_wait_for_start_timeout(self):
+        from tests.test_webchat import Clock, FakePage
+        clk = Clock()
+        current = verdict(True)+'\nREPLY_COMPLETE_current'
+
+        class HiddenReply(FakePage):
+            def evaluate(self, js, arg=None):
+                if js is webchat._STATE_JS:
+                    return dict(count=1,text='Claude finished the response',url=self.url)
+                return super().evaluate(js,arg)
+
+        page = HiddenReply(clk,webchat.DEEPSEEK,[('',False)]*100)
+        page.pre_cands=[verdict(True)+'\nREPLY_COMPLETE_previous']
+        page.cands=[current]
+        result=webchat.ask(page,webchat.DEEPSEEK,'Review this revised script please',clock=clk,
+                           ready=hr.completion_check('reviewer','REPLY_COMPLETE_current'),ready_wait=12)
+        self.assertEqual(result,current)
+        self.assertLess(clk(),40)
+
+    def test_ready_in_hidden_block_with_stuck_generating_flag_finishes_promptly(self):
+        from tests.test_webchat import Clock, FakePage
+        clk=Clock()
+        current=verdict(True)+'\nREPLY_COMPLETE_current'
+        page=FakePage(clk,webchat.DEEPSEEK,[('Footer label',True)]*300)
+        page.cands=[current]
+        result=webchat.ask(page,webchat.DEEPSEEK,'Review this revised script please',clock=clk,
+                           ready=hr.completion_check('reviewer','REPLY_COMPLETE_current'),ready_wait=12)
+        self.assertEqual(result,current)
+        self.assertLess(clk(),45)
+
+    def test_web_transport_honours_short_completion_wait(self):
+        chat=mock.Mock()
+        chat.ask.return_value=verdict(True)
+        transport=webstages.WebTransport(chat,lambda _:None)
+        ready=hr.completion_check('reviewer','REPLY_COMPLETE_current')
+        transport.ask('deepseek','Review please',ready=ready)
+        self.assertEqual(chat.ask.call_args.kwargs['ready_wait'],12)
+        self.assertIs(chat.ask.call_args.kwargs['ready'],ready)

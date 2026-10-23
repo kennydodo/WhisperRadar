@@ -95,6 +95,8 @@ class WebTransport:
         extra = ({"ready_wait": JUDGE_READY_WAIT}
                  if ready in (_is_json_verdict, _is_script_verdict,
                               _is_shotlist_verdict) else {})
+        if ready is not None and getattr(ready, "ready_wait", None) is not None:
+            extra["ready_wait"] = ready.ready_wait
         t0 = time.monotonic()
         try:
             reply = self.chat.ask(site, prompt, list(files), new_chat=new_chat,

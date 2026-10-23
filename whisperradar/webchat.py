@@ -1693,7 +1693,9 @@ def _ask_inner(page, site: Site, prompt: str, files: Sequence[str] = (),
                 and clock() - stable_since < ready_wait
                 and not ready(clean_reply(last_text))):
             done_waiting = False           # settled, but not a full answer yet
-        if (ready is not None and started and not gen and not done_waiting
+        if (ready is not None and started and not done_waiting
+                and (not gen or (getattr(ready, "request_scoped", False)
+                                 and clock() - stable_since >= GEN_READY_WAIT))
                 and clock() - stable_since >= 8
                 and clock() - cand_at >= 4):
             cand_at = clock()              # the reply may sit in another block

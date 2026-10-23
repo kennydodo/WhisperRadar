@@ -116,6 +116,24 @@ def extract_revision(reply):
     return matches[-1].strip()
 
 
+def completion_check(role, marker):
+    """Recognize only a complete reply to THIS turn in a persistent chat."""
+    def ready(text):
+        if not re.search(r'^' + re.escape(marker) + r'[ \t]*(?=\r?\n|$)', text or '', re.M):
+            return False
+        try:
+            if role == 'reviewer':
+                parse_review(text)
+            else:
+                extract_revision(text)
+            return True
+        except ValueError:
+            return False
+    ready.request_scoped = True
+    ready.ready_wait = 12
+    return ready
+
+
 def prompt(role, title, style, script, review=None, files=None):
     rules = (
         'Assess natural spoken English, not whether AI wrote this. No AI-detector scores. '
@@ -193,10 +211,20 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
             adopt(site, url)
         elif continuing and writer == reviewer:
             raise ValueError('Cannot reopen the separate role chat; stopping to preserve its context.')
+        marker = 'REPLY_COMPLETE_' + uuid4().hex
+        ready = completion_check(role, marker)
+
+        def with_receipt(message):
+            return (message + '\n\nAfter your COMPLETE final answer, print this exact '
+                    'line once on its own at the very end, outside the JSON or script '
+                    'boundaries. Do not print it while thinking or before the answer '
+                    'is finished:\n' + marker)
+
         if build is not None:
-            reply = ws._send(transport, site, build, log, new_chat=not continuing)
+            reply = ws._send(transport, site, lambda files: with_receipt(build(files)),
+                             log, new_chat=not continuing, ready=ready)
         else:
-            reply = transport.ask(site, text, new_chat=not continuing)
+            reply = transport.ask(site, with_receipt(text), new_chat=not continuing, ready=ready)
         started.add(role)
         urls = getattr(transport, 'urls', None)
         if callable(urls) and urls().get(site):
