@@ -84,7 +84,7 @@ class HumanReviewTests(Base):
         for reply in ['Looks good', '{"decision":"READY","summary":"OK","issues":[{}]}', verdict(passage='invented quote')]:
             with self.subTest(reply=reply):
                 with self.assertRaises(ValueError):
-                    self.run_review(Fake(deepseek=[reply]))
+                    self.run_review(Fake(deepseek=[reply,reply]))
                 self.assertEqual(self.script(),ORIGINAL)
                 self.assertEqual(hr.load(self.pdir)['status'],'failed')
 
@@ -169,3 +169,30 @@ class HumanReviewTests(Base):
         p=hr.prompt('reviewer','Title','STYLE',ORIGINAL,files=files)
         self.assertIn('current_script.txt',p)
         self.assertEqual({f['name']:f['text'] for f in files}['current_script.txt'],ORIGINAL)
+
+    def test_reasoning_and_ui_do_not_hide_verdict_with_unescaped_quotes(self):
+        reply = ('" Thinking with an unmatched quote.\nNeed final JSON.\n'
+                 '{"decision":"NEEDS_REVISION","summary":"Fix phrasing.",'
+                 '"issues":[{"passage":"You can put money aside each month.",'
+                 '"problem":"The phrase "put money" sounds awkward.",'
+                 '"suggestion":"Put a little money aside each month."}]}\n'
+                 'DeepThink\nSearch\nAI-generated, for reference only')
+        review = hr.parse_review(reply)
+        self.assertEqual(review['decision'],'NEEDS_REVISION')
+        self.assertIn('"put money"', review['issues'][0]['problem'])
+        t = Fake(deepseek=[reply,verdict(True)],zai=[REVISED])
+        self.assertEqual(self.run_review(t)['status'],'ready')
+        self.assertIn('Fix phrasing.',t.calls[1]['prompt'])
+
+    def test_final_verdict_wins_over_reasoning_example(self):
+        self.assertEqual(hr.parse_review(verdict(True)+'\nThinking...\n'+verdict())['decision'],'NEEDS_REVISION')
+        with self.assertRaises(ValueError):
+            hr.parse_review(verdict(True)+'\n{"decision":"NEEDS_REVISION"')
+
+    def test_one_format_correction_then_pass_to_writer(self):
+        t = Fake(deepseek=['Malformed response',verdict(),verdict(True)],zai=[REVISED])
+        result = self.run_review(t)
+        self.assertEqual(result['status'],'ready')
+        self.assertEqual([c['site'] for c in t.calls],['deepseek','deepseek','zai','deepseek'])
+        self.assertFalse(t.calls[1]['new_chat'])
+        self.assertEqual(result['revisions'],1)

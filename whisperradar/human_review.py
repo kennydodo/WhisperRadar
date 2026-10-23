@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -24,7 +25,13 @@ def load(pdir: Path) -> dict:
 
 
 def parse_review(reply: str) -> dict:
-    data = json.loads(ws._clean_script(reply))
+    # Ignore thinking/UI text before the final verdict. Starting the scan at
+    # the object also avoids an unmatched quote in reasoning hiding the JSON.
+    starts = list(re.finditer(r'\{\s*"(?:decision|summary|issues)"\s*:', reply or ''))
+    if not starts:
+        raise ValueError('Reviewer returned no review JSON object.')
+    candidate = next(studio._iter_json_objects(reply[starts[-1].start():]), '')
+    data = studio._json_candidate(candidate) if candidate else None
     if not isinstance(data, dict) or data.get('decision') not in ('READY', 'NEEDS_REVISION'):
         raise ValueError('Reviewer must return READY or NEEDS_REVISION in JSON.')
     issues = data.get('issues')
@@ -57,6 +64,7 @@ def prompt(role, title, style, script, review=None, files=None):
             'Return ONLY JSON: {"decision":"READY" or "NEEDS_REVISION", '
             '"summary":"brief explanation", "issues":[{"passage":"exact quote", '
             '"problem":"why unnatural aloud", "suggestion":"specific correction"}]}. '
+            'Escape quotation marks inside JSON strings with a backslash. '
             'READY means no material language issues remain, and issues must be empty. '
             'Approval does not certify factual accuracy. Do not manufacture issues to prolong the loop.'
         )
@@ -116,10 +124,28 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
                 'reviewer', ctx['prod']['title'], ep._writing_style(ctx), current,
                 prior, files), log, new_chat=True)
             (folder / f'review-{index + 1}.txt').write_text(reply, encoding='utf-8')
-            verdict = parse_review(reply)
-            for issue in verdict['issues']:
-                if issue['passage'] not in current:
-                    raise ValueError('Reviewer quoted a passage absent from the current script.')
+            for formatting_attempt in range(2):
+                try:
+                    verdict = parse_review(reply)
+                    for issue in verdict['issues']:
+                        if issue['passage'] not in current:
+                            raise ValueError('Reviewer quoted a passage absent from the current script.')
+                    break
+                except ValueError as exc:
+                    if formatting_attempt or should_stop():
+                        raise
+                    log(f'Reviewer response needs formatting correction: {exc}')
+                    correction = (
+                        'Your last review could not be read: ' + str(exc) +
+                        '\nReturn the same final review as valid JSON only, with decision, '
+                        'summary and issues. Escape double quotes inside strings. '
+                        'Do not include thinking, commentary, UI labels or code outside the JSON. '
+                        'Preserve your verdict and findings; do not invent approval. '
+                        'Every passage must be copied exactly from the current script already '
+                        'provided in this chat. Each issue requires passage, problem, suggestion.'
+                    )
+                    reply = transport.ask(reviewer, correction, new_chat=False)
+                    (folder / f'review-{index + 1}-format-correction.txt').write_text(reply, encoding='utf-8')
             state.update(reviews=index + 1, summary=verdict['summary'], issues=verdict['issues'])
             persist()
             if should_stop():
