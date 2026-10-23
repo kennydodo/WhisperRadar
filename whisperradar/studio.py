@@ -5503,7 +5503,7 @@ def shotlist_max_tokens(total_narration_seconds: float, cue_count: int,
     duration divided by a typical hold (SHOTLIST_ASSUMED_AVG_HOLD), with 40%
     headroom for a more fragmented-than-average plan, never below the hard
     pacing floor (every shot at the channel's max hold), and never above one
-    shot per cue (shotlist_pacing's FRAGMENTATION_SHARE cannot exceed that
+    shot per cue (a separately configured fragmentation limit may reject that
     by definition). This is an estimate for SIZING THE BUDGET ONLY - it does
     not influence, cap, or validate how many shots the plan actually ends up
     with; shotlist_pacing still does that, independently, after the fact."""
@@ -5559,7 +5559,6 @@ MOTION_MAX_SHARE = briefs.MOTION_MAX_SHARE
 # others - a tighter, code-specific cap catches that before the general 40%
 # ceiling would ever trip.
 MOTION_MAX_SHARE_OVERRIDES = briefs.MOTION_MAX_SHARE_OVERRIDES
-FRAGMENTATION_SHARE = 0.50
 
 
 def shotlist_type_faults(data: dict, profile) -> list[str]:
@@ -5952,9 +5951,9 @@ def shotlist_pacing(data: dict, cues: list[dict],
             faults.append("a long STATIC hold is never acceptable: " + ", ".join(
                 f"{a} ({h:.0f}s, ST)" for h, a in static_long[:4]))
     st = [(h, a) for h, m, a, _f, _l in holds if m == "ST"]
-    if (prof.st_max_share is not None and st
+    if (prof.st_max_share is not None and st and not any(codes == ("ST",) for codes, _ in prof.share_targets)
             and len(st) / len(holds) > prof.st_max_share
-            + briefs.SHARE_TOLERANCE + 1e-9):
+            + prof.share_tolerance + 1e-9):
         faults.append(f"ST is {len(st) / len(holds):.0%} of shots (cap ~"
                       f"{prof.st_max_share:.0%}) - ST is the exception, not "
                       f"the default")
@@ -5971,49 +5970,29 @@ def shotlist_pacing(data: dict, cues: list[dict],
                             if m and m != "REVEAL"}):
             share = sum(1 for _h, m, _a, _f, _l in holds if m == code) / len(holds)
             share_cap = prof.code_share_overrides.get(code, prof.code_max_share)
-            if share > share_cap + briefs.SHARE_TOLERANCE + 1e-9:
+            if share > share_cap + prof.share_tolerance + 1e-9:
                 faults.append(f"motion {code} is {share:.0%} of shots (cap ~"
                               f"{share_cap:.0%}) - vary the motion codes")
     for codes, share_cap in getattr(prof, "group_caps", ()):
+        if any(codes == target_codes for target_codes, _ in prof.share_targets):
+            continue
         share = sum(1 for _h, m, _a, _f, _l in holds if m in codes) / len(holds)
-        if share > share_cap + briefs.SHARE_TOLERANCE + 1e-9:
+        if share > share_cap + prof.share_tolerance + 1e-9:
             faults.append(f"{'/'.join(codes)} together are {share:.0%} of "
                           f"shots (cap ~{share_cap:.0%}) - vary the motion "
                           f"codes")
-    if len(holds) >= briefs.MIX_MIN_SHOTS:
-        total = len(holds)
-        for codes, target in briefs.mix_targets(prof):
-            share = sum(1 for _h, m, _a, _f, _l in holds if m in codes) / total
-            floor = target * briefs.MIX_FLOOR_RATIO
-            if share < floor - 1e-9:
-                label = "/".join(codes)
-                faults.append(
-                    f"{label} is only {share:.0%} of shots - this channel's "
-                    f"mix is about {target:.0%} (never below ~{floor:.0%}). "
-                    f"Give about {max(1, round(target * total) - round(share * total))}"
-                    f" more shots {label}: change the shot's \"motion\" AND "
-                    f"the ending of its asset file name together"
-                    + (" (only on holds of ~5s or less)" if codes == ("ST",)
-                       else ""))
-        if briefs.zoom_balanced(prof):
-            zi = sum(1 for _h, m, _a, _f, _l in holds if m == "ZI")
-            zo = sum(1 for _h, m, _a, _f, _l in holds if m == "ZO")
-            if zi + zo >= briefs.MIX_MIN_ZOOM_SHOTS:
-                lo, hi = briefs.ZOOM_SPLIT
-                ratio = zi / (zi + zo)
-                if ratio < lo - 1e-9 or ratio > hi + 1e-9:
-                    more, less = ("ZO", "ZI") if ratio > hi else ("ZI", "ZO")
-                    move = round(abs(zi - (zi + zo) / 2))
-                    faults.append(
-                        f"ZI is {ratio:.0%} of the ZI+ZO shots ({zi} ZI, {zo} "
-                        f"ZO) - it must be {lo:.0%}-{hi:.0%}. Change about "
-                        f"{move} {less} shots to {more}: change the shot's "
-                        f"\"motion\" AND the ending of its asset file name "
-                        f"together")
+    for codes, target in prof.share_targets:
+        share = sum(1 for _h, m, _a, _f, _l in holds if m in codes) / len(holds)
+        lo, hi = briefs.motion_share_bounds(target, prof.share_tolerance)
+        if share < lo - 1e-9 or share > hi + 1e-9:
+            faults.append(f"{'/'.join(codes)} together are {share:.1%} of shots "
+                          f"(target ~{target * 100:g}%; accepted {briefs.motion_share_range(target, prof.share_tolerance)}). "
+                          "Adjust motion AND image composition only enough to enter this range; "
+                          "the exact target is not required.")
     if prof.min_hold and len(holds) > 1:
         body = holds[:-1]   # the last shot ends where the narration ends
         short = [(h, a) for h, _m, a, _f, _l in body if h < prof.min_hold]
-        if short and len(short) / len(body) > briefs.MIN_HOLD_MAX_SHORT_SHARE:
+        if short and len(short) / len(body) > briefs.pacing_share_cap(prof, "short_hold") + 1e-9:
             faults.append(
                 f"{len(short)} of {len(body)} shots hold under the "
                 f"{prof.min_hold:.0f}s this channel expects - the plan is "
@@ -6026,7 +6005,8 @@ def shotlist_pacing(data: dict, cues: list[dict],
                   if (r := cue_range(s.get("cues"))) and r[0] == r[1])
     if prof.per_cue:
         faults.extend(_every_cue_faults(shots, cues))
-    elif one_cue / len(holds) > FRAGMENTATION_SHARE:
+    elif (prof.single_cue_share is not None
+          and one_cue / len(holds) > briefs.pacing_share_cap(prof, "single_cue") + 1e-9):
         faults.append(f"{one_cue} of {len(holds)} shots span a single cue - "
                       f"changing images more often than the ideas change is "
                       f"fragmentation; group the cues that develop one idea")

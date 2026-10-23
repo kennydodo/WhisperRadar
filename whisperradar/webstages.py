@@ -1469,6 +1469,9 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
     log(f"Full beats diagnostics: {run_dir}")
     judge_open = False
     max_words = beatsmod.words_per_beat(cap, tol, narration, plan["total_s"])
+    min_hold = getattr(profile, "min_hold", None) or 0
+    min_words = (beatsmod.min_words_per_beat(min_hold, narration, plan["total_s"])
+                 if min_hold else 0)
     elements_md = elements.load_text(pdir)
     channel_context = ep.planning_context_prompt(
         cfg, ctx, plan, "Read the NARRATION below; beats use exact opening words instead of cue numbers.")
@@ -1488,9 +1491,10 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
         f"about {max_words} words ({cap:g}s limit + {tol:.0%} tolerance); "
         + (f"elements.md used" if elements_md else "no elements.md"))
     def build_beats_prompt(files):
-        text = beatsmod.prompt(narration, elements_md, ctx["visual_style"],
+        text = beatsmod.prompt(beatsmod.sentences(cues), elements_md, ctx["visual_style"],
                                ctx["bible"], allowed, cap, max_words,
-                               animation_note=animation_note, channel_context=channel_context)
+                               animation_note=animation_note, channel_context=channel_context,
+                               min_words=min_words)
         dump("beats_prompt", text)
         return text
     reply = _send(transport, writer, build_beats_prompt, log, ready=_has_json)

@@ -243,7 +243,7 @@ class GroupCapTests(unittest.TestCase):
 
     def test_a_family_cap_limits_its_codes_together(self):
         p = briefs.custom_profile({
-            "allowed": self.ALL, "st_max_share": 15,
+            "allowed": self.ALL, "st_max_share": 15, "mix_mode": "caps",
             "pan_max_share": 5, "tilt_max_share": 10})
         self.assertEqual(p.group_caps, ((("PL", "PR"), 0.05),
                                         (("PU", "PD", "PV"), 0.10)))
@@ -258,10 +258,9 @@ class GroupCapTests(unittest.TestCase):
         self.assertNotIn("ZI", p.code_share_overrides)
         self.assertNotIn("ZO", p.code_share_overrides)
 
-    def test_an_unset_family_keeps_the_standard_per_code_cap(self):
+    def test_an_unset_family_has_no_implicit_cap(self):
         p = briefs.custom_profile({"allowed": self.ALL, "tilt_max_share": 25})
-        self.assertEqual(p.code_share_overrides["PL"], 0.10)
-        self.assertEqual(p.code_share_overrides["PR"], 0.10)
+        self.assertEqual(p.code_share_overrides, {})
         self.assertEqual(p.group_caps, ((("PU", "PD", "PV"), 0.25),))
 
     def test_only_ticked_codes_count_in_a_family(self):
@@ -279,7 +278,7 @@ class GroupCapTests(unittest.TestCase):
     def test_nothing_left_for_zoom_is_an_error(self):
         err = briefs.custom_error({"allowed": self.ALL, "st_max_share": 50,
                                    "pan_max_share": 30, "tilt_max_share": 20})
-        self.assertIn("nothing is left for ZI / ZO", err)
+        self.assertIsNone(err)
 
     def test_the_gate_enforces_the_family_total(self):
         prof = briefs.custom_profile({"allowed": self.ALL,
@@ -293,17 +292,73 @@ class GroupCapTests(unittest.TestCase):
 
 
 class CustomChannelTests(_ChannelCase):
-    def test_a_ticked_pan_or_tilt_group_needs_its_share(self):
+    def test_a_ticked_pan_or_tilt_group_may_have_no_cap(self):
         self._post(brief_motion="static")
         for allowed, share in ((["ZI", "PL"], {}),
                                (["ZI", "PU"], {"custom_pan_share": "10"})):
             resp = self._post(brief_motion="custom", custom_allowed=allowed,
                               **share)
-            self.assertIn("enter%20a%20max%20share", resp.headers["Location"])
-            self.assertEqual(self._row()["brief_motion"], "static")
+            self.assertIn("Channel%20updated", resp.headers["Location"])
+            self.assertEqual(self._row()["brief_motion"], "custom")
         # ZI/ZO alone, no share at all, is fine: they take what is left
         self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"])
         self.assertEqual(self._row()["brief_motion"], "custom")
+
+    def test_mix_tolerance_saves_and_invalid_input_does_not_save(self):
+        for value, expected in (("", .05), ("2.5", .025), ("0", 0)):
+            response = self._post(brief_motion="custom", custom_allowed=["ZI", "ZO", "PU"],
+                                 custom_tilt_share="15", custom_share_tolerance=value)
+            self.assertIn("Channel%20updated", response.headers["Location"])
+            spec = json.loads(self._row()["brief_custom"])
+            self.assertEqual(briefs.custom_profile(spec).share_tolerance, expected)
+        before = self._row()["brief_custom"]
+        for bad in ("hello", "-1", "101", "nan"):
+            response = self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"],
+                                 custom_share_tolerance=bad)
+            self.assertNotEqual(response.status_code, 500)
+            self.assertEqual(self._row()["brief_custom"], before)
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn('name="custom_share_tolerance"', page)
+        self.assertIn('name="custom_mix_mode"', page)
+
+    def test_both_pacing_tolerances_save_for_any_preset(self):
+        self._post(brief_motion="documentary", planning_policy_form="1",
+                   short_hold_share="20", single_cue_share="50",
+                   short_hold_tolerance="2.5", single_cue_tolerance="10")
+        spec = json.loads(self._row()["brief_custom"])
+        profile = briefs.resolve_profile("documentary", custom=spec)
+        self.assertEqual(profile.short_hold_tolerance, .025)
+        self.assertEqual(profile.single_cue_tolerance, .10)
+        self.assertAlmostEqual(briefs.pacing_share_cap(profile, "short_hold"), .225)
+        self.assertEqual(briefs.pacing_share_cap(profile, "single_cue"), .60)
+        before = self._row()["brief_custom"]
+        self._post(planning_policy_form="1", single_cue_tolerance="-5")
+        self.assertEqual(self._row()["brief_custom"], before)
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn('name="short_hold_tolerance"', page)
+        self.assertIn('name="single_cue_tolerance"', page)
+
+    def test_pacing_settings_save_resolve_and_render(self):
+        self._post(brief_motion="custom", custom_allowed=["ZI", "ZO"],
+                   planning_policy_form="1", short_hold_share="20", single_cue_share="70")
+        spec = json.loads(self._row()["brief_custom"])
+        self.assertEqual(spec["short_hold_share"], .2)
+        self.assertEqual(spec["single_cue_share"], .7)
+        prof = briefs.resolve_profile("custom", 8, 12, custom=spec)
+        self.assertEqual(prof.short_hold_share, .2)
+        self.assertEqual(prof.single_cue_share, .7)
+        # Switching preset keeps the saved custom specification and policies.
+        self._post(brief_motion="documentary", planning_policy_form="1",
+                   planning_policy_existing=json.dumps(spec),
+                   short_hold_share="", single_cue_share="")
+        saved = json.loads(self._row()["brief_custom"])
+        self.assertEqual(saved["allowed"], ["ZI", "ZO"])
+        prof = briefs.resolve_profile("documentary", custom=saved)
+        self.assertEqual(prof.short_hold_share, 0)
+        self.assertIsNone(prof.single_cue_share)
+        page = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn('name="short_hold_share"', page)
+        self.assertIn('name="single_cue_share"', page)
 
     def test_the_boxes_grey_out_with_their_codes(self):
         page = self.client.get("/my-channels").get_data(as_text=True)

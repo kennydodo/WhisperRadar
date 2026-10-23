@@ -2335,6 +2335,13 @@ def create_app(cfg) -> Flask:
                 or raw == briefs.CUSTOM_KEY
                 else None)   # empty/standard = default
             if raw == briefs.CUSTOM_KEY:
+                tolerance_text = (form.get("custom_share_tolerance") or "").strip()
+                try:
+                    tolerance = float(tolerance_text) / 100 if tolerance_text else None
+                except ValueError:
+                    return fields, "Motion mix tolerance must be a number - nothing was saved"
+                if tolerance is not None and not 0 <= tolerance <= 1:
+                    return fields, "Motion mix tolerance must be between 0 and 100 - nothing was saved"
                 spec = briefs.normalize_custom({
                     "allowed": form.getlist("custom_allowed"),
                     "st_max_share": form.get("custom_st_share"),
@@ -2343,25 +2350,38 @@ def create_app(cfg) -> Flask:
                     "pan_max_share": form.get("custom_pan_share"),
                     "tilt_max_share": form.get("custom_tilt_share"),
                     "rules": form.get("custom_rules"),
+                    "mix_mode": form.get("custom_mix_mode"),
+                    "share_tolerance": tolerance,
                     "tol_max": form.get("custom_tol_max"),
                     "tol_st": form.get("custom_tol_st"),
                     "tol_static": form.get("custom_tol_static"),
                 })
                 problem = briefs.custom_error(spec)
-                if spec and not problem:
-                    for key, codes in briefs.CODE_GROUPS.items():
-                        if spec.get(key):    # (ZI/ZO take what is left)
-                            continue
-                        if any(c in spec["allowed"] for c in codes):
-                            problem = (f"enter a max share for "
-                                       f"{' / '.join(codes)}")
-                            break
                 if problem:
                     return fields, (f"Custom motion: {problem} - "
                                     "nothing was saved")
                 # kept when the channel switches back to a preset, so the
                 # custom settings are still there next time
                 fields["brief_custom"] = json.dumps(spec)
+        if "planning_policy_form" in form:
+            prior = fields.get("brief_custom")
+            if prior is None:
+                prior = form.get("planning_policy_existing") or "{}"
+            try:
+                policy = json.loads(prior) if isinstance(prior, str) else dict(prior or {})
+            except (ValueError, TypeError):
+                policy = {}
+            for key in ("short_hold_share", "single_cue_share",
+                        "short_hold_tolerance", "single_cue_tolerance"):
+                raw = (form.get(key) or "").strip()
+                try:
+                    value = float(raw) / 100 if raw else None
+                except ValueError:
+                    return fields, "Pacing percentages must be numbers - nothing was saved"
+                if value is not None and not 0 <= value <= 1:
+                    return fields, "Pacing percentages must be between 0 and 100 - nothing was saved"
+                policy[key] = value
+            fields["brief_custom"] = json.dumps(policy)
         hold = {}
         for key in ("brief_min_hold", "brief_max_hold"):
             if key in form:

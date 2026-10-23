@@ -216,13 +216,13 @@ def _targets(profile) -> dict[str, float]:
         return left
 
     zoom = [c for c in briefs.ZOOM_CODES if c in allowed]
-    if briefs.zoom_balanced(profile):
+    if len(zoom) == 2:
         left = spread(zoom, left)
     others = [c for c in allowed if c not in targets and c not in zoom
               and c != "ST"]
     if left > 1e-9 and others:
         left = spread(others, left)
-    if left > 1e-9 and not briefs.zoom_balanced(profile):
+    if left > 1e-9 and len(zoom) != 2:
         left = spread([c for c in allowed if c != "ST"] or allowed, left)
     if left > 1e-9:                      # nothing else may take it
         pool = [c for c in targets if c != "ST"] or list(targets) or allowed

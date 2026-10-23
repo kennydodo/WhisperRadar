@@ -489,7 +489,7 @@
               <summary style="cursor:pointer; font-weight:600">Custom motion</summary>
               <div class="muted" style="font-size:12px; margin:6px 0">
                 Custom motion - the planner may only use the ticked codes, and the shotlist review checks the same limits.
-                Empty = the standard limit. Canvas sizes follow the ticked codes.
+                Empty motion limits = no cap. Canvas sizes follow the ticked codes.
               </div>
               <div class="inline">
                 {% for code, info in brief_motion_codes.items() %}
@@ -500,31 +500,48 @@
               </div>
               {% set cap_fallback = cs.get('code_max_share') %}
               <div class="muted" style="font-size:12px; margin:8px 0 2px">
-                Max share of shots (%) - the codes of a group count together. A group is greyed out (0) while none of its codes is ticked.
-                ZI / ZO is calculated: whatever the others leave.
+                Motion family shares (%) - the codes of a group count together. A group is greyed out (0) while none of its codes is ticked.
+                In target mode, ZI / ZO takes the remainder when every other enabled family has a target. Blank families are unrestricted.
               </div>
+              <div class="inline">
+                <label>Family share meaning
+                  <select name="custom_mix_mode">
+                    <option value="targets" {{ 'selected' if cs.get('mix_mode') != 'caps' else '' }}>Approximate targets</option>
+                    <option value="caps" {{ 'selected' if cs.get('mix_mode') == 'caps' else '' }}>Maximums only</option>
+                  </select>
+                </label>
+                <label>Motion mix tolerance (percentage points)
+                  <input type="number" name="custom_share_tolerance" min="0" max="100" step="any" style="width:80px"
+                         value="{{ '%g' % (cs.get('share_tolerance') * 100) if cs.get('share_tolerance') is not none else '' }}" placeholder="5">
+                </label>
+              </div>
+              <p class="muted" style="font-size:12px">Default tolerance: +/-5 percentage points. An 85% target accepts 80-90%; a 15% target accepts 10-20%. In maximums mode, the tolerance only extends the upper cap. Zero means strict. The any-one-code field remains a maximum.</p>
               <div class="inline cm-limits">
                 {% for name, label, key, ph, codes, req in [
                     ('custom_st_share',   'ST',       'st_max_share',   '10', 'ST', false),
-                    ('custom_pan_share',  'PL / PR',  'pan_max_share',  '10', 'PL,PR', true),
-                    ('custom_tilt_share', 'PU / PD / PV', 'tilt_max_share', '40', 'PU,PD,PV', true)] %}
-                {% set v = cs.get(key) or (cap_fallback if key != 'st_max_share' else none) %}
+                    ('custom_pan_share',  'PL / PR',  'pan_max_share',  '10', 'PL,PR', false),
+                    ('custom_tilt_share', 'PU / PD / PV', 'tilt_max_share', '40', 'PU,PD,PV', false)] %}
+                {% set v = cs.get(key) %}
                 <label>{{ label }}
                   <input type="number" name="{{ name }}" min="1" max="100" step="any" style="width:72px"
                          data-codes="{{ codes }}" data-req="{{ '1' if req else '' }}"
-                         value="{{ '%g' % (v * 100) if v else '' }}" placeholder="{{ ph }}">
+                         value="{{ '%g' % (v * 100) if v else '' }}" placeholder="No cap">
                 </label>
                 {% endfor %}
-                <label>ZI / ZO (the rest)
+                <label>Any one motion code (%)
+                  <input type="number" name="custom_code_share" min="1" max="100" step="any" style="width:72px"
+                         value="{{ '%g' % (cs.get('code_max_share') * 100) if cs.get('code_max_share') is not none else '' }}" placeholder="No cap">
+                </label>
+                <label>ZI / ZO (combined remainder)
                   <input type="number" id="cm-zoom-rest" style="width:72px" readonly tabindex="-1"
                          data-codes="ZI,ZO" title="100% minus ST, PL / PR and PU / PD / PV">
                 </label>
                 <label>ST max hold (s)
                   <input type="number" name="custom_st_hold" min="1" max="300" step="any" style="width:72px"
-                         data-codes="ST" value="{{ '%g' % cs.st_max_hold if cs.get('st_max_hold') else '' }}" placeholder="5">
+                         data-codes="ST" value="{{ '%g' % cs.st_max_hold if cs.get('st_max_hold') else '' }}" placeholder="No cap">
                 </label>
               </div>
-              <div class="muted" style="font-size:12px; margin-top:2px">Empty ST boxes use the standard (10% share, 5 s hold).</div>
+              <div class="muted" style="font-size:12px; margin-top:2px">Empty ST boxes impose no share or hold cap.</div>
               <div class="muted" style="font-size:12px; margin:8px 0 2px">
                 Hold tolerance (%) - how far over a hold limit the shotlist check, the shot drafting and the judge still accept.
                 Empty = the standard (20 for all three); 0 = strict, no leniency.
@@ -575,12 +592,19 @@
                       f.required = on && visible && f.dataset.req === '1';
                     });
                     var zOn = ticked('ZI') || ticked('ZO');
-                    var left = 100 - val('custom_st_share', 10) - val('custom_pan_share')
+                    var left = 100 - val('custom_st_share') - val('custom_pan_share')
                                - val('custom_tilt_share');
                     zoom.disabled = !zOn;
                     zoom.style.opacity = zOn ? '' : '0.45';
-                    zoom.value = zOn ? String(Math.max(0, Math.round(left * 100) / 100)) : '0';
-                    zoom.style.outline = (zOn && left <= 0) ? '2px solid #d33' : '';
+                    var known = [['custom_st_share', ['ST']], ['custom_pan_share', ['PL','PR']],
+                                 ['custom_tilt_share', ['PU','PD','PV']]].every(function (group) {
+                      return !group[1].some(ticked) || box.querySelector('input[name="' + group[0] + '"]').value.trim() !== '';
+                    });
+                    zoom.value = zOn && known ? String(Math.max(0, Math.round(left * 100) / 100)) : '';
+                    zoom.placeholder = known ? '' : 'Unspecified';
+                    zoom.title = known ? 'Combined zoom share; motion mix tolerance applies in target mode' :
+                      'Set a share for each other enabled motion family to calculate the zoom target';
+                    zoom.style.outline = ''; // Caps are maxima, not reserved shares.
                   }
                   ticks.forEach(function (t) { t.addEventListener('change', sync); });
                   box.querySelectorAll('input[type="number"]').forEach(function (f) {
@@ -625,6 +649,28 @@
                 for this channel; the shotlist review enforces it.
               </span>
             </div>
+            <input type="hidden" name="planning_policy_form" value="1">
+            <input type="hidden" name="planning_policy_existing" value="{{ ch['brief_custom'] or '{}' }}">
+            <div class="inline" style="margin-top:8px">
+              <label>Shots allowed below minimum hold (%)
+                <input type="number" name="short_hold_share" min="0" max="100" step="any" style="width:90px"
+                       value="{{ '%g' % (cs.get('short_hold_share') * 100) if cs.get('short_hold_share') is not none else '' }}" placeholder="0">
+              </label>
+              <label>Maximum shots spanning one subtitle cue (%)
+                <input type="number" name="single_cue_share" min="0" max="100" step="any" style="width:90px"
+                       value="{{ '%g' % (cs.get('single_cue_share') * 100) if cs.get('single_cue_share') is not none else '' }}" placeholder="No limit">
+              </label>
+            </div>
+            <div class="inline" style="margin-top:6px">
+              {% for key, label in [('short_hold_tolerance', 'Below-minimum-hold tolerance'), ('single_cue_tolerance', 'Single-cue limit tolerance')] %}
+              <label>{{ label }} (percentage points)
+                <input type="number" name="{{ key }}" min="0" max="100" step="any" style="width:90px"
+                       value="{{ '%g' % (cs.get(key) * 100) if cs.get(key) is not none else '' }}" placeholder="5">
+              </label>
+              {% endfor %}
+            </div>
+            <p class="muted" style="font-size:12px">Pacing tolerances default to +5 percentage points above the configured maximum share. A 50% single-cue limit accepts up to 55%. Set tolerance to 0 for strict enforcement. A disabled limit stays disabled.</p>
+            <p class="muted" style="font-size:12px">Minimum-hold allowance applies only when a minimum hold is set; the final shot is exempt. The single-cue limit is optional and does not apply in Every cue mode. Motion family shares follow the selected target or maximums mode and its tolerance.</p>
             {% set bt = ch['brief_types'] | typesjson %}
             <input type="hidden" name="types_form" value="1">
             <details class="type-limits" open style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px">

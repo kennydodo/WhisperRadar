@@ -31,6 +31,24 @@ def metadata(obj: dict) -> dict:
     return {k: dict(obj[k]) for k in PLAN_MAPS if isinstance(obj.get(k), dict)}
 
 
+def sentences(cues: list[dict]) -> str:
+    """The narration as sentences, one per line (a subtitle cue is a poor unit
+    for a writer: it cuts sentences in two and invites micro-beats)."""
+    text = " ".join(" ".join(str(c.get("text", "")).split()) for c in cues)
+    text = re.sub(r"(?<=\d)\s+(?=[,.]\d)", "", text)          # "4 ,000" -> "4,000"
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    parts = re.split(r"(?<=[.!?])\s+(?=[\"'(\[]?[A-Z0-9])", text)
+    return "\n".join(p.strip() for p in parts if p.strip())
+
+
+def min_words_per_beat(min_s: float, script: str, total_s: float) -> int:
+    """Fewest words a beat should carry so that it is on screen for min_s."""
+    n = len(tokens(script))
+    wps = (n / total_s) if total_s > 0 and n else 2.6
+    return max(WORDS_PER_BEAT_MIN, int(min_s * wps))
+
+
+
 # ---- the prompt --------------------------------------------------------------------
 
 def words_per_beat(cap_s: float, tol: float, script: str, total_s: float) -> int:
@@ -53,7 +71,7 @@ def motion_hint(allowed) -> str:
 def prompt(script: str, elements_md: str, style: str, bible: str,
            allowed: list[str], cap_s: float, max_words: int,
            first_words: str = "", animation_note: str = "",
-           channel_context: str = "") -> str:
+           channel_context: str = "", min_words: int = 0) -> str:
     codes = ", ".join(allowed)
     types = "; ".join(f"{k} = {v}" for k, v in briefs.TYPE_CODES.items())
     el = ((elements_md or "").strip()
@@ -73,7 +91,10 @@ def prompt(script: str, elements_md: str, style: str, bible: str,
         f"- Keep a beat short enough to be spoken in about {cap_s:g} seconds: at most "
         f"about {max_words} words of narration. Longer passages need more than one beat; "
         "split where the idea, the subject or the example changes. Do not make beats "
-        "shorter than one sentence unless the sentence itself changes the picture.\n"
+        "shorter than one sentence unless the sentence itself changes the picture"
+        + (f"; a beat should carry at least about {min_words} words of narration "
+           "(group short sentences that belong together)" if min_words else "")
+        + ".\n"
         "- You do NOT count or write subtitle cue numbers. The app works those out "
         "from `starts_with`. The opening quote is ONLY a location marker, not the "
         "length of a beat. A beat normally covers a complete developing visual idea "
@@ -145,7 +166,7 @@ def prompt(script: str, elements_md: str, style: str, bible: str,
         "If you reach your output limit, stop after the last COMPLETE beat. When I reply "
         '"continue", output ONLY the remaining beats in a new ```json block, starting at '
         "the next beat, no repetition, finishing the document.")
-    blocks.append("NARRATION (exactly what the voice says, one subtitle line per row; a beat may start in the middle of a row):\n" + (script or "").strip())
+    blocks.append("NARRATION (exactly what the voice says, one sentence per row):\n" + (script or "").strip())
     return "\n\n".join(blocks) + "\n"
 
 

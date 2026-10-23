@@ -80,7 +80,6 @@ class MappingTests(unittest.TestCase):
         starts, faults = beats.find_starts([beat("It is the industry behind")], make_cues())
         self.assertEqual(starts, [0])
         self.assertIn("plan starts late", faults[0])
-        self.assertIn("You can sit in a", faults[0])
 
     def test_unique_two_word_quote_matches(self):
         starts, faults = beats.find_starts(
@@ -91,8 +90,9 @@ class MappingTests(unittest.TestCase):
     def test_ambiguous_two_word_quote_is_rejected(self):
         cues = make_cues()
         cues[2]["text"] = "You can also eat something else."
-        starts, faults = beats.find_starts([beat("You can")], cues)
-        self.assertEqual(starts, [0])
+        cues[3]["text"] = "You can also say so."
+        starts, faults = beats.find_starts([beat("You can sit in a"), beat("You can")], cues)
+        self.assertEqual(starts, [1, 0])
         self.assertTrue(faults)
 
     def test_starts_are_found_in_order_across_cue_lines(self):
@@ -341,7 +341,6 @@ class RunBeatsTests(unittest.TestCase):
         ws.run_beats(None, 1, t, "zai", log=lambda m: None)
         self.assertEqual(len(asked), 2)
         self.assertEqual(len(saved[0]["shots"]), 3)
-        self.assertIn('"through"', asked[1])
 
     def _check_judge_delivery(self, site, limit, attached):
         raw = [beat("You can sit in a"), beat("But crocodile meat is a"),
@@ -373,6 +372,13 @@ class RunBeatsTests(unittest.TestCase):
              mock.patch.object(t, "ask", side_effect=receive):
             ws.run_beats(None, 1, t, "zai", log=lambda m: None, quality_judge=site)
         self.assertEqual(len(saved), 1)
+
+    def test_no_word_minimum_is_invented_without_channel_minimum(self):
+        raw = [beat("You can sit in a"), beat("But crocodile meat is a"),
+               beat("It is the industry behind")]
+        ws, pdir, asked, saved, t = self._setup([json.dumps({"beats": raw})])
+        ws.run_beats(None, 1, t, "zai", log=lambda m: None)
+        self.assertNotIn("a beat should carry at least about", asked[0])
 
     def test_quality_judge_receives_inline_narration_and_shotlist(self):
         self._check_judge_delivery("deepseek_judge", 1000000, False)
@@ -541,6 +547,36 @@ class RunBeatsTests(unittest.TestCase):
         self.assertEqual(len(saved), 1)
         self.assertEqual(len(saved[0]["shots"]), 3)
 
+    def test_motion_mix_is_fixed_by_writer_with_composition_and_land(self):
+        raw = [beat("You can sit in a", prompt="A wide horizontal restaurant.", motion="ZI"),
+               beat("But crocodile meat is a", motion="ZI"),
+               beat("It is the industry behind", motion="ZI")]
+        changed = dict(raw[0], motion="PU", land=70, prompt="Tall composition with the subject low and open space above.")
+        correction = json.dumps({"replace": [{"beat": 1, "with": [changed]}]})
+        ws, pdir, asked, saved, transport = self._setup([self._reply(raw), correction])
+        with mock.patch.object(ws.ep, "shotlist_judge_prompt", side_effect=[
+                ("", ["S01_01_SCN_ZI.png: motion mix needs more PU/PD; update composition too."]), ("", [])]):
+            ws.run_beats(None, 1, transport, "zai", log=lambda message: None)
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(saved[0]["shots"][0]["motion"], "PU")
+        self.assertEqual(saved[0]["shots"][0]["land"], 70)
+        self.assertIn("Tall composition", saved[0]["images"][0]["prompt"])
+
+    def test_same_cue_merge_preserves_writer_combined_refs_and_overlay(self):
+        first = dict(beat("You can sit in a"), refs=["CH_CAT"])
+        second = dict(beat("restaurant in Louisiana and"), refs=["CH_DOG"],
+                      overlays=[{"text": "Important detail", "style": "label"}])
+        raw = [first, second, beat("But crocodile meat is a"), beat("It is the industry behind")]
+        combined = dict(first, prompt="A cat and dog together in a restaurant.",
+                        refs=["CH_CAT", "CH_DOG"], overlays=second["overlays"])
+        correction = json.dumps({"replace": [{"beat": 1, "through": 2, "with": [combined]}]})
+        ws, pdir, asked, saved, transport = self._setup([self._reply(raw), correction])
+        ws.run_beats(None, 1, transport, "zai", log=lambda message: None)
+        self.assertEqual(len(asked), 2)
+        self.assertEqual(saved[0]["images"][0]["refs"], ["CH_CAT", "CH_DOG"])
+        self.assertEqual(saved[0]["shots"][0]["overlays"], second["overlays"])
+        self.assertEqual(len(saved[0]["shots"]), 3)
+
     def _setup(self, replies):
         from whisperradar import webstages as ws
         from whisperradar import briefs
@@ -611,3 +647,11 @@ class RunBeatsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SentenceMergeBalanceTests(unittest.TestCase):
+    def test_sentences_join_cues_and_numbers(self):
+        cues = [{"index": 1, "text": "It cost 4 ,000 dollars and"},
+                {"index": 2, "text": "then it grew. Next came more."}]
+        self.assertEqual(beats.sentences(cues),
+                         "It cost 4,000 dollars and then it grew.\nNext came more.")

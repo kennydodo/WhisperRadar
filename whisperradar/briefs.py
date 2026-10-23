@@ -34,23 +34,12 @@ ST_MAX_SHARE = 0.10
 MOTION_MAX_SHARE = 0.40
 MOTION_MAX_SHARE_OVERRIDES = {"PL": 0.10, "PR": 0.10}
 STATIC_LONG_HOLD_SECONDS = 15.0
-# On a channel with a minimum hold, more than this share of shots (the last
-# one is exempt - it ends where the narration ends) holding under the minimum
-# is a fault: the plan is chopping the narration up instead of grouping ideas.
-MIN_HOLD_MAX_SHORT_SHARE = 0.35
-
-# ---- the motion MIX (all profiles) -------------------------------------------
-# The share limits above are CAPS, and a plan that never uses a capped code
-# (no ST, no PU/PD, nothing but ZI) satisfies every one of them. So the mix is
-# also a target: a code with a stated share is used at least MIX_FLOOR_RATIO of
-# it, and when both zoom codes are allowed ZI takes ZOOM_SPLIT of the ZI+ZO
-# shots (the other zoom takes the rest). Small plans are exempt: a handful of
-# shots cannot show a mix.
-ZOOM_SPLIT = (0.40, 0.60)
-MIX_FLOOR_RATIO = 0.5
+# ---- explicit motion caps and hold tolerances -------------------------------
 # A share cap (ST, one code, a code group) is met when the share is at most the
 # cap plus this many percentage points: 10.05% against a ~10% cap is not a fault.
 SHARE_TOLERANCE = 0.02
+DEFAULT_MIX_TOLERANCE = 0.05
+DEFAULT_PACING_TOLERANCE = 0.05
 # A hold limit (seconds) is met when the hold is at most the limit plus this
 # share of it: with an ST maximum of 5 s, a 6 s ST shot passes. The writer is
 # still told the nominal limit; only the app's own check is lenient, so a
@@ -66,8 +55,6 @@ def hold_limit(seconds: float, tolerance: float) -> float:
     return float(seconds) * (1.0 + tolerance)
 
 
-MIX_MIN_SHOTS = 20
-MIX_MIN_ZOOM_SHOTS = 10
 
 # ---- slot texts: the STANDARD preset, extracted verbatim from the brief ----
 # (tests/test_brief_profiles.py proves the default render equals the
@@ -145,6 +132,13 @@ class MotionProfile:
         default_factory=lambda: dict(MOTION_MAX_SHARE_OVERRIDES))
     # ((codes...), share): those codes TOGETHER may take at most this share
     group_caps: tuple = ()
+    share_targets: tuple = ()
+    share_tolerance: float = SHARE_TOLERANCE
+    # Pacing allowances: strict minimum when set, optional single-cue cap.
+    short_hold_share: float = 0.0
+    single_cue_share: float | None = None
+    short_hold_tolerance: float = DEFAULT_PACING_TOLERANCE
+    single_cue_tolerance: float = DEFAULT_PACING_TOLERANCE
     # None = inherit (the channel / global shotlist_max_hold_seconds)
     min_hold: float | None = None
     max_hold: float | None = None
@@ -180,6 +174,18 @@ class MotionProfile:
         if mix and "MOTION_SECTION" in out:
             out["MOTION_SECTION"] = out["MOTION_SECTION"].rstrip() + "\n\n" + mix
             out["CHECK_MOTION"] = out["CHECK_MOTION"].rstrip() + " " + mix
+        policy = []
+        if self.min_hold:
+            policy.append(f"Minimum hold {self.min_hold:g}s; at most {pacing_share_cap(self, 'short_hold') * 100:g}% "
+                          f"of shots may be shorter (final shot exempt; allowance {self.short_hold_share * 100:g}% "
+                          f"plus {self.short_hold_tolerance * 100:g} percentage points tolerance).")
+        if self.single_cue_share is not None and not self.per_cue:
+            policy.append(f"At most {pacing_share_cap(self, 'single_cue') * 100:g}% of shots may span one subtitle cue "
+                          f"(cap {self.single_cue_share * 100:g}% plus "
+                          f"{self.single_cue_tolerance * 100:g} percentage points tolerance).")
+        if policy:
+            for key in ("MOTION_SECTION", "CHECK_MOTION"):
+                out[key] = out.get(key, "").rstrip() + "\n" + " ".join(policy)
         kinds = types_text(self.types)
         if kinds and "MOTION_SECTION" in out:
             out["MOTION_SECTION"] = (
@@ -194,10 +200,11 @@ def _allows(profile, code: str) -> bool:
 
 
 def mix_targets(profile: "MotionProfile") -> list:
-    """[((codes...), share)]: ST and the grouped codes (PU/PD...) with a stated
-    share cap, which the plan must also actually use (about that share, never
-    below half of it). The per-code overrides (PL/PR kept low because they
-    default too easily, and rendered through the paid API) stay pure caps."""
+    """Explicit capped families used by the optional skeleton allocator.
+
+    The optional skeleton uses these as allocation hints. Runtime validation
+    distinguishes approximate targets from one-sided caps via share_targets.
+    """
     out: list = []
     if _allows(profile, "ST") and profile.st_max_share:
         out.append((("ST",), profile.st_max_share))
@@ -208,30 +215,32 @@ def mix_targets(profile: "MotionProfile") -> list:
     return out
 
 
-def zoom_balanced(profile: "MotionProfile") -> bool:
-    """True when both zoom codes are allowed, so their split is enforced."""
-    return _allows(profile, "ZI") and _allows(profile, "ZO")
+def pacing_share_cap(profile: "MotionProfile", kind: str) -> float | None:
+    cap = getattr(profile, kind + "_share")
+    return None if cap is None else min(1.0, cap + getattr(profile, kind + "_tolerance"))
+
+
+def motion_share_bounds(target: float, tolerance: float) -> tuple[float, float]:
+    return max(0.0, target - tolerance), min(1.0, target + tolerance)
+
+
+def motion_share_range(target: float, tolerance: float) -> str:
+    lo, hi = motion_share_bounds(target, tolerance)
+    return f"{lo * 100:g}%-{hi * 100:g}%"
 
 
 def mix_text(profile: "MotionProfile") -> str:
-    """The brief's "aim for this mix" paragraph (empty when a profile has
-    nothing to mix, e.g. a static-only channel)."""
-    parts = [f"{'/'.join(codes)} about {share:.0%}"
-             + (" (short holds only)" if codes == ("ST",) else
-                " together" if len(codes) > 1 else "")
-             for codes, share in mix_targets(profile)]
-    if zoom_balanced(profile):
-        lo, hi = ZOOM_SPLIT
-        parts.append(f"ZI and ZO take all the remaining shots, split roughly "
-                     f"evenly - ZI is between {lo:.0%} and {hi:.0%} of the "
-                     f"ZI+ZO shots and ZO the rest")
-    if not parts:
+    """Explicit family targets with the exact ranges enforced by the app."""
+    if not profile.share_targets:
         return ""
-    return ("Aim for this mix, not merely to stay under the caps: "
-            + "; ".join(parts) + ". A plan with one code on nearly every "
-            "shot, or that never uses a code listed here, fails review - "
-            "choose each shot's motion while designing the image so the mix "
-            "comes out right.")
+    return ("MOTION MIX TARGETS: " + "; ".join(
+        f"{'/'.join(codes)} about {target * 100:g}% "
+        f"(accepted {motion_share_range(target, profile.share_tolerance)})"
+        for codes, target in profile.share_targets)
+        + f". Tolerance is +/-{profile.share_tolerance * 100:g} percentage points of ALL shots. "
+        "Anything inside these inclusive ranges passes; exact percentages are not required. "
+        "ZI/ZO is their combined share, with no required split between them. "
+        "Choose motion with the image composition; never swap codes without adjusting the image.")
 
 
 STANDARD = MotionProfile(
@@ -506,7 +515,7 @@ def normalize_custom(spec) -> dict | None:
 
     Keys: allowed (motion codes, in canonical order), st_max_share (0-1),
     st_max_hold (s), code_max_share (0-1), rules (free text). Empty numbers
-    mean "the standard limit"."""
+    mean "no cap"."""
     if isinstance(spec, str):
         import json
         try:
@@ -531,26 +540,24 @@ def normalize_custom(spec) -> dict | None:
         "tol_max": _tol(spec.get("tol_max")),
         "tol_st": _tol(spec.get("tol_st")),
         "tol_static": _tol(spec.get("tol_static")),
+        "short_hold_share": _tol(spec.get("short_hold_share")),
+        "single_cue_share": _tol(spec.get("single_cue_share")),
+        "short_hold_tolerance": _tol(spec.get("short_hold_tolerance")),
+        "single_cue_tolerance": _tol(spec.get("single_cue_tolerance")),
+        "mix_mode": "caps" if spec.get("mix_mode") == "caps" else "targets",
+        "share_tolerance": min(1.0, _tol(spec.get("share_tolerance"))) if _tol(spec.get("share_tolerance")) is not None else None,
     }
 
 
 def _caps(spec: dict):
     """(st_share, default per-code cap, per-code overrides, group caps).
 
-    A pan / tilt family cap limits that family's codes TOGETHER; a family left
-    empty keeps the standard per-code cap. ZI/ZO are never capped on their own
-    - they take whatever share the others leave. cap None = no cap at all."""
+    A pan / tilt family cap limits its codes together. Blank caps impose
+    no restriction; code_max_share applies to every selected code."""
     allowed = spec["allowed"]
     moving = [c for c in allowed if c != "ST"]
-    st_share = (spec["st_max_share"] or ST_MAX_SHARE) if "ST" in allowed else 0.0
+    st_share = spec["st_max_share"] if "ST" in allowed else 0.0
     cap, overrides, groups = spec["code_max_share"], {}, []
-    if cap is None and len(moving) >= 4:      # the standard caps, per code
-        if not spec.get("pan_max_share"):
-            overrides.update({c: v for c, v in MOTION_MAX_SHARE_OVERRIDES.items()
-                              if c in moving})
-        if not spec.get("tilt_max_share"):
-            overrides.update({c: MOTION_MAX_SHARE for c in ("PU", "PD", "PV")
-                              if c in moving})
     for key, codes in CODE_GROUPS.items():
         inside = tuple(c for c in codes if c in moving)
         if spec.get(key) and inside:
@@ -565,7 +572,7 @@ def _room(spec: dict) -> float:
     st_share, cap, overrides, groups = _caps(spec)
     moving = [c for c in spec["allowed"] if c != "ST"]
     grouped = {c for codes, _v in groups for c in codes}
-    room = st_share + sum(v for _c, v in groups)
+    room = (1.0 if st_share is None else st_share) + sum(v for _c, v in groups)
     room += sum(overrides.get(c, cap if cap is not None else 1.0)
                 for c in moving if c not in grouped)
     return room
@@ -595,18 +602,24 @@ def custom_error(spec) -> str | None:
     spec = normalize_custom(spec)
     if spec is None:
         return "tick at least one motion code"
+    if spec["mix_mode"] == "targets":
+        total = sum(v for codes, v in _caps(spec)[3])
+        if "ST" in spec["allowed"]:
+            total += spec["st_max_share"] or 0
+        if total > 1 + 1e-9:
+            return "motion family targets exceed 100% - reduce a target"
     moving = [c for c in spec["allowed"] if c != "ST"]
     if "ST" not in spec["allowed"] and not moving:
         return "tick at least one motion code"
     if moving:
         st_share, cap, overrides, groups = _caps(spec)
         if cap is not None:
-            zoom = [c for c in ZOOM_CODES if c in moving]
-            taken = st_share + sum(v for _c, v in groups)
-            if zoom and groups and taken >= 1.0 - 1e-9:
-                return ("the other shares already use 100% of the shots - "
-                        "nothing is left for " + " / ".join(zoom))
-            room = _room(spec)
+            tolerance = spec["share_tolerance"] if spec["share_tolerance"] is not None else DEFAULT_MIX_TOLERANCE
+            adjusted = dict(spec)
+            for key in ("st_max_share", "code_max_share", *CODE_GROUPS):
+                if adjusted[key] is not None:
+                    adjusted[key] = min(1.0, adjusted[key] + tolerance)
+            room = _room(adjusted)
             if room + 1e-9 < 1.0:
                 return (f"the share caps allow at most {room:.0%} of shots "
                         f"across the {len(moving)} moving code(s) - raise a "
@@ -634,40 +647,45 @@ def custom_profile(spec) -> MotionProfile:
     tols = {name: spec[key] for name, key in (
         ("max_hold_tol", "tol_max"), ("st_hold_tol", "tol_st"),
         ("static_hold_tol", "tol_static")) if spec.get(key) is not None}
-    if allowed == ("ST",):                    # all-static = the Static preset
-        base = replace(STATIC, key=CUSTOM_KEY, label=CUSTOM_LABEL,
-                       description=CUSTOM_DESCRIPTION)
-        if spec["rules"]:
-            slots = dict(base.slots)
-            slots["MOTION_SECTION"] += ("\n\nCreator's own rules for this "
-                                        "channel (follow them):\n"
-                                        + spec["rules"])
-            base = replace(base, slots=slots)
-        return replace(base, **tols)
     st_share, cap, overrides, groups = _caps(spec)
-    st_hold = (spec["st_max_hold"] or ST_MAX_HOLD_SECONDS) if has_st else None
+    tolerance = spec["share_tolerance"] if spec["share_tolerance"] is not None else DEFAULT_MIX_TOLERANCE
+    targets = []
+    if spec["mix_mode"] == "targets":
+        if has_st and st_share is not None:
+            targets.append((("ST",), st_share))
+        targets.extend(groups)
+        covered = {c for codes, _ in targets for c in codes}
+        # Only derive the remainder if every allowed non-zoom family is specified.
+        zoom = tuple(c for c in ZOOM_CODES if c in allowed)
+        if zoom and all(c in covered for c in allowed if c not in ZOOM_CODES) and targets:
+            targets.append((zoom, max(0.0, 1.0 - sum(v for _, v in targets))))
+    st_hold = spec["st_max_hold"] if has_st else None
     not_allowed = [c for c in MOTION_CODES if c not in allowed]
 
     rows = "\n".join(f"| {c} | {MOTION_CODE_INFO[c][0]} | "
                      f"{MOTION_CODE_INFO[c][1]} |" for c in allowed)
     limits = []
-    if has_st:
-        limits.append(
-            f"ST (static) is the exception: only on very short holds "
-            f"(~{_num(st_hold)}s or less, roughly 1-2 cues) and at most "
-            f"~{st_share:.0%} of shots.")
-    else:
-        limits.append("There is no static code on this channel: every shot "
-                      "carries motion, and a long hold on a still frame is "
-                      "never acceptable.")
-    shares = share_text(cap, overrides, groups)
+    static_rules = []
+    if st_hold is not None:
+        static_rules.append(f"ST holds at most {_num(st_hold)}s")
+    if st_share is not None and has_st and spec["mix_mode"] == "caps":
+        static_rules.append(f"ST is at most {st_share:.0%} of shots")
+    static_text = "; ".join(static_rules) + ("." if static_rules else "")
+    if static_text:
+        limits.append(static_text)
+    if not has_st:
+        limits.append("There is no static code on this channel: every shot carries motion.")
+    shares = share_text(cap, overrides, groups if spec["mix_mode"] == "caps" else ())
     if shares:
-        limits.append(shares)
+        limits.append(shares + f" Maximum shares allow {tolerance * 100:g} percentage points "
+                      "above their cap; lower shares pass.")
     if len(moving) > 1:
         limits.append("Vary the codes - one code on every shot reads as "
                       "wallpaper.")
     section = (
         "### Motion — this channel's own rules\n\n"
+        "These explicit settings override generic motion guidance elsewhere in this brief. "
+        "Blank custom limits impose no cap. Follow the mix ranges when targets are configured.\n\n"
         f"Allowed motion codes on this channel: {', '.join(allowed)}."
         + (f" Never use {', '.join(not_allowed)} - a plan that uses a code "
            "outside this list fails review, and every rule elsewhere in this "
@@ -688,16 +706,12 @@ def custom_profile(spec) -> MotionProfile:
         "the asset's own filename** (the image was composed for that motion "
         "and overscan)."
         + (f" Never write {', '.join(not_allowed)}." if not_allowed else "")
-        + (f" **ST is rare and special:** only on very short holds (~"
-           f"{_num(st_hold)}s or less) and at most ~{st_share:.0%} of shots; "
-           "every shot that holds longer must carry motion." if has_st else
-           " Every shot carries motion.")
+        + (" " + static_text if has_st else " Every shot carries motion.")
         + (" " + shares if shares else ""))
     check_motion = (
         f"Only {', '.join(allowed)} are used"
         + (f" - never {', '.join(not_allowed)}" if not_allowed else "") + ". "
-        + (f"ST appears only on short holds, at most ~{st_share:.0%} of "
-           "shots. " if has_st else "Every shot carries motion. ")
+        + (static_text + " " if has_st else "Every shot carries motion. ")
         + (shares + " " if shares else "")
         + "Every motion code in `shots[].motion` matches the motion code in "
         "that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, "
@@ -713,6 +727,9 @@ def custom_profile(spec) -> MotionProfile:
         "EX_B": "ST" if has_st else seq[1 % len(seq)],
         "EX_C": seq[2 % len(seq)] if len(seq) > 2 else seq[-1],
     }
+    if has_st:
+        slots["CHECK_HOLD"] = "No shot exceeds the configured maximum hold."
+        slots["HOLD_RULE"] = "Group narration by developing ideas; follow the configured hold limits."
     if not has_st:
         slots["CHECK_HOLD"] = (
             "long holds are acceptable only where the idea keeps developing "
@@ -726,9 +743,9 @@ def custom_profile(spec) -> MotionProfile:
         allowed=None if len(allowed) == len(MOTION_CODES) else allowed,
         st_max_share=st_share if has_st else None,
         st_max_hold=st_hold,
-        static_long_hold=STATIC_LONG_HOLD_SECONDS if has_st else None,
+        static_long_hold=None,
         code_max_share=cap, code_share_overrides=overrides,
-        group_caps=groups, slots=slots, **tols)
+        group_caps=groups, share_targets=tuple(targets), share_tolerance=tolerance, slots=slots, **tols)
 
 
 _RANGE_HOLD_RULE = (
@@ -976,6 +993,21 @@ def resolve_profile(key, min_hold=None, max_hold=None,
     normalize_types / effective_types) and whether reveal shots are allowed.
     Nothing set = today's profile."""
     prof = _resolve_motion(key, min_hold, max_hold, default_max, custom)
+    policy = custom
+    if isinstance(policy, str):
+        try:
+            policy = json.loads(policy)
+        except ValueError:
+            policy = {}
+    if isinstance(policy, dict):
+        short = _tol(policy.get("short_hold_share"))
+        single = _tol(policy.get("single_cue_share"))
+        allowances = {"short_hold_share": short if short is not None else 0.0,
+                      "single_cue_share": single}
+        for key in ("short_hold_tolerance", "single_cue_tolerance"):
+            value = _tol(policy.get(key))
+            allowances[key] = min(1.0, value) if value is not None else DEFAULT_PACING_TOLERANCE
+        prof = replace(prof, **allowances)
     spec = normalize_types(types)
     if spec:
         prof = replace(prof, types=spec)

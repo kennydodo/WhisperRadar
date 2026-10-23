@@ -11,11 +11,12 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from dataclasses import replace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from whisperradar import autorun, studio  # noqa: E402
+from whisperradar import autorun, briefs, studio  # noqa: E402
 
 
 def _ts(t):
@@ -109,12 +110,13 @@ class PacingTests(unittest.TestCase):
         self.assertFalse(any(f.startswith("motion PL") or f.startswith("motion PR")
                              for f in faults), faults)
 
-    def test_fragmentation_is_a_fault(self):
+    def test_fragmentation_requires_an_explicit_limit(self):
         cues = _cues(6, 2)
         motions = ["ZI", "ZO", "PL", "PR", "PU", "PV"]
         data = _shots([(f"S01_0{i}_SCN_{m}.png", i, i, m)
                        for i, m in enumerate(motions, 1)])
-        faults, _ = studio.shotlist_pacing(data, cues)
+        faults, _ = studio.shotlist_pacing(data, cues, profile=replace(
+            briefs.STANDARD, single_cue_share=.5))
         self.assertTrue(any("single cue" in f for f in faults), faults)
 
     def test_no_image_may_hold_past_the_default_12s(self):

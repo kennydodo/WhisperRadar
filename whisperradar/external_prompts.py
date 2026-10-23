@@ -532,8 +532,10 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         lines.append(
             f"MINIMUM HOLD: this is a slow-paced channel - shots are meant "
             f"to hold {profile.min_hold:g}-{cap:g}s. More than "
-            f"{briefs.MIN_HOLD_MAX_SHORT_SHARE:.0%} of the shots (the last "
-            f"one is exempt) holding under {profile.min_hold:g}s is a fault.")
+            f"{briefs.pacing_share_cap(profile, 'short_hold') * 100:g}% of the shots (the last "
+            f"one is exempt) holding under {profile.min_hold:g}s is a fault. "
+            f"This includes {profile.short_hold_tolerance * 100:g} percentage points tolerance "
+            f"above the configured {profile.short_hold_share * 100:g}% allowance; up to that is not a fault.")
     if any(briefs._allows(profile, c) for c in ("PU", "PD", "PL", "PR")):
         lines.append(
             "PAN LANDING: every PU/PD/PL/PR shot should carry a numeric \"land\" (0-100: how far "
@@ -556,7 +558,7 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         motion.append(f"an ST shot may not hold longer than {top:.1f}s "
                       f"({profile.st_max_hold:g}s plus the accepted "
                       f"tolerance; up to that is NOT a fault)")
-    if profile.st_max_share is not None:
+    if profile.st_max_share is not None and not any(codes == ("ST",) for codes, _ in profile.share_targets):
         motion.append(f"ST may be at most {profile.st_max_share:.0%} of shots")
     if profile.code_max_share is not None:
         caps = ", ".join(f"{c} {v:.0%}" for c, v in
@@ -568,23 +570,20 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
         elif caps:
             motion.append(f"motion code share caps: {caps}")
     for codes, share_cap in getattr(profile, "group_caps", ()):
+        if any(codes == target_codes for target_codes, _ in profile.share_targets):
+            continue
         motion.append(f"{'/'.join(codes)} together may be at most "
                       f"{share_cap:.0%} of shots")
     if motion:
         lines.append("MOTION MIX: " + "; ".join(motion) + ". Every share "
-                     f"limit here has a tolerance of {briefs.SHARE_TOLERANCE:.0%}"
-                     f" (percentage points): a share up to "
-                     f"{briefs.SHARE_TOLERANCE:.0%} over its cap is NOT a "
-                     f"fault (10.05% against a 10% cap passes). Do not report "
+                     f"limit here has a tolerance of {profile.share_tolerance * 100:g}"
+                     f" percentage points: a share up to "
+                     f"{profile.share_tolerance * 100:g} percentage points over its cap is NOT a "
+                     f"fault. Do not report "
                      f"it.")
     mix = briefs.mix_text(profile)
     if mix:
-        lines.append("MOTION TARGETS: " + mix + " Plans of "
-                     f"{briefs.MIX_MIN_SHOTS}+ shots are checked: a listed "
-                     f"code below {briefs.MIX_FLOOR_RATIO:.0%} of its share, "
-                     f"or ZI outside {briefs.ZOOM_SPLIT[0]:.0%}-"
-                     f"{briefs.ZOOM_SPLIT[1]:.0%} of the ZI+ZO shots, is a "
-                     f"fault.")
+        lines.append(mix)
     kinds = briefs.types_text(profile.types)
     if kinds:
         lines.append(kinds)
@@ -595,11 +594,13 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
             "number, no image used twice. Shots spanning several cues, a reused "
             "image, or a missing cue is a fault; one image per cue is NOT "
             "fragmentation here.")
-    else:
+    elif profile.single_cue_share is not None:
         lines.append(
-            f"FRAGMENTATION: more than {studio.FRAGMENTATION_SHARE:.0%} of "
+            f"FRAGMENTATION: more than {briefs.pacing_share_cap(profile, 'single_cue') * 100:g}% of "
             f"the shots spanning a single cue is a fault - images should change "
-            f"when the idea changes, not at every cue.")
+            f"when the idea changes, not at every cue. This includes "
+            f"{profile.single_cue_tolerance * 100:g} percentage points tolerance above "
+            f"the configured {profile.single_cue_share * 100:g}% cap; up to that is not a fault.")
     if not plan["allow_refs"]:
         lines.append(
             "REFERENCES ARE OFF for this channel: the shotlist must have "
