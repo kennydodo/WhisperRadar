@@ -5050,7 +5050,7 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="Unknown chat site")
         if (stage == "beats" and request.form.get("quality_judge") == "on"
                 and writer == judge):
-            return _studio_url(pid, error="Choose a different chat site/account for the quality reviewer")
+            return _studio_url(pid, error="Choose a different chat site/account for the judge")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -5093,6 +5093,9 @@ def create_app(cfg) -> Flask:
         if not sjob.running or "web chat" not in str(sjob.kind or ""):
             return _studio_url(pid, error="No web-chat run is going")
         sjob.cancel = True
+        if "shotlist" not in str(sjob.kind or ""):
+            return _studio_url(pid, msg="Stopping after the current chat reply - "
+                                        "your saved shotlist is not changed")
         return _studio_url(pid, msg="Stopping after the current round - the "
                                     "best result so far will be saved")
 

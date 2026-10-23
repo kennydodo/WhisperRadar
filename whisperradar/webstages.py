@@ -1324,7 +1324,8 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
 # ---- entry points the web app calls --------------------------------------------------
 
 def run_elements(cfg, pid: int, transport, writer: str = "zai",
-                 log: Callable[[str], None] = print) -> list[dict]:
+                 log: Callable[[str], None] = print,
+                 should_stop: Callable[[], bool] = lambda: False) -> list[dict]:
     """Ask the writer chat for the production's element list (recurring
     characters, places, objects with one fixed look) and save it as
     elements.json / elements.md. One retry when the reply has no usable list."""
@@ -1354,6 +1355,8 @@ def run_elements(cfg, pid: int, transport, writer: str = "zai",
                   ready=_has_json)
     _dump(cfg, pid, "elements_reply_1", reply)
     found = elements.parse(reply)
+    if not found and should_stop():
+        raise StageFailed("Stopped by you.")
     if not found:
         log(f"{writer}: no usable element list in the reply - asking once more")
         reply = transport.ask(
@@ -1384,7 +1387,7 @@ def elements_job(cfg, pid: int, writer: str, judge: str, log,
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
         try:
-            run_elements(cfg, pid, t, writer, log)
+            run_elements(cfg, pid, t, writer, log, should_stop)
         finally:
             save_chats(cfg, pid, t)
 

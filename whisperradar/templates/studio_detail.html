@@ -840,6 +840,19 @@
         <br>Planning brief: <b>{{ brief_profile.label }}</b>{% if brief_profile.max_hold %} (holds {% if brief_profile.min_hold %}{{ '%g' % brief_profile.min_hold }}-{% else %}up to {% endif %}{{ '%g' % brief_profile.max_hold }}s){% endif %}{% if brief_presentation %}, with a presentation note{% endif %}
         (set per channel on <a href="/my-channels">My Channels</a>).
       </div>
+      {% macro stop_run(job, prod) %}
+      {% if job.running and 'web chat' in (job.kind or '') %}
+      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin:6px 0 0">
+        {% if 'shotlist' in (job.kind or '') %}
+        <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">&#9632; Stop web-chat run</button>
+        <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
+        {% else %}
+        <button type="submit" class="ghost" title="Stop after the chat reply that is being waited for. Nothing is saved over your current shotlist.">&#9632; Stop web-chat run</button>
+        <span class="muted" style="font-size:12px">Running: {{ job.kind }}. Stops after the current chat reply; your saved shotlist is not changed.</span>
+        {% endif %}
+      </form>
+      {% endif %}
+      {% endmacro %}
       <div style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px">
           <b>Step 1 &middot; Elements</b>
@@ -857,6 +870,7 @@
           </div>
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>{{ 'List elements again' if elements_text else 'List elements in web chat' }}</button>
         </form>
+        {{ stop_run(job, prod) }}
       </div>
       <div style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px">
@@ -874,12 +888,13 @@
           <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
           </div>
+          <label style="flex-basis:100%"><input type="checkbox" name="quality_judge"> Judge visual quality after code checks</label>
           <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-            <label><input type="checkbox" name="quality_judge"> Review visual quality after code checks</label>
-            <label>Reviewer <select name="judge"><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+            <label>Judge <select name="judge"><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
           </div>
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Plan beats in web chat</button>
         </form>
+        {{ stop_run(job, prod) }}
       </div>
       <div style="font-weight:600; margin:14px 0 4px">Or the old way &middot; Shotlist with a judge</div>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/shots" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
@@ -899,12 +914,7 @@
         <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
                 title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run shotlist in web chat</button>
       </form>
-      {% if job.running and 'web chat' in (job.kind or '') %}
-      <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:6px">
-        <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">■ Stop web-chat run</button>
-        <span class="muted" style="font-size:12px">Runs until the judge passes it; stop it here.</span>
-      </form>
-      {% endif %}
+      {{ stop_run(job, prod) }}
       <details class="extbox" style="margin:14px 0">
         <summary style="cursor:pointer; font-weight:600">Use an external LLM (ChatGPT / Claude) for the shotlist</summary>
         <div class="muted" style="font-size:12px; margin:8px 0">
