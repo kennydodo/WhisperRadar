@@ -196,3 +196,17 @@ class HumanReviewTests(Base):
         self.assertEqual([c['site'] for c in t.calls],['deepseek','deepseek','zai','deepseek'])
         self.assertFalse(t.calls[1]['new_chat'])
         self.assertEqual(result['revisions'],1)
+
+    def test_claude_curly_json_after_truncated_preview(self):
+        body = verdict().replace('"','”')
+        # Mixed opening/closing delimiter shapes as rendered on Claude's page.
+        body = body.replace('{”','{“').replace(',”',',“')
+        reply = ('Claude responded: {"decision":"NEEDS_REVISION","summary":"Preview...\n'
+                 'Thinking about source sentences.\n'+body+'\nReply\nClaude finished the response')
+        self.assertEqual(hr.parse_review(reply)['decision'],'NEEDS_REVISION')
+        t = Fake(deepseek=[reply,verdict(True)],zai=[REVISED])
+        self.assertEqual(self.run_review(t)['status'],'ready')
+
+    def test_quote_typography_matches_but_paraphrase_does_not(self):
+        self.assertTrue(hr._quoted_in_script("It isn't magic.", 'It isn’t magic.'))
+        self.assertFalse(hr._quoted_in_script('It is not magic.', 'It isn’t magic.'))

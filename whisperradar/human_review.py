@@ -27,7 +27,10 @@ def load(pdir: Path) -> dict:
 def parse_review(reply: str) -> dict:
     # Ignore thinking/UI text before the final verdict. Starting the scan at
     # the object also avoids an unmatched quote in reasoning hiding the JSON.
-    starts = list(re.finditer(r'\{\s*"(?:decision|summary|issues)"\s*:', reply or ''))
+    # Claude can render JSON delimiters as typographic quotes. Normalize
+    # delimiters before locating the final object, including preview snippets.
+    reply = (reply or '').translate(str.maketrans({'“':'"', '”':'"'}))
+    starts = list(re.finditer(r'\{\s*"(?:decision|summary|issues)"\s*:', reply))
     if not starts:
         raise ValueError('Reviewer returned no review JSON object.')
     candidate = next(studio._iter_json_objects(reply[starts[-1].start():]), '')
@@ -45,6 +48,13 @@ def parse_review(reply: str) -> dict:
     if (data['decision'] == 'READY') != (len(issues) == 0):
         raise ValueError('READY requires no unresolved issues; revision requires issues.')
     return data
+
+
+def _quoted_in_script(passage, script):
+    # Existing JSON quote repair normalizes apostrophes too; typography alone
+    # must not turn an otherwise exact source quotation into an invented one.
+    table = str.maketrans({'“':'"', '”':'"', '‘':"'", '’':"'"})
+    return passage.translate(table) in script.translate(table)
 
 
 def prompt(role, title, style, script, review=None, files=None):
@@ -128,7 +138,7 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
                 try:
                     verdict = parse_review(reply)
                     for issue in verdict['issues']:
-                        if issue['passage'] not in current:
+                        if not _quoted_in_script(issue['passage'], current):
                             raise ValueError('Reviewer quoted a passage absent from the current script.')
                     break
                 except ValueError as exc:
