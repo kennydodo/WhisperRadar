@@ -35,6 +35,8 @@ def parse_review(reply: str) -> dict:
         raise ValueError('Reviewer returned no review JSON object.')
     candidate = next(studio._iter_json_objects(reply[starts[-1].start():]), '')
     data = studio._json_candidate(candidate) if candidate else None
+    if data is None:
+        data = _recover_review_fields(reply[starts[-1].start():])
     if not isinstance(data, dict) or data.get('decision') not in ('READY', 'NEEDS_REVISION'):
         raise ValueError('Reviewer must return READY or NEEDS_REVISION in JSON.')
     issues = data.get('issues')
@@ -48,6 +50,54 @@ def parse_review(reply: str) -> dict:
     if (data['decision'] == 'READY') != (len(issues) == 0):
         raise ValueError('READY requires no unresolved issues; revision requires issues.')
     return data
+
+
+def _recover_review_fields(text):
+    """Recover quote-damaged review values using the exact review schema.
+
+    Unlike generic quote repair, a quoted example followed by a comma is
+    not mistaken for a field boundary. No verdict or issue is synthesized.
+    Reject partial objects and unexpected fields rather than dropping issues.
+    """
+    header = re.match(
+        r'\{\s*"decision"\s*:\s*"(READY|NEEDS_REVISION)"\s*,\s*'
+        r'"summary"\s*:\s*"(.*?)"\s*,\s*"issues"\s*:\s*\[',
+        text, re.S)
+    if not header:
+        return None
+
+    def value(raw):
+        try:
+            return json.loads('"' + raw + '"', strict=False)
+        except ValueError:
+            # Only unescape the standard string escapes emitted by the model.
+            return re.sub(r'\\(["\\/bfnrt])', lambda m: {
+                '"':'"', '\\':'\\', '/':'/', 'b':'\b', 'f':'\f',
+                'n':'\n', 'r':'\r', 't':'\t'}[m[1]], raw)
+
+    issue_pattern = re.compile(
+        r'\s*\{\s*"passage"\s*:\s*"(.*?)"\s*,\s*'
+        r'"problem"\s*:\s*"(.*?)"\s*,\s*'
+        r'"suggestion"\s*:\s*"(.*?)"\s*\}(?=\s*(?:,\s*\{|\]))', re.S)
+    pos = header.end()
+    issues = []
+    while not re.match(r'\s*\]', text[pos:]):
+        match = issue_pattern.match(text, pos)
+        if not match:
+            return None
+        issues.append(dict(zip(('passage', 'problem', 'suggestion'),
+                               (value(v) for v in match.groups()))))
+        pos = match.end()
+        comma = re.match(r'\s*,', text[pos:])
+        if comma:
+            pos += comma.end()
+            if re.match(r'\s*\]', text[pos:]):
+                return None
+        elif not re.match(r'\s*\]', text[pos:]):
+            return None
+    if not re.match(r'\s*\]\s*\}', text[pos:]):
+        return None
+    return dict(decision=header[1], summary=value(header[2]), issues=issues)
 
 
 def _quoted_in_script(passage, script):

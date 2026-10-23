@@ -210,3 +210,23 @@ class HumanReviewTests(Base):
     def test_quote_typography_matches_but_paraphrase_does_not(self):
         self.assertTrue(hr._quoted_in_script("It isn't magic.", 'It isn’t magic.'))
         self.assertFalse(hr._quoted_in_script('It is not magic.', 'It isn’t magic.'))
+
+    def test_nested_quoted_examples_separated_by_commas(self):
+        reply = ('{"decision":"NEEDS_REVISION","summary":"Review contains "examples", "more examples".",'
+                 '"issues":[{"passage":"You can put money aside each month.",'
+                 '"problem":"Repeated openers ("Imagine", "Picture", "Suppose") sound stiff.",'
+                 '"suggestion":"Use "Put money aside", "Start small" as examples."}]}')
+        review = hr.parse_review(reply)
+        self.assertEqual(review['decision'],'NEEDS_REVISION')
+        self.assertEqual(review['issues'][0]['problem'],'Repeated openers ("Imagine", "Picture", "Suppose") sound stiff.')
+        self.assertIn('"more examples"',review['summary'])
+
+    def test_schema_recovery_never_drops_broken_issues_or_fabricates_ready(self):
+        for text in [
+            '{"decision":"READY","summary":"OK","issues":[{"passage":"bad"}]}',
+            '{"decision":"READY","summary":"OK","issues":[]',
+            '{"decision":"READY","summary":"OK","issues":[],"unknown":true}',
+        ]:
+            self.assertIsNone(hr._recover_review_fields(text))
+        with self.assertRaises(ValueError):
+            hr.parse_review('{"decision":"NEEDS_REVISION","summary":"OK","issues":[]}')
