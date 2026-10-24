@@ -200,4 +200,26 @@ def render_final(project_folder: str, preview: bool,
                 shutil.copyfile(srt_path, os.path.join(final_dir, "captions.srt"))
     except RuntimeError as e:
         return False, "", [str(e)]
+    if result.success:
+        _vertical_captions(folder, out_dir, preview, options, srt_path)
     return result.success, result.output_path, list(result.errors)
+
+
+def _vertical_captions(folder, out_dir, preview, options, srt_path) -> None:
+    """Portrait output (Shorts): big word-by-word captions beside the video -
+    captions_words.srt and captions.ass - and, for the preview, a copy with
+    them burned in (preview_captions.mp4). Never fails the render."""
+    try:
+        o = options.output
+        if not (o.height > o.width) or not srt_path:
+            return
+        from .. import shortcaptions
+        target = out_dir if preview else os.path.join(out_dir, "final")
+        files = shortcaptions.write(srt_path, target, o.width, o.height)
+        if files and preview and os.path.isfile(os.path.join(out_dir, "preview.mp4")):
+            r = options.render
+            shortcaptions.burn(resolve_effective_ffmpeg_path(r), out_dir,
+                               "preview.mp4", "captions.ass",
+                               "preview_captions.mp4")
+    except Exception:  # noqa: BLE001 - captions are a bonus, not the render
+        pass
