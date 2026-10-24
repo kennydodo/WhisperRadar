@@ -125,10 +125,38 @@ def _zai_search_on(page) -> None:
         pass
 
 
+# z.ai moved the thinking level: it is now an "Effort" slider inside the model
+# menu (GLM-5.3 / 5.3-Flash: Low, High, Max; GLM-5.2: High, Max). Arrow keys
+# move it, so the level is set by key presses and read back from aria-valuetext.
+_ZAI_EFFORT_JS = """async (level) => {
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const find = () => document.querySelector('[role=slider][aria-label=Effort]');
+  let s = find();
+  if (!s) {
+    const b = document.querySelector('button[aria-label="Select a model"]');
+    if (!b) return 'no-picker';
+    b.click(); await wait(700); s = find();
+  }
+  if (!s) return 'no-slider';
+  const lo = parseInt(s.getAttribute('aria-valuemin') || '0', 10);
+  const hi = parseInt(s.getAttribute('aria-valuemax') || '0', 10);
+  const names = (hi - lo) === 2 ? ['Low', 'High', 'Max'] : (hi - lo) === 1 ? ['High', 'Max'] : null;
+  let want = hi - lo;                                  // Max is always the top
+  if (names) { const i = names.indexOf(level); want = i < 0 ? 0 : i; }
+  else if (level === 'Low') want = 0;
+  s.focus();
+  const press = async key => {
+    s.dispatchEvent(new KeyboardEvent('keydown', {key, bubbles: true})); await wait(150); };
+  for (let i = 0; i < (hi - lo) + 1; i++) await press('ArrowLeft');
+  for (let i = 0; i < want; i++) await press('ArrowRight');
+  return 'set:' + (s.getAttribute('aria-valuetext') || '?');
+}"""
+
+
 def _zai_prepare(page, thinking: str = "Low", model: str = "flash") -> None:
-    """Pick the model, then z.ai's Deep Think level (it defaults to Max on
-    every page load, and Max can spend the whole turn thinking and answer
-    nothing, so the default here is Low)."""
+    """Pick the model, then z.ai's thinking level (it defaults to Max on every
+    page load, and Max can spend the whole turn thinking and answer nothing,
+    so the default here is Low; GLM-5.2 has no Low and gets High)."""
     try:
         _zai_pick_model(page, model)
     except NeedsSignIn:
@@ -136,35 +164,47 @@ def _zai_prepare(page, thinking: str = "Low", model: str = "flash") -> None:
     except Exception:  # noqa: BLE001 - the picker moved: keep the default
         pass
     _zai_search_on(page)
-    opened = page.evaluate("""() => {
-        const spans=[...document.querySelectorAll('span')].filter(
-          e=>/^(Low|High|Max)$/.test((e.innerText||'').trim())
-             && e.previousElementSibling
-             && /Deep Think/.test(e.previousElementSibling.innerText||''));
-        if(!spans.length) return false; spans[0].click(); return true; }""")
-    if not opened:
-        return                                   # layout changed: ask anyway
-    page.wait_for_timeout(600)
-    page.evaluate("""(level) => {
-        const el=[...document.querySelectorAll('div,button,li,span')].filter(
-          e=>e.children.length===0 && (e.innerText||'').trim()===level);
-        if(el.length) el[el.length-1].click(); }""", thinking)
-    page.wait_for_timeout(400)
-    try:                                         # close the menu overlay
-        page.mouse.click(8, 8)
-    except Exception:  # noqa: BLE001 - the fake page / old layouts have none
-        pass
-    page.wait_for_timeout(300)
+    result = ""
+    try:
+        result = str(page.evaluate(_ZAI_EFFORT_JS, thinking) or "")
+    except Exception:  # noqa: BLE001 - layout changed or fake page: ask anyway
+        result = ""
+    if not result.startswith("set:"):
+        result = _zai_legacy_deep_think(page, thinking)
+    for close in (lambda: page.keyboard.press("Escape"),
+                  lambda: page.mouse.click(8, 8)):
+        try:                                     # close the model menu overlay
+            close()
+        except Exception:  # noqa: BLE001 - the fake page / old layouts have none
+            pass
+        page.wait_for_timeout(250)
     try:
         now = page.evaluate("""() => {
           const m=document.querySelector('button[aria-label="Select a model"]');
-          const d=[...document.querySelectorAll('span')].find(e=>
-            /^(Low|High|Max)$/.test((e.innerText||'').trim())
-            && e.previousElementSibling
-            && /Deep Think/.test(e.previousElementSibling.innerText||''));
-          return (m?m.innerText.trim():'?')+' / Deep Think '
-                 +(d?d.innerText.trim():'?'); }""")
-        return f"z.ai is using {now} (asked: {model}, {thinking})"
+          return m ? m.innerText.trim() : '?'; }""")
+        return f"z.ai is using {now}, thinking {result.replace('set:', '') or '?'} (asked: {model}, {thinking})"
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _zai_legacy_deep_think(page, thinking: str) -> str:
+    """The old z.ai layout: a "Deep Think  Max" chip that opened a menu."""
+    try:
+        opened = page.evaluate("""() => {
+            const spans=[...document.querySelectorAll('span')].filter(
+              e=>/^(Low|High|Max)$/.test((e.innerText||'').trim())
+                 && e.previousElementSibling
+                 && /Deep Think/.test(e.previousElementSibling.innerText||''));
+            if(!spans.length) return false; spans[0].click(); return true; }""")
+        if not opened:
+            return ""
+        page.wait_for_timeout(600)
+        page.evaluate("""(level) => {
+            const el=[...document.querySelectorAll('div,button,li,span')].filter(
+              e=>e.children.length===0 && (e.innerText||'').trim()===level);
+            if(el.length) el[el.length-1].click(); }""", thinking)
+        page.wait_for_timeout(400)
+        return "set:" + thinking
     except Exception:  # noqa: BLE001
         return ""
 
