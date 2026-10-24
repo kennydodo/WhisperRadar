@@ -77,6 +77,18 @@
 </nav>
 <div class="wrap">
   <h1>In production</h1>
+  <details style="float:right;margin:0 0 0 10px">
+    <summary style="cursor:pointer;font-size:13px">Import a production</summary>
+    <form method="post" action="/studio/import" enctype="multipart/form-data" style="margin-top:6px">
+      <input type="file" name="export_file" accept=".zip" required>
+      <select name="own_channel_id">
+        <option value="">channel from the file</option>
+        {% for cid, cname in import_channels %}<option value="{{ cid }}">{{ cname }}</option>{% endfor %}
+      </select>
+      <input type="text" name="title" placeholder="new title (optional)" style="width:200px">
+      <button type="submit">Import</button>
+    </form>
+  </details>
   <form method="post" action="/studio/migrate-all" style="float:right;margin:0">
     <button type="submit" title="Moves each production's loose flow, motion, packaging and chat files into their own folders and links duplicate copies. Nothing is deleted.">Tidy all production folders</button>
   </form>

@@ -140,6 +140,15 @@
     </form>
   </details>
   <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a> &middot; <a href="/studio/{{ prod['id'] }}/shorts" style="font-size:13px">Shorts</a></div>
+  <details style="margin:-4px 0 8px">
+    <summary class="muted" style="font-size:13px;cursor:pointer">Export this production</summary>
+    <form method="get" action="/studio/{{ prod['id'] }}/export" style="margin-top:6px">
+      <span class="muted" style="font-size:13px">One zip with the script, style, plans and settings. Images are never included.</span><br>
+      <label><input type="checkbox" name="audio" value="1"> include the audio</label>
+      <label><input type="checkbox" name="refs" value="1"> include the reference images</label>
+      <button type="submit">Download export</button>
+    </form>
+  </details>
   {% if layout_old %}
   <form method="post" action="/studio/{{ prod['id'] }}/migrate-layout" style="margin:0 0 8px" class="muted">
     <span style="font-size:13px">This folder still has the old layout (loose files, duplicate copies).</span>

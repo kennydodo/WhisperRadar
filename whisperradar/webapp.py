@@ -36,7 +36,7 @@ from flask import (
     session,
 )
 
-from . import external_prompts, flow_accounts, prodfiles
+from . import external_prompts, flow_accounts, prodfiles, prodtransfer
 from . import textfiles
 from . import motion
 from . import handover
@@ -5208,6 +5208,33 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
         return _studio_url(pid, msg="Human-language review started")
 
+    @app.get("/studio/<int:pid>/export")
+    def studio_export(pid):
+        """One zip with the production's text, plans and settings (no images)."""
+        try:
+            blob, name = prodtransfer.export_production(
+                cfg, pid, audio=bool(request.args.get("audio")),
+                refs=bool(request.args.get("refs")))
+        except prodtransfer.TransferError as e:
+            return _studio_url(pid, error=str(e))
+        return send_file(io.BytesIO(blob), mimetype="application/zip",
+                         as_attachment=True, download_name=name)
+
+    @app.post("/studio/import")
+    def studio_import():
+        """Create a new production from an export zip."""
+        f = request.files.get("export_file")
+        if f is None or not f.filename:
+            return redirect("/in-production?error=Choose+an+export+file+first")
+        own = (request.form.get("own_channel_id") or "").strip() or None
+        title = (request.form.get("title") or "").strip() or None
+        try:
+            pid = prodtransfer.import_production(cfg, f.read(), own, title)
+        except (prodtransfer.TransferError, RuntimeError) as e:
+            return redirect("/in-production?" + urlencode({"error": str(e)[:200]}))
+        return _studio_url(pid, msg="Imported. Images are not part of an export - "
+                                    "the image stages will make them again.")
+
     @app.post("/studio/<int:pid>/migrate-layout")
     def studio_migrate_layout(pid):
         """Move an old production's loose files into the grouped folders."""
@@ -5833,7 +5860,14 @@ def create_app(cfg) -> Flask:
         else:
             sort = "channel"
             rows.sort(key=lambda r: (r["channel"].lower(), r["id"]))
+        conn = db.connect(cfg.db_path)
+        try:
+            import_channels = [(c["id"], c["name"]) for c in db.list_own_channels(conn)
+                               if c["active"]]
+        finally:
+            conn.close()
         return render_template("in_production.html", rows=rows, sort=sort,
+                               import_channels=import_channels,
                                any_running=any(r["job"] for r in rows),
                                msg=request.args.get("msg"),
                                error=request.args.get("error"))
