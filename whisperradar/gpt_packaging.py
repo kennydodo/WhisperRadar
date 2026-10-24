@@ -20,7 +20,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import autorun, db, packaging, studio, thumbnails
+from . import autorun, db, packaging, prodfiles, studio, thumbnails
 
 PACKAGING_BRIEF = """CONTENT AND EVIDENCE RULES
 Read the entire final script before choosing a promise. Titles and thumbnails
@@ -369,7 +369,7 @@ def complete(cfg, jid, token, result):
         folder.mkdir(parents=True, exist_ok=True)
         for previous in (pdir / packaging.KIT_FILE,
                          thumbnails.thumbs_dir(pdir) / thumbnails.THUMBS_FILE,
-                         pdir / "description.txt", pdir / "title.txt", pdir / "titles.txt"):
+                         prodfiles.path(pdir, "description.txt"), prodfiles.path(pdir, "title.txt"), prodfiles.path(pdir, "titles.txt")):
             backup = folder / ("previous-" + previous.name)
             if previous.exists() and not backup.exists():
                 shutil.copy2(previous, backup)
@@ -383,7 +383,7 @@ def complete(cfg, jid, token, result):
                 "text_color": "#FFD400", "accent": "#FFD400",
                 "emphasis": "none", "focal": "auto", "art_prompt": str(it.get("prompt") or ""),
                 "idea": str(it.get("idea") or ""), "art_file": "",
-                "final": f"thumbnails/{name}", "precomposed": True})
+                "final": f"{thumbnails.thumbs_dir(pdir).relative_to(pdir).as_posix()}/{name}", "precomposed": True})
         kit.update(status="ready", provider="codex", description_complete=True,
                    notes=str(result.get("notes") or ""))
         # Description is complete text from the worker; keep hashtags/chapters
@@ -395,9 +395,9 @@ def complete(cfg, jid, token, result):
             recommended = 1
         recommended = min(max(recommended, 1), len(concepts))
         packaging.save_kit(pdir, kit)
-        (pdir / "title.txt").write_text(kit["title"] + "\n", encoding="utf-8")
-        (pdir / "titles.txt").write_text("\n".join(t["text"] for t in title_options) + "\n", encoding="utf-8")
-        (pdir / "description.txt").write_text(kit["description"] + "\n", encoding="utf-8")
+        prodfiles.wpath(pdir, "title.txt").write_text(kit["title"] + "\n", encoding="utf-8")
+        prodfiles.wpath(pdir, "titles.txt").write_text("\n".join(t["text"] for t in title_options) + "\n", encoding="utf-8")
+        prodfiles.wpath(pdir, "description.txt").write_text(kit["description"] + "\n", encoding="utf-8")
         thumbnails.save_thumbs(pdir, {"concepts": concepts, "chosen": None,
             "status": "ready", "score": None, "provider": "codex",
             "recommended": recommended})
@@ -405,9 +405,9 @@ def complete(cfg, jid, token, result):
         (folder / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2),
                                             encoding="utf-8")
         saved = {"production_id": row["production_id"], "title": kit["title"],
-                 "description_file": str(pdir / "description.txt"),
-                 "title_file": str(pdir / "title.txt"),
-                 "titles_file": str(pdir / "titles.txt"), "titles": title_options,
+                 "description_file": str(prodfiles.path(pdir, "description.txt")),
+                 "title_file": str(prodfiles.path(pdir, "title.txt")),
+                 "titles_file": str(prodfiles.path(pdir, "titles.txt")), "titles": title_options,
                  "thumbnails": [str(pdir / c["final"]) for c in concepts]}
         conn.execute("UPDATE gpt_packaging_jobs SET status='complete',result=?,"
                      "updated_at=?,error='' WHERE id=?", (json.dumps(saved), _now(), jid))

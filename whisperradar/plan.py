@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import Callable
 
+from . import prodfiles
+
 PLAN_FILE = "packaging_plan.json"
 TITLE_MAX = 100
 TITLE_GOOD = 60
@@ -57,7 +59,7 @@ def empty_plan() -> dict:
 
 
 def plan_path(pdir) -> Path:
-    return Path(pdir) / PLAN_FILE
+    return prodfiles.path(pdir, PLAN_FILE)
 
 
 def load_plan(pdir) -> dict:
@@ -74,8 +76,8 @@ def load_plan(pdir) -> dict:
 
 
 def save_plan(pdir, plan: dict) -> None:
-    plan_path(pdir).write_text(json.dumps(plan, indent=1, ensure_ascii=False),
-                               encoding="utf-8")
+    prodfiles.wpath(pdir, PLAN_FILE).write_text(
+        json.dumps(plan, indent=1, ensure_ascii=False), encoding="utf-8")
 
 
 def _s(value) -> str:

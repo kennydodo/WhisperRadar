@@ -15,7 +15,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from tests import wr_tmp
-from whisperradar import db, gpt_packaging as gp, packaging, studio, thumbnails
+from whisperradar import db, gpt_packaging as gp, packaging, prodfiles, studio, thumbnails
 from whisperradar.config import load_config
 from whisperradar.webapp import create_app
 
@@ -130,7 +130,7 @@ class GPTPackagingTests(unittest.TestCase):
         db.update_production(self.conn, self.pid, status="published")
         with self.assertRaisesRegex(ValueError, "published"):
             gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
-        self.assertFalse((self.pdir / "title.txt").exists())
+        self.assertFalse(prodfiles.path(self.pdir, "title.txt").exists())
 
     def test_context_uses_live_channel_and_production_override(self):
         self.assertEqual(gp.context(self.cfg, self.pid)["visual_style"], "Live channel style")
@@ -185,13 +185,13 @@ class GPTPackagingTests(unittest.TestCase):
         result = self.result()
         saved = gp.complete(self.cfg, job["id"], job["claim_token"], result)
         self.assertEqual(gp.complete(self.cfg, job["id"], job["claim_token"], result), saved)
-        self.assertEqual((self.pdir / "description.txt").read_text().strip(), result["description"].strip())
+        self.assertEqual(prodfiles.path(self.pdir, "description.txt").read_text().strip(), result["description"].strip())
         self.assertEqual(len(saved["thumbnails"]), 4)
         for path in saved["thumbnails"]:
             with Image.open(path) as image:
                 self.assertEqual(image.size, (1280, 720))
-        self.assertTrue((self.pdir / "title.txt").exists())
-        self.assertEqual((self.pdir / "titles.txt").read_text().splitlines(), [t["text"] for t in result["titles"]])
+        self.assertTrue(prodfiles.path(self.pdir, "title.txt").exists())
+        self.assertEqual(prodfiles.path(self.pdir, "titles.txt").read_text().splitlines(), [t["text"] for t in result["titles"]])
         kit = packaging.load_kit(self.pdir)
         self.assertEqual(packaging.assemble_description(kit, [{"start": 0}]), result["description"].strip())
         page = self.client.get("/finished")
@@ -205,7 +205,7 @@ class GPTPackagingTests(unittest.TestCase):
         (self.pdir / "description.txt").write_text("My edited description", encoding="utf-8")
         job = self.job()
         gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
-        backup = self.pdir / "thumbnails" / "jobs" / job["id"] / "previous-description.txt"
+        backup = thumbnails.thumbs_dir(self.pdir) / "jobs" / job["id"] / "previous-description.txt"
         self.assertEqual(backup.read_text(), "My edited description")
         data = thumbnails.load_thumbs(self.pdir)
         final = self.pdir / data["concepts"][0]["final"]
@@ -220,7 +220,7 @@ class GPTPackagingTests(unittest.TestCase):
         (self.pdir / "script.md").write_text("A changed final script", encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "changed"):
             gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
-        self.assertFalse((self.pdir / "description.txt").exists())
+        self.assertFalse(prodfiles.path(self.pdir, "description.txt").exists())
 
     def test_arbitrary_paths_and_incomplete_results_rejected_before_writing(self):
         job = self.job()
@@ -232,7 +232,7 @@ class GPTPackagingTests(unittest.TestCase):
         result["thumbnails"].pop()
         with self.assertRaisesRegex(ValueError, "four"):
             gp.complete(self.cfg, job["id"], job["claim_token"], result)
-        self.assertFalse((self.pdir / "title.txt").exists())
+        self.assertFalse(prodfiles.path(self.pdir, "title.txt").exists())
 
     def test_invalid_title_options_rejected_before_writing(self):
         job = self.job()
@@ -248,7 +248,7 @@ class GPTPackagingTests(unittest.TestCase):
                 result["title"] = "Outside the options"
             with self.assertRaises(ValueError):
                 gp.complete(self.cfg, job["id"], job["claim_token"], result)
-            self.assertFalse((self.pdir / "titles.txt").exists())
+            self.assertFalse(prodfiles.path(self.pdir, "titles.txt").exists())
 
     def test_failed_error_can_be_cleared_from_the_finished_page(self):
         job = self.job()

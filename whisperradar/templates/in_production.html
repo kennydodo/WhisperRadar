@@ -77,6 +77,9 @@
 </nav>
 <div class="wrap">
   <h1>In production</h1>
+  <form method="post" action="/studio/migrate-all" style="float:right;margin:0">
+    <button type="submit" title="Moves each production's loose flow, motion, packaging and chat files into their own folders and links duplicate copies. Nothing is deleted.">Tidy all production folders</button>
+  </form>
   <p class="sub">Every active production. <b>Continue</b> runs only the next stage; <b>Auto-run</b> runs everything up to review.</p>
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}

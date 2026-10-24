@@ -12,7 +12,7 @@ from pathlib import Path
 import threading
 import time
 
-from . import db, settings
+from . import db, prodfiles, settings
 
 LOCAL = threading.local()
 OWNER_FILE = "flow_account.json"
@@ -121,7 +121,7 @@ def write_owner(pdir, account, bound):
 
 def legacy_project(pdir):
     for name in ("flow_prepare.json", "refs_project.json", "flowbatch.json"):
-        path = Path(pdir) / name
+        path = prodfiles.path(pdir, name)
         if path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
             if data.get("projectUrl"):

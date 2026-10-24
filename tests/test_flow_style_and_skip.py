@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT))
 
 from tests import wr_tmp  # noqa: E402
 
-from whisperradar import db, studio  # noqa: E402
+from whisperradar import db, prodfiles, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
 
@@ -59,7 +59,7 @@ class SkipMotionTests(unittest.TestCase):
 
 class StyleAttachTests(unittest.TestCase):
     def _job(self, d):
-        return json.loads((Path(d) / "flowbatch.json").read_text("utf-8"))
+        return json.loads(prodfiles.path(Path(d), "flowbatch.json").read_text("utf-8"))
 
     def test_style_attached_when_it_fits(self):
         with wr_tmp.tempdir() as d:

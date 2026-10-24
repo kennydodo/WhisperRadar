@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import autorun, beats as beatsmod, briefs, db, external_prompts as ep, handover, studio, webchat
+from . import autorun, beats as beatsmod, briefs, db, external_prompts as ep, handover, prodfiles, studio, webchat
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
@@ -149,7 +149,7 @@ _CHATS_FILE = "webchat_chats.json"
 
 
 def _chats_path(cfg, pid: int) -> Path:
-    return studio.prod_dir(cfg, pid) / _CHATS_FILE
+    return prodfiles.path(studio.prod_dir(cfg, pid), _CHATS_FILE)
 
 
 def load_chats(cfg, pid: int) -> dict:
@@ -175,7 +175,7 @@ def save_chats(cfg, pid: int, transport) -> None:
             return
         merged = load_chats(cfg, pid)
         merged.update(found)
-        _chats_path(cfg, pid).write_text(
+        prodfiles.wpath(studio.prod_dir(cfg, pid), _CHATS_FILE).write_text(
             json.dumps(merged, indent=1), encoding="utf-8")
     except OSError:
         pass
@@ -395,8 +395,8 @@ def _dump(cfg, pid: int, name: str, text: str) -> None:
     """Keep every raw chat reply in the production folder, so a parsing
     problem can be looked at afterwards (webchat_debug/<name>.txt)."""
     try:
-        d = studio.prod_dir(cfg, pid) / "webchat_debug"
-        d.mkdir(exist_ok=True)
+        d = prodfiles.wpath(studio.prod_dir(cfg, pid), "webchat_debug")
+        d.mkdir(parents=True, exist_ok=True)
         (d / f"{name}.txt").write_text(text or "", encoding="utf-8")
     except OSError:
         pass
@@ -405,7 +405,7 @@ def _dump(cfg, pid: int, name: str, text: str) -> None:
 def _saved_plan(cfg, pid: int, tag: str = "plan_reply") -> dict | None:
     """The plan in the raw replies a previous run kept (plan_reply_1.txt,
     plan_reply_2.txt, ...), joined the way the loop joins them."""
-    d = studio.prod_dir(cfg, pid) / "webchat_debug"
+    d = prodfiles.path(studio.prod_dir(cfg, pid), "webchat_debug")
     body = ""
     for i in range(1, MAX_CONTINUES + 2):
         f = d / f"{tag}_{i}.txt"
@@ -1451,7 +1451,7 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
     from uuid import uuid4
     if quality_judge == writer:
         raise StageFailed("Choose a different chat site/account for the quality judge.")
-    run_dir = pdir / "webchat_debug" / "beats_runs" / (
+    run_dir = prodfiles.path(pdir, "webchat_debug") / "beats_runs" / (
         datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ_") + uuid4().hex[:8])
     run_dir.mkdir(parents=True, exist_ok=True)
 

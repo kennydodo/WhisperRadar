@@ -7,7 +7,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from whisperradar import beats, studio  # noqa: E402
+from whisperradar import beats, prodfiles, studio  # noqa: E402
 
 TEXTS = [
     "You can sit in a restaurant in Louisiana and",          # 1
@@ -403,7 +403,7 @@ class RunBeatsTests(unittest.TestCase):
         ws.run_beats(None, 1, t, "zai", log=lambda m: None, quality_judge="deepseek")
         self.assertEqual(len(asked), 2)
         self.assertEqual(len(saved), 1)
-        report = next((pdir / "webchat_debug" / "beats_runs").glob("*/beats_checks_round1.txt"))
+        report = next((prodfiles.path(pdir, "webchat_debug") / "beats_runs").glob("*/beats_checks_round1.txt"))
         self.assertTrue(json.loads(report.read_text())["quality_verdict"]["pass"])
 
     def test_quality_rejection_gets_targeted_correction_then_reviewed_again(self):
@@ -426,7 +426,7 @@ class RunBeatsTests(unittest.TestCase):
         with mock.patch.object(ws.ep, "shotlist_judge_prompt", return_value=("", faults)):
             with self.assertRaises(ws.StageFailed):
                 ws.run_beats(None, 1, t, "zai", log=lambda m: None)
-        report = next((pdir / "webchat_debug" / "beats_runs").glob("*/beats_checks_round1.txt"))
+        report = next((prodfiles.path(pdir, "webchat_debug") / "beats_runs").glob("*/beats_checks_round1.txt"))
         self.assertEqual(json.loads(report.read_text())["faults"], faults)
 
     def test_unusable_judge_verdict_preserves_old_shotlist(self):

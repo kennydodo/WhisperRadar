@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from tests import wr_tmp  # noqa: E402
 
-from whisperradar import autorun, db, studio  # noqa: E402
+from whisperradar import autorun, db, prodfiles, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
 
@@ -86,7 +86,7 @@ class RunRenderlyRefsTests(unittest.TestCase):
         self.assertEqual(data["refs"]["CH_MAYA"], "refs/CH_MAYA.png")
         self.assertIsNone(data["refs"]["BG_KITCHEN"])
         manifest = json.loads(
-            (self.pdir / studio.REFS_GENERATED_MANIFEST).read_text())
+            prodfiles.path(self.pdir, studio.REFS_GENERATED_MANIFEST).read_text())
         self.assertEqual(manifest, ["CH_MAYA"])
 
     def test_no_refs_is_a_no_op(self):
@@ -336,7 +336,7 @@ class FlowBatchRefsFolderTests(unittest.TestCase):
                     mock.patch.object(studio, "_flowbatch_stream",
                                       return_value=(0, [])):
                 studio.run_flowbatch_refs(cfg, pdir, 1, {"CH_MAYA": {"prompt": "p"}})
-            rec = json.loads((pdir / studio.REFS_PROJECT_RECORD).read_text(
+            rec = json.loads(prodfiles.path(pdir, studio.REFS_PROJECT_RECORD).read_text(
                 encoding="utf-8"))
             self.assertEqual(rec["projectUrl"], url)
             self.assertIn("CH_MAYA", rec["names"])

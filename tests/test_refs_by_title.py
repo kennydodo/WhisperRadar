@@ -18,7 +18,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from whisperradar import studio  # noqa: E402
+from whisperradar import prodfiles, studio  # noqa: E402
 from whisperradar.config import load_config  # noqa: E402
 
 URL = "https://flow.google.com/project/aaaa1111-2222"
@@ -35,7 +35,7 @@ class Tmp(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def record(self):
-        return json.loads((self.pdir / studio.REFS_PROJECT_RECORD)
+        return json.loads(prodfiles.path(self.pdir, studio.REFS_PROJECT_RECORD)
                           .read_text(encoding="utf-8"))
 
 
@@ -80,7 +80,7 @@ class RecordTitles(Tmp):
 class JobCarriesCaptions(Tmp):
     def write(self, record_url):
         (self.pdir / "refs" / "CH_APES.png").write_bytes(b"x")
-        (self.pdir / studio.REFS_PROJECT_RECORD).write_text(json.dumps(
+        prodfiles.wpath(self.pdir, studio.REFS_PROJECT_RECORD).write_text(json.dumps(
             {"projectUrl": record_url, "names": ["CH_APES"],
              "titles": {"CH_APES": "Two apes sitting hunched"}}), encoding="utf-8")
         (self.pdir / "shotlist.json").write_text(json.dumps({

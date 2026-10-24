@@ -24,7 +24,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import briefs, motion, flow_accounts
+from . import briefs, motion, flow_accounts, prodfiles
 
 log = logging.getLogger("whisperradar")
 
@@ -1168,7 +1168,7 @@ def _record_refs_project(pdir: Path, project_url, names, titles=None) -> None:
             kept[str(name)] = title.strip()
     record["titles"] = dict(sorted(kept.items()))
     try:
-        (pdir / REFS_PROJECT_RECORD).write_text(
+        prodfiles.wpath(pdir, REFS_PROJECT_RECORD).write_text(
             json.dumps(record, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8")
     except OSError:
@@ -1181,7 +1181,7 @@ REFS_TITLES_FILE = "refs_titles.json"
 def _read_refs_titles(pdir: Path) -> dict:
     """{ref name: Flow's caption} written by FlowBatch during the refs run."""
     try:
-        loaded = json.loads((pdir / REFS_TITLES_FILE).read_text(encoding="utf-8"))
+        loaded = json.loads(prodfiles.path(pdir, REFS_TITLES_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return {str(k): v for k, v in loaded.items()
@@ -1190,7 +1190,7 @@ def _read_refs_titles(pdir: Path) -> dict:
 
 def _refs_project_record(pdir: Path) -> dict:
     try:
-        loaded = json.loads((pdir / REFS_PROJECT_RECORD).read_text(encoding="utf-8"))
+        loaded = json.loads(prodfiles.path(pdir, REFS_PROJECT_RECORD).read_text(encoding="utf-8"))
         return loaded if isinstance(loaded, dict) else {}
     except (OSError, ValueError):
         return {}
@@ -1207,7 +1207,7 @@ def find_supplied_refs(pdir: Path) -> list[str]:
         return []
     try:
         generated = set(json.loads(
-            (pdir / REFS_GENERATED_MANIFEST).read_text(encoding="utf-8")))
+            prodfiles.path(pdir, REFS_GENERATED_MANIFEST).read_text(encoding="utf-8")))
     except (OSError, ValueError):
         generated = set()
     return sorted(
@@ -1367,7 +1367,7 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
         log.info("refs: omitting the %d-char style - ref prompts would exceed "
                  "Flow's %d-char limit", len(style),
                  FLOWBATCH_MAX_PROMPT_CHARS)
-    job_path = pdir / "flowbatch_refs.json"
+    job_path = prodfiles.wpath(pdir, "flowbatch_refs.json")
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
     return job_path
@@ -1472,7 +1472,7 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
     if force:
         # the job holds only the refs to remake; their old "done" state must not skip them
         cmd.append("--no-resume")
-    (pdir / REFS_TITLES_FILE).unlink(missing_ok=True)
+    prodfiles.path(pdir, REFS_TITLES_FILE).unlink(missing_ok=True)
     url, _ = flow_project_url_for(cfg, pid)
     if not url:
         # First pass for this video: create the Flow project HERE and record it,
@@ -1520,7 +1520,7 @@ def run_flowbatch_refs(cfg, pdir: Path, pid: int, refs: dict,
             alt.replace(target)  # the registry names refs\<name>.png
         generated.append(name)
     if generated:
-        (pdir / REFS_GENERATED_MANIFEST).write_text(
+        prodfiles.wpath(pdir, REFS_GENERATED_MANIFEST).write_text(
             json.dumps(sorted(generated), indent=2) + "\n", encoding="utf-8")
         _update_ref_paths(pdir, generated)
         recorded_url, _ = flow_project_url_for(cfg, pid)
@@ -1629,7 +1629,7 @@ def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if generated:
-        (pdir / REFS_GENERATED_MANIFEST).write_text(
+        prodfiles.wpath(pdir, REFS_GENERATED_MANIFEST).write_text(
             json.dumps(sorted(generated), indent=2) + "\n", encoding="utf-8")
         _update_ref_paths(pdir, generated)
         log(f"refs: {len(generated)} reference image(s) ready in refs\\ - "
@@ -1840,7 +1840,7 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
         # never uploaded. Only valid in the project the refs were made in.
         if url and str(record["projectUrl"]) == url and record.get("titles"):
             job["refAssets"] = dict(record["titles"])
-    job_path = pid_dir / "flowbatch.json"
+    job_path = prodfiles.wpath(pid_dir, "flowbatch.json")
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
     return job_path, [i["file"] for i in todo]
@@ -1980,7 +1980,7 @@ def _adopt_flowbatch_outputs(pdir: Path, names: list[str],
         for cand in candidates:
             src = out_dir / cand
             if src.is_file():
-                shutil.copy(src, img_dir / name)
+                prodfiles.link_or_copy(src, img_dir / name)
                 adopted.append(name)
                 # FlowBatch writes BOTH the Flow master and the upscaled
                 # <stem>_<tier> file. Keep the master (the real source - a bad
@@ -2054,7 +2054,7 @@ def run_flowbatch_prepare(cfg, pid_dir: Path, job_path: Path,
     `created` flag is what the images stage checks to honor "never fall back to
     a previous project"."""
     log = log or (lambda m: None)
-    report_path = pid_dir / FLOW_PREPARE_REPORT
+    report_path = prodfiles.wpath(pid_dir, FLOW_PREPARE_REPORT)
     repo = flowbatch_dir(cfg)
     from . import chrome_profile
     chrome_profile.apply(cfg, "flowbatch", log)
@@ -2430,7 +2430,7 @@ def run_flowbatch_recover(cfg, pid_dir: Path, pid: int,
     job_path, _ = prepare_flowbatch_job(cfg, pid_dir, pid, project_url)
     tier = set_flowbatch_tier(cfg, cfg.renderly_upscale if upscale is None
                                    else upscale)
-    report_path = pid_dir / FLOW_RECOVER_REPORT
+    report_path = prodfiles.wpath(pid_dir, FLOW_RECOVER_REPORT)
     try:
         report_path.unlink()
     except OSError:
@@ -2717,7 +2717,7 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
         old.unlink()
     audio = find_audio(pid_dir)
     if audio:
-        shutil.copy(audio, audio_dir / f"narration{audio.suffix}")
+        prodfiles.link_or_copy(audio, audio_dir / f"narration{audio.suffix}")
     sanitize_shotlist(pid_dir)
     if animate is not None:
         # tell the renderer whether the channel's animated opening is ON and
@@ -2913,8 +2913,8 @@ def run_motion_flowbatch(cfg, pid_dir: Path, pid: int, clips: list[dict],
     job = {"model": model, "aspect": "16:9", "projectUrl": url or "",
            "items": [{"image": c["image"], "prompt": c["prompt"],
                       "out": c["out"]} for c in clips]}
-    job_path = Path(pid_dir) / "motion_job.json"
-    report_path = Path(pid_dir) / "motion_report.json"
+    job_path = prodfiles.wpath(pid_dir, "motion_job.json")
+    report_path = prodfiles.wpath(pid_dir, "motion_report.json")
     job_path.write_text(json.dumps(job, indent=2), encoding="utf-8")
     report_path.unlink(missing_ok=True)
     from . import chrome_profile

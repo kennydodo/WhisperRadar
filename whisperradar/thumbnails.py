@@ -13,6 +13,8 @@ import json
 import re
 from pathlib import Path
 
+from . import prodfiles
+
 THUMB_DIR = "thumbnails"
 THUMBS_FILE = "thumbs.json"
 W, H = 1280, 720
@@ -29,7 +31,7 @@ LAYOUTS = {
 # ---- storage ---------------------------------------------------------------
 
 def thumbs_dir(pdir) -> Path:
-    return Path(pdir) / THUMB_DIR
+    return prodfiles.path(pdir, THUMB_DIR)
 
 
 def empty_thumbs() -> dict:

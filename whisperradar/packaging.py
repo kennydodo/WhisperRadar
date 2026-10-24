@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import Callable
 
+from . import prodfiles
+
 KIT_FILE = "publish_kit.json"
 
 TITLE_MAX = 100            # YouTube's hard limit
@@ -279,7 +281,7 @@ def local_faults(kit: dict, chapters: list[dict]) -> list[str]:
 # ---- storage ---------------------------------------------------------------
 
 def kit_path(pdir) -> Path:
-    return Path(pdir) / KIT_FILE
+    return prodfiles.path(pdir, KIT_FILE)
 
 
 def load_kit(pdir) -> dict:
@@ -294,8 +296,8 @@ def load_kit(pdir) -> dict:
 
 
 def save_kit(pdir, kit: dict) -> None:
-    kit_path(pdir).write_text(json.dumps(kit, indent=1, ensure_ascii=False),
-                              encoding="utf-8")
+    prodfiles.wpath(pdir, KIT_FILE).write_text(
+        json.dumps(kit, indent=1, ensure_ascii=False), encoding="utf-8")
 
 
 # ---- context + prompts -------------------------------------------------------

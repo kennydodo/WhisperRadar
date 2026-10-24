@@ -140,6 +140,12 @@
     </form>
   </details>
   <div style="margin:-4px 0 8px"><a href="/studio/{{ prod['id'] }}/plan" style="font-size:13px">Packaging plan (title, promise, thumbnail idea)</a> &middot; <a href="/studio/{{ prod['id'] }}/shorts" style="font-size:13px">Shorts</a></div>
+  {% if layout_old %}
+  <form method="post" action="/studio/{{ prod['id'] }}/migrate-layout" style="margin:0 0 8px" class="muted">
+    <span style="font-size:13px">This folder still has the old layout (loose files, duplicate copies).</span>
+    <button type="submit" title="Moves the flow, motion, packaging and chat files into their own folders and links duplicate copies. Nothing is deleted; leftovers go to _work/old.">Tidy folder</button>
+  </form>
+  {% endif %}
   {% if fix_enabled and script_readiness and script_readiness.findings %}
   <section class="script-review" role="status" style="border:2px solid {{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else '#777' }};border-radius:8px;padding:14px;margin:12px 0">
     <strong style="color:{{ '#d94b4b' if script_readiness.warning_count and not script_readiness.ignored else 'var(--green)' }}">{{ '⚠ Script needs review before audio' if script_readiness.warning_count and not script_readiness.ignored else 'Script scan — warnings acknowledged' if script_readiness.ignored else 'Review complete — no unresolved warnings' if script_readiness.reviewed_count else 'Script scan — audience CTAs only' }}</strong>

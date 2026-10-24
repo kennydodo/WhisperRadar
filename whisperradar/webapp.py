@@ -20,7 +20,7 @@ import time
 import zipfile
 from collections import deque
 from pathlib import Path
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from flask import (
     Flask,
@@ -36,7 +36,7 @@ from flask import (
     session,
 )
 
-from . import external_prompts, flow_accounts
+from . import external_prompts, flow_accounts, prodfiles
 from . import textfiles
 from . import motion
 from . import handover
@@ -3185,7 +3185,7 @@ def create_app(cfg) -> Flask:
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
                 "gpt_job": gpt_jobs.get(p["id"]),
-                "has_titles_file": (studio.prod_dir(cfg, p["id"]) / "titles.txt").is_file(),
+                "has_titles_file": prodfiles.path(studio.prod_dir(cfg, p["id"]), "titles.txt").is_file(),
             })
         due_results = len(results_mod.due(conn))
         conn.close()
@@ -3927,7 +3927,7 @@ def create_app(cfg) -> Flask:
                              for s in handover.STAGES},
             handover_from_channel={s: handover.effective_id(cfg, prod, s)[1]
                                    == "channel" for s in handover.STAGES},
-            stage_labels=stage_labels, hooks=hooks,
+            stage_labels=stage_labels, hooks=hooks, layout_old=prodfiles.needs_migration(pdir),
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob._real(),
             prod_voice=prod["voice"] or eff["voice"],
             voice_from=("this production" if prod["voice"]
@@ -3956,7 +3956,7 @@ def create_app(cfg) -> Flask:
             batch_sheet=(pdir / "shotlist.json").exists(),
             thumb_count=len(thumbnails.load_thumbs(pdir).get("concepts", [])),
             kit_ready=packaging.load_kit(pdir).get("status") == "ready",
-            plan_exists=(pdir / "packaging_plan.json").exists(),
+            plan_exists=prodfiles.path(pdir, "packaging_plan.json").exists(),
             direction_versions=_version_names(pdir, "direction", stage),
             shotlist_count=shotlist_count, cue_count=cue_count,
             elements_text=elements_text, elements_count=elements_count, source_warnings=source_warnings,
@@ -4008,7 +4008,7 @@ def create_app(cfg) -> Flask:
             db.update_production(conn, pid, title=back)
             gone.append(f"title restored to \"{back[:60]}\"")
         for name in (planmod.PLAN_FILE, "publish_kit.json"):
-            f = pdir / name
+            f = prodfiles.path(pdir, name)
             if f.exists():
                 f.unlink()
                 gone.append(name)
@@ -4018,7 +4018,7 @@ def create_app(cfg) -> Flask:
         """Delete the raw web-chat replies (webchat_debug). Starting over from
         the shots stage keeps the script stage's own replies."""
         gone = []
-        d = pdir / "webchat_debug"
+        d = prodfiles.path(pdir, "webchat_debug")
         if not d.is_dir():
             return gone
         for f in list(d.iterdir()):
@@ -4145,7 +4145,7 @@ def create_app(cfg) -> Flask:
                 if "script" in reset or "shots" in reset:
                     # old chats hold the old inputs (style, script, scores):
                     # every LLM starts the next run in a fresh chat
-                    cf = pdir / "webchat_chats.json"
+                    cf = prodfiles.path(pdir, "webchat_chats.json")
                     if cf.exists():
                         cf.unlink()
                         removed.append("webchat_chats.json")
@@ -4191,7 +4191,7 @@ def create_app(cfg) -> Flask:
                     if stage == "refs":
                         # only the refs WE generated (tracked in the manifest):
                         # supplied refs are inputs and must survive a reset
-                        manifest = pdir / studio.REFS_GENERATED_MANIFEST
+                        manifest = prodfiles.path(pdir, studio.REFS_GENERATED_MANIFEST)
                         names = []
                         try:
                             names = json.loads(
@@ -5208,6 +5208,43 @@ def create_app(cfg) -> Flask:
             return _studio_url(pid, error="A job is already running")
         return _studio_url(pid, msg="Human-language review started")
 
+    @app.post("/studio/<int:pid>/migrate-layout")
+    def studio_migrate_layout(pid):
+        """Move an old production's loose files into the grouped folders."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is running - tidy the folder when it has finished")
+        pdir = studio.prod_dir(cfg, pid)
+        try:
+            done = prodfiles.migrate(pdir)
+        except OSError as e:
+            return _studio_url(pid, error=f"Could not tidy the folder: {e}")
+        if not done:
+            return _studio_url(pid, msg="The folder is already tidy")
+        return _studio_url(pid, msg=f"Folder tidied ({len(done)} change(s)): " + "; ".join(done[:6])
+                           + ("; ..." if len(done) > 6 else ""))
+
+    @app.post("/studio/migrate-all")
+    def studio_migrate_all():
+        """The same tidy-up for every production whose folder is on disk."""
+        if sjob.running:
+            return redirect("/in-production?error=A+job+is+running+-+try+again+when+it+has+finished")
+        conn = db.connect(cfg.db_path)
+        try:
+            ids = [r["id"] for r in db.list_productions(conn)]
+        finally:
+            conn.close()
+        tidied = failed = 0
+        for pid in ids:
+            try:
+                pdir = studio.prod_dir(cfg, pid)
+                if pdir.is_dir() and prodfiles.needs_migration(pdir):
+                    prodfiles.migrate(pdir)
+                    tidied += 1
+            except OSError:
+                failed += 1
+        text = f"Tidied {tidied} production folder(s)" + (f"; {failed} could not be changed" if failed else "")
+        return redirect("/in-production?" + urlencode({"msg": text}))
+
     @app.post("/studio/<int:pid>/webchat-stop")
     def studio_webchat_stop(pid):
         """Stop a web-chat run after its current round (the loop has no round
@@ -6058,7 +6095,7 @@ def create_app(cfg) -> Flask:
         sheet = thumbnails.thumbs_dir(pdir) / "sheet.jpg"
         return render_template(
             "thumbs.html", prod=prod, data=data, layouts=thumbnails.LAYOUTS,
-            sheet_url=(f"/studio/file/{pid}/thumbnails/sheet.jpg?t={stamp}"
+            sheet_url=(f"/studio/file/{pid}/{sheet.relative_to(pdir).as_posix()}?t={stamp}"
                        if sheet.is_file() else ""),
             msg=request.args.get("msg"), error=request.args.get("error"))
 
