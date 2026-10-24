@@ -908,13 +908,14 @@
       </form>
       {% endif %}
       {% endmacro %}
-      <div style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px">
+      <style>details.substep > summary::before{content:"\25B8"; color:var(--muted)} details.substep[open] > summary::before{content:"\25BE"} details.substep > summary::-webkit-details-marker{display:none}</style>
+      <details class="substep" data-key="elements" style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
+        <summary style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; cursor:pointer">
           <b>Step 1 &middot; Elements</b>
           <span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">optional</span>
           {% if elements_text %}<span style="font-size:11px; color:var(--green); border:1px solid var(--green); border-radius:10px; padding:1px 8px">{{ elements_count }} elements ready &middot; the planner will use them</span>
           {% else %}<span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">none yet &middot; the planner works the old way</span>{% endif %}
-        </div>
+        </summary>
         <div class="muted" style="font-size:12px; margin-bottom:8px">
           A chat reads the script and lists the recurring characters, places and objects, each with one fixed look, so every image describes them the same way. Skip this step to plan exactly as before.
         </div>
@@ -926,12 +927,12 @@
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>{{ 'List elements again' if elements_text else 'List elements in web chat' }}</button>
         </form>
         {{ stop_run(job, prod) }}
-      </div>
-      <div style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
-        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px">
+      </details>
+      <details class="substep" data-key="beats" style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
+        <summary style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; cursor:pointer">
           <b>Step 2 &middot; Plan from the script (beats)</b>
           <span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">new way</span>
-        </div>
+        </summary>
         {% for warning in source_warnings %}
         <p role="alert" class="muted">{{ warning }}</p>
         {% endfor %}
@@ -950,7 +951,19 @@
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Plan beats in web chat</button>
         </form>
         {{ stop_run(job, prod) }}
-      </div>
+      </details>
+      <script>
+        (function () {
+          // remember which planning boxes were opened (this browser, all productions)
+          document.querySelectorAll('details.substep[data-key]').forEach(function (d) {
+            var k = 'wr_substep_' + d.dataset.key;
+            try { if (localStorage.getItem(k) === '1') d.open = true; } catch (e) {}
+            d.addEventListener('toggle', function () {
+              try { localStorage.setItem(k, d.open ? '1' : '0'); } catch (e) {}
+            });
+          });
+        })();
+      </script>
       <div style="font-weight:600; margin:14px 0 4px">Or the old way &middot; Shotlist with a judge</div>
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/shots" style="margin-top:8px; gap:8px; align-items:center; flex-wrap:wrap"
             onsubmit="return wrConfirmSubmit(this, 'Run the shotlist in web chats? A browser window opens and the chats are driven for you.')">
@@ -1430,14 +1443,6 @@
     {% endif %}
   </div>
 
-  <div class="panel">
-    <h2 style="margin-top:0">Notes</h2>
-    <form method="post" action="/studio/{{ prod['id'] }}/notes">
-      <textarea name="notes" style="min-height:70px" placeholder="Ideas, reminders, what to change...">{{ prod["notes"] }}</textarea>
-      <div class="actions"><button type="submit" class="secondary">Save notes</button></div>
-    </form>
-  </div>
-
   {% if stage == "script" %}
   <div class="panel">
     <h2 style="margin-top:0">Target words &mdash; script stage</h2>
@@ -1452,7 +1457,6 @@
       <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save target</button>
     </form>
   </div>
-  {% set hshow = ["script"] %}{% include "_instructions_panel.html" %}
   {% endif %}
 
   <div class="panel">
@@ -1502,6 +1506,14 @@
       {% endfor %}
     </div>
     {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0">Notes</h2>
+    <form method="post" action="/studio/{{ prod['id'] }}/notes">
+      <textarea name="notes" style="min-height:70px" placeholder="Ideas, reminders, what to change...">{{ prod["notes"] }}</textarea>
+      <div class="actions"><button type="submit" class="secondary">Save notes</button></div>
+    </form>
   </div>
 
   <h2>History</h2>
