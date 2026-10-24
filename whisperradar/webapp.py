@@ -6156,6 +6156,19 @@ def create_app(cfg) -> Flask:
         return redirect(f"/studio/{pid}/shorts?msg=" + quote(
             f"{len(done)} clip(s) made"))
 
+    @app.post("/studio/<int:pid>/shorts/new")
+    def studio_shorts_new(pid):
+        """A new vertical production from a window of this video."""
+        from . import shortfrom
+        try:
+            new_pid = shortfrom.create(
+                cfg, pid, request.form.get("start"), request.form.get("end"),
+                request.form.get("title"))
+        except shortfrom.ShortError as exc:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(str(exc)))
+        return redirect(f"/studio/{new_pid}?msg=" + quote(
+            "New Short created from the video - plan its shots next"))
+
     @app.post("/studio/<int:pid>/plan/generate")
     def studio_plan_generate(pid):
         from . import plan as packplan, webchat
