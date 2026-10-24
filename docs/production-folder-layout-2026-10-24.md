@@ -29,7 +29,6 @@ Move the text files into `script/` and the plan files into `plan/`; needs the ma
 script.md / style.md / bible.md / elements.* switched to `prodfiles.path` first.
 
 ## Next tasks
-- Qwen web chat: open the live page, compare its model/thinking controls with the app's prepare
-  code and fix + verify live, the same way as z.ai (JS run on the live page + webchat tests).
+- Qwen web chat: DONE 2026-10-24 (checked live on chat.qwen.ai). Model picker (`div[aria-label="Select Model"]`, 3 models) still matches the saved site. Thinking mode (Auto / Thinking / Fast) is a menu in `.qwen-thinking-selector`; the "Select Mode" button is the + tools menu, not thinking. The Qwen site definition (settings `webchat_sites`) got those three as levels; old value saved in `data/webchat_sites.before-qwen-levels.json`. Test: tests/test_webchat_qwen.py. Note: the site has `paid: false`, so the model choice is skipped; tick "paid" on Qwen if the model should be picked.
 - Production export/import (no images), channel brief tidy-up, hand-over decision: see the
   recommendations given on 2026-10-24.
