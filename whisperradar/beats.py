@@ -472,7 +472,31 @@ def motion_faults(beats, allowed, allow_reveal=False) -> list[str]:
             f"{', '.join(allowed)}."]
 
 
-def check(beats, cues, allowed, cap_s, tol, allow_reveal=False) -> tuple[list[int], list[tuple[int, int]], list[str]]:
+def short_hold_faults(beats, ranges, cues, profile) -> list[str]:
+    """The channel's minimum hold, from its settings (nothing fixed here): when
+    more beats than the allowed share are shorter than min_hold, name EVERY short
+    beat so the writer can merge enough of them in one go. The final beat is
+    exempt, as in the shotlist review."""
+    min_hold = getattr(profile, "min_hold", None)
+    if not min_hold or len(beats) < 2:
+        return []
+    share = briefs.pacing_share_cap(profile, "short_hold") or 0.0
+    body = [(n, a, z) for n, (a, z) in enumerate(ranges[:-1], 1) if a]
+    short = [(n, a, z, hold(cues, a, z)) for n, a, z in body if hold(cues, a, z) < min_hold]
+    allowed = int(share * len(body) + 1e-9)
+    if len(short) <= allowed:
+        return []
+    rows = "; ".join(
+        f"beat {n} ({h:.1f}s, cues {a}-{z}, starts \"{' '.join(str(beats[n - 1]['starts_with']).split()[:6])}\")"
+        for n, a, z, h in short)
+    return [f"{len(short)} of {len(body)} beats are shorter than the {min_hold:g}s minimum hold this "
+            f"channel sets; at most {allowed} may be ({share * 100:g}% allowed). Merge short beats "
+            f"into the neighbour whose idea they continue (replace beat N through N+1 with ONE "
+            f"beat), until at most {allowed} short beats are left, and keep every merged "
+            f"beat under the maximum hold. The short beats: {rows}."]
+
+
+def check(beats, cues, allowed, cap_s, tol, allow_reveal=False, profile=None) -> tuple[list[int], list[tuple[int, int]], list[str]]:
     """Everything the app can say about beats BEFORE the shotlist code checks:
     (starts, ranges, faults)."""
     starts, f1 = find_starts(beats, cues)
@@ -481,6 +505,8 @@ def check(beats, cues, allowed, cap_s, tol, allow_reveal=False) -> tuple[list[in
     faults += motion_faults(beats, allowed, allow_reveal)
     if not f1 and not f2:
         faults += hold_faults(beats, ranges, cues, cap_s, tol)
+        if profile is not None:
+            faults += short_hold_faults(beats, ranges, cues, profile)
         for n, (b, (a, z)) in enumerate(zip(beats, ranges), 1):
             reveal = b.get("reveal")
             if not reveal:
@@ -588,6 +614,55 @@ def fix_prompt(faults: list[str], beats, ranges, cues, names, allowed, cap_s: fl
         "beat's opening quote and combine the visual idea into one depictable image. "
         "Do not return a second replacement for any beat inside that range. All numbers "
         "refer to the current list BEFORE any changes. Do not resend the whole list.")
+
+
+# A judge that points at more than this share of the beats (or at none in
+# particular) is complaining about the plan as a whole, not about a few images.
+WHOLE_REVISION_SHARE = 1 / 3
+
+
+def needs_whole_revision(faults: list[str], names: list[str], beats) -> bool:
+    """True when the reviewer's feedback is about the whole plan rather than a
+    few named beats, so patching beat by beat would not answer it."""
+    pointed = beats_named("\n".join(faults), names, [])
+    return not pointed or len(pointed) > max(1, len(beats)) * WHOLE_REVISION_SHARE
+
+
+def revise_prompt(faults: list[str], fixes: list[str], beats, style: str,
+                  plan_meta: dict | None, allowed, cap_s: float, max_words: int,
+                  min_words: int = 0, channel_context: str = "") -> str:
+    """Ask the writer to revise the WHOLE plan after a reviewer's verdict and
+    return the complete beats document again, in the original format."""
+    feedback = "\n".join(f"- {f}" for f in faults)
+    if fixes:
+        feedback += "\n\nWHAT THE REVIEWER SUGGESTS:\n" + "\n".join(f"- {x}" for x in fixes)
+    current = json.dumps(
+        {"style": style, **metadata(plan_meta or {}),
+         "beats": [{k: b[k] for k in ("starts_with", "scene", "type", "motion", "prompt") + SHOT_FIELDS
+                    + ("refs",) if k in b} for b in beats]},
+        ensure_ascii=False)
+    context = (("CHANNEL RULES AND INPUTS (still apply):\n" + channel_context + "\n\n")
+               if channel_context else "")
+    return (context +
+        "PLAN REVISION: a reviewer looked at your whole plan and found problems that "
+        "are about the plan as a whole, not about single beats. Revise the plan where "
+        "the feedback needs it - rewrite weak prompts, regroup beats, change what the "
+        "viewer sees, vary the rhythm - and keep everything that is already good.\n\n"
+        "REVIEWER'S FEEDBACK:\n" + feedback + "\n\n"
+        "THE CURRENT PLAN (your last version, with the corrections made since):\n" + current + "\n\n"
+        "Rules are the same as the first time: beats follow the narration in order and "
+        "cover all of it; `starts_with` is the first "
+        f"{QUOTE_WORDS} words of the narration where the beat begins, copied exactly (a "
+        f"beat you keep unchanged keeps its quote); a beat is spoken in about {cap_s:g} "
+        f"seconds at most (about {max_words} words)"
+        + (f" and carries at least about {min_words} words" if min_words else "")
+        + f". Allowed motion codes: {', '.join(allowed)}. Keep refs, land, overlays, "
+        "transition, sfx, reveal and ai_motion on beats you keep.\n\n"
+        "Reply with the COMPLETE revised plan as ONE JSON object in ONE ```json block, "
+        'in the same format as before: {"style": "...", "beats": [...]} (plus the '
+        "refs / refPrompts maps if you used them), as text in this chat (no file). If "
+        'you reach your output limit, stop after the last COMPLETE beat; when I reply '
+        '"continue", output ONLY the remaining beats in a new ```json block.')
 
 
 def parse_fix(reply: str, allowed=None) -> dict | None:

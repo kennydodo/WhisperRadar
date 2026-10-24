@@ -5094,6 +5094,7 @@ def create_app(cfg) -> Flask:
 
         if stage == "beats":
             options["beats_quality_judge"] = request.form.get("quality_judge") == "on"
+            options["beats_same_chats"] = request.form.get("same_chats") == "on"
 
         resume = (stage != "script"
                   and request.form.get("resume_plan") == "on")

@@ -1432,7 +1432,7 @@ def _collect_beats(transport, site: str, reply: str, log, dump, allowed) -> dict
 def run_beats(cfg, pid: int, transport, writer: str = "zai",
               log: Callable[[str], None] = print,
               should_stop: Callable[[], bool] = lambda: False,
-              quality_judge: str | None = None) -> dict:
+              quality_judge: str | None = None, same_chats: bool = False) -> dict:
     """Plan the video from the NARRATION: the writer returns beats (one image
     each, with the first words of the narration they begin at); the app finds
     those words in the subtitles, so every cue is covered once by construction,
@@ -1498,7 +1498,12 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
                                min_words=min_words)
         dump("beats_prompt", text)
         return text
-    reply = _send(transport, writer, build_beats_prompt, log, ready=_has_json)
+    kept = (adopt_chats(cfg, pid, transport,
+                        {writer, quality_judge} - {None}, log)
+            if same_chats else set())
+    judge_open = judge_open or (quality_judge in kept)
+    reply, _ = _send_in(transport, writer, build_beats_prompt, log,
+                        writer in kept, ready=_has_json)
     got = _collect_beats(transport, writer, reply, log, dump, allowed)
     beats, style = got["beats"], got["style"] or ctx["visual_style"]
     plan_meta = beatsmod.metadata(got)
@@ -1513,7 +1518,7 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
             for name in supplied:
                 plan_meta.get("refPrompts", {}).pop(name, None)
         starts, ranges, faults = beatsmod.check(beats, cues, allowed, cap, tol,
-                                              allow_reveal=profile.reveal)
+                                              allow_reveal=profile.reveal, profile=profile)
         data, names = beatsmod.build_shotlist(beats, ranges, style, plan_meta, cues)
         if not plan["allow_refs"] and studio.shotlist_uses_refs(data):
             faults.append("References are disabled for this channel: remove refs/refPrompts "
@@ -1551,8 +1556,8 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
             dump(f"beats_checks_round{rnd}", json.dumps({
                 "round": rnd, "source": source, "pacing": pacing, "numbers": numbers,
                 "faults": faults, "status": "awaiting_quality_review"}, ensure_ascii=False, indent=2))
-            raw = _send(transport, quality_judge, build_beats_judge, log,
-                        new_chat=not judge_open, ready=_is_shotlist_verdict)
+            raw, _ = _send_in(transport, quality_judge, build_beats_judge, log,
+                              judge_open, ready=_is_shotlist_verdict)
             dump(f"beats_judge_round{rnd}", raw)
             verdict = studio._parse_json_object(raw, want=("pass", "faults"))
             if not verdict:
@@ -1603,6 +1608,31 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
         prev_faults = key
         if same >= 2 or rnd > BEATS_MAX_ROUNDS:
             break
+        if verdict is not None and beatsmod.needs_whole_revision(faults, names, beats):
+            log(f"round {rnd}: the reviewer's feedback is about the plan as a whole - "
+                f"asking {writer} to revise the whole plan")
+            revised = None
+            try:
+                rev = transport.ask(
+                    writer,
+                    beatsmod.revise_prompt(
+                        faults, [str(x) for x in (verdict.get("fixes") or [])], beats, style,
+                        plan_meta, allowed, cap, max_words, min_words,
+                        channel_context=channel_context + animation_note),
+                    (), new_chat=False, ready=_has_json)
+                revised = _collect_beats(
+                    transport, writer, rev, log,
+                    lambda n, txt: dump(f"beats_revise_round{rnd}_{n}", txt), allowed)
+            except StageFailed as e:
+                log(f"{writer}: no usable revised plan ({e}) - correcting beat by beat instead")
+            if revised and revised["beats"]:
+                log(f"plan revised: {len(beats)} -> {len(revised['beats'])} beats")
+                beats = revised["beats"]
+                style = revised["style"] or style
+                for key, entries in beatsmod.metadata(revised).items():
+                    if entries:
+                        plan_meta.setdefault(key, {}).update(entries)
+                continue
         msg = beatsmod.fix_prompt(faults, beats, ranges, cues, names, allowed, cap,
                                  plan_meta=plan_meta,
                                  channel_context=channel_context + animation_note)
@@ -1649,12 +1679,14 @@ def beats_job(cfg, pid: int, writer: str, judge: str, log,
               options: dict | None = None) -> None:
     options = dict(options or {})
     quality = bool(options.pop("beats_quality_judge", False))
+    same_chats = bool(options.pop("beats_same_chats", False))
     with web_transport(cfg, log, options) as t:
         log(f"settings: {t.options}")
         t.set_stop(should_stop)
         try:
             run_beats(cfg, pid, t, writer, log, should_stop,
-                      quality_judge=judge if quality else None)
+                      quality_judge=judge if quality else None,
+                      same_chats=same_chats)
         finally:
             save_chats(cfg, pid, t)
 

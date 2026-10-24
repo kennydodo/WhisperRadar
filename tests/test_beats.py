@@ -136,6 +136,50 @@ class MappingTests(unittest.TestCase):
         self.assertEqual(starts, [1, 3])
 
 
+class MinimumHoldTests(unittest.TestCase):
+    """The channel's minimum hold comes from its settings (min_hold, the
+    allowed share and the tolerance); nothing is fixed in the checker."""
+
+    @staticmethod
+    def profile(min_hold, share=0.0, tol=0.0):
+        from whisperradar import briefs
+        return briefs.resolve_profile(
+            "standard", min_hold=min_hold, max_hold=30,
+            custom={"short_hold_share": share, "short_hold_tolerance": tol})
+
+    def beats6(self):
+        return [beat(t.split()[0] + " " + " ".join(t.split()[1:4])) for t in TEXTS]
+
+    def test_short_beats_are_named_all_at_once(self):
+        cues = make_cues(2.0)                       # every beat is 2s
+        bl = self.beats6()
+        starts, ranges, faults = beats.check(bl, cues, ["ZI"], 30, 0, profile=self.profile(5))
+        self.assertEqual(len(faults), 1)
+        for n in range(1, 6):                       # the last beat is exempt
+            self.assertIn(f"beat {n} (", faults[0])
+        self.assertNotIn("beat 6 (", faults[0])
+        self.assertIn("5s minimum", faults[0])
+
+    def test_the_allowed_share_and_tolerance_come_from_the_settings(self):
+        cues = make_cues(2.0)
+        bl = self.beats6()
+        _, _, strict = beats.check(bl, cues, ["ZI"], 30, 0, profile=self.profile(5, 0.4, 0.0))
+        _, _, loose = beats.check(bl, cues, ["ZI"], 30, 0, profile=self.profile(5, 0.6, 0.4))
+        self.assertTrue(strict)                     # 5 short of 5 > 40%
+        self.assertEqual(loose, [])                 # 60% + 40 points = everything allowed
+
+    def test_no_minimum_set_means_no_check(self):
+        cues = make_cues(2.0)
+        _, _, faults = beats.check(self.beats6(), cues, ["ZI"], 30, 0, profile=self.profile(None))
+        self.assertEqual(faults, [])
+
+    def test_beats_that_reach_the_minimum_pass(self):
+        cues = make_cues(4.0)                       # pairs of cues = 8s
+        bl = [beat("You can sit in a"), beat("But crocodile meat is a"), beat("It is the industry behind")]
+        _, _, faults = beats.check(bl, cues, ["ZI"], 30, 0, profile=self.profile(5))
+        self.assertEqual(faults, [])
+
+
 class HoldAndBuildTests(unittest.TestCase):
     def test_ai_motion_survives_parse_and_build(self):
         from whisperradar import motion
@@ -417,6 +461,61 @@ class RunBeatsTests(unittest.TestCase):
         ws.run_beats(None, 1, t, "zai", log=lambda m: None, quality_judge="deepseek")
         self.assertEqual(len(asked), 4)
         self.assertEqual(saved[0]["images"][0]["prompt"], "A man at a restaurant table.")
+
+    def test_a_broad_quality_complaint_revises_the_whole_plan(self):
+        raw = [beat("You can sit in a"), beat("But crocodile meat is a"),
+               beat("It is the industry behind")]
+        bad = json.dumps({"pass": False, "faults": ["The plan repeats the same restaurant picture."],
+                          "fixes": ["Vary the settings across the video."],
+                          "shots": [], "detailed_ratio": .5})
+        better = [beat("You can sit in a", prompt="A harbour market at dawn."),
+                  beat("But crocodile meat is a", motion="ZO", prompt="A tannery workshop."),
+                  beat("It is the industry behind", prompt="A shop window of handbags.")]
+        good = json.dumps({"pass": True, "faults": [], "shots": [], "detailed_ratio": 1.0})
+        ws, pdir, asked, saved, t = self._setup([self._reply(raw), bad, self._reply(better), good])
+        ws.run_beats(None, 1, t, "zai", log=lambda m: None, quality_judge="deepseek")
+        self.assertEqual(len(asked), 4)
+        self.assertIn("PLAN REVISION", asked[2])
+        self.assertIn("Vary the settings across the video.", asked[2])
+        self.assertIn("A harbour market at dawn.", saved[0]["images"][0]["prompt"])
+        self.assertEqual(len(saved[0]["shots"]), 3)
+
+    def test_whole_revision_only_when_the_feedback_is_not_about_a_few_beats(self):
+        names = [f"S01_0{i}_SCN_ZI.png" for i in range(1, 7)]
+        bl = [beat("x y z")] * 6
+        self.assertTrue(beats.needs_whole_revision(["The rhythm is monotonous."], names, bl))
+        self.assertFalse(beats.needs_whole_revision(["S01_02_SCN_ZI.png: vague."], names, bl))
+        self.assertTrue(beats.needs_whole_revision(
+            [f"{n}: vague." for n in names[:4]], names, bl))
+
+    def test_same_chats_continues_in_the_script_chat(self):
+        raw = [beat("You can sit in a"), beat("But crocodile meat is a"),
+               beat("It is the industry behind")]
+        ws, pdir, asked, saved, t = self._setup([self._reply(raw)])
+        adopted, news = [], []
+        t.adopt = lambda site, url: adopted.append((site, url))
+        original = t.ask
+        def ask(site, text, files, new_chat=True, ready=None):
+            news.append(new_chat)
+            return original(site, text, files, new_chat=new_chat, ready=ready)
+        t.ask = ask
+        with mock.patch.object(ws, "load_chats", return_value={"zai": "https://chat/c/1"}):
+            ws.run_beats(None, 1, t, "zai", log=lambda m: None, same_chats=True)
+        self.assertEqual(adopted, [("zai", "https://chat/c/1")])
+        self.assertEqual(news, [False])
+
+    def test_a_new_chat_is_used_without_the_option(self):
+        raw = [beat("You can sit in a"), beat("But crocodile meat is a"),
+               beat("It is the industry behind")]
+        ws, pdir, asked, saved, t = self._setup([self._reply(raw)])
+        news = []
+        original = t.ask
+        def ask(site, text, files, new_chat=True, ready=None):
+            news.append(new_chat)
+            return original(site, text, files, new_chat=new_chat, ready=ready)
+        t.ask = ask
+        ws.run_beats(None, 1, t, "zai", log=lambda m: None)
+        self.assertEqual(news, [True])
 
     def test_full_fault_text_and_all_faults_are_saved_per_run(self):
         raw = [beat("You can sit in a"), beat("But crocodile meat is a"),

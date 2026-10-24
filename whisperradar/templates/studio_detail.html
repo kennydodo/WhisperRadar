@@ -944,7 +944,8 @@
           <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
           </div>
-          <label style="flex-basis:100%"><input type="checkbox" name="quality_judge"> Judge visual quality after code checks</label>
+          <label style="flex-basis:100%" title="A second chat reviews the plan (specific images, fit to the narration) after the code checks pass, and its feedback goes back to the writer. Untick to accept a plan that only passes the code checks."><input type="checkbox" name="quality_judge" checked> Judge visual quality after code checks</label>
+          <label style="flex-basis:100%" title="Continue in the chats the script stage used (the writer chat, and the judge chat when it is the same site), so they already know the story. A chat that cannot be reopened is replaced by a new one."><input type="checkbox" name="same_chats"> Same chats as the script</label>
           <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <label>Judge <select name="judge"><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
           </div>
