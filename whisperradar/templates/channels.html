@@ -451,6 +451,8 @@
               "Standard" is the brief exactly as it has always been; the
               shotlist review checks the same limits the brief states.
             </div>
+            {% set cs = (ch['brief_custom'] | fromjson) if ch['brief_custom'] else {} %}
+            <h4 class="brief-sec" style="margin:18px 0 4px; padding-top:8px; border-top:1px solid var(--border, #8884); font-size:13px">1. Motion <span class="muted" style="font-weight:normal">which camera moves the planner may use</span></h4>
             <div class="inline" style="gap:28px">
               <label>motion &amp; pacing
                 <select name="brief_motion" style="width:290px">
@@ -460,41 +462,7 @@
                   <option value="custom" title="Tick the motion codes, set the limits and type your own motion rules" {{ 'selected' if ch['brief_motion'] == 'custom' else '' }}>{{ brief_custom_label }}</option>
                 </select>
               </label>
-              <label>presentation starter
-                <select style="width:290px"
-                        onchange="var box = this.form.elements['brief_presentation']; if (this.value === '__custom__') { box.value = ''; box.focus(); } else if (this.value) { box.value = this.value; } this.selectedIndex = 0;">
-                  <option value="">fill the box below from...</option>
-                  <option value="__custom__">Custom - write my own</option>
-                  {% for key, starter in brief_starters.items() %}
-                  <option value="{{ starter[1] }}">{{ starter[0] }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <label>reveal shots
-                <select name="brief_reveal" style="width:290px"
-                        title="A reveal shot is one image with 2-4 items in a row; the video shows them one at a time as the narrator names each (a mask-style reveal), as a row, a 2x2 grid or separate images, optionally with a sound per item. Static only.">
-                  <option value="">off</option>
-                  <option value="1" {{ 'selected' if ch['brief_reveal'] == 1 else '' }}>allowed - items appear one at a time (+ sound effects)</option>
-                  <option value="2" {{ 'selected' if ch['brief_reveal'] == 2 else '' }}>required - every list of 2-4 items in the narration becomes a reveal</option>
-                </select>
-              </label>
-              <label>text drawn by the renderer
-                <select name="brief_text_overlays" style="width:290px"
-                        title="Off: any text is part of the image. On: images are generated WITHOUT readable text and the shotlist says which text the renderer writes and where (own font and style; each shot may carry 'overlays').">
-                  <option value="">off - text (if any) is part of the image</option>
-                  <option value="1" {{ 'selected' if ch['brief_text_overlays'] else '' }}>on - images have no text; the renderer writes it</option>
-                </select>
-              </label>
-              <label>sound effect
-                <input name="brief_sfx" list="sfx-names-{{ ch['id'] }}" style="width:200px"
-                       value="{{ ch['brief_sfx'] or '' }}" placeholder="pop (default)"
-                       title="The sound the plan uses for reveal items. Leave empty for the built-in pop (ImgToVideo plays its default pop variant). A name from ImgToVideo (pop_marimba, ding, whoosh ...) or a file you put in the project's sfx folder.">
-                <datalist id="sfx-names-{{ ch['id'] }}">
-                  {% for n in ['pop','pop_bubble','pop_boop','pop_drop','pop_blip','pop_tap','pop_snap','pop_cork','pop_thump','pop_pluck','pop_marimba','pop_ping','pop_sparkle','pop_classic','ding','click','tick','whoosh','swipe'] %}<option value="{{ n }}">{% endfor %}
-                </datalist>
-              </label>
             </div>
-            {% set cs = (ch['brief_custom'] | fromjson) if ch['brief_custom'] else {} %}
             <details class="custom-motion" open style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px; {{ '' if ch['brief_motion'] == 'custom' else 'display:none' }}">
               <summary style="cursor:pointer; font-weight:600">Custom motion</summary>
               <div class="muted" style="font-size:12px; margin:6px 0">
@@ -642,6 +610,7 @@
                 });
               })();
             </script>
+            <h4 class="brief-sec" style="margin:18px 0 4px; padding-top:8px; border-top:1px solid var(--border, #8884); font-size:13px">2. Pacing <span class="muted" style="font-weight:normal">how long an image holds and how strictly the limits are applied</span></h4>
             <div class="inline" style="margin-top:8px">
               <label>min hold (s)
                 <input type="number" name="brief_min_hold" min="1" max="300" step="any"
@@ -681,6 +650,7 @@
             </div>
             <p class="muted" style="font-size:12px">Pacing tolerances default to +5 percentage points above the configured maximum share. A 50% single-cue limit accepts up to 55%. Set tolerance to 0 for strict enforcement. A disabled limit stays disabled.</p>
             <p class="muted" style="font-size:12px">Minimum-hold allowance applies only when a minimum hold is set; the final shot is exempt. The single-cue limit is optional and does not apply in Every cue mode. Motion family shares follow the selected target or maximums mode and its tolerance.</p>
+            <h4 class="brief-sec" style="margin:18px 0 4px; padding-top:8px; border-top:1px solid var(--border, #8884); font-size:13px">3. Shot types &amp; host <span class="muted" style="font-weight:normal">share of each shot type, host in frame</span></h4>
             {% set bt = ch['brief_types'] | typesjson %}
             <input type="hidden" name="types_form" value="1">
             <details class="type-limits" open style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px">
@@ -721,6 +691,45 @@
                 {% endfor %}
               </div>
             </details>
+            <h4 class="brief-sec" style="margin:18px 0 4px; padding-top:8px; border-top:1px solid var(--border, #8884); font-size:13px">4. Reveals, text &amp; sound <span class="muted" style="font-weight:normal"></span></h4>
+            <div class="inline" style="gap:28px">
+              <label>reveal shots
+                <select name="brief_reveal" style="width:290px"
+                        title="A reveal shot is one image with 2-4 items in a row; the video shows them one at a time as the narrator names each (a mask-style reveal), as a row, a 2x2 grid or separate images, optionally with a sound per item. Static only.">
+                  <option value="">off</option>
+                  <option value="1" {{ 'selected' if ch['brief_reveal'] == 1 else '' }}>allowed - items appear one at a time (+ sound effects)</option>
+                  <option value="2" {{ 'selected' if ch['brief_reveal'] == 2 else '' }}>required - every list of 2-4 items in the narration becomes a reveal</option>
+                </select>
+              </label>
+              <label>text drawn by the renderer
+                <select name="brief_text_overlays" style="width:290px"
+                        title="Off: any text is part of the image. On: images are generated WITHOUT readable text and the shotlist says which text the renderer writes and where (own font and style; each shot may carry 'overlays').">
+                  <option value="">off - text (if any) is part of the image</option>
+                  <option value="1" {{ 'selected' if ch['brief_text_overlays'] else '' }}>on - images have no text; the renderer writes it</option>
+                </select>
+              </label>
+              <label>sound effect
+                <input name="brief_sfx" list="sfx-names-{{ ch['id'] }}" style="width:200px"
+                       value="{{ ch['brief_sfx'] or '' }}" placeholder="pop (default)"
+                       title="The sound the plan uses for reveal items. Leave empty for the built-in pop (ImgToVideo plays its default pop variant). A name from ImgToVideo (pop_marimba, ding, whoosh ...) or a file you put in the project's sfx folder.">
+                <datalist id="sfx-names-{{ ch['id'] }}">
+                  {% for n in ['pop','pop_bubble','pop_boop','pop_drop','pop_blip','pop_tap','pop_snap','pop_cork','pop_thump','pop_pluck','pop_marimba','pop_ping','pop_sparkle','pop_classic','ding','click','tick','whoosh','swipe'] %}<option value="{{ n }}">{% endfor %}
+                </datalist>
+              </label>
+            </div>
+            <h4 class="brief-sec" style="margin:18px 0 4px; padding-top:8px; border-top:1px solid var(--border, #8884); font-size:13px">5. Presentation <span class="muted" style="font-weight:normal">who is on screen, and when</span></h4>
+            <div class="inline" style="gap:28px">
+              <label>presentation starter
+                <select style="width:290px"
+                        onchange="var box = this.form.elements['brief_presentation']; if (this.value === '__custom__') { box.value = ''; box.focus(); } else if (this.value) { box.value = this.value; } this.selectedIndex = 0;">
+                  <option value="">fill the box below from...</option>
+                  <option value="__custom__">Custom - write my own</option>
+                  {% for key, starter in brief_starters.items() %}
+                  <option value="{{ starter[1] }}">{{ starter[0] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
             <div class="inline" style="margin-top:8px">
               <label style="flex:1 1 90%">presentation - who is on screen, and when (optional)
                 <textarea name="brief_presentation" style="min-height:70px"
