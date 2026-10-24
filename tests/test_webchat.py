@@ -181,6 +181,23 @@ class AskTests(unittest.TestCase):
                          "The reply.\nSecond line.")
         self.assertEqual(wc.after_prompt(P(), ""), "")
 
+    def test_after_prompt_finds_the_reply_when_the_site_cuts_a_long_prompt(self):
+        # Qwen shows only the first 10,240 characters of what was sent, so the
+        # end of the prompt is not on the page (found 2026-10-24: the app
+        # read only the last paragraph of a full script).
+        words = ["w%d" % i for i in range(3000)]
+        prompt = " ".join(words)
+        shown = prompt[:wc.SHOWN_PROMPT_CHARS].rstrip()
+        seen = []
+
+        class P:
+            def evaluate(self, js, arg=None):
+                seen.append(arg)
+                return "\nThe whole reply.\nCopy\n" if arg and shown.endswith(arg.strip()) \
+                    else None
+        self.assertEqual(wc.after_prompt(P(), prompt), "The whole reply.")
+        self.assertEqual(len(seen), 2)
+
     def test_continue_is_capped(self):
         clk = Clock()
         page = FakePage(clk, wc.DEEPSEEK, [("x", False)] * 8,
