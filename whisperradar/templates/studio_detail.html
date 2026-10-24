@@ -117,7 +117,6 @@
   <a href="/finished">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
-  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   {% macro provider_select(stage) %}
@@ -1453,7 +1452,7 @@
       <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save target</button>
     </form>
   </div>
-  {% set hshow = ["script"] %}{% include "_handover_panel.html" %}
+  {% set hshow = ["script"] %}{% include "_instructions_panel.html" %}
   {% endif %}
 
   <div class="panel">

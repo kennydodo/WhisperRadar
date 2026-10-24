@@ -39,7 +39,6 @@ from flask import (
 from . import external_prompts, flow_accounts, prodfiles, prodtransfer
 from . import textfiles
 from . import motion
-from . import handover
 from . import source_prep
 from . import source_analysis
 from . import demand as demand_mod
@@ -84,35 +83,9 @@ def _back(request, msg: str | None = None, error: str | None = None,
     return redirect(base + ("?" + "&".join(parts) if parts else ""))
 
 
-def _handover_options(cfg, prod) -> list:
-    """Templates the production's channel may pick from; a template already
-    chosen stays listed (marked) even if the channel no longer offers it."""
-    try:
-        cid = prod["own_channel_id"]
-    except (KeyError, IndexError):
-        cid = None
-    opts = handover.available_for(cfg, cid)
-    have = {t["id"] for t in opts}
-    allt = handover.all_templates(cfg)
-    for st in handover.STAGES:
-        tid = handover.choice_for(prod, st)
-        if tid and tid in allt and tid not in have:
-            t = dict(allt[tid])
-            t["name"] += " (not offered to this channel)"
-            opts.append(t)
-            have.add(tid)
-    return opts
-
-
-def _handover_ctx(cfg, prod) -> dict:
-    return dict(
-        instructions={k: db.stage_extra(prod, k)
-                      for k in ("plan", "plan_judge", "script", "script_judge")},
-        handover_templates=_handover_options(cfg, prod),
-        handover_choice={s: handover.effective_id(cfg, prod, s)[0]
-                         for s in handover.STAGES},
-        handover_from_channel={s: handover.effective_id(cfg, prod, s)[1]
-                               == "channel" for s in handover.STAGES})
+def _instructions_ctx(prod) -> dict:
+    return dict(instructions={k: db.stage_extra(prod, k)
+                              for k in ("plan", "plan_judge", "script", "script_judge")})
 
 
 def _studio_url(pid, msg: str | None = None, error: str | None = None):
@@ -2253,14 +2226,6 @@ def create_app(cfg) -> Flask:
             own_state=own_state,
             own_active_count=sum(1 for c in all_own if c["active"]),
             own_paused_count=sum(1 for c in all_own if not c["active"]),
-            handover_options={c["id"]: handover.available_for(cfg, c["id"])
-                              for c in own_channels},
-            handover_defaults={c["id"]: handover.channel_defaults(cfg, c["id"])
-                               for c in own_channels},
-            handover_all=list(handover.all_templates(cfg).values()),
-            handover_uses={c["id"]: {t["id"]: handover.uses_template(t, c["id"])
-                                     for t in handover.all_templates(cfg).values()}
-                           for c in own_channels},
             watched_channels=watched_channels, watched_by_oc=watched_by_oc,
             renderly_url=cfg.renderly_url, genres=genres,
             source_genres=source_genres,
@@ -2489,26 +2454,6 @@ def create_app(cfg) -> Flask:
             fields["brief_presentation"] = (
                 (form.get("brief_presentation") or "").strip() or None)
         return fields, None
-
-    @app.post("/my-channels/handover")
-    def my_channels_handover():
-        """Save only the channel's default hand-over templates."""
-        oc_id = _own_channel_id()
-        if not oc_id:
-            return redirect("/my-channels?error=Unknown+channel")
-        conn = db.connect(cfg.db_path)
-        try:
-            ids = [c["id"] for c in db.list_own_channels(conn)]
-        finally:
-            conn.close()
-        if request.form.get("handover_listed"):
-            handover.set_channel_templates(
-                cfg, oc_id, request.form.getlist("handover_use"), ids)
-        handover.set_channel_default(cfg, oc_id,
-                                     request.form.get("handover_plan") or "",
-                                     request.form.get("handover_script") or "")
-        return redirect("/my-channels?msg=" + quote("Hand-over templates saved")
-                        + f"#edit-{oc_id}-handover")
 
     @app.post("/my-channels/brief")
     def my_channels_brief():
@@ -3922,11 +3867,6 @@ def create_app(cfg) -> Flask:
             instructions={k: db.stage_extra(prod, k)
                           for k in ("plan", "plan_judge", "script",
                                     "script_judge")},
-            handover_templates=_handover_options(cfg, prod),
-            handover_choice={s: handover.effective_id(cfg, prod, s)[0]
-                             for s in handover.STAGES},
-            handover_from_channel={s: handover.effective_id(cfg, prod, s)[1]
-                                   == "channel" for s in handover.STAGES},
             stage_labels=stage_labels, hooks=hooks, layout_old=prodfiles.needs_migration(pdir),
             renderly_ready=renderly_ready, work_dir=str(pdir), job=sjob._real(),
             prod_voice=prod["voice"] or eff["voice"],
@@ -6166,7 +6106,7 @@ def create_app(cfg) -> Flask:
         return render_template(
             "plan.html", prod=prod, plan=plan, job=sjob._real(),
             faults=packplan.faults_for(cfg, pid, plan) if plan["title"] else [],
-            layouts=thumbnails.LAYOUTS, **_handover_ctx(cfg, prod),
+            layouts=thumbnails.LAYOUTS, **_instructions_ctx(prod),
             msg=request.args.get("msg"), error=request.args.get("error"))
 
     @app.get("/studio/<int:pid>/shorts")
@@ -6284,8 +6224,8 @@ def create_app(cfg) -> Flask:
                      daemon=True).start()
     from . import look_routes
     look_routes.register(app, cfg, research_job)
-    from . import handover_routes
-    handover_routes.register(app, cfg)
+    from . import instructions_routes
+    instructions_routes.register(app, cfg)
     from . import video_routes
     video_routes.register(app, cfg)
     from . import explainer_routes

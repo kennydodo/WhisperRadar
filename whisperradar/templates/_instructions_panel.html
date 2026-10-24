@@ -1,27 +1,7 @@
-{# included with: hshow (stages to show), prod, job, handover_* and instructions #}
+{# included with: hshow (stages to show), prod, job and instructions #}
 {% set hback = "/studio/" ~ prod["id"] ~ ("/plan" if "plan" in hshow else "") %}
 <div class="panel">
-    <h2 style="margin-top:0">What the judge passes to the writer</h2>
-    <div class="muted" style="font-size:12px; margin-bottom:6px">
-      <b>Style only</b> is the safe default: notes are scrubbed of anything from the
-      original. <b>Full feedback</b> passes everything as the judge wrote it (details of the
-      original can reach the writer). <a href="/handover">Manage templates</a>.
-    </div>
-    <form class="row" method="post" action="/studio/{{ prod['id'] }}/handover">
-      <input type="hidden" name="back" value="{{ hback }}">
-      {% for st in hshow %}
-      <label>{{ st|capitalize }} template
-        <select name="{{ st }}">
-          {% for t in handover_templates %}
-          <option value="{{ t['id'] }}" {{ 'selected' if handover_choice[st] == t['id'] else '' }}
-                  title="{{ t['help'] }}">{{ t['name'] }}</option>
-          {% endfor %}
-        </select>{% if handover_from_channel[st] %} <span class="muted" style="font-size:11px">channel default</span>{% endif %}
-      </label>
-      {% endfor %}
-      <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Save</button>
-    </form>
-    <h2 style="margin:16px 0 4px">Your instructions</h2>
+    <h2 style="margin-top:0">Your instructions</h2>
     <div class="muted" style="font-size:12px; margin-bottom:6px">
       <b>Writer</b>: extra direction the writer follows. <b>Judge</b>: what the judge should look for
       and what it should ignore (in addition to its own rules). Used the next time that stage runs.

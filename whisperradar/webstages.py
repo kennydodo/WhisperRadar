@@ -556,7 +556,6 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     if soft:
         rounds = SOFT_ROUNDS
     hand = handover.for_production(cfg, ctx["prod"], "script")
-    log(f"hand-over template for the script: {hand['name']}")
     writer_dir = handover.instruction(cfg, ctx["prod"], "script")
     judge_dir = handover.instruction(cfg, ctx["prod"], "script_judge")
     if writer_dir or judge_dir:
@@ -634,7 +633,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                          if str(x).strip()],
             "weak_spans": [str(x) for x in (verdict.get("weak_spans") or [])
                            if str(x).strip()]}
-        # what reaches the writer follows the production's hand-over template
+        # what reaches the writer: all parts, scrubbed (handover.py)
         must, unver = studio.verdict_blockers(verdict)
         (judged["must_fix"], judged["feedback"], judged["weak_spans"],
          gone) = handover.script_notes(hand, must, judged["feedback"],

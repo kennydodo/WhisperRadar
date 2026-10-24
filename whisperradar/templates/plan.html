@@ -77,7 +77,6 @@
   <a href="/finished">Finished</a>
   <a href="/my-channels">My Channels</a>
   <a href="/settings">Settings</a>
-  <a href="/handover">Hand-over</a>
 </nav>
 <div class="wrap">
   <p class="muted" style="margin:0 0 6px"><a href="/studio/{{ prod['id'] }}">&larr; back to the production</a></p>
@@ -87,7 +86,7 @@
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
 
-  {% set hshow = ["plan"] %}{% include "_handover_panel.html" %}
+  {% set hshow = ["plan"] %}{% include "_instructions_panel.html" %}
 
   <div class="panel">
     <h2>Generate</h2>
