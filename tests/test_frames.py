@@ -142,6 +142,37 @@ class VerticalMotionTests(unittest.TestCase):
                          briefs.resolve_profile(None, vertical=False).allowed)
 
 
+class ShortsPresetTests(unittest.TestCase):
+    def test_vertical_with_no_preset_gets_shorts(self):
+        prof = briefs.resolve_profile(None, vertical=True)
+        self.assertEqual(prof.key, "shorts")
+        self.assertEqual((prof.min_hold, prof.max_hold), (1.5, 4.0))
+
+    def test_a_chosen_preset_is_respected(self):
+        self.assertEqual(briefs.resolve_profile("static", vertical=True).key, "static")
+
+    def test_landscape_default_is_unchanged(self):
+        self.assertEqual(briefs.resolve_profile(None).key, "standard")
+
+    def test_the_prompt_carries_the_hold_range(self):
+        prof = briefs.resolve_profile(None, vertical=True)
+        text = " ".join(str(v) for v in prof.slots.values())
+        self.assertIn("[[MIN]]", text)
+
+
+class ShortsScriptTests(unittest.TestCase):
+    def test_target_is_short_unless_the_creator_typed_one(self):
+        self.assertEqual(studio.script_target_words(1200, 5000, vertical=True), 130)
+        self.assertEqual(studio.script_target_words(1200, 5000, explicit=90, vertical=True), 90)
+        self.assertEqual(studio.script_target_words(1200, 5000), 1200)
+
+    def test_prompt_gets_the_hook_first_rules_only_when_vertical(self):
+        v = studio.script_prompt("T", "g", "facts", target_words=130, vertical=True)
+        n = studio.script_prompt("T", "g", "facts", target_words=130)
+        self.assertIn("The very first sentence is the hook", v)
+        self.assertNotIn("SHORT-FORM RULES", n)
+
+
 class FlowVerticalMasterTests(unittest.TestCase):
     def test_768x1376_is_cropped_not_padded_for_9_16(self):
         from whisperradar.video import motion_engine

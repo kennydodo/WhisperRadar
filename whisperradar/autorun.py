@@ -599,9 +599,10 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         _log_line("no writing style guide (run the style stage first) - "
                   "writing without one")
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
+    vertical = studio.production_frame(cfg, pid) == "9:16"
     target_words = studio.script_target_words(
         cfg.studio_script_words, source_words,
-        explicit=studio.script_words_override(prod))
+        explicit=studio.script_words_override(prod), vertical=vertical)
     script_path = pdir / "script.md"
     auto_dir = pdir / "versions" / "script"
     auto_dir.mkdir(parents=True, exist_ok=True)
@@ -713,6 +714,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
+            vertical=vertical,
             style_variant=studio.style_variant(cfg, pid=pid),
             extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))

@@ -192,7 +192,7 @@ def _target_words(cfg, pid: int, target_words) -> int:
         conn.close()
     return studio.script_target_words(
         cfg.studio_script_words, len(re.findall(r"\w+", source or "")),
-        explicit=explicit)
+        explicit=explicit, vertical=studio.production_frame(cfg, pid) == "9:16")
 
 
 def _length_window(target: int) -> tuple[int, int]:
@@ -261,6 +261,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         _title(ctx, title), prod["genre"], facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
+        vertical=studio.production_frame(cfg, pid) == "9:16",
         style_variant=studio.style_variant(cfg, pid=pid),
         style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
         extra_direction=packplan.with_plan(cfg, prod,

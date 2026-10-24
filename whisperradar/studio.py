@@ -3169,8 +3169,20 @@ def script_words_override(prod) -> int | None:
     return int(raw) if raw and int(raw) > 0 else None
 
 
+SHORTS_SCRIPT_WORDS = 130   # about 50 seconds spoken, inside the 60 s limit
+
+SHORTS_SCRIPT_RULES = """SHORT-FORM RULES (this is a vertical YouTube Short, about 45-55 seconds spoken):
+- The very first sentence is the hook: a surprising fact, a question or a
+  bold claim. No greeting, no channel intro, no "in this video".
+- One idea only. Short spoken sentences; every sentence moves the story on.
+- Keep a steady, fast rhythm: a new detail or image about every 2-4 seconds.
+- End on the payoff or a line that makes people replay it. No long outro and
+  no "subscribe" padding."""
+
+
 def script_target_words(setting: int | None, source_words: int,
-                        explicit: int | None = None) -> int:
+                        explicit: int | None = None,
+                        vertical: bool = False) -> int:
     """The written script is never planned LONGER than the transcript it is
     based on - a longer target only makes generation slower without adding
     substance. An explicit `studio.script_words` still wins when it is shorter.
@@ -3178,6 +3190,8 @@ def script_target_words(setting: int | None, source_words: int,
     is used as it is, longer than the source or not."""
     if explicit:
         return int(explicit)
+    if vertical:
+        return SHORTS_SCRIPT_WORDS
     wanted = int(setting or 0) or source_words or 1200
     cap = source_words or wanted
     return min(wanted, cap)
@@ -4561,7 +4575,10 @@ def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = 1200,
                   variation: str = "", extra_direction: str = "",
                   style_variant: str | None = None,
-                  style_limit: int = 6000) -> str:
+                  style_limit: int = 6000, vertical: bool = False) -> str:
+    if vertical:
+        extra_direction = ((extra_direction or "").strip() + "\n\n"
+                           + SHORTS_SCRIPT_RULES).strip()
     facts = (source_text or "").strip()[:4000]      # a ~100-word brief
     if facts:
         facts_block = ("BRIEF (what the video is about, and the KEYWORDS you "
