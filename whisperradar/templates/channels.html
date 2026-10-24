@@ -326,6 +326,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>Picture frame
+                <select name="frame">
+                  {% for k, label in frame_labels.items() %}
+                  <option value="{{ k }}" {{ 'selected' if (ch['frame'] or '16:9') == k else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+                <span class="hint">Applies to new productions of this channel. A production keeps its frame once images start.</span>
+              </label>
               {% if flow_accounts_enabled %}
               <label>Flow account
                 <select name="flow_account">

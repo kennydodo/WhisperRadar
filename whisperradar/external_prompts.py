@@ -433,7 +433,8 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
         default_max=eff["shotlist_max_hold_seconds"],
         custom=eff.get("brief_custom"), types=eff.get("brief_types"),
         reveal=eff.get("brief_reveal"), sfx=eff.get("brief_sfx"),
-        text_overlays=eff.get("brief_text_overlays"))
+        text_overlays=eff.get("brief_text_overlays"),
+        vertical=eff.get("frame") == "9:16")
     max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
     total_s = studio._srt_seconds(cues[-1]["end"])
     return {"srt_text": srt_text, "cues": cues, "profile": profile,

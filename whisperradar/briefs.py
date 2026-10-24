@@ -987,7 +987,8 @@ def _resolve_motion(key, min_hold=None, max_hold=None,
 def resolve_profile(key, min_hold=None, max_hold=None,
                     default_max: float | None = None,
                     custom=None, types=None, reveal=None,
-                    sfx=None, text_overlays=None) -> MotionProfile:
+                    sfx=None, text_overlays=None,
+                    vertical=False) -> MotionProfile:
     """The channel's effective profile: its motion preset, the channel's own
     hold range (seconds), its shot-type spec (`types`, see
     normalize_types / effective_types) and whether reveal shots are allowed.
@@ -1018,6 +1019,13 @@ def resolve_profile(key, min_hold=None, max_hold=None,
         prof = replace(prof, sfx=str(sfx).strip())
     if text_overlays:
         prof = replace(prof, text_overlays=True)
+    if vertical:
+        # a 9:16 picture: no sideways pans or tilts, only push in / pull back
+        # / still (frames.VERTICAL_MOTIONS)
+        from .frames import VERTICAL_MOTIONS
+        keep = tuple(c for c in (prof.allowed or MOTION_CODES)
+                     if c in VERTICAL_MOTIONS) or ("ST",)
+        prof = replace(prof, allowed=keep)
     return prof
 
 

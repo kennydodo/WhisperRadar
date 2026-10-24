@@ -1733,6 +1733,7 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
     img_dir.mkdir(exist_ok=True)
     existing = {p.name for p in img_dir.iterdir() if p.is_file()}
     todo = []
+    vertical = production_frame(cfg, pid) == "9:16"
     skip = {m.upper() for m in skip_motion} if skip_motion else set()
     for item in data.get("images", []):
         if not (isinstance(item, dict) and item.get("file")
@@ -1744,7 +1745,9 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
         stem = (item["file"][:-4] if item["file"].lower().endswith(".png")
                 else item["file"])
         motion = stem.rsplit("_", 1)[-1]
-        flow_aspect = FLOWBATCH_ASPECT_BY_MOTION.get(motion)
+        # vertical productions: every shot is 9:16, no per-motion overrides
+        flow_aspect = (None if vertical
+                       else FLOWBATCH_ASPECT_BY_MOTION.get(motion))
         if flow_aspect:
             entry["aspectRatio"] = flow_aspect
         if item.get("refs"):
@@ -1765,7 +1768,8 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
         "outputsDir": str(out_dir),
         "refMode": "reuse",
         "refs": registry,
-        "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
+        "defaults": {"mode": "image", "agent": False,
+                     "aspectRatio": "9:16" if vertical else "16:9",
                      "outputs": 1, "refMode": "reuse"},
         "images": todo,
     }
@@ -2765,6 +2769,24 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
 # 2560x1440, so "2k" keeps today's behaviour. The PREVIEW stays at ImgToVideo's
 # 960x540 draft - the shimmer seen on productions 5/6 was low-resolution
 # B-frames, fixed in ImgToVideo by preview_bframes=0, not a resolution problem.
+def production_frame(cfg, pid: int) -> str:
+    """"16:9" or "9:16" for a production (frames.py); 16:9 if unknown."""
+    from . import db, frames
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            own = (db.get_own_channel(conn, prod["own_channel_id"])
+                   if prod is not None and prod["own_channel_id"] else None)
+            return frames.effective(prod, own)
+        finally:
+            conn.close()
+    except Exception as exc:  # noqa: BLE001 - never block a stage
+        log.debug("could not resolve the frame: %s", exc)
+        return frames.LANDSCAPE
+
+
 RENDER_RESOLUTIONS = {"1080p": (1920, 1080), "2k": (2560, 1440),
                       "4k": (3840, 2160), "flow-native": (1376, 768)}
 RENDER_RESOLUTION_LABELS = {"1080p": "1920x1080 (Full HD)",
@@ -2830,6 +2852,14 @@ def apply_render_resolution(cfg, pid: int) -> None:
         log.debug("could not resolve the render resolution: %s", exc)
         return
     size = RENDER_RESOLUTIONS.get(str(eff.get("render_resolution") or "").lower())
+    from . import frames
+    vertical = production_frame(cfg, pid) == "9:16"
+    if vertical:
+        # vertical: Flow's own 768x1376 stays as it is, anything else is the
+        # Premiere project size (upscaled there)
+        size = (frames.VERTICAL_FLOW_NATIVE
+                if str(eff.get("render_resolution") or "").lower() == "flow-native"
+                else frames.VERTICAL_PROJECT)
     if not size:
         return
     try:
@@ -2842,9 +2872,24 @@ def apply_render_resolution(cfg, pid: int) -> None:
     output = data.get("output")
     if not isinstance(output, dict):
         output = {}
-    if output.get("width") == size[0] and output.get("height") == size[1]:
+    changed = False
+    if vertical:
+        # 360p preview by default (upscaled to 1080p in Premiere); a preview
+        # size somebody set on purpose is left alone
+        render = data.get("render")
+        if not isinstance(render, dict):
+            render = {}
+        if (render.get("preview_width"), render.get("preview_height")) in (
+                (None, None), (960, 540)):
+            render["preview_width"], render["preview_height"] = \
+                frames.VERTICAL_PREVIEW
+            data["render"] = render
+            changed = True
+    if output.get("width") != size[0] or output.get("height") != size[1]:
+        output["width"], output["height"] = size
+        changed = True
+    if not changed:
         return
-    output["width"], output["height"] = size
     data["output"] = output
     data.setdefault("schema_version", 1)
     data.setdefault("naming", {"image_extensions": [".png", ".jpg", ".jpeg",

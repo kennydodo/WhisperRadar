@@ -62,8 +62,13 @@ def _even(value: float) -> int:
     return _round_away(value / 2) * 2
 
 
+NEAR_ASPECT_TOLERANCE = 0.01
+
+
 def _canvas_rect(image_width, image_height, out_aspect) -> m.Rect:
-    if image_width / image_height < out_aspect:
+    # Flow's 9:16 master is 768x1376 (0.558), a hair narrower than 9:16
+    # (0.5625): crop that sliver instead of padding black edges
+    if image_width / image_height < out_aspect * (1 - NEAR_ASPECT_TOLERANCE):
         canvas_height = image_height
         canvas_width = _even(image_height * out_aspect)
     else:
