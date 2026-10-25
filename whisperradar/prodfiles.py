@@ -113,7 +113,15 @@ def needs_migration(pdir) -> bool:
     if not pdir.is_dir():
         return False
     return bool(_pending(pdir) or _junk(pdir)
-                or any(not _same_file(o, c) for o, c in _duplicate_pairs(pdir)))
+                or any(not _same_file(o, c) and _identical(o, c)
+                       for o, c in _duplicate_pairs(pdir)))
+
+
+def _identical(a: Path, b: Path) -> bool:
+    try:
+        return a.stat().st_size == b.stat().st_size and filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
 
 
 def link_or_copy(src: Path, dst: Path) -> None:

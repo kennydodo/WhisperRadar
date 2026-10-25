@@ -197,16 +197,25 @@ class GPTPackagingTests(unittest.TestCase):
         page = self.client.get("/finished")
         self.assertIn(b"4 thumbnails", page.data)
         self.assertIn(b"kit ready", page.data)
+        for name in ("title.txt", "titles.txt", "description.txt"):
+            url = f"/studio/file/{self.pid}/packaging/{name}"
+            self.assertIn(url.encode(), page.data)
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            response.close()
         page = self.client.get(f"/studio/{self.pid}/thumbnails")
         self.assertIn(b"Choose this one", page.data)
         self.assertNotIn(b"Save changes and re-compose", page.data)
 
     def test_existing_files_are_backed_up_and_precomposed_images_survive_save(self):
         (self.pdir / "description.txt").write_text("My edited description", encoding="utf-8")
+        old_kit = {"title": "My previous kit", "description": "Keep my old kit"}
+        packaging.save_kit(self.pdir, old_kit)
         job = self.job()
         gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
         backup = thumbnails.thumbs_dir(self.pdir) / "jobs" / job["id"] / "previous-description.txt"
         self.assertEqual(backup.read_text(), "My edited description")
+        self.assertEqual(json.loads((backup.parent / "previous-publish_kit.json").read_text()), old_kit)
         data = thumbnails.load_thumbs(self.pdir)
         final = self.pdir / data["concepts"][0]["final"]
         before = final.read_bytes()

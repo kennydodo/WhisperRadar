@@ -3131,6 +3131,8 @@ def create_app(cfg) -> Flask:
                 "kit": kit if kit.get("title") else None,
                 "gpt_job": gpt_jobs.get(p["id"]),
                 "has_titles_file": prodfiles.path(studio.prod_dir(cfg, p["id"]), "titles.txt").is_file(),
+                "packaging_files": {name: prodfiles.relative(studio.prod_dir(cfg, p["id"]), name)
+                                    for name in ("title.txt", "titles.txt", "description.txt")},
             })
         due_results = len(results_mod.due(conn))
         conn.close()

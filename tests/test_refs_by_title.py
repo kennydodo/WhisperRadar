@@ -78,6 +78,35 @@ class RecordTitles(Tmp):
 
 
 class JobCarriesCaptions(Tmp):
+    def test_reference_paths_survive_job_folder_move(self):
+        # CH_JOE is an alias for an outfit filename: do not replace it with
+        # the stem, or look for refs/ below the job's flow/ directory.
+        outfit = self.pdir / "refs" / "CH_JOE_casual.png"
+        outfit.write_bytes(b"x")
+        external = self.pdir / "external.png"
+        external.write_bytes(b"x")
+        data = {"refs": {"CH_JOE": "refs/CH_JOE_casual.png",
+                         "CH_OTHER": str(external)},
+                "images": [{"file": "S01_01_SCN_ZI.png", "prompt": "p",
+                            "refs": ["CH_JOE", "CH_OTHER"]}]}
+        source = json.dumps(data)
+        (self.pdir / "shotlist.json").write_text(source, encoding="utf-8")
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                if legacy:
+                    prodfiles.path(self.pdir, "flowbatch.json").unlink()
+                    (self.pdir / "flowbatch.json").write_text("{}", encoding="utf-8")
+                job_path, _ = studio.prepare_flowbatch_job(
+                    load_config(), self.pdir, 1, project_url=URL)
+                job = json.loads(job_path.read_text(encoding="utf-8"))
+                self.assertEqual(job_path.parent, self.pdir if legacy else self.pdir / "flow")
+                self.assertEqual(job["refs"]["CH_JOE"], str(outfit.resolve()))
+                self.assertEqual(job["refs"]["CH_OTHER"], str(external.resolve()))
+                for value in job["refs"].values():
+                    self.assertTrue(Path(value).is_absolute())
+                    self.assertTrue((job_path.parent / value).is_file())
+        self.assertEqual((self.pdir / "shotlist.json").read_text(encoding="utf-8"), source)
+
     def write(self, record_url):
         (self.pdir / "refs" / "CH_APES.png").write_bytes(b"x")
         prodfiles.wpath(self.pdir, studio.REFS_PROJECT_RECORD).write_text(json.dumps(
