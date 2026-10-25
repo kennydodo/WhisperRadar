@@ -91,6 +91,16 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual((self.pdir / "images" / "S01_01_SCN_ZI.png").read_bytes(), b"E" * 4000)
         self.assertEqual((self.pdir / "flow_images" / "S01_01_SCN_ZI.png").read_bytes(), b"P" * 4000)
 
+    def test_different_copies_alone_do_not_need_migration(self):
+        import shutil
+        pdir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, pdir)
+        for folder, content in (("images", b"edited"), ("flow_images", b"source")):
+            (pdir / folder).mkdir()
+            (pdir / folder / "shot.png").write_bytes(content)
+        self.assertFalse(prodfiles.needs_migration(pdir))
+        self.assertEqual(prodfiles.migrate(pdir), [])
+
 
 class ButtonTests(unittest.TestCase):
     def test_button_shows_for_an_old_folder_and_migrates_it(self):

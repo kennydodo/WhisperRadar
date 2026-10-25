@@ -147,7 +147,7 @@
             {% if item.thumbs %}<div class="muted" style="font-size:12px">{{ item.thumbs.count }} thumbnail(s) exist, so this error may be out of date.</div>{% endif %}
             <form method="post" action="/studio/{{ item.row['id'] }}/gpt-pro/clear-error" style="margin-top:4px"><button type="submit" class="ghost" title="Remove this error. Use Generate with GPT Pro to try again.">Clear error</button></form>
             {% endif %}{% endif %}
-            {% if item.gpt_job and item.gpt_job.status == 'complete' %}<div style="font-size:12px"><a href="/studio/file/{{ item.row['id'] }}/title.txt" download>title</a> {% if item.has_titles_file %}&middot; <a href="/studio/file/{{ item.row['id'] }}/titles.txt" download>all titles</a>{% endif %} &middot; <a href="/studio/file/{{ item.row['id'] }}/description.txt" download>description</a></div>{% endif %}
+            {% if item.gpt_job and item.gpt_job.status == 'complete' %}<div style="font-size:12px"><a href="/studio/file/{{ item.row['id'] }}/{{ item.packaging_files['title.txt'] }}" download>title</a> {% if item.has_titles_file %}&middot; <a href="/studio/file/{{ item.row['id'] }}/{{ item.packaging_files['titles.txt'] }}" download>all titles</a>{% endif %} &middot; <a href="/studio/file/{{ item.row['id'] }}/{{ item.packaging_files['description.txt'] }}" download>description</a></div>{% endif %}
           </td>
           <td class="actions">
             <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>

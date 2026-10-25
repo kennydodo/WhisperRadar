@@ -1724,11 +1724,16 @@ def prepare_flowbatch_job(cfg, pid_dir: Path, pid: int,
     registry = {k: v for k, v in (data.get("refs") or {}).items()
                 if isinstance(v, str)} if isinstance(data.get("refs"), dict) \
         else {}
+    # Shotlist paths belong to the production, while FlowBatch resolves paths
+    # against its job directory (now flow/). Keep registry aliases intact and
+    # make the transport paths independent of where the job file is stored.
+    registry = {name: str((pid_dir / value).resolve()) if value.strip()
+                else value for name, value in registry.items()}
     refs_dir = pid_dir / "refs"
     if refs_dir.exists():
         for p in sorted(refs_dir.iterdir()):
             if p.is_file():
-                registry.setdefault(p.stem, str(p))
+                registry.setdefault(p.stem, str(p.resolve()))
     img_dir = pid_dir / "images"
     img_dir.mkdir(exist_ok=True)
     existing = {p.name for p in img_dir.iterdir() if p.is_file()}

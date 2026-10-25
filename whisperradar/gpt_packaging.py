@@ -367,7 +367,7 @@ def complete(cfg, jid, token, result):
         # Unique output paths and backups preserve older images/user edits.
         folder = thumbnails.thumbs_dir(pdir) / "jobs" / jid
         folder.mkdir(parents=True, exist_ok=True)
-        for previous in (pdir / packaging.KIT_FILE,
+        for previous in (packaging.kit_path(pdir),
                          thumbnails.thumbs_dir(pdir) / thumbnails.THUMBS_FILE,
                          prodfiles.path(pdir, "description.txt"), prodfiles.path(pdir, "title.txt"), prodfiles.path(pdir, "titles.txt")):
             backup = folder / ("previous-" + previous.name)
