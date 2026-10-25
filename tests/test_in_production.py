@@ -166,10 +166,41 @@ class InProductionTests(unittest.TestCase):
 
         self.assertIn('name="sort"', self.client.get("/in-production").get_data(as_text=True))
         self.assertEqual(order(""), ["C", "A", "B"])                    # channel name, then id
-        self.assertEqual(order("?sort=stage"), ["B", "C", "A"])        # script, audio, images
-        self.assertEqual(order("?sort=created"), ["B", "C", "A"])      # newest first
-        self.assertEqual(order("?sort=created_old"), ["A", "C", "B"])
+        self.assertEqual(order("?group=none&sort=stage"), ["B", "C", "A"])        # script, audio, images
+        self.assertEqual(order("?group=none&sort=created"), ["B", "C", "A"])      # newest first
+        self.assertEqual(order("?group=none&sort=created_old"), ["A", "C", "B"])
         self.assertEqual(order("?sort=nonsense"), ["C", "A", "B"])
+
+    def test_group_by_channel_and_last_updated(self):
+        other = db.create_own_channel(self.conn, "Aardvark Channel")
+        a = self._make("Row A")
+        b = self._make("Row B")
+        c = self._make("Row C")
+        db.update_production(self.conn, c, own_channel_id=other)
+        for pid, stage, upd in ((a, "images", "2026-10-01 10:00:00"),
+                                (b, "images", "2026-10-05 10:00:00"),
+                                (c, "audio", "2026-10-03 10:00:00")):
+            db.update_production(self.conn, pid, stage=stage)
+            self.conn.execute("UPDATE productions SET updated_at=? WHERE id=?", (upd, pid))
+        self.conn.commit()
+
+        def order(q):
+            html = self.client.get("/in-production" + q).get_data(as_text=True)
+            pos = {t: html.index(t) for t in ("Row A", "Row B", "Row C")}
+            return [t[-1] for t in sorted(pos, key=pos.get)]
+
+        html = self.client.get("/in-production").get_data(as_text=True)
+        self.assertIn('name="group"', html)
+        self.assertIn("grouprow", html)                       # grouped by default
+        self.assertIn("1 in progress", html)
+        # grouped: channels A-Z, rows inside keep the sort (newest update first)
+        self.assertEqual(order("?sort=updated"), ["C", "B", "A"])
+        # stage sort inside a group: same stage -> most recently updated first
+        self.assertEqual(order("?sort=stage"), ["C", "B", "A"])
+        # ungrouped: one flat list in the chosen order
+        flat = self.client.get("/in-production?group=none&sort=updated").get_data(as_text=True)
+        self.assertNotIn('class="grouprow"', flat)
+        self.assertEqual(order("?group=none&sort=updated"), ["B", "C", "A"])
 
 
 if __name__ == "__main__":

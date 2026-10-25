@@ -5787,6 +5787,7 @@ def create_app(cfg) -> Flask:
                 # channel, say) is shown grayed out
                 "skipped": skipped,
                 "created": (p["created_at"] or "")[:16],
+                "updated": (p["updated_at"] or p["created_at"] or "")[:16],
                 "failed": p["status"] == "failed",
                 "next": nxt,
                 "job": ({"kind": job.kind, "stage": job.stage}
@@ -5794,8 +5795,12 @@ def create_app(cfg) -> Flask:
         sort = request.args.get("sort") or "channel"
         stage_pos = {n: i for i, n in enumerate(db.STAGES)}
         if sort == "stage":
-            rows.sort(key=lambda r: (stage_pos.get(r["stage"], 99),
-                                     r["channel"].lower(), r["id"]))
+            # earliest stage first; inside a stage the most recently touched
+            # production on top (stable sorts: last key applied first)
+            rows.sort(key=lambda r: (r["updated"], r["id"]), reverse=True)
+            rows.sort(key=lambda r: stage_pos.get(r["stage"], 99))
+        elif sort == "updated":          # most recently touched first
+            rows.sort(key=lambda r: (r["updated"], r["id"]), reverse=True)
         elif sort == "created":          # newest first
             rows.sort(key=lambda r: (r["created"], r["id"]), reverse=True)
         elif sort == "created_old":
@@ -5803,6 +5808,16 @@ def create_app(cfg) -> Flask:
         else:
             sort = "channel"
             rows.sort(key=lambda r: (r["channel"].lower(), r["id"]))
+        group = "none" if request.args.get("group") == "none" else "channel"
+        groups = []
+        if group == "channel":
+            # channels A-Z; each keeps the order the chosen sort gave its rows
+            by_channel: dict[str, list] = {}
+            for r in rows:
+                by_channel.setdefault(r["channel"], []).append(r)
+            groups = [{"name": n, "rows": by_channel[n]}
+                      for n in sorted(by_channel, key=str.lower)]
+            rows = [r for g in groups for r in g["rows"]]
         conn = db.connect(cfg.db_path)
         try:
             import_channels = [(c["id"], c["name"]) for c in db.list_own_channels(conn)
@@ -5810,6 +5825,8 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         return render_template("in_production.html", rows=rows, sort=sort,
+                               group=group, groups=groups,
+                               chan_counts={g["name"]: len(g["rows"]) for g in groups},
                                import_channels=import_channels,
                                any_running=any(r["job"] for r in rows),
                                msg=request.args.get("msg"),

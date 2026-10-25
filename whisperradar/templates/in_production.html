@@ -100,16 +100,25 @@
     <select id="sortsel" name="sort" onchange="try{localStorage.setItem('wr_prod_sort',this.value)}catch(e){}this.form.submit()">
       <option value="channel"{% if sort == 'channel' %} selected{% endif %}>Channel name</option>
       <option value="stage"{% if sort == 'stage' %} selected{% endif %}>Stage (earliest first)</option>
+      <option value="updated"{% if sort == 'updated' %} selected{% endif %}>Last updated (newest first)</option>
       <option value="created"{% if sort == 'created' %} selected{% endif %}>Created (newest first)</option>
       <option value="created_old"{% if sort == 'created_old' %} selected{% endif %}>Created (oldest first)</option>
+    </select>
+    <label for="groupsel" class="muted small" style="margin-left:10px">Group by</label>
+    <select id="groupsel" name="group" onchange="try{localStorage.setItem('wr_prod_group',this.value)}catch(e){}this.form.submit()">
+      <option value="channel"{% if group == 'channel' %} selected{% endif %}>Channel</option>
+      <option value="none"{% if group == 'none' %} selected{% endif %}>No grouping</option>
     </select>
   </form>
   <script>
   (function(){ try {
-    var saved = localStorage.getItem('wr_prod_sort');
-    if (saved && !location.search.match(/[?&]sort=/) && saved !== 'channel') {
-      location.replace('/in-production?sort=' + encodeURIComponent(saved));
-    }
+    var q = new URLSearchParams(location.search);
+    var sort = localStorage.getItem('wr_prod_sort');
+    var group = localStorage.getItem('wr_prod_group');
+    var go = false;
+    if (sort && !q.has('sort') && sort !== 'channel') { q.set('sort', sort); go = true; }
+    if (group === 'none' && !q.has('group')) { q.set('group', 'none'); go = true; }
+    if (go) location.replace('/in-production?' + q.toString());
   } catch(e){} })();
   </script>
   {% endif %}
@@ -118,10 +127,18 @@
   {% else %}
   <div class="panel" style="padding:0;overflow-x:auto">
   <table>
-    <thead><tr><th>Channel</th><th>ID</th><th>Title</th><th>Stage</th><th>Created</th><th></th></tr></thead>
+    <thead><tr><th>Channel</th><th>ID</th><th>Title</th><th>Stage</th><th>Updated</th><th>Created</th><th></th></tr></thead>
     <tbody>
     {% for r in rows %}
-    <tr>
+    {% if group == 'channel' and (loop.first or rows[loop.index0 - 1].channel != r.channel) %}
+    <tr class="grouprow" data-group="{{ r.channel }}" style="cursor:pointer" title="Click to collapse or expand">
+      <td colspan="7" style="background:var(--panel2, rgba(255,255,255,.04)); font-weight:600">
+        <span class="gtoggle">&#9662;</span> {{ r.channel }}
+        <span class="muted small" style="font-weight:400">&middot; {{ chan_counts.get(r.channel, 0) }} in progress</span>
+      </td>
+    </tr>
+    {% endif %}
+    <tr class="prodrow" data-chan="{{ r.channel }}">
       <td><span class="badge chan">{{ r.channel }}</span></td>
       <td>#{{ r.id }}</td>
       <td><a href="/studio/{{ r.id }}">{{ r.title }}</a></td>
@@ -133,6 +150,7 @@
         {% elif r.next %}<div class="muted small">{% if r.skipped %}{{ r.stage }} skipped ({{ r.skipped }}); next: {{ r.next.stage }} - {% endif %}{{ r.next.detail[:90] }}</div>
         {% else %}<div class="muted small">all stages done - ready for review</div>{% endif %}
       </td>
+      <td class="muted small" style="white-space:nowrap">{{ r.updated }}</td>
       <td class="muted small" style="white-space:nowrap">{{ r.created }}</td>
       <td class="actions">
         {% if r.next and r.next.action == 'run' and not r.job %}
@@ -151,6 +169,30 @@
   </div>
   {% endif %}
 </div>
+<script>
+(function(){ try {
+  var KEY = 'wr_prod_collapsed';
+  var hidden = JSON.parse(localStorage.getItem(KEY) || '[]');
+  function apply() {
+    document.querySelectorAll('tr.grouprow').forEach(function (g) {
+      var off = hidden.indexOf(g.dataset.group) >= 0;
+      g.querySelector('.gtoggle').innerHTML = off ? '&#9656;' : '&#9662;';
+    });
+    document.querySelectorAll('tr.prodrow').forEach(function (r) {
+      r.style.display = hidden.indexOf(r.dataset.chan) >= 0 ? 'none' : '';
+    });
+  }
+  document.querySelectorAll('tr.grouprow').forEach(function (g) {
+    g.addEventListener('click', function () {
+      var i = hidden.indexOf(g.dataset.group);
+      if (i >= 0) hidden.splice(i, 1); else hidden.push(g.dataset.group);
+      try { localStorage.setItem(KEY, JSON.stringify(hidden)); } catch (e) {}
+      apply();
+    });
+  });
+  apply();
+} catch (e) {} })();
+</script>
 {% if any_running %}<script>setTimeout(function(){ location.reload(); }, 15000);</script>{% endif %}
 <script src="{{ url_for('static', filename='keepscroll.js') }}"></script>
 </body>
