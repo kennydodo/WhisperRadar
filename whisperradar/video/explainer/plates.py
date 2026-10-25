@@ -120,6 +120,25 @@ def _hex_rgb(color: str):
     return tuple(int(c[k:k + 2], 16) for k in (0, 2, 4))
 
 
+def crop_to_content(plates: list) -> tuple:
+    """Crop full-canvas plates to the box that holds all their pixels.
+
+    A text plate used to be as big as the whole frame (8 MB at 1080p) with a
+    few words in it, and a typed-on label has one per two characters: ffmpeg
+    held every one of them in memory. All plates of one object are cropped to
+    the SAME box (the union), so they still line up frame to frame.
+    Returns (cropped plates, (x, y) of the box on the canvas)."""
+    box = None
+    for p in plates:
+        b = p.getbbox()
+        if b:
+            box = b if box is None else (min(box[0], b[0]), min(box[1], b[1]),
+                                         max(box[2], b[2]), max(box[3], b[3]))
+    if box is None:                      # nothing drawn: keep a 1px plate
+        return [p.crop((0, 0, 1, 1)) for p in plates], (0, 0)
+    return [p.crop(box) for p in plates], (box[0], box[1])
+
+
 def render_scene_plates(laid: LaidOutScene, canvas: tuple, out_dir: str,
                         theme, project_folder: str = "") -> dict:
     """-> {object_id: (paths, kind, origin)}.
@@ -139,12 +158,13 @@ def render_scene_plates(laid: LaidOutScene, canvas: tuple, out_dir: str,
             else:
                 plates = [text_plate(lo.text, canvas)]
                 kind = "single"
+            plates, origin = crop_to_content(plates)
             paths = []
             for i, p in enumerate(plates):
                 path = os.path.join(out_dir, f"{spec.id}_{i:03d}.png")
                 p.save(path)
                 paths.append(path)
-            result[spec.id] = (paths, kind, (0, 0))
+            result[spec.id] = (paths, kind, origin)
         elif spec.type == sc.CALLOUT and lo.text is not None:
             img = callout_plate(lo.text, lo.box_px, theme,
                                 number=None, outline_color=theme.foreground)

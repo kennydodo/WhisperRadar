@@ -26,9 +26,14 @@ from .timing import CompiledScene
 
 
 def needs_pipe(scene: CompiledScene) -> bool:
-    return any(o.type in (sc.PATH, sc.BAR, sc.COUNTER, sc.GRID, sc.BLOCKS,
-                          sc.STROKE_ASSET, sc.HANDWRITING)
-               for o in scene.spec.objects)
+    if any(o.type in (sc.PATH, sc.BAR, sc.COUNTER, sc.GRID, sc.BLOCKS,
+                      sc.STROKE_ASSET, sc.HANDWRITING)
+           for o in scene.spec.objects):
+        return True
+    # A typed-on label is ~25 plates. In the filtergraph each one is its own
+    # looped input and overlay (ffmpeg held 1.5 GB for one label and ran out
+    # of memory with six); the frame pipe composites them one at a time.
+    return any(c.event.action == sc.TYPE_ON for c in scene.events)
 
 
 def _f(v) -> str:
