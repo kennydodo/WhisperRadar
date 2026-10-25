@@ -75,11 +75,15 @@ studio:
   # engines\flowbatch (null = that folder). Run `npm install` and
   # `npm run login` there once; the signed-in Google session lives in its
   # gitignored profile\ folder.
-  flowbatch_repo: null
+  # This checkout uses the sibling clone at D:\Repos\FlowBatch instead.
+  flowbatch_repo: D:\Repos\FlowBatch
   # The Renderly web API (import/upscale, PL/PR/PV wide shots), now part of
   # this repo at engines\renderly-api (null = that folder). Its packages are
   # in requirements.txt.
   renderly_api_dir: null
+  # Preview render + NLE export: python = whisperradar.video (draws text
+  # overlays; the C# ImgToVideo port ignores them), csharp = ImgToVideo.Cli.
+  video_engine: python
   # Default Google Flow project URL for its jobs. Empty = FlowBatch's own
   # config/settings.json projectUrl, else Flow's most recent project.
   flowbatch_project_url: null
