@@ -40,6 +40,7 @@
   .badge.genre { background: rgba(79,140,255,.15); color: var(--accent); }
   .badge.chan { background: rgba(224,169,63,.15); color: var(--amber); }
   .badge.ready { background: rgba(224,169,63,.15); color: var(--amber); }
+  .badge.youtube_queued { background: rgba(79,140,255,.15); color: var(--accent); }
   .badge.published { background: rgba(63,185,111,.15); color: var(--green); }
   .tabs { display:flex; gap:6px; margin-bottom:14px; }
   .tabs a { padding:5px 12px; border-radius:20px; font-size:12px;
@@ -89,8 +90,9 @@
   </form>
 
   <div class="tabs">
-    <a href="?{{ qs(status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All ({{ ready_count + published_count }})</a>
+    <a href="?{{ qs(status='all') }}" class="{{ 'active' if status_filter == 'all' }}">All ({{ ready_count + queued_count + published_count }})</a>
     <a href="?{{ qs(status='ready') }}" class="{{ 'active' if status_filter == 'ready' }}">Ready to publish ({{ ready_count }})</a>
+    <a href="?{{ qs(status='youtube_queued') }}" class="{{ 'active' if status_filter == 'youtube_queued' }}">Queued on YouTube ({{ queued_count }})</a>
     <a href="?{{ qs(status='published') }}" class="{{ 'active' if status_filter == 'published' }}">Published ({{ published_count }})</a>
   </div>
 
@@ -128,6 +130,8 @@
             <span class="badge published" title="Published {{ item.row['published_at'] }}">published</span>
             {% for r in item.results %}{% if loop.last %}<div class="muted" style="font-size:12px;margin-top:3px" title="views {{ r.horizon }} after publishing{{ ' (read late)' if r.late else '' }}">{{ r.horizon }}: {{ r.views|int }} views{% if r.multiplier %} &middot; <b style="color:{{ 'var(--green)' if r.multiplier >= 1.5 else ('var(--red)' if r.multiplier < 0.7 else 'inherit') }}">{{ '%.1f' % r.multiplier }}x your norm</b>{% endif %}</div>{% endif %}{% endfor %}
             {% if not item.row['youtube_video_id'] %}<form method="post" action="/studio/{{ item.row['id'] }}/youtube-link" style="margin-top:4px"><input type="text" name="youtube_url" placeholder="YouTube link" style="width:130px;font-size:12px;padding:2px 6px"> <button type="submit" class="ghost" style="padding:2px 8px">track</button></form>{% endif %}
+            {% elif item.row["status"] == "youtube_queued" %}
+            <span class="badge youtube_queued" title="Queued {{ item.row['youtube_queued_at'] }}">Queued on YouTube</span>
             {% else %}
             <span class="badge ready">ready to publish</span>
             {% endif %}
@@ -152,6 +156,11 @@
           <td class="actions">
             <a class="btn" href="/studio/{{ item.row['id'] }}">Open</a>
             {% if item.row["status"] == "ready" %}
+            <form method="post" action="/studio/{{ item.row['id'] }}/youtube-queue"><button type="submit" class="ghost" title="Record that you have queued or scheduled this video on YouTube">Mark queued</button></form>
+            {% elif item.row["status"] == "youtube_queued" %}
+            <form method="post" action="/studio/{{ item.row['id'] }}/youtube-unqueue"><button type="submit" class="ghost">Undo queued</button></form>
+            {% endif %}
+            {% if item.row["status"] in ("ready", "youtube_queued") %}
             <form method="post" action="/studio/{{ item.row['id'] }}/publish" style="display:inline"
                   {% if not (item.kit and item.kit.status == 'ready') %}onsubmit="return wrConfirmSubmit(this, 'There is no finished publish kit (title, description, hashtags) yet. Mark it published anyway?')"{% endif %}>
               <input type="text" name="youtube_url" placeholder="YouTube link (optional)" style="width:150px;font-size:12px;padding:3px 6px">

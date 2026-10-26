@@ -2975,7 +2975,7 @@ def create_app(cfg) -> Flask:
         finished_count = 0
         counts: dict[int, int] = {}
         for p in db.list_productions(conn):
-            if p["status"] in ("ready", "published"):
+            if p["status"] in ("ready", "youtube_queued", "published"):
                 # Approved/published productions move to their own
                 # "Finished" page instead of staying mixed into this
                 # in-progress list.
@@ -3086,7 +3086,7 @@ def create_app(cfg) -> Flask:
         if direction not in ("asc", "desc"):
             direction = "desc"
         status_filter = request.args.get("status") or "all"
-        if status_filter not in ("all", "ready", "published"):
+        if status_filter not in ("all", "ready", "youtube_queued", "published"):
             status_filter = "all"
 
         # every channel by default; ?channel=<id> narrows to one
@@ -3105,16 +3105,18 @@ def create_app(cfg) -> Flask:
         if scope not in (None, 0) and scope not in own_by_id:
             scope = None                      # that channel is gone
         rows = [p for p in db.list_productions(conn)
-                if p["status"] in ("ready", "published")
+                if p["status"] in ("ready", "youtube_queued", "published")
                 and (scope is None or (p["own_channel_id"] or 0) == scope)]
         try:
             gpt_jobs = gpt_packaging.latest_for(cfg, [p["id"] for p in rows])
         except (ValueError, OSError, sqlite3.Error):
             gpt_jobs = {}
-        all_items, ready_count, published_count = [], 0, 0
+        all_items, ready_count, queued_count, published_count = [], 0, 0, 0
         for p in rows:
             if p["status"] == "ready":
                 ready_count += 1
+            elif p["status"] == "youtube_queued":
+                queued_count += 1
             else:
                 published_count += 1
             kit = packaging.load_kit(studio.prod_dir(cfg, p["id"]))
@@ -3159,7 +3161,7 @@ def create_app(cfg) -> Flask:
         resp = make_response(render_template(
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
             status_filter=status_filter, ready_count=ready_count,
-            published_count=published_count, due_results=due_results,
+            published_count=published_count, queued_count=queued_count, due_results=due_results,
             scope=scope,
             channel_options=[{"id": c["id"], "name": c["name"]}
                              for c in own_channels if c["active"]],
@@ -3274,6 +3276,22 @@ def create_app(cfg) -> Flask:
         except (ValueError, OSError, sqlite3.Error) as exc:
             return jsonify(error=str(exc)), 400
 
+    @app.post("/studio/<int:pid>/youtube-queue")
+    @app.post("/studio/<int:pid>/youtube-unqueue")
+    def studio_youtube_queue(pid):
+        queued = request.path.endswith("/youtube-queue")
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            changed = db.mark_production_youtube_queued(conn, pid, queued)
+            if not changed:
+                return redirect("/finished?error=" + quote("Production is not in the required state"))
+            note = "Queued on YouTube" if queued else "Moved back to ready to publish"
+            db.add_step(conn, pid, "review", "manual", detail=note)
+        finally:
+            conn.close()
+        return redirect("/finished?msg=" + quote(note))
+
     @app.post("/studio/<int:pid>/publish")
     def studio_publish(pid):
         conn = db.connect(cfg.db_path)
@@ -3282,9 +3300,9 @@ def create_app(cfg) -> Flask:
             prod = db.get_production(conn, pid)
             if not prod:
                 return redirect("/finished?error=" + quote("Unknown production"))
-            if prod["status"] != "ready":
+            if prod["status"] not in ("ready", "youtube_queued"):
                 return redirect("/finished?error="
-                                + quote("Only a ready production can be published"))
+                                + quote("Only a ready or YouTube-queued production can be published"))
             db.mark_production_published(conn, pid, published=True)
             db.add_step(conn, pid, "review", "manual", detail="published")
             link = (request.form.get("youtube_url") or "").strip()
@@ -4362,7 +4380,7 @@ def create_app(cfg) -> Flask:
             if idx == 0:
                 return redirect(f"/studio/{pid}?error=Already+at+the+first+stage")
             updates = {"stage": db.STAGES[idx - 1]}
-            if prod["status"] == "ready":
+            if prod["status"] in ("ready", "youtube_queued"):
                 updates["status"] = "active"
             db.update_production(conn, pid, **updates)
         finally:
@@ -5757,7 +5775,7 @@ def create_app(cfg) -> Flask:
             paused = {c["id"] for c in channels if not c["active"]}
             # finished work and paused channels do not belong here
             prods = [p for p in db.list_productions(conn)
-                     if p["status"] not in ("ready", "published")
+                     if p["status"] not in ("ready", "youtube_queued", "published")
                      and p["own_channel_id"] not in paused]
         finally:
             conn.close()

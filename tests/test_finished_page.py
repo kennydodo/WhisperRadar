@@ -52,6 +52,43 @@ class FinishedPageTests(unittest.TestCase):
                              status=status)
         return pid
 
+    def test_youtube_queue_lifecycle(self):
+        pid = self._make("Scheduled Video", self.chan_a, status="ready")
+        self.client.post(f"/studio/{pid}/youtube-queue")
+        row = db.get_production(self.conn, pid)
+        self.assertEqual(row["status"], "youtube_queued")
+        self.assertTrue(row["youtube_queued_at"])
+        self.assertIsNone(row["published_at"])
+        page = self.client.get("/finished?status=youtube_queued").data
+        self.assertIn(b"Scheduled Video", page)
+        self.assertIn(b"Undo queued", page)
+        self.assertIn(b"Mark published", page)
+        self.assertNotIn(b"Scheduled Video", self.client.get("/studio").data)
+        self.client.post(f"/studio/{pid}/youtube-unqueue")
+        row = db.get_production(self.conn, pid)
+        self.assertEqual(row["status"], "ready")
+        self.assertIsNone(row["youtube_queued_at"])
+        self.client.post(f"/studio/{pid}/youtube-queue")
+        self.client.post(f"/studio/{pid}/publish")
+        self.assertEqual(db.get_production(self.conn, pid)["status"], "published")
+        self.assertTrue(db.get_production(self.conn, pid)["published_at"])
+        self.client.post(f"/studio/{pid}/youtube-queue")
+        self.assertEqual(db.get_production(self.conn, pid)["status"], "published")
+
+    def test_queued_source_has_a_label_in_studio(self):
+        pid = self._make("Queued source", self.chan_a, status="youtube_queued",
+                         source_video_id="queued-video")
+        tags = db.source_use_tags(self.conn, self.chan_a,
+                                  [{"video_id": "queued-video", "produced": 0}])
+        self.assertEqual(tags["queued-video"], "queued on YouTube")
+        self.client.set_cookie("wr_channel", str(self.chan_a))
+        self.assertEqual(self.client.get("/studio").status_code, 200)
+
+    def test_active_production_cannot_be_youtube_queued(self):
+        pid = self._make("Working", self.chan_a)
+        self.client.post(f"/studio/{pid}/youtube-queue")
+        self.assertEqual(db.get_production(self.conn, pid)["status"], "active")
+
     def test_a_ready_production_is_not_on_the_studio_page(self):
         pid = self._make("Ready One", self.chan_a, status="ready")
         resp = self.client.get("/studio")

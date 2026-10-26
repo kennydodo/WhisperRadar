@@ -325,6 +325,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
     # to YouTube) - distinct from status="ready", which only means it
     # passed review and is waiting to be published
     _add_column_if_missing(conn, "productions", "published_at", "TEXT")
+    _add_column_if_missing(conn, "productions", "youtube_queued_at", "TEXT")
     _add_column_if_missing(conn, "productions", "youtube_video_id", "TEXT")
     # FlowImagesGen was renamed to FlowBatch (2026-09-25); carry the stored
     # engine choice over so channels keep their engine
@@ -789,6 +790,7 @@ def get_videos(conn, status: str | None = None, genre: str | None = None,
 # what the topic picker shows next to a source that is taken, by the status of
 # the production built on it
 SOURCE_USE_LABELS = {"active": "in production", "ready": "ready",
+                     "youtube_queued": "queued on YouTube",
                      "published": "published", "failed": "failed"}
 
 
@@ -814,7 +816,7 @@ def source_use_tags(conn, own_channel_id, videos) -> dict[str, str]:
             f" WHERE source_video_id IS NOT NULL AND {where}", params
         ).fetchall()
         best: dict[str, int] = {}
-        order = ["active", "ready", "published", "failed"]
+        order = ["active", "ready", "youtube_queued", "published", "failed"]
         for r in rows:
             status = r["status"] if r["status"] in order else "active"
             rank = order.index(status)
@@ -1032,6 +1034,18 @@ def delete_production(conn, pid: int) -> None:
     conn.commit()
 
 
+def mark_production_youtube_queued(conn, pid: int, queued: bool = True) -> bool:
+    """Manually track YouTube scheduling without starting publication tracking."""
+    source, target = ("ready", "youtube_queued") if queued else ("youtube_queued", "ready")
+    stamp = "datetime('now', 'localtime')" if queued else "NULL"
+    result = conn.execute(
+        f"UPDATE productions SET status = ?, youtube_queued_at = {stamp},"
+        " updated_at = datetime('now', 'localtime') WHERE id = ? AND status = ?",
+        (target, pid, source))
+    conn.commit()
+    return result.rowcount == 1
+
+
 def mark_production_published(conn, pid: int, published: bool = True) -> None:
     """Flip a "ready" production to "published" (or back). Kept separate
     from update_production so published_at always comes from SQLite's own
@@ -1045,7 +1059,7 @@ def mark_production_published(conn, pid: int, published: bool = True) -> None:
             (pid,))
     else:
         conn.execute(
-            "UPDATE productions SET status = 'ready', published_at = NULL,"
+            "UPDATE productions SET status = 'ready', published_at = NULL, youtube_queued_at = NULL,"
             " updated_at = datetime('now', 'localtime') WHERE id = ?",
             (pid,))
     conn.commit()

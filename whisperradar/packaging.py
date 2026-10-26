@@ -334,7 +334,7 @@ def context(cfg, pid: int) -> dict:
                if prod["own_channel_id"] else None)
         past = []
         for p in db.list_productions(conn):
-            if (p["id"] != pid and p["status"] in ("ready", "published")
+            if (p["id"] != pid and p["status"] in ("ready", "youtube_queued", "published")
                     and p["own_channel_id"] == prod["own_channel_id"]):
                 past.append(p["title"])
         genre = (own["genre"] if own else None) or prod["genre"] or ""
