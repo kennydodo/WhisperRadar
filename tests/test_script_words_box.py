@@ -31,10 +31,14 @@ class ScriptWordsBoxTests(unittest.TestCase):
             conn.close()
 
     def test_explicit_value_wins_over_source_cap_and_default(self):
-        self.assertEqual(studio.script_target_words(None, 0), 1200)
-        self.assertEqual(studio.script_target_words(None, 800), 800)
+        self.assertEqual(studio.script_target_words(None, 0), 4000)
+        self.assertEqual(studio.script_target_words(None, 800), 4000)
         self.assertEqual(studio.script_target_words(None, 800, explicit=2500), 2500)
         self.assertEqual(studio.script_target_words(None, 0, explicit=2500), 2500)
+
+    def test_external_prompts_default_to_4000(self):
+        from whisperradar import external_prompts as ep
+        self.assertEqual(ep._target_words(self.cfg, self.pid, None), 4000)
 
     def test_box_saves_reads_and_clears(self):
         self.client.post(f"/studio/{self.pid}/script-words",
@@ -63,6 +67,7 @@ class ScriptWordsBoxTests(unittest.TestCase):
     def test_stage_page_shows_the_box(self):
         page = self.client.get(f"/studio/{self.pid}?stage=script").get_data(as_text=True)
         self.assertIn('name="script_words"', page)
+        self.assertIn('placeholder="4000"', page)
 
 
 if __name__ == "__main__":

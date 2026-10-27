@@ -3912,6 +3912,7 @@ def create_app(cfg) -> Flask:
             script_versions=_version_names(pdir, "script"),
             stage_direction=db.stage_extra(prod, stage),
             script_words=studio.script_words_override(prod),
+            script_default_words=studio.script_target_words(cfg.studio_script_words, 0),
             bible_text=bible_text,
             batch_sheet=(pdir / "shotlist.json").exists(),
             thumb_count=len(thumbnails.load_thumbs(pdir).get("concepts", [])),

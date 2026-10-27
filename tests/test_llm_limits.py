@@ -76,16 +76,14 @@ class ScriptLengthTests(unittest.TestCase):
         self.assertEqual(studio.script_max_tokens(1200), 2120)
         self.assertEqual(studio.script_max_tokens(0), 200)
 
-    def test_target_is_never_longer_than_the_source(self):
-        # An over-long explicit setting is capped by the transcript length.
-        self.assertEqual(studio.script_target_words(5000, 2000), 2000)
-        # A shorter explicit setting still wins.
+    def test_target_uses_default_or_creator_choice_regardless_of_source(self):
+        self.assertEqual(studio.script_target_words(5000, 2000), 5000)
         self.assertEqual(studio.script_target_words(800, 2000), 800)
-        # No setting: match the source.
-        self.assertEqual(studio.script_target_words(None, 2000), 2000)
-        # No source at all: the documented 1200 default.
-        self.assertEqual(studio.script_target_words(None, 0), 1200)
-        self.assertEqual(studio.script_target_words(None, None), 1200)
+        self.assertEqual(studio.script_target_words(None, 2000), 4000)
+        self.assertEqual(studio.script_target_words(None, 8000), 4000)
+        self.assertEqual(studio.script_target_words(None, 0), 4000)
+        self.assertEqual(studio.script_target_words(None, None), 4000)
+        self.assertEqual(studio.script_target_words(5000, 2000, explicit=2500), 2500)
 
 
 class MaxTokensTests(unittest.TestCase):
