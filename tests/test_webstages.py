@@ -97,8 +97,12 @@ class ScriptLoopTests(Base):
         self.assertEqual([c["site"] for c in t.calls],
                          ["zai", "deepseek", "deepseek"])
 
-    def test_a_cut_off_or_short_draft_is_not_accepted(self):
+    def test_judge_approved_shorter_draft_is_accepted(self):
         t = Fake(zai=[words(30)], deepseek=[verdict(9)])
+        self.assertEqual(self.run_loop(t, rounds=1), words(30))
+
+    def test_cut_off_draft_is_still_not_accepted(self):
+        t = Fake(zai=[words(100).rstrip(".")], deepseek=[verdict(9)])
         with self.assertRaises(ws.StageFailed):
             self.run_loop(t, rounds=1)
 
@@ -454,16 +458,25 @@ class JudgeSameChatTests(unittest.TestCase):
     def test_followup_states_measured_length(self):
         t = ws._script_followup("x", 1500, 1000, 0.02, False)
         self.assertIn("1500 words", t)
-        self.assertIn("OUTSIDE", t)
-        self.assertIn("INSIDE", ws._script_followup("x", 1000, 1000, 0.0,
+        self.assertIn("not enforced", t)
+        self.assertIn("not enforced", ws._script_followup("x", 1000, 1000, 0.0,
                                                     False))
+
+    def test_retry_feedback_does_not_enforce_word_count(self):
+        text = ws._script_feedback(500, 4000, ["weak ending"],
+                                   {"feedback": ["Finish the story."]}, False)
+        self.assertIn("flexible guide", text)
+        self.assertNotIn("It must be", text)
+        self.assertNotIn("minimum", text)
+        self.assertNotIn("Add about", text)
 
     def test_word_count_matches_manual_prompts_and_feedback_is_exact(self):
         self.assertEqual(ws._wc("It's a well-known fact."), 6)
         over = ws._length_delta(1500, 1000)
-        self.assertIn("over", over)
-        self.assertIn("Cut at least 500", over)
-        self.assertIn("Add about", ws._length_delta(500, 1000))
+        self.assertIn("1500 words", over)
+        self.assertIn("not a requirement", over)
+        self.assertNotIn("Cut at least", over)
+        self.assertIn("not a requirement", ws._length_delta(500, 1000))
 
 
 class JoinAndResumeTests(Base):
@@ -650,7 +663,7 @@ class RobustnessTests(Base):
         rev = json.loads((self.pdir / "versions" / "script"
                           / "review.json").read_text("utf-8"))
         self.assertEqual(rev[0]["score"], 0.0)      # not null
-        self.assertIs(rev[0]["too_long"], True)     # 200 > 115% of 100
+        self.assertIs(rev[0]["too_long"], False)    # word guide is not enforced
         self.assertIs(rev[1]["too_long"], False)
         self.assertTrue(any("rating" in r for r in rev[0]["reasons"]))
         self.assertTrue(rev[1]["passed"])

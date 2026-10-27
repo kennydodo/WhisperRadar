@@ -25,22 +25,18 @@ class ScriptGateTests(unittest.TestCase):
         self.assertEqual(why, [])
         self.assertFalse(too_long or too_short)
 
-    def test_a_stub_is_rejected_with_a_length_reason(self):
-        passed, why, _, too_short = self.gate(words=300)
-        self.assertFalse(passed)
-        self.assertTrue(too_short)
-        self.assertTrue(any("well under" in r for r in why), why)
+    def test_length_alone_never_rejects_a_judge_approved_script(self):
+        for words in (300, 750, 850, 1300, 5000):
+            with self.subTest(words=words):
+                passed, why, too_long, too_short = self.gate(words=words)
+                self.assertTrue(passed)
+                self.assertEqual(why, [])
+                self.assertFalse(too_long or too_short)
 
-    def test_the_too_short_floor_is_80_percent_of_target(self):
-        # Raised from 0.6 to 0.8 after two real productions showed a
-        # 67-71%-of-target draft winning "best of attempts" purely on judge
-        # score, because a shorter draft gives the judge less material to
-        # find repetition/overreach in. 750/1000 (75%) must now be
-        # too_short; 850/1000 (85%) must not.
-        _, _, _, too_short_at_75pct = self.gate(words=750)
-        _, _, _, too_short_at_85pct = self.gate(words=850)
-        self.assertTrue(too_short_at_75pct)
-        self.assertFalse(too_short_at_85pct)
+    def test_incomplete_short_draft_still_fails_on_judged_quality(self):
+        passed, why, _, _ = self.gate(words=300, score=4.0)
+        self.assertFalse(passed)
+        self.assertTrue(any("rating" in r for r in why))
 
     def test_a_judge_that_cannot_rate_is_named(self):
         passed, why, _, _ = self.gate(score=None, judge_error="empty response")
@@ -55,7 +51,7 @@ class ScriptGateTests(unittest.TestCase):
 
     def test_being_long_is_flagged_but_does_not_reject_on_its_own(self):
         passed, why, too_long, _ = self.gate(words=1300)
-        self.assertTrue(too_long)
+        self.assertFalse(too_long)
         self.assertTrue(passed)
         self.assertEqual(why, [])
 

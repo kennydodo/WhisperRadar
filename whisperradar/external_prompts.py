@@ -144,10 +144,6 @@ def _add_file(files: list, name: str, text: str, about: str) -> None:
 
 # ---- script -----------------------------------------------------------------
 
-# the same window autorun._script_gate enforces
-LEN_MIN_RATIO = 0.8
-LEN_MAX_RATIO = 1.15
-
 _STYLE_TOKEN = "@@STYLE-FILE@@"
 _FACTS_TOKEN = "@@FACTS-FILE@@"
 _ORIG_TOKEN = "@@ORIGINAL-FILE@@"
@@ -194,9 +190,6 @@ def _target_words(cfg, pid: int, target_words) -> int:
         cfg.studio_script_words, len(re.findall(r"\w+", source or "")),
         explicit=explicit)
 
-
-def _length_window(target: int) -> tuple[int, int]:
-    return int(target * LEN_MIN_RATIO), int(target * LEN_MAX_RATIO)
 
 _SCRIPT_REPLY_FORMAT = (
     "\n\nREPLY FORMAT: the finished script as plain text only - no title "
@@ -265,11 +258,10 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
         extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
-    lo, hi = _length_window(int(target_words))
     bar = (f"\n\nQUALITY BAR - a script is only accepted when ALL of these "
            f"hold:\n"
-           f"- length between {lo} and {hi} words (target {int(target_words)}); "
-           f"shorter or longer is rejected\n"
+           f"- around {int(target_words)} words is a flexible guide, not a "
+           f"requirement; assess completeness and pacing, never length alone\n"
            f"- an overall rating of at least {_bar(eff['script_min_rating'])}"
            f"/10 from a strict editor\n"
            f"- no more than {float(eff['script_max_overlap']):.0%} of its "
@@ -338,7 +330,6 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                      f"ONLY): in the attached {SOURCE_FACTS_FILE} (read all "
                      f"of it).")
     target = _target_words(cfg, pid, target_words)
-    lo, hi = _length_window(target)
     words = len(re.findall(r"\w+", script))
     cut = studio.script_looks_truncated(script)
     extra = []
@@ -367,8 +358,9 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"overall score at least {_bar(eff['script_min_rating'])}; "
            f"5-gram overlap at most {float(eff['script_max_overlap']):.0%} "
            f"(above {float(eff['script_hard_overlap']):.0%} is a hard "
-           f"rejection however well it reads); length {lo}-{hi} words "
-           f"(target {target}); ends on a complete sentence; it is spoken "
+           f"rejection however well it reads); ends on a complete sentence; "
+           f"word guide {target} is not enforced and length alone never "
+           f"fails or lowers the score; it is spoken "
            f"narration only - it never mentions or alludes to the "
            f"thumbnail, cover, video title or packaging.{measured}\n"
            f"Judge it BEAT BY BEAT against the ORIGINAL, for tone, style, hook, "

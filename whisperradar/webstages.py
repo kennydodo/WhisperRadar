@@ -499,22 +499,14 @@ def _wc(text: str) -> int:
 
 
 def _length_delta(words: int, target: int) -> str:
-    lo, hi = ep._length_window(target)
-    if words > hi:
-        return (f"Your draft was {words} words - {words - hi} over the "
-                f"maximum of {hi}. Cut at least {words - target} words "
-                f"(drop repetition and side points, keep the brief's keywords).")
-    if words < lo:
-        return (f"Your draft was {words} words - {lo - words} under the "
-                f"minimum of {lo}. Add about {target - words} words using "
-                f"depth on points you have not unpacked yet.")
-    return f"Your draft was {words} words, inside {lo}-{hi}."
+    return (f"Your draft was {words} words; {target} is a flexible guide, "
+            "not a requirement. Change length only to improve completeness "
+            "or pacing, never to meet a count.")
 
 
 def _script_feedback(words: int, target: int, reasons: list[str],
                      judged: dict, truncated: bool,
                      direction: str = "") -> str:
-    lo, hi = ep._length_window(target)
     lines = [f"The editor did NOT accept this draft. Why: "
              f"{'; '.join(reasons) or 'see below'}."]
     if truncated:
@@ -531,10 +523,10 @@ def _script_feedback(words: int, target: int, reasons: list[str],
         lines.append("Passages the editor flagged as weak:")
         lines += [f"- {w}" for w in judged["weak_spans"]]
     lines.append(
-        f"Rewrite the COMPLETE script, fixing every point above and keeping "
+        f"Rewrite the COMPLETE script, fixing required corrections above and keeping "
         f"what the editor did not criticise. {_length_delta(words, target)} "
-        f"It must be {lo}-{hi} words (target {target}); count before you "
-        f"reply. Keep working in the brief's keywords; the story, research "
+        f"Keep keywords natural; do not add filler or cut useful content just "
+        f"to reach the guide. The story, research "
         f"and wording stay your own. Same reply format as before: the finished script "
         f"as plain text only, no notes before or after it."
         + _creator_block(direction, "YOU, THE WRITER"))
@@ -699,11 +691,6 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         if cut:
             passed = False
             reasons.append("the script looks cut off")
-        if too_long:
-            passed = False
-            reasons.append(f"{words} words is over the "
-                           f"{ep._length_window(target)[1]}-word maximum "
-                           f"(target {target})")
         log(f"round {rnd}: score {score if score is not None else 'n/a'} "
             f"(min {min_rating:g}) - " + ("PASSED" if passed else
                                           "not accepted: " + "; ".join(reasons)))
@@ -736,15 +723,12 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         reply = transport.ask(
             writer, to_writer, (),
             new_chat=False, ready=long_enough)
-    best = max(attempts, key=lambda a: (not a["too_short"],
-                                        not a["too_long"], not a["cut"],
-                                        a["score"]))
+    best = max(attempts, key=lambda a: (not a["cut"], a["score"]))
     if soft and attempts and not should_stop():
         # the round cap was reached: a draft with no mandatory fix, a sound
-        # length and ending, no copying and a score near the bar is taken
+        # ending, no copying and a score near the bar is taken
         ok = [a for a in attempts
-              if not a["must_fix"] and not a["cut"] and not a["too_long"]
-              and not a["too_short"] and not a.get("struct")
+              if not a["must_fix"] and not a["cut"] and not a.get("struct")
               and a["overlap"] <= hard_overlap and a["score"]
               and a["score"] >= min_rating - SOFT_MARGIN]
         if ok:
@@ -851,18 +835,11 @@ def _script_followup(script: str, words: int | None = None,
                      direction: str = "") -> str:
     measured = ""
     if words is not None and target:
-        lo, hi = ep._length_window(target)
         measured = (f"Measured by software, do not re-estimate: length "
-                    f"{words} words (the bar is {lo}-{hi}, target {target}"
-                    f") - "
-                    f"{'INSIDE' if lo <= words <= hi else 'OUTSIDE'} the "
-                    f"window"
-                    + (f"; overlap {overlap:.1%}" if overlap is not None
-                       else "")
-                    + f"; ending {'LOOKS CUT OFF' if cut else 'is complete'}"
-                    f". A script outside the length window fails the bar "
-                    f"however well it reads - list it among the failed "
-                    f"items.\n"
+                    f"{words} words (flexible guide {target}, not enforced)"
+                    + (f"; overlap {overlap:.1%}" if overlap is not None else "")
+                    + f"; ending {'LOOKS CUT OFF' if cut else 'is complete'}. "
+                    f"Length alone never fails or lowers the score.\n"
                     + (f"Story order vs the source (measured): "
                        f"{struct['matched']:.0%} of the script's sentences "
                        f"echo a source sentence, {struct['order']:.0%} of "

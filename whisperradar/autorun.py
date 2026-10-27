@@ -487,28 +487,15 @@ def _script_gate(words: int, target_words: int, overlap: float,
                  score: float | None, min_rating: float, max_overlap: float,
                  hard_overlap: float,
                  judge_error: str | None = None) -> tuple[bool, list[str], bool, bool]:
-    """(passed, reasons, too_long, too_short) for one script attempt.
+    """Judge quality and originality; word count is informational only.
 
-    A stub must not slip through: a judge that cannot rate returns score None,
-    which used to reject with an EMPTY reason, and nothing rejected a draft far
-    under the target (a 1067-word answer to a 3531-word target was only rejected
-    because the judge was down)."""
-    too_long = words > int(target_words * 1.15)
-    # 0.6 used to let a 67-71%-of-target draft win "best of attempts" purely
-    # on judge score - confirmed on two real productions where a shorter
-    # draft outscored a fuller one because it had less material for the
-    # judge to find repetition/overreach in (see the ranking comment in
-    # _run_script). 0.8 was chosen directly by the channel owner after
-    # seeing those real word counts, to make the selection favor length
-    # more than the judge's rating alone does.
-    too_short = words < int(target_words * 0.8)
+    Keep the legacy length flags false so length cannot trigger retry nudges
+    or influence selection of the best draft.
+    """
+    too_long = too_short = False
     passed = (overlap <= max_overlap and overlap <= hard_overlap
-              and not too_short
               and score is not None and score >= min_rating)
     reasons: list[str] = []
-    if too_short:
-        reasons.append(f"~{words} words is well under the {target_words}-word "
-                       f"target")
     if score is None:
         reasons.append("the judge could not rate the draft"
                        + (f" ({judge_error})" if judge_error else ""))
@@ -532,15 +519,13 @@ def _script_criteria_line(score: float | None, min_rating: float,
     thresholds every time; this states it directly per criterion."""
     rating_ok = score is not None and score >= min_rating
     overlap_ok = overlap <= max_overlap and overlap <= hard_overlap
-    length_ok = not too_short
     rating_mark = "✓" if rating_ok else "✗"
     overlap_mark = "✓" if overlap_ok else "✗"
-    length_mark = "✓" if length_ok else "✗"
     rating_text = score if score is not None else "n/a"
     pct = f"{words / target_words:.0%}" if target_words else "?"
     return (f"{rating_mark} rating {rating_text} (min {min_rating})  "
            f"{overlap_mark} overlap {overlap:.1%} (max {max_overlap:.0%})  "
-           f"{length_mark} length {words}/{target_words} words ({pct})")
+           f"length {words} words (guide {target_words}; {pct}, not enforced)")
 
 
 def _webchat_pair(cfg) -> tuple[str, str, dict | None]:
@@ -702,14 +687,6 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             runs=previous["runs"] if previous else None,
             feedback=previous["feedback"] if previous else None,
             version=run_index)
-        if previous and previous.get("too_long"):
-            variation = ((variation + "\n") if variation else "") + (
-                f"The previous draft was too long. Keep this one at or under "
-                f"{target_words} words.")
-        if previous and previous.get("too_short"):
-            variation = ((variation + "\n") if variation else "") + (
-                f"The previous draft was far too short. Write the full "
-                f"{target_words} words and cover the whole topic in depth.")
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
@@ -810,18 +787,8 @@ def _run_script(cfg, pid: int, provider: str | None = None,
     # but "best" must include the script already on disk (the baseline), or a
     # run whose attempts are all worse would still overwrite it
     candidates = attempts + ([baseline] if baseline else [])
-    # A too-short draft has less surface area for the judge to find repetition
-    # or overreach in, so it can score HIGHER than a fuller draft purely by
-    # having less content to criticize - confirmed on a real run where a
-    # 1685-word attempt (44% of a 3827-word target, well under the 60%
-    # too_short floor) outscored four longer attempts and was picked as
-    # "best" on rating alone. Rank any non-too-short candidate above every
-    # too-short one first, and only fall back to a too-short candidate when
-    # NOTHING else is available - score (then overlap) still breaks ties
-    # within each group.
-    best = max(candidates,
-              key=lambda a: (not a["too_short"], (a["score"] or 0),
-                            -a["overlap"]))
+    # Select by judged quality and originality, never proximity to a word guide.
+    best = max(candidates, key=lambda a: ((a["score"] or 0), -a["overlap"]))
     kept_existing = bool(baseline) and best is baseline
     text = best["text"]
     passed = best["passed"]

@@ -72,7 +72,7 @@ class ScriptPromptTests(Base):
         self.assertIn('titled "My Own Title"', text)
         self.assertIn(WSTYLE, text)
         self.assertIn("pennies from 1943", text)
-        self.assertIn("About 900 words", text)
+        self.assertIn("Aim around 900 words", text)
         self.assertIn("QUALITY BAR", text)
         self.assertIn("plain text", text)
 
@@ -406,16 +406,30 @@ class SeedAndNotesTests(Base):
 
 
 class LengthAndStyleTests(Base):
-    def test_length_window_reaches_writer_and_judge(self):
+    def test_flexible_word_guide_reaches_writer_and_judge(self):
         w = ep.script_writer_prompt(self.cfg, self.pid, target_words=1000)
-        self.assertIn("between 800 and 1150 words", w)
+        self.assertIn("around 1000 words is a flexible guide", w)
+        self.assertNotIn("shorter or longer is rejected", w)
         self.assertIn("complete sentence", w)
         j = ep.script_judge_prompt(self.cfg, self.pid, "Short script here.",
                                    target_words=1000)
-        self.assertIn("800-1150 words", j)
+        self.assertIn("word guide 1000 is not enforced", j)
+        self.assertNotIn("800-1150 words", j)
         self.assertIn("length 3 words", j)
         self.assertIn("ending is complete", j)
         self.assertIn("do not raise or lower", j)
+
+    def test_editorial_rules_reach_exported_writer_and_judge(self):
+        w = ep.script_writer_prompt(self.cfg, self.pid)
+        j = ep.script_judge_prompt(self.cfg, self.pid, "A complete script.")
+        for text in (w, j):
+            self.assertIn("SIMPLE SPOKEN ENGLISH", text)
+            self.assertIn("ACCURATE NUMBERS", text)
+            self.assertIn("FICTIONAL DISCLOSURE", text)
+            self.assertIn("PROMISE AND DELIVERY", text)
+            self.assertIn("sources actually checked", text)
+        self.assertIn("BOTH conflicting passages", j)
+        self.assertIn("provide a simpler replacement", j)
 
     def test_judge_flags_a_cut_off_script(self):
         j = ep.script_judge_prompt(self.cfg, self.pid, "It stops mid")

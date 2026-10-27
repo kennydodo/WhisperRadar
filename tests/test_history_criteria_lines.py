@@ -24,7 +24,7 @@ class ScriptCriteriaLineTests(unittest.TestCase):
             score=8.0, min_rating=7.5, overlap=0.05, max_overlap=0.12,
             hard_overlap=0.20, words=2000, target_words=2000,
             too_short=False)
-        self.assertEqual(line.count(CHECK), 3)
+        self.assertEqual(line.count(CHECK), 2)
         self.assertEqual(line.count(CROSS), 0)
 
     def test_a_failing_rating_is_crossed_but_others_stay_checked(self):
@@ -34,7 +34,7 @@ class ScriptCriteriaLineTests(unittest.TestCase):
             too_short=False)
         self.assertIn(f"{CROSS} rating", line)
         self.assertIn(f"{CHECK} overlap", line)
-        self.assertIn(f"{CHECK} length", line)
+        self.assertIn("not enforced", line)
 
     def test_a_too_short_draft_crosses_length_only(self):
         line = autorun._script_criteria_line(
@@ -43,7 +43,8 @@ class ScriptCriteriaLineTests(unittest.TestCase):
             too_short=True)
         self.assertIn(f"{CHECK} rating", line)
         self.assertIn(f"{CHECK} overlap", line)
-        self.assertIn(f"{CROSS} length", line)
+        self.assertNotIn(f"{CROSS} length", line)
+        self.assertIn("not enforced", line)
 
     def test_overlap_over_the_hard_limit_is_crossed(self):
         line = autorun._script_criteria_line(

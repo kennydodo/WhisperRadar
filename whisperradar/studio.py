@@ -3902,6 +3902,58 @@ def judge_niche_block(cfg, genre: str) -> str:
     return npf.judge_block(npf.playbook_for(genre, user) or npf.GENERIC)
 
 
+SCRIPT_EDITORIAL_DEFAULTS = """DEFAULT SCRIPT RULES (apply alongside channel style):
+- SIMPLE SPOKEN ENGLISH: use familiar words, natural dialogue, and sentences
+  understood on first hearing. Explain necessary technical terms. Replace
+  confusing metaphors and unnatural phrasing, while keeping clear imagery.
+- STORY CONSISTENCY: check names, ages, jobs, locations, travel, dates, and event
+  order. A fact established in one scene must agree with later scenes.
+- ACCURATE NUMBERS: reconcile figures, totals, arithmetic, units, time periods,
+  and assumptions. Distinguish monthly/annual, gross/net, rates and amounts.
+  Fictional financial examples must still add up; show calculations when useful.
+- SUPPORTED CLAIMS AND HONEST SOURCING: verify historical, cultural, scientific,
+  and financial claims against sources actually checked. Do not invent studies,
+  quotations, traditions, references, or verification. Distinguish evidence from
+  interpretation. Without verification, omit a material claim or clearly state
+  its uncertainty; never turn a guess into a vague claim of established fact.
+  Promise references in the description only if an actual checked source list
+  has been supplied with the production's research; do not invent one.
+- FICTIONAL DISCLOSURE: identify invented illustrative stories as fictional in
+  a brief natural line. Call a story a composite only with documented case
+  material. Fiction illustrates a method; it does not prove that method works.
+- REALISTIC ADVICE: avoid universal diagnoses, guaranteed results, unsupported
+  comparisons, and claims that habits replace appropriate professional care.
+  Keep instructions practical and flexible, with qualifications where relevant.
+- SETUP AND PAYOFF: resolve important setups. Show change through behaviour,
+  earned progress and setbacks. When a character harms someone, show appropriate
+  repair rather than treating private insight as enough.
+- PROMISE AND DELIVERY: deliver the title/opening promise and every promised
+  step or benefit. Practical instructions must agree with the story's lessons.
+- PURPOSEFUL PACING: remove repeated explanations and multiple endings. Keep
+  scenes, callbacks and clear images that add meaning. Do not force arbitrary
+  cuts, lengthy spoken source lists, or continual cosmetic rewrites.
+- FLEXIBLE LENGTH: the word target is a guide, not a requirement or acceptance
+  range. Judge completeness, pacing and repetition. Never pad or cut useful
+  material simply to reach a number, or penalise length alone.
+"""
+
+SCRIPT_JUDGE_DEFAULTS = """EDITORIAL REVIEW INSTRUCTIONS:
+Apply the DEFAULT SCRIPT RULES to this draft before scoring. For each issue,
+quote the exact SCRIPT passage, explain the problem, and give a specific fix.
+For a contradiction, identify BOTH conflicting passages. For mismatched figures,
+show the relevant arithmetic/assumptions and where the writer must reconcile it.
+For difficult English, provide a simpler replacement. Do not label a subjective
+preference as a factual error. Separate required corrections from optional polish
+using must_fix and feedback. Material contradictions, misleading unsupported
+claims, broken promises, or language that prevents understanding are required
+corrections; minor wording polish is optional. An unverified claim is not
+necessarily false: say what could not be checked, never fabricate verification.
+Accept a sound script without inventing fresh objections each round. Check earlier
+fixes first; preserve what already works. Do not penalise a draft just because it
+is shorter or longer than the word guide.
+"""
+
+
 def _rating_prompt_base(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "",
@@ -3938,6 +3990,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"Score each criterion 1-10:\n{rubric}\n\n"
         f"Measured 5-gram overlap with the original: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
+        f"{SCRIPT_EDITORIAL_DEFAULTS}\n{SCRIPT_JUDGE_DEFAULTS}\n"
         f"HOW TO JUDGE:\n"
         f"- REPETITION AND QUALIFICATIONS. Check for repeated meaning, not "
         f"just repeated wording. Each section must add a distinct mechanism, "
@@ -3975,7 +4028,8 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"- SEVERITY. \"must_fix\" is ONLY for a real error that would "
         f"mislead the viewer or contradict the script (a wrong figure that "
         f"changes the conclusion, double counting, a false claim stated as "
-        f"fact). Maximum 3 items, the most serious first. Anything smaller "
+        f"fact, material story contradiction, broken promise, or language "
+        f"that prevents understanding). Maximum 3 items, the most serious first. Anything smaller "
         f"- rounding, simplification, an unstated assumption, a possible "
         f"nitpick - goes in \"feedback\" and never blocks. A script with "
         f"anything in \"must_fix\" or a claim marked \"wrong\" cannot "
@@ -4036,7 +4090,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f'"criteria": {{"hook": <n>, "originality": <n>, "accuracy": <n>, '
         f'"structure": <n>, "pacing": <n>, "style_fit": <n>, "ending": <n>}}, '
         f'"claims": [{{"claim": "<exact claim>", "status": "verified|wrong|unverified", "support": "<what you found>", "correction": "<fix or empty>"}}, ...], '
-        f'"must_fix": ["<mandatory factual/reasoning correction: passage -> why wrong -> what to change>", ...], '
+        f'"must_fix": ["<required correction: passage -> problem -> specific fix>", ...], '
         f'"feedback": ["<optional improvement, free of anything from the original>", ...], '
         f'"weak_spans": ["<a passage of the SCRIPT that reads weak>", ...]}}'
     )
@@ -4517,7 +4571,7 @@ def beat_word_table(style_guide: str, target_words: int) -> str:
 
 
 def script_prompt(title: str, genre: str, source_text: str,
-                  style_guide: str = "", target_words: int = 1200,
+                  style_guide: str = "", target_words: int = DEFAULT_SCRIPT_WORDS,
                   variation: str = "", extra_direction: str = "",
                   style_variant: str | None = None,
                   style_limit: int = 6000) -> str:
@@ -4575,6 +4629,8 @@ TIME BEATS FOR THIS SCRIPT (about {target_words} words in total):
 {extra}
 TASK: Write an original YouTube script titled "{title}".
 {var_block}
+{SCRIPT_EDITORIAL_DEFAULTS}
+
 Rules:
 - Follow the STYLE GUIDE above precisely. The script must feel like it was
   written by the writer described there.
@@ -4587,7 +4643,8 @@ Rules:
   topic the brief describes. They tell you what the video is about, nothing more.
 - Only state facts you are confident are real and could be checked: a number, a
   law, a study, a date or a named institution must be true. Never invent
-  statistics or sources; when unsure, say it more vaguely, not more vividly.
+  statistics or sources; when verification is unavailable, omit the claim or
+  explicitly describe the uncertainty rather than disguising it with vague wording.
   Keep an uncertain claim as uncertain ("may have", "suggests") - never upgrade it
   into "proves".
 - Choose your OWN story structure and decide yourself what the viewer should
@@ -4612,12 +4669,11 @@ Rules:
   emotional resolution, and thematic payoff may happen in one scene; do not
   write a separate conclusion for each.
 - Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
-- About {target_words} words - this is a real target, not a ceiling. If you are
-  running short, do NOT pad by repeating a point already made; instead go deeper
-  on a point you have not fully unpacked yet, add another concrete example from
-  your research, or slow down and narrate a moment instead of summarizing it. Conversational, no stage directions, no scene
-  labels. Use the narrator's person and voice the STYLE GUIDE describes
-  (second person only when it says so or gives none).
+- Aim around {target_words} words as a flexible guide, not a requirement.
+  Let the topic's depth and natural pacing determine the final length. Never pad
+  a complete script or cut useful content to match a number. Conversational,
+  no stage directions, no scene labels. Use the narrator's person and voice
+  the STYLE GUIDE describes (second person only when it says so or gives none).
 - Write ONE ending. Land the final point once, in a single short closing passage,
   then go straight into the call to action - do not summarize the video, restate
   the thesis, or add a second "so what does this all mean" passage before it.
