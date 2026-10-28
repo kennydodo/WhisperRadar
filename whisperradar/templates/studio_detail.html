@@ -570,8 +570,8 @@
       </form>
       {% if job.running and 'web chat' in (job.kind or '') %}
       <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat-stop" style="margin-top:6px">
-        {% if 'Human-language review' in (job.kind or '') %}
-        <button type="submit" class="ghost">■ Stop human-language review</button>
+        {% if 'Human-language review' in (job.kind or '') or 'GPT-Claude script review' in (job.kind or '') %}
+        <button type="submit" class="ghost">■ Stop GPT-Claude review</button>
         <span class="muted" style="font-size:12px">Stops after the current reply; keeps drafts and leaves the saved script unchanged.</span>
         {% else %}
         <button type="submit" class="ghost" title="Finish the current round, save the best result so far, and stop. There is no round limit: otherwise it runs until the judge passes the work.">■ Stop web-chat run</button>
@@ -626,20 +626,31 @@
         </div>
       </details>
       <details class="artifact" style="margin:14px 0" open>
-        <summary style="font-weight:600; cursor:pointer">Human-language review</summary>
-        <p class="muted">Run after your writer and judge finish. Reviews natural spoken language, then sends specific findings to a revision writer. Stops early when ready. The last revision is reviewed too. Your saved script is replaced only after approval; original and intermediate drafts are kept. This does not certify factual accuracy. If audio or shots already exist, check them against the revised script.</p>
+        <summary style="font-weight:600; cursor:pointer">GPT-Claude Script Review</summary>
+        <p class="muted">Run after your initial draft is saved. GPT analyses this production’s original reference. Claude receives the original, brief and draft for a required creative style rewrite. GPT then checks delivery and accuracy separately, including simple English, forced idioms, originality, calculations and claims. Claude fixes specific findings and GPT checks again. The original reference and channel writing style are required for every channel. Stops early when ready. The last revision is reviewed too. When every check passes the reviewed script is saved straight away; the original and every intermediate draft are kept, and you can restore the original with one click. Both editorial and accuracy checks must pass. Unverified material claims block completion; model agreement alone is not proof. If audio or shots already exist, check them against the revised script.</p>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/human-review" style="gap:8px; flex-wrap:wrap">
-          <label>Reviewer <select name="judge"><option value="deepseek">DeepSeek</option><option value="zai">z.ai</option></select></label>
-          <label>Revision writer <select name="writer"><option value="zai">z.ai</option><option value="deepseek">DeepSeek</option></select></label>
+          <span>Reviewer: GPT · Revision writer: Claude</span>
+
           <label>Maximum revision rounds <select name="rounds"><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
-          <button type="submit" class="secondary" {{ 'disabled' if job.running or not script_text else '' }}>Start human-language review</button>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not script_text else '' }}>Start GPT-Claude review</button>
         </form>
         {% if human_review %}
-        <p><strong>{{ {'ready':'Ready — saved script updated', 'outdated':'Approval outdated — script changed', 'running':'Review running', 'stopped':'Stopped — saved script unchanged', 'failed':'Review failed', 'limit_reached':'Review limit reached — unresolved issues remain', 'conflict':'Saved script changed — candidate kept separately'}.get(human_review.status, human_review.status) }}</strong>
+        <p><strong>{{ {'ready':('Done with GPT-Claude' if human_review.workflow == 'reference-style-v2' else 'Previous review approved — reference workflow not completed'), 'restored':'Original script restored', 'outdated':'Approval outdated — inputs or candidate changed', 'running':'Review running', 'stopped':'Stopped — saved script unchanged', 'failed':'Review failed', 'limit_reached':'Needs review — maximum revision rounds reached', 'conflict':'Saved script changed — candidate kept separately'}.get(human_review.status, human_review.status) }}</strong>
           · {{ human_review.revisions }} revisions · {{ human_review.reviews }} reviews</p>
         <p>{{ human_review.summary }}</p>
+        {% if human_review.status == 'running' %}<p>Step: {{ {'reference_analysis':'GPT is analysing the original reference','claude_style_pass':'Claude is doing the creative rewrite','delivery_accuracy_review':'GPT check ' ~ ((human_review.reviews or 0) + 1) ~ ' of up to ' ~ ((human_review.max_rounds or 0) + 1) ~ ' (' ~ (human_review.revisions or 0) ~ ' corrections so far)'}.get(human_review.phase, human_review.phase or 'Starting') }}</p>{% endif %}
+        {% if human_review.checks %}<p>Delivery: {{ human_review.checks.delivery or "Not separately reviewed" }} · Editorial: {{ human_review.checks.editorial }} · Accuracy: {{ human_review.checks.accuracy }}</p>{% endif %}
+        {% if human_review.reference_brief %}
+        <p><a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/reference_brief.json" target="_blank">Reference analysis brief</a>
+        · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/style-rewrite.txt" target="_blank">Claude creative rewrite</a></p>
+        {% endif %}
+        {% if human_review.status == 'ready' %}
+        <form method="post" action="/studio/{{ prod['id'] }}/human-review/restore" onsubmit="return confirm('Put the original script back? The reviewed version stays in the run folder.')">
+          <button type="submit" class="ghost" {{ 'disabled' if job.running else '' }}>Restore original script</button>
+        </form>
+        {% endif %}
         {% for issue in human_review.issues %}
-        <div class="warn"><q>{{ issue.passage }}</q><br>{{ issue.problem }}<br>{{ issue.suggestion }}</div>
+        <div class="warn">{{ issue.id }} {{ issue.category }} · <q>{{ issue.passage }}</q><br>{{ issue.problem }}<br>{{ issue.suggestion }}</div>
         {% endfor %}
         <p><a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/original.txt" target="_blank">Original script</a>
           · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/result.json" target="_blank">Review report</a>

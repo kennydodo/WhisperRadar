@@ -5139,10 +5139,10 @@ def create_app(cfg) -> Flask:
     def studio_human_review(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
-        writer = (request.form.get("writer") or "zai").strip()
-        reviewer = (request.form.get("judge") or "deepseek").strip()
+        writer = "claude"
+        reviewer = "chatgpt"
         if writer not in webchat.SITES or reviewer not in webchat.SITES:
-            return _studio_url(pid, error="Unknown chat site")
+            return _studio_url(pid, error="Configure ChatGPT and Claude web chats in Settings before starting GPT-Claude review")
         try:
             rounds = int(request.form.get("rounds", "3"))
         except ValueError:
@@ -5158,7 +5158,7 @@ def create_app(cfg) -> Flask:
             return redirect("/studio?error=Unknown+production")
         script = studio.find_script(studio.prod_dir(cfg, pid))
         if not script or not script.read_text(encoding="utf-8").strip():
-            return _studio_url(pid, error="Save a script before starting human-language review")
+            return _studio_url(pid, error="Save a script before starting GPT-Claude script review")
         options = _chat_options(request.form, remember=False)
         job = sjob._real()
 
@@ -5166,9 +5166,19 @@ def create_app(cfg) -> Flask:
             human_review.job(cfg, pid, writer, reviewer, rounds,
                              job.log.append, lambda: job.cancel, options)
 
-        if not sjob.start(worker, f"Human-language review in web chat ({reviewer} reviews, {writer} revises)"):
+        if not sjob.start(worker, f"GPT-Claude script review in web chat ({reviewer} reviews, {writer} revises)"):
             return _studio_url(pid, error="A job is already running")
-        return _studio_url(pid, msg="Human-language review started")
+        return _studio_url(pid, msg="GPT-Claude script review started")
+
+    @app.post("/studio/<int:pid>/human-review/restore")
+    def studio_human_review_restore(pid):
+        if sjob.running:
+            return _studio_url(pid, error="Wait for the active job to finish before restoring.")
+        try:
+            human_review.restore_original(cfg, pid)
+        except (ValueError, OSError) as exc:
+            return _studio_url(pid, error=str(exc))
+        return _studio_url(pid, msg="Original script restored; the reviewed version is kept in the run folder")
 
     @app.get("/studio/<int:pid>/export")
     def studio_export(pid):
@@ -5241,8 +5251,8 @@ def create_app(cfg) -> Flask:
         if not sjob.running or "web chat" not in str(sjob.kind or ""):
             return _studio_url(pid, error="No web-chat run is going")
         sjob.cancel = True
-        if "Human-language review" in str(sjob.kind or ""):
-            return _studio_url(pid, msg="Stopping human-language review after the current reply; drafts are kept and the saved script stays unchanged")
+        if any(label in str(sjob.kind or "") for label in ("Human-language review", "GPT-Claude script review")):
+            return _studio_url(pid, msg="Stopping GPT-Claude review after the current reply; drafts are kept and the saved script stays unchanged")
         if "shotlist" not in str(sjob.kind or ""):
             return _studio_url(pid, msg="Stopping after the current chat reply - "
                                         "your saved shotlist is not changed")

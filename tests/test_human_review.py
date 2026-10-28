@@ -19,7 +19,9 @@ def marked(script):
 def verdict(ready=False, passage='You can put money aside each month.'):
     return json.dumps(dict(decision='READY' if ready else 'NEEDS_REVISION',
                           summary='Natural aloud.' if ready else 'Tighten the phrasing.',
-                          issues=[] if ready else [dict(passage=passage,
+                          checks={'editorial':'PASS' if ready else 'FAIL','accuracy':'PASS'},
+                          resolved_ids=['I1'] if ready else [], evidence=[], calculations=[],
+                          issues=[] if ready else [dict(id='I1', category='language', passage=passage,
                               problem='Wordy phrasing.', suggestion='Use a direct sentence.')]))
 
 
@@ -29,6 +31,7 @@ class HumanReviewTests(Base):
         (self.pdir/'script.md').write_text(ORIGINAL, encoding='utf-8')
 
     def run_review(self, transport, **kw):
+        kw.setdefault('reference_pass', False)
         return hr.run(self.cfg, self.pid, transport, 'zai', 'deepseek',
                       log=lambda _: None, **kw)
 
@@ -156,7 +159,7 @@ class HumanReviewTests(Base):
                 self.current = url
 
         t = RoleChats(zai=[verdict(),marked(REVISED),verdict(passage=REVISED),marked(ORIGINAL),verdict(True)])
-        result = hr.run(self.cfg,self.pid,t,'zai','zai',log=lambda _:None)
+        result = hr.run(self.cfg,self.pid,t,'zai','zai',reference_pass=False,log=lambda _:None)
         self.assertEqual(result['status'],'ready')
         self.assertEqual([c['new_chat'] for c in t.calls],[True,True,False,False,False])
         self.assertEqual([c['url'] for c in t.calls],['https://chat.z.ai/c/role-1','https://chat.z.ai/c/role-2','https://chat.z.ai/c/role-1','https://chat.z.ai/c/role-2','https://chat.z.ai/c/role-1'])
@@ -166,8 +169,8 @@ class HumanReviewTests(Base):
         client = create_app(self.cfg).test_client()
         response = client.get(f'/studio/{self.pid}?stage=script')
         self.assertEqual(response.status_code,200)
-        self.assertIn('Start human-language review',response.get_data(as_text=True))
-        self.assertIn('Ready — saved script updated',response.get_data(as_text=True))
+        self.assertIn('Start GPT-Claude review',response.get_data(as_text=True))
+        self.assertIn('Previous review approved',response.get_data(as_text=True))
         with client.get(f"/studio/file/{self.pid}/human_review/{result['run_id']}/original.txt") as download:
             self.assertEqual(download.status_code,200)
 
@@ -176,17 +179,38 @@ class HumanReviewTests(Base):
         def synchronous(job,fn,kind):
             fn()
             return True
-        with mock.patch.object(_Job,'start',synchronous), mock.patch.object(hr,'job') as runner:
+        with mock.patch.dict(webchat.SITES, {'chatgpt':webchat.DEEPSEEK,'claude':webchat.ZAI}), mock.patch.object(_Job,'start',synchronous), mock.patch.object(hr,'job') as runner:
             response = client.post(f'/studio/{self.pid}/human-review', data={'writer':'deepseek','judge':'zai','rounds':'5'})
             self.assertEqual(response.status_code,302)
-            self.assertEqual(runner.call_args.args[2:5],('deepseek','zai',5))
+            self.assertEqual(runner.call_args.args[2:5],('claude','chatgpt',5))
             runner.reset_mock()
             client.post(f'/studio/{self.pid}/human-review',data={'rounds':'7'})
-            client.post(f'/studio/{self.pid}/human-review',data={'writer':'missing'})
             self.assertFalse(runner.called)
             (self.pdir/'script.md').unlink()
             client.post(f'/studio/{self.pid}/human-review')
             self.assertFalse(runner.called)
+
+    def test_old_language_approval_does_not_get_gpt_claude_badge(self):
+        result=self.run_review(Fake(deepseek=[verdict(True)]))
+        pointer=self.pdir/'human_review.json'
+        saved=json.loads(pointer.read_text(encoding='utf-8'));saved.pop('workflow')
+        pointer.write_text(json.dumps(saved),encoding='utf-8')
+        text=create_app(self.cfg).test_client().get(f'/studio/{self.pid}?stage=script').get_data(as_text=True)
+        self.assertIn('Previous review approved',text)
+        self.assertNotIn('<strong>Done with GPT-Claude</strong>',text)
+
+    def test_bad_evidence_quote_requests_full_report_then_reaches_writer(self):
+        bad=json.loads(verdict())
+        bad['evidence']=[dict(passage='You can ... month.',url='https://example.org/source',
+                             status='verified',supports='Source evidence.')]
+        t=Fake(deepseek=[json.dumps(bad),verdict(),verdict(True)],zai=[marked(REVISED)])
+        result=self.run_review(t)
+        self.assertEqual(result['status'],'ready')
+        self.assertEqual(result['revisions'],1)
+        self.assertIn('evidence[0].passage',t.calls[1]['prompt'])
+        self.assertIn('ALL seven top-level fields',t.calls[1]['prompt'])
+        self.assertIn('calculations',t.calls[1]['prompt'])
+        self.assertIn('I1',t.calls[2]['prompt'])
 
     def test_files_mode_contains_entire_script_and_style(self):
         files=[]
@@ -204,9 +228,9 @@ class HumanReviewTests(Base):
         review = hr.parse_review(reply)
         self.assertEqual(review['decision'],'NEEDS_REVISION')
         self.assertIn('"put money"', review['issues'][0]['problem'])
-        t = Fake(deepseek=[reply,verdict(True)],zai=[marked(REVISED)])
+        t = Fake(deepseek=[reply,verdict(),verdict(True)],zai=[marked(REVISED)])
         self.assertEqual(self.run_review(t)['status'],'ready')
-        self.assertIn('Fix phrasing.',t.calls[1]['prompt'])
+        self.assertIn('Tighten the phrasing.',t.calls[2]['prompt'])
 
     def test_final_verdict_wins_over_reasoning_example(self):
         self.assertEqual(hr.parse_review(verdict(True)+'\nThinking...\n'+verdict())['decision'],'NEEDS_REVISION')
@@ -317,3 +341,235 @@ class HumanReviewTests(Base):
         transport.ask('deepseek','Review please',ready=ready)
         self.assertEqual(chat.ask.call_args.kwargs['ready_wait'],12)
         self.assertIs(chat.ask.call_args.kwargs['ready'],ready)
+
+
+class GPTClaudeGuardTests(__import__('unittest').TestCase):
+    def test_legacy_approval_cannot_pass_new_checks(self):
+        with self.assertRaises(ValueError):
+            hr.validate_checks({'decision':'READY','summary':'Fine','issues':[]})
+
+    def test_accuracy_fail_cannot_be_overruled_by_editorial_pass(self):
+        review=json.loads(verdict(True))
+        review['checks']['accuracy']='FAIL'
+        with self.assertRaises(ValueError): hr.validate_checks(review)
+
+    def test_previous_issue_cannot_silently_disappear(self):
+        review=json.loads(verdict(True)); review['resolved_ids']=[]
+        with self.assertRaises(ValueError): hr.validate_checks(review,json.loads(verdict()))
+        review['resolved_ids']=['I1']
+        hr.validate_checks(review,json.loads(verdict()))
+
+    def test_independent_math_check_blocks_false_ready(self):
+        review=json.loads(verdict(True))
+        review['calculations']=[dict(passage=ORIGINAL,expression='14*20+6.5*20',
+            claimed_result=400,decimals=0,working='Twenty workdays; dollars.')]
+        out=hr.audit_accuracy(review,ORIGINAL)
+        self.assertEqual(out['decision'],'NEEDS_REVISION')
+        self.assertEqual(out['checks']['accuracy'],'FAIL')
+        self.assertEqual(out['calculations'][0]['computed_result'],410)
+        self.assertIn('410',out['issues'][0]['problem'])
+
+    def test_rounding_is_allowed_and_code_execution_is_rejected(self):
+        self.assertAlmostEqual(hr.calculate('60000*(1.07**20)'),232181.0677,places=3)
+        for expression in ['__import__("os").getcwd()','2**1000000','True+1','1/0','1+']:
+            with self.subTest(expression=expression),self.assertRaises(ValueError):
+                hr.calculate(expression)
+
+    def test_unverified_evidence_blocks_ready(self):
+        review=json.loads(verdict(True))
+        review['evidence']=[dict(passage=ORIGINAL,status='unverified',url='',supports='No original source available.')]
+        out=hr.audit_accuracy(review,ORIGINAL)
+        self.assertEqual(out['decision'],'NEEDS_REVISION')
+        self.assertEqual(out['checks']['accuracy'],'FAIL')
+
+    def test_verified_evidence_requires_source_and_actual_quote(self):
+        review=json.loads(verdict(True))
+        review['evidence']=[dict(passage=ORIGINAL,status='verified',url='',supports='A source supports this.')]
+        out=hr.audit_accuracy(review,ORIGINAL)
+        self.assertEqual(out['decision'],'NEEDS_REVISION')
+        self.assertEqual(out['evidence'][0]['status'],'unverified')
+        review['evidence'][0].update(url='https://example.org/source',passage='invented')
+        with self.assertRaises(ValueError): hr.audit_accuracy(review,ORIGINAL)
+
+    def test_prompt_covers_retention_purpose_accuracy_and_no_fixed_length(self):
+        prompt=hr.prompt('reviewer','Title','Style',ORIGINAL,research='Source material')
+        for phrase in ['WHOLE current script','purpose immediately after the hook','pacing',
+                       'simple spoken English','No fixed word count','resolved_ids','claimed_result','Source material']:
+            self.assertIn(phrase,prompt)
+
+
+class ReviewRepairTests(__import__('unittest').TestCase):
+    def test_retry_preserves_entire_schema_and_does_not_allow_empty_shortcut(self):
+        text=hr.review_correction(ValueError('Bad evidence quote'))
+        for name in ('checks','resolved_ids','evidence','calculations','issues',
+                     'claimed_result','supports','SAME units','never to bypass validation'):
+            self.assertIn(name,text)
+        self.assertIn('no thinking',text)
+
+    def test_all_shortened_passages_are_identified_in_one_retry(self):
+        v=json.loads(verdict())
+        v['evidence']=[{'passage':'You can ... each month.'}]
+        v['calculations']=[{'passage':'some other missing quote'}]
+        with self.assertRaises(ValueError) as failure:
+            hr.validate_quotes(v,ORIGINAL)
+        self.assertIn('evidence[0].passage',str(failure.exception))
+        self.assertIn('calculations[0].passage',str(failure.exception))
+        self.assertIn('no paraphrases or inserted ellipses',str(failure.exception))
+
+    def test_repaired_exact_quotes_keep_existing_findings(self):
+        v=json.loads(verdict())
+        v['evidence']=[dict(passage=ORIGINAL,status='unverified',url='',supports='Needs evidence.')]
+        hr.validate_quotes(v,ORIGINAL)
+        hr.validate_checks(v)
+        self.assertEqual(v['issues'][0]['id'],'I1')
+
+
+class MissingSourceHandoffTests(__import__('unittest').TestCase):
+    def test_missing_url_becomes_actionable_finding_instead_of_exception(self):
+        review=json.loads(verdict())
+        review['evidence']=[dict(passage=ORIGINAL,status='verified',url='',supports='Model explanation.')]
+        out=hr.audit_accuracy(review,ORIGINAL)
+        self.assertEqual(out['decision'],'NEEDS_REVISION')
+        self.assertEqual(out['checks']['accuracy'],'FAIL')
+        self.assertEqual(out['issues'][0]['id'],'I1')
+        self.assertIn('without a source URL',out['issues'][-1]['problem'])
+
+    def test_false_ready_with_missing_source_cannot_be_saved_as_done(self):
+        review=json.loads(verdict(True))
+        review['evidence']=[dict(passage=ORIGINAL,status='verified',url='',supports='Unsupported factual claim.')]
+        out=hr.audit_accuracy(review,ORIGINAL)
+        self.assertEqual(out['decision'],'NEEDS_REVISION')
+        self.assertEqual(out['checks']['accuracy'],'FAIL')
+
+
+class ComplexCalculationHandoffTests(__import__('unittest').TestCase):
+    def test_complex_expression_becomes_fix_request_and_blocks_completion(self):
+        review=json.loads(verdict(True))
+        review['calculations']=[dict(passage=ORIGINAL,expression='+'.join(['1']*60),
+                                    claimed_result=60,decimals=0,working='Sum of sixty units.')]
+        out=hr.audit_accuracy(review,ORIGINAL)
+        self.assertEqual(out['decision'],'NEEDS_REVISION')
+        self.assertEqual(out['calculations'][0]['local_check'],'not_checked')
+        self.assertNotIn('computed_result',out['calculations'][0])
+        self.assertIn('Split the calculation',out['issues'][0]['suggestion'])
+
+
+BRIEF = {k: 'Specific reference observation about ' + k for k in hr.REFERENCE_FIELDS}
+
+
+def delivery_verdict(ready=True):
+    v=json.loads(verdict(ready));v['checks']['delivery']='PASS' if ready else 'FAIL'
+    return json.dumps(v)
+
+
+class ReferenceStyleWorkflowTests(Base):
+    def setUp(self):
+        super().setUp()
+        (self.pdir/'script.md').write_text(ORIGINAL,encoding='utf-8')
+
+    def run_new(self, t):
+        return hr.run(self.cfg,self.pid,t,'zai','deepseek',log=lambda _:None)
+
+    def transport(self):
+        return Fake(deepseek=[json.dumps(BRIEF),delivery_verdict()],zai=[marked(REVISED)])
+
+    def test_all_channels_require_analysis_then_creative_pass_then_review(self):
+        t=self.transport();out=self.run_new(t)
+        self.assertEqual([c['site'] for c in t.calls],['deepseek','zai','deepseek'])
+        self.assertEqual(out['workflow'],'reference-style-v2')
+        self.assertEqual(out['status'],'ready')
+        self.assertEqual(out['style_rewrites'],1)
+        self.assertEqual(out['revisions'],0)
+        self.assertEqual((self.pdir/'script.md').read_text().strip(),REVISED)
+        self.assertIn('original_reference.txt',t.calls[1]['prompt'])
+        self.assertIn('reference_brief.json',t.calls[1]['prompt'])
+        self.assertIn('current_script.txt',t.calls[1]['prompt'])
+        folder=self.pdir/'human_review'/out['run_id']
+        for name in ('reference.txt','reference_brief.json','style-rewrite.txt','ready.txt','original.txt'):
+            self.assertTrue((folder/name).exists(),name)
+        for name in ('opening-sample.txt','body-sample.txt'):
+            self.assertFalse((folder/name).exists(),name)
+
+    def test_correction_prompt_for_claude_has_no_reviewer_instructions(self):
+        bad=json.loads(delivery_verdict(False));bad['issues'][0]['passage']='Put a little money aside each month.'
+        t=Fake(deepseek=[json.dumps(BRIEF),json.dumps(bad),delivery_verdict()],zai=[marked(REVISED),marked(REVISED+' Again.')])
+        self.run_new(t)
+        writer=t.calls[3]['prompt'];reviewer=t.calls[2]['prompt']
+        self.assertEqual(t.calls[3]['site'],'zai')
+        self.assertIn('review.json',writer)
+        self.assertNotIn('include delivery as PASS or FAIL',writer)
+        self.assertNotIn('Compare the current script against the original',writer)
+        self.assertIn('include delivery as PASS or FAIL',reviewer)
+
+    def test_missing_original_stops_before_any_model_call(self):
+        (self.pdir/'source_transcript.txt').unlink();t=self.transport()
+        with self.assertRaisesRegex(ValueError,'original reference'):self.run_new(t)
+        self.assertEqual(t.calls,[])
+
+    def test_missing_style_stops_before_any_model_call(self):
+        (self.pdir/'writing_style.md').unlink();t=self.transport()
+        with self.assertRaises(ValueError):self.run_new(t)
+        self.assertEqual(t.calls,[])
+
+    def test_malformed_analysis_cannot_skip_creative_brief(self):
+        t=Fake(deepseek=['Generic style advice'])
+        with self.assertRaises(ValueError):self.run_new(t)
+        self.assertEqual(len(t.calls),1)
+        self.assertEqual(hr.load(self.pdir)['status'],'failed')
+
+    def test_passing_review_saves_directly_and_restore_puts_original_back(self):
+        out=self.run_new(self.transport())
+        self.assertEqual(hr.load(self.pdir)['status'],'ready')
+        state=hr.restore_original(self.cfg,self.pid)
+        self.assertEqual(state['status'],'restored')
+        self.assertEqual((self.pdir/'script.md').read_text().strip(),ORIGINAL)
+        self.assertEqual(hr.load(self.pdir)['status'],'restored')
+        self.assertTrue((self.pdir/'human_review'/out['run_id']/'ready.txt').exists())
+        with self.assertRaises(ValueError):hr.restore_original(self.cfg,self.pid)
+
+    def test_changed_inputs_or_script_mark_review_outdated(self):
+        for filename in ('script.md','source_transcript.txt','writing_style.md'):
+            with self.subTest(filename=filename):
+                self.run_new(self.transport())
+                path=self.pdir/filename
+                original=path.read_text(encoding='utf-8');path.write_text(original+' changed',encoding='utf-8')
+                self.assertEqual(hr.load(self.pdir)['status'],'outdated')
+                path.write_text(original,encoding='utf-8')
+                (self.pdir/'script.md').write_text(ORIGINAL,encoding='utf-8')
+
+    def test_promo_rule_in_analyst_writer_and_reviewer_prompts(self):
+        t=self.transport();self.run_new(t)
+        for call in t.calls:
+            self.assertIn('sponsor reads',call['prompt'])
+
+    def test_delivery_must_pass_independently(self):
+        v=json.loads(delivery_verdict());v['checks']['delivery']='FAIL'
+        t=Fake(deepseek=[json.dumps(BRIEF),json.dumps(v),json.dumps(v)],zai=[marked(REVISED)])
+        with self.assertRaises(ValueError):self.run_new(t)
+        self.assertEqual(hr.load(self.pdir)['status'],'failed')
+        self.assertEqual((self.pdir/'script.md').read_text(),ORIGINAL)
+
+    def test_page_shows_done_and_restore_route(self):
+        self.run_new(self.transport());client=create_app(self.cfg).test_client()
+        text=client.get(f'/studio/{self.pid}?stage=script').get_data(as_text=True)
+        self.assertIn('Done with GPT-Claude',text)
+        self.assertIn('Restore original script',text)
+        self.assertNotIn('listening',text.lower().replace('addeventlistener',''))
+        self.assertIn('Reference analysis brief',text)
+        response=client.post(f'/studio/{self.pid}/human-review/restore')
+        self.assertEqual(response.status_code,302)
+        self.assertEqual(hr.load(self.pdir)['status'],'restored')
+        self.assertEqual((self.pdir/'script.md').read_text().strip(),ORIGINAL)
+
+
+class RoundingRegressionTests(__import__('unittest').TestCase):
+    def test_approximate_thousands_do_not_trigger_new_revision(self):
+        v=json.loads(verdict(True));quote='It grows to roughly $745,000.'
+        v['calculations']=[dict(passage=quote,expression='500*((1+.08/12)**360-1)/(.08/12)',
+                                claimed_result=745000,decimals=0,working='Nominal annual rate, monthly deposits.')]
+        self.assertEqual(hr.audit_accuracy(v,quote)['decision'],'READY')
+
+    def test_large_timing_error_still_fails(self):
+        v=json.loads(verdict(True));quote='It grows to roughly $665,000.'
+        v['calculations']=[dict(passage=quote,expression='643192',claimed_result=665000,decimals=0,working='129 months.')]
+        self.assertEqual(hr.audit_accuracy(v,quote)['decision'],'NEEDS_REVISION')
