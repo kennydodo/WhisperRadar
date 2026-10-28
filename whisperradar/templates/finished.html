@@ -75,8 +75,10 @@
   .act .btn, .act > form > button { width: 100%; text-align: center; }
   .act form { margin: 0 !important; display: flex !important; gap: 6px; align-items: center; }
   .act form { grid-column: 1 / -1; }
+  /* YouTube link boxes are hidden for now (still in the page and the forms); delete this rule to show them again */
+  .yt-hide { display: none !important; }
   .act form.pub input[type=text] { flex: 1 1 0; min-width: 0; width: 0 !important; }
-  .act form.pub button { flex: 0 0 auto; width: auto; }
+  .act form.pub button { flex: 1 1 auto; width: 100%; }
   /* fixed columns only where there is room; narrower windows scroll */
   .tablewrap { overflow-x: auto; }
   @media (min-width: 1280px) { table.fin { table-layout: fixed; } }
@@ -152,7 +154,7 @@
             {% if item.row["status"] == "published" %}
             <span class="badge published" title="Published {{ item.row['published_at'] }}">published</span>
             {% for r in item.results %}{% if loop.last %}<div class="muted" style="font-size:12px;margin-top:3px" title="views {{ r.horizon }} after publishing{{ ' (read late)' if r.late else '' }}">{{ r.horizon }}: {{ r.views|int }} views{% if r.multiplier %} &middot; <b style="color:{{ 'var(--green)' if r.multiplier >= 1.5 else ('var(--red)' if r.multiplier < 0.7 else 'inherit') }}">{{ '%.1f' % r.multiplier }}x your norm</b>{% endif %}</div>{% endif %}{% endfor %}
-            {% if not item.row['youtube_video_id'] %}<form method="post" action="/studio/{{ item.row['id'] }}/youtube-link" style="margin-top:4px"><input type="text" name="youtube_url" placeholder="YouTube link" style="width:130px;font-size:12px;padding:2px 6px"> <button type="submit" class="ghost" style="padding:2px 8px">track</button></form>{% endif %}
+            {% if not item.row['youtube_video_id'] %}<form method="post" action="/studio/{{ item.row['id'] }}/youtube-link" class="yt-hide" style="margin-top:4px"><input type="text" name="youtube_url" placeholder="YouTube link" style="width:130px;font-size:12px;padding:2px 6px"> <button type="submit" class="ghost" style="padding:2px 8px">track</button></form>{% endif %}
             {% elif item.row["status"] == "youtube_queued" %}
             <span class="badge youtube_queued" title="Queued {{ item.row['youtube_queued_at'] }}">Queued on YouTube</span>
             {% else %}
@@ -185,7 +187,7 @@
             {% if item.row["status"] in ("ready", "youtube_queued") %}
             <form method="post" action="/studio/{{ item.row['id'] }}/publish" class="pub"
                   {% if not (item.kit and item.kit.status == 'ready') %}onsubmit="return wrConfirmSubmit(this, 'There is no finished publish kit (title, description, hashtags) yet. Mark it published anyway?')"{% endif %}>
-              <input type="text" name="youtube_url" placeholder="YouTube link" title="YouTube link (optional)" style="width:150px;font-size:12px;padding:3px 6px">
+              <input type="text" name="youtube_url" class="yt-hide" placeholder="YouTube link" title="YouTube link (optional)" style="width:150px;font-size:12px;padding:3px 6px">
               <button type="submit" title="Mark this production as published">Mark published</button>
             </form>
             {% else %}
