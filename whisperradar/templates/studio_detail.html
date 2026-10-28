@@ -640,6 +640,9 @@
         <p>{{ human_review.summary }}</p>
         {% if human_review.status == 'running' %}<p>Step: {{ {'reference_analysis':'GPT is analysing the original reference','claude_style_pass':'Claude is doing the creative rewrite','delivery_accuracy_review':'GPT check ' ~ ((human_review.reviews or 0) + 1) ~ ' of up to ' ~ ((human_review.max_rounds or 0) + 1) ~ ' (' ~ (human_review.revisions or 0) ~ ' corrections so far)'}.get(human_review.phase, human_review.phase or 'Starting') }}</p>{% endif %}
         {% if human_review.checks %}<p>Delivery: {{ human_review.checks.delivery or "Not separately reviewed" }} · Editorial: {{ human_review.checks.editorial }} · Accuracy: {{ human_review.checks.accuracy }}</p>{% endif %}
+        {% if human_review.fingerprint %}{% set fp = human_review.fingerprint %}
+        <p class="muted">Voice match (you / contractions per 100 words, questions per 1000): reference {{ fp.reference.you_per_100_words }} / {{ fp.reference.contractions_per_100_words }} / {{ fp.reference.questions_per_1000_words }} · your draft {{ fp.draft.you_per_100_words }} / {{ fp.draft.contractions_per_100_words }} / {{ fp.draft.questions_per_1000_words }}{% if fp.final %} · reviewed {{ fp.final.you_per_100_words }} / {{ fp.final.contractions_per_100_words }} / {{ fp.final.questions_per_1000_words }}{% endif %}{% if not fp.reference.sentence_split_reliable %} · reference has weak punctuation, sentence length not used{% endif %}</p>
+        {% endif %}
         {% if human_review.reference_brief %}
         <p><a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/reference_brief.json" target="_blank">Reference analysis brief</a>
         · <a href="/studio/file/{{ prod['id'] }}/human_review/{{ human_review.run_id }}/style-rewrite.txt" target="_blank">Claude creative rewrite</a></p>

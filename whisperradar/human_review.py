@@ -362,6 +362,43 @@ def prompt(role, title, style, script, review=None, files=None, research=''):
     return task + '\n\n' + '\n\n'.join(f'--- {k} ---\n{v}' for k, v in parts.items())
 
 
+YOU_WORDS = {'you', 'your', 'yours', 'yourself', "you're", "you've", "you'll", "you'd"}
+
+PRECEDENCE_RULE = ('If the channel writing style and this reference disagree, the channel style wins on '
+                   'vocabulary, banned phrases, content limits and formatting; the reference wins on '
+                   'rhythm, structure, emotional movement and how the audience is addressed. ')
+
+FINGERPRINT_RULE = ('style_fingerprint.json holds measured facts for the reference and the current script. '
+                    'Use the word-level figures (you-rate, contractions, questions) as targets to stay close to. '
+                    'Sentence-length figures are null when the reference lacks reliable punctuation (for example '
+                    'auto-captions); then never infer rhythm from sentence length. ')
+
+
+def style_fingerprint(text):
+    """Simple measured facts about how a text speaks; same for every niche, no model calls."""
+    text = (text or '').replace('\u2019', "'")
+    words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)*", text)
+    n = max(len(words), 1)
+    low = [w.lower() for w in words]
+    marks = len(re.findall(r'[.!?]+(?=\s|$)', text))
+    reliable = len(words) >= 200 and marks * 100 / n >= 4
+    out = dict(words=len(words),
+               you_per_100_words=round(100 * sum(w in YOU_WORDS for w in low) / n, 1),
+               contractions_per_100_words=round(100 * sum("'" in w for w in low) / n, 1),
+               questions_per_1000_words=round(1000 * text.count('?') / n, 1),
+               sentence_split_reliable=reliable, avg_sentence_words=None, short_sentence_pct=None)
+    if reliable:
+        lengths = [len(re.findall(r"[A-Za-z']+", x)) for x in re.split(r'(?<=[.!?])\s+', text.strip()) if x.strip()]
+        lengths = [x for x in lengths if x] or [0]
+        out.update(avg_sentence_words=round(sum(lengths) / len(lengths), 1),
+                   short_sentence_pct=round(100 * sum(x <= 6 for x in lengths) / len(lengths)))
+    return out
+
+
+def fingerprint_pair(reference, script):
+    return dict(reference=style_fingerprint(reference), current_script=style_fingerprint(script))
+
+
 REFERENCE_FIELDS = ('audience', 'opening', 'emotional_stakes', 'rhythm',
                     'progression', 'examples', 'ending', 'avoid_copying')
 
@@ -386,7 +423,7 @@ def reference_prompt(role, title, style, reference, draft, brief=None, review=No
                 'avoid_copying. Describe concrete techniques and their function, the tension '
                 'and payoff, what makes the narration sound spoken, what this draft misses, '
                 'and distinctive phrases, anecdotes, personal claims and unsupported assertions '
-                'that must not be borrowed. ' + PROMO_RULE + 'Public views do not establish retention or prove '
+                'that must not be borrowed. ' + PROMO_RULE + PRECEDENCE_RULE + FINGERPRINT_RULE + 'Public views do not establish retention or prove '
                 'these techniques caused performance. Do not rewrite yet.')
     elif role == 'style_writer':
         task = ('You are Claude, performing the REQUIRED creative style pass. Read the complete '
@@ -400,14 +437,15 @@ def reference_prompt(role, title, style, reference, draft, brief=None, review=No
                 'and repeated announcements. Necessary qualifications should fit naturally '
                 'beside the relevant claim. You may restructure, not merely polish. Return '
                 'COMPLETE narration between BEGIN_FINAL_SCRIPT and END_FINAL_SCRIPT on '
-                'standalone lines; no analysis or omitted sections. ' + PROMO_RULE + 'Do not impose a fixed word count.')
+                'standalone lines; no analysis or omitted sections. ' + PROMO_RULE + PRECEDENCE_RULE + FINGERPRINT_RULE +
+                'Do not impose a fixed word count, but do not grow the script beyond about 125% of the draft. ')
     elif role == 'writer':
         task = prompt(role, title, style, draft, review, files=[], research=research).split('\nRead all attached files:')[0]
         task += (' Fix the findings in review.json, including any delivery findings: keep the '
                  'narration spoken, in simple English, without forced idioms or wording copied '
                  'from the reference, and keep the movement and payoff set out in '
                  'reference_brief.json. Preserve strong passages and the improved delivery; '
-                 'do not reopen settled cosmetic preferences. Source creator claims are not proof.')
+                 'do not reopen settled cosmetic preferences. Source creator claims are not proof. ' + PRECEDENCE_RULE + FINGERPRINT_RULE)
     else:
         task = prompt(role, title, style, draft, review, files=[], research=research).split('\nRead all attached files:')[0]
         task += (' Compare the current script against the original and reference brief. '
@@ -417,9 +455,15 @@ def reference_prompt(role, title, style, reference, draft, brief=None, review=No
                  'In checks, include delivery as PASS or FAIL in addition to editorial and accuracy. '
                  'Do not excuse a delivery failure with a high overall score. '
                  'For a correction pass preserve strong passages and the improved delivery; '
-                 'do not reopen settled cosmetic preferences. Source creator claims are not proof.')
+                 'do not reopen settled cosmetic preferences. Source creator claims are not proof. ' + PRECEDENCE_RULE + FINGERPRINT_RULE +
+                 'Compare the two fingerprints. If the script differs from the reference by more than 30% '
+                 '(relative) on you-rate, by more than 1.5 points on contractions per 100 words, or by '
+                 'more than 40% (relative) on questions per 1000 words, either raise a style issue naming '
+                 'the figures or state in the summary why the gap is justified. Never fail delivery on '
+                 'null sentence figures. ')
     parts = {'title.txt': title, 'writing_style.md': style, 'original_reference.txt': reference,
              'current_script.txt': draft, 'research_notes.md': research or 'No supplied evidence.'}
+    parts['style_fingerprint.json'] = json.dumps(fingerprint_pair(reference, draft), ensure_ascii=False, indent=1)
     if brief is not None:
         parts['reference_brief.json'] = json.dumps(brief, ensure_ascii=False)
     if review is not None:
@@ -476,6 +520,7 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
                      reference_hash=script_readiness.digest(reference),
                      style_hash=script_readiness.digest(style))
         (folder / 'reference.txt').write_text(reference, encoding='utf-8')
+        state['fingerprint'] = dict(reference=style_fingerprint(reference), draft=style_fingerprint(original))
         (folder / 'writing_style.md').write_text(style, encoding='utf-8')
 
     def persist():
@@ -586,6 +631,8 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
                     state.update(status='conflict', summary='Saved script changed during review; reviewed candidate kept separately.')
                     break
                 (folder / 'ready.txt').write_text(current + '\n', encoding='utf-8')
+                if reference_pass:
+                    state['fingerprint']['final'] = style_fingerprint(current)
                 ws.save_script(cfg, pid, current, 'Done with GPT-Claude; delivery, editorial and accuracy checks passed; see review evidence and limits', advance=False)
                 state.update(status='ready', phase='done', candidate_hash=script_readiness.digest(current + '\n'),
                              script_hash=script_readiness.digest(path.read_text(encoding='utf-8')))

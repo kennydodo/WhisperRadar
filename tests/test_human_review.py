@@ -501,6 +501,24 @@ class ReferenceStyleWorkflowTests(Base):
         self.assertNotIn('Compare the current script against the original',writer)
         self.assertIn('include delivery as PASS or FAIL',reviewer)
 
+    def test_fingerprint_is_measured_and_given_to_every_role(self):
+        fp=hr.style_fingerprint("You can't wait. Can you? You'll see it soon. "*30)
+        self.assertGreater(fp['you_per_100_words'],10);self.assertGreater(fp['contractions_per_100_words'],5)
+        self.assertTrue(fp['sentence_split_reliable']);self.assertIsNotNone(fp['avg_sentence_words'])
+        captions=hr.style_fingerprint('so today we look at money '*80)
+        self.assertFalse(captions['sentence_split_reliable']);self.assertIsNone(captions['avg_sentence_words'])
+        self.assertEqual(hr.style_fingerprint("don\u2019t stop")['contractions_per_100_words'],50.0)
+        t=self.transport();out=self.run_new(t)
+        for call in t.calls:
+            self.assertIn('style_fingerprint.json',call['prompt'])
+            self.assertIn('channel style wins on',call['prompt'])
+        self.assertEqual(set(out['fingerprint']),{'reference','draft','final'})
+
+    def test_reviewer_must_compare_fingerprints(self):
+        t=self.transport();self.run_new(t)
+        self.assertIn('Compare the two fingerprints',t.calls[2]['prompt'])
+        self.assertNotIn('Compare the two fingerprints',t.calls[1]['prompt'])
+
     def test_missing_original_stops_before_any_model_call(self):
         (self.pdir/'source_transcript.txt').unlink();t=self.transport()
         with self.assertRaisesRegex(ValueError,'original reference'):self.run_new(t)
