@@ -63,20 +63,24 @@
   td .badge { white-space: normal; }
   td.status .badge { white-space: nowrap; }
   td.date { white-space: nowrap; }
-  td.title { min-width: 260px; }
-  td.title a { font-weight: 600; overflow-wrap: break-word; }
-  td.actions { min-width: 270px; }
-  .act { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end;
-         align-items: center; }
-  .act form { margin: 0 !important; display: flex !important; gap: 6px;
-              align-items: center; }
-  .act form.pub { flex: 1 1 100%; min-width: 0; }
+  td.kit { white-space: nowrap; }
+  td.kit button { white-space: normal; }
+  td.title { min-width: 250px; }
+  td.title a { display: inline-block; max-width: 30ch; font-weight: 600; overflow-wrap: break-word; }
+  td.actions { min-width: 280px; }
+  /* one tidy block per row: two equal buttons, then link + publish, then reenable */
+  .act { display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+         max-width: 300px; margin-left: auto; }
+  .act > * { min-width: 0; }
+  .act .btn, .act > form > button { width: 100%; text-align: center; }
+  .act form { margin: 0 !important; display: flex !important; gap: 6px; align-items: center; }
+  .act form.pub, .act form.reen { grid-column: 1 / -1; }
   .act form.pub input[type=text] { flex: 1 1 0; min-width: 0; width: 0 !important; }
-  .act form.pub button { flex: 0 0 auto; }
+  .act form.pub button { flex: 0 0 auto; width: auto; }
   /* fixed columns only where there is room; narrower windows scroll */
   .tablewrap { overflow-x: auto; }
   @media (min-width: 1280px) { table.fin { table-layout: fixed; } }
-  @media (max-width: 1279px) { table.fin { min-width: 1150px; } }
+  @media (max-width: 1279px) { table.fin { min-width: 1050px; } }
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='mobile.css') }}">
 </head>
@@ -124,14 +128,13 @@
   <div class="panel">
     {% if items %}
     <div class="tablewrap"><table class="fin">
-      <colgroup><col><col style="width:150px"><col style="width:130px"><col style="width:132px"><col style="width:138px"><col style="width:170px"><col style="width:270px"></colgroup>
+      <colgroup><col style="width:270px"><col style="width:165px"><col style="width:125px"><col style="width:175px"><col style="width:185px"><col></colgroup>
       <thead>
         <tr>
           <th><a href="?{{ qs(sort='title', dir=('asc' if sort != 'title' or dir == 'desc' else 'desc')) }}"
                  class="{{ 'active' if sort == 'title' }}">Title</a></th>
           <th><a href="?{{ qs(sort='channel', dir=('asc' if sort != 'channel' or dir == 'desc' else 'desc')) }}"
                  class="{{ 'active' if sort == 'channel' }}">Channel</a></th>
-          <th>Genre</th>
           <th><a href="?{{ qs(sort='date', dir=('asc' if sort != 'date' or dir == 'desc' else 'desc')) }}"
                  class="{{ 'active' if sort == 'date' }}">Date</a></th>
           <th>Status</th>
@@ -144,7 +147,6 @@
         <tr>
           <td class="title"><a href="/studio/{{ item.row['id'] }}">{{ item.row["title"] }}</a></td>
           <td>{% if item.own_channel %}<span class="badge chan">{{ item.own_channel }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
-          <td><span class="badge genre">{{ item.row["genre"] }}</span></td>
           <td class="muted date" title="{{ item.row['published_at'] if item.row['status'] == 'published' else item.row['updated_at'] }}">{{ ((item.row["published_at"] if item.row["status"] == "published" else item.row["updated_at"]) or "")[:16] }}</td>
           <td class="status">
             {% if item.row["status"] == "published" %}
@@ -157,7 +159,7 @@
             <span class="badge ready">ready to publish</span>
             {% endif %}
           </td>
-          <td>
+          <td class="kit">
             {% if item.kit and item.kit.status == 'ready' %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge published" title="Publish kit is ready">kit ready{% if item.kit.score %} {{ item.kit.score }}{% endif %}</a>
             {% elif item.kit %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge genre" title="A draft kit - open it to finish it">kit draft</a>
             {% else %}{% if item.row['status'] == 'published' %}<span class="muted off">no kit</span>{% else %}<a href="/studio/{{ item.row['id'] }}/kit" class="muted">no kit</a>{% endif %}{% endif %}
@@ -194,7 +196,7 @@
             </form>
             {% endif %}
             {% if item.row["source_video_id"] %}
-            <form method="post" action="/videos/action" style="display:inline"
+            <form method="post" action="/videos/action" class="reen"
                   onsubmit="return wrConfirmSubmit(this, 'Re-enable this source video so it can be used for another production?')">
               <input type="hidden" name="video_id" value="{{ item.row['source_video_id'] }}">
               <input type="hidden" name="action" value="reenable">
