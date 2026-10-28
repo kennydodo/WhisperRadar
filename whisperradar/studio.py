@@ -3927,6 +3927,11 @@ SCRIPT_EDITORIAL_DEFAULTS = """DEFAULT SCRIPT RULES (apply alongside channel sty
 - SETUP AND PAYOFF: resolve important setups. Show change through behaviour,
   earned progress and setbacks. When a character harms someone, show appropriate
   repair rather than treating private insight as enough.
+- CLEAR PURPOSE AFTER THE HOOK: immediately after the hook, naturally explain
+  what the viewer will learn or understand, why it matters, and how the story
+  or explanation will help. Keep this brief and suited to the channel's voice;
+  do not force an "In this video" introduction, a numbered preview, or a separate
+  heading. The hook itself may establish this purpose; avoid repeating it.
 - PROMISE AND DELIVERY: deliver the title/opening promise and every promised
   step or benefit. Practical instructions must agree with the story's lessons.
 - PURPOSEFUL PACING: remove repeated explanations and multiple endings. Keep
@@ -3942,6 +3947,12 @@ Apply the DEFAULT SCRIPT RULES to this draft before scoring. For each issue,
 quote the exact SCRIPT passage, explain the problem, and give a specific fix.
 For a contradiction, identify BOTH conflicting passages. For mismatched figures,
 show the relevant arithmetic/assumptions and where the writer must reconcile it.
+Check the hook and the transition immediately after it for a clear viewer
+purpose: what they will learn or understand, why it matters, and how the story
+or explanation helps. If the opening earns attention but leaves that purpose
+unclear, quote the opening/transition and request a brief natural clarification
+in must_fix. Accept a purpose already clear in the hook; do not demand a formula,
+a separate promise paragraph, or repeated explanations.
 For difficult English, provide a simpler replacement. Do not label a subjective
 preference as a factual error. Separate required corrections from optional polish
 using must_fix and feedback. Material contradictions, misleading unsupported
