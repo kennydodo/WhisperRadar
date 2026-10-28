@@ -182,8 +182,17 @@ class HumanReviewTests(Base):
         with mock.patch.dict(webchat.SITES, {'chatgpt':webchat.DEEPSEEK,'claude':webchat.ZAI}), mock.patch.object(_Job,'start',synchronous), mock.patch.object(hr,'job') as runner:
             response = client.post(f'/studio/{self.pid}/human-review', data={'writer':'deepseek','judge':'zai','rounds':'5'})
             self.assertEqual(response.status_code,302)
-            self.assertEqual(runner.call_args.args[2:5],('claude','chatgpt',5))
+            self.assertEqual(runner.call_args.args[2:5],('deepseek','zai',5))
             runner.reset_mock()
+            client.post(f'/studio/{self.pid}/human-review',data={'rounds':'3'})
+            self.assertEqual(runner.call_args.args[2:5],('claude','chatgpt',3))
+            runner.reset_mock()
+            for bad in ({'writer':'zai','judge':'zai'},{'writer':'nope','judge':'zai'}):
+                client.post(f'/studio/{self.pid}/human-review',data=dict(bad,rounds='3'))
+                self.assertFalse(runner.called)
+            page = client.get(f'/studio/{self.pid}?stage=script').get_data(as_text=True)
+            self.assertIn('name="judge"',page);self.assertIn('name="writer"',page)
+            self.assertIn('value="chatgpt" selected',page)
             client.post(f'/studio/{self.pid}/human-review',data={'rounds':'7'})
             self.assertFalse(runner.called)
             (self.pdir/'script.md').unlink()

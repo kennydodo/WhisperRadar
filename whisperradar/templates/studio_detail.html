@@ -629,14 +629,15 @@
         <summary style="font-weight:600; cursor:pointer">GPT-Claude Script Review</summary>
         <p class="muted">Run after your initial draft is saved. GPT analyses this production’s original reference. Claude receives the original, brief and draft for a required creative style rewrite. GPT then checks delivery and accuracy separately, including simple English, forced idioms, originality, calculations and claims. Claude fixes specific findings and GPT checks again. The original reference and channel writing style are required for every channel. Stops early when ready. The last revision is reviewed too. When every check passes the reviewed script is saved straight away; the original and every intermediate draft are kept, and you can restore the original with one click. Both editorial and accuracy checks must pass. Unverified material claims block completion; model agreement alone is not proof. If audio or shots already exist, check them against the revised script.</p>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/human-review" style="gap:8px; flex-wrap:wrap">
-          <span>Reviewer: GPT · Revision writer: Claude</span>
+          <label>Judge (analysis and checks) <select name="judge">{% for key, name in review_sites %}<option value="{{ key }}"{{ ' selected' if key == 'chatgpt' else '' }}>{{ name }}</option>{% endfor %}</select></label>
+          <label>Writer (rewrite and corrections) <select name="writer">{% for key, name in review_sites %}<option value="{{ key }}"{{ ' selected' if key == 'claude' else '' }}>{{ name }}</option>{% endfor %}</select></label>
 
           <label>Maximum revision rounds <select name="rounds"><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not script_text else '' }}>Start GPT-Claude review</button>
         </form>
         {% if human_review %}
         <p><strong>{{ {'ready':('Done with GPT-Claude' if human_review.workflow == 'reference-style-v2' else 'Previous review approved — reference workflow not completed'), 'restored':'Original script restored', 'outdated':'Approval outdated — inputs or candidate changed', 'running':'Review running', 'stopped':'Stopped — saved script unchanged', 'failed':'Review failed', 'limit_reached':'Needs review — maximum revision rounds reached', 'conflict':'Saved script changed — candidate kept separately'}.get(human_review.status, human_review.status) }}</strong>
-          · {{ human_review.revisions }} revisions · {{ human_review.reviews }} reviews</p>
+          · {{ human_review.revisions }} revisions · {{ human_review.reviews }} reviews{% if human_review.reviewer %} · judge {{ human_review.reviewer }}, writer {{ human_review.writer }}{% endif %}</p>
         <p>{{ human_review.summary }}</p>
         {% if human_review.status == 'running' %}<p>Step: {{ {'reference_analysis':'GPT is analysing the original reference','claude_style_pass':'Claude is doing the creative rewrite','delivery_accuracy_review':'GPT check ' ~ ((human_review.reviews or 0) + 1) ~ ' of up to ' ~ ((human_review.max_rounds or 0) + 1) ~ ' (' ~ (human_review.revisions or 0) ~ ' corrections so far)'}.get(human_review.phase, human_review.phase or 'Starting') }}</p>{% endif %}
         {% if human_review.checks %}<p>Delivery: {{ human_review.checks.delivery or "Not separately reviewed" }} · Editorial: {{ human_review.checks.editorial }} · Accuracy: {{ human_review.checks.accuracy }}</p>{% endif %}

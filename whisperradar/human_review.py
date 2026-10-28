@@ -327,7 +327,7 @@ def prompt(role, title, style, script, review=None, files=None, research=''):
         'Do not claim to predict retention rates. No fixed word count, padding, AI-detector '
         'scores or endless cosmetic preferences. Optional polish is not a required finding. ' + PROMO_RULE)
     if role == 'reviewer':
-        task = ('You are the GPT script reviewer. Read the WHOLE current script and '
+        task = ('You are the script reviewer (the judge). Read the WHOLE current script and '
             'recheck every earlier issue against this exact revision. ' + rules +
             'Return ONLY JSON starting with decision: '
             '{"decision":"READY or NEEDS_REVISION","summary":"brief explanation",'
@@ -345,8 +345,8 @@ def prompt(role, title, style, script, review=None, files=None, research=''):
             'explicitly list fixed ids in resolved_ids, never silently drop findings. '
             'Every passage in issues, evidence and calculations must be a contiguous exact substring of current_script.txt; never insert ellipses or paraphrases. Calculation expression and claimed_result must use identical units: percentages in percentage points or both as decimal rates, never mix them; do not compare interest in dollars with a percentage rate. Escape quotes inside JSON strings. Do not invent issues to prolong the loop.')
     else:
-        task = ('You are the Claude revision writer. ' + rules +
-            'Fix the GPT findings with targeted edits; a broad rewrite is warranted only '
+        task = ('You are the revision writer. ' + rules +
+            'Fix the findings from the reviewer with targeted edits; a broad rewrite is warranted only '
             'for a material structural problem identified by the reviewer. Preserve unaffected '
             'passages and qualifications. Do not add unsupported claims while fixing others. '
             'Return the COMPLETE revised narration between exact standalone lines '
@@ -426,7 +426,7 @@ def reference_prompt(role, title, style, reference, draft, brief=None, review=No
                 'that must not be borrowed. ' + PROMO_RULE + PRECEDENCE_RULE + FINGERPRINT_RULE + 'Public views do not establish retention or prove '
                 'these techniques caused performance. Do not rewrite yet.')
     elif role == 'style_writer':
-        task = ('You are Claude, performing the REQUIRED creative style pass. Read the complete '
+        task = ('You are the writer, performing the REQUIRED creative style pass. Read the complete '
                 'original reference, its specific brief, channel writing style and our draft. '
                 'Rebuild weak sections to match the reference opening METHOD, confidence, '
                 'rhythm, audience connection, emotional stakes and forward movement. Use '
@@ -573,7 +573,7 @@ def run(cfg, pid, transport, writer, reviewer, rounds=3, log=print,
         if reference_pass:
             if should_stop():
                 raise ValueError('Review stopped before reference analysis.')
-            log('GPT: analysing this production’s original reference and channel voice')
+            log('Judge: analysing this production’s original reference and channel voice')
             reply = send('analyst', reviewer, build=lambda files: build_prompt('analyst', current, None, files))
             (folder / 'reference-analysis.txt').write_text(reply, encoding='utf-8')
             brief = parse_reference(reply)

@@ -3901,6 +3901,7 @@ def create_app(cfg) -> Flask:
             native_download=autorun.is_flow_native(eff),
             default_render_mode=eff["render_mode"],
             default_engine=studio.effective_engine(eff["engine"],
+            review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
                                                    eff["render_mode"]),
             own_channel_name=eff["own_channel_name"],
             channel_ws=studio.channel_writing_style_for(cfg, prod),
@@ -5139,10 +5140,12 @@ def create_app(cfg) -> Flask:
     def studio_human_review(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
-        writer = "claude"
-        reviewer = "chatgpt"
+        writer = (request.form.get("writer") or "claude").strip()
+        reviewer = (request.form.get("judge") or "chatgpt").strip()
         if writer not in webchat.SITES or reviewer not in webchat.SITES:
-            return _studio_url(pid, error="Configure ChatGPT and Claude web chats in Settings before starting GPT-Claude review")
+            return _studio_url(pid, error="Choose a configured chat site for both the writer and the judge (Settings > web chats)")
+        if writer == reviewer:
+            return _studio_url(pid, error="Choose two different chat sites: each role keeps its own conversation")
         try:
             rounds = int(request.form.get("rounds", "3"))
         except ValueError:
