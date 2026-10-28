@@ -63,13 +63,14 @@
   td .badge { white-space: normal; }
   td.status .badge { white-space: nowrap; }
   td.date { white-space: nowrap; }
+  td.kit .kitline { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
   td.kit { white-space: nowrap; }
   td.kit button { white-space: normal; }
   td.title { min-width: 250px; }
   td.title a { display: inline-block; max-width: 30ch; font-weight: 600; overflow-wrap: break-word; }
   td.actions { min-width: 340px; }
   /* buttons side by side (wrapping only if the column is too narrow), each just its text plus a little padding */
-  .act { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+  .act { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: 6px; }
   .act form { margin: 0 !important; display: block !important; }
   .act button { width: auto; padding: 5px 9px; font-size: 12px; white-space: nowrap; }
   /* YouTube link boxes are hidden for now (still in the page and the forms); delete this rule to show them again */
@@ -156,13 +157,14 @@
             <span class="badge ready">ready to publish</span>
             {% endif %}
           </td>
-          <td class="kit">
+          <td class="kit"><div class="kitline">
             {% if item.kit and item.kit.status == 'ready' %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge published" title="Publish kit is ready">kit ready{% if item.kit.score %} {{ item.kit.score }}{% endif %}</a>
             {% elif item.kit %}<a href="/studio/{{ item.row['id'] }}/kit" class="badge genre" title="A draft kit - open it to finish it">kit draft</a>
             {% else %}{% if item.row['status'] == 'published' %}<span class="muted off">no kit</span>{% else %}<a href="/studio/{{ item.row['id'] }}/kit" class="muted">no kit</a>{% endif %}{% endif %}
-            <br>{% if item.thumbs and item.thumbs.chosen %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge published" title="A thumbnail is chosen">thumbnail chosen</a>
+            {% if item.thumbs and item.thumbs.chosen %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge published" title="A thumbnail is chosen">thumbnail chosen</a>
             {% elif item.thumbs %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="badge genre" title="Concepts exist - pick one">{{ item.thumbs.count }} thumbnails</a>
             {% else %}{% if item.row['status'] == 'published' %}<span class="muted off">no thumbnail</span>{% else %}<a href="/studio/{{ item.row['id'] }}/thumbnails" class="muted">no thumbnail</a>{% endif %}{% endif %}
+            </div>
             <form method="post" action="/studio/{{ item.row['id'] }}/gpt-pro/generate" style="margin-top:6px">
               <button type="submit" class="ghost{{ ' off' if item.row['status'] != 'ready' else '' }}" {% if item.row['status'] != 'ready' or (item.gpt_job and item.gpt_job.status in ('queued', 'running')) %}disabled{% endif %}>{{ 'Generating with GPT Pro' if item.gpt_job and item.gpt_job.status == 'running' else ('Queued for GPT Pro' if item.gpt_job and item.gpt_job.status == 'queued' else ('Retry GPT Pro' if item.gpt_job and item.gpt_job.status == 'failed' else 'Generate with GPT Pro')) }}</button>
             </form>
