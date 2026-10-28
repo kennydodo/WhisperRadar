@@ -68,17 +68,12 @@
   td.title { min-width: 250px; }
   td.title a { display: inline-block; max-width: 30ch; font-weight: 600; overflow-wrap: break-word; }
   td.actions { min-width: 280px; }
-  /* one tidy block per row: queue/unpublish, then link + publish, then reenable */
-  .act { display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
-         max-width: 300px; margin-left: auto; }
-  .act > * { min-width: 0; }
-  .act .btn, .act > form > button { width: 100%; text-align: center; }
-  .act form { margin: 0 !important; display: flex !important; gap: 6px; align-items: center; }
-  .act form { grid-column: 1 / -1; }
+  /* one tidy stack per row; every button is just its text plus a little padding */
+  .act { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .act form { margin: 0 !important; display: block !important; }
+  .act button { width: auto; padding: 5px 12px; white-space: nowrap; }
   /* YouTube link boxes are hidden for now (still in the page and the forms); delete this rule to show them again */
   .yt-hide { display: none !important; }
-  .act form.pub input[type=text] { flex: 1 1 0; min-width: 0; width: 0 !important; }
-  .act form.pub button { flex: 1 1 auto; width: 100%; }
   /* fixed columns only where there is room; narrower windows scroll */
   .tablewrap { overflow-x: auto; }
   @media (min-width: 1280px) { table.fin { table-layout: fixed; } }
