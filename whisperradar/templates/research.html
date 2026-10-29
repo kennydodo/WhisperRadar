@@ -107,6 +107,7 @@
     <a href="/research?tab=channels{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'channels' else '' }}">Channels</a>
     <a href="/research?tab=trending{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'trending' else '' }}">Trending</a>
     <a href="/research?tab=niches{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'niches' else '' }}">Niches</a>
+    <a href="/research?tab=exploding" class="{{ 'active' if tab == 'exploding' else '' }}">Exploding</a>
     <a href="/research?tab=analyze{% if selected_own %}&own={{ selected_own }}{% endif %}" class="{{ 'active' if tab == 'analyze' else '' }}">Analyze</a>
   </div>
 
@@ -249,6 +250,8 @@
     </tbody></table></div>
   {% endif %}
   {% endif %}
+  {% elif tab == 'exploding' %}
+  {% include '_exploding.html' %}
   {% elif tab == 'topics' %}
   <div class="panel">
     {% if job.running %}

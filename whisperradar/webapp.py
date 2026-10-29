@@ -933,7 +933,7 @@ def create_app(cfg) -> Flask:
         args = request.args
         tab = (args.get("tab") if args.get("tab") in (
             "topics", "channels", "keywords", "analyze", "trending",
-            "niches") else "outliers")
+            "niches", "exploding") else "outliers")
 
         def _num(name, default, cast=float):
             try:
@@ -6278,6 +6278,8 @@ def create_app(cfg) -> Flask:
     look_routes.register(app, cfg, research_job)
     from . import instructions_routes
     instructions_routes.register(app, cfg)
+    from . import exploding_routes
+    exploding_routes.register(app, cfg, research_job)
     from . import video_routes
     video_routes.register(app, cfg)
     from . import explainer_routes

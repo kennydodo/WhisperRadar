@@ -1,0 +1,134 @@
+{% set ex = exploding_view() %}
+<div class="panel">
+  <div class="title">Find small channels that are exploding</div>
+  {% if not ex.key %}
+    <div class="note">This needs the YouTube API key. Add it on the <a href="/research?tab=channels">Channels</a> tab (it stays on this computer).</div>
+  {% else %}
+  <form method="post" action="/research/exploding/run" id="xform">
+    <label style="display:block;font-size:12px" class="muted">Topics to search - one per line (up to 12)
+      <textarea name="queries" id="xq" rows="4" style="width:100%;box-sizing:border-box;margin-top:4px" placeholder="e.g. megaproject failures&#10;why budgets fail">{{ ex.queries }}</textarea></label>
+    <div class="filters" style="margin-top:8px">
+      <label>videos from last (days)<input type="number" name="days" value="{{ ex.opts.days }}" min="1" max="60" style="width:70px"></label>
+      <label>channel under (subs)<input type="number" name="max_subs" value="{{ ex.opts.max_subs }}" min="0" step="1000" style="width:90px"></label>
+      <label>beats own norm by<input type="number" name="min_mult" value="{{ '%g' % ex.opts.min_mult }}" min="1.5" step="0.5" style="width:60px">x</label>
+      <label>min views<input type="number" name="min_views" value="{{ ex.opts.min_views }}" min="0" step="500" style="width:80px"></label>
+      <label>search pages<select name="pages">{% for p in (1, 2, 3) %}<option value="{{ p }}" {{ 'selected' if p == ex.opts.pages }}>{{ p }}</option>{% endfor %}</select></label>
+      <label>channels to check<input type="number" name="check_limit" value="{{ ex.opts.check_limit }}" min="5" max="200" style="width:70px"></label>
+      <label><select name="english_only"><option value="1" {{ 'selected' if ex.opts.english_only }}>English only</option><option value="0" {{ 'selected' if not ex.opts.english_only }}>Any language</option></select></label>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px">
+      <button type="submit" {{ 'disabled' if job.running }}>Find exploding channels</button>
+      <button type="button" class="ghost" id="xsug" style="background:transparent;border:1px solid var(--border);color:var(--muted)" title="Adds what people actually type in YouTube search. Free.">Add related phrases</button>
+      <span class="muted" style="font-size:12px">Worst case about <b>{{ ex.estimate }}</b> API units (shown for the topics typed when the page loaded; the run checks before it starts) - quota left today: {{ ex.left }}. The app stops before the daily limit and keeps what it found.</span>
+    </div>
+  </form>
+  <div class="note" style="margin-top:8px">How it works: searches the most-viewed recent videos for each topic, keeps channels you are not watching and that are small, then reads each channel's own last 50 uploads and measures the new video against that channel's normal views. The score (0-100) rewards a big multiple, repeats, small size and freshness; the reasons are listed on every row.</div>
+  {% endif %}
+</div>
+
+{% if job.running and job.kind.startswith('exploding') %}
+<div class="panel" id="xrunning"><b>Searching...</b>
+  <pre id="xlog" style="margin:6px 0 0;white-space:pre-wrap;font-size:12px">{{ (job.log|list)[-12:]|join('\n') }}</pre></div>
+{% endif %}
+
+{% if ex.last %}
+<div class="panel muted" style="font-size:12px">Last {{ {'snowball': 'snowball', 'rescore': 're-score of saved data'}.get(ex.last.kind, 'search') }} {{ ex.last.at[:16]|replace('T', ' ') }}: {{ ex.last.candidates }} channels {{ 'judged' if ex.last.kind == 'rescore' else 'found' }}, {{ ex.last.checked }} checked, <b>{{ ex.last.exploding }}</b> exploding, {{ ex.last.units }} API units{% if ex.last.stopped == 'quota' %} - <b>stopped early at the quota guard</b>{% elif ex.last.stopped == 'cancelled' %} - stopped by you{% endif %}.</div>
+{% endif %}
+
+{% if ex.total %}
+<div class="panel">
+  <form class="filters" method="get" action="/research" style="margin:0">
+    <input type="hidden" name="tab" value="exploding">
+    <label>sort<select name="xsort">{% for s in ex.sorts %}<option value="{{ s }}" {{ 'selected' if s == ex.sort }}>{{ {'score': 'score', 'multiplier': 'biggest multiple', 'subs': 'smallest', 'fresh': 'newest', 'views': 'most views'}[s] }}</option>{% endfor %}</select></label>
+    <label>min score<input type="number" name="xscore" value="{{ ex.f.xscore }}" min="0" max="100" style="width:60px"></label>
+    <label>max subs<input type="number" name="xsubs" value="{{ ex.f.xsubs }}" min="0" step="1000" style="width:90px"></label>
+    <label><input type="checkbox" name="xnew" value="1" {{ 'checked' if ex.f.xnew }}> channel under 1 year old</label>
+    <button type="submit">Apply</button>
+  </form>
+</div>
+{% endif %}
+
+{% if ex.rows %}
+<div class="panel" style="padding:0"><table>
+  <thead><tr><th class="num">score</th><th>channel and best recent video</th><th class="num">x own norm</th><th class="num">views</th><th class="num hide-sm">subs</th><th class="num hide-sm">age</th><th></th></tr></thead><tbody>
+  {% for c in ex.rows %}{% set b = c.best %}<tr>
+    <td class="num"><b>{{ c.score }}</b></td>
+    <td style="max-width:460px"><div style="display:flex;gap:10px">
+      {% if b.thumb %}<a href="{{ b.url }}" target="_blank" rel="noopener"><img src="{{ b.thumb }}" alt="" width="96" style="border-radius:4px;display:block"></a>{% endif %}
+      <div><div class="title"><a href="{{ b.url }}" target="_blank" rel="noopener">{{ b.title }}</a></div>
+        <div style="font-size:12px"><a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.name }}</a>{% if c.new_channel %} <span class="badge">new channel</span>{% endif %}{% if c.country %} <span class="muted">{{ c.country }}</span>{% endif %}</div>
+        <div class="muted" style="font-size:12px">{{ c.why|join(' · ') }}</div>
+        {% if c.queries %}<div class="muted" style="font-size:11px">found via: {{ c.queries|join(', ') }}</div>{% endif %}</div></div></td>
+    <td class="num"><b>{{ '%.1f' % b.multiplier }}x</b>{% if c.outliers_last10 > 1 %}<div class="muted" style="font-size:11px">{{ c.outliers_last10 }} of last 10</div>{% endif %}</td>
+    <td class="num">{{ ex.fmt(b.views) }}</td>
+    <td class="num hide-sm">{{ ex.fmt(c.subscribers) if c.subscribers is not none else 'hidden' }}</td>
+    <td class="num hide-sm">{{ '%d' % b.age_days }}d</td>
+    <td class="num" style="white-space:nowrap">
+      <form method="post" action="/channels/add" style="margin:0 0 4px"><input type="hidden" name="url" value="{{ c.channel_id }}"><input type="hidden" name="name" value="{{ c.name }}"><input type="hidden" name="return" value="/research?tab=exploding"><input type="hidden" name="genre" value="{{ genres[0] if genres else 'general' }}"><button type="submit" title="Start watching this channel">Watch</button></form>
+      <form method="post" action="/research/exploding/dismiss" style="margin:0"><input type="hidden" name="channel_id" value="{{ c.channel_id }}"><button type="submit" class="ghost" style="background:transparent;border:1px solid var(--border);color:var(--muted)" title="Hide this channel from future results">Dismiss</button></form></td></tr>{% endfor %}
+</tbody></table></div>
+{% elif ex.total %}<div class="panel muted">Nothing matches these filters.</div>
+{% elif ex.key %}<div class="panel muted">No results yet. Type a few topics above and run a search.</div>{% endif %}
+
+{% if ex.total %}
+<div class="panel">
+  <div class="title">Snowball: find more channels like these</div>
+  {% if ex.sb.seeds %}
+  <form method="post" action="/research/exploding/snowball" class="filters" style="margin:6px 0 0">
+    <label>rounds<select name="rounds">{% for n in (1, 2, 3) %}<option value="{{ n }}" {{ 'selected' if n == ex.sb.opts.rounds }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>"like this video" searches per round<select name="phrases">{% for n in (0, 1, 2, 3, 4, 5) %}<option value="{{ n }}" {{ 'selected' if n == ex.sb.opts.phrases }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>expand from score at least<input type="number" name="min_seed_score" value="{{ ex.sb.opts.min_seed_score }}" min="0" max="100" style="width:60px"></label>
+    <label>channels to check per round<input type="number" name="check_limit" value="{{ ex.sb.check_limit }}" min="5" max="200" style="width:70px"></label>
+    <button type="submit" {{ 'disabled' if job.running }}>Snowball</button>
+  </form>
+  <div class="note">Ready to expand from {{ ex.sb.seeds|length }} strong channel(s): {{ ex.sb.seeds[:4]|join(', ') }}{{ '...' if ex.sb.seeds|length > 4 }}. Worst case about <b>{{ ex.sb.estimate }}</b> API units; far less when the data is already saved. It reads the channels they feature (1 unit per 50) and searches for videos like their best one (100 units each), judges the small new channels the same way as a search, then the new strong ones seed the next round. Uses the thresholds of your last search.</div>
+  {% else %}
+  <div class="note">No strong channel left to expand from (score {{ ex.sb.opts.min_seed_score }}+ and not expanded yet). Run a search first, or lower the minimum score:</div>
+  <form method="get" action="/research" class="filters" style="margin:6px 0 0"><input type="hidden" name="tab" value="exploding"><label>score at least<input type="number" name="min_seed_score" value="{{ ex.sb.opts.min_seed_score }}" min="0" max="100" style="width:60px"></label><button type="submit">Check again</button></form>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <div class="title">Saved on this computer</div>
+  <div class="note" style="margin-top:2px">{{ ex.saved.overview }} channel profiles, {{ ex.saved.uploads }} upload histories, {{ ex.saved.search }} searches, {{ ex.saved.featured }} featured-channel lists (data/exploding_cache.json). Searches are reused for 1 day, upload histories for 2, channel profiles for 3, featured lists for 14: repeating something costs 0 API units. Safe to delete that file.</div>
+  <form method="post" action="/research/exploding/rescore" class="filters" style="margin:8px 0 0">
+    <label>beats own norm by<input type="number" name="min_mult" value="{{ '%g' % ex.last_opts.min_mult }}" min="1.5" step="0.5" style="width:60px">x</label>
+    <label>min views<input type="number" name="min_views" value="{{ ex.last_opts.min_views }}" min="0" step="500" style="width:80px"></label>
+    <label>video from last (days)<input type="number" name="days" value="{{ ex.last_opts.days }}" min="1" max="60" style="width:70px"></label>
+    <label>channel under (subs)<input type="number" name="max_subs" value="{{ ex.last_opts.max_subs }}" min="0" step="1000" style="width:90px"></label>
+    <button type="submit" class="ghost" style="background:transparent;border:1px solid var(--border);color:var(--muted)" title="Judges the saved upload histories again. No API units.">Re-score saved data (free)</button>
+  </form>
+</div>
+{% endif %}
+
+{% if ex.last and ex.last.per_query %}
+<div class="panel" style="padding:0"><table>
+  <thead><tr><th>search phrase (last run)</th><th class="num">channels</th><th class="num">small</th><th class="num">checked</th><th class="num">exploding</th><th class="num">hit rate</th></tr></thead><tbody>
+  {% for q, s in ex.last.per_query.items() %}<tr><td>{{ q }}</td><td class="num">{{ s.channels }}</td><td class="num">{{ s.small }}</td><td class="num">{{ s.checked }}</td><td class="num">{{ s.exploding }}</td><td class="num">{{ ('%d%%' % (s.rate * 100)) if s.rate is not none else '-' }}</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="note">Hit rate = share of checked small channels with an exploding video. Phrases with a high rate are the niches worth digging into; reuse them next time.</div>
+{% endif %}
+
+<script>
+  (function () {
+    var b = document.getElementById('xsug'), q = document.getElementById('xq');
+    if (b && q) b.addEventListener('click', function () {
+      b.disabled = true;
+      fetch('/research/exploding/suggest?q=' + encodeURIComponent(q.value)).then(function (r) { return r.json(); })
+        .then(function (j) { if (j.queries && j.queries.length) q.value = j.queries.join('\n'); b.disabled = false; })
+        .catch(function () { b.disabled = false; });
+    });
+  })();
+  (function () {
+    var box = document.getElementById('xrunning'), log = document.getElementById('xlog');
+    if (!box) return;
+    function tick() {
+      fetch('/research/job').then(function (r) { return r.json(); }).then(function (j) {
+        if (log) log.textContent = (j.log || []).slice(-12).join('\n');
+        if (!j.running) { location.href = '/research?tab=exploding'; return; }
+        setTimeout(tick, 3000);
+      }).catch(function () { setTimeout(tick, 5000); });
+    }
+    tick();
+  })();
+</script>
