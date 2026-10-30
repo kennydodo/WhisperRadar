@@ -18,6 +18,7 @@ import json
 from typing import Callable
 
 from . import studio
+from . import explainer_terms
 from .video.explainer import recipes
 from .video.explainer.validate import ExplainerError
 
@@ -90,6 +91,7 @@ PACING AND ANCHORS:
 TEXT:
 - Labels are 2-4 words (at most 32 characters), plain words, no sentences, no emoji. Numbers and units are welcome (7B, 14 GB).
 - Use an icon from the list; another valid Lucide icon name is fine if you are sure of it. Every item should have an icon.
+- NAMES ARE SHOWN: when the narrator says a name, acronym or key term (for example NCM, LLM, VRAM), or spells it out ("NCM stands for Next-Concept Modeling"), write it on screen in the scene that covers those words - as the title, a label, the hero line or the footer - spelled as the narrator says it, and add what it stands for when the narrator says that. A viewer must never hear a key term that is not shown.
 - Use colour to carry meaning (green = good, red = problem, orange = caution, blue = neutral info, yellow = the key thing); leave "color" off when unsure, the app picks.
 - Never invent facts. Labels restate what the narrator says.
 - An icon must add meaning (a thing, a place, an action), not just repeat the label's noun or decorate. Leave "icon" off when no icon helps.
@@ -116,6 +118,13 @@ STYLE_HINT = {
 def counts(total_seconds: float, density: str = "normal") -> tuple[int, int]:
     lo, hi = DENSITY.get(density or "normal", DENSITY["normal"])
     return max(1, int(total_seconds / lo)), max(2, int(total_seconds / hi))
+
+
+def _terms_hint(terms: list) -> str:
+    if not terms:
+        return ""
+    names = "; ".join(t["term"] + (f" (= {t['expansion']})" if t["expansion"] else "") for t in terms)
+    return f"\nKEY TERMS THE NARRATOR SAYS - each must be written on screen in the scene where it is first said: {names}"
 
 
 def look_hint(look: dict) -> str:
@@ -151,7 +160,7 @@ def fix_prompt(plan: dict, faults: list[str]) -> str:
 def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE) -> str:
     return f"""You are a strict reviewer of an explainer video's scene plan (hand-drawn whiteboard style). A narrator reads the NARRATION; the plan says what is drawn while each part is spoken. The code already checked the format and the timing. You judge the TEACHING.
 
-Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does.
+Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does. (8) every key name or acronym the narrator says (and what it stands for, when spelled out) is written on screen in the scene where it is said; a missing one is a fault.
 
 NARRATION:
 {narration}
@@ -209,6 +218,54 @@ def _cue_objs(cues):
     return [_Cue(c) for c in cues]
 
 
+def _fix_terms(plan: dict, cues: list, terms: list) -> tuple:
+    """Write every spoken key term the writer left off the screen into its scene (footer or title)."""
+    if not terms:
+        return plan, []
+    try:
+        resolved = recipes.resolve_anchors(plan, _cue_objs(cues))
+    except ExplainerError:
+        return plan, []                               # unresolved anchors come back to the writer first
+    import copy
+    notes = []
+    for gap in explainer_terms.missing(resolved, terms):
+        trial, added = explainer_terms.insert_missing(copy.deepcopy(plan), resolved, [gap])
+        if not added:
+            continue                                  # the scene already has a title and a footer: the writer decides
+        sid = str(gap["scene"].get("id"))
+        if not _fits(trial, cues, sid):               # no room for a footer: say it in the title instead
+            trial, added = explainer_terms.insert_missing(copy.deepcopy(plan), resolved, [dict(gap, no_footer=True)])
+        if added and _fits(trial, cues, sid):
+            plan, notes = trial, notes + added
+        else:
+            notes.append(f"scene {sid}: '{gap['term']}' is not shown and the scene has no room for it - "
+                         "the writer is asked to make room")
+    return plan, notes
+
+
+def _fits(plan: dict, cues: list, sid: str) -> bool:
+    """True when the scene still fits its narration time (icons may go: they are decoration)."""
+    import copy
+    for drop_icons in (False, True):
+        trial = copy.deepcopy(plan)
+        if drop_icons:
+            for s in trial.get("scenes") or []:
+                if str(s.get("id")) == sid:
+                    for it in s.get("items") or []:
+                        if isinstance(it, dict):
+                            it.pop("icon", None)
+        try:
+            recipes.build(trial, _cue_objs(cues))
+            if drop_icons:
+                plan.clear()
+                plan.update(trial)                    # adopt the icon-free scene
+            return True
+        except ExplainerError as exc:
+            if not any(f"Scene {sid}: too much for the time" in e for e in exc.errors):
+                return not any(sid in e for e in exc.errors)
+    return False
+
+
 def _split_faults(found: list) -> tuple:
     """(blocking, advisory): a label a little long for its layout is advice for the writer and the
     judge, never a reason to skip the judge; everything else must be fixed first."""
@@ -216,7 +273,7 @@ def _split_faults(found: list) -> tuple:
     return [f for f in found if f not in advisory], advisory
 
 
-def check(plan, cues: list[dict], total_seconds: float, look: dict = None) -> list[str]:
+def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms: list = None) -> list[str]:
     """Faults the code can find: the recipe builder's readable errors plus pacing."""
     if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
         return ["the reply has no \"scenes\" list"]
@@ -235,6 +292,11 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None) -> li
         faults.append(f"{len(scenes)} scenes is too many for {total_seconds / 60:.1f} minutes - merge neighbours (about {low}-{high})")
     first = plan["scenes"][0]
     resolved = recipes.resolve_anchors(plan, _cue_objs(cues))
+    if terms:
+        starts = {int(c["index"]): c["start"] for c in cues}
+        for gap in explainer_terms.missing(resolved, terms):
+            mmss = str(starts.get(gap["cue"], "")).split(",")[0].lstrip("0:") or "0:00"
+            faults.append(explainer_terms.fault_text(gap, mmss))
     if resolved["scenes"][0]["cue_range"][0] != int(cues[0]["index"]):
         faults.append("the first scene must start with the very first words of the narration")
     for s in plan["scenes"]:
@@ -295,12 +357,19 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
     try:
         prod = db.get_production(conn, pid)
         direction = db.stage_extra(prod, "shots") if prod is not None else ""
+        try:
+            title = prod["title"] if prod is not None else ""
+        except (IndexError, KeyError):
+            title = ""
     finally:
         conn.close()
     from .video.explainer import validate as _val
     look = _val.project_look(str(pdir))
+    terms = explainer_terms.key_terms(cues, title or "")
+    if terms:
+        log("key terms to show on screen: " + ", ".join(t["term"] for t in terms))
     log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - asking the writer")
-    reply = ask("writer", writer_prompt(narration, total, direction or "", look_hint(look),
+    reply = ask("writer", writer_prompt(narration, total, direction or "", look_hint(look) + _terms_hint(terms),
                                               look.get("scenes_per_video") or "normal"), True)
     plan = _plan_from(reply)
     if plan is None:
@@ -315,10 +384,13 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
     for rnd in range(1, rounds + 1):
         if should_stop():
             raise RuntimeError("Stopped by you.")
+        plan, added = _fix_terms(plan, cues, terms)
+        for note in added:
+            log("auto-fix: " + note)
         plan, trimmed = recipes.simplify_overfull(plan, _cue_objs(cues))
         for note in trimmed:
             log("auto-fix: " + note)
-        faults, advisory = _split_faults(check(plan, cues, total, look))
+        faults, advisory = _split_faults(check(plan, cues, total, look, terms))
         for a in advisory:
             log("note (does not block the judge): " + a)
         if faults:
@@ -361,7 +433,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         plan = fixed
     final = best[1] if best else plan
     verdict = kept_verdict
-    left, _advice = _split_faults(check(final, cues, total, look))
+    left, _advice = _split_faults(check(final, cues, total, look, terms))
     (pdir / "plan.json").write_text(json.dumps(final, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (pdir / "plan_review.json").write_text(json.dumps(
         {"score": verdict.get("score"), "faults": verdict.get("faults") or [],
