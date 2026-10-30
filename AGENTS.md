@@ -1822,3 +1822,40 @@ worker page both receive the shared brief. This adds no paid tools or automatic
 keyword research: absent supplied keyword evidence, label phrases script-derived;
 never invent volume, competition, rankings, or measured performance. This is
 Finish/GPT packaging only, not the hook-only Plan. Existing outputs are unchanged.
+
+## GPT packaging headline approval (2026-10-28)
+New GPT packages contain one or two numbered title/thumbnail pairs. Research
+returns a proposal, and the queue waits in awaiting_review until the user approves
+the exact headlines. Completion rejects unapproved or changed pairs and mismatched
+recommendations. Worker research must inspect relevant similar-video thumbnails,
+record references and evidence limits, and never infer CTR from public views.
+Ready and youtube_queued productions can prepare packaging; published cannot.
+New GPT output is always in packaging/ (text, publish_kit.json, packaging.json)
+and packaging/thumbnails/ (images, metadata, backups); legacy reads remain.
+No production-wide file sweep or image generation is implied by research approval.
+Checks: test_gpt_packaging, test_codex_worker, test_packaging,
+test_thumbnail_at_review, test_prodfiles. Windows hard-link tests require normal
+host filesystem support; the sandbox may deny hard links.
+
+Packaging keywords (2026-10-28): workers return a plain comma-separated keywords
+string in final packaging, distinct from public description. Saved as
+packaging/keywords.txt, included in publish kit tags/keywords and job result,
+with a Finished download link. Legacy tags/primary keyword inputs remain readable;
+no automatic reprocessing of existing or published productions.
+
+Future packaging now requires at least 20 distinct relevant keywords/search phrases.
+The shared brief, worker prompt and completion validator enforce the minimum;
+case and whitespace variants count once. Missing/short lists fail before output
+writes. Existing completed packages and historical keyword files are not migrated.
+
+Packaging keywords must also fit within 500 characters TOTAL, including comma-space
+separators. Completion enforces both >=20 distinct phrases and <=500 characters
+before output writes. Prompts require shorter accurate phrases, not truncation or
+irrelevant padding. Tests cover exactly 500 accepted and 501 rejected. Existing
+published packages and keyword files remain unchanged.
+
+Packaging now also requires first_comment: a concise, topic-specific conversation
+starter in plain text. Saved as packaging/first_comment.txt and included in kit
+pinned_comment/first_comment and completion result, with a Finished download link.
+Existing pinned_comment inputs remain accepted. Do not post/pin automatically;
+no backfill of existing packages. Keywords remain >=20 distinct and <=500 chars.

@@ -35,7 +35,7 @@ class CodexWorkerTests(unittest.TestCase):
     def test_result_passes_to_existing_validator(self):
         with tempfile.TemporaryDirectory() as folder:
             cfg = SimpleNamespace(db_path=Path(folder) / "db")
-            job = {"id": "job1", "claim_token": "private", "context": {"script": "source"}}
+            job = {"id": "job1", "claim_token": "private", "context": {"script": "source", "approved_proposal": {"pairs": []}}}
             result = Path(folder) / "codex_packaging/job1/result.json"
             process = Mock(returncode=0)
             process.communicate.side_effect = lambda *a, **k: result.write_text(
@@ -49,6 +49,20 @@ class CodexWorkerTests(unittest.TestCase):
                 self.assertIn("workspace-write", args)
                 self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", args)
                 self.assertNotIn("shell", popen.call_args.kwargs)
+
+    def test_unapproved_job_returns_research_without_importing_images(self):
+        with tempfile.TemporaryDirectory() as folder:
+            cfg = SimpleNamespace(db_path=Path(folder) / "db")
+            job = {"id": "research", "claim_token": "private", "context": {"script": "source"}}
+            result = Path(folder) / "codex_packaging/research/result.json"
+            process = Mock(returncode=0)
+            proposal = {"pairs": [], "research": "references"}
+            process.communicate.side_effect = lambda *a, **k: result.write_text(json.dumps(proposal))
+            with patch.dict(os.environ, {"CODEX_HOME": folder}), patch.object(worker.subprocess, "Popen", return_value=process), patch.object(worker.gpt_packaging, "propose", return_value="awaiting_review") as propose, patch.object(worker.gpt_packaging, "complete") as complete:
+                self.assertEqual(worker.run_job(cfg, job, "codex"), "awaiting_review")
+                propose.assert_called_once_with(cfg, "research", "private", proposal)
+                complete.assert_not_called()
+                self.assertIn("Do not generate", process.communicate.call_args.args[0])
 
     def test_failure_releases_worker_and_marks_job(self):
         job = {"id": "j", "claim_token": "private"}

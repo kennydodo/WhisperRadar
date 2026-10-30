@@ -29,8 +29,8 @@ GROUPS = {
              "flowbatch_recover.json", "refs_generated.json", "refs_project.json",
              "refs_titles.json"),
     "motion": ("motion_job.json", "motion_report.json"),
-    "packaging": ("packaging_plan.json", "publish_kit.json", "title.txt",
-                  "titles.txt", "description.txt", "thumbnails"),
+    "packaging": ("packaging_plan.json", "packaging.json", "publish_kit.json", "title.txt",
+                  "titles.txt", "description.txt", "keywords.txt", "first_comment.txt", "thumbnails"),
     "_work": ("webchat_chats.json", "webchat_debug"),
 }
 FOLDER = {name: group for group, names in GROUPS.items() for name in names}

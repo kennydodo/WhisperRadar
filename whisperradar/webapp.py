@@ -3132,9 +3132,11 @@ def create_app(cfg) -> Flask:
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
                 "gpt_job": gpt_jobs.get(p["id"]),
+                "has_first_comment_file": prodfiles.path(studio.prod_dir(cfg, p["id"]), "first_comment.txt").is_file(),
+                "has_keywords_file": prodfiles.path(studio.prod_dir(cfg, p["id"]), "keywords.txt").is_file(),
                 "has_titles_file": prodfiles.path(studio.prod_dir(cfg, p["id"]), "titles.txt").is_file(),
                 "packaging_files": {name: prodfiles.relative(studio.prod_dir(cfg, p["id"]), name)
-                                    for name in ("title.txt", "titles.txt", "description.txt")},
+                                    for name in ("title.txt", "titles.txt", "description.txt", "keywords.txt", "first_comment.txt")},
             })
         due_results = len(results_mod.due(conn))
         conn.close()
@@ -3176,8 +3178,24 @@ def create_app(cfg) -> Flask:
     @app.get("/gpt-pro/queue")
     def gpt_pro_queue_page():
         jobs = gpt_packaging.queue_status(cfg)
-        return render_template("gpt_queue.html", jobs=jobs,
+        csrf = session.setdefault("gpt_worker_csrf", secrets.token_urlsafe(24))
+        return render_template("gpt_queue.html", jobs=jobs, csrf_token=csrf,
+            review_count=sum(j["status"] == "awaiting_review" for j in jobs),
             active_count=sum(j["status"] in ("queued", "running") for j in jobs))
+
+    @app.post("/gpt-pro/jobs/<jid>/approve")
+    def gpt_pro_approve(jid):
+        _gpt_worker_only(require_header=False)
+        if request.form.get("csrf") != session.get("gpt_worker_csrf") or not session.get("gpt_worker_csrf"):
+            abort(403)
+        try:
+            executable = codex_worker.discover()
+            codex_worker.preflight(executable)
+            gpt_packaging.approve(cfg, jid)
+            codex_worker.start(cfg, executable)
+            return redirect("/gpt-pro/queue")
+        except (ValueError, OSError, sqlite3.Error, subprocess.SubprocessError) as exc:
+            return redirect("/finished?error=" + quote(str(exc)))
 
     @app.post("/studio/<int:pid>/gpt-pro/generate")
     def studio_gpt_pro_generate(pid):
@@ -3229,6 +3247,10 @@ def create_app(cfg) -> Flask:
                 action = request.form.get("action")
                 if action == "claim" and not job:
                     job = gpt_packaging.claim(cfg)
+                elif action == "propose" and job:
+                    gpt_packaging.propose(cfg, job["id"], job["claim_token"],
+                        json.loads(request.form.get("proposal") or "{}"))
+                    job = None
                 elif action == "complete" and job:
                     result = gpt_packaging.complete(cfg, job["id"], job["claim_token"],
                         json.loads(request.form.get("result") or "{}"))

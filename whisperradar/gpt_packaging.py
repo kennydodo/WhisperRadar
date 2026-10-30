@@ -23,14 +23,24 @@ from pathlib import Path
 from . import autorun, db, packaging, prodfiles, studio, thumbnails
 
 PACKAGING_BRIEF = """CONTENT AND EVIDENCE RULES
+RESEARCH AND APPROVAL FIRST: Inspect relevant similar-video thumbnails and titles
+from several channels. Record source URLs, dates, visible headline/layout ideas
+and evidence limits. Views alone do not prove thumbnail CTR. Use inspiration,
+never copy artwork or claim a measured winner. Read the full script, subtitles,
+style, Bible and relevant references. Propose at most two distinct numbered pairs
+(title, why, headline, idea, prompt), with research notes. Obtain explicit user
+approval of these pairs BEFORE image generation. No approval means return a
+proposal only, with no images. Approval of the workflow is not headline approval.
+Use natural search phrases in titles and description, not keyword-stuffed
+thumbnail headlines. The headline must be understandable and relevant on its own.
 Read the entire final script before choosing a promise. Titles and thumbnails
 must represent its main content, not turn one minor example into the whole video.
 Identify the intended viewer, their concrete problem, and the useful outcome.
 Lead with a clear, specific benefit or honest curiosity. Use cultural framing
 only when the script supports it; do not invent national secrets, universal
 customs, guaranteed fixes, or superiority claims.
-Make the four options meaningfully different, faithful angles on the same video.
-Pair the recommended title and thumbnail around ONE promise. In each title's
+Make up to two options meaningfully different, faithful angles on the same video.
+Align each numbered title with the thumbnail of the same number around ONE promise. In each title's
 why, explain the script support and viewer benefit. In each thumbnail's idea,
 explain the visual promise and how it complements the recommended title.
 Use a clear focal subject/action, strong readable contrast and a short headline
@@ -62,7 +72,11 @@ available; record its source and date. Without that evidence, explicitly label
 the phrases as script-derived suggestions, not verified search demand. Do not
 invent search volumes, competition scores, rankings, or keyword-tool results.
 
-TITLES: All four options must make the subject understandable on their own.
+KEYWORDS: Include keywords in the final result as a plain comma-separated string of relevant search phrases, ready to paste. Use the actual script topic and supporting subjects; no headings, hashtags, scores, invented search demand or unrelated terms. Provide AT LEAST 20 distinct, relevant keywords or search phrases, with the ENTIRE comma-separated string no more than 500 characters INCLUDING commas and spaces. Use shorter accurate phrases to meet both limits; count characters before submitting. Cover the main topic, supporting subjects and natural viewer search wording; never pad the count with irrelevant terms, duplicate phrases or trivial spelling/case variants. The server saves this separately as packaging/keywords.txt; never dump it into the description.
+
+FIRST COMMENT: Include first_comment as a short, ready-to-post plain-text comment that starts a natural conversation about the actual video. Ask a specific, easy-to-answer question tied to its main idea; a relevant choice or personal experience prompt can work. Match the channel voice. No generic engagement bait, keyword stuffing, invented host promises, links or unsupported claims. The server saves packaging/first_comment.txt separately. This is a suggestion for the user to post or pin; never post or pin it automatically.
+
+TITLES: Both numbered options must make the subject understandable on their own.
 Include the primary phrase naturally in the recommended title, preferably early
 when readable; use relevant plain-language phrasing in the other options.
 Keep important topic words near the beginning, avoid keyword lists, and retain
@@ -88,7 +102,7 @@ Inspect the finished images for accurate text and readability at a small preview
 FINAL SEO CHECK: Before returning the package, check that the recommended title,
 description opening, thumbnail and actual script opening deliver the same promise;
 the title/description contain the chosen phrase naturally; each title explains
-the subject; secondary phrases add useful context; and the four finished images
+the subject; secondary phrases add useful context; and the finished images
 remain distinct and on-topic. Revise failures before submitting. Include an SEO
 summary in notes: primary phrase, secondary phrases, search intent, evidence
 basis (supplied evidence with source/date or script-derived suggestions), and
@@ -118,7 +132,7 @@ def _connect(cfg):
         error TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '{}')""")
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS gpt_packaging_active "
                  "ON gpt_packaging_jobs(production_id) "
-                 "WHERE status IN ('queued','running')")
+                 "WHERE status IN ('queued','running','awaiting_review')")
             conn.commit()
         with conn:
             yield conn
@@ -130,7 +144,7 @@ def _public(row):
     if not row:
         return None
     return {k: row[k] for k in ("id", "production_id", "status", "created_at",
-                                "updated_at", "error")}
+                                "updated_at", "error")} | {"proposal": json.loads(row["result"]).get("proposal")}
 
 
 def _expire(conn):
@@ -192,14 +206,14 @@ def queue(cfg, pid):
         prod = db.get_production(conn, pid)
         if not prod:
             raise ValueError("Unknown production")
-        if prod["status"] != "ready":
+        if prod["status"] not in ("ready", "youtube_queued"):
             raise ValueError("Finish and approve this production first; published productions cannot generate GPT packaging")
         pdir = studio.prod_dir(cfg, pid)
         if not (pdir / "script.md").is_file():
             raise ValueError("The final script is missing")
         _expire(conn)
         active = conn.execute("SELECT * FROM gpt_packaging_jobs WHERE "
-                              "production_id=? AND status IN ('queued','running')",
+                              "production_id=? AND status IN ('queued','running','awaiting_review')",
                               (pid,)).fetchone()
         if active:
             return _public(active)
@@ -219,7 +233,7 @@ def _read(pdir, name):
 def context(cfg, pid):
     with _connect(cfg) as conn:
         prod = db.get_production(conn, pid)
-        if not prod or prod["status"] != "ready":
+        if not prod or prod["status"] not in ("ready", "youtube_queued"):
             raise ValueError("Production is no longer ready; published productions cannot generate GPT packaging")
         pdir = studio.prod_dir(cfg, pid)
         own = db.get_own_channel(conn, prod["own_channel_id"]) if prod["own_channel_id"] else None
@@ -272,6 +286,11 @@ def claim(cfg):
                 conn.execute("UPDATE gpt_packaging_jobs SET status='failed',error=?,updated_at=? "
                              "WHERE id=?", (str(exc), _now(), row["id"]))
                 continue
+            review = json.loads(row["result"] or "{}")
+            if review.get("approved") and row["fingerprint"] != ctx["fingerprint"]:
+                conn.execute("UPDATE gpt_packaging_jobs SET result='{}' WHERE id=?", (row["id"],))
+                review = {}
+            ctx["approved_proposal"] = review.get("proposal") if review.get("approved") else None
             token = secrets.token_urlsafe(32)
             conn.execute("UPDATE gpt_packaging_jobs SET status='running',claim_token=?,"
                          "fingerprint=?,updated_at=? WHERE id=?",
@@ -307,7 +326,49 @@ def worker_job(cfg, jid, token):
         conn.execute("UPDATE gpt_packaging_jobs SET updated_at=? WHERE id=?",
                      (_now(), jid))
         return {"id": jid, "claim_token": token,
-                "context": context(cfg, row["production_id"])}
+                "context": dict(context(cfg, row["production_id"]), approved_proposal=(json.loads(row["result"]).get("proposal") if json.loads(row["result"]).get("approved") else None))}
+
+
+def propose(cfg, jid, token, proposal):
+    """Store source-backed concepts for human review; never generate images here."""
+    if not isinstance(proposal, dict):
+        raise ValueError("A concept proposal is required")
+    pairs = proposal.get("pairs")
+    if not isinstance(pairs, list) or not 1 <= len(pairs) <= 2:
+        raise ValueError("Propose one or two numbered pairs")
+    for pair in pairs:
+        if not isinstance(pair, dict) or any(not str(pair.get(k) or "").strip()
+                for k in ("title", "why", "text", "idea", "prompt")):
+            raise ValueError("Each pair needs title, why, text, idea and prompt")
+        if len(pair["title"]) > 100:
+            raise ValueError("Titles must be at most 100 characters")
+    if len({p["title"].casefold() for p in pairs}) != len(pairs):
+        raise ValueError("Proposed titles must be distinct")
+    if not str(proposal.get("research") or "").strip():
+        raise ValueError("Include reference research and its evidence limits")
+    with _LOCK, _connect(cfg) as conn:
+        row = _authorized(conn, jid, token)
+        if row["status"] != "running":
+            raise ValueError("This job is no longer running")
+        if context(cfg, row["production_id"])["fingerprint"] != row["fingerprint"]:
+            raise ValueError("Production changed; retry research")
+        conn.execute("UPDATE gpt_packaging_jobs SET status='awaiting_review',result=?,updated_at=? WHERE id=?",
+                     (json.dumps({"proposal": proposal, "approved": False}), _now(), jid))
+        return {"status": "awaiting_review", "production_id": row["production_id"]}
+
+
+def approve(cfg, jid):
+    """Human approval queues generation of exactly the displayed concepts."""
+    with _LOCK, _connect(cfg) as conn:
+        row = conn.execute("SELECT * FROM gpt_packaging_jobs WHERE id=?", (jid,)).fetchone()
+        if not row or row["status"] != "awaiting_review":
+            raise ValueError("This job has no concepts awaiting approval")
+        if context(cfg, row["production_id"])["fingerprint"] != row["fingerprint"]:
+            raise ValueError("Production changed; retry research before approving")
+        data = json.loads(row["result"])
+        data["approved"] = True
+        conn.execute("UPDATE gpt_packaging_jobs SET status='queued',claim_token='',result=?,updated_at=? WHERE id=?",
+                     (json.dumps(data), _now(), jid))
 
 
 def _generated_image(path):
@@ -344,20 +405,53 @@ def complete(cfg, jid, token, result):
         if not isinstance(result, dict):
             raise ValueError("A packaging result is required")
         kit = packaging.parse_kit(result)
+        keywords, seen_keywords = [], set()
+        for phrase in kit["tags"]:
+            phrase = " ".join(phrase.split())
+            if phrase and phrase.casefold() not in seen_keywords:
+                seen_keywords.add(phrase.casefold())
+                keywords.append(phrase)
+        if len(keywords) < 20:
+            raise ValueError("Packaging requires at least 20 distinct relevant keywords or search phrases.")
+        keywords_text = ", ".join(keywords)
+        if len(keywords_text) > 500:
+            raise ValueError("Packaging keywords must be no more than 500 characters, including commas and spaces; keep at least 20 distinct keywords.")
+        kit["tags"] = keywords
+        kit["keywords"] = keywords_text
+        first_comment = result.get("first_comment") or result.get("pinned_comment")
+        if not isinstance(first_comment, str) or not first_comment.strip():
+            raise ValueError("A suggested first comment is required for packaging.")
+        first_comment = first_comment.strip()
+        kit["first_comment"] = kit["pinned_comment"] = first_comment
         if not kit["title"] or len(kit["title"]) > 100:
             raise ValueError("A title of 1-100 characters is required")
         if not 200 <= len(kit["description"]) <= 4500:
             raise ValueError("The description must contain 200-4500 characters")
+        review = json.loads(row["result"] or "{}")
+        if not review.get("approved"):
+            raise ValueError("Approve headline concepts before generating or importing images")
+        pairs = review["proposal"]["pairs"]
         title_options = kit["titles"]
-        if (len(title_options) != 4
+        if (len(title_options) != len(pairs)
                 or any(not t["text"] or len(t["text"]) > 100 for t in title_options)
-                or len({t["text"].casefold() for t in title_options}) != 4):
-            raise ValueError("Exactly four distinct titles of 1-100 characters are required")
+                or len({t["text"].casefold() for t in title_options}) != len(pairs)):
+            raise ValueError("One or two distinct titles matching approved pairs are required")
         if kit["title"] not in {t["text"] for t in title_options}:
-            raise ValueError("The recommended title must be one of the four titles")
+            raise ValueError("The recommended title must be one of the approved titles")
         items = result.get("thumbnails")
-        if not isinstance(items, list) or len(items) != 4:
-            raise ValueError("Exactly four finished thumbnails are required")
+        if not isinstance(items, list) or len(items) != len(pairs):
+            raise ValueError("One or two finished thumbnails matching approved pairs are required")
+        if [t["text"] for t in title_options] != [p["title"] for p in pairs]:
+            raise ValueError("Titles must match the approved numbered pairs")
+        if [str(it.get("text") or "").strip() if isinstance(it, dict) else "" for it in items] != [p["text"].strip() for p in pairs]:
+            raise ValueError("Thumbnail headlines must match the approved numbered pairs")
+        try:
+            recommended = int(result.get("recommended_thumbnail", 1))
+        except (TypeError, ValueError):
+            recommended = 1
+        recommended = min(max(recommended, 1), len(items))
+        if kit["title"] != title_options[recommended - 1]["text"]:
+            raise ValueError("Recommended title and thumbnail must use the same pair number")
         prepared = []
         for it in items:
             if not isinstance(it, dict) or not str(it.get("text") or "").strip():
@@ -365,39 +459,43 @@ def complete(cfg, jid, token, result):
             prepared.append(_generated_image(it.get("path") or ""))
         pdir = Path(ctx["source_folder"])
         # Unique output paths and backups preserve older images/user edits.
-        folder = thumbnails.thumbs_dir(pdir) / "jobs" / jid
-        folder.mkdir(parents=True, exist_ok=True)
-        for previous in (packaging.kit_path(pdir),
+        output = pdir / "packaging"
+        thumb_dir = output / "thumbnails"
+        folder = thumb_dir / "jobs" / jid
+        previous_files = (packaging.kit_path(pdir),
                          thumbnails.thumbs_dir(pdir) / thumbnails.THUMBS_FILE,
-                         prodfiles.path(pdir, "description.txt"), prodfiles.path(pdir, "title.txt"), prodfiles.path(pdir, "titles.txt")):
+                         prodfiles.path(pdir, "description.txt"), prodfiles.path(pdir, "title.txt"), prodfiles.path(pdir, "titles.txt"), prodfiles.path(pdir, "keywords.txt"))
+        previous_files += (prodfiles.path(pdir, "first_comment.txt"),)
+        folder.mkdir(parents=True, exist_ok=True)
+        for previous in previous_files:
             backup = folder / ("previous-" + previous.name)
             if previous.exists() and not backup.exists():
                 shutil.copy2(previous, backup)
         concepts = []
         for i, (it, data) in enumerate(zip(items, prepared), 1):
             name = f"gpt-{jid[:8]}-{i}.jpg"
-            dst = thumbnails.thumbs_dir(pdir) / name
+            dst = thumb_dir / name
             dst.write_bytes(data)
             concepts.append({"id": f"gpt_{jid[:8]}_{i}", "layout": "character",
                 "text": str(it["text"]).strip(), "text_pos": "top",
                 "text_color": "#FFD400", "accent": "#FFD400",
                 "emphasis": "none", "focal": "auto", "art_prompt": str(it.get("prompt") or ""),
                 "idea": str(it.get("idea") or ""), "art_file": "",
-                "final": f"{thumbnails.thumbs_dir(pdir).relative_to(pdir).as_posix()}/{name}", "precomposed": True})
+                "final": f"packaging/thumbnails/{name}", "precomposed": True})
         kit.update(status="ready", provider="codex", description_complete=True,
                    notes=str(result.get("notes") or ""))
         # Description is complete text from the worker; keep hashtags/chapters
         # in the body so the kit does not add them a second time.
         kit["hashtags"], kit["chapter_titles"] = [], []
-        try:
-            recommended = int(result.get("recommended_thumbnail", 1))
-        except (TypeError, ValueError):
-            recommended = 1
-        recommended = min(max(recommended, 1), len(concepts))
-        packaging.save_kit(pdir, kit)
-        prodfiles.wpath(pdir, "title.txt").write_text(kit["title"] + "\n", encoding="utf-8")
-        prodfiles.wpath(pdir, "titles.txt").write_text("\n".join(t["text"] for t in title_options) + "\n", encoding="utf-8")
-        prodfiles.wpath(pdir, "description.txt").write_text(kit["description"] + "\n", encoding="utf-8")
+        (output / "publish_kit.json").write_text(json.dumps(kit, ensure_ascii=False, indent=2), encoding="utf-8")
+        manifest = dict(result, proposal=review["proposal"], approved=True)
+        (output / "packaging.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        (output / "title.txt").write_text(kit["title"] + "\n", encoding="utf-8")
+        (output / "titles.txt").write_text("\n".join(t["text"] for t in title_options) + "\n", encoding="utf-8")
+        (output / "first_comment.txt").write_text(first_comment + "\n", encoding="utf-8")
+        (output / "keywords.txt").write_text(keywords_text + "\n", encoding="utf-8")
+        (output / "description.txt").write_text(kit["description"] + "\n", encoding="utf-8")
+        thumb_dir.mkdir(parents=True, exist_ok=True)
         thumbnails.save_thumbs(pdir, {"concepts": concepts, "chosen": None,
             "status": "ready", "score": None, "provider": "codex",
             "recommended": recommended})
@@ -406,6 +504,8 @@ def complete(cfg, jid, token, result):
                                             encoding="utf-8")
         saved = {"production_id": row["production_id"], "title": kit["title"],
                  "description_file": str(prodfiles.path(pdir, "description.txt")),
+                 "keywords_file": str(prodfiles.path(pdir, "keywords.txt")), "keywords": keywords_text,
+                 "first_comment_file": str(prodfiles.path(pdir, "first_comment.txt")), "first_comment": first_comment,
                  "title_file": str(prodfiles.path(pdir, "title.txt")),
                  "titles_file": str(prodfiles.path(pdir, "titles.txt")), "titles": title_options,
                  "thumbnails": [str(pdir / c["final"]) for c in concepts]}

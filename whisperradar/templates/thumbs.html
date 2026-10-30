@@ -93,12 +93,12 @@
 <div class="wrap">
   <p class="muted" style="margin:0 0 6px"><a href="/finished">&larr; Finished</a> &middot; <a href="/studio/{{ prod['id'] }}/kit">publish kit</a> &middot; <a href="/studio/{{ prod['id'] }}">open the production</a></p>
   <h1>Thumbnails &mdash; {{ prod['title'] }}</h1>
-  <p class="sub">Thumbnails come from Generate with GPT Pro: four finished images with the words in the picture. Preview them, download them, and choose your favourite.</p>
+  <p class="sub">Thumbnails come from Generate with GPT Pro: up to two finished images with approved headlines. Preview them, download them, and choose your favourite.</p>
   {% if msg %}<div class="banner ok">{{ msg }}</div>{% endif %}
   {% if error %}<div class="banner err">{{ error }}</div>{% endif %}
   <form method="post" action="/studio/{{ prod['id'] }}/gpt-pro/generate" style="margin-bottom:16px">
-    <button type="submit" {% if prod['status'] != 'ready' %}disabled{% endif %}>Generate with GPT Pro</button>
-    <span class="muted" style="font-size:12px">Four finished thumbnails, four titles and a description from this PC's signed-in Codex runtime. Starts immediately; keep WhisperRadar running.</span>
+    <button type="submit" {% if prod['status'] not in ('ready', 'youtube_queued') %}disabled{% endif %}>Generate with GPT Pro</button>
+    <span class="muted" style="font-size:12px">Research and approve headlines first, then generate up to two thumbnails, matching titles and a description inside packaging/.</span>
   </form>
 
   {% if data.concepts %}
