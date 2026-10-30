@@ -22,17 +22,20 @@ from .video.explainer import recipes
 from .video.explainer.validate import ExplainerError
 
 MAX_ROUNDS = 5
+CONTINUE_MESSAGE = ("continue - this is the same task, not a new one. Output ONLY the rest of the scene plan "
+                    "JSON as text in this chat (no file, no download), starting at the next scene after the "
+                    "last complete one, and close every bracket.")
 MIN_SCORE = 8.0
 
 ICONS = (
     "box blocks layers puzzle file folder database server hard-drive cpu gpu memory-stick monitor laptop "
     "smartphone cloud globe wifi lock shield key user users message-square mail bell bookmark book-open "
-    "image video music mic camera calculator ruler scale gauge hourglass clock calendar zap flame battery "
+    "image video file-music mic camera calculator ruler scale gauge hourglass clock calendar zap flame battery "
     "sun moon thermometer wrench hammer settings sliders-horizontal search eye lightbulb brain target flag "
-    "rocket trophy star heart thumbs-up thumbs-down triangle-alert circle-check circle-x circle-help info "
+    "rocket trophy star heart thumbs-up thumbs-down triangle-alert circle-check circle-x message-circle-question-mark info "
     "wallet credit-card dollar-sign coins piggy-bank trending-up trending-down chart-bar chart-line "
-    "chart-pie shopping-cart store house building car plane train bike truck map-pin route compass "
-    "list-checks clipboard-list pencil trash-2 download upload refresh-cw repeat split merge arrow-right "
+    "chart-pie shopping-cart store house building car plane train-front bike truck map-pin route compass "
+    "list-checks clipboard-list pencil trash download upload refresh-cw repeat split merge arrow-right "
     "turtle snail rabbit leaf sprout tree-pine droplet shield-check badge-check scissors package gift "
     "graduation-cap briefcase handshake megaphone newspaper code terminal bug bot sparkles wand"
 ).split()
@@ -146,7 +149,10 @@ def fix_prompt(plan: dict, faults: list[str]) -> str:
             + json.dumps(plan, ensure_ascii=False, indent=1))
 
 
-def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE) -> str:
+def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE,
+                 checker_notes: list | None = None) -> str:
+    notes = ("\n\nMINOR NOTES FROM THE CODE CHECK (mention one only if it really hurts the video):\n"
+             + "\n".join(f"- {n}" for n in checker_notes[:10])) if checker_notes else ""
     return f"""You are a strict reviewer of an explainer video's scene plan (hand-drawn whiteboard style). A narrator reads the NARRATION; the plan says what is drawn while each part is spoken. The code already checked the format and the timing. You judge the TEACHING.
 
 Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does.
@@ -155,7 +161,7 @@ NARRATION:
 {narration}
 
 THE PLAN AS IT WILL BE DRAWN (scene, layout, what appears, and the narration it covers):
-{summary}
+{summary}{notes}
 
 Reply with ONE JSON object and nothing else:
 {{"score": 8.5, "pass": true, "faults": ["scene id: specific problem"], "fixes": ["scene id: the specific change"]}}
@@ -285,17 +291,21 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             rank = (0, -len(faults))
             if best is None or rank > best[0]:
                 best, kept_verdict = (rank, plan), {}
-            if rnd == rounds:
-                break
-            fixed = _plan_from(ask("writer", fix_prompt(plan, faults), False))
-            if fixed is None:
-                log("writer: the corrected plan was not readable - keeping the last one")
-                break
-            plan = fixed
-            continue
-        summary = summary_text(plan, cues)
+            if rnd < rounds:
+                fixed = _plan_from(ask("writer", fix_prompt(plan, faults), False))
+                if fixed is None:
+                    log("writer: the corrected plan was not readable - keeping the last one")
+                    break
+                plan = fixed
+                continue
+            log("checker faults are minor now - the judge reviews the plan anyway")
+        try:
+            summary = summary_text(plan, cues)
+        except ExplainerError:
+            break          # cannot even be summarised: keep the best plan so far
         verdict = studio._parse_json_object(
-            ask("judge", judge_prompt(narration, plan, summary), True), want=("score",)) or {}
+            ask("judge", judge_prompt(narration, plan, summary, checker_notes=faults or None), True),
+            want=("score",)) or {}
         try:
             score = float(verdict.get("score"))
         except (TypeError, ValueError):
@@ -303,6 +313,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         log(f"round {rnd}: judge scored {score if score is not None else 'nothing'}"
             + (f" - {len(verdict.get('faults') or [])} fault(s)" if verdict.get("faults") else ""))
         rank = (1, score if score is not None else 0.0)
+        notes_extra = list(faults or [])
         if best is None or rank > best[0]:
             best, kept_verdict = (rank, plan), verdict
         if score is None:
@@ -314,6 +325,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             break
         notes = [f"{a}  FIX: {b}" for a, b in zip(verdict.get("faults") or [],
                                                    (verdict.get("fixes") or []) + [""] * 20)]
+        notes += notes_extra
         fixed = _plan_from(ask("writer", fix_prompt(plan, notes or ["raise the quality"]), False))
         if fixed is None:
             break
@@ -327,9 +339,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
          "fixes": verdict.get("fixes") or [], "checker_faults_left": left}, indent=1), encoding="utf-8")
     log(f"plan.json saved: {len(final['scenes'])} scene(s)"
         + (f" - {len(left)} checker fault(s) still open, see the log" if left else ""))
-    if left:
-        raise RuntimeError("the plan still has faults: " + " | ".join(left[:4]))
-    return final
+    return final        # leftover checker faults are warnings (plan_review.json), not a failure
 
 
 # ---- transports --------------------------------------------------------------------------
@@ -342,9 +352,28 @@ def webchat_job(cfg, pid: int, writer: str, judge: str, log, should_stop=lambda:
     with ws.web_transport(cfg, log, options) as t:
         t.set_stop(should_stop)
 
+        n = [0]
+
         def ask(role, text, new_chat):
             log(f"{sites[role]}: sending {len(text):,} characters")
-            return t.ask(sites[role], text, (), new_chat=new_chat, ready=ws._has_json)
+            reply = t.ask(sites[role], text, (), new_chat=new_chat, ready=ws._has_json)
+            n[0] += 1
+            tag = f"scene_{role}_reply_{n[0]}"
+            ws._dump(cfg, pid, tag + "_1", reply)          # raw replies for debugging (webchat_debug)
+            if role != "writer":
+                return reply
+            # like the shotlist: a long plan is often cut off by the chat - send 'continue'
+            # while the JSON is really incomplete, and join the pieces
+            body = ws._json_chunk(reply, True)
+            for i in range(ws.MAX_CONTINUES):
+                if _plan_from(body) is not None or "{" not in body:
+                    break
+                log(f"{sites[role]}: the plan is cut off ({len(body):,} characters read) - "
+                    f"sending 'continue' ({i + 1}/{ws.MAX_CONTINUES})")
+                more = t.ask(sites[role], CONTINUE_MESSAGE, (), new_chat=False, ready=ws._has_json)
+                ws._dump(cfg, pid, f"{tag}_{i + 2}", more)
+                body = ws._join_chunks(body, ws._json_chunk(more, False))
+            return body
         try:
             return run_scenes(cfg, pid, ask, log, should_stop)
         finally:

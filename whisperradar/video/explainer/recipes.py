@@ -40,6 +40,7 @@ LAYOUTS = ("row", "steps", "timeline", "compare", "stack", "hero", "memory", "pr
 CYCLE = ("yellow", "green", "blue", "pink", "orange", "purple")
 Y_BOTTOM = 0.83          # nothing below this: the subtitles live there
 GAP_MS = 70
+OVERRUN_MS = 2500         # lenient: the last label may finish this much later than the tail margin allows
 TAIL_MS = 1000           # every label must finish and stay readable this long before the scene ends
 WN = 9.0 / 16.0          # normalized width of a square per unit of normalized height
 
@@ -371,8 +372,10 @@ def _schedule(s, els, cue_ms):
     if not ok:
         lo, hi = 0.0, 1.0
         plan, ok = _simulate(els, 0.0, cue_ms, start, end)
+        last = plan[-1][0] + plan[-1][1]
+        if not ok and last - GAP_MS <= end - TAIL_MS + OVERRUN_MS:
+            return plan      # a little late at the fastest pen speed: fine, the judge decides if it is too busy
         if not ok:
-            last = plan[-1][0] + plan[-1][1]
             raise ExplainerError([
                 f"Scene {s['id']}: too much for the time - even at the fastest pen speed "
                 f"the last object ends {(last - end) / 1000:.1f}s after the scene "
@@ -494,9 +497,17 @@ def resolve_anchors(plan: dict, cues) -> dict:
             if isinstance(d, dict) and d.get(key) and d.get("cue") is None:
                 try:
                     _, c = stream.find(d[key], base, f"{label} {where}")
-                    d["cue"] = c
+                    # said after the scene ends: draw it at the scene's last cue instead of failing
+                    d["cue"] = min(max(c, s["cue_range"][0]), s["cue_range"][1])
                 except ExplainerError as exc:
-                    errors.extend(exc.errors)
+                    # said earlier than the scene starts (the writer put it in the wrong
+                    # scene): keep it, drawn at the scene's first cue. Words that are said
+                    # nowhere are still a fault.
+                    try:
+                        _, c = stream.find(d[key], 0, f"{label} {where}")
+                        d["cue"] = min(max(c, s["cue_range"][0]), s["cue_range"][1])
+                    except ExplainerError:
+                        errors.extend(exc.errors)
         s["items"] = [dict(i) for i in (s.get("items") or [])]
         for k, it in enumerate(s["items"]):
             anchor(it, where=f"item {k + 1} ({it.get('label', '')})")
@@ -522,8 +533,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
             s["sides"] = sides
         for it in s["items"]:
             if it.get("cue") is not None and not (s["cue_range"][0] <= it["cue"] <= s["cue_range"][1]):
-                errors.append(f"{label}: \"{it.get('at')}\" is in cue {it['cue']}, which is outside the scene "
-                              f"(cues {s['cue_range']}); it belongs to a later scene.")
+                it["cue"] = s["cue_range"][1]     # belongs to a later scene: show it at the end of this one
     if errors:
         raise ExplainerError(errors)
     for s in out["scenes"]:

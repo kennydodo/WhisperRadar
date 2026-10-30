@@ -5028,25 +5028,29 @@ def create_app(cfg) -> Flask:
     @app.post("/studio/<int:pid>/scenes/generate")
     def studio_scenes_generate(pid):
         """Explainer productions: writer drafts plan.json, the code checks it,
-        the judge reviews it (web chat sites, or API providers)."""
+        the judge reviews it. Web chats only; the writer, judge and their
+        model / thinking settings come from the run form, like the shotlist."""
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         if not studio.find_srt(studio.prod_dir(cfg, pid)):
             return _studio_url(pid, error="Generate the subtitles first")
-        transport = "webchat" if request.form.get("transport") == "webchat" else None
-        provider = autorun._stage_provider(
-            cfg, pid, "shots",
-            override=(request.form.get("provider") or "").strip() or None)
+        from . import webchat
+        writer = (request.form.get("writer") or "zai").strip()
+        judge = (request.form.get("judge") or "deepseek").strip()
+        if writer not in webchat.SITES or judge not in webchat.SITES:
+            return _studio_url(pid, error="Unknown chat site")
+        options = _chat_options(request.form)
         _job = sjob._real()
 
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "shots", {
-                    "provider": provider, "transport": transport,
+                    "transport": "webchat", "writer": writer,
+                    "judge": judge, "options": options,
                     "log": sjob.log.append,
                     "cancel": (lambda _j=_job: _j.cancel)}))
 
-        sjob.start(worker, "explainer scene plan")
+        sjob.start(worker, f"explainer scene plan in web chat ({writer} writes, {judge} judges)")
         return _studio_url(pid, msg="Scene plan started - the job log shows each round")
 
     @app.post("/studio/<int:pid>/shotlist/generate")
@@ -5065,6 +5069,11 @@ def create_app(cfg) -> Flask:
             studio.seed_production(cfg, conn, prod)
         finally:
             conn.close()
+        if autorun.explainer_production(cfg, pid):
+            return _studio_url(
+                pid,
+                error="This is an explainer channel: it has a scene plan, not a "
+                      "shotlist. Use 'Write scene plan (web chat)' instead.")
         # the manifest-authoring brief's bible gate: the LLM refuses to plan
         # without a reference bible, so require it up front
         if not studio.find_bible(studio.prod_dir(cfg, pid)):
