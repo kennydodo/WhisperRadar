@@ -11,7 +11,8 @@ other layouts, so they share the pen, the cache and Stop/resume:
              format needs. Scene: params_b (billions), items [{label, bits, at}].
              The size is computed (params x bits / 8), never typed.
   offload    the layer stack split between two memories. Scene: layers,
-             items [{label, layers, at, note}] (two zones, in order).
+             items [{label, layers, at, note}] (two zones, in order). Unless the scene
+             says exact, it is tagged as an illustrative, simplified split.
 
 The numbers are checked: segments must fit the box unless the scene says
 allow_overflow, precision sizes are calculated, and the layer counts must add up.
@@ -157,7 +158,7 @@ def precision(R, s, sid, els, top):
                            [bx, y + bar_h + 0.005, 0.62, pitch * 0.34], "grey", cue, gid))
     if not s.get("footer"):
         els.append(R._text(f"{sid}_raw", "weights only - real files add some overhead",
-                           [X0, 0.775, 0.8, 0.05], "grey", s["cue_range"][1], "footer"))
+                           [X0, 0.775, 0.8, 0.05], "grey", _cue(R, s, items, len(items) - 1), "footer"))
     return els
 
 
@@ -208,8 +209,8 @@ def offload(R, s, sid, els, top):
         x += w
         start += c
     if not s.get("footer"):
-        els.append(R._text(f"{sid}_simp", "simplified split",
-                           [X0, 0.775, 0.85, 0.05], "grey", s["cue_range"][1], "footer"))
+        els.append(R._text(f"{sid}_simp", "simplified split" if s.get("exact") else "illustrative, simplified split",
+                           [X0, 0.775, 0.85, 0.05], "grey", _cue(R, s, items, len(items) - 1), "footer"))
     return els
 
 
