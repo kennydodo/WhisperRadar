@@ -143,6 +143,33 @@ class NormalWorkflowTests(Base):
 
 
 class SwitchingTests(Base):
+    def test_legacy_channel_choice_wins_over_a_new_global_type(self):
+        ss.save_global(self.conn, {"channel_type": "standard", "visual_mode": "images"})
+        ss.save_channel(self.conn, self.oc, {"visual_mode": "motion_graphics"})
+        values = ss.effective(self.conn, self.oc)
+        self.assertEqual(values["channel_type"], "explainer")
+        self.assertEqual(values["visual_mode"], "motion_graphics")
+        self.assertTrue(autorun.explainer_production(self.cfg, self.pid))
+        self.assertEqual(self.seed().get("skipped"), "explainer channel")
+        # Resolving old choices does not rewrite the channel's stored options.
+        self.assertEqual(ss.load_channel(self.conn, self.oc), {"visual_mode": "motion_graphics"})
+
+    def test_legacy_normal_channel_does_not_inherit_explainer_type(self):
+        ss.save_global(self.conn, {"channel_type": "explainer", "explainer.format": "motion_graphics"})
+        ss.save_channel(self.conn, self.oc, {"visual_mode": "images"})
+        self.assertEqual(ss.effective(self.conn, self.oc)["channel_type"], "standard")
+        self.assertFalse(autorun.explainer_production(self.cfg, self.pid))
+        self.assertTrue(self.seed()["bible"])
+
+    def test_legacy_channel_format_wins_over_global_format(self):
+        ss.save_global(self.conn, {"channel_type": "explainer", "explainer.format": "motion_graphics"})
+        ss.save_channel(self.conn, self.oc, {"visual_mode": "whiteboard"})
+        self.assertEqual(ss.effective(self.conn, self.oc)["visual_mode"], "whiteboard")
+
+    def test_no_channel_type_choice_still_inherits_global(self):
+        ss.save_global(self.conn, {"channel_type": "explainer", "explainer.format": "motion_graphics"})
+        self.assertEqual(ss.effective(self.conn, self.oc)["visual_mode"], "motion_graphics")
+
     def test_switching_type_loses_no_saved_setting(self):
         ss.save_channel(self.conn, self.oc, {"explainer.theme": "chalkboard", "timing.min_image_seconds": 2.0})
         before = {r: db.get_own_channel(self.conn, self.oc)[r] for r in ("bible", "style", "bible_dir", "writing_style")}

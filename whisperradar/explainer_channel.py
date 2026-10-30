@@ -121,7 +121,9 @@ def save(conn, oc_id: int, form) -> str:
         errors.append("Explainer format: one of " + ", ".join(ss.BY_PATH["explainer.format"]["choices"]))
     if not errors:
         # blank type = inherit. A format picked while the type is "standard" is remembered, not used.
-        fmt = typed.get("format") or keep.get("explainer.format", "")
+        # An absent field preserves the remembered format (older/partial forms).
+        # An explicitly blank field means the user selected default/inherit.
+        fmt = typed.get("format", "") if "explainer_format" in form else keep.get("explainer.format", "")
         values = channel_types.apply_choice(values, typed.get("channel_type", ""), fmt)
     if not errors:
         errors = ss.validate(values)

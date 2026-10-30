@@ -101,6 +101,22 @@ class ExplainerChannelTests(unittest.TestCase):
         self.assertEqual(self.saved()["visual_mode"], "whiteboard")
         self.assertIn("error=", self.post(explainer_mode="movie").headers["Location"])
 
+    def test_explicit_default_clears_remembered_presentation(self):
+        self.post(explainer_channel_type="explainer", explainer_format="motion_graphics")
+        self.post(explainer_channel_type="explainer", explainer_format="")
+        self.assertNotIn("explainer.format", self.saved())
+        self.assertEqual(self.saved()["visual_mode"], "whiteboard")
+
+    def test_default_presentation_inherits_global_format(self):
+        conn = db.connect(self.cfg.db_path)
+        ss.save_global(conn, {"explainer.format": "motion_graphics"})
+        conn.close()
+        self.post(explainer_channel_type="explainer", explainer_format="whiteboard")
+        self.post(explainer_channel_type="explainer", explainer_format="")
+        conn = db.connect(self.cfg.db_path)
+        self.assertEqual(ss.effective(conn, self.oc)["visual_mode"], "motion_graphics")
+        conn.close()
+
     def test_a_channel_with_only_the_old_visual_mode_shows_as_its_type(self):
         from whisperradar.video import settings_spec as ss
         conn = db.connect(self.cfg.db_path)

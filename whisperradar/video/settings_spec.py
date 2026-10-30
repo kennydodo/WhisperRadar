@@ -297,10 +297,18 @@ def save_channel(conn, oc_id, values: dict) -> None:
 
 def effective(conn, own_channel_id) -> dict:
     """channel overrides on top of the global ones."""
+    from .. import channel_types
     vals = load_global(conn)
     if own_channel_id not in (None, ""):
-        vals.update(load_channel(conn, own_channel_id))
-    from .. import channel_types
+        channel = load_channel(conn, own_channel_id)
+        # An explicit legacy channel mode is still a channel-level choice. Resolve
+        # its type/format before overlaying it, or a newer global type wins instead.
+        if not channel.get("channel_type") and channel.get("visual_mode"):
+            channel = dict(channel)
+            channel["channel_type"] = channel_types.from_visual_mode(channel["visual_mode"]).key
+            if channel_types.type_of(channel).formats and not channel.get("explainer.format"):
+                channel["explainer.format"] = channel_types.format_of(channel)
+        vals.update(channel)
     return channel_types.normalize(vals)
 
 
