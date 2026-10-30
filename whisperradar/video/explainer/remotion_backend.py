@@ -137,6 +137,8 @@ def _check_pipeline(p: dict, where: str) -> list:
             continue
         if not isinstance(x.get("workers"), int) or isinstance(x.get("workers"), bool) or not 1 <= x["workers"] <= 8:
             errs.append(f"{where}: stage {k} workers must be a whole number 1-8.")
+        if "at_ms" in x and not _ms(x["at_ms"]):
+            errs.append(f"{where}: stage {k} at_ms must be a whole number >= 0.")
         if "work" in x and (not _pos(x["work"]) or x["work"] > 10):
             errs.append(f"{where}: stage {k} work must be a number 0-10 (relative time per task).")
     if not isinstance(p.get("tasks"), int) or isinstance(p.get("tasks"), bool) or not 4 <= p["tasks"] <= 24:
@@ -164,8 +166,12 @@ def _check_generation(p: dict, where: str) -> list:
         if r.get("mode") not in GEN_MODES:
             errs.append(f"{where}: row {k} mode must be one of {', '.join(GEN_MODES)}.")
         w = r.get("words")
-        if (not isinstance(w, list) or not 4 <= len(w) <= 14 or not all(_text(x, 12) for x in w)):
-            errs.append(f"{where}: row {k} words must be 4-14 short words (12 characters at most).")
+        if (not isinstance(w, list) or not 4 <= len(w) <= 14 or not all(_text(x, 18) for x in w)):
+            errs.append(f"{where}: row {k} words must be 4-14 short words (18 characters at most).")
+        bm = r.get("beats_ms")
+        if bm is not None and (not isinstance(bm, list) or not 1 <= len(bm) <= 3 or not all(_ms(v) for v in bm)
+                               or sorted(bm) != bm):
+            errs.append(f"{where}: row {k} beats must be 1-3 narration anchors in the order they are said.")
     if not _ms(p.get("start_ms")) or not _ms(p.get("run_ms")) or p.get("run_ms", 0) < 3000:
         errs.append(f"{where}: start_ms >= 0 and run_ms >= 3000 are needed.")
     for key, n in (("title", 48), ("sub", 70), ("note", 70)):

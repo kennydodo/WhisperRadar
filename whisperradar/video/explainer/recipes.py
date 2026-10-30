@@ -514,6 +514,21 @@ def resolve_anchors(plan: dict, cues) -> dict:
             if isinstance(s.get(key), dict):
                 s[key] = dict(s[key])
                 anchor(s[key], where=key)
+        for key in ("stages", "highlights"):
+            if isinstance(s.get(key), list):
+                s[key] = [dict(x) if isinstance(x, dict) else x for x in s[key]]
+                for k, x in enumerate(s[key]):
+                    anchor(x, where=f"{key[:-1]} {k + 1}")
+        if isinstance(s.get("rows"), list):
+            rows = []
+            for k, row in enumerate(s["rows"]):
+                row = dict(row) if isinstance(row, dict) else row
+                if isinstance(row, dict) and isinstance(row.get("beats"), list):
+                    row["beats"] = [dict(b) if isinstance(b, dict) else b for b in row["beats"]]
+                    for j, b in enumerate(row["beats"]):
+                        anchor(b, where=f"row {k + 1} beat {j + 1}")
+                rows.append(row)
+            s["rows"] = rows
         sides = []
         for k, side in enumerate(s.get("sides") or []):
             side = dict(side)
@@ -599,12 +614,44 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
         params = {k: v for k, v in raw.items() if k in ("title", "sub", "note", "stages", "tasks", "rows",
                                                           "filename", "lines", "highlights")}
         params["start_ms"] = int(st)
+
+        def beat_ms(spec, label):
+            """Scene-relative ms of a narration anchor, or None when the spec has none."""
+            if not isinstance(spec, dict) or spec.get("cue") is None:
+                return None
+            if spec["cue"] not in cue_ms or not cr[0] <= spec["cue"] <= cr[1]:
+                raise ExplainerError([f"Scene {sid}: {label} is anchored outside the scene."])
+            return max(int(cue_ms[spec["cue"]][0] - start), 0)
         if layout == "code":
             params["type_ms"] = int(m.get("type_ms") or min(run, 5000))
-            params["highlights"] = [dict(h, start_ms=int(h.get("start_ms", params["type_ms"]))) for h in
-                                    (raw.get("highlights") or []) if isinstance(h, dict)]
+            hls = []
+            for k, h in enumerate(raw.get("highlights") or []):
+                if not isinstance(h, dict):
+                    continue
+                at = beat_ms(h, f"highlight {k + 1}")
+                hls.append(dict(h, start_ms=max(at - st, 0) if at is not None else int(h.get("start_ms", params["type_ms"]))))
+            params["highlights"] = hls
         else:
             params["run_ms"] = run
+        if layout == "pipeline":
+            stages = []
+            for k, sg in enumerate(raw.get("stages") or []):
+                sg = dict(sg)
+                at = beat_ms(sg, f"stage {k + 1}")
+                if at is not None:
+                    sg["at_ms"] = at
+                sg.pop("at", None), sg.pop("cue", None)
+                stages.append(sg)
+            params["stages"] = stages
+        if layout == "generation":
+            rows = []
+            for k, row in enumerate(raw.get("rows") or []):
+                row = dict(row)
+                bs = [beat_ms(b, f"row {k + 1} beat {j + 1}") for j, b in enumerate(row.pop("beats", None) or [])]
+                if bs and None not in bs:
+                    row["beats_ms"] = bs
+                rows.append(row)
+            params["rows"] = rows
     else:
         z = dict(raw.get("zoom") or {})
         st = rel_ms(z, "the zoom")

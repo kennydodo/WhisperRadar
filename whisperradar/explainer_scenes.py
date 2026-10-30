@@ -66,12 +66,13 @@ FORMAT = """\
   {"id": "fit", "start": "...", "layout": "fit_chart", "limit": 24, "unit": "GB", "bits": 4, "fade": {"out_ms": 400},
    "items": [{"label": "7B", "params_b": 7, "at": "words"}, {"label": "70B", "params_b": 70, "at": "words"}]},
   {"id": "run", "start": "...", "layout": "pipeline", "title": "short", "tasks": 8, "motion": {"at": "words"},
-   "stages": [{"label": "Stage 1", "workers": 8, "work": 1}, {"label": "Stage 2", "workers": 4, "work": 1, "waits_for_all": true}]},
+   "stages": [{"label": "Stage 1", "workers": 8, "work": 1}, {"label": "Stage 2", "workers": 4, "work": 1, "waits_for_all": true, "at": "words"}]},
   {"id": "order", "start": "...", "layout": "generation", "title": "short", "motion": {"at": "words"},
    "rows": [{"label": "Way A", "mode": "sequential", "words": ["a", "b", "c", "d", "e", "f"]},
-            {"label": "Way B", "mode": "plan_then_fill", "words": ["a", "b", "c", "d", "e", "f"]}]},
+            {"label": "Way B", "mode": "plan_then_fill", "beats": [{"at": "words"}, {"at": "words"}, {"at": "words"}],
+             "words": ["a", "b", "c", "d", "e", "f"]}]},
   {"id": "src", "start": "...", "layout": "code", "title": "short", "filename": "train.py", "motion": {"at": "words"},
-   "lines": ["def f(x):", "    return x"], "highlights": [{"line": 2, "start_ms": 3000, "note": "short"}]},
+   "lines": ["def f(x):", "    return x"], "highlights": [{"line": 2, "at": "words", "note": "short"}]},
   {"id": "num", "start": "...", "layout": "counter", "title": "optional",
    "counter": {"from": 0, "to": 14, "unit": "GB", "label": "a 7B model at 16-bit", "at": "words"}}
  ]}"""
@@ -88,6 +89,7 @@ MOTION SCENES (the viewer watches the idea happen; use them where the narrator d
 - pipeline: tasks (4-24) flow through 2-3 stages; each stage has "workers" (1-8) and a relative "work" per task; "waits_for_all": true makes a stage wait until the whole stage before it is finished (shown locked). Use it for parallel work, queues, bottlenecks, "level 2 waits for level 1".
 - generation: 1-2 rows of 4-14 short words, each row "mode": "sequential" (one after another) or "plan_then_fill" (a rough outline first, then the gaps). Use it to show two ways of producing the same thing side by side.
 - code: 2-12 lines (64 characters at most) typed out, with "highlights" (line, start_ms, short note) on the line that matters. Use it only for real code or a real excerpt the narrator discusses, never invented.
+- ONE DIAGRAM, MANY BEATS: a motion scene may last 20-60 seconds and keep the same diagram while the narrator moves through several points. Tie each change to the words that cause it: pipeline stages take "at" (the stage unlocks and starts when those words are said), generation rows take "beats" (a list of {"at": words}, one per pass: the outline, the next detail, the last detail; sequential rows take 2: where the writing starts and ends), code highlights take "at". Without an anchor a step is spaced evenly, which does not follow the narrator, so always anchor them.
 - "motion": {"at": words, "run_ms": optional} is where the animation starts. Give each scene 6+ seconds. Colours, fonts and line style come from the channel; never choose them. At most one or two motion scenes in a row; titles under 48 characters.
 NUMBER SCENES (only when the narrator states the quantities; the app draws them to scale and checks the arithmetic):
 - memory: a box (GPU memory, RAM, a budget) filled by up to 4 segments, widths proportional to "gb". Segments must add up to at most "capacity" (else the scene is rejected). Use the narrator's numbers; set "exact": true when the narrator gave them, leave it off to show an "illustrative numbers" tag. "grows_from" (last segment only) makes it grow from a smaller size.
