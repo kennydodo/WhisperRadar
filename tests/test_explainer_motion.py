@@ -52,6 +52,38 @@ class ParamTests(unittest.TestCase):
         self.assertGreaterEqual(blk["params"]["start_ms"], 400)
 
 
+class BeatTests(unittest.TestCase):
+    """Each step of an animation can be tied to the narration words that cause it."""
+
+    def build(self, scene):
+        return recipes.build({"scenes": [scene]}, cues())["scenes"][0]["remotion"]["params"]
+
+    def test_pipeline_stage_unlocks_on_its_words(self):
+        p = self.build({"id": "run", "start": "words number 1", "layout": "pipeline", "tasks": 8,
+                        "motion": {"at": "words number 1"},
+                        "stages": [{"label": "One", "workers": 8}, {"label": "Two", "workers": 4, "waits_for_all": True,
+                                                                     "at": "words number 3"}]})
+        self.assertNotIn("at_ms", p["stages"][0])
+        self.assertEqual(p["stages"][1]["at_ms"], 10000)
+
+    def test_generation_beats_follow_the_narration(self):
+        p = self.build({"id": "g", "start": "words number 1", "layout": "generation", "motion": {"at": "words number 1"},
+                        "rows": [{"label": "A", "mode": "plan_then_fill", "words": list("abcdefgh"),
+                                  "beats": [{"at": "words number 2"}, {"at": "words number 4"}, {"cue": 6}]}]})
+        self.assertEqual(p["rows"][0]["beats_ms"], [5000, 15000, 25000])
+
+    def test_a_beat_outside_the_scene_is_rejected(self):
+        with self.assertRaises(Exception):
+            self.build({"id": "g", "cue_range": [1, 2], "layout": "generation", "motion": {"cue": 1},
+                        "rows": [{"label": "A", "mode": "sequential", "words": list("abcd"), "beats": [{"cue": 5}]}]})
+
+    def test_code_highlight_is_timed_from_the_words(self):
+        p = self.build({"id": "c", "start": "words number 1", "layout": "code", "filename": "a.py",
+                        "motion": {"at": "words number 1"}, "lines": ["x = 1", "y = 2"],
+                        "highlights": [{"line": 2, "at": "words number 4", "note": "this"}]})
+        self.assertEqual(p["highlights"][0]["start_ms"], 15000 - p["start_ms"])
+
+
 class LookTests(unittest.TestCase):
     class Doc:
         pass
