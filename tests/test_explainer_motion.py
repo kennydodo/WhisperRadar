@@ -84,6 +84,61 @@ class BeatTests(unittest.TestCase):
         self.assertEqual(p["highlights"][0]["start_ms"], 15000 - p["start_ms"])
 
 
+class FixesAfterReviewTests(unittest.TestCase):
+    def build(self, scene):
+        return recipes.build({"scenes": [scene]}, cues())["scenes"][0]["remotion"]["params"]
+
+    def test_eight_stages_are_kept(self):
+        stages = [{"label": f"S{i}", "workers": 8} for i in range(8)]
+        self.assertEqual(rb.check_block({"component": "pipeline", "params": pipe(stages=stages)}, "S"), [])
+        self.assertTrue(rb.check_block({"component": "pipeline", "params": pipe(stages=stages + [{"label": "S9", "workers": 1}])}, "S"))
+
+    def test_blank_words_are_rejected(self):
+        gen = {"rows": [{"label": "A", "mode": "plan_then_fill", "words": ["Team", "___", "Thursday", "bring"]}],
+               "start_ms": 0, "run_ms": 3000}
+        self.assertTrue(any("___" in e for e in rb.check_block({"component": "generation", "params": gen}, "S")))
+
+    def test_steps_on_the_same_moment_are_rejected(self):
+        with self.assertRaises(Exception) as cm:
+            self.build({"id": "g", "start": "words number 1", "layout": "generation", "motion": {"cue": 1},
+                        "rows": [{"label": "A", "mode": "plan_then_fill", "words": list("abcdefgh"),
+                                  "beats": [{"cue": 2}, {"cue": 2}, {"cue": 4}]}]})
+        self.assertIn("same moment", str(cm.exception))
+
+    def test_the_footer_reaches_the_animation(self):
+        p = self.build({"id": "g", "start": "words number 1", "layout": "generation", "motion": {"at": "words number 1"},
+                        "footer": {"text": "Why it matters", "at": "words number 3"},
+                        "rows": [{"label": "A", "mode": "sequential", "words": list("abcd")}]})
+        self.assertEqual(p["footer"]["text"], "Why it matters")
+        self.assertEqual(p["footer"]["start_ms"], 10000)
+
+    def test_levels_scene_builds_with_timed_levels(self):
+        p = self.build({"id": "l", "cue_range": [1, 6], "layout": "levels", "motion": {"cue": 1},
+                        "levels": [{"label": "Broad", "cells": 2, "cue": 1}, {"label": "Finer", "cells": 6, "cue": 3}],
+                        "decoder": {"label": "Decoder", "cue": 5}, "result": {"text": "Done", "cue": 6}})
+        self.assertEqual([x["at_ms"] for x in p["levels"]], [0, 10000])
+        self.assertEqual(p["result"]["text"], "Done")
+        self.assertTrue(rb.check_block({"component": "levels", "params": dict(p, levels=[{"label": "x", "cells": 9, "at_ms": 0}])}, "S"))
+
+
+class CountTests(unittest.TestCase):
+    def check(self, narration, scene):
+        srt = f"1\n00:00:00,000 --> 00:00:08,000\n{narration}\n\n"
+        cs = studio.parse_srt_cues(srt)
+        return es.count_faults(recipes.resolve_anchors({"scenes": [dict(scene, cue_range=[1, 1])]}, es._cue_objs(cs)), cs)
+
+    def test_a_wrong_stage_count_is_a_fault(self):
+        st = lambda n: [{"label": f"S{i}", "workers": 2} for i in range(n)]
+        bad = self.check("Suppose a job has eight stages and each one waits.", {"id": "p", "layout": "pipeline", "stages": st(2)})
+        self.assertTrue(bad and "eight stages" in bad[0] and "exactly 8" in bad[0])
+        self.assertEqual(self.check("Suppose a job has eight stages.", {"id": "p", "layout": "pipeline", "stages": st(8)}), [])
+
+    def test_a_count_the_component_cannot_draw_points_to_another_layout(self):
+        lv = [{"label": "L", "cells": 2}, {"label": "M", "cells": 4}]
+        bad = self.check("There are six levels in the hierarchy.", {"id": "l", "layout": "levels", "levels": lv})
+        self.assertTrue(bad and "cannot draw" in bad[0])
+
+
 class LookTests(unittest.TestCase):
     class Doc:
         pass

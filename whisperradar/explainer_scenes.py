@@ -15,6 +15,7 @@ loop works over the web-chat transport and over a plain API provider.
 from __future__ import annotations
 
 import json
+import re
 from typing import Callable
 
 from . import studio
@@ -71,6 +72,9 @@ FORMAT = """\
    "rows": [{"label": "Way A", "mode": "sequential", "words": ["a", "b", "c", "d", "e", "f"]},
             {"label": "Way B", "mode": "plan_then_fill", "beats": [{"at": "words"}, {"at": "words"}, {"at": "words"}],
              "words": ["a", "b", "c", "d", "e", "f"]}]},
+  {"id": "tree", "start": "...", "layout": "levels", "title": "short", "motion": {"at": "words"},
+   "levels": [{"label": "Broad", "cells": 2, "at": "words"}, {"label": "Finer", "cells": 6, "at": "words"}],
+   "decoder": {"label": "Decoder", "at": "words"}, "result": {"text": "the final text", "at": "words"}},
   {"id": "src", "start": "...", "layout": "code", "title": "short", "filename": "train.py", "motion": {"at": "words"},
    "lines": ["def f(x):", "    return x"], "highlights": [{"line": 2, "at": "words", "note": "short"}]},
   {"id": "num", "start": "...", "layout": "counter", "title": "optional",
@@ -87,10 +91,12 @@ LAYOUTS (pick the one that teaches the sentence):
 MOTION SCENES (the viewer watches the idea happen; use them where the narrator describes a process, a comparison of how two things work, or evidence):
 - A video made mostly of hero, stack and row scenes is a slide deck. Wherever the narrator explains how something works, how two ways differ, what waits for what, or shows evidence, use a motion scene, about one for every 60-90 seconds of narration. Hero, stack and row are for the short statements between them. Prefer fewer, longer scenes (15-40 seconds) over many 3-6 second ones.
 - First ask for every scene: what will the viewer understand by watching this that the words alone do not show? If the answer is only "they read the same point", pick a motion scene or a better picture.
-- pipeline: tasks (4-24) flow through 2-3 stages; each stage has "workers" (1-8) and a relative "work" per task; "waits_for_all": true makes a stage wait until the whole stage before it is finished (shown locked). Use it for parallel work, queues, bottlenecks, "level 2 waits for level 1".
+- levels: a broad level first, then finer levels that split it into more cells, then an optional decoder and the resulting text; "levels": [{"label", "cells" (1-16, more each level), "at": words}], "decoder": {"label", "at"}, "result": {"text", "at"}. Use it for hierarchies, coarse-to-fine, layers, zooming in. Give each level its own words.
+- COUNTS ARE THE NARRATOR'S: if the narration says eight stages, draw eight; never change a count or a relationship to fit a component. If a component cannot draw it (levels: 2-4, pipeline: 2-8, a row: 4-14 words), use a steps or row scene with the exact count, and say in the footer what is simplified. The app rejects a drawn count that differs from the stated one.
+- pipeline: tasks (4-24) flow through 2-8 stages (as many as the narrator names: if the narration says eight stages, draw eight; labels of 14 characters when there are more than three); each stage has "workers" (1-8) and a relative "work" per task; "waits_for_all": true makes a stage wait until the whole stage before it is finished (shown locked). Use it for parallel work, queues, bottlenecks, "level 2 waits for level 1".
 - generation: 1-2 rows of 4-14 short words, each row "mode": "sequential" (one after another) or "plan_then_fill" (a rough outline first, then the gaps). Use it to show two ways of producing the same thing side by side.
 - code: 2-12 lines (64 characters at most) typed out, with "highlights" (line, start_ms, short note) on the line that matters. Use it only for real code or a real excerpt the narrator discusses, never invented.
-- ONE DIAGRAM, MANY BEATS: a motion scene may last 20-60 seconds and keep the same diagram while the narrator moves through several points. Tie each change to the words that cause it: pipeline stages take "at" (the stage unlocks and starts when those words are said), generation rows take "beats" (a list of {"at": words}, one per pass: the outline, the next detail, the last detail; sequential rows take 2: where the writing starts and ends), code highlights take "at". Without an anchor a step is spaced evenly, which does not follow the narrator, so always anchor them.
+- ONE DIAGRAM, MANY BEATS: a motion scene may last 20-60 seconds and keep the same diagram while the narrator moves through several points. Tie each change to the words that cause it: pipeline stages take "at" (the stage unlocks and starts when those words are said), generation rows take "beats" (a list of {"at": words}, one per pass: the outline, the next detail, the last detail; sequential rows take 2: where the writing starts and ends), code highlights take "at". Anchors for different steps must be words said in different places (at least half a second apart, never inside one short phrase). Every motion scene may carry a "footer" ({"text", "at"}): the one sentence that should stay on screen for the point. Row words must all be real final text, never "___" or placeholders: the animation already shows every slot empty until its step. Without an anchor a step is spaced evenly, which does not follow the narrator, so always anchor them.
 - "motion": {"at": words, "run_ms": optional} is where the animation starts. Give each scene 6+ seconds. Colours, fonts and line style come from the channel; never choose them. At most one or two motion scenes in a row; titles under 48 characters.
 NUMBER SCENES (only when the narrator states the quantities; the app draws them to scale and checks the arithmetic):
 - memory: a box (GPU memory, RAM, a budget) filled by up to 4 segments, widths proportional to "gb". Segments must add up to at most "capacity" (else the scene is rejected). Use the narrator's numbers; set "exact": true when the narrator gave them, leave it off to show an "illustrative numbers" tag. "grows_from" (last segment only) makes it grow from a smaller size.
@@ -176,7 +182,7 @@ def fix_prompt(plan: dict, faults: list[str]) -> str:
 def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE) -> str:
     return f"""You are a strict reviewer of an explainer video's scene plan (hand-drawn whiteboard style). A narrator reads the NARRATION; the plan says what is drawn while each part is spoken. The code already checked the format and the timing. You judge the TEACHING.
 
-Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does. (9) the video does not read as a slide deck: where the narration explains a process, a comparison of how two things work, a dependency or evidence, the scene is a motion scene (pipeline, generation, code) whose steps are anchored to the narrator's words; a long run of hero/stack/row scenes over such narration is a fault. (8) every key name or acronym the narrator says (and what it stands for, when spelled out) is written on screen in the scene where it is said; a missing one is a fault.
+Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does. (10) you are given the exact animation specification of every motion scene (stages, rows, levels, code, footer, step anchors): check that counts match the narration, every slot is real text, each step is anchored to the words that cause it, nothing the narrator says is left out, and that watching it teaches the idea; judge only what the specification says is drawn, never call a scene 'only a footer' when it lists animation. (9) the video does not read as a slide deck: where the narration explains a process, a comparison of how two things work, a dependency or evidence, the scene is a motion scene (pipeline, generation, code) whose steps are anchored to the narrator's words; a long run of hero/stack/row scenes over such narration is a fault. (8) every key name or acronym the narrator says (and what it stands for, when spelled out) is written on screen in the scene where it is said; a missing one is a fault.
 
 NARRATION:
 {narration}
@@ -211,6 +217,11 @@ def summary_text(plan: dict, cues: list[dict]) -> str:
             extra = [f"{k}={it[k]}" for k in ("gb", "bits", "layers", "params_b") if it.get(k) is not None]
             if extra:
                 drawn.append(f"{it.get('label')}: " + ", ".join(extra))
+        if isinstance(s.get("levels"), list):
+            drawn.append("animated levels, broad to fine: " + "; ".join(
+                f"{g.get('label')} ({g.get('cells')} cells, on '{g.get('at', '')}')" for g in s["levels"] if isinstance(g, dict))
+                + (f"; decoder '{s['decoder'].get('label')}'" if isinstance(s.get("decoder"), dict) else "")
+                + (f"; result text '{s['result'].get('text')}'" if isinstance(s.get("result"), dict) else ""))
         if isinstance(s.get("stages"), list):
             drawn.append("animated pipeline of " + str(s.get("tasks", "?")) + " tasks through stages: " + "; ".join(
                 f"{g.get('label')} ({g.get('workers')} workers"
@@ -307,6 +318,39 @@ def _split_faults(found: list) -> tuple:
     return [f for f in found if f not in advisory], advisory
 
 
+_NUMS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+_COUNT = re.compile(r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(stages?|levels?|layers?|steps?|passes|rounds?)\b", re.I)
+_NOUN_FOR = {"pipeline": ("stage", "step"), "levels": ("level", "layer")}
+_LIMIT = {"pipeline": (2, 8), "levels": (2, 4)}
+
+
+def count_faults(resolved: dict, cues: list) -> list:
+    """The narrator's count must be the drawn count: 'eight stages' is never drawn as two."""
+    texts = {int(c["index"]): c["text"] for c in cues}
+    faults = []
+    for s in resolved.get("scenes") or []:
+        lay = s.get("layout")
+        if lay not in _NOUN_FOR:
+            continue
+        drawn = len(s.get("stages") if lay == "pipeline" else s.get("levels") or [])
+        a, b = s["cue_range"]
+        said = " ".join(texts.get(i, "") for i in range(a, b + 1))
+        for m in _COUNT.finditer(said):
+            n = int(m.group(1)) if m.group(1).isdigit() else _NUMS[m.group(1).lower()]
+            if not m.group(2).lower().rstrip("s") in _NOUN_FOR[lay] or n == drawn:
+                continue
+            lo, hi = _LIMIT[lay]
+            if lo <= n <= hi:
+                faults.append(f"scene {s.get('id')}: the narrator says '{m.group(0)}' but the {lay} draws {drawn}; "
+                              f"draw exactly {n}")
+            else:
+                faults.append(f"scene {s.get('id')}: the narrator says '{m.group(0)}', which a {lay} scene cannot draw "
+                              f"({lo}-{hi} supported); use a steps or row scene with exactly {n} items instead of "
+                              "changing the count")
+            break
+    return faults
+
+
 def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms: list = None) -> list[str]:
     """Faults the code can find: the recipe builder's readable errors plus pacing."""
     if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
@@ -331,6 +375,7 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms
         for gap in explainer_terms.missing(resolved, terms):
             mmss = str(starts.get(gap["cue"], "")).split(",")[0].lstrip("0:") or "0:00"
             faults.append(explainer_terms.fault_text(gap, mmss))
+    faults.extend(count_faults(resolved, cues))
     if resolved["scenes"][0]["cue_range"][0] != int(cues[0]["index"]):
         faults.append("the first scene must start with the very first words of the narration")
     for s in plan["scenes"]:

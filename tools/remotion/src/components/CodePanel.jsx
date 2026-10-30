@@ -1,5 +1,5 @@
 import React from 'react';
-import {Heading, Note, Scribble, clamp01, prog, useMs, usePal} from '../motion.jsx';
+import {Footer, Heading, Note, Scribble, clamp01, prog, useMs, usePal} from '../motion.jsx';
 
 const KW = /\b(def|return|for|in|if|else|while|import|from|class|await|async|const|let|function|True|False|None)\b/g;
 const tint = (line, pal) => {
@@ -18,7 +18,7 @@ const tint = (line, pal) => {
 };
 
 // Evidence on screen: real code or a source excerpt, typed out, with the line that matters lit up.
-export const CodePanel = ({title, sub, filename, lines, highlights, start_ms, type_ms, theme}) => {
+export const CodePanel = ({title, sub, filename, lines, highlights, start_ms, type_ms, footer, theme}) => {
   const pal = usePal(theme);
   const ms = useMs();
   const total = lines.join('\n').length;
@@ -54,6 +54,7 @@ export const CodePanel = ({title, sub, filename, lines, highlights, start_ms, ty
         {show > 0 && show < ln.length ? <span style={{width: 14, height: 30, background: pal.accent, marginLeft: 2}} /> : null}
       </div>;
     })}
+    {footer ? <Footer footer={footer} pal={pal} /> : null}
     {hl.filter((h) => h.note).map((h, i) => <Note key={i} x={1180} y={Y + 12 + (h.line - 1) * LH - 6} start={start_ms + h.start_ms + 300} pal={pal} size={32}>← {h.note}</Note>)}
   </>;
 };
