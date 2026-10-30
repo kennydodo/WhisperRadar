@@ -33,14 +33,25 @@
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
   <div class="panel">
     {% if not ready %}<div class="muted">Needs the finished video (final.mp4) and its subtitles in this production.</div>{% endif %}
-    {% if plan %}<table><thead><tr><th>#</th><th>from</th><th>to</th><th>opens with</th><th>score</th></tr></thead><tbody>
-      {% for c in plan %}<tr><td>{{ loop.index }}</td><td>{{ '%d:%02d' % (c.start // 60, c.start % 60) }}</td><td>{{ '%d:%02d' % (c.end // 60, c.end % 60) }}</td><td>{{ c.hook }}</td><td>{{ c.score }}</td></tr>{% endfor %}
+    {% if plan %}<table><thead><tr><th>#</th><th>from</th><th>to</th><th>opens with</th><th>score</th><th></th></tr></thead><tbody>
+      {% for c in plan %}<tr><td>{{ loop.index }}</td><td>{{ '%d:%02d' % (c.start // 60, c.start % 60) }}</td><td>{{ '%d:%02d' % (c.end // 60, c.end % 60) }}</td><td>{{ c.hook }}</td><td>{{ c.score }}</td><td><button type="button" class="use" data-from="{{ '%d:%02d' % (c.start // 60, c.start % 60) }}" data-to="{{ '%d:%02d' % (c.end // 60, c.end % 60) }}">use</button></td></tr>{% endfor %}
     </tbody></table>{% endif %}
     <form method="post" action="/studio/{{ prod['id'] }}/shorts/make" style="margin-top:10px">
       <label>clips <input type="number" name="n" min="1" max="6" value="3"></label>
       <button type="submit" {{ '' if ready else 'disabled' }}>Make the clips</button>
     </form>
   </div>
+  <div class="panel">
+    <b>New Short production from this video</b>
+    <div class="muted">Takes that part of the narration (audio, subtitles, script text) into a new 9:16 production at the shots stage. New vertical pictures are made; this video is not changed.</div>
+    <form method="post" action="/studio/{{ prod['id'] }}/shorts/new" style="margin-top:10px">
+      <label>from <input name="start" id="s-start" placeholder="0:30"></label>
+      <label>to <input name="end" id="s-end" placeholder="1:15"></label>
+      <label>title <input name="title" style="width:260px" placeholder="optional"></label>
+      <button type="submit">Create the Short</button>
+    </form>
+  </div>
+  <script>document.querySelectorAll('.use').forEach(function(b){b.onclick=function(){document.getElementById('s-start').value=b.dataset.from;document.getElementById('s-end').value=b.dataset.to;};});</script>
   {% if files %}<div class="panel"><b>Made</b>
     {% for f in files %}<div><a href="/studio/file/{{ prod['id'] }}/shorts/{{ f }}">{{ f }}</a></div>{% endfor %}
   </div>{% endif %}

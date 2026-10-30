@@ -26,9 +26,13 @@ from .timing import CompiledScene
 
 
 def needs_pipe(scene: CompiledScene) -> bool:
-    return any(o.type in (sc.PATH, sc.BAR, sc.COUNTER, sc.GRID, sc.BLOCKS,
-                          sc.STROKE_ASSET, sc.HANDWRITING, sc.SHAPE)
-               for o in scene.spec.objects)
+    if any(o.type in (sc.PATH, sc.BAR, sc.COUNTER, sc.GRID, sc.BLOCKS,
+                      sc.STROKE_ASSET, sc.HANDWRITING, sc.SHAPE)
+           for o in scene.spec.objects):
+        return True
+    # Typed labels must not create one looped ffmpeg input per character plate.
+    return any(c.event.action == sc.TYPE_ON for c in scene.events)
+
 
 
 def _f(v) -> str:

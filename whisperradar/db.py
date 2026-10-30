@@ -236,6 +236,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         # JSON {"plan": template id, "script": template id}: what the judge
         # passes to the writer (handover.py); NULL = the default template
         conn.execute("ALTER TABLE productions ADD COLUMN handover TEXT")
+    if "frame" not in cols:
+        # picture frame: NULL/"16:9" = landscape, "9:16" = vertical (Shorts).
+        # Copied from the channel when the production is created; locked once
+        # images start (frames.py)
+        conn.execute("ALTER TABLE productions ADD COLUMN frame TEXT")
     _migrate_own_channels(conn)
     for column, decl in (("flow_project_url", "TEXT"),
                          ("flow_account", "TEXT"),
@@ -256,6 +261,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("shotlist_judge_provider", "TEXT"),
                          ("render_target", "TEXT"),
                          ("render_resolution", "TEXT"),
+                         ("frame", "TEXT"),
                          ("generate_references", "INTEGER"),
                          # animated opening (motion.py): per channel only
                          ("animate_enabled", "INTEGER"),
@@ -949,7 +955,7 @@ _PROD_FIELDS = {"youtube_video_id", "title", "genre", "stage", "status", "notes"
                 "flow_project_id", "autorun", "last_attempt_at",
                 "style_override", "bible_override", "published_at",
                 "style_variant", "visual_density",
-                "handover", "opening_config"}
+                "handover", "opening_config", "frame"}
 
 
 def stage_extra(prod, stage: str) -> str:
@@ -1170,7 +1176,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 
 _OWN_CHANNEL_FIELDS = {
     "opening_styles",
-    "flow_account",
+    "flow_account", "frame",
     "name", "description", "genre", "youtube_handle", "active",
     "handover_default", "video_options",
     "default_voice", "default_engine", "default_render_mode", "narration_speed",

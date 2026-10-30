@@ -249,6 +249,9 @@
   {% endif %}
   <div class="sub">
     <span class="badge genre">{{ prod["genre"] }}</span>
+    {% if prod["frame"] == "9:16" %}
+    <span class="badge stage" title="Vertical frame (Shorts). It is fixed once the reference images start.">9:16 vertical</span>
+    {% endif %}
     {% if own_channel_name %}
     <span class="badge stage" title="The channel this production is for">My Channel: {{ own_channel_name }}</span>
     {% else %}

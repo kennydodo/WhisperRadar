@@ -23,6 +23,23 @@ class PipeCancelled(Exception):
     pass
 
 
+# Windows: BELOW_NORMAL_PRIORITY_CLASS + CREATE_NO_WINDOW. A scene render keeps
+# every core busy for minutes; at normal priority it starves the desktop.
+_BELOW_NORMAL = 0x00004000
+
+
+def process_flags() -> int:
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0) | (
+        _BELOW_NORMAL if getattr(subprocess, "CREATE_NO_WINDOW", 0) else 0)
+
+
+def encode_threads() -> list:
+    """`-threads N` for the encoder: half the cores (at least 1), so the
+    drawing loop and the rest of the PC keep some."""
+    import os
+    return ["-threads", str(max(1, (os.cpu_count() or 2) // 2))]
+
+
 class FramePipe:
     """Stream raw RGB frames into an ffmpeg process (rawvideo -> h264)."""
 
@@ -33,7 +50,7 @@ class FramePipe:
             "-f", "rawvideo", "-pix_fmt", "rgb24",
             "-s", f"{width}x{height}", "-r", _f(fps), "-i", "pipe:0",
             "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
-            "-bf", "0", "-pix_fmt", "yuv420p", output_path]
+            "-bf", "0", "-pix_fmt", "yuv420p", *encode_threads(), output_path]
         self.width, self.height = width, height
         self._proc: Optional[subprocess.Popen] = None
         self._args = args
@@ -42,7 +59,7 @@ class FramePipe:
     def __enter__(self):
         self._proc = subprocess.Popen(
             self._args, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE)
+            stderr=subprocess.PIPE, creationflags=process_flags())
         self._drain = threading.Thread(target=self._pump_stderr, daemon=True)
         self._drain.start()
         return self

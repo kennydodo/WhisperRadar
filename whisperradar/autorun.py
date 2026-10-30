@@ -619,9 +619,10 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         _log_line("no writing style guide (run the style stage first) - "
                   "writing without one")
     source_words = len(re.findall(r"\w+", source_text)) if source_text else 0
+    vertical = studio.production_frame(cfg, pid) == "9:16"
     target_words = studio.script_target_words(
         cfg.studio_script_words, source_words,
-        explicit=studio.script_words_override(prod))
+        explicit=studio.script_words_override(prod), vertical=vertical)
     script_path = pdir / "script.md"
     auto_dir = pdir / "versions" / "script"
     auto_dir.mkdir(parents=True, exist_ok=True)
@@ -725,6 +726,7 @@ def _run_script(cfg, pid: int, provider: str | None = None,
         prompt = studio.script_prompt(
             prod["title"], prod["genre"], facts, style_guide,
             target_words=target_words, variation=variation,
+            vertical=vertical,
             style_variant=studio.style_variant(cfg, pid=pid),
             extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
@@ -1122,7 +1124,8 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
             default_max=eff["shotlist_max_hold_seconds"],
             custom=eff.get("brief_custom"), types=eff.get("brief_types"),
             reveal=eff.get("brief_reveal"), sfx=eff.get("brief_sfx"),
-            text_overlays=eff.get("brief_text_overlays"))
+            text_overlays=eff.get("brief_text_overlays"),
+            vertical=eff.get("frame") == "9:16")
         presentation = eff.get("brief_presentation") or ""
         max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
         brief = studio.load_manifest_brief(cfg, profile, presentation)

@@ -38,6 +38,7 @@ from flask import (
 
 from . import external_prompts, flow_accounts, prodfiles, prodtransfer
 from . import textfiles
+from . import frames
 from . import motion
 from . import source_prep
 from . import source_analysis
@@ -457,7 +458,8 @@ def create_app(cfg) -> Flask:
 
     @app.context_processor
     def _flow_account_context():
-        return {"flow_accounts_enabled": flow_accounts.enabled(cfg),
+        return {"frame_labels": frames.LABELS,
+                "flow_accounts_enabled": flow_accounts.enabled(cfg),
                 "flow_login_status": dict(flow_login_status),
                 "production_flow_account": lambda prod: flow_accounts.selection(
                     cfg, Path(prod["work_dir"]) if prod["work_dir"] else cfg.studio_dir / str(prod["id"]), prod["id"])}
@@ -2570,6 +2572,8 @@ def create_app(cfg) -> Flask:
             raw = (request.form.get("render_target") or "").strip().lower()
             fields["render_target"] = (raw if raw in studio.RENDER_TARGETS
                                        else None)   # empty = inherit
+        if "frame" in request.form:
+            fields["frame"] = frames.normalize(request.form.get("frame"))
         if "render_resolution" in request.form:
             raw = (request.form.get("render_resolution") or "").strip().lower()
             fields["render_resolution"] = (raw if raw in studio.RENDER_RESOLUTIONS
@@ -3573,6 +3577,7 @@ def create_app(cfg) -> Flask:
                     if not (request.form.get("genre") or "").strip():
                         db.update_production(conn, pid, genre=oc["genre"])
                     db.update_production(conn, pid, own_channel_id=oc["id"])
+                    frames.stamp_from_channel(conn, pid, oc)
                     prod = db.get_production(conn, pid)
                     seeded = studio.seed_production(cfg, conn, prod)
         finally:
@@ -3911,7 +3916,8 @@ def create_app(cfg) -> Flask:
                 types=eff.get("brief_types"),
                 reveal=eff.get("brief_reveal"),
                 sfx=eff.get("brief_sfx"),
-                text_overlays=eff.get("brief_text_overlays")),
+                text_overlays=eff.get("brief_text_overlays"),
+                vertical=eff.get("frame") == "9:16"),
             brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
@@ -4255,6 +4261,7 @@ def create_app(cfg) -> Flask:
             if not ch:
                 return _studio_url(pid, error="Unknown channel")
             db.update_production(conn, pid, own_channel_id=ch["id"])
+            frames.stamp_from_channel(conn, pid, ch)
         finally:
             conn.close()
         return _studio_url(pid, msg=f"Production assigned to '{ch['name']}'")
@@ -6291,6 +6298,19 @@ def create_app(cfg) -> Flask:
             return redirect(f"/studio/{pid}/shorts?error=" + quote(str(exc)))
         return redirect(f"/studio/{pid}/shorts?msg=" + quote(
             f"{len(done)} clip(s) made"))
+
+    @app.post("/studio/<int:pid>/shorts/new")
+    def studio_shorts_new(pid):
+        """A new vertical production from a window of this video."""
+        from . import shortfrom
+        try:
+            new_pid = shortfrom.create(
+                cfg, pid, request.form.get("start"), request.form.get("end"),
+                request.form.get("title"))
+        except shortfrom.ShortError as exc:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(str(exc)))
+        return redirect(f"/studio/{new_pid}?msg=" + quote(
+            "New Short created from the video - plan its shots next"))
 
     @app.post("/studio/<int:pid>/plan/generate")
     def studio_plan_generate(pid):

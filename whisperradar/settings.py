@@ -768,7 +768,9 @@ def for_production(conn, prod) -> dict:
         upscale_warning = (f"upscale tier {configured} does not match render "
                            f"resolution {resolution} - using {derived} "
                            f"(the resolution wins)")
+    from . import frames
     return {
+        "frame": frames.effective(prod, own),
         "voice": (row_get(prod, "voice") or row_get(own, "default_voice")
                   or None),
         "narration_speed": float(row_get(own, "narration_speed",

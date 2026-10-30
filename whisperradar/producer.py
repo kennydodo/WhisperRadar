@@ -24,7 +24,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from . import db, notify, settings, studio
+from . import db, frames, notify, settings, studio
 
 log = logging.getLogger("whisperradar")
 
@@ -328,6 +328,7 @@ def run(cfg, log=None, job=None, stop_before: str | None = None,
             # fixed to stop doing (2615632); the topic-pick provider stays a
             # one-off choice for THIS call, not a lasting pin on the row.
             db.update_production(conn, pid, own_channel_id=oc["id"], autorun=1)
+            frames.stamp_from_channel(conn, pid, oc)
             prod = db.get_production(conn, pid)
             seeded = studio.seed_production(cfg, conn, prod, log=log)
             created.append({"pid": pid, "title": title,

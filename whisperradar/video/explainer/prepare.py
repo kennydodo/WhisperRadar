@@ -183,10 +183,11 @@ def _render_filtergraph(doc, compiled: CompiledScene, laid, out_path: str,
         args += ["-filter_complex", graph, "-map", "[vout]",
                  "-frames:v", str(compiled.duration_frames)]
     args += ["-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf),
-             "-bf", "0", "-pix_fmt", "yuv420p", out_path]
+             "-bf", "0", "-pix_fmt", "yuv420p", *pipe_mod.encode_threads(),
+             out_path]
     import subprocess
     proc = subprocess.run(args, capture_output=True, text=True,
-                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                          creationflags=pipe_mod.process_flags())
     if cancel_event is not None and cancel_event.is_set():
         raise pipe_mod.PipeCancelled("Scene render cancelled.")
     if proc.returncode != 0:

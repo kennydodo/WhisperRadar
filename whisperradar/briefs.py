@@ -434,9 +434,31 @@ EVERY_CUE = replace(
         "CHECK_HOLD": ("every shot covers exactly one cue."),
     })
 
+SHORTS = MotionProfile(
+    key="shorts",
+    label="Shorts - quick cuts on a vertical frame",
+    description="9:16. A shot holds 1.5-4s, push in / pull back / still only "
+                "(no sideways pans on a tall picture), ST on up to ~20% of "
+                "shots. The default for vertical productions.",
+    allowed=("ST", "ZI", "ZO"),
+    st_max_share=0.20, st_max_hold=2.5, min_hold=1.5, max_hold=4.0,
+    short_hold_share=0.15,
+    slots={
+        "HOLD_RULE": (
+            "This is a vertical Short: a shot holds [[MIN]] to [[MAX]] "
+            "seconds (hard maximum [[MAX]]s), so the picture changes with "
+            "every new beat of the narration. The first shot is the hook: a "
+            "single striking image that shows the opening line. Never cut "
+            "one idea into one-cue fragments just to change the image, and "
+            "any hold of 2.5 seconds or more should carry motion."),
+        "CHECK_HOLD": (
+            "no shot exceeds [[MAX]]s; the first shot is a clear hook; the "
+            "picture changes with the narration's beats."),
+    })
+
 MOTION_PRESETS: dict[str, MotionProfile] = {
     p.key: p for p in (STANDARD, STATIC, LONG_HOLDS, FLOW_SAFE, ZOOMS_ONLY,
-                       FAST_PACED, DOCUMENTARY, EVERY_CUE)}
+                       FAST_PACED, DOCUMENTARY, EVERY_CUE, SHORTS)}
 
 
 def get_profile(key) -> MotionProfile:
@@ -987,11 +1009,14 @@ def _resolve_motion(key, min_hold=None, max_hold=None,
 def resolve_profile(key, min_hold=None, max_hold=None,
                     default_max: float | None = None,
                     custom=None, types=None, reveal=None,
-                    sfx=None, text_overlays=None) -> MotionProfile:
+                    sfx=None, text_overlays=None,
+                    vertical=False) -> MotionProfile:
     """The channel's effective profile: its motion preset, the channel's own
     hold range (seconds), its shot-type spec (`types`, see
     normalize_types / effective_types) and whether reveal shots are allowed.
     Nothing set = today's profile."""
+    if vertical and not str(key or "").strip():
+        key = SHORTS.key        # a vertical production with no preset set
     prof = _resolve_motion(key, min_hold, max_hold, default_max, custom)
     policy = custom
     if isinstance(policy, str):
@@ -1018,6 +1043,13 @@ def resolve_profile(key, min_hold=None, max_hold=None,
         prof = replace(prof, sfx=str(sfx).strip())
     if text_overlays:
         prof = replace(prof, text_overlays=True)
+    if vertical:
+        # a 9:16 picture: no sideways pans or tilts, only push in / pull back
+        # / still (frames.VERTICAL_MOTIONS)
+        from .frames import VERTICAL_MOTIONS
+        keep = tuple(c for c in (prof.allowed or MOTION_CODES)
+                     if c in VERTICAL_MOTIONS) or ("ST",)
+        prof = replace(prof, allowed=keep)
     return prof
 
 

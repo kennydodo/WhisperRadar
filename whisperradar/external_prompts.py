@@ -188,7 +188,7 @@ def _target_words(cfg, pid: int, target_words) -> int:
         conn.close()
     return studio.script_target_words(
         cfg.studio_script_words, len(re.findall(r"\w+", source or "")),
-        explicit=explicit)
+        explicit=explicit, vertical=studio.production_frame(cfg, pid) == "9:16")
 
 
 _SCRIPT_REPLY_FORMAT = (
@@ -255,6 +255,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         _title(ctx, title), prod["genre"], facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
+        vertical=studio.production_frame(cfg, pid) == "9:16",
         style_variant=studio.style_variant(cfg, pid=pid),
         style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
         extra_direction=packplan.with_plan(cfg, prod,
@@ -426,7 +427,8 @@ def _plan_inputs(cfg, pid: int, ctx: dict) -> dict:
         default_max=eff["shotlist_max_hold_seconds"],
         custom=eff.get("brief_custom"), types=eff.get("brief_types"),
         reveal=eff.get("brief_reveal"), sfx=eff.get("brief_sfx"),
-        text_overlays=eff.get("brief_text_overlays"))
+        text_overlays=eff.get("brief_text_overlays"),
+        vertical=eff.get("frame") == "9:16")
     max_hold = profile.max_hold or eff["shotlist_max_hold_seconds"]
     total_s = studio._srt_seconds(cues[-1]["end"])
     return {"srt_text": srt_text, "cues": cues, "profile": profile,
