@@ -82,6 +82,17 @@ class ScenePlanTests(unittest.TestCase):
         self.assertIn("scene b: too thin", writer_msgs[1])
         self.assertEqual(len([1 for r, _ in self.log if r == "judge"]), 2)
 
+    def test_the_judge_runs_even_when_the_writer_gives_a_long_label_and_a_crowded_scene(self):
+        crowded = plan()
+        crowded["scenes"][1]["items"][1]["label"] = "Memory " + "x" * 30         # a note, not a block
+        crowded["scenes"][1]["footer"] = "A footer given as plain text"            # tolerated
+        crowded["scenes"][0]["sides"][0]["points"] = [{"text": "a"}, {"text": "b"}]
+        ask = self._ask([crowded], [{"score": 9, "pass": True, "faults": [], "fixes": []}])
+        logs = []
+        out = es.run_scenes(self.cfg, self.pid, ask, log=logs.append, rounds=3)
+        self.assertEqual([r for r, _ in self.log], ["writer", "judge"])            # the judge was called
+        self.assertTrue(out["scenes"])
+
     def test_writer_prompt_has_rules_and_narration(self):
         p = es.writer_prompt("[0:00] hello there", 600, "keep it light")
         for word in ("compare", "hero", "copied word for word", "[0:00] hello there", "keep it light"):
@@ -147,3 +158,43 @@ class ChannelPlanningSettingsTests(unittest.TestCase):
             ev = [e for sc_ in doc["scenes"] for e in sc_["events"] if "duration_ms" in e or "dur" in e]
             return json.dumps(doc["scenes"])
         self.assertNotEqual(span({"pen_speed": "slow"}), span({"pen_speed": "fast"}))
+
+
+class JudgeIsReachedTests(unittest.TestCase):
+    """An over-full scene or a slightly long label must not keep the judge from ever running."""
+
+    def cues(self):
+        return es.studio.parse_srt_cues(SRT)
+
+    def crowded(self):
+        p = plan()
+        p["scenes"][1]["footer"] = "A footer that needs pen time too"
+        p["scenes"][1]["items"][1]["label"] = "Memory " + "x" * 30       # long for a row, a note only
+        return p
+
+    def test_overfull_scenes_are_simplified_in_code(self):
+        from whisperradar.video.explainer import recipes
+        p = plan()
+        p["scenes"][0]["sides"][0]["points"] = [{"text": "one"}, {"text": "two"}, {"text": "three"}]
+        out, notes = recipes.simplify_overfull(p, es._cue_objs(self.cues()))
+        recipes.build(out, es._cue_objs(self.cues()))                  # builds now, whatever was removed
+        self.assertIsInstance(notes, list)
+
+    def test_a_long_label_is_advice_not_a_block(self):
+        faults, advice = es._split_faults(es.check(self.crowded(), self.cues(), 20.0))
+        self.assertTrue(any("is longer than" in a for a in advice))
+        self.assertFalse(any("is longer than" in f for f in faults))
+
+    def test_stack_rows_may_be_longer(self):
+        self.assertGreater(es.LABEL_MAX["stack"], 32)
+        self.assertEqual(es.LABEL_MAX.get("row", 32), 32)
+
+    def test_the_overfull_message_says_how_late(self):
+        from whisperradar.video.explainer import recipes
+        tight = {"theme": "chalkboard", "scenes": [{"id": "a", "start": "two computers can run", "layout": "row", "title": "T",
+                 "items": [{"label": f"Item number {i}", "icon": "box", "at": "two computers can run"} for i in range(5)]}]}
+        try:
+            recipes.build(tight, es._cue_objs(self.cues()))
+        except es.ExplainerError as exc:
+            self.assertIn("too late", exc.errors[0])
+            self.assertNotIn("after the scene", exc.errors[0])

@@ -22,6 +22,8 @@ from .video.explainer import recipes
 from .video.explainer.validate import ExplainerError
 
 MAX_ROUNDS = 5
+# longest label each layout can show; stack rows and hero lines are wide, the others share a row
+LABEL_MAX = {"stack": 48, "hero": 60, "compare": 40}
 MIN_SCORE = 8.0
 
 ICONS = (
@@ -175,7 +177,7 @@ def summary_text(plan: dict, cues: list[dict]) -> str:
         for it in s.get("items") or []:
             drawn.append(f"{it.get('label')} [{it.get('icon', '-')}]")
         for sd in s.get("sides") or []:
-            pts = "; ".join(p.get("text", "") for p in sd.get("points") or [])
+            pts = "; ".join(str(p.get("text", "")) for p in sd.get("points") or [] if isinstance(p, dict))
             drawn.append(f"{sd.get('header')} [{sd.get('icon', '-')}]: {pts}")
         for key in ("capacity", "params_b", "layers", "limit", "bits"):
             if s.get(key) is not None:
@@ -187,8 +189,8 @@ def summary_text(plan: dict, cues: list[dict]) -> str:
         if isinstance(s.get("counter"), dict):
             c = s["counter"]
             drawn.append(f"counter {c.get('from', 0)} -> {c.get('to')} {c.get('unit', '')} '{c.get('label', '')}'")
-        if s.get("footer"):
-            drawn.append("footer: " + s["footer"].get("text", ""))
+        if isinstance(s.get("footer"), dict):
+            drawn.append("footer: " + str(s["footer"].get("text", "")))
         out.append(f"scene {s.get('id')} ({s.get('layout')}"
                    + (f", title '{s['title']}'" if s.get("title") else "") + ")\n"
                    f"  narration: {said}\n  drawn: {' | '.join(drawn)}")
@@ -207,6 +209,13 @@ def _cue_objs(cues):
     return [_Cue(c) for c in cues]
 
 
+def _split_faults(found: list) -> tuple:
+    """(blocking, advisory): a label a little long for its layout is advice for the writer and the
+    judge, never a reason to skip the judge; everything else must be fixed first."""
+    advisory = [f for f in found if "is longer than" in f]
+    return [f for f in found if f not in advisory], advisory
+
+
 def check(plan, cues: list[dict], total_seconds: float, look: dict = None) -> list[str]:
     """Faults the code can find: the recipe builder's readable errors plus pacing."""
     if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
@@ -216,6 +225,8 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None) -> li
         built = recipes.build(plan, _cue_objs(cues), look)
     except ExplainerError as exc:
         return list(exc.errors)
+    except Exception as exc:  # noqa: BLE001 - a malformed plan is a fault for the writer, never a crash
+        return [f"the plan could not be built ({type(exc).__name__}: {str(exc)[:160]}) - check every field has the shape in the format example"]
     scenes = built.get("scenes") or []
     low, high = counts(total_seconds, (look or {}).get("scenes_per_video") or "normal")
     if len(scenes) < low:
@@ -227,17 +238,42 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None) -> li
     if resolved["scenes"][0]["cue_range"][0] != int(cues[0]["index"]):
         faults.append("the first scene must start with the very first words of the narration")
     for s in plan["scenes"]:
+        cap = LABEL_MAX.get(s.get("layout"), 32)
         for it in s.get("items") or []:
-            if len(str(it.get("label", ""))) > 32 and s.get("layout") != "hero":
-                faults.append(f"scene {s.get('id')}: label '{it.get('label')}' is longer than 32 characters")
+            if len(str(it.get("label", ""))) > cap:
+                faults.append(f"scene {s.get('id')}: label '{it.get('label')}' is longer than {cap} characters")
     return faults
 
 
 # ---- the loop --------------------------------------------------------------------------
 
+def normalize_plan(plan: dict) -> dict:
+    """Writers shorten shapes: a footer as plain text, an item or a point as a bare string.
+    Put them in the documented shape so one habit never crashes the checker or the judge's summary."""
+    def obj(v, key):
+        return v if isinstance(v, dict) else {key: str(v)}
+
+    for s in plan.get("scenes") or []:
+        if not isinstance(s, dict):
+            continue
+        if isinstance(s.get("footer"), str):
+            s["footer"] = {"text": s["footer"]} if s["footer"].strip() else None
+        if s.get("footer") is None:
+            s.pop("footer", None)
+        if isinstance(s.get("items"), list):
+            s["items"] = [obj(i, "label") for i in s["items"] if i not in (None, "")]
+        if isinstance(s.get("sides"), list):
+            s["sides"] = [sd for sd in s["sides"] if isinstance(sd, dict)]
+            for sd in s["sides"]:
+                if isinstance(sd.get("points"), list):
+                    sd["points"] = [obj(p, "text") for p in sd["points"] if p not in (None, "")]
+    plan["scenes"] = [s for s in plan.get("scenes") or [] if isinstance(s, dict)]
+    return plan
+
+
 def _plan_from(reply: str):
     d = studio._parse_json_object(reply or "", want=("scenes",))
-    return d if d and isinstance(d.get("scenes"), list) else None
+    return normalize_plan(d) if d and isinstance(d.get("scenes"), list) else None
 
 
 def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
@@ -279,7 +315,12 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
     for rnd in range(1, rounds + 1):
         if should_stop():
             raise RuntimeError("Stopped by you.")
-        faults = check(plan, cues, total, look)
+        plan, trimmed = recipes.simplify_overfull(plan, _cue_objs(cues))
+        for note in trimmed:
+            log("auto-fix: " + note)
+        faults, advisory = _split_faults(check(plan, cues, total, look))
+        for a in advisory:
+            log("note (does not block the judge): " + a)
         if faults:
             log(f"round {rnd}: {len(faults)} fault(s) from the checker, e.g. {faults[0][:140]}")
             rank = (0, -len(faults))
@@ -320,7 +361,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         plan = fixed
     final = best[1] if best else plan
     verdict = kept_verdict
-    left = check(final, cues, total, look)
+    left, _advice = _split_faults(check(final, cues, total, look))
     (pdir / "plan.json").write_text(json.dumps(final, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (pdir / "plan_review.json").write_text(json.dumps(
         {"score": verdict.get("score"), "faults": verdict.get("faults") or [],

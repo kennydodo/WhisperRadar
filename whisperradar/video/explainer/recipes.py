@@ -289,6 +289,10 @@ def _footer(s, sid, els):
     f = s.get("footer")
     if not f:
         return
+    if isinstance(f, str):
+        f = {"text": f}
+    if not isinstance(f, dict) or not str(f.get("text") or "").strip():
+        raise ExplainerError([f"Scene {sid}: footer must be {{\"text\": \"...\", \"at\": \"narration words\"}}."])
     cue = int(f.get("cue") or s["cue_range"][1])
     if f.get("highlight", True):
         els.append(_shape(f"{sid}_fhl", "highlight", cue, "yellow", "footer", dur=450,
@@ -373,11 +377,12 @@ def _schedule(s, els, cue_ms):
         plan, ok = _simulate(els, 0.0, cue_ms, start, end)
         if not ok:
             last = plan[-1][0] + plan[-1][1]
+            over = (last - (end - TAIL_MS)) / 1000
             raise ExplainerError([
                 f"Scene {s['id']}: too much for the time - even at the fastest pen speed "
-                f"the last object ends {(last - end) / 1000:.1f}s after the scene "
-                f"({(end - start) / 1000:.1f}s long). Use fewer items, or give the items "
-                "earlier cues, or start the scene on an earlier cue."])
+                f"the last object is {over:.1f}s too late: every label must be finished "
+                f"{TAIL_MS / 1000:.0f}s before the scene ends ({(end - start) / 1000:.1f}s long). "
+                "Use fewer items, or give the items earlier cues, or start the scene on an earlier cue."])
         for _ in range(14):
             mid = (lo + hi) / 2
             if _simulate(els, mid, cue_ms, start, end)[1]:
@@ -600,6 +605,72 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict) -> dict:
         raise ExplainerError(errs)
     return {"id": sid, "shot_id": f"S{idx + 1:02d}_01", "cue_range": list(cr), "objects": [],
             "events": [], "remotion": block}
+
+
+_OVERFULL = re.compile(r"^Scene (\S+): too much for the time")
+_MECHANISM = ("memory", "precision", "offload")
+
+
+def _sid(raw, idx):
+    sid = re.sub(r"[^A-Za-z0-9_\-]", "", str(raw.get("id") or f"s{idx + 1}")) or f"s{idx + 1}"
+    return sid if sid[0].isalpha() else "s" + sid
+
+
+def _simplify_step(scene, step):
+    """Take one decoration off an over-full scene. Returns what was removed, or "" when nothing is left."""
+    items = scene.get("items") or []
+    if step == 0 and scene.get("footer"):
+        scene.pop("footer")
+        return "its footer"
+    if step <= 1 and any(isinstance(i, dict) and i.get("icon") for i in items):
+        for i in items:
+            if isinstance(i, dict):
+                i.pop("icon", None)
+        return "the item icons"
+    if scene.get("layout") in _MECHANISM:
+        return ""                                  # the numbers must keep adding up
+    sides = scene.get("sides") or []
+    if step <= 2 and any(isinstance(sd, dict) and sd.get("points") for sd in sides):
+        for sd in sides:
+            if isinstance(sd, dict):
+                sd["points"] = []
+        return "the compare points"
+    if len(items) > 2:
+        items.pop()
+        return "the last item"
+    return ""
+
+
+def simplify_overfull(plan: dict, cues) -> tuple:
+    """(plan, notes): a copy of the plan where scenes that cannot be drawn in time
+    lose decoration one piece at a time (footer, icons, compare points, last item)
+    until they fit. Nothing else is changed; notes say what was removed."""
+    import copy
+    plan = copy.deepcopy(plan)
+    notes, steps = [], {}
+    for _ in range(60):
+        try:
+            build(plan, cues)
+            break
+        except Exception as exc:  # noqa: BLE001 - only over-full scenes are ours to fix
+            if not isinstance(exc, ExplainerError):
+                break
+            bad = {m.group(1) for m in (_OVERFULL.match(e) for e in exc.errors) if m}
+            if not bad:
+                break
+            moved = False
+            for idx, raw in enumerate(plan.get("scenes") or []):
+                if not isinstance(raw, dict) or _sid(raw, idx) not in bad:
+                    continue
+                key = _sid(raw, idx)
+                what = _simplify_step(raw, steps.get(key, 0))
+                steps[key] = steps.get(key, 0) + 1
+                if what:
+                    notes.append(f"scene {key}: removed {what} (it did not fit the narration time)")
+                    moved = True
+            if not moved:
+                break
+    return plan, notes
 
 
 PEN_FACTOR = {"slow": 1.3, "normal": 1.0, "fast": 0.75}
