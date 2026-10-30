@@ -305,3 +305,86 @@ class WriteOnTailsTests(unittest.TestCase):
         ink = mask.getbbox()
         self.assertLessEqual(ink[3], y1, "the tails of g/y/p/q must not be cut by the reveal band")
         self.assertGreaterEqual(ink[1], y0)
+
+
+class TextLookTests(unittest.TestCase):
+    """Text weight and letter spacing change the drawn text, and default to thin and normal."""
+
+    def _font(self):
+        import glob
+        fonts = sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                              "fonts", "Handlee-Regular.ttf")))
+        if not fonts:
+            self.skipTest("Handlee not available")
+        return fonts[0]
+
+    def test_weight_and_spacing_change_the_mask(self):
+        from whisperradar.video.explainer import pipe
+        f = self._font()
+        box = (10, 10, 900, 120)
+        thin, ex_thin = pipe._write_layer(f, "Memory fits", box, (1000, 200), 0.0, 0.04)
+        bold, _ = pipe._write_layer(f, "Memory fits", box, (1000, 200), 1.0, 0.04)
+        wide, ex_wide = pipe._write_layer(f, "Memory fits", box, (1000, 200), 0.0, 0.09)
+        ink = lambda m: sum(m.histogram()[1:])
+        self.assertGreater(ink(bold), ink(thin))
+        self.assertGreater(ex_wide[0][1], ex_thin[0][1])
+
+    def test_defaults_are_thin_and_normal(self):
+        from whisperradar.video.explainer import pipe
+        self.assertEqual(pipe.WEIGHT_FACTOR[""], 0.0)
+        self.assertEqual(pipe.TRACKING_EM[""], pipe.TRACKING_EM["normal"])
+        self.assertLess(pipe.TRACKING_EM["tight"], pipe.TRACKING_EM["wide"])
+
+    def test_option_validation(self):
+        from whisperradar.video import options as o
+        opts = o.ProjectOptions()
+        opts.explainer.text_weight = "huge"
+        self.assertTrue(any("text weight" in e for e in opts.validate()))
+        opts.explainer.text_weight, opts.explainer.letter_spacing = "bold", "wide"
+        self.assertEqual([e for e in opts.validate() if "text weight" in e or "letter spacing" in e], [])
+
+
+class StraightLinesTests(unittest.TestCase):
+    """A graphic (motion_graphics) channel draws straight, clean lines; hand-drawn keeps the wobble."""
+
+    def _spec(self, kind, **kw):
+        from whisperradar.video.explainer import schema as sc
+        return sc.ObjectSpec(id="x1", type=sc.SHAPE, kind=kind, **kw) if hasattr(sc, "ObjectSpec") else None
+
+    def test_straight_removes_wobble_and_bend(self):
+        from whisperradar.video.explainer import shapes
+        class S:   # the few fields shape_strokes reads
+            id, kind, side, curve, dashed = "x1", "arrow", None, 0.4, False
+        wob = shapes.shape_strokes(S, (0, 0, 10, 10), [(100, 100), (500, 300)], 5.0)
+        flat = shapes.shape_strokes(S, (0, 0, 10, 10), [(100, 100), (500, 300)], 5.0, straight=True)
+        def off_line(strokes):     # largest distance of the shaft from the straight chord
+            pts = strokes[0].points
+            (x0, y0), (x1, y1) = (100, 100), (500, 300)
+            ln = ((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5
+            return max(abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / ln for x, y in pts)
+        self.assertGreater(off_line(wob), 5)
+        self.assertLess(off_line(flat), 0.01)
+
+    def test_card_is_not_wobbly_when_straight(self):
+        from whisperradar.video.explainer import shapes
+        class S:
+            id, kind, side, curve, dashed = "c1", "card", None, 0.0, False
+        a = shapes.shape_strokes(S, (100, 100, 400, 200), [], 5.0, straight=True)
+        b = shapes.shape_strokes(S, (100, 100, 400, 200), [], 5.0)
+        self.assertNotEqual([p for s in a for p in s.points], [p for s in b for p in s.points])
+
+    def test_graphic_channel_sets_line_style(self):
+        import json, tempfile
+        from whisperradar.video.explainer import validate as va
+        tmp = tempfile.mkdtemp()
+        with open(os.path.join(tmp, "imgtovideo.json"), "w") as fh:
+            json.dump({"visual_mode": "motion_graphics", "explainer": {"theme": "chalkboard"}}, fh)
+        look = va.project_look(tmp)
+        self.assertEqual(look["visual_mode"], "motion_graphics")
+        doc = {"schema_version": 1, "style": "whiteboard", "scenes": [{
+            "id": "a", "shot_id": "S01_01", "cue_range": [1, 1], "objects": [], "events": []}]}
+        from whisperradar.video.explainer import schema as sc
+        doc["schema_version"] = sc.SCHEMA_VERSION
+        self.assertEqual(va.parse_doc(doc, tmp, look).theme.line_style, "straight")
+        look["visual_mode"] = "whiteboard"
+        self.assertEqual(va.parse_doc(doc, tmp, look).theme.line_style, "")

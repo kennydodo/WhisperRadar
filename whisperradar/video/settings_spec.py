@@ -45,6 +45,8 @@ def _theme_choices() -> list:
 CHOICES = {
     "explainer.theme": _theme_choices(),
     "explainer.hand_font": ["strokes"] + _font_choices(),
+    "explainer.text_weight": ["thin", "normal", "bold"],
+    "explainer.letter_spacing": ["tight", "normal", "wide"],
     "explainer.heading_font": _font_choices(),
     "explainer.body_font": _font_choices(),
     "motion.easing": list(m.EASINGS),
@@ -73,6 +75,10 @@ HELP = {
                                "purple, grey, or #RRGGBB. Blank = chalk yellow.",
     "explainer.text_color": "Colour of labels, points and footers: a chalk colour name or #RRGGBB. "
                             "Blank = chalk white.",
+    "explainer.text_weight": "How heavy the hand-written text looks: thin (the font as designed), normal "
+                             "or bold (thickened like chalk). Blank = thin.",
+    "explainer.letter_spacing": "Space between the letters of hand-written text: tight, normal or wide. "
+                                "Blank = normal.",
     "explainer.background": "Colour of the board as #RRGGBB (for example #0F2A24 for a green chalkboard). "
                             "Blank = the theme's board.",
     "text.auto_values": "Show the numbers, years and amounts the narration says on screen "

@@ -491,6 +491,16 @@ def parse_doc(data, project_folder: str = "", look=None):
             setattr(theme, attr, val.lower() if not val.startswith("#") else val.upper())
             if key == "text_color":
                 theme.foreground = hexval
+    for key, allowed in (("text_weight", ("thin", "normal", "bold")),
+                         ("letter_spacing", ("tight", "normal", "wide"))):
+        val = str(look.get(key) or "").strip().lower()
+        if val and val not in allowed:
+            errors.append(f"channel explainer {key.replace('_', ' ')} {val!r}: use {', '.join(allowed)}.")
+        elif val:
+            setattr(theme, key, val)
+    # a graphic (motion_graphics) channel draws straight, clean lines; a whiteboard one wobbles by hand
+    if str(look.get("visual_mode") or "").strip().lower() == "motion_graphics":
+        theme.line_style = "straight"
     # channel setting first (Video options, saved in the database) ...
     _apply_fonts({"hand": look.get("hand_font"), "heading": look.get("heading_font"),
                   "body": look.get("body_font")}, "channel explainer")
@@ -611,10 +621,15 @@ def project_look(project_folder: str) -> dict:
     try:
         with open(os.path.join(project_folder, "imgtovideo.json"),
                   encoding="utf-8-sig") as fh:
-            section = json.load(fh).get("explainer")
+            data = json.load(fh)
+        section = data.get("explainer")
+        mode = data.get("visual_mode")
     except (OSError, ValueError, AttributeError):
         return {}
-    return section if isinstance(section, dict) else {}
+    section = dict(section) if isinstance(section, dict) else {}
+    if mode:
+        section.setdefault("visual_mode", mode)      # graphic vs hand-drawn decides the line style
+    return section
 
 
 def event_property_conflicts(doc):

@@ -169,6 +169,8 @@ class ExplainerOptions:
     heading_color: str = ""         # titles: a chalk colour name or #RRGGBB ("" = yellow)
     text_color: str = ""            # labels, points, footers: name or #RRGGBB ("" = white)
     background: str = ""            # the board: #RRGGBB ("" = the theme's)
+    text_weight: str = ""           # hand-written text: thin | normal | bold ("" = thin)
+    letter_spacing: str = ""        # tight | normal | wide ("" = normal)
 
 
 @dataclass
@@ -280,6 +282,10 @@ class ProjectOptions:
                 errors.append(f"Explainer {label} must be "
                               + ("#RRGGBB." if label == "board colour"
                                  else "a colour name (white, yellow, green, red, orange, blue, pink, purple, grey) or #RRGGBB."))
+        if self.explainer.text_weight and self.explainer.text_weight not in ("thin", "normal", "bold"):
+            errors.append("Explainer text weight must be thin, normal or bold.")
+        if self.explainer.letter_spacing and self.explainer.letter_spacing not in ("tight", "normal", "wide"):
+            errors.append("Explainer letter spacing must be tight, normal or wide.")
         if self.planner not in ("v1", "v2"):
             errors.append('Planner must be "v1" or "v2".')
         if self.visual_mode not in VISUAL_MODES:

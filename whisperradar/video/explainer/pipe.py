@@ -302,11 +302,21 @@ def _hand_font(spec, theme, scene):
 _WRITE_CACHE: dict = {}
 
 
-def _write_layer(font_path, text, box_px, canvas_px, weight):
+# how much of the old chalk thickening each text weight keeps, and the extra space
+# between letters (a fraction of the font size) for each spacing choice
+WEIGHT_FACTOR = {"": 0.0, "thin": 0.0, "normal": 0.5, "bold": 1.0}
+TRACKING_EM = {"": 0.04, "normal": 0.04, "tight": 0.0, "wide": 0.09}
+
+
+def _tracked_width(font, ln, track):
+    return sum(font.getlength(ch) for ch in ln) + track * max(0, len(ln) - 1)
+
+
+def _write_layer(font_path, text, box_px, canvas_px, weight, tracking=0.04):
     """Greyscale mask of the whole text plus each line's x-extent: built once
     per (font, text, box) and reused for every frame of the write-on."""
     from PIL import ImageFont
-    key = (font_path, text, box_px, canvas_px, weight)
+    key = (font_path, text, box_px, canvas_px, weight, tracking)
     hit = _WRITE_CACHE.get(key)
     if hit is not None:
         return hit
@@ -318,7 +328,8 @@ def _write_layer(font_path, text, box_px, canvas_px, weight):
     while True:
         font = ImageFont.truetype(font_path, size)
         sw = max(0, int(round(size * weight / 36.0)))
-        widths = [font.getlength(ln) + 2 * sw for ln in lines]
+        track = size * tracking
+        widths = [_tracked_width(font, ln, track) + 2 * sw for ln in lines]
         if max(widths) <= w or size <= 8:
             break
         size = int(size * 0.92)
@@ -329,8 +340,10 @@ def _write_layer(font_path, text, box_px, canvas_px, weight):
     extents = []
     for i, ln in enumerate(lines):
         top = y + i * lh
-        md.text((x + sw, top), ln, font=font, fill=255, stroke_width=sw,
-                stroke_fill=255)
+        cx = x + sw
+        for ch in ln:                          # letter by letter so the spacing is ours
+            md.text((cx, top), ch, font=font, fill=255, stroke_width=sw, stroke_fill=255)
+            cx += font.getlength(ch) + track
         extents.append((x, x + widths[i], int(top) - sw, int(top + lh) + sw))
     if len(_WRITE_CACHE) > 64:
         _WRITE_CACHE.clear()
@@ -342,8 +355,10 @@ def _write_on(img, draw, spec, lo, st, theme, alpha, font_path):
     """Real-font handwriting: the text is revealed left to right, line by
     line, with a pen nib at the writing edge (and rubbed out in reverse)."""
     W, H = img.size
-    mask, extents = _write_layer(font_path, spec.text, lo.box_px, (W, H),
-                                 theme.stroke_width / 5.0)
+    mask, extents = _write_layer(
+        font_path, spec.text, lo.box_px, (W, H),
+        theme.stroke_width / 5.0 * WEIGHT_FACTOR.get(getattr(theme, "text_weight", ""), 0.0),
+        TRACKING_EM.get(getattr(theme, "letter_spacing", ""), 0.04))
     frac = _clamp01(float(st.progress) * (1.0 - float(st.erase_progress)))
     if frac <= 0 and st.alpha <= 0:
         return
@@ -377,7 +392,8 @@ def _shape_strokes(spec, lo, canvas_px, theme, scale=1.0):
     box = lo.box_px
     if scale != 1.0:                       # stretch: the left edge stays, the width follows
         box = (box[0], box[1], max(2, box[2] * scale), box[3])
-    return shapes.shape_strokes(spec, box, pts, theme.stroke_width)
+    return shapes.shape_strokes(spec, box, pts, theme.stroke_width,
+                                straight=getattr(theme, "line_style", "") == "straight")
 
 
 def _shape_extras(img, draw, spec, strokes, theme, st, progress, lw_scale, alpha):

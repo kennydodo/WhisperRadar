@@ -818,6 +818,24 @@
               </label>
               {% endfor %}
             </div>
+            <div class="inline">
+              <label>text weight
+                <select name="explainer_text_weight" class="xp-style" data-ch="{{ ch['id'] }}">
+                  <option value="">inherit{% if xg.text_weight %} (global: {{ xg.text_weight }}){% else %} (thin){% endif %}</option>
+                  {% for v in ['thin', 'normal', 'bold'] %}
+                  <option value="{{ v }}" {{ 'selected' if xv.get('text_weight') == v else '' }}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>letter spacing
+                <select name="explainer_letter_spacing" class="xp-style" data-ch="{{ ch['id'] }}">
+                  <option value="">inherit{% if xg.letter_spacing %} (global: {{ xg.letter_spacing }}){% else %} (normal){% endif %}</option>
+                  {% for v in ['tight', 'normal', 'wide'] %}
+                  <option value="{{ v }}" {{ 'selected' if xv.get('letter_spacing') == v else '' }}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
             <div class="xp-preview" id="xp-prev-{{ ch['id'] }}">
               <div class="muted">preview</div>
               <div id="xp-hand-{{ ch['id'] }}" class="xp-line">Start early, win later &mdash; 3/4 full, $1,200</div>
@@ -1007,6 +1025,23 @@
     });
     if (pick) pick.addEventListener('input', function () { inp.value = pick.value.toUpperCase(); wrXpColor(inp); });
     wrXpColor(inp);
+  });
+  function wrXpStyle(sel) {
+    var box = document.getElementById('xp-prev-' + sel.getAttribute('data-ch'));
+    if (!box) return;
+    var form = sel.closest('details') || document;
+    var w = (form.querySelector('select[name=explainer_text_weight]') || {}).value || 'thin';
+    var s = (form.querySelector('select[name=explainer_letter_spacing]') || {}).value || 'normal';
+    var px = {thin: '0px', normal: '0.6px', bold: '1.2px'}[w];
+    var ls = {tight: '0em', normal: '0.04em', wide: '0.09em'}[s];
+    box.querySelectorAll('.xp-line').forEach(function (l) {
+      l.style.webkitTextStroke = px + ' currentColor';
+      l.style.letterSpacing = ls;
+    });
+  }
+  document.querySelectorAll('select.xp-style').forEach(function (sel) {
+    sel.addEventListener('change', function () { wrXpStyle(sel); });
+    wrXpStyle(sel);
   });
   document.querySelectorAll('select.xp-font').forEach(function (sel) {
     sel.addEventListener('change', function () { wrXpFont(sel); });

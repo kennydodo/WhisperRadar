@@ -17,7 +17,8 @@ from .video import settings_spec as ss
 FIELDS = (("mode", "visual_mode"), ("theme", "explainer.theme"), ("hand_font", "explainer.hand_font"),
           ("heading_font", "explainer.heading_font"),
           ("body_font", "explainer.body_font"), ("heading_color", "explainer.heading_color"),
-          ("text_color", "explainer.text_color"), ("background", "explainer.background"))
+          ("text_color", "explainer.text_color"), ("background", "explainer.background"),
+          ("text_weight", "explainer.text_weight"), ("letter_spacing", "explainer.letter_spacing"))
 CHALK = {"white": "#F4F1E8", "yellow": "#F2D75B", "green": "#7FD08A", "red": "#F0746B",
          "orange": "#F5A04A", "blue": "#6BB6F0", "pink": "#F08CC4", "purple": "#B49BF0",
          "grey": "#9C998F"}

@@ -50,7 +50,7 @@ def _densify(pts, step):
 def _wobble(pts, amp, rng, step=7.0):
     """Offset a polyline along its normal by smooth low-frequency noise, so
     lines look hand-held rather than ruled."""
-    if amp <= 0 or len(pts) < 2:
+    if amp <= 0 or len(pts) < 2 or getattr(rng, "straight", False):
         return list(pts)
     pts = _densify(pts, step)
     f1, f2 = rng.uniform(0.012, 0.022), rng.uniform(0.035, 0.055)
@@ -219,10 +219,12 @@ def _cross(box, rng, width):
     return [_stroke(_wobble(a, 1.0, rng), width), _stroke(_wobble(b, 1.0, rng), width)]
 
 
-def shape_strokes(spec, box_px, points_px, width: float):
+def shape_strokes(spec, box_px, points_px, width: float, straight: bool = False):
     """Pixel-space strokes for a shape spec. `width` is the pen width at the
-    1920 reference size (the renderer scales it)."""
+    1920 reference size (the renderer scales it). straight=True is the clean
+    graphic look: no hand wobble, arrows without a bend."""
     rng = random.Random(seed_for(spec.id))
+    rng.straight = straight
     kind = spec.kind
     if kind == "card":
         return _card(box_px, rng, width)
@@ -235,7 +237,7 @@ def shape_strokes(spec, box_px, points_px, width: float):
     if kind == "brace":
         return _brace(box_px, rng, width, spec.side or "right")
     if kind == "arrow":
-        return _arrow(points_px[0], points_px[1], rng, width, spec.curve)
+        return _arrow(points_px[0], points_px[1], rng, width, 0.0 if straight else spec.curve)
     if kind == "line":
         return _line(points_px[0], points_px[1], rng, width, spec.dashed)
     if kind == "check":

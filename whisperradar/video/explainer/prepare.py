@@ -54,7 +54,7 @@ def scene_fingerprint(compiled: CompiledScene, doc, fps: float,
             assets[obj.asset] = _file_sha(
                 os.path.join(project_folder, obj.asset))
     payload = json.dumps(
-        {"v": 3, "scene": compiled.spec.to_dict(), "timing": timing_data,
+        {"v": 4, "scene": compiled.spec.to_dict(), "timing": timing_data,
          "theme": doc.theme.to_dict(), "fonts": fonts, "assets": assets,
          "fps": fps, "w": width, "h": height},
         sort_keys=True, separators=(",", ":"))
