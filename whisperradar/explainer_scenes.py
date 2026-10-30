@@ -104,13 +104,25 @@ def _timed_narration(cues: list[dict]) -> str:
     return "\n".join(out)
 
 
-def counts(total_seconds: float) -> tuple[int, int]:
-    return max(1, int(total_seconds / 25)), max(2, int(total_seconds / 11))
+DENSITY = {"few": (38, 17), "normal": (25, 11), "many": (18, 8)}   # seconds per scene: (low end, high end)
+STYLE_HINT = {
+    "icons": "DIAGRAM STYLE: picture-heavy - give most points a fitting icon and prefer rows, steps and compare scenes.",
+    "minimal": "DIAGRAM STYLE: minimal - few icons; lean on words, numbers, charts and mechanism scenes; skip decoration.",
+}
+
+
+def counts(total_seconds: float, density: str = "normal") -> tuple[int, int]:
+    lo, hi = DENSITY.get(density or "normal", DENSITY["normal"])
+    return max(1, int(total_seconds / lo)), max(2, int(total_seconds / hi))
+
+
+def look_hint(look: dict) -> str:
+    return STYLE_HINT.get((look or {}).get("diagram_style") or "", "")
 
 
 def writer_prompt(narration: str, total_seconds: float, direction: str = "",
-                  look: str = "") -> str:
-    low, high = counts(total_seconds)
+                  look: str = "", density: str = "normal") -> str:
+    low, high = counts(total_seconds, density)
     return f"""You are the visual planner of a hand-drawn whiteboard/chalkboard explainer video. A narrator reads the script below; you decide WHAT IS DRAWN while each part is spoken. Think like a great teacher at a board: one clear picture per idea, drawn as the words are said.
 
 The video is {total_seconds / 60:.1f} minutes long. Return a scene plan as JSON in exactly this shape:
@@ -195,17 +207,17 @@ def _cue_objs(cues):
     return [_Cue(c) for c in cues]
 
 
-def check(plan, cues: list[dict], total_seconds: float) -> list[str]:
+def check(plan, cues: list[dict], total_seconds: float, look: dict = None) -> list[str]:
     """Faults the code can find: the recipe builder's readable errors plus pacing."""
     if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
         return ["the reply has no \"scenes\" list"]
     faults = []
     try:
-        built = recipes.build(plan, _cue_objs(cues))
+        built = recipes.build(plan, _cue_objs(cues), look)
     except ExplainerError as exc:
         return list(exc.errors)
     scenes = built.get("scenes") or []
-    low, high = counts(total_seconds)
+    low, high = counts(total_seconds, (look or {}).get("scenes_per_video") or "normal")
     if len(scenes) < low:
         faults.append(f"only {len(scenes)} scenes for {total_seconds / 60:.1f} minutes - plan about {low}-{high}")
     if len(scenes) > high * 1.3:
@@ -249,8 +261,11 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         direction = db.stage_extra(prod, "shots") if prod is not None else ""
     finally:
         conn.close()
+    from .video.explainer import validate as _val
+    look = _val.project_look(str(pdir))
     log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - asking the writer")
-    reply = ask("writer", writer_prompt(narration, total, direction or ""), True)
+    reply = ask("writer", writer_prompt(narration, total, direction or "", look_hint(look),
+                                              look.get("scenes_per_video") or "normal"), True)
     plan = _plan_from(reply)
     if plan is None:
         log("writer: no readable plan in the reply - asking once more")
@@ -264,7 +279,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
     for rnd in range(1, rounds + 1):
         if should_stop():
             raise RuntimeError("Stopped by you.")
-        faults = check(plan, cues, total)
+        faults = check(plan, cues, total, look)
         if faults:
             log(f"round {rnd}: {len(faults)} fault(s) from the checker, e.g. {faults[0][:140]}")
             rank = (0, -len(faults))
@@ -305,7 +320,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         plan = fixed
     final = best[1] if best else plan
     verdict = kept_verdict
-    left = check(final, cues, total)
+    left = check(final, cues, total, look)
     (pdir / "plan.json").write_text(json.dumps(final, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     (pdir / "plan_review.json").write_text(json.dumps(
         {"score": verdict.get("score"), "faults": verdict.get("faults") or [],

@@ -62,6 +62,21 @@ class ExplainerChannelTests(unittest.TestCase):
         html = self.client.get("/my-channels").get_data(as_text=True)
         self.assertIn('value="Caveat-Bold.ttf" selected', html)
 
+    def test_pen_speed_scene_count_and_diagram_style_are_saved(self):
+        r = self.post(explainer_pen_speed="fast", explainer_scenes_per_video="many",
+                      explainer_diagram_style="minimal")
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.saved(), {"explainer.pen_speed": "fast", "explainer.scenes_per_video": "many",
+                                        "explainer.diagram_style": "minimal"})
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn('value="fast" selected', html)
+        self.assertIn("pen speed", html)
+
+    def test_bad_pen_speed_is_refused(self):
+        r = self.post(explainer_pen_speed="warp")
+        self.assertIn("error=", r.headers["Location"])
+        self.assertEqual(self.saved(), {})
+
     def test_channel_type_normal_or_explainer(self):
         html = self.client.get("/my-channels").get_data(as_text=True)
         self.assertIn('name="explainer_mode"', html)

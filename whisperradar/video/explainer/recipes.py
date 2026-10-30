@@ -602,6 +602,9 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict) -> dict:
             "events": [], "remotion": block}
 
 
+PEN_FACTOR = {"slow": 1.3, "normal": 1.0, "fast": 0.75}
+
+
 def build(plan: dict, cues, look=None) -> dict:
     """plan dict + SRT cues (video.parsing blocks) -> explainer.json dict."""
     if isinstance(plan, dict) and any(isinstance(x, dict) and ("start" in x or any(
@@ -622,6 +625,10 @@ def build(plan: dict, cues, look=None) -> dict:
             continue
         try:
             s, els = _scene_elements(raw, idx)
+            pen = PEN_FACTOR.get(str((look or {}).get("pen_speed") or "normal"), 1.0)
+            if pen != 1.0:
+                for e in els:
+                    e.dur = max(e.min, int(e.dur * pen))
             sched = _schedule(s, els, cue_ms)
         except ExplainerError as exc:
             errors.extend(exc.errors)

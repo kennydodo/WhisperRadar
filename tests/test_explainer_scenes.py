@@ -122,3 +122,28 @@ class NumberSceneTests(unittest.TestCase):
         self.assertIn("capacity=24GB", text)
         self.assertIn("gb=14", text)
         self.assertIn("counter 0 -> 14 GB", text)
+
+
+class ChannelPlanningSettingsTests(unittest.TestCase):
+    def cues(self):
+        return es.studio.parse_srt_cues(SRT)
+
+    def test_scene_density_moves_the_target_range(self):
+        few, normal, many = (es.counts(300, d) for d in ("few", "normal", "many"))
+        self.assertLess(few[1], normal[1])
+        self.assertLess(normal[1], many[1])
+        self.assertEqual(es.counts(300), normal)
+
+    def test_diagram_style_adds_a_hint_to_the_writer(self):
+        self.assertIn("minimal", es.look_hint({"diagram_style": "minimal"}))
+        self.assertEqual(es.look_hint({}), "")
+        self.assertIn("DIAGRAM STYLE", es.writer_prompt("n", 60, "", es.look_hint({"diagram_style": "icons"})))
+
+    def test_pen_speed_changes_how_long_the_pen_takes(self):
+        from whisperradar.video.explainer import recipes
+        cues = es._cue_objs(self.cues())
+        def span(look):
+            doc = recipes.build(plan(), cues, look)
+            ev = [e for sc_ in doc["scenes"] for e in sc_["events"] if "duration_ms" in e or "dur" in e]
+            return json.dumps(doc["scenes"])
+        self.assertNotEqual(span({"pen_speed": "slow"}), span({"pen_speed": "fast"}))

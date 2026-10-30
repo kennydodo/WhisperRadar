@@ -836,6 +836,20 @@
                 </select>
               </label>
             </div>
+            <div class="inline">
+              {% for key, label, opts, dflt in [('pen_speed', 'pen speed', ['slow', 'normal', 'fast'], 'normal'),
+                                                ('scenes_per_video', 'scenes per video', ['few', 'normal', 'many'], 'normal'),
+                                                ('diagram_style', 'diagram style', ['balanced', 'icons', 'minimal'], 'balanced')] %}
+              <label>{{ label }}
+                <select name="explainer_{{ key }}">
+                  <option value="">inherit{% if xg.get(key) %} (global: {{ xg.get(key) }}){% else %} ({{ dflt }}){% endif %}</option>
+                  {% for v in opts %}
+                  <option value="{{ v }}" {{ 'selected' if xv.get(key) == v else '' }}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% endfor %}
+            </div>
             <div class="xp-preview" id="xp-prev-{{ ch['id'] }}">
               <div class="muted">preview</div>
               <div id="xp-hand-{{ ch['id'] }}" class="xp-line">Start early, win later &mdash; 3/4 full, $1,200</div>
@@ -985,6 +999,12 @@
     if (!box) return;
     var mode = sel.value || sel.getAttribute('data-global');
     box.style.display = (mode === 'images') ? 'none' : '';
+    // an explainer channel draws its pictures itself, so the image-look and image-motion groups do not apply
+    var chId = sel.id.replace('xp-mode-', '');
+    ['creative', 'brief'].forEach(function (g) {
+      var d = document.getElementById('edit-' + chId + '-' + g);
+      if (d) d.style.display = (mode === 'images') ? '' : 'none';
+    });
   }
   document.querySelectorAll('select.xp-mode').forEach(function (sel) {
     sel.addEventListener('change', function () { wrXpMode(sel); });

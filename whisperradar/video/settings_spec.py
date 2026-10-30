@@ -47,6 +47,9 @@ CHOICES = {
     "explainer.hand_font": ["strokes"] + _font_choices(),
     "explainer.text_weight": ["thin", "normal", "bold"],
     "explainer.letter_spacing": ["tight", "normal", "wide"],
+    "explainer.pen_speed": ["slow", "normal", "fast"],
+    "explainer.scenes_per_video": ["few", "normal", "many"],
+    "explainer.diagram_style": ["balanced", "icons", "minimal"],
     "explainer.heading_font": _font_choices(),
     "explainer.body_font": _font_choices(),
     "motion.easing": list(m.EASINGS),
@@ -79,6 +82,12 @@ HELP = {
                              "or bold (thickened like chalk). Blank = thin.",
     "explainer.letter_spacing": "Space between the letters of hand-written text: tight, normal or wide. "
                                 "Blank = normal.",
+    "explainer.pen_speed": "How fast the pen draws: slow, normal or fast. Blank = normal. A scene with a lot "
+                           "to draw still speeds up on its own to fit the narration.",
+    "explainer.scenes_per_video": "How many scenes the planner aims for: few (longer scenes), normal or many "
+                                  "(a new picture more often). Blank = normal.",
+    "explainer.diagram_style": "How picture-heavy the scenes are: balanced, icons (an icon with most points) "
+                               "or minimal (words and numbers, few icons). Blank = balanced.",
     "explainer.background": "Colour of the board as #RRGGBB (for example #0F2A24 for a green chalkboard). "
                             "Blank = the theme's board.",
     "text.auto_values": "Show the numbers, years and amounts the narration says on screen "

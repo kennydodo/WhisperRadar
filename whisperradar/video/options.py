@@ -171,6 +171,9 @@ class ExplainerOptions:
     background: str = ""            # the board: #RRGGBB ("" = the theme's)
     text_weight: str = ""           # hand-written text: thin | normal | bold ("" = thin)
     letter_spacing: str = ""        # tight | normal | wide ("" = normal)
+    pen_speed: str = ""             # slow | normal | fast ("" = normal): how fast the pen draws
+    scenes_per_video: str = ""      # few | normal | many ("" = normal): how many scenes the planner aims for
+    diagram_style: str = ""         # balanced | icons | minimal ("" = balanced): how picture-heavy scenes are
 
 
 @dataclass
@@ -286,6 +289,11 @@ class ProjectOptions:
             errors.append("Explainer text weight must be thin, normal or bold.")
         if self.explainer.letter_spacing and self.explainer.letter_spacing not in ("tight", "normal", "wide"):
             errors.append("Explainer letter spacing must be tight, normal or wide.")
+        for _name, _val, _ok in (("pen speed", self.explainer.pen_speed, ("slow", "normal", "fast")),
+                                 ("scenes per video", self.explainer.scenes_per_video, ("few", "normal", "many")),
+                                 ("diagram style", self.explainer.diagram_style, ("balanced", "icons", "minimal"))):
+            if _val and _val not in _ok:
+                errors.append(f"Explainer {_name} must be {', '.join(_ok[:-1])} or {_ok[-1]}.")
         if self.planner not in ("v1", "v2"):
             errors.append('Planner must be "v1" or "v2".')
         if self.visual_mode not in VISUAL_MODES:
