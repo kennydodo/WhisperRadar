@@ -734,7 +734,17 @@ def simplify_overfull(plan: dict, cues) -> tuple:
                     notes.append(f"scene {key}: removed {what} (it did not fit the narration time)")
                     moved = True
             if not moved:
-                break
+                # nothing left to take off: the scene is simply too short for any picture.
+                # Remove it; the scene before it stays on screen through those words.
+                keep = [r for i, r in enumerate(plan.get("scenes") or [])
+                        if not (isinstance(r, dict) and _sid(r, i) in bad)]
+                if not keep or len(keep) == len(plan.get("scenes") or []):
+                    break
+                for i, r in enumerate(plan["scenes"]):
+                    if isinstance(r, dict) and _sid(r, i) in bad:
+                        notes.append(f"scene {_sid(r, i)}: removed (too short for any picture; "
+                                     "the scene before it stays on screen)")
+                plan["scenes"] = keep
     return plan, notes
 
 

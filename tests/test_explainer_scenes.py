@@ -198,3 +198,20 @@ class JudgeIsReachedTests(unittest.TestCase):
         except es.ExplainerError as exc:
             self.assertIn("too late", exc.errors[0])
             self.assertNotIn("after the scene", exc.errors[0])
+
+
+class TooShortSceneTests(unittest.TestCase):
+    def test_a_scene_nothing_can_be_taken_off_is_removed_not_failed(self):
+        from whisperradar.video.explainer import recipes
+        srt = "".join(f"{i}\n00:00:{(i - 1) * 4:02d},000 --> 00:00:{i * 4 - 1:02d},800\nWords number {i} are said here.\n\n"
+                      for i in range(1, 7))
+        cues = es._cue_objs(studio.parse_srt_cues(srt))
+        plan = {"scenes": [
+            {"id": "a", "start": "words number 1", "layout": "hero", "title": "A", "items": [{"label": "First point", "at": "words number 1"}]},
+            {"id": "b", "start": "words number 2", "layout": "row", "title": "B", "items": [
+                {"label": "One", "at": "words number 2"}, {"label": "Two", "at": "words number 2"},
+                {"label": "Three", "at": "words number 2"}, {"label": "Four", "at": "words number 2"}]},
+            {"id": "c", "start": "words number 3", "layout": "hero", "title": "C", "items": [{"label": "Third point", "at": "words number 3"}]}]}
+        fixed, notes = recipes.simplify_overfull(plan, cues)
+        recipes.build(fixed, cues)                      # builds: nothing is left over-full
+        self.assertTrue(len(fixed["scenes"]) <= 3)
