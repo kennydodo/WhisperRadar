@@ -613,6 +613,8 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
     elif layout in ("pipeline", "generation", "code", "levels"):
         m = dict(raw.get("motion") or {})
         st = rel_ms(m, "the animation")
+        if not m.get("run_ms") and st + 3000 > dur - TAIL_MS:
+            st = max(400, dur - TAIL_MS - 3000)               # said late in the scene: start a little earlier
         run = int(m.get("run_ms") or min(max(dur - st - TAIL_MS, 3000), 12000))
         must_finish(st, run, "the animation")
         params = {k: v for k, v in raw.items() if k in ("title", "sub", "note", "stages", "tasks", "rows",
@@ -643,8 +645,9 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
             ft = {"text": ft}
         if isinstance(ft, dict) and ft.get("text"):
             fa = beat_ms(ft, "the footer")
-            params["footer"] = {"text": str(ft["text"]), "start_ms": int(fa if fa is not None else st + 600)}
-            must_finish(params["footer"]["start_ms"], 700, "the footer")
+            fs = int(fa if fa is not None else st + 600)
+            fs = min(fs, max(dur - TAIL_MS - 700, st))        # a footer said too late appears a little earlier
+            params["footer"] = {"text": str(ft["text"]), "start_ms": fs}
 
         def in_order(vals, label, gap=500):
             for a, b in zip(vals, vals[1:]):
