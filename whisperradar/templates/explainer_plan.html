@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhisperRadar &middot; Edit the scene plan</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --border:#262b36; --text:#e6e9ef;
+          --muted:#8b93a3; --accent:#4f8cff; --green:#3fb96f; --red:#e05c5c; --amber:#d9a441; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 96px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+  .card.gone { opacity: .45; }
+  .head { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+  label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+  input[type=text], select, textarea { background: var(--bg); color: var(--text); border: 1px solid var(--border);
+          border-radius: 5px; padding: 5px 8px; font: 14px "Segoe UI", system-ui, sans-serif; }
+  textarea { width: 100%; font: 12px/1.4 Consolas, monospace; min-height: 38px; }
+  .num { font-weight: 600; color: var(--muted); align-self: center; min-width: 28px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  td { padding: 2px 4px 2px 0; vertical-align: top; }
+  td input { width: 100%; }
+  th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 400; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  button { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px;
+           padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--border);
+         padding: 10px 16px; display: flex; gap: 10px; justify-content: center; align-items: center; }
+  .msg { background: rgba(63,185,111,.12); border: 1px solid var(--green); color: var(--green); border-radius: 6px;
+         padding: 10px 12px; white-space: pre-wrap; margin: 12px 0; }
+  .err { background: rgba(224,92,92,.12); border: 1px solid var(--red); color: var(--red); border-radius: 6px;
+         padding: 10px 12px; white-space: pre-wrap; margin: 12px 0; }
+  .adv { background: rgba(217,164,65,.12); border: 1px solid var(--amber); color: var(--amber); border-radius: 6px;
+         padding: 10px 12px; white-space: pre-wrap; margin: 12px 0; }
+  .muted { color: var(--muted); }
+  .wide { flex: 1 1 260px; }
+</style>
+</head>
+<body>
+<main>
+<h1>Edit the scene plan</h1>
+<p><a href="/studio/{{ pid }}">&larr; Back to production</a> &middot;
+   <a href="/explainer?pid={{ pid }}">Validate / storyboard</a></p>
+<p class="muted">Reword labels, change an icon, or change the narration words an item appears on
+(<b>at</b>). Move a scene with the arrows, or tick <b>delete</b>. Saving checks the plan the same way the
+scene planner does; a plan with a real fault is not written. The old plan is kept as
+<span style="font-family:Consolas,monospace">plan_before_edit.json</span>. When you render again, only the scenes you changed are redrawn.</p>
+
+{% if msg %}<div class="msg">{{ msg }}</div>{% endif %}
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if errors %}<div class="err">{% for e in errors %}{{ e }}&#10;{% endfor %}</div>{% endif %}
+{% if advice %}<div class="adv">{% for a in advice %}{{ a }}&#10;{% endfor %}</div>{% endif %}
+
+<form method="post" action="/explainer/{{ pid }}/plan" id="plan-form">
+<input type="hidden" name="scene_count" value="{{ scenes|length }}">
+<div id="cards">
+{% for s in scenes %}
+<div class="card" data-i="{{ s.n }}">
+  <div class="head">
+    <span class="num">{{ loop.index }}</span>
+    <input type="hidden" name="s{{ s.n }}_order" value="{{ loop.index }}" class="order">
+    <label>id <input type="text" name="s{{ s.n }}_id" value="{{ s.id }}" size="14"></label>
+    <label>layout
+      <select name="s{{ s.n }}_layout">
+        {% if s.layout and s.layout not in layouts %}<option value="{{ s.layout }}" selected>{{ s.layout }}</option>{% endif %}
+        {% for l in layouts %}<option value="{{ l }}" {{ 'selected' if s.layout == l else '' }}>{{ l }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="wide">title <input type="text" name="s{{ s.n }}_title" value="{{ s.title }}"></label>
+    <label class="wide">footer <input type="text" name="s{{ s.n }}_footer" value="{{ s.footer }}"></label>
+    <span>
+      <button type="button" class="up" title="move up">&uarr;</button>
+      <button type="button" class="down" title="move down">&darr;</button>
+      <label style="display:inline-flex;flex-direction:row;align-items:center;gap:4px;margin-left:8px">
+        <input type="checkbox" name="s{{ s.n }}_delete" class="del"> delete</label>
+    </span>
+  </div>
+  <label style="margin-top:8px">starts where the narrator says
+    <input type="text" name="s{{ s.n }}_start" value="{{ s.start }}"></label>
+  <table>
+    <tr><th style="width:26%">item label</th><th style="width:18%">icon</th><th>appears at (narration words)</th></tr>
+    {% for it in s['items'] %}
+    <tr>
+      <td><input type="text" name="s{{ s.n }}_item_label" value="{{ it.label }}"></td>
+      <td><input type="text" name="s{{ s.n }}_item_icon" value="{{ it.icon }}"></td>
+      <td><input type="text" name="s{{ s.n }}_item_at" value="{{ it.at }}">
+          <input type="hidden" name="s{{ s.n }}_item_extra" value="{{ it.extra }}"></td>
+    </tr>
+    {% endfor %}
+    <tr>
+      <td><input type="text" name="s{{ s.n }}_item_label" placeholder="+ add an item"></td>
+      <td><input type="text" name="s{{ s.n }}_item_icon"></td>
+      <td><input type="text" name="s{{ s.n }}_item_at"><input type="hidden" name="s{{ s.n }}_item_extra" value=""></td>
+    </tr>
+  </table>
+  <details {{ 'open' if s.extra and errors else '' }}>
+    <summary>other settings of this scene (sides, numbers, chart data...) as JSON</summary>
+    <textarea name="s{{ s.n }}_extra" spellcheck="false">{{ s.extra }}</textarea>
+  </details>
+</div>
+{% endfor %}
+</div>
+<div class="bar">
+  <button type="submit" class="primary">Save the plan</button>
+  <span class="muted">Then use Render draft in the production page to check it.</span>
+</div>
+</form>
+</main>
+<script>
+(function () {
+  var box = document.getElementById('cards');
+  function renumber() {
+    box.querySelectorAll('.card').forEach(function (c, i) {
+      c.querySelector('.num').textContent = i + 1;
+      c.querySelector('.order').value = i + 1;
+    });
+  }
+  box.addEventListener('click', function (e) {
+    var card = e.target.closest('.card');
+    if (!card) return;
+    if (e.target.classList.contains('up') && card.previousElementSibling) {
+      box.insertBefore(card, card.previousElementSibling); renumber();
+    } else if (e.target.classList.contains('down') && card.nextElementSibling) {
+      box.insertBefore(card.nextElementSibling, card); renumber();
+    }
+  });
+  box.addEventListener('change', function (e) {
+    if (e.target.classList.contains('del')) e.target.closest('.card').classList.toggle('gone', e.target.checked);
+  });
+})();
+</script>
+</body>
+</html>

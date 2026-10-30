@@ -1431,7 +1431,7 @@
       <div class="help" style="margin-bottom:8px">Explainer video: the scenes are built from
         <span class="mono">plan.json</span> + the subtitles, drawn one by one (scenes already
         drawn are reused), joined and mixed with the narration into the finished video.
-        <a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a></div>
+        <a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a>{% if scene_plan_exists %} &middot; <a href="/explainer/{{ prod['id'] }}/plan">Edit the scene plan</a>{% endif %}</div>
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render"
               onsubmit="return wrConfirmSubmit(this, 'Render the explainer video now? Every scene is drawn frame by frame; a long video takes a while. Watch the job log.')">
