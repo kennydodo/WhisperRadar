@@ -20,7 +20,7 @@ FIELDS = (("mode", "visual_mode"), ("theme", "explainer.theme"), ("hand_font", "
           ("text_color", "explainer.text_color"), ("background", "explainer.background"),
           ("text_weight", "explainer.text_weight"), ("letter_spacing", "explainer.letter_spacing"),
           ("pen_speed", "explainer.pen_speed"), ("scenes_per_video", "explainer.scenes_per_video"),
-          ("diagram_style", "explainer.diagram_style"))
+          ("diagram_style", "explainer.diagram_style"), ("scene_fade", "explainer.scene_fade"))
 CHALK = {"white": "#F4F1E8", "yellow": "#F2D75B", "green": "#7FD08A", "red": "#F0746B",
          "orange": "#F5A04A", "blue": "#6BB6F0", "pink": "#F08CC4", "purple": "#B49BF0",
          "grey": "#9C998F"}

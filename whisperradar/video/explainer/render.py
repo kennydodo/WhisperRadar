@@ -88,6 +88,31 @@ def _run(args, what):
         raise RuntimeError(f"{what} failed (exit {proc.returncode}): {proc.stderr[-300:]}")
 
 
+FADE_S = {"short": 0.25, "long": 0.5}
+
+
+def fade_filter(doc, compiled, clips, fps, mode) -> str:
+    """ffmpeg -vf that dips to the board colour at each join between two pen
+    scenes (a scene's length never changes, so the narration stays in step).
+    "" when off or there is nothing to fade."""
+    d = FADE_S.get(mode or "")
+    if not d or len(clips) < 2:
+        return ""
+    from whisperradar.video import tool_locator
+    from whisperradar.video.ffprobe import ffprobe_duration_seconds
+    probe = tool_locator.resolve("ffprobe", "ffprobe")
+    colour = "0x" + doc.theme.background.lstrip("#")
+    parts, t = [], 0.0
+    for i, c in enumerate(clips[:-1]):
+        t += ffprobe_duration_seconds(c, probe)
+        a, b = compiled[i].spec, compiled[i + 1].spec
+        if getattr(a, "remotion", None) or getattr(b, "remotion", None):
+            continue                      # motion scenes fade themselves
+        parts.append(f"fade=t=out:st={t - d:.3f}:d={d}:color={colour}")
+        parts.append(f"fade=t=in:st={t:.3f}:d={d}:color={colour}")
+    return ",".join(parts)
+
+
 def render_video(folder: str, audio: str = "", final: bool = True,
                  log=print, cancel=None, draft: bool = False) -> str:
     """Render every scene, join them and add the narration. Returns the path.
@@ -146,10 +171,11 @@ def render_video(folder: str, audio: str = "", final: bool = True,
         for c in clips:
             fh.write("file '" + os.path.abspath(c).replace("'", "'\\''") + "'\n")
     rough = os.path.join(prep.cache_dir(folder), "rough_draft.mp4" if draft else "rough.mp4")
+    vf = fade_filter(doc, compiled, clips, fps, validate_mod.project_look(folder).get("scene_fade"))
     log("[explainer] joining the scenes...")
     # re-encode on concat: stream copy can drop frames at boundaries
     _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
-          "-safe", "0", "-i", concat_path, "-c:v", "libx264", "-preset",
+          "-safe", "0", "-i", concat_path] + (["-vf", vf] if vf else []) + ["-c:v", "libx264", "-preset",
           "veryfast", "-crf", "18", "-bf", "0", "-pix_fmt", "yuv420p", rough],
          "joining the scenes")
     if not audio:

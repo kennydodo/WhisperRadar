@@ -839,7 +839,8 @@
             <div class="inline">
               {% for key, label, opts, dflt in [('pen_speed', 'pen speed', ['slow', 'normal', 'fast'], 'normal'),
                                                 ('scenes_per_video', 'scenes per video', ['few', 'normal', 'many'], 'normal'),
-                                                ('diagram_style', 'diagram style', ['balanced', 'icons', 'minimal'], 'balanced')] %}
+                                                ('diagram_style', 'diagram style', ['balanced', 'icons', 'minimal'], 'balanced'),
+                                                ('scene_fade', 'fade between scenes', ['none', 'short', 'long'], 'none')] %}
               <label>{{ label }}
                 <select name="explainer_{{ key }}">
                   <option value="">inherit{% if xg.get(key) %} (global: {{ xg.get(key) }}){% else %} ({{ dflt }}){% endif %}</option>
