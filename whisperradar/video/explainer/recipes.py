@@ -514,7 +514,11 @@ def resolve_anchors(plan: dict, cues) -> dict:
             if isinstance(s.get(key), dict):
                 s[key] = dict(s[key])
                 anchor(s[key], where=key)
-        for key in ("stages", "highlights"):
+        for key in ("decoder", "result"):
+            if isinstance(s.get(key), dict):
+                s[key] = dict(s[key])
+                anchor(s[key], where=key)
+        for key in ("stages", "highlights", "levels"):
             if isinstance(s.get(key), list):
                 s[key] = [dict(x) if isinstance(x, dict) else x for x in s[key]]
                 for k, x in enumerate(s[key]):
@@ -554,7 +558,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
     return out
 
 
-REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code")
+REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code", "levels")
 FIT_CHART_MS = 1900          # a bar finishes growing, and its labels appear, within this
 
 
@@ -606,13 +610,14 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
         must_finish(st, cm, "the counter")
         params = {"from": c.get("from", 0), "to": c.get("to"), "unit": c.get("unit", ""),
                   "label": c.get("label", ""), "start_ms": int(st), "count_ms": cm}
-    elif layout in ("pipeline", "generation", "code"):
+    elif layout in ("pipeline", "generation", "code", "levels"):
         m = dict(raw.get("motion") or {})
         st = rel_ms(m, "the animation")
         run = int(m.get("run_ms") or min(max(dur - st - TAIL_MS, 3000), 12000))
         must_finish(st, run, "the animation")
         params = {k: v for k, v in raw.items() if k in ("title", "sub", "note", "stages", "tasks", "rows",
-                                                          "filename", "lines", "highlights")}
+                                                          "filename", "lines", "highlights", "levels", "decoder",
+                                                          "result")}
         params["start_ms"] = int(st)
 
         def beat_ms(spec, label):
@@ -633,6 +638,38 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
             params["highlights"] = hls
         else:
             params["run_ms"] = run
+        ft = raw.get("footer")
+        if isinstance(ft, str):
+            ft = {"text": ft}
+        if isinstance(ft, dict) and ft.get("text"):
+            fa = beat_ms(ft, "the footer")
+            params["footer"] = {"text": str(ft["text"]), "start_ms": int(fa if fa is not None else st + 600)}
+            must_finish(params["footer"]["start_ms"], 700, "the footer")
+
+        def in_order(vals, label, gap=500):
+            for a, b in zip(vals, vals[1:]):
+                if b - a < gap:
+                    raise ExplainerError([f"Scene {sid}: {label} are anchored to the same moment of the narration "
+                                          f"(less than {gap} ms apart); anchor each to words said in a different place."])
+            if vals:
+                must_finish(vals[-1], 1200, label)
+        if layout == "levels":
+            lv = []
+            for k, x in enumerate(raw.get("levels") or []):
+                x = dict(x)
+                at = beat_ms(x, f"level {k + 1}")
+                x["at_ms"] = int(at if at is not None else st + k * 1500)
+                x.pop("at", None), x.pop("cue", None)
+                lv.append(x)
+            in_order([x["at_ms"] for x in lv], "the levels")
+            params["levels"] = lv
+            for key in ("decoder", "result"):
+                if isinstance(raw.get(key), dict):
+                    d = dict(raw[key])
+                    at = beat_ms(d, key)
+                    d["at_ms"] = int(at if at is not None else (lv[-1]["at_ms"] + 1500 if lv else st))
+                    d.pop("at", None), d.pop("cue", None)
+                    params[key] = d
         if layout == "pipeline":
             stages = []
             for k, sg in enumerate(raw.get("stages") or []):
@@ -643,12 +680,14 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
                 sg.pop("at", None), sg.pop("cue", None)
                 stages.append(sg)
             params["stages"] = stages
+            in_order([g["at_ms"] for g in stages if "at_ms" in g], "the stages")
         if layout == "generation":
             rows = []
             for k, row in enumerate(raw.get("rows") or []):
                 row = dict(row)
                 bs = [beat_ms(b, f"row {k + 1} beat {j + 1}") for j, b in enumerate(row.pop("beats", None) or [])]
                 if bs and None not in bs:
+                    in_order(bs, f"the steps of row {k + 1}")
                     row["beats_ms"] = bs
                 rows.append(row)
             params["rows"] = rows

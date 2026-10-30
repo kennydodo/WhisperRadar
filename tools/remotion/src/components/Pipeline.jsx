@@ -1,12 +1,11 @@
 import React from 'react';
-import {Heading, Note, clamp01, lerp, prog, useMs, usePal} from '../motion.jsx';
+import {Footer, Heading, Note, clamp01, lerp, prog, useMs, usePal} from '../motion.jsx';
 
 // Tasks flow through stages. Each stage has N workers; a stage can wait for the whole
 // previous stage to finish (a barrier). The run is simulated here, deterministically,
 // so the picture shows what the numbers cause: eight workers busy, a later stage blocked.
-const GAP = 130, TOP = 290, WR = 36, CW = 92;
 
-function simulate(stages, tasks, runMs) {
+function simulate(stages, tasks, runMs, startMs, k0) {
   const unit = 1, travel = 0.18;
   const ready = Array.from({length: tasks}, (_, i) => i * 0.04);
   const plan = stages.map(() => []);
@@ -17,7 +16,8 @@ function simulate(stages, tasks, runMs) {
     const W = Math.max(1, st.workers);
     const free = Array(W).fill(0);
     const dur = (st.work || 1) * unit;
-    const barrier = st.waits_for_all && s > 0 ? Math.max(...ready) : 0;
+    const hold = st.at_ms != null && k0 ? Math.max(0, (st.at_ms - startMs) / k0) : 0;   // narration says it here
+    const barrier = Math.max(hold, st.waits_for_all && s > 0 ? Math.max(...ready) : 0);
     const order = ready.map((r, i) => [r, i]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     const ends = Array(tasks).fill(0);
     for (const [r, i] of order) {
@@ -32,49 +32,54 @@ function simulate(stages, tasks, runMs) {
     for (let i = 0; i < tasks; i++) ready[i] = ends[i];
     prevEnd = Math.max(...ends);
   }
-  const k = runMs / prevEnd;
+  const k = k0 || runMs / prevEnd;
   return {plan, k, total: prevEnd, barriers};
 }
 
-const Chip = ({x, y, color, label, glow, scale = 1, opacity = 1, font}) => (
-  <div style={{position: 'absolute', left: x - 24, top: y - 24, width: 48, height: 48, borderRadius: 12,
+const Chip = ({x, y, color, label, glow, scale = 1, opacity = 1, font, size = 48}) => (
+  <div style={{position: 'absolute', left: x - size / 2, top: y - size / 2, width: size, height: size, borderRadius: 12,
     background: color, opacity, transform: `scale(${scale})`, boxShadow: glow ? `0 0 18px ${color}` : 'none',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font, fontSize: 22,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: font, fontSize: Math.round(size * 0.46),
     fontWeight: 700, color: '#0b0e13'}}>{label}</div>
 );
 
-export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, theme}) => {
+export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, footer, theme}) => {
   const pal = usePal(theme);
   const ms = useMs();
-  const sim = React.useMemo(() => simulate(stages.map((s) => ({...s})), tasks, run_ms),
-    [JSON.stringify(stages), tasks, run_ms]);
+  const sim = React.useMemo(() => {
+    const free = simulate(stages.map((s) => ({...s, at_ms: null})), tasks, run_ms, start_ms, 0);
+    return simulate(stages.map((s) => ({...s})), tasks, run_ms, start_ms, free.k);
+  }, [JSON.stringify(stages), tasks, run_ms, start_ms]);
   const t = Math.max(0, ms - start_ms) / sim.k;                    // simulation time
   const n = stages.length;
+  const z = n <= 3 ? 1 : n <= 5 ? 0.72 : 0.56;                 // many stages: everything gets smaller
+  const GAP = Math.round(130 * z), TOP = 290, WR = Math.round(36 * z), CW = Math.round(92 * z);
+  const H0 = Math.round(190 * z), RH = Math.round(100 * z), CH = Math.round(56 * z), CS = Math.round(48 * z);
   const COLW = Math.min(620, Math.floor((1700 - (n - 1) * GAP) / n));
   const x0 = (1920 - (n * COLW + (n - 1) * GAP)) / 2;
   const colX = (s) => x0 + s * (COLW + GAP);
   const wpos = (s, w) => {
     const per = Math.min(stages[s].workers, Math.max(1, Math.floor((COLW - 40) / CW)), 4);
     const col = w % per, row = Math.floor(w / per);
-    return [colX(s) + COLW / 2 - ((per - 1) * CW) / 2 + col * CW, TOP + 190 + row * 100];
+    return [colX(s) + COLW / 2 - ((per - 1) * CW) / 2 + col * CW, TOP + H0 + row * RH];
   };
   const maxRows = Math.max(...stages.map((x) => Math.ceil(x.workers / 4)));
-  const trayY = TOP + 190 + maxRows * 100 + 70;
+  const trayY = TOP + H0 + maxRows * RH + 40;
   const done = [];
   const boxes = stages.map((st, s) => {
     const rows = Math.ceil(st.workers / Math.min(4, Math.max(1, Math.floor((COLW - 40) / CW))));
-    const blocked = st.waits_for_all && s > 0 && t < sim.barriers[s];
+    const blocked = s > 0 && t < sim.barriers[s];
     const release = st.waits_for_all && s > 0 ? clamp01((t - sim.barriers[s]) / 0.25) : 1;
     const appear = prog(ms, start_ms - 200 + s * 150, 500);
     const busyCount = sim.plan[s].filter((p) => t >= p.start && t < p.end).length;
     return (
-      <div key={s} style={{position: 'absolute', left: colX(s), top: TOP, width: COLW, height: 150 + rows * 100 + 20,
+      <div key={s} style={{position: 'absolute', left: colX(s), top: TOP, width: COLW, height: H0 - 40 + rows * RH + 20,
         borderRadius: 20, background: pal.panel, border: `2px ${blocked ? 'dashed' : 'solid'} ${blocked ? pal.bad : pal.line}`,
         opacity: appear * (blocked ? 0.62 : 1), transform: `translateY(${(1 - appear) * 20}px)`,
         boxShadow: busyCount ? `0 0 ${14 + busyCount * 3}px ${pal.accent}55` : 'none'}}>
-        <div style={{position: 'absolute', left: 26, top: 20, fontFamily: pal.sansF, fontWeight: 650, fontSize: 34, color: pal.text}}>{st.label}</div>
-        <div style={{position: 'absolute', left: 26, top: 66, fontFamily: pal.monoF, fontSize: 24,
-          color: blocked ? pal.bad : pal.accent}}>{blocked ? '🔒 waiting' : `${st.workers} workers · ${busyCount} busy`}</div>
+        <div style={{position: 'absolute', left: Math.round(26 * z), top: Math.round(20 * z), fontFamily: pal.sansF, fontWeight: 650, fontSize: Math.round(34 * z), color: pal.text}}>{st.label}</div>
+        <div style={{position: 'absolute', left: Math.round(26 * z), top: Math.round(66 * z), fontFamily: pal.monoF, fontSize: Math.round(24 * z),
+          color: blocked ? pal.bad : pal.accent}}>{blocked ? '🔒 waiting' : z < 1 ? `${busyCount}/${st.workers} busy` : `${st.workers} workers · ${busyCount} busy`}</div>
       </div>
     );
   });
@@ -82,7 +87,7 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, the
     const busy = sim.plan[s].find((p) => p.worker === w && t >= p.start && t < p.end);
     const [x, y] = wpos(s, w);
     const pr = busy ? clamp01((t - busy.start) / (busy.end - busy.start)) : 0;
-    const blocked = st.waits_for_all && s > 0 && t < sim.barriers[s];
+    const blocked = s > 0 && t < sim.barriers[s];
     const a = prog(ms, start_ms + s * 150, 500);
     const R = WR, C = 2 * Math.PI * (R - 3);
     return (
@@ -108,14 +113,14 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, the
         const slot = waiting[s]++;
         const prev = s > 0 ? sim.plan[s - 1][i] : null;
         const [px, py] = prev ? wpos(s - 1, prev.worker) : [colX(0) + 40, trayY - 120];
-        const perRow = Math.max(4, Math.floor((COLW - 40) / 56)); const tx = colX(s) + 40 + (slot % perRow) * 56, ty = trayY + Math.floor(slot / perRow) * 58;
+        const perRow = Math.max(3, Math.floor((COLW - 30) / CH)); const tx = colX(s) + 24 + (slot % perRow) * CH, ty = trayY + Math.floor(slot / perRow) * CH;
         const mv = prev ? clamp01((t - prev.end) / 0.18) : 1;
         const e = mv * mv * (3 - 2 * mv);
-        if (slot < 24) chips.push(<Chip font={pal.monoF} key={i} x={lerp(px, tx, e)} y={lerp(py, ty, e)} color={colr} label={i + 1} />);
+        if (slot < perRow * 2) chips.push(<Chip size={CS} font={pal.monoF} key={i} x={lerp(px, tx, e)} y={lerp(py, ty, e)} color={colr} label={i + 1} />);
         placed = true;
       } else if (t < p.end) {
         const [x, y] = wpos(s, p.worker);
-        chips.push(<Chip font={pal.monoF} key={i} x={x} y={y} color={colr} label={i + 1} glow scale={0.8} />);
+        chips.push(<Chip size={CS} font={pal.monoF} key={i} x={x} y={y} color={colr} label={i + 1} glow scale={0.8} />);
         placed = true;
       }
     }
@@ -143,6 +148,6 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, the
       </div>
       <div style={{fontFamily: pal.monoF, fontSize: 30, color: fin === tasks ? pal.good : pal.text, width: 120, textAlign: 'right'}}>{fin}/{tasks}</div>
     </div>
-    {note ? <Note x={110} y={965} start={start_ms + run_ms * 0.5} pal={pal}>{note}</Note> : null}
+    {footer ? <Footer footer={footer} pal={pal} /> : note ? <Note x={110} y={965} start={start_ms + run_ms * 0.5} pal={pal}>{note}</Note> : null}
   </>;
 };

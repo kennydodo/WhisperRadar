@@ -6,12 +6,13 @@ import {ScreenshotZoom} from './components/ScreenshotZoom.jsx';
 import {Pipeline} from './components/Pipeline.jsx';
 import {Generation} from './components/Generation.jsx';
 import {CodePanel} from './components/CodePanel.jsx';
+import {Levels} from './components/Levels.jsx';
 import {Backdrop, usePal} from './motion.jsx';
 
 // Allowlisted components. The Python side validates names and parameters
 // before anything reaches here; unknown names render nothing.
 const REGISTRY = {fit_chart: FitChart, counter: Counter, screenshot: ScreenshotZoom};
-const MOTION = {pipeline: Pipeline, generation: Generation, code: CodePanel};
+const MOTION = {pipeline: Pipeline, generation: Generation, code: CodePanel, levels: Levels};
 
 export const Scene = ({component, params, theme, fade}) => {
   const f = useCurrentFrame();

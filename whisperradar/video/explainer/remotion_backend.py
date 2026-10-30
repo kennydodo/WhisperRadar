@@ -129,11 +129,11 @@ def _text(v, n) -> bool:
 def _check_pipeline(p: dict, where: str) -> list:
     errs = []
     st = p.get("stages")
-    if not isinstance(st, list) or not 2 <= len(st) <= 3:
-        return [f"{where}: stages must be a list of 2-3 stages."]
+    if not isinstance(st, list) or not 2 <= len(st) <= 8:
+        return [f"{where}: stages must be a list of 2-8 stages."]
     for k, x in enumerate(st, 1):
-        if not isinstance(x, dict) or not _text(x.get("label"), 22):
-            errs.append(f"{where}: stage {k} needs a label of 22 characters at most.")
+        if not isinstance(x, dict) or not _text(x.get("label"), 22 if len(st) <= 3 else 14):
+            errs.append(f"{where}: stage {k} needs a label of {22 if len(st) <= 3 else 14} characters at most.")
             continue
         if not isinstance(x.get("workers"), int) or isinstance(x.get("workers"), bool) or not 1 <= x["workers"] <= 8:
             errs.append(f"{where}: stage {k} workers must be a whole number 1-8.")
@@ -154,6 +154,15 @@ def _check_pipeline(p: dict, where: str) -> list:
 GEN_MODES = ("sequential", "plan_then_fill")
 
 
+def _check_footer(p: dict, where: str) -> list:
+    f = p.get("footer")
+    if f is None:
+        return []
+    if not isinstance(f, dict) or not _text(f.get("text"), 70) or not _ms(f.get("start_ms")):
+        return [f"{where}: footer must be text of 70 characters at most."]
+    return []
+
+
 def _check_generation(p: dict, where: str) -> list:
     errs = []
     rows = p.get("rows")
@@ -168,6 +177,9 @@ def _check_generation(p: dict, where: str) -> list:
         w = r.get("words")
         if (not isinstance(w, list) or not 4 <= len(w) <= 14 or not all(_text(x, 18) for x in w)):
             errs.append(f"{where}: row {k} words must be 4-14 short words (18 characters at most).")
+        elif any(not any(ch.isalnum() for ch in x) for x in w):
+            errs.append(f"{where}: row {k} words must all be real text; a blank like '___' never gets filled in. "
+                        "Write the final word for every slot (the animation shows each one empty until its step).")
         bm = r.get("beats_ms")
         if bm is not None and (not isinstance(bm, list) or not 1 <= len(bm) <= 3 or not all(_ms(v) for v in bm)
                                or sorted(bm) != bm):
@@ -177,6 +189,34 @@ def _check_generation(p: dict, where: str) -> list:
     for key, n in (("title", 48), ("sub", 70), ("note", 70)):
         if key in p and not isinstance(p[key], str) or len(p.get(key) or "") > n:
             errs.append(f"{where}: {key} must be text of {n} characters at most.")
+    return errs
+
+
+LEVEL_CELLS = (1, 16)
+
+
+def _check_levels(p: dict, where: str) -> list:
+    errs = []
+    lv = p.get("levels")
+    if not isinstance(lv, list) or not 2 <= len(lv) <= 4:
+        return [f"{where}: levels must be a list of 2-4 levels (broad first)."]
+    last = 0
+    for k, x in enumerate(lv, 1):
+        if (not isinstance(x, dict) or not _text(x.get("label"), 28) or not isinstance(x.get("cells"), int)
+                or isinstance(x.get("cells"), bool) or not LEVEL_CELLS[0] <= x["cells"] <= LEVEL_CELLS[1]
+                or not _ms(x.get("at_ms"))):
+            errs.append(f"{where}: level {k} needs a label (28 characters) and cells 1-16.")
+            continue
+        if x["cells"] < last:
+            errs.append(f"{where}: level {k} has fewer cells than the level before; finer levels have more.")
+        last = x["cells"]
+    for key in ("decoder", "result"):
+        d = p.get(key)
+        if d is not None and (not isinstance(d, dict) or not _text(d.get("label" if key == "decoder" else "text"), 60)
+                              or not _ms(d.get("at_ms"))):
+            errs.append(f"{where}: {key} needs {'a label' if key == 'decoder' else 'text'} of 60 characters at most.")
+    if not _ms(p.get("start_ms")):
+        errs.append(f"{where}: start_ms must be a whole number >= 0.")
     return errs
 
 
@@ -202,7 +242,8 @@ def _check_code(p: dict, where: str) -> list:
 
 
 COMPONENTS = {"fit_chart": _check_fit_chart, "counter": _check_counter, "screenshot": _check_screenshot,
-              "pipeline": _check_pipeline, "generation": _check_generation, "code": _check_code}
+              "pipeline": _check_pipeline, "generation": _check_generation, "code": _check_code,
+              "levels": _check_levels}
 
 # Motion style presets are data: a channel picks a preset and may override colours.
 STYLE_PRESETS = ("tech", "warm", "light")
@@ -241,7 +282,7 @@ def check_block(block, where: str) -> list:
     params = block.get("params")
     if not isinstance(params, dict):
         return [f"{where}: remotion.params must be an object."]
-    return COMPONENTS[name](params, where)
+    return COMPONENTS[name](params, where) + _check_footer(params, where)
 
 
 # ---- fingerprint and cache --------------------------------------------------------

@@ -94,3 +94,14 @@ export const Note = ({x, y, start, children, pal, size = 34, color}) => {
     color: color || pal.accent2, opacity: p, transform: `translateY(${(1 - p) * 10}px)${hand ? ' rotate(-2deg)' : ''}`,
     whiteSpace: 'nowrap', borderLeft: hand ? 'none' : `4px solid ${color || pal.accent2}`, paddingLeft: hand ? 0 : 14}}>{children}</div>;
 };
+
+// The sentence the planner wants on screen for the point being made: appears on its words.
+export const Footer = ({footer, pal}) => {
+  const ms = useMs();
+  const p = prog(ms, footer.start_ms, 500);
+  return <div style={{position: 'absolute', left: 110, right: 110, top: 950, display: 'flex', alignItems: 'center', gap: 16,
+    opacity: p, transform: `translateY(${(1 - p) * 10}px)`}}>
+    <div style={{width: 5, alignSelf: 'stretch', background: pal.accent2, borderRadius: 3}} />
+    <div style={{fontFamily: pal.sansF, fontSize: 32, color: pal.text}}>{footer.text}</div>
+  </div>;
+};
