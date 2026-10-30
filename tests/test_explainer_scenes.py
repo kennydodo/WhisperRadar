@@ -215,3 +215,20 @@ class TooShortSceneTests(unittest.TestCase):
         fixed, notes = recipes.simplify_overfull(plan, cues)
         recipes.build(fixed, cues)                      # builds: nothing is left over-full
         self.assertTrue(len(fixed["scenes"]) <= 3)
+
+
+class JudgeSeesMotionScenesTests(unittest.TestCase):
+    def test_summary_lists_what_a_motion_scene_animates(self):
+        plan = {"scenes": [
+            {"id": "g", "cue_range": [1, 1], "layout": "generation", "title": "Orders", "rows": [
+                {"label": "Left to right", "mode": "sequential", "words": ["Hi", "team", "meeting"]},
+                {"label": "Plan first", "mode": "plan_then_fill", "words": ["Hi", "team", "meeting"],
+                 "beats": [{"at": "a broad outline"}]}]},
+            {"id": "p", "cue_range": [1, 1], "layout": "pipeline", "title": "Waiting", "tasks": 8, "stages": [
+                {"label": "Stage 1", "workers": 8}, {"label": "Stage 2", "workers": 4, "waits_for_all": True, "at": "needs the result"}]},
+            {"id": "c", "cue_range": [1, 1], "layout": "code", "title": "Code", "filename": "a.py", "lines": ["x = 1", "y = 2"],
+             "highlights": [{"line": 2, "note": "the batch size"}]}]}
+        text = es.summary_text(plan, [{"index": 1, "start": "00:00:00,000", "end": "00:00:04,000", "text": "Hello there, a broad outline needs the result today."}])
+        for needle in ("Left to right", "one word after another", "a rough outline first", "a broad outline",
+                       "Stage 2 (4 workers, locked", "needs the result", "a.py", "the batch size"):
+            self.assertIn(needle, text)
