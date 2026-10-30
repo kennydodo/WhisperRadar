@@ -135,6 +135,33 @@ class ExplainerPageTests(unittest.TestCase):
             self.assertTrue(seen["cancel"]())
             release.set()
 
+    def test_redo_scene_plan_takes_the_llm_chosen_on_the_page(self):
+        from whisperradar import autorun
+        (self.pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
+        (self.pdir / "plan.json").write_text("{}", encoding="utf-8")
+        html = self.client.get(f"/studio/{self.pid}?stage=shots").get_data(as_text=True)
+        self.assertIn('name="writer"', html)
+        self.assertIn('name="judge"', html)
+        seen = {}
+
+        def fake(cfg, pid, stage, opts):
+            seen.update(opts)
+            return {}
+        with mock.patch.object(autorun, "run_stage_and_advance", side_effect=fake), \
+                mock.patch.object(autorun, "raise_result", lambda r: None):
+            self.client.post(f"/studio/{self.pid}/scenes/generate",
+                             data={"transport": "webchat", "writer": "zai", "judge": "deepseek_judge"})
+            for _ in range(50):
+                if seen:
+                    break
+                __import__("time").sleep(0.1)
+        self.assertEqual((seen.get("writer"), seen.get("judge")), ("zai", "deepseek_judge"))
+
+    def test_an_unknown_chat_site_is_refused(self):
+        (self.pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
+        r = self.client.post(f"/studio/{self.pid}/scenes/generate", data={"transport": "webchat", "writer": "nope"})
+        self.assertIn("Unknown chat site", __import__("urllib.parse").parse.unquote(r.headers["Location"]))
+
     def test_normal_production_unchanged(self):
         html = self.client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
         self.assertNotIn("Render explainer video", html)

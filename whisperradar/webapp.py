@@ -5025,12 +5025,22 @@ def create_app(cfg) -> Flask:
         provider = autorun._stage_provider(
             cfg, pid, "shots",
             override=(request.form.get("provider") or "").strip() or None)
+        writer = (request.form.get("writer") or "").strip() or None
+        judge = (request.form.get("judge") or "").strip() or None
+        if transport == "webchat":
+            from . import webchat as _wc
+            for site in (writer, judge):
+                if site and site not in _wc.SITES:
+                    return _studio_url(pid, error="Unknown chat site")
+        else:
+            judge = None                                  # the API judge follows the chosen provider
         _job = sjob._real()
 
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "shots", {
                     "provider": provider, "transport": transport,
+                    "writer": writer, "judge": judge,
                     "log": sjob.log.append,
                     "cancel": (lambda _j=_job: _j.cancel)}))
 

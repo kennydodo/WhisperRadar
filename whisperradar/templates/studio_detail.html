@@ -926,12 +926,17 @@
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
               onsubmit="return wrConfirmSubmit(this, 'Write the scene plan in the web chat (writer, then judge)?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
           <input type="hidden" name="transport" value="webchat">
+          <label title="Which chat writes the plan for this run. Settings default = the writer chosen in Settings.">Writer
+            <select name="writer"><option value="">Settings default</option><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <label title="Which chat judges it for this run.">Judge
+            <select name="judge"><option value="">Settings default</option><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
           <button type="submit" class="green" {{ 'disabled' if job.running or not srt else '' }}>
             {{ 'Working...' if job.running else ('Redo scene plan (web chat)' if scene_plan_exists else 'Write scene plan (web chat)') }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
               onsubmit="return wrConfirmSubmit(this, 'Write the scene plan with the API providers?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
+          {{ provider_select('shots') }}
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not srt else '' }}>Write scene plan (API)</button>
         </form>
         {% if job.running and (job.kind or '').startswith('explainer') %}
