@@ -59,6 +59,11 @@
   td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   tr:last-child td { border-bottom: none; }
   label { font-size: 12px; color: var(--muted); }
+  .xp-preview { margin-top: 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: #12161a; color: #f2efe6; }
+  .xp-preview .muted { font-size: 11px; margin-bottom: 4px; }
+  .xp-line { font-size: 26px; line-height: 1.25; }
+{% for f in explainer_choices.fonts %}  @font-face { font-family: "wr-{{ f }}"; src: url("/explainer/fonts/{{ f }}"); }
+{% endfor %}
   .grp { border: 1px solid var(--border); border-radius: 8px; margin: 10px 0; padding: 0 16px 16px; }
   .grp > summary { cursor: pointer; font-weight: 600; padding: 9px 0; list-style-position: inside; }
   .grp > summary .muted { font-weight: 400; font-size: 12px; margin-left: 8px; }
@@ -129,6 +134,9 @@
       <input type="text" name="genre" list="genre-list"
              placeholder="genre e.g. Human &amp; Animal"
              style="flex:0 0 200px">
+      <datalist id="xp-colors">
+        {% for c in explainer_choices.colors %}<option value="{{ c }}">{% endfor %}
+      </datalist>
       <datalist id="genre-list">
         {% for g in genres %}<option value="{{ g }}"></option>{% endfor %}
       </datalist>
@@ -740,6 +748,84 @@
                         title="Saves only the planning-brief settings above; the rest of this form is left as it is">save planning brief</button>
               </div>
             </details>
+            <details class="grp" id="edit-{{ ch['id'] }}-explainer">
+              <summary>Channel type &amp; explainer <span class="muted">normal or explainer channel; theme, hand-drawn writing, fonts</span></summary>
+            <input type="hidden" name="explainer_present" value="1">
+            {% set xv = explainer_values.get(ch['id'], {}) %}
+            {% set xg = explainer_global %}
+            <div class="muted" style="font-size:12px; margin:10px 0 6px">
+              How this channel's explainer videos look. Saved in the database
+              (the same values as the Explainer look group on
+              <a href="/video-options?channel={{ ch['id'] }}">Video options</a>);
+              blank = inherit the global value. A production's own
+              explainer.json can still override one video.
+            </div>
+            <div class="inline">
+              <label>channel type
+                <select name="explainer_mode" id="xp-mode-{{ ch['id'] }}" class="xp-mode" data-global="{{ xg.mode or 'images' }}" data-box="xp-box-{{ ch['id'] }}">
+                  <option value="">inherit (global: {{ xg.mode or 'images' }})</option>
+                  {% for m, label in explainer_choices.modes %}
+                  <option value="{{ m }}" {{ 'selected' if xv.get('mode') == m else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div id="xp-box-{{ ch['id'] }}">
+            <div class="inline">
+              <label>theme
+                <select name="explainer_theme">
+                  <option value="">inherit{% if xg.theme %} (global: {{ xg.theme }}){% endif %}</option>
+                  {% for t, label in explainer_choices.themes %}
+                  <option value="{{ t }}" {{ 'selected' if xv.get('theme') == t else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>hand-drawn writing
+                <select name="explainer_hand_font" class="xp-font" data-target="xp-hand-{{ ch['id'] }}">
+                  <option value="">inherit{% if xg.hand_font %} (global: {{ xg.hand_font }}){% endif %}</option>
+                  <option value="strokes" {{ 'selected' if xv.get('hand_font') == 'strokes' else '' }}>pen strokes - letters drawn stroke by stroke (limited characters)</option>
+                  {% for f in explainer_choices.hand_fonts %}
+                  <option value="{{ f }}" {{ 'selected' if xv.get('hand_font') == f else '' }}>{{ f[:-4] }} - hand font, writes on</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>heading font
+                <select name="explainer_heading_font" class="xp-font" data-target="xp-head-{{ ch['id'] }}">
+                  <option value="">inherit{% if xg.heading_font %} (global: {{ xg.heading_font }}){% endif %}</option>
+                  {% for f in explainer_choices.fonts %}
+                  <option value="{{ f }}" {{ 'selected' if xv.get('heading_font') == f else '' }}>{{ f[:-4] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>body font
+                <select name="explainer_body_font" class="xp-font" data-target="xp-body-{{ ch['id'] }}">
+                  <option value="">inherit{% if xg.body_font %} (global: {{ xg.body_font }}){% endif %}</option>
+                  {% for f in explainer_choices.fonts %}
+                  <option value="{{ f }}" {{ 'selected' if xv.get('body_font') == f else '' }}>{{ f[:-4] }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="inline">
+              {% for key, label, ph in [('heading_color', 'heading colour', 'yellow'), ('text_color', 'text colour', 'white'), ('background', 'board colour (#RRGGBB)', 'theme')] %}
+              <label>{{ label }}
+                <span style="display:flex; gap:4px; align-items:center">
+                  <input type="text" name="explainer_{{ key }}" class="xp-color" data-prev="{{ key }}" data-ch="{{ ch['id'] }}"
+                         value="{{ xv.get(key, '') }}" placeholder="{{ xg.get(key) or ph }}" size="10"
+                         {% if key != 'background' %}list="xp-colors"{% endif %}>
+                  <input type="color" class="xp-pick" value="{{ (xv.get(key) if (xv.get(key) or '').startswith('#') else explainer_choices.colors.get(xv.get(key) or ph, '#F4F1E8')) }}" title="pick a colour">
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            <div class="xp-preview" id="xp-prev-{{ ch['id'] }}">
+              <div class="muted">preview</div>
+              <div id="xp-hand-{{ ch['id'] }}" class="xp-line">Start early, win later &mdash; 3/4 full, $1,200</div>
+              <div id="xp-head-{{ ch['id'] }}" class="xp-line">HEADING: Local vs offline</div>
+              <div id="xp-body-{{ ch['id'] }}" class="xp-line">Body text sits here, a little smaller.</div>
+            </div>
+            </div>
+            </details>
             <details class="grp" id="edit-{{ ch['id'] }}-autorun">
               <summary>Auto Run <span class="muted">run window, candidate window, producer LLM</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
@@ -873,6 +959,59 @@
 <script>
   // Ask the local server to open the OS folder chooser (a browser page cannot
   // read a real filesystem path itself) and drop the result into the field.
+
+  // Explainer group: preview each picked font (the hand-drawn line shows the pen-strokes choice as plain text)
+  // the explainer look only matters for an explainer channel
+  function wrXpMode(sel) {
+    var box = document.getElementById(sel.getAttribute('data-box'));
+    if (!box) return;
+    var mode = sel.value || sel.getAttribute('data-global');
+    box.style.display = (mode === 'images') ? 'none' : '';
+  }
+  document.querySelectorAll('select.xp-mode').forEach(function (sel) {
+    sel.addEventListener('change', function () { wrXpMode(sel); });
+    wrXpMode(sel);
+  });
+  function wrXpFont(sel) {
+    var t = document.getElementById(sel.getAttribute('data-target'));
+    if (!t) return;
+    var v = sel.value;
+    t.style.fontFamily = (v && v !== 'strokes') ? '"wr-' + v + '", cursive' : '';
+    if (sel.name === 'explainer_hand_font') {
+      t.setAttribute('title', v === 'strokes' ? 'Pen strokes: drawn letter by letter (shown here in the default font)' : '');
+    }
+  }
+  var XP_CHALK = {{ explainer_choices.colors | tojson }};
+  function xpHex(v, dflt) {
+    v = (v || '').trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(v)) return v;
+    return XP_CHALK[v] || dflt;
+  }
+  function wrXpColor(inp) {
+    var box = document.getElementById('xp-prev-' + inp.getAttribute('data-ch'));
+    if (!box) return;
+    var kind = inp.getAttribute('data-prev');
+    if (kind === 'background') {
+      box.style.background = /^#[0-9a-fA-F]{6}$/.test(inp.value.trim()) ? inp.value.trim() : '';
+      return;
+    }
+    var lines = kind === 'heading_color' ? [box.querySelector('[id^=xp-head-]')]
+                                         : [box.querySelector('[id^=xp-body-]'), box.querySelector('[id^=xp-hand-]')];
+    lines.forEach(function (l) { if (l) l.style.color = xpHex(inp.value, ''); });
+  }
+  document.querySelectorAll('input.xp-color').forEach(function (inp) {
+    var pick = inp.parentNode.querySelector('input.xp-pick');
+    inp.addEventListener('input', function () {
+      if (pick && /^#[0-9a-fA-F]{6}$/.test(inp.value.trim())) pick.value = inp.value.trim();
+      wrXpColor(inp);
+    });
+    if (pick) pick.addEventListener('input', function () { inp.value = pick.value.toUpperCase(); wrXpColor(inp); });
+    wrXpColor(inp);
+  });
+  document.querySelectorAll('select.xp-font').forEach(function (sel) {
+    sel.addEventListener('change', function () { wrXpFont(sel); });
+    wrXpFont(sel);
+  });
   // Same route/contract as studio.html's own copy (/studio/pick-folder) -
   // this page is a separate standalone template so it keeps its own copy.
   async function pickFolder(inputId) {

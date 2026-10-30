@@ -27,7 +27,7 @@ from .timing import CompiledScene
 
 def needs_pipe(scene: CompiledScene) -> bool:
     return any(o.type in (sc.PATH, sc.BAR, sc.COUNTER, sc.GRID, sc.BLOCKS,
-                          sc.STROKE_ASSET, sc.HANDWRITING)
+                          sc.STROKE_ASSET, sc.HANDWRITING, sc.SHAPE)
                for o in scene.spec.objects)
 
 

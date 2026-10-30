@@ -1,0 +1,499 @@
+{
+ "schema_version": 2,
+ "style": "whiteboard",
+ "theme": "chalkboard",
+ "canvas": {
+  "width": 1280,
+  "height": 720
+ },
+ "scenes": [
+  {
+   "id": "cards",
+   "shot_id": "S01_01",
+   "cue_range": [
+    1,
+    3
+   ],
+   "objects": [
+    {
+     "id": "title",
+     "type": "handwriting",
+     "text": "Start early, win later",
+     "box": [
+      0.08,
+      0.07,
+      0.6,
+      0.13
+     ],
+     "color": "yellow",
+     "font": "Kalam-Bold.ttf"
+    },
+    {
+     "id": "tl",
+     "type": "shape",
+     "kind": "line",
+     "points": [
+      [
+       0.08,
+       0.56
+      ],
+      [
+       0.92,
+       0.56
+      ]
+     ],
+     "color": "grey"
+    },
+    {
+     "id": "i25",
+     "type": "stroke_asset",
+     "asset": "lucide:piggy-bank",
+     "box": [
+      0.1,
+      0.3,
+      0.12,
+      0.2
+     ],
+     "color": "pink"
+    },
+    {
+     "id": "i35",
+     "type": "stroke_asset",
+     "asset": "lucide:clock",
+     "box": [
+      0.43,
+      0.3,
+      0.12,
+      0.2
+     ],
+     "color": "orange"
+    },
+    {
+     "id": "i65",
+     "type": "stroke_asset",
+     "asset": "lucide:trending-up",
+     "box": [
+      0.77,
+      0.3,
+      0.12,
+      0.2
+     ],
+     "color": "green"
+    },
+    {
+     "id": "o25",
+     "type": "shape",
+     "kind": "oval",
+     "box": [
+      0.09,
+      0.51,
+      0.1,
+      0.1
+     ],
+     "color": "pink"
+    },
+    {
+     "id": "o35",
+     "type": "shape",
+     "kind": "oval",
+     "box": [
+      0.45,
+      0.51,
+      0.1,
+      0.1
+     ],
+     "color": "orange"
+    },
+    {
+     "id": "o65",
+     "type": "shape",
+     "kind": "oval",
+     "box": [
+      0.81,
+      0.51,
+      0.1,
+      0.1
+     ],
+     "color": "green"
+    },
+    {
+     "id": "a25",
+     "type": "handwriting",
+     "text": "age 25",
+     "box": [
+      0.09,
+      0.65,
+      0.14,
+      0.08
+     ],
+     "color": "pink"
+    },
+    {
+     "id": "a35",
+     "type": "handwriting",
+     "text": "age 35",
+     "box": [
+      0.45,
+      0.65,
+      0.14,
+      0.08
+     ],
+     "color": "orange"
+    },
+    {
+     "id": "a65",
+     "type": "handwriting",
+     "text": "age 65",
+     "box": [
+      0.81,
+      0.65,
+      0.14,
+      0.08
+     ],
+     "color": "green"
+    },
+    {
+     "id": "br",
+     "type": "shape",
+     "kind": "brace",
+     "box": [
+      0.23,
+      0.47,
+      0.19,
+      0.05
+     ],
+     "side": "top",
+     "color": "white"
+    },
+    {
+     "id": "ten",
+     "type": "handwriting",
+     "text": "10 years",
+     "box": [
+      0.26,
+      0.37,
+      0.14,
+      0.07
+     ],
+     "color": "white"
+    },
+    {
+     "id": "hl",
+     "type": "shape",
+     "kind": "highlight",
+     "box": [
+      0.1,
+      0.8,
+      0.5,
+      0.09
+     ],
+     "color": "yellow",
+     "opacity": 0.28
+    },
+    {
+     "id": "dbl",
+     "type": "handwriting",
+     "text": "can double the pot",
+     "box": [
+      0.1,
+      0.8,
+      0.5,
+      0.09
+     ],
+     "color": "white"
+    },
+    {
+     "id": "ar",
+     "type": "shape",
+     "kind": "arrow",
+     "points": [
+      [
+       0.62,
+       0.85
+      ],
+      [
+       0.87,
+       0.85
+      ]
+     ],
+     "color": "blue",
+     "curve": -0.12
+    },
+    {
+     "id": "ok",
+     "type": "shape",
+     "kind": "check",
+     "box": [
+      0.9,
+      0.79,
+      0.05,
+      0.08
+     ],
+     "color": "green"
+    }
+   ],
+   "events": [
+    {
+     "target": "title",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 1,
+      "edge": "start"
+     },
+     "offset_ms": 0,
+     "duration_ms": 1500
+    },
+    {
+     "target": "tl",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 1,
+      "edge": "start"
+     },
+     "offset_ms": 1600,
+     "duration_ms": 900
+    },
+    {
+     "target": "i25",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 1,
+      "edge": "start"
+     },
+     "offset_ms": 2000,
+     "duration_ms": 1800
+    },
+    {
+     "target": "o25",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 1,
+      "edge": "start"
+     },
+     "offset_ms": 3300,
+     "duration_ms": 600
+    },
+    {
+     "target": "a25",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 2,
+      "edge": "start"
+     },
+     "offset_ms": 0,
+     "duration_ms": 700
+    },
+    {
+     "target": "i35",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 2,
+      "edge": "start"
+     },
+     "offset_ms": 500,
+     "duration_ms": 1800
+    },
+    {
+     "target": "o35",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 2,
+      "edge": "start"
+     },
+     "offset_ms": 2000,
+     "duration_ms": 600
+    },
+    {
+     "target": "a35",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 2,
+      "edge": "start"
+     },
+     "offset_ms": 2600,
+     "duration_ms": 700
+    },
+    {
+     "target": "br",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 2,
+      "edge": "start"
+     },
+     "offset_ms": 3000,
+     "duration_ms": 700
+    },
+    {
+     "target": "ten",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 2,
+      "edge": "start"
+     },
+     "offset_ms": 3300,
+     "duration_ms": 600
+    },
+    {
+     "target": "i65",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 0,
+     "duration_ms": 1800
+    },
+    {
+     "target": "o65",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 1500,
+     "duration_ms": 600
+    },
+    {
+     "target": "a65",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 2100,
+     "duration_ms": 700
+    },
+    {
+     "target": "hl",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 2400,
+     "duration_ms": 500
+    },
+    {
+     "target": "dbl",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 2800,
+     "duration_ms": 900
+    },
+    {
+     "target": "ar",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 3300,
+     "duration_ms": 500
+    },
+    {
+     "target": "ok",
+     "action": "draw_strokes",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 3700,
+     "duration_ms": 300
+    },
+    {
+     "target": "o25",
+     "action": "emphasis",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "offset_ms": 0,
+     "duration_ms": 3000
+    },
+    {
+     "target": "i25",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    },
+    {
+     "target": "o25",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    },
+    {
+     "target": "a25",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    },
+    {
+     "target": "i35",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    },
+    {
+     "target": "o35",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    },
+    {
+     "target": "a35",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    },
+    {
+     "target": "br",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    },
+    {
+     "target": "ten",
+     "action": "dim",
+     "at": {
+      "cue": 3,
+      "edge": "start"
+     },
+     "duration_ms": 500,
+     "amount": 0.7
+    }
+   ]
+  }
+ ]
+}

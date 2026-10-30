@@ -32,7 +32,7 @@ def _window(ev: CompiledEvent, f: int):
 class ObjectState:
     __slots__ = ("visible", "alpha", "dx", "dy", "progress", "value",
                  "visible_count", "emphasized", "text_progress", "gone",
-                 "drawing", "erase_progress", "pen")
+                 "drawing", "erase_progress", "pen", "dim", "scale")
 
     def __init__(self):
         self.visible = False
@@ -47,6 +47,8 @@ class ObjectState:
         self.drawing = False          # pen currently down on this object
         self.erase_progress = 0.0     # 0..1 (1 = fully erased)
         self.pen = None               # (x, y) pen-tip px while drawing
+        self.dim = 0.0                # 0..1 spotlight fade-back (1 = nearly gone)
+        self.scale = 1.0              # shape width factor (stretch action)
 
 
 def _default_visible(obj_spec) -> bool:
@@ -76,6 +78,13 @@ def evaluate(scene: CompiledScene, laid_out, frame: int) -> dict:
             st.progress = 1.0 if st.visible else 0.0
         states[lo.spec.id] = st
 
+    for cev in sorted((c for c in scene.events if c.event.action == sc.STRETCH),
+                      key=lambda c: c.start_frame, reverse=True):
+        st0 = states.get(cev.event.target)         # before its first stretch the shape
+        if st0 is not None:                         # sits at that event's starting width
+            e0 = cev.event
+            st0.scale = e0.from_amount if e0.from_amount is not None else e0.amount
+
     for cev in scene.events:
         ev = cev.event
         st = states.get(ev.target)
@@ -89,7 +98,7 @@ def evaluate(scene: CompiledScene, laid_out, frame: int) -> dict:
             # strokes/handwriting erase stroke-by-stroke (reverse draw);
             # other objects fade quickly (no fake wipe of typed text)
             if active:
-                if _spec_type_of(scene, ev.target) in (sc.STROKE_ASSET, sc.HANDWRITING):
+                if _spec_type_of(scene, ev.target) in (sc.STROKE_ASSET, sc.HANDWRITING, sc.SHAPE):
                     st.erase_progress = max(st.erase_progress, p)
                     st.alpha = min(st.alpha, 1.0)
                     if st.erase_progress >= 1.0:
@@ -158,6 +167,17 @@ def evaluate(scene: CompiledScene, laid_out, frame: int) -> dict:
                             spec.filled, cev, frame))
                     else:
                         st.visible_count = spec.columns * spec.rows
+        elif a == "scale":
+            if active:
+                start = ev.from_amount if ev.from_amount is not None else st.scale
+                eased = p * p * (3.0 - 2.0 * p)
+                st.scale = start + (ev.amount - start) * eased
+        elif a == "dim":
+            if active:
+                if ev.action == sc.DIM:
+                    st.dim = max(st.dim, ev.amount * p)
+                else:                                  # undim: ease home from where it is
+                    st.dim = st.dim * (1.0 - p)
         elif a == "emphasis":
             if active:
                 st.visible = True

@@ -39,6 +39,40 @@ RUN_STAGES = [s for s in db.STAGES if s != "review"]
 
 # ------------------------------------------------------------- helpers ---
 
+# Stages an explainer video never needs: its scenes are drawn from
+# explainer.json (or plan.json), not planned as shots or rendered as images.
+EXPLAINER_SKIPPED = ("refs", "images", "motion")
+
+
+def is_explainer(pdir) -> bool:
+    """True for a production that carries an explainer.json or plan.json."""
+    pdir = Path(pdir)
+    return (pdir / "explainer.json").is_file() or (pdir / "plan.json").is_file()
+
+
+def explainer_production(cfg, pid: int) -> bool:
+    """An explainer production: it has a plan/explainer file, or its channel is
+    set to an explainer visual mode (motion_graphics / whiteboard)."""
+    pdir = studio.prod_dir(cfg, pid)
+    if is_explainer(pdir):
+        return True
+    try:
+        from .video import settings_spec
+        conn = _connect(cfg)
+        try:
+            row = db.get_production(conn, pid)
+            try:
+                oc = row["own_channel_id"] if row is not None else None
+            except (IndexError, KeyError):
+                oc = None
+            mode = settings_spec.effective(conn, oc).get("visual_mode")
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - never block a page on a settings error
+        return False
+    return mode in ("motion_graphics", "whiteboard")
+
+
 def _connect(cfg):
     conn = db.connect(cfg.db_path)
     db.init_db(conn)
@@ -1008,8 +1042,30 @@ def _motion_breakdown_line(shots: list) -> str:
     return "motion: " + ", ".join(parts) if parts else ""
 
 
+def _run_scenes(cfg, pid: int, provider, log, cancel, transport) -> None:
+    """The shots stage of an explainer production: write plan.json (writer +
+    checker + judge). The scenes are built from it when the video is rendered."""
+    from . import explainer_scenes
+    log = log or (lambda m: None)
+    stop = _bounded_stop(cancel)
+    if transport == "webchat":
+        w, j, o = _webchat_pair(cfg)
+        explainer_scenes.webchat_job(cfg, pid, w, j, log, stop, o)
+    else:
+        judge = studio.judge_provider(cfg, provider, None)
+        explainer_scenes.api_job(cfg, pid, provider, judge, log, stop)
+    conn = _connect(cfg)
+    try:
+        db.add_step(conn, pid, "shots", "auto", detail="explainer scene plan")
+    finally:
+        conn.close()
+
+
 def _run_shots(cfg, pid: int, provider: str | None = None,
                log=None, cancel=None, transport: str | None = None) -> None:
+    if explainer_production(cfg, pid):
+        _run_scenes(cfg, pid, provider, log, cancel, transport)
+        return
     if transport == "webchat":
         from . import webstages
         w, j, o = _webchat_pair(cfg)
@@ -2006,6 +2062,9 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
     pdir = studio.prepare_project_folder(cfg, pid)
     audio = studio.find_audio(pdir)
     srt = studio.find_srt(pdir)
+    if explainer_production(cfg, pid):
+        _run_explainer_merge(cfg, pid, pdir, audio, srt, log, cancel)
+        return
     images = studio.find_images(pdir)
     if not audio or not srt or not images:
         raise RuntimeError("Need audio, subtitles and images first")
@@ -2059,6 +2118,37 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
     conn = _connect(cfg)
     try:
         db.add_step(conn, pid, "merge", "auto", detail=detail)
+    finally:
+        conn.close()
+
+
+def _run_explainer_merge(cfg, pid: int, pdir: Path, audio, srt, log, cancel) -> None:
+    """Merge for an explainer production: build the scenes from plan.json when
+    needed, draw every scene, join them and add the narration -> final video."""
+    from .video.explainer import render as xrender
+    from .video.explainer.validate import ExplainerError
+    if not audio or not srt:
+        raise RuntimeError("Need audio and subtitles first")
+    if log is None:
+        log = lambda m: None
+    log("[merge] explainer video: drawing the scenes (finished scenes are reused)")
+
+    class _Cancel:
+        """The job hands over a callable (or an Event); the renderer wants .is_set()."""
+        def is_set(self):
+            if cancel is None:
+                return False
+            return bool(cancel() if callable(cancel) else cancel.is_set())
+
+    try:
+        out = xrender.render_video(str(pdir), audio=str(audio), final=True,
+                                   log=log, cancel=_Cancel())
+    except ExplainerError as exc:
+        raise RuntimeError("explainer: " + " | ".join(exc.errors[:6])) from None
+    conn = _connect(cfg)
+    try:
+        db.add_step(conn, pid, "merge", "auto",
+                    detail="explainer video " + Path(out).name)
     finally:
         conn.close()
 
@@ -2169,6 +2259,8 @@ def run_stage(cfg, pid: int, stage: str, params: dict | None = None) -> str:
     runner = _RUNNERS.get(stage)
     if runner is None:
         return f"failed:unknown stage '{stage}'"
+    if stage in EXPLAINER_SKIPPED and explainer_production(cfg, pid):
+        return "ok"          # nothing to do: the explainer draws its own scenes
     try:
         runner(cfg, pid, **(params or {}))
         return "ok"
@@ -2218,6 +2310,23 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
     if wait and stage != "style":
         # nothing to compare with or take points from until it is there
         return {"stage": stage, "action": "pause", "detail": wait["text"]}
+    explainer = explainer_production(cfg, pid)
+    if explainer and stage in EXPLAINER_SKIPPED:
+        return {"stage": stage, "action": "skip",
+                "detail": "explainer video: scenes come from the scene plan"}
+    if explainer and stage == "shots":
+        if is_explainer(pdir):
+            return {"stage": stage, "action": "skip",
+                    "detail": "scene plan (plan.json / explainer.json) exists"}
+        return {"stage": stage, "action": "run",
+                "detail": "scene plan: writer drafts, the code checks, the judge reviews"}
+    if explainer and stage == "merge":
+        if studio.find_final(pdir):
+            return {"stage": stage, "action": "skip",
+                    "detail": "explainer video already rendered"}
+        return {"stage": stage, "action": "run",
+                "detail": "draw the explainer scenes, add the narration - "
+                          "can take a long time"}
     if stage == "style":
         if studio.find_writing_style(pdir):
             return {"stage": stage, "action": "skip",

@@ -4,11 +4,18 @@ All assets are authored in-repo (viewBox 100x100, y down). Provenance: drawn
 for this project, no external licensing. An object references them as
 "asset": "builtin:<name>" (a project-relative JSON file with the same schema
 is equally valid). Authoring guide: docs/explainer/user-guide.md.
+
+"lucide:<name>" references the ~2000 line icons of the Lucide set (ISC
+license, icons/lucide.json, converted by scripts/build_lucide_library.py);
+find a name with `python -m whisperradar.video.explainer.cli icons <word>`.
 """
 from __future__ import annotations
 
+import difflib
+import functools
 import json
 import os
+import re
 
 from .strokes import Stroke, StrokeAsset, stroke_from_path_commands
 
@@ -210,8 +217,100 @@ def load_file(path: str) -> StrokeAsset:
                        name=path)
 
 
+# ---- Lucide line-icon library (ISC) -------------------------------------------------
+
+LUCIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons",
+                           "lucide.json")
+LUCIDE_WIDTH = 5.0           # pen width in the 100x100 asset box (like the built-ins)
+LUCIDE_PAUSE = 0.12          # relative pen lift between an icon's strokes
+_TOKEN = re.compile(r"[MLCQ]|-?\d+(?:\.\d+)?")
+
+
+@functools.lru_cache(maxsize=1)
+def _lucide() -> dict:
+    with open(LUCIDE_FILE, encoding="utf-8") as fh:
+        return json.load(fh)["icons"]
+
+
+def lucide_names() -> list:
+    return sorted(_lucide())
+
+
+def _lucide_key(name: str) -> str:
+    return re.sub(r"[\s_]+", "-", (name or "").strip().lower())
+
+
+def lucide_search(query: str, limit: int = 12) -> list:
+    """[(name, tags)] best matches first. Every word of the query must match
+    the icon's name or one of its tags; exact and whole-word name matches
+    rank above substring and tag matches."""
+    words = [w for w in re.split(r"[\s_-]+", (query or "").lower()) if w]
+    if not words:
+        return []
+    scored = []
+    for name, icon in _lucide().items():
+        parts = name.split("-")
+        tags = [t.lower() for t in icon.get("tags", [])]
+        total = 0
+        for w in words:
+            if name == w:
+                pts = 100
+            elif w in parts:
+                pts = 40
+            elif name.startswith(w):
+                pts = 30
+            elif w in tags:
+                pts = 25
+            elif w in name:
+                pts = 20
+            elif any(w in t for t in tags):
+                pts = 10
+            else:
+                total = 0
+                break
+            total += pts
+        if total:
+            scored.append((-total, len(name), name, icon.get("tags", [])))
+    scored.sort()
+    return [(n, t) for _, _, n, t in scored[:max(1, int(limit))]]
+
+
+def lucide_suggestions(name: str, limit: int = 5) -> list:
+    """Names to offer for an unknown icon: search hits first, then spelling."""
+    out = [n for n, _ in lucide_search(_lucide_key(name), limit)]
+    for n in difflib.get_close_matches(_lucide_key(name), _lucide(), n=limit,
+                                       cutoff=0.6):
+        if n not in out:
+            out.append(n)
+    return out[:limit]
+
+
+def load_lucide(name: str) -> StrokeAsset:
+    key = _lucide_key(name)
+    icon = _lucide().get(key)
+    if icon is None:
+        near = lucide_suggestions(name)
+        hint = f" Did you mean: {', '.join(near)}?" if near else ""
+        raise ValueError(
+            f"unknown lucide icon {name!r}.{hint} Search names with: "
+            "python -m whisperradar.video.explainer.cli icons <word>")
+    strokes = []
+    last = len(icon["strokes"]) - 1
+    for i, path in enumerate(icon["strokes"]):
+        cmds = [t if t in ("M", "L", "C", "Q") else float(t)
+                for t in _TOKEN.findall(path)]
+        strokes.append(stroke_from_path_commands(
+            cmds, width=LUCIDE_WIDTH, weight=1.0,
+            pause_after=LUCIDE_PAUSE if i < last else 0.0,   # no wasted pause at the end
+            fill=False, tol=0.5))
+    return StrokeAsset(strokes=strokes, viewBox=(100.0, 100.0),
+                       name=f"lucide:{key}")
+
+
 def load(ref: str, project_folder: str = "") -> StrokeAsset:
-    """builtin:<name> or a project-relative JSON path."""
+    """builtin:<name>, lucide:<name> or a project-relative JSON path."""
+    if ref.startswith("lucide:"):
+        return load_lucide(ref[len("lucide:"):])
     if ref.startswith("builtin:"):
         name = ref[len("builtin:"):]
         if not has(name):

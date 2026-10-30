@@ -13,6 +13,7 @@ from . import schema as sc
 from . import themes
 from . import strokes_library
 from . import glyphs
+from . import shapes
 
 _ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_\-]{0,47}$")
 
@@ -67,7 +68,19 @@ def _norm_points(v, where, errors):
     return pts
 
 
-def _parse_object(raw, scene_id, errors, project_folder):
+def _find_font(path, project_folder):
+    from . import layout            # layout imports this module: import late
+    return layout.find_font(path, project_folder)
+
+
+def hand_font_for(obj, theme):
+    """Font file a handwriting object writes with, or "" for pen-stroke glyphs."""
+    if obj.font == "strokes":
+        return ""
+    return obj.font or (theme.hand_font if theme is not None else "")
+
+
+def _parse_object(raw, scene_id, errors, project_folder, theme=None):
     if not isinstance(raw, dict):
         errors.append(f"Scene {scene_id}: object entries must be JSON objects.")
         return None
@@ -82,11 +95,34 @@ def _parse_object(raw, scene_id, errors, project_folder):
         errors.append(f"{where}: unknown type \"{otype}\" "
                       f"(supported: {', '.join(sc.OBJECT_TYPES)}).")
         return None
+    if (otype == sc.SHAPE and raw.get("box") is None
+            and raw.get("kind") in shapes.NEEDS_POINTS):
+        pts = raw.get("points")        # arrows/lines are placed by their end points
+        if (isinstance(pts, list) and len(pts) == 2
+                and all(isinstance(p, list) and len(p) == 2
+                        and all(_is_num(c) for c in p) for p in pts)):
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            raw = dict(raw)
+            raw["box"] = [min(xs), min(ys), max(max(xs) - min(xs), 0.01),
+                          max(max(ys) - min(ys), 0.01)]
+        else:
+            errors.append(f"{where}: a {raw.get('kind')} needs points: "
+                          "[[x1, y1], [x2, y2]] (start, end).")
+            return None
     box = _norm_box(raw.get("box"), where, errors)
     if box is None:
         return None
 
     obj = sc.ObjectSpec(id=oid, type=otype, box=box)
+    color = raw.get("color")
+    if color is not None:
+        resolved = sc.resolve_color(color, theme or themes.resolve(None))
+        if resolved is None:
+            errors.append(f"{where}: unknown color {color!r} (use one of "
+                          f"{', '.join(sc.COLOR_NAMES)}, accent, positive, "
+                          "negative, muted, or #RRGGBB).")
+            return None
+        obj.color = str(color).strip().lower()
     obj.text = raw.get("text", "") if isinstance(raw.get("text"), str) else ""
     style = raw.get("style")
     obj.style = style if isinstance(style, str) and style else "body"
@@ -187,10 +223,76 @@ def _parse_object(raw, scene_id, errors, project_folder):
         obj.stroke_order = order
         obj.fill_after_draw = bool(raw.get("fill_after_draw", False))
 
+    if otype == sc.SHAPE:
+        kind = raw.get("kind")
+        if kind not in shapes.KINDS:
+            errors.append(f"{where}: shape kind must be one of "
+                          f"{', '.join(shapes.KINDS)} (got {kind!r}).")
+            return None
+        obj.kind = kind
+        if kind in shapes.NEEDS_POINTS:
+            pts = raw.get("points")
+            if not isinstance(pts, list) or len(pts) != 2:
+                errors.append(f"{where}: a {kind} needs points: "
+                              "[[x1, y1], [x2, y2]] (start, end).")
+                return None
+            obj.points = _norm_points(pts, where, errors)
+            if obj.points is None:
+                return None
+        for key in ("dashed", "filled"):
+            if not isinstance(raw.get(key, False), bool):
+                errors.append(f"{where}: {key} must be true or false.")
+                return None
+        obj.dashed = bool(raw.get("dashed", False))
+        obj.filled = bool(raw.get("filled", False))
+        if (obj.dashed and kind != "line") or (obj.filled and kind != "card"):
+            errors.append(f"{where}: dashed is for line shapes and filled "
+                          "is for card shapes.")
+            return None
+        curve = raw.get("curve", 0.12)
+        if not _is_num(curve) or not (-1.0 <= float(curve) <= 1.0):
+            errors.append(f"{where}: curve must be a number from -1 to 1.")
+            return None
+        obj.curve = float(curve)
+        side = raw.get("side", "right" if kind == "brace" else "")
+        if kind == "brace" and side not in shapes.SIDES:
+            errors.append(f"{where}: side must be left, right, top or bottom.")
+            return None
+        obj.side = side if kind == "brace" else ""
+        op = raw.get("opacity", 0.38 if kind == "highlight" else 1.0)
+        if not _is_num(op) or not (0.05 <= float(op) <= 1.0):
+            errors.append(f"{where}: opacity must be within 0.05..1.")
+            return None
+        obj.opacity = float(op)
+        obj._stroke_count = shapes.stroke_budget(obj)
+
     if otype == sc.HANDWRITING:
         if not obj.text.strip():
             errors.append(f"{where}: handwriting objects need text.")
             return None
+        font = raw.get("font", "")
+        if font and not isinstance(font, str):
+            errors.append(f"{where}: font must be a font file name or \"strokes\".")
+            return None
+        obj.font = font.strip()
+        if obj.font and obj.font.lower() != "strokes" and not _find_font(
+                obj.font, project_folder):
+            errors.append(f"{where}: font file not found: {obj.font} "
+                          "(put the .ttf in the repo fonts/ folder or the "
+                          "production folder, or use \"strokes\").")
+            return None
+        if obj.font.lower() == "strokes":
+            obj.font = "strokes"
+        if hand_font_for(obj, theme):
+            # a real font writes on left to right; no glyph set to check
+            obj._stroke_count = max(1, len(obj.text.replace("\n", "").replace(" ", "")) // 2)
+            iv = raw.get("initial_visible")
+            if iv is not None:
+                if not isinstance(iv, bool):
+                    errors.append(f"{where}: initial_visible must be true or false.")
+                    return None
+                obj.initial_visible = iv
+            return obj
         obj.fallback_typed = bool(raw.get("fallback_typed", False))
         missing = glyphs.missing_glyphs(obj.text)
         if missing and not obj.fallback_typed:
@@ -288,6 +390,23 @@ def _parse_event(raw, scene_id, obj_ids, errors):
             errors.append(f"{where}: prefix must be a string.")
             return None
         ev.prefix = pre
+    if action == sc.DIM:
+        amount = raw.get("amount", 0.65)
+        if not _is_num(amount) or not (0.1 <= float(amount) <= 0.95):
+            errors.append(f"{where}: amount must be a number from 0.1 to 0.95.")
+            return None
+        ev.amount = float(amount)
+    if action == sc.STRETCH:
+        amount = raw.get("amount", 1.0)
+        frm = raw.get("from_amount")
+        if not _is_num(amount) or not (0.0 < float(amount) <= 1.0):
+            errors.append(f"{where}: stretch amount (the end width) must be above 0 and at most 1.")
+            return None
+        if frm is not None and (not _is_num(frm) or not (0.0 < float(frm) <= 1.0)):
+            errors.append(f"{where}: stretch from_amount (the start width) must be above 0 and at most 1.")
+            return None
+        ev.amount = float(amount)
+        ev.from_amount = None if frm is None else float(frm)
     if action == sc.EMPHASIS:
         role = raw.get("role", "default")
         if role not in sc.ROLES:
@@ -297,7 +416,7 @@ def _parse_event(raw, scene_id, obj_ids, errors):
     return ev
 
 
-def parse_doc(data, project_folder: str = ""):
+def parse_doc(data, project_folder: str = "", look=None):
     """dict -> ExplainerDoc. Raises ExplainerError with all errors found."""
     errors = []
     if not isinstance(data, dict):
@@ -324,9 +443,68 @@ def parse_doc(data, project_folder: str = ""):
     if theme_name is not None and not isinstance(theme_name, str):
         errors.append("theme must be a theme name string.")
         theme_name = None
+    look = look if isinstance(look, dict) else {}
+    look_theme = str(look.get("theme") or "").strip().lower()
+    if look_theme and theme_name is None:
+        if look_theme in themes.THEMES:
+            theme_name = look_theme       # the channel's setting, unless the doc names one
+        else:
+            errors.append(f"channel explainer theme {look_theme!r} is unknown "
+                          f"(one of {', '.join(themes.THEMES)}).")
     theme = themes.resolve(theme_name)
     if style_name == sc.STYLE_WHITEBOARD and theme_name is None:
         theme = themes.resolve("whiteboard_light")
+
+    def _apply_fonts(fonts, source):
+        for key, val in fonts.items():
+            if not isinstance(val, str) or not val.strip():
+                continue
+            val = val.strip()
+            if key == "hand" and val.lower() == "strokes":
+                theme.hand_font = ""
+            elif not _find_font(val, project_folder):
+                errors.append(f"{source}.{key}: font file not found: {val} "
+                              "(put the .ttf in the repo fonts/ folder or the "
+                              "production folder).")
+            elif key == "hand":
+                theme.hand_font = val
+            elif key == "heading":
+                theme.heading_font = val
+            else:
+                theme.body_font = val
+
+    # colours from the channel (Video options): heading, text, board
+    for key, attr in (("heading_color", "heading_color"), ("text_color", "text_color"),
+                      ("background", "background")):
+        val = str(look.get(key) or "").strip()
+        if not val:
+            continue
+        hexval = sc.resolve_color(val, theme) if key != "background" else (
+            val.upper() if re.fullmatch(r"#[0-9A-Fa-f]{6}", val) else None)
+        if hexval is None:
+            errors.append(f"channel explainer {key.replace('_', ' ')} {val!r}: use a colour name "
+                          f"({', '.join(sc.COLOR_NAMES[:9])}) or #RRGGBB"
+                          + (" (the board takes #RRGGBB only)" if key == "background" else "") + ".")
+        elif key == "background":
+            theme.background = hexval
+        else:
+            setattr(theme, attr, val.lower() if not val.startswith("#") else val.upper())
+            if key == "text_color":
+                theme.foreground = hexval
+    # channel setting first (Video options, saved in the database) ...
+    _apply_fonts({"hand": look.get("hand_font"), "heading": look.get("heading_font"),
+                  "body": look.get("body_font")}, "channel explainer")
+    # ... then the production's own explainer.json, which wins for that production
+    fonts = data.get("fonts")
+    if fonts is not None:
+        if not isinstance(fonts, dict) or not set(fonts) <= {"hand", "heading", "body"}:
+            errors.append('fonts must be an object with any of "hand", "heading", '
+                          '"body" (a font file name, or "strokes" for hand).')
+        else:
+            for key, val in fonts.items():
+                if not isinstance(val, str) or not val.strip():
+                    errors.append(f"fonts.{key} must be a font file name.")
+            _apply_fonts(fonts, "fonts")
 
     scene_ids = set()
     scenes = []
@@ -364,7 +542,7 @@ def parse_doc(data, project_folder: str = ""):
         obj_ids = {}
         objects = []
         for raw_obj in raw.get("objects", []):
-            obj = _parse_object(raw_obj, sid, errors, project_folder)
+            obj = _parse_object(raw_obj, sid, errors, project_folder, theme)
             if obj is None:
                 continue
             if obj.id.lower() in obj_ids:
@@ -396,8 +574,18 @@ def parse_doc(data, project_folder: str = ""):
                         f"{ev.duration_ms} ms is budgeted (~{count * 120} ms "
                         "minimum for readable drawing) - grow duration_ms or "
                         "split the drawing across cues.")
+        remo = raw.get("remotion")
+        if remo is not None:
+            from . import remotion_backend
+            before = len(errors)
+            errors.extend(remotion_backend.check_block(remo, where))
+            if len(errors) > before:
+                continue
+            if objects or events:
+                errors.append(f"{where}: a Remotion scene has no objects or events of its own.")
+                continue
         scenes.append(sc.SceneSpec(sid, shot_id.strip(), (int(cr[0]), int(cr[1])),
-                                   objects, events))
+                                   objects, events, remotion=remo))
     if errors:
         raise ExplainerError(errors)
     if not scenes:
@@ -412,7 +600,21 @@ def load(path: str, project_folder: str = ""):
             data = json.load(fh)
         except json.JSONDecodeError as e:
             raise ExplainerError([f"explainer.json is not valid JSON: {e}"]) from None
-    return parse_doc(data, project_folder)
+    return parse_doc(data, project_folder, project_look(project_folder))
+
+
+def project_look(project_folder: str) -> dict:
+    """The channel's Explainer look settings, as WhisperRadar merged them into
+    the production's imgtovideo.json ("explainer" section). {} when absent."""
+    if not project_folder:
+        return {}
+    try:
+        with open(os.path.join(project_folder, "imgtovideo.json"),
+                  encoding="utf-8-sig") as fh:
+            section = json.load(fh).get("explainer")
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return section if isinstance(section, dict) else {}
 
 
 def event_property_conflicts(doc):

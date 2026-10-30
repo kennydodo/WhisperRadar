@@ -157,6 +157,21 @@ class TextOptions:
 
 
 @dataclass
+class ExplainerOptions:
+    """Look of explainer (motion_graphics / whiteboard) productions, set per
+    channel in the Video options page. Blank = what explainer.json or the
+    theme says. An explicit "theme" / "fonts" in a production's own
+    explainer.json still wins for that production."""
+    theme: str = ""                 # chalkboard | whiteboard_light | ... ("" = the doc's)
+    hand_font: str = ""             # handwriting: a .ttf in fonts/, or "strokes" (pen letters)
+    heading_font: str = ""          # typed headings / labels
+    body_font: str = ""             # typed body text
+    heading_color: str = ""         # titles: a chalk colour name or #RRGGBB ("" = yellow)
+    text_color: str = ""            # labels, points, footers: name or #RRGGBB ("" = white)
+    background: str = ""            # the board: #RRGGBB ("" = the theme's)
+
+
+@dataclass
 class ProjectOptions:
     schema_version: int = OPTIONS_SCHEMA_VERSION
     output: OutputOptions = field(default_factory=OutputOptions)
@@ -173,6 +188,7 @@ class ProjectOptions:
     # is never silently overridden by a sidecar's presence.
     visual_mode: str = "images"
     text: TextOptions = field(default_factory=TextOptions)
+    explainer: ExplainerOptions = field(default_factory=ExplainerOptions)
     planner: str = "v2"
 
     def to_dict(self) -> dict:
@@ -247,6 +263,23 @@ class ProjectOptions:
             errors.append("Final B-frames must be between 0 and 16.")
         if r.supersample_target_width < 0 or r.supersample_target_width > 16384:
             errors.append("Supersample target width must be between 0 and 16384.")
+        if self.explainer.theme:
+            from .explainer import themes as _themes
+            if self.explainer.theme.strip().lower() not in _themes.THEMES:
+                errors.append("Explainer theme must be one of "
+                              f"{', '.join(_themes.THEMES)}.")
+        import re as _re
+        for label, val in (("heading colour", self.explainer.heading_color),
+                           ("text colour", self.explainer.text_color),
+                           ("board colour", self.explainer.background)):
+            v = (val or "").strip().lower()
+            named = ("white", "yellow", "green", "red", "orange", "blue", "pink", "purple", "grey")
+            ok = (not v or _re.fullmatch(r"#[0-9a-f]{6}", v)
+                  or (v in named and label != "board colour"))
+            if not ok:
+                errors.append(f"Explainer {label} must be "
+                              + ("#RRGGBB." if label == "board colour"
+                                 else "a colour name (white, yellow, green, red, orange, blue, pink, purple, grey) or #RRGGBB."))
         if self.planner not in ("v1", "v2"):
             errors.append('Planner must be "v1" or "v2".')
         if self.visual_mode not in VISUAL_MODES:

@@ -18,30 +18,35 @@ FILE_NAME = "explainer.json"
 # ---- object types -------------------------------------------------------------
 TEXT, LABEL, PATH, BAR, COUNTER, GRID, BLOCKS, CALLOUT, IMAGE = (
     "text", "label", "path", "bar", "counter", "grid", "blocks", "callout", "image")
-STROKE_ASSET, HANDWRITING = "stroke_asset", "handwriting"
+STROKE_ASSET, HANDWRITING, SHAPE = "stroke_asset", "handwriting", "shape"
 OBJECT_TYPES = (TEXT, LABEL, PATH, BAR, COUNTER, GRID, BLOCKS, CALLOUT, IMAGE,
-                STROKE_ASSET, HANDWRITING)
+                STROKE_ASSET, HANDWRITING, SHAPE)
 
 # ---- actions -------------------------------------------------------------------
 FADE_IN, FADE_OUT, SLIDE, TYPE_ON, DRAW, COUNT, GROW, REVEAL, EMPHASIS = (
     "fade_in", "fade_out", "slide", "type_on", "draw", "count", "grow", "reveal", "emphasis")
 DRAW_STROKES, ERASE = "draw_strokes", "erase"
+DIM, UNDIM = "dim", "undim"          # spotlight: fade others back, bring them home
+STRETCH = "stretch"           # a shape's width grows/shrinks (a memory segment filling up)
 ACTIONS = (FADE_IN, FADE_OUT, SLIDE, TYPE_ON, DRAW, COUNT, GROW, REVEAL, EMPHASIS,
-           DRAW_STROKES, ERASE)
+           DRAW_STROKES, ERASE, DIM, UNDIM, STRETCH)
 
 # which actions may target which object types
 ACTION_TARGETS = {
-    FADE_IN: (TEXT, LABEL, PATH, BAR, COUNTER, GRID, BLOCKS, CALLOUT, IMAGE),
-    FADE_OUT: (TEXT, LABEL, PATH, BAR, COUNTER, GRID, BLOCKS, CALLOUT, IMAGE),
+    FADE_IN: (TEXT, LABEL, PATH, BAR, COUNTER, GRID, BLOCKS, CALLOUT, IMAGE, SHAPE),
+    FADE_OUT: (TEXT, LABEL, PATH, BAR, COUNTER, GRID, BLOCKS, CALLOUT, IMAGE, SHAPE),
     SLIDE: (TEXT, LABEL, CALLOUT, IMAGE),
     TYPE_ON: (TEXT, LABEL),
     DRAW: (PATH,),
     COUNT: (COUNTER,),
     GROW: (BAR,),
     REVEAL: (GRID, BLOCKS),
-    EMPHASIS: (TEXT, LABEL, BAR, COUNTER, CALLOUT),
-    DRAW_STROKES: (STROKE_ASSET, HANDWRITING),
-    ERASE: (STROKE_ASSET, HANDWRITING, TEXT, LABEL, PATH, BAR, COUNTER, GRID,
+    EMPHASIS: (TEXT, LABEL, BAR, COUNTER, CALLOUT, SHAPE),
+    DRAW_STROKES: (STROKE_ASSET, HANDWRITING, SHAPE),
+    DIM: (STROKE_ASSET, HANDWRITING, SHAPE),
+    UNDIM: (STROKE_ASSET, HANDWRITING, SHAPE),
+    STRETCH: (SHAPE,),
+    ERASE: (STROKE_ASSET, HANDWRITING, SHAPE, TEXT, LABEL, PATH, BAR, COUNTER, GRID,
             BLOCKS, CALLOUT, IMAGE),
 }
 
@@ -53,6 +58,7 @@ ACTION_PROPERTY = {
     COUNT: "value",
     GROW: "fraction", REVEAL: "visible_count",
     EMPHASIS: "emphasis",
+    DIM: "dim", UNDIM: "dim", STRETCH: "scale",
 }
 
 EDGES = ("start", "end")
@@ -80,6 +86,47 @@ EMPH_NONE, EMPHASIS_OUTLINE, EMPHASIS_GLOW = "none", "outline", "glow"
 
 # ---- roles (accent colors from the theme) --------------------------------------------------
 ROLES = ("default", "accent", "positive", "negative", "muted")
+
+# ---- chalk palette (named colours any object can use: "color": "yellow") --------
+PALETTE_DARK = {
+    "white": "#F2EFE6", "yellow": "#FFD23F", "green": "#5EE08A", "red": "#FF6B6B",
+    "orange": "#FF9F43", "blue": "#6EC1FF", "pink": "#FF8FD0", "purple": "#B49BFF",
+    "grey": "#8E96A0"}
+PALETTE_LIGHT = {
+    "white": "#2B2B28", "yellow": "#D99A00", "green": "#2E9E5B", "red": "#D64545",
+    "orange": "#E07B1F", "blue": "#1F6FB8", "pink": "#D6479B", "purple": "#7B5BD6",
+    "grey": "#7A766C"}
+COLOR_NAMES = tuple(PALETTE_DARK) + ("heading", "text")   # heading/text: the channel's own colours
+
+
+def _is_dark(hex_color: str) -> bool:
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128
+
+
+def resolve_color(value, theme):
+    """Named chalk colour, theme role or #RRGGBB -> "#RRGGBB"; None if invalid."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    v = value.strip().lower()
+    pal = PALETTE_DARK if _is_dark(theme.background) else PALETTE_LIGHT
+    if v in pal:
+        return pal[v]
+    if v == "heading":                      # the channel's heading colour, else chalk yellow
+        return resolve_color(getattr(theme, "heading_color", "") or "yellow", theme)
+    if v == "text":                         # the channel's text colour, else chalk white
+        return resolve_color(getattr(theme, "text_color", "") or "white", theme)
+    if v in ("accent", "positive", "negative", "muted"):
+        return getattr(theme, v)
+    if len(v) == 7 and v[0] == "#":
+        try:
+            int(v[1:], 16)
+            return v.upper()
+        except ValueError:
+            return None
+    return None
+
 
 # ---- canvas default ---------------------------------------------------------------------
 DEFAULT_CANVAS = (1920, 1080)
@@ -117,6 +164,8 @@ class EventSpec:
     decimals: int = 0                     # counter decimals
     prefix: str = ""                      # counter prefix (e.g. currency symbol override)
     role: str = "default"                 # emphasis/accent role
+    amount: float = 0.65                  # dim: how far it fades back (0.1..0.95); stretch: target width
+    from_amount: Optional[float] = None   # stretch: starting width (the box is the 1.0 width)
 
     def to_dict(self) -> dict:
         d = {"target": self.target, "action": self.action, "at": self.at.to_dict()}
@@ -136,6 +185,12 @@ class EventSpec:
                 d["prefix"] = self.prefix
         if self.action == EMPHASIS:
             d["role"] = self.role
+        if self.action == DIM and self.amount != 0.65:
+            d["amount"] = self.amount
+        if self.action == STRETCH:
+            d["amount"] = self.amount
+            if self.from_amount is not None:
+                d["from_amount"] = self.from_amount
         return d
 
 
@@ -171,9 +226,34 @@ class ObjectSpec:
     # handwriting
     fallback_typed: bool = False          # disclosed typed-text fallback
     initial_visible: Optional[bool] = None  # None = type default
+    # colour (any object) and generated shapes
+    color: str = ""                       # named chalk colour, role or #RRGGBB
+    kind: str = ""                        # shape kind (shapes.KINDS)
+    dashed: bool = False                  # shape line
+    curve: float = 0.12                   # shape arrow bend, -1..1
+    side: str = ""                        # shape brace: left | right
+    filled: bool = False                  # shape card: dark inside
+    opacity: float = 1.0                  # shape: ink opacity 0..1
+    font: str = ""                        # handwriting: "" = scene default, "strokes", or a .ttf
 
     def to_dict(self) -> dict:
         d = {"id": self.id, "type": self.type, "box": list(self.box)}
+        if self.color:
+            d["color"] = self.color
+        if self.font:
+            d["font"] = self.font
+        if self.type == SHAPE:
+            d["kind"] = self.kind
+            if self.dashed:
+                d["dashed"] = True
+            if self.curve != 0.12:
+                d["curve"] = self.curve
+            if self.side:
+                d["side"] = self.side
+            if self.filled:
+                d["filled"] = True
+            if self.opacity != 1.0:
+                d["opacity"] = self.opacity
         if self.text:
             d["text"] = self.text
         if self.style != "body":
@@ -223,6 +303,7 @@ class SceneSpec:
     objects: list = field(default_factory=list)   # ObjectSpec
     events: list = field(default_factory=list)    # EventSpec
     camera: Optional[str] = None          # None only in MVP (static viewport)
+    remotion: Optional[dict] = None       # {component, params}: drawn by the Remotion backend
 
     def to_dict(self) -> dict:
         d = {"id": self.id, "shot_id": self.shot_id, "cue_range": list(self.cue_range),
@@ -230,6 +311,8 @@ class SceneSpec:
              "events": [e.to_dict() for e in self.events]}
         if self.camera is not None:
             d["camera"] = self.camera
+        if self.remotion is not None:
+            d["remotion"] = self.remotion
         return d
 
 
@@ -245,6 +328,9 @@ class ThemeSpec:
     heading_font: str
     body_font: str
     mono_font: str
+    hand_font: str = ""                   # "" = built-in pen-stroke writing, else a .ttf
+    heading_color: str = ""               # "" = chalk yellow; a colour name or #RRGGBB
+    text_color: str = ""                  # "" = chalk white (labels, points, footers)
     heading_size: int = 72
     body_size: int = 44
     label_size: int = 36
@@ -257,9 +343,13 @@ class ThemeSpec:
             "foreground": self.foreground, "muted": self.muted,
             "accent": self.accent, "positive": self.positive, "negative": self.negative,
             "heading_font": self.heading_font, "body_font": self.body_font,
-            "mono_font": self.mono_font, "heading_size": self.heading_size,
+            "mono_font": self.mono_font, "hand_font": self.hand_font,
+            "heading_size": self.heading_size,
             "body_size": self.body_size, "label_size": self.label_size,
-            "stroke_width": self.stroke_width, "subtitle_safe": self.subtitle_safe}
+            "stroke_width": self.stroke_width, "subtitle_safe": self.subtitle_safe,
+            # only when set, so a production without them keeps its cached scenes
+            **({"heading_color": self.heading_color} if self.heading_color else {}),
+            **({"text_color": self.text_color} if self.text_color else {})}
 
 
 @dataclass

@@ -3,6 +3,8 @@
     python -m whisperradar.video.explainer.cli validate <folder>
     python -m whisperradar.video.explainer.cli storyboard <folder> [--out dir]
     python -m whisperradar.video.explainer.cli render-scene <folder> <scene_id>
+    python -m whisperradar.video.explainer.cli icons <word> [<word> ...]
+    python -m whisperradar.video.explainer.cli build <folder>      (plan.json -> explainer.json)
 """
 from __future__ import annotations
 
@@ -80,6 +82,34 @@ def cmd_validate(folder: str) -> int:
     return 0
 
 
+def cmd_build(folder: str) -> int:
+    """plan.json + subtitles.srt -> explainer.json (then validated like any other)."""
+    import json
+    from . import recipes
+    plan_path = os.path.join(folder, "plan.json")
+    if not os.path.isfile(plan_path):
+        raise ExplainerError([f"no plan.json in {folder}"])
+    srt = _find_srt(folder)
+    if srt is None:
+        raise ExplainerError([f"no .srt file in {folder} (cue anchoring needs it)"])
+    from whisperradar.video import parsing
+    with open(plan_path, encoding="utf-8-sig") as fh:
+        try:
+            plan = json.load(fh)
+        except json.JSONDecodeError as e:
+            raise ExplainerError([f"plan.json is not valid JSON: {e}"]) from None
+    with open(srt, encoding="utf-8-sig") as fh:
+        cues = parsing.parse_srt(fh.read())
+    doc = recipes.build(plan, cues)
+    out = os.path.join(folder, "explainer.json")
+    with open(out, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=1)
+        fh.write("\n")
+    print(f"built explainer.json: {len(doc['scenes'])} scene(s), "
+          f"{sum(len(sc_['objects']) for sc_ in doc['scenes'])} objects")
+    return cmd_validate(folder)
+
+
 def cmd_storyboard(folder: str, out_dir: str = "") -> int:
     doc, cues, fps, total = _load_context(folder)
     compiled = compile_doc(doc, cues, fps, total_seconds=total)
@@ -134,49 +164,29 @@ def cmd_render_scene(folder: str, scene_id: str) -> int:
     return 0
 
 
-def cmd_render_demo(folder: str, preview: bool = True) -> int:
-    """Full demo assembly: prepare every scene, concat, mux narration."""
-    doc, cues, fps, total = _load_context(folder)
-    compiled = compile_doc(doc, cues, fps, total_seconds=total)
-    conflicts = validate_mod.event_property_conflicts(doc)
-    if conflicts:
-        raise ExplainerError(conflicts)
-    from whisperradar.video import tool_locator
-    ffmpeg = tool_locator.resolve("ffmpeg", "ffmpeg")
-    clips = []
-    for cs in compiled:
-        clips.append(prep.render_scene_clip(doc, cs, ffmpeg, folder, fps))
-    concat_path = os.path.join(prep.cache_dir(folder), "concat.txt")
-    with open(concat_path, "w", encoding="utf-8", newline="") as fh:
-        fh.write("ffconcat version 1.0\n")
-        for c in clips:
-            fh.write("file '" + os.path.abspath(c).replace("'", "'\\''") + "'\n")
-    rough = os.path.join(prep.cache_dir(folder), "rough.mp4")
-    import subprocess
-    # Re-encode on concat: stream-copy can round timestamps at each boundary
-    # and silently drop frames; the assembled clip must be frame-exact.
-    args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
-            "-safe", "0", "-i", concat_path, "-c:v", "libx264", "-preset",
-            "veryfast", "-crf", "18", "-bf", "0", "-pix_fmt", "yuv420p", rough]
-    proc = subprocess.run(args, capture_output=True, text=True,
-                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    if proc.returncode != 0:
-        raise RuntimeError(f"concat failed (exit {proc.returncode}): {proc.stderr[-300:]}")
-    audio = _find_audio(folder)
-    if not audio:
-        print(rough)
+def cmd_render_demo(folder: str, preview: bool = True, draft: bool = False) -> int:
+    """Full assembly: build from plan.json when stale, render every scene,
+    join them and add the narration (same code as the Studio's Render)."""
+    from . import render
+    print(render.render_video(folder, final=not preview, draft=draft))
+    return 0
+
+
+def cmd_icons(words, limit) -> int:
+    """Find "lucide:<name>" icons by name or tag."""
+    from . import strokes_library as lib
+    query = " ".join(words)
+    if not query.strip():
+        print(f"{len(lib.lucide_names())} lucide icons. "
+              "Search: cli icons <word> (e.g. 'server', 'money', 'lock').")
         return 0
-    out_name = "preview.mp4" if preview else "final.mp4"
-    out_path = os.path.join(folder, "out", out_name)
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    args = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", rough,
-            "-i", audio, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
-            "-c:a", "aac", "-b:a", "192k", "-shortest", out_path]
-    proc = subprocess.run(args, capture_output=True, text=True,
-                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    if proc.returncode != 0:
-        raise RuntimeError(f"mux failed (exit {proc.returncode}): {proc.stderr[-300:]}")
-    print(out_path)
+    hits = lib.lucide_search(query, limit)
+    if not hits:
+        print(f"no icon matches {query!r}")
+        return 1
+    for name, tags in hits:
+        extra = f"   [{', '.join(tags[:6])}]" if tags else ""
+        print(f"lucide:{name}{extra}")
     return 0
 
 
@@ -195,8 +205,19 @@ def main(argv=None) -> int:
     p4.add_argument("folder")
     p4.add_argument("--final", action="store_true",
                     help="write out/final.mp4 instead of out/preview.mp4")
+    p4.add_argument("--draft", action="store_true",
+                    help="draw at half size (own cache) into out/preview.mp4")
+    p6 = sub.add_parser("build", help="plan.json + subtitles.srt -> explainer.json")
+    p6.add_argument("folder")
+    p5 = sub.add_parser("icons", help="search the lucide icon library")
+    p5.add_argument("words", nargs="*")
+    p5.add_argument("--limit", type=int, default=15)
     ns = ap.parse_args(argv)
     try:
+        if ns.cmd == "icons":
+            return cmd_icons(ns.words, ns.limit)
+        if ns.cmd == "build":
+            return cmd_build(ns.folder)
         if ns.cmd == "validate":
             return cmd_validate(ns.folder)
         if ns.cmd == "storyboard":
@@ -204,7 +225,7 @@ def main(argv=None) -> int:
         if ns.cmd == "render-scene":
             return cmd_render_scene(ns.folder, ns.scene_id)
         if ns.cmd == "render-demo":
-            return cmd_render_demo(ns.folder, preview=not ns.final)
+            return cmd_render_demo(ns.folder, preview=not ns.final, draft=ns.draft)
     except ExplainerError as e:
         for err in e.errors:
             print(f"ERROR: {err}", file=sys.stderr)

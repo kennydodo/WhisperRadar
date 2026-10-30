@@ -21,13 +21,32 @@ GROUP_TITLES = {
     "output": "Output", "timing": "Shot length", "motion": "Motion",
     "transitions": "Transitions", "naming": "File naming",
     "render": "Render and encoder", "scene_inference": "Scene detection",
-    "shotlist": "Shotlist limits", "sound": "Sound", "text": "Text overlays", "": "Planner",
+    "shotlist": "Shotlist limits", "sound": "Sound", "text": "Text overlays",
+    "explainer": "Explainer look", "": "Planner",
 }
 GROUP_ORDER = ["output", "timing", "motion", "transitions", "render", "sound", "text",
-               "scene_inference", "shotlist", "naming", ""]
+               "explainer", "scene_inference", "shotlist", "naming", ""]
 _PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium",
             "slow", "slower", "veryslow"]
+def _font_choices() -> list:
+    """Hand fonts a channel can pick: every .ttf/.otf in the repo fonts/ folder
+    (read when the app starts) plus the built-in pen letters."""
+    folder = Path(__file__).resolve().parents[2] / "fonts"
+    names = sorted(p.name for p in folder.glob("*")
+                   if p.suffix.lower() in (".ttf", ".otf")) if folder.is_dir() else []
+    return names
+
+
+def _theme_choices() -> list:
+    from .explainer import themes
+    return list(themes.THEMES)
+
+
 CHOICES = {
+    "explainer.theme": _theme_choices(),
+    "explainer.hand_font": ["strokes"] + _font_choices(),
+    "explainer.heading_font": _font_choices(),
+    "explainer.body_font": _font_choices(),
     "motion.easing": list(m.EASINGS),
     "transitions.kind": list(m.TRANSITION_KINDS),
     "transitions.scene_boundary_kind": list(m.TRANSITION_KINDS),
@@ -42,6 +61,20 @@ CHOICES = {
                            "middle-right", "bottom-left", "bottom-center", "bottom-right"],
 }
 HELP = {
+    "explainer.theme": "Board and chalk colours of explainer videos. chalkboard = dark board, "
+                       "chalk colours (default look for new work); whiteboard_light = light board, "
+                       "dark ink. Blank = whatever the production's explainer.json says.",
+    "explainer.hand_font": "Handwriting in explainer scenes. Pick a hand font from the repo fonts/ "
+                           "folder (text writes on left to right) or strokes (the built-in pen "
+                           "letters, limited character set). Blank = the theme's default.",
+    "explainer.heading_font": "Font of typed headings and labels in explainer scenes. Blank = the theme's.",
+    "explainer.body_font": "Font of typed body text in explainer scenes. Blank = the theme's.",
+    "explainer.heading_color": "Colour of scene titles: white, yellow, green, red, orange, blue, pink, "
+                               "purple, grey, or #RRGGBB. Blank = chalk yellow.",
+    "explainer.text_color": "Colour of labels, points and footers: a chalk colour name or #RRGGBB. "
+                            "Blank = chalk white.",
+    "explainer.background": "Colour of the board as #RRGGBB (for example #0F2A24 for a green chalkboard). "
+                            "Blank = the theme's board.",
     "text.auto_values": "Show the numbers, years and amounts the narration says on screen "
                         "(found in the subtitles, no LLM). Each appears when its cue starts and "
                         "goes when the sentence is over. A channel whose brief has 'text drawn "

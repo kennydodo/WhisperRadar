@@ -10,7 +10,7 @@ import subprocess
 import threading
 from typing import Optional
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from . import schema as sc
 from .timing import CompiledScene
@@ -162,7 +162,7 @@ def draw_scene_frame(img: Image.Image, scene: CompiledScene, laid_out,
         spec = lo.spec
         x, y, w, h = lo.box_px
         alpha = int(round(255 * max(0.0, min(1.0, st.alpha))))
-        if spec.type in (sc.STROKE_ASSET, sc.HANDWRITING):
+        if spec.type in (sc.STROKE_ASSET, sc.HANDWRITING, sc.SHAPE):
             _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, (W, H))
         elif spec.type == sc.PATH:
             if st.progress <= 0:
@@ -215,7 +215,15 @@ def _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, canvas_px):
     erase reverses them, pen nib shows while drawing (doc 16.3/16.5/16.7)."""
     spec = lo.spec
     W, H = canvas_px
-    if spec.type == sc.HANDWRITING:
+    if st.dim > 0:
+        alpha = int(round(alpha * (1.0 - st.dim)))
+    if spec.type == sc.SHAPE:
+        strokes = _shape_strokes(spec, lo, (W, H), theme, float(getattr(st, "scale", 1.0)))
+        alpha = int(round(alpha * spec.opacity))
+    elif spec.type == sc.HANDWRITING and _hand_font(spec, theme, scene):
+        _write_on(img, draw, spec, lo, st, theme, alpha, _hand_font(spec, theme, scene))
+        return
+    elif spec.type == sc.HANDWRITING:
         if getattr(spec, "fallback_typed", False) and getattr(
                 spec, "_missing_glyphs", None):
             return   # typed fallback renders as a label plate, not strokes
@@ -236,10 +244,21 @@ def _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, canvas_px):
 
     total = sum(s.length for s in strokes) or 1.0
     lw_scale = max(1.0, W / 1920.0)
+    if spec.type == sc.SHAPE:
+        _shape_extras(img, draw, spec, strokes, theme, st, draw_progress,
+                      lw_scale, alpha)
     ink = theme.foreground
     budget = total * _clamp01(draw_progress)
     spent = 0.0
     tip = None
+    colours = {_stroke_color(st_, spec, theme) for st_ in strokes}
+    # fading / dimmed / translucent ink is drawn flat, so stroke caps and joints never stack up
+    translucent = ((spec.type == sc.SHAPE and spec.opacity < 1.0) or alpha < 250) \
+        and len(colours) == 1 and not (spec.type == sc.STROKE_ASSET and spec.fill_after_draw)
+    if translucent:                      # one flat mask, so overlaps never double-blend
+        tmask = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        real_draw, draw = draw, ImageDraw.Draw(tmask)
+        mask_alpha, alpha = alpha, 255
     for s in strokes:
         if spent >= budget:
             break
@@ -252,22 +271,142 @@ def _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, canvas_px):
             draw.line(pts, fill=_with_alpha(color, alpha), width=width,
                       joint="curve")
             r = max(1, width // 2)   # round caps/joins (16.3)
-            for cap in (pts[0], pts[-1]):
+            for cap in (() if translucent and spec.type == sc.SHAPE and spec.opacity < 1.0
+                        else (pts[0], pts[-1])):
                 draw.ellipse([cap[0] - r, cap[1] - r, cap[0] + r, cap[1] + r],
                              fill=_with_alpha(color, alpha))
         if frac < 1.0:
             tip = pts[-1]
         spent += sl * frac
+    if translucent:
+        draw = real_draw
+        tmask = tmask.getchannel("A").point(lambda v: v * mask_alpha // 255)
+        img.paste(_hex_rgb(_stroke_color(strokes[0], spec, theme)), (0, 0), tmask)
     if (spec.type == sc.STROKE_ASSET and spec.fill_after_draw
             and draw_progress >= 1.0):
         _fill_stroke_silhouette(draw, strokes, theme, alpha)
-    if st.drawing and tip and erase == 0.0:
+    if st.drawing and tip and erase == 0.0 and spec.opacity >= 1.0:
         r = max(2, int(round(4 * lw_scale)))
         draw.ellipse([tip[0] - r, tip[1] - r, tip[0] + r, tip[1] + r],
                      fill=_with_alpha(theme.muted, alpha))
 
 
+def _hand_font(spec, theme, scene):
+    """Resolved .ttf path a handwriting object writes with, or "" for the
+    built-in pen-stroke glyphs."""
+    from .layout import find_font
+    name = "" if spec.font == "strokes" else (spec.font or theme.hand_font)
+    return find_font(name, _scene_project(scene)) if name else ""
+
+
+_WRITE_CACHE: dict = {}
+
+
+def _write_layer(font_path, text, box_px, canvas_px, weight):
+    """Greyscale mask of the whole text plus each line's x-extent: built once
+    per (font, text, box) and reused for every frame of the write-on."""
+    from PIL import ImageFont
+    key = (font_path, text, box_px, canvas_px, weight)
+    hit = _WRITE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    x, y, w, h = box_px
+    lines = text.split("\n")
+    probe = ImageFont.truetype(font_path, 100).getmetrics()
+    ratio = max(1.2, (probe[0] + probe[1]) / 100.0)      # tall fonts need taller lines
+    size = max(8, int(h / len(lines) / ratio))
+    while True:
+        font = ImageFont.truetype(font_path, size)
+        sw = max(0, int(round(size * weight / 36.0)))
+        widths = [font.getlength(ln) + 2 * sw for ln in lines]
+        if max(widths) <= w or size <= 8:
+            break
+        size = int(size * 0.92)
+    ascent, descent = font.getmetrics()
+    lh = max(size * 1.2, ascent + descent + 2 * sw)   # tails of g/y/p must stay inside the line
+    mask = Image.new("L", canvas_px, 0)
+    md = ImageDraw.Draw(mask)
+    extents = []
+    for i, ln in enumerate(lines):
+        top = y + i * lh
+        md.text((x + sw, top), ln, font=font, fill=255, stroke_width=sw,
+                stroke_fill=255)
+        extents.append((x, x + widths[i], int(top) - sw, int(top + lh) + sw))
+    if len(_WRITE_CACHE) > 64:
+        _WRITE_CACHE.clear()
+    _WRITE_CACHE[key] = (mask, extents)
+    return _WRITE_CACHE[key]
+
+
+def _write_on(img, draw, spec, lo, st, theme, alpha, font_path):
+    """Real-font handwriting: the text is revealed left to right, line by
+    line, with a pen nib at the writing edge (and rubbed out in reverse)."""
+    W, H = img.size
+    mask, extents = _write_layer(font_path, spec.text, lo.box_px, (W, H),
+                                 theme.stroke_width / 5.0)
+    frac = _clamp01(float(st.progress) * (1.0 - float(st.erase_progress)))
+    if frac <= 0 and st.alpha <= 0:
+        return
+    total = sum(e[1] - e[0] for e in extents) or 1.0
+    budget = total * frac
+    reveal = Image.new("L", (W, H), 0)
+    rd = ImageDraw.Draw(reveal)
+    tip = None
+    for x0, x1, y0, y1 in extents:
+        take = min(x1 - x0, budget)
+        if take <= 0:
+            break
+        rd.rectangle([x0 - 2, y0, x0 + take, y1], fill=255)
+        if take < x1 - x0:
+            tip = (int(x0 + take), int((y0 + y1) / 2 + (y1 - y0) * 0.15))
+        budget -= take
+    from PIL import ImageChops
+    vis = ImageChops.multiply(mask, reveal).point(lambda v: v * alpha // 255)
+    color = _stroke_color(Stroke(points=[(0, 0), (1, 0)]), spec, theme)
+    img.paste(_hex_rgb(color), (0, 0), vis)
+    if st.drawing and tip and st.erase_progress == 0.0:
+        r = max(2, int(round(4 * max(1.0, W / 1920.0))))
+        draw.ellipse([tip[0] - r, tip[1] - r, tip[0] + r, tip[1] + r],
+                     fill=_with_alpha(theme.muted, alpha))
+
+
+def _shape_strokes(spec, lo, canvas_px, theme, scale=1.0):
+    from . import shapes
+    W, H = canvas_px
+    pts = [(px * W, py * H) for px, py in (spec.points or [])]
+    box = lo.box_px
+    if scale != 1.0:                       # stretch: the left edge stays, the width follows
+        box = (box[0], box[1], max(2, box[2] * scale), box[3])
+    return shapes.shape_strokes(spec, box, pts, theme.stroke_width)
+
+
+def _shape_extras(img, draw, spec, strokes, theme, st, progress, lw_scale, alpha):
+    """Card fill (drawn under the outline) and the glow of an emphasised shape."""
+    color = sc.resolve_color(spec.color, theme) if spec.color else theme.foreground
+    if spec.kind == "card" and spec.filled and strokes and progress > 0:
+        poly = [(int(round(a)), int(round(b))) for a, b in strokes[0].points]
+        bg = _hex_rgb(theme.background)
+        inner = tuple(int(c * 0.45) for c in bg)
+        a = int(alpha * 0.9 * _clamp01(progress * 2.5))
+        draw.polygon(poly, fill=inner + (a,))
+    if st.emphasized and progress > 0:
+        mask = Image.new("L", img.size, 0)
+        md = ImageDraw.Draw(mask)
+        for s in strokes:
+            pts = [(int(round(a)), int(round(b))) for a, b in s.points]
+            if len(pts) >= 2:
+                md.line(pts, fill=255, width=int(round(theme.stroke_width * lw_scale * 3)),
+                        joint="curve")
+        mask = mask.filter(ImageFilter.GaussianBlur(10 * lw_scale))
+        mask = mask.point(lambda v: int(v * 0.85 * alpha / 255))
+        img.paste(_hex_rgb(color), (0, 0), mask)
+
+
 def _stroke_color(s: Stroke, spec, theme):
+    if getattr(spec, "color", ""):
+        resolved = sc.resolve_color(spec.color, theme)
+        if resolved:
+            return resolved
     style = spec.style if spec.style not in ("body", "heading", "label") else ""
     if style:
         return _role_color(style, theme)

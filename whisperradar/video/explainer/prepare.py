@@ -54,7 +54,7 @@ def scene_fingerprint(compiled: CompiledScene, doc, fps: float,
             assets[obj.asset] = _file_sha(
                 os.path.join(project_folder, obj.asset))
     payload = json.dumps(
-        {"v": 2, "scene": compiled.spec.to_dict(), "timing": timing_data,
+        {"v": 3, "scene": compiled.spec.to_dict(), "timing": timing_data,
          "theme": doc.theme.to_dict(), "fonts": fonts, "assets": assets,
          "fps": fps, "w": width, "h": height},
         sort_keys=True, separators=(",", ":"))
@@ -73,6 +73,10 @@ def render_scene_clip(doc, compiled: CompiledScene, ffmpeg_path: str,
     Raises ExplainerError on invalid input, RuntimeError on ffmpeg failure,
     PipeCancelled on cancel.
     """
+    if getattr(compiled.spec, "remotion", None):
+        from . import remotion_backend
+        return remotion_backend.render_scene_clip(doc, compiled, project_folder, fps,
+                                                  cancel_event, canvas, ffmpeg_path=ffmpeg_path)
     W, H = canvas or doc.canvas
     laid = layout_scene(compiled.spec, doc.theme, (W, H),
                         project_folder=project_folder)
