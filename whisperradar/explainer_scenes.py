@@ -211,6 +211,24 @@ def summary_text(plan: dict, cues: list[dict]) -> str:
             extra = [f"{k}={it[k]}" for k in ("gb", "bits", "layers", "params_b") if it.get(k) is not None]
             if extra:
                 drawn.append(f"{it.get('label')}: " + ", ".join(extra))
+        if isinstance(s.get("stages"), list):
+            drawn.append("animated pipeline of " + str(s.get("tasks", "?")) + " tasks through stages: " + "; ".join(
+                f"{g.get('label')} ({g.get('workers')} workers"
+                + (", locked until the stage before is finished" if g.get("waits_for_all") else "")
+                + (", starts on '" + str(g["at"]) + "'" if g.get("at") else "") + ")"
+                for g in s["stages"] if isinstance(g, dict)))
+        for r in s.get("rows") or []:
+            if isinstance(r, dict) and r.get("words"):
+                how = ("one word after another, left to right" if r.get("mode") == "sequential"
+                       else "a rough outline first, then the gaps are filled")
+                drawn.append(f"animated row '{r.get('label')}' ({how}): " + " | ".join(map(str, r["words"]))
+                             + (" - steps on: " + "; ".join(str(b.get("at")) for b in r.get("beats") or [] if isinstance(b, dict))
+                                if r.get("beats") else ""))
+        if isinstance(s.get("lines"), list):
+            drawn.append(f"code panel {s.get('filename', '')}: " + " / ".join(map(str, s["lines"])))
+            for h in s.get("highlights") or []:
+                if isinstance(h, dict):
+                    drawn.append(f"highlight line {h.get('line')}: {h.get('note', '')}")
         if isinstance(s.get("counter"), dict):
             c = s["counter"]
             drawn.append(f"counter {c.get('from', 0)} -> {c.get('to')} {c.get('unit', '')} '{c.get('label', '')}'")
