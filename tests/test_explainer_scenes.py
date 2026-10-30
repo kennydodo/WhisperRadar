@@ -90,3 +90,35 @@ class ScenePlanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NumberSceneTests(unittest.TestCase):
+    CUES = studio.parse_srt_cues(SRT)
+
+    def _plan(self, mem):
+        return {"theme": "chalkboard", "scenes": [
+            {"id": "m", "start": "two computers can run", "layout": "memory", "capacity": 24, "unit": "GB",
+             "items": mem},
+            {"id": "n", "start": "the reason is whether", "layout": "counter",
+             "counter": {"from": 0, "to": 14, "unit": "GB", "label": "a 7B model", "at": "fits in memory"}}]}
+
+    def test_writer_prompt_teaches_number_scenes(self):
+        p = es.writer_prompt("narration", 120)
+        for word in ("memory:", "precision:", "offload:", "fit_chart", "counter", "illustrative"):
+            self.assertIn(word, p)
+        self.assertIn("arithmetic", es.judge_prompt("n", {"scenes": []}, "s"))
+
+    def test_checker_passes_good_numbers_and_rejects_overflow(self):
+        good = self._plan([{"label": "Weights", "gb": 14, "at": "one answers quickly"},
+                           {"label": "Cache", "gb": 6, "at": "the other struggles"}])
+        self.assertEqual(es.check(good, self.CUES, 20), [])
+        bad = self._plan([{"label": "Weights", "gb": 20, "at": "one answers quickly"},
+                          {"label": "Cache", "gb": 8, "at": "the other struggles"}])
+        self.assertTrue(any("add up to 28" in f for f in es.check(bad, self.CUES, 20)))
+
+    def test_judge_summary_shows_the_numbers(self):
+        good = self._plan([{"label": "Weights", "gb": 14, "at": "one answers quickly"}])
+        text = es.summary_text(good, self.CUES)
+        self.assertIn("capacity=24GB", text)
+        self.assertIn("gb=14", text)
+        self.assertIn("counter 0 -> 14 GB", text)

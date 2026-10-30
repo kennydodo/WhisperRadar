@@ -51,7 +51,19 @@ FORMAT = """\
    "sides": [{"header": "Left", "icon": "rocket", "at": "words", "color": "green",
               "points": [{"text": "short point", "at": "words", "mark": "check"}]},
              {"header": "Right", "icon": "snail", "at": "words", "color": "red",
-              "points": [{"text": "short point", "at": "words", "mark": "cross"}]}]}
+              "points": [{"text": "short point", "at": "words", "mark": "cross"}]}]},
+  {"id": "mem", "start": "...", "layout": "memory", "title": "optional", "capacity": 24, "unit": "GB",
+   "capacity_label": "24 GB graphics card", "exact": true,
+   "items": [{"label": "Model weights", "gb": 14, "at": "words"},
+             {"label": "Context cache", "gb": 6, "grows_from": 1.5, "at": "words"}]},
+  {"id": "bits", "start": "...", "layout": "precision", "params_b": 7,
+   "items": [{"label": "16-bit", "bits": 16, "at": "words"}, {"label": "4-bit", "bits": 4, "at": "words"}]},
+  {"id": "split", "start": "...", "layout": "offload", "layers": 32,
+   "items": [{"label": "GPU VRAM", "layers": 20, "at": "words"}, {"label": "CPU RAM", "layers": 12, "at": "words"}]},
+  {"id": "fit", "start": "...", "layout": "fit_chart", "limit": 24, "unit": "GB", "bits": 4, "fade": {"out_ms": 400},
+   "items": [{"label": "7B", "params_b": 7, "at": "words"}, {"label": "70B", "params_b": 70, "at": "words"}]},
+  {"id": "num", "start": "...", "layout": "counter", "title": "optional",
+   "counter": {"from": 0, "to": 14, "unit": "GB", "label": "a 7B model at 16-bit", "at": "words"}}
  ]}"""
 
 RULES = """\
@@ -61,6 +73,12 @@ LAYOUTS (pick the one that teaches the sentence):
 - stack: 3-4 short lines, one per row, each with an icon (lists of facts or tiers); a footer fits under it.
 - hero: ONE big icon with one short sentence (a rule, a warning, the key idea). The label may be up to ~50 characters.
 - compare: exactly two sides, each with a header, an icon and 1-3 short points (right vs wrong, A vs B, before vs after).
+NUMBER SCENES (only when the narrator states the quantities; the app draws them to scale and checks the arithmetic):
+- memory: a box (GPU memory, RAM, a budget) filled by up to 4 segments, widths proportional to "gb". Segments must add up to at most "capacity" (else the scene is rejected). Use the narrator's numbers; set "exact": true when the narrator gave them, leave it off to show an "illustrative numbers" tag. "grows_from" (last segment only) makes it grow from a smaller size.
+- precision: the same model at different bit sizes, 1-4 rows. Give "params_b" (billions) and each row's "bits"; the app computes size = params x bits / 8. Never type the sizes yourself.
+- offload: a model's layers split across two memories (two zones that add up to "layers"). Labels must be short (about 10 characters for a small zone). Say it is simplified; real tools place layers differently.
+- fit_chart: bars of model size (params_b x bits / 8) against a memory "limit" (4 models at most; over the limit turns red). counter: one big number counting from "from" to "to" with a short label. Both are drawn by a second renderer; "fade" ({"in_ms", "out_ms"}, each up to 2000) is optional. Use at most one or two of these per video.
+- Do not use a number scene for a number the narrator never says. Numbers must match the narration exactly (units too).
 PACING AND ANCHORS:
 - The FIRST scene must start with the very first words of the narration; later scenes follow in order. Together the scenes cover the whole narration.
 - "start" and every "at" are copied word for word from the narration (3 or more consecutive words, no need for punctuation) and each must be findable only in its own place: never an "at" from another scene.
@@ -72,6 +90,8 @@ TEXT:
 - Use an icon from the list; another valid Lucide icon name is fine if you are sure of it. Every item should have an icon.
 - Use colour to carry meaning (green = good, red = problem, orange = caution, blue = neutral info, yellow = the key thing); leave "color" off when unsure, the app picks.
 - Never invent facts. Labels restate what the narrator says.
+- An icon must add meaning (a thing, a place, an action), not just repeat the label's noun or decorate. Leave "icon" off when no icon helps.
+- Use "connect": "arrow" only when the items really happen in order or feed each other; use "none" for a set of separate things.
 - Do NOT output cue numbers or timings. Output ONLY the JSON object, in one ```json block, as text in this chat (no file)."""
 
 
@@ -117,7 +137,7 @@ def fix_prompt(plan: dict, faults: list[str]) -> str:
 def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE) -> str:
     return f"""You are a strict reviewer of an explainer video's scene plan (hand-drawn whiteboard style). A narrator reads the NARRATION; the plan says what is drawn while each part is spoken. The code already checked the format and the timing. You judge the TEACHING.
 
-Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem).
+Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does.
 
 NARRATION:
 {narration}
@@ -145,6 +165,16 @@ def summary_text(plan: dict, cues: list[dict]) -> str:
         for sd in s.get("sides") or []:
             pts = "; ".join(p.get("text", "") for p in sd.get("points") or [])
             drawn.append(f"{sd.get('header')} [{sd.get('icon', '-')}]: {pts}")
+        for key in ("capacity", "params_b", "layers", "limit", "bits"):
+            if s.get(key) is not None:
+                drawn.append(f"{key}={s[key]}{s.get('unit', '') if key in ('capacity', 'limit') else ''}")
+        for it in s.get("items") or []:
+            extra = [f"{k}={it[k]}" for k in ("gb", "bits", "layers", "params_b") if it.get(k) is not None]
+            if extra:
+                drawn.append(f"{it.get('label')}: " + ", ".join(extra))
+        if isinstance(s.get("counter"), dict):
+            c = s["counter"]
+            drawn.append(f"counter {c.get('from', 0)} -> {c.get('to')} {c.get('unit', '')} '{c.get('label', '')}'")
         if s.get("footer"):
             drawn.append("footer: " + s["footer"].get("text", ""))
         out.append(f"scene {s.get('id')} ({s.get('layout')}"
