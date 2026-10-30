@@ -934,6 +934,12 @@
               onsubmit="return wrConfirmSubmit(this, 'Write the scene plan with the API providers?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not srt else '' }}>Write scene plan (API)</button>
         </form>
+        {% if job.running and (job.kind or '').startswith('explainer') %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/explainer/stop"
+              onsubmit="return wrConfirmSubmit(this, '{{ 'Stop the scene plan? It stops after the current reply and plan.json is not changed.' if 'scene plan' in (job.kind or '') else 'Stop the render? Scenes already drawn are kept for the next render.' }}')">
+          <button type="submit" class="secondary" title="{{ 'Stops after the current chat reply; the saved plan.json is not changed' if 'scene plan' in (job.kind or '') else 'Abandons the scene being drawn; finished scenes are kept' }}">&#9632; Stop {{ 'scene plan' if 'scene plan' in (job.kind or '') else 'render' }}</button>
+        </form>
+        {% endif %}
       </div>
 
     {% elif stage == "shots" %}
@@ -1439,6 +1445,12 @@
             {{ 'Working...' if job.running else 'Render explainer video' }}
           </button>
         </form>
+        {% if job.running and (job.kind or '').startswith('explainer') %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/explainer/stop"
+              onsubmit="return wrConfirmSubmit(this, '{{ 'Stop the scene plan? It stops after the current reply and plan.json is not changed.' if 'scene plan' in (job.kind or '') else 'Stop the render? Scenes already drawn are kept for the next render.' }}')">
+          <button type="submit" class="secondary" title="{{ 'Stops after the current chat reply; the saved plan.json is not changed' if 'scene plan' in (job.kind or '') else 'Abandons the scene being drawn; finished scenes are kept' }}">&#9632; Stop {{ 'scene plan' if 'scene plan' in (job.kind or '') else 'render' }}</button>
+        </form>
+        {% endif %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render">
           <input type="hidden" name="draft" value="1">
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not (audio and srt) else '' }}
