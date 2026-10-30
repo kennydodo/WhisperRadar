@@ -319,7 +319,7 @@ def _split_faults(found: list) -> tuple:
 
 
 _NUMS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
-_COUNT = re.compile(r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(stages?|levels?|layers?|steps?|passes|rounds?)\b", re.I)
+_COUNT = re.compile(r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(?:[a-z-]+\s+){0,2}?(stages?|levels?|layers?|steps?|passes|rounds?)\b", re.I)
 _NOUN_FOR = {"pipeline": ("stage", "step"), "levels": ("level", "layer")}
 _LIMIT = {"pipeline": (2, 8), "levels": (2, 4)}
 
