@@ -503,6 +503,16 @@
     <div class="muted" style="font-size:12px; margin-bottom:8px">{{ steps[stage]["detail"] }}</div>
     {% endif %}
 
+    {% if explainer_mode and stage in ["refs", "images", "motion"] %}
+    <div class="note" style="margin-bottom:10px">
+      <b>Explainer video.</b> This production has an <span class="mono">explainer.json</span> /
+      <span class="mono">plan.json</span>, so no shot list, references, images or motion clips
+      are needed &mdash; the scenes are drawn from it. Go straight to
+      <a href="/studio/{{ prod['id'] }}?stage=merge">Render</a>.
+      (<a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a>)
+    </div>
+    {% endif %}
+
     {% if stage == "style" %}
       {% if style %}
       <div class="artifact">
@@ -894,6 +904,37 @@
         <input type="file" name="srt_file" accept=".srt">
         <button type="submit" class="secondary">Upload .srt file</button>
       </form>
+
+    {% elif stage == "shots" and explainer_mode %}
+      <div class="help" style="margin-bottom:8px">Explainer video: instead of a shot list, the writer drafts a
+        <b>scene plan</b> (what is drawn while each part is spoken), the app checks it against the subtitles
+        (words, timing, icons), and the judge reviews the teaching. No images are needed.</div>
+      {% if scene_plan_exists %}
+      <div style="margin-bottom:8px"><span class="badge done">plan.json exists</span>
+        {% if scene_review and scene_review.score is not none %}<span class="muted">judge score {{ scene_review.score }}</span>{% endif %}
+        &middot; <a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a>
+        &middot; <a href="/studio/{{ prod['id'] }}?stage=merge">Render</a></div>
+      {% if scene_review and (scene_review.faults or scene_review.checker_faults_left) %}
+      <div class="warn" style="margin-bottom:8px">
+        {% for f in (scene_review.checker_faults_left or []) + (scene_review.faults or []) %}<div>{{ f }}</div>{% endfor %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="muted" style="margin-bottom:8px">No scene plan yet.</div>
+      {% endif %}
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
+              onsubmit="return wrConfirmSubmit(this, 'Write the scene plan in the web chat (writer, then judge)?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
+          <input type="hidden" name="transport" value="webchat">
+          <button type="submit" class="green" {{ 'disabled' if job.running or not srt else '' }}>
+            {{ 'Working...' if job.running else ('Redo scene plan (web chat)' if scene_plan_exists else 'Write scene plan (web chat)') }}
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
+              onsubmit="return wrConfirmSubmit(this, 'Write the scene plan with the API providers?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not srt else '' }}>Write scene plan (API)</button>
+        </form>
+      </div>
 
     {% elif stage == "shots" %}
       {% if coverage_gap %}
@@ -1386,6 +1427,31 @@
         (<span class="mono">%LOCALAPPDATA%\CapCut\User Data\Projects\com.lveditor.draft</span>) with CapCut closed, then open it in CapCut.</div>
       {% endif %}
       {% endif %}
+      {% if explainer_mode %}
+      <div class="help" style="margin-bottom:8px">Explainer video: the scenes are built from
+        <span class="mono">plan.json</span> + the subtitles, drawn one by one (scenes already
+        drawn are reused), joined and mixed with the narration into the finished video.
+        <a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a>{% if scene_plan_exists %} &middot; <a href="/explainer/{{ prod['id'] }}/plan">Edit the scene plan</a>{% endif %}</div>
+      <div class="actions">
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render"
+              onsubmit="return wrConfirmSubmit(this, 'Render the explainer video now? Every scene is drawn frame by frame; a long video takes a while. Watch the job log.')">
+          <button type="submit" class="green" {{ 'disabled' if job.running or not (audio and srt) else '' }}>
+            {{ 'Working...' if job.running else 'Render explainer video' }}
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render">
+          <input type="hidden" name="draft" value="1">
+          <button type="submit" class="secondary" {{ 'disabled' if job.running or not (audio and srt) else '' }}
+                  title="Half size: about half the time. Saved as out/preview.mp4; the finished video is not touched.">
+            Render draft (half size)
+          </button>
+        </form>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/merge/upload" enctype="multipart/form-data">
+          <input type="file" name="video_file" accept="video/*" required>
+          <button type="submit" class="secondary">Upload final video</button>
+        </form>
+      </div>
+      {% else %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render"
               onsubmit="return wrConfirmSubmit(this, 'Build the preview draft and export the {{ render_target_label }} project with ImgToVideo?')">
@@ -1411,14 +1477,17 @@
           <button type="submit" class="secondary">Upload final video</button>
         </form>
       </div>
+      {% endif %}
 
     {% elif stage == "review" %}
       <ul style="margin:8px 0; padding-left:18px">
         <li>Script: {% if steps.get("script") %}<span class="badge done">done</span> {% if steps["script"]["detail"] %}<span class="muted">{{ steps["script"]["detail"] }}</span>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Audio: {% if steps.get("audio") %}<span class="badge done">done</span> {% if audio %}<a href="/studio/file/{{ prod['id'] }}/{{ audio.name }}">listen</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Subtitles: {% if steps.get("srt") %}<span class="badge done">done</span> {% if srt %}<a href="/studio/file/{{ prod['id'] }}/subtitles.srt">file</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        {% if not explainer_mode %}
         <li>Shotlist: {% if steps.get("shots") %}<span class="badge done">done</span> {% if shotlist_count %}<span class="muted">{{ shotlist_count }} image(s) planned</span>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Images: {% if steps.get("images") %}<span class="badge done">done</span> <span class="muted">{{ images|length }} file(s)</span>{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        {% endif %}
         <li>Preview / final video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if review_video %}<a href="{{ review_video_url }}">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>NLE export: {% if nle_projects %}{% for n in nle_projects %}{% if n.url %}<a href="{{ n.url }}">{{ n.label }}</a>{% elif n.zip_url %}<a href="{{ n.zip_url }}">{{ n.label }} (.zip)</a>{% else %}<span class="mono">{{ n.rel }}</span>{% endif %}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Publish kit: {% if kit_ready %}<span class="badge done">ready</span>{% else %}<span class="badge pending">missing</span>{% endif %} &middot; <a href="/studio/{{ prod['id'] }}/kit">open</a></li>

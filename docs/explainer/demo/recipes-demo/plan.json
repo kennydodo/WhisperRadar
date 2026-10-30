@@ -1,0 +1,93 @@
+{
+ "theme": "chalkboard",
+ "scenes": [
+  {
+   "id": "start",
+   "cue_range": [
+    1,
+    3
+   ],
+   "title": "Start early, win later",
+   "layout": "timeline",
+   "items": [
+    {
+     "label": "Age 25",
+     "icon": "piggy-bank",
+     "color": "pink",
+     "cue": 2
+    },
+    {
+     "label": "Age 35",
+     "icon": "clock",
+     "color": "orange",
+     "cue": 2
+    },
+    {
+     "label": "Age 65",
+     "icon": "trending-up",
+     "color": "green",
+     "cue": 3
+    }
+   ],
+   "focus": true,
+   "footer": {
+    "text": "Ten extra years can double the pot",
+    "cue": 3
+   }
+  },
+  {
+   "id": "why",
+   "cue_range": [
+    4,
+    5
+   ],
+   "title": "Why it works",
+   "layout": "steps",
+   "items": [
+    {
+     "label": "You invest",
+     "icon": "coins",
+     "cue": 4
+    },
+    {
+     "label": "It earns",
+     "icon": "sprout",
+     "cue": 4
+    },
+    {
+     "label": "Earnings earn too",
+     "icon": "refresh-cw",
+     "cue": 5
+    }
+   ]
+  },
+  {
+   "id": "pick",
+   "cue_range": [
+    6,
+    6
+   ],
+   "layout": "compare",
+   "sides": [
+    {
+     "header": "Start early",
+     "icon": "rocket",
+     "cue": 6,
+     "points": [
+      "small amounts",
+      "time does the work"
+     ]
+    },
+    {
+     "header": "Start late",
+     "icon": "turtle",
+     "cue": 6,
+     "points": [
+      "huge amounts",
+      "you do the work"
+     ]
+    }
+   ]
+  }
+ ]
+}

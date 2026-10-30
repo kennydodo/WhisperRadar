@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from flask import Response, redirect, render_template, request
 
-from . import db, studio
+from . import db, explainer_storyboard as sbe, studio
 from .video.explainer_planner import has_explainer
 from .video.explainer import validate as ev
 from .video.explainer.validate import ExplainerError
@@ -74,6 +74,68 @@ def register(app, cfg) -> None:
             storyboards=_storyboards(str(pdir)),
             preview=_preview_name(str(pdir)),
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    def _plan_page(pid, pdir, plan, msg=None, error=None, errors=None, advice=None, status=200):
+        return Response(render_template(
+            "explainer_plan.html", pid=pid, scenes=sbe.rows(plan), layouts=sbe.layouts(),
+            errors=errors or [], advice=advice or [],
+            msg=msg or request.args.get("msg"), error=error or request.args.get("error")), status=status)
+
+    def _read_plan(pdir):
+        path = os.path.join(str(pdir), "plan.json")
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        return d if isinstance(d, dict) and isinstance(d.get("scenes"), list) else None
+
+    @app.get("/explainer/<pid>/plan")
+    def explainer_plan_page(pid):
+        pinfo = _pid_dir(cfg, pid)
+        if not pinfo:
+            return Response("Unknown production", status=404)
+        pdir, pid_i = pinfo
+        plan = _read_plan(pdir)
+        if plan is None:
+            return redirect(f"/studio/{pid_i}?error=" + quote(
+                "No scene plan yet - write the scene plan first."))
+        return _plan_page(pid_i, pdir, plan)
+
+    @app.post("/explainer/<pid>/plan")
+    def explainer_plan_save(pid):
+        pinfo = _pid_dir(cfg, pid)
+        if not pinfo:
+            return Response("Unknown production", status=404)
+        pdir, pid_i = pinfo
+        base = _read_plan(pdir)
+        if base is None:
+            return redirect(f"/studio/{pid_i}?error=" + quote("No scene plan yet."))
+        plan, errors = sbe.plan_from_form(request.form, base)
+        advice = []
+        if not errors:
+            srt = _find_srt(str(pdir))
+            if not srt:
+                errors = ["No .srt file in the production folder - scenes cannot be timed."]
+            else:
+                from .video import parsing  # noqa: F401  (cue objects come from studio below)
+                with open(srt, encoding="utf-8-sig") as fh:
+                    cues = studio.parse_srt_cues(fh.read())
+                if not cues:
+                    errors = ["The subtitles are empty."]
+                else:
+                    total = studio._srt_seconds(cues[-1]["end"])
+                    errors, advice = sbe.faults(plan, cues, total, ev.project_look(str(pdir)))
+        if errors:
+            return _plan_page(pid_i, pdir, plan, errors=errors, advice=advice,
+                              error="Not saved - fix these first; your edits are still in the form.", status=200)
+        sbe.save(pdir, plan)
+        note = (" Note: " + "; ".join(advice)) if advice else ""
+        return redirect(f"/explainer/{pid_i}/plan?msg=" + quote(
+            f"Saved {len(plan['scenes'])} scene(s). The previous plan is kept as plan_before_edit.json. "
+            "Render again: only scenes you changed are redrawn." + note))
 
     @app.post("/explainer/<pid>/import")
     def explainer_import(pid):

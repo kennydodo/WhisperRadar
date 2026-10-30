@@ -1,0 +1,606 @@
+{
+  "schema_version": 2,
+  "style": "whiteboard",
+  "theme": "chalkboard",
+  "canvas": {
+    "width": 1920,
+    "height": 1080
+  },
+  "scenes": [
+    {
+      "id": "income",
+      "shot_id": "S01_01",
+      "cue_range": [
+        1,
+        5
+      ],
+      "objects": [
+        {
+          "id": "t",
+          "type": "handwriting",
+          "text": "$150 a month to spare",
+          "box": [
+            0.2,
+            0.05,
+            0.6,
+            0.12
+          ]
+        },
+        {
+          "id": "wallet",
+          "type": "stroke_asset",
+          "asset": "lucide:wallet",
+          "box": [
+            0.11,
+            0.26,
+            0.14,
+            0.25
+          ]
+        },
+        {
+          "id": "bills",
+          "type": "stroke_asset",
+          "asset": "lucide:receipt",
+          "box": [
+            0.43,
+            0.26,
+            0.14,
+            0.25
+          ]
+        },
+        {
+          "id": "piggy",
+          "type": "stroke_asset",
+          "asset": "lucide:piggy-bank",
+          "box": [
+            0.75,
+            0.26,
+            0.14,
+            0.25
+          ]
+        },
+        {
+          "id": "a1",
+          "type": "stroke_asset",
+          "asset": "lucide:minus",
+          "box": [
+            0.3,
+            0.34,
+            0.08,
+            0.14
+          ],
+          "style": "accent"
+        },
+        {
+          "id": "a2",
+          "type": "stroke_asset",
+          "asset": "lucide:equal",
+          "box": [
+            0.62,
+            0.34,
+            0.08,
+            0.14
+          ],
+          "style": "accent"
+        },
+        {
+          "id": "l1",
+          "type": "handwriting",
+          "text": "$600 a month",
+          "box": [
+            0.06,
+            0.56,
+            0.24,
+            0.09
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "handwriting",
+          "text": "bills $450",
+          "box": [
+            0.38,
+            0.56,
+            0.24,
+            0.09
+          ]
+        },
+        {
+          "id": "l3",
+          "type": "handwriting",
+          "text": "$150 left",
+          "box": [
+            0.7,
+            0.56,
+            0.24,
+            0.09
+          ]
+        }
+      ],
+      "events": [
+        {
+          "target": "t",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 1,
+            "edge": "start"
+          },
+          "duration_ms": 4030
+        },
+        {
+          "target": "wallet",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 1,
+            "edge": "start"
+          },
+          "duration_ms": 1500
+        },
+        {
+          "target": "l1",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 1,
+            "edge": "start"
+          },
+          "duration_ms": 2545
+        },
+        {
+          "target": "a1",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 2,
+            "edge": "start"
+          },
+          "duration_ms": 500
+        },
+        {
+          "target": "bills",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 3,
+            "edge": "start"
+          },
+          "duration_ms": 1500
+        },
+        {
+          "target": "l2",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 3,
+            "edge": "start"
+          },
+          "duration_ms": 1870
+        },
+        {
+          "target": "a2",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 4,
+            "edge": "start"
+          },
+          "duration_ms": 500
+        },
+        {
+          "target": "piggy",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 4,
+            "edge": "start"
+          },
+          "duration_ms": 1500
+        },
+        {
+          "target": "l3",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 4,
+            "edge": "start"
+          },
+          "duration_ms": 1735
+        }
+      ]
+    },
+    {
+      "id": "jobs",
+      "shot_id": "S02_01",
+      "cue_range": [
+        6,
+        9
+      ],
+      "objects": [
+        {
+          "id": "t",
+          "type": "handwriting",
+          "text": "Give every dollar a job",
+          "box": [
+            0.16,
+            0.05,
+            0.68,
+            0.12
+          ]
+        },
+        {
+          "id": "coins",
+          "type": "stroke_asset",
+          "asset": "lucide:hand-coins",
+          "box": [
+            0.43,
+            0.2,
+            0.14,
+            0.25
+          ]
+        },
+        {
+          "id": "al",
+          "type": "stroke_asset",
+          "asset": "lucide:arrow-down-left",
+          "box": [
+            0.3,
+            0.42,
+            0.1,
+            0.17
+          ],
+          "style": "accent"
+        },
+        {
+          "id": "ar",
+          "type": "stroke_asset",
+          "asset": "lucide:arrow-down-right",
+          "box": [
+            0.6,
+            0.42,
+            0.1,
+            0.17
+          ],
+          "style": "accent"
+        },
+        {
+          "id": "debt",
+          "type": "stroke_asset",
+          "asset": "lucide:credit-card",
+          "box": [
+            0.17,
+            0.58,
+            0.14,
+            0.22
+          ]
+        },
+        {
+          "id": "save",
+          "type": "stroke_asset",
+          "asset": "lucide:sprout",
+          "box": [
+            0.69,
+            0.58,
+            0.14,
+            0.22
+          ]
+        },
+        {
+          "id": "l_debt",
+          "type": "handwriting",
+          "text": "debt first",
+          "box": [
+            0.12,
+            0.79,
+            0.24,
+            0.08
+          ]
+        },
+        {
+          "id": "l_save",
+          "type": "handwriting",
+          "text": "savings",
+          "box": [
+            0.64,
+            0.79,
+            0.24,
+            0.08
+          ]
+        }
+      ],
+      "events": [
+        {
+          "target": "t",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 6,
+            "edge": "start"
+          },
+          "duration_ms": 3895
+        },
+        {
+          "target": "coins",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 6,
+            "edge": "start"
+          },
+          "duration_ms": 1600
+        },
+        {
+          "target": "al",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 7,
+            "edge": "start"
+          },
+          "duration_ms": 600
+        },
+        {
+          "target": "debt",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 7,
+            "edge": "start"
+          },
+          "duration_ms": 1400
+        },
+        {
+          "target": "l_debt",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 7,
+            "edge": "start"
+          },
+          "duration_ms": 2410
+        },
+        {
+          "target": "ar",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 8,
+            "edge": "start"
+          },
+          "duration_ms": 600
+        },
+        {
+          "target": "save",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 8,
+            "edge": "start"
+          },
+          "duration_ms": 1400
+        },
+        {
+          "target": "l_save",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 8,
+            "edge": "start"
+          },
+          "duration_ms": 1735
+        }
+      ]
+    },
+    {
+      "id": "later",
+      "shot_id": "S03_01",
+      "cue_range": [
+        10,
+        12
+      ],
+      "objects": [
+        {
+          "id": "t",
+          "type": "handwriting",
+          "text": "Six months later",
+          "box": [
+            0.26,
+            0.05,
+            0.48,
+            0.12
+          ]
+        },
+        {
+          "id": "down",
+          "type": "stroke_asset",
+          "asset": "lucide:trending-down",
+          "box": [
+            0.17,
+            0.24,
+            0.16,
+            0.28
+          ]
+        },
+        {
+          "id": "up",
+          "type": "stroke_asset",
+          "asset": "lucide:trending-up",
+          "box": [
+            0.67,
+            0.24,
+            0.16,
+            0.28
+          ]
+        },
+        {
+          "id": "card",
+          "type": "stroke_asset",
+          "asset": "lucide:credit-card",
+          "box": [
+            0.2,
+            0.56,
+            0.1,
+            0.17
+          ]
+        },
+        {
+          "id": "fund",
+          "type": "stroke_asset",
+          "asset": "lucide:piggy-bank",
+          "box": [
+            0.7,
+            0.56,
+            0.1,
+            0.17
+          ]
+        },
+        {
+          "id": "l1",
+          "type": "handwriting",
+          "text": "card nearly gone",
+          "box": [
+            0.08,
+            0.76,
+            0.34,
+            0.09
+          ]
+        },
+        {
+          "id": "l2",
+          "type": "handwriting",
+          "text": "3/4 full",
+          "box": [
+            0.64,
+            0.76,
+            0.22,
+            0.09
+          ]
+        }
+      ],
+      "events": [
+        {
+          "target": "t",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 10,
+            "edge": "start"
+          },
+          "duration_ms": 3490
+        },
+        {
+          "target": "down",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 10,
+            "edge": "start"
+          },
+          "duration_ms": 1800
+        },
+        {
+          "target": "card",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 10,
+            "edge": "start",
+            "offset_ms": 1200
+          },
+          "duration_ms": 1200
+        },
+        {
+          "target": "l1",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 11,
+            "edge": "start"
+          },
+          "duration_ms": 3220
+        },
+        {
+          "target": "up",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 11,
+            "edge": "start"
+          },
+          "duration_ms": 1800
+        },
+        {
+          "target": "fund",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 12,
+            "edge": "start"
+          },
+          "duration_ms": 900
+        },
+        {
+          "target": "l2",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 12,
+            "edge": "start"
+          },
+          "duration_ms": 1050
+        }
+      ]
+    },
+    {
+      "id": "closing",
+      "shot_id": "S04_01",
+      "cue_range": [
+        13,
+        14
+      ],
+      "objects": [
+        {
+          "id": "t1",
+          "type": "handwriting",
+          "text": "Small surplus",
+          "box": [
+            0.26,
+            0.14,
+            0.48,
+            0.13
+          ]
+        },
+        {
+          "id": "t2",
+          "type": "handwriting",
+          "text": "Two jobs",
+          "box": [
+            0.32,
+            0.34,
+            0.36,
+            0.13
+          ]
+        },
+        {
+          "id": "ok",
+          "type": "stroke_asset",
+          "asset": "lucide:circle-check",
+          "box": [
+            0.43,
+            0.56,
+            0.14,
+            0.25
+          ],
+          "style": "accent"
+        }
+      ],
+      "events": [
+        {
+          "target": "t1",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 13,
+            "edge": "start"
+          },
+          "duration_ms": 2545
+        },
+        {
+          "target": "t2",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 13,
+            "edge": "start",
+            "offset_ms": 1800
+          },
+          "duration_ms": 1600
+        },
+        {
+          "target": "ok",
+          "action": "draw_strokes",
+          "at": {
+            "cue": 14,
+            "edge": "start"
+          },
+          "duration_ms": 900
+        }
+      ]
+    }
+  ]
+}

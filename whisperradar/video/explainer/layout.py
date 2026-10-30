@@ -176,6 +176,8 @@ def layout_scene(scene, theme: sc.ThemeSpec, canvas: tuple,
             lo.text = layout_text(spec_text, lo.box_px, spec.style, theme, H,
                                   scale, f"Scene {scene.id}, object {spec.id}",
                                   errors, project_folder)
+            if spec.color:                      # named chalk colour overrides the style
+                lo.text.color = sc.resolve_color(spec.color, theme) or lo.text.color
         out.objects.append(lo)
     if errors:
         raise ExplainerError(errors)

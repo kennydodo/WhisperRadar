@@ -2215,10 +2215,13 @@ def create_app(cfg) -> Flask:
             watched_channels = db.list_channels(conn, active_only=True)
             watched_by_oc = {c["id"]: db.own_channel_watched(c)
                              for c in own_channels}
+            from . import explainer_channel
+            explainer_ctx = explainer_channel.context(conn, own_channels)
         finally:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            **explainer_ctx,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
             densities=[(k, studio.DENSITY_LABELS[k])
@@ -2650,6 +2653,11 @@ def create_app(cfg) -> Flask:
             if not db.get_own_channel(conn, oc_id):
                 return redirect("/my-channels?error=Unknown+channel")
             db.update_own_channel(conn, oc_id, **fields)
+            if "explainer_present" in request.form:
+                from . import explainer_channel
+                bad = explainer_channel.save(conn, oc_id, request.form)
+                if bad:
+                    return redirect("/my-channels?error=" + quote(bad))
             # "apply to all channels": copy this channel's saved value
             applied, rejected = [], []
             wanted = request.form.getlist("apply_all")
@@ -3847,10 +3855,15 @@ def create_app(cfg) -> Flask:
         # references / motion clips the shotlist does not need (or the channel
         # has off): shown grayed out, and auto-run passes over them
         skipped_stages = {}
+        explainer_mode = autorun.explainer_production(cfg, pid)
+        from . import explainer_scenes as _xs
+        scene_review = _xs.load_review(pdir) if explainer_mode else {}
+        scene_plan_exists = (pdir / "plan.json").is_file()
         try:
             for e in autorun.build_plan(cfg, pid):
-                if (e["stage"] in ("refs", "motion") and e["action"] == "skip"
-                        and e["stage"] not in steps):
+                if (e["stage"] in ("shots", "refs", "images", "motion")
+                        and e["action"] == "skip"
+                        and (e["stage"] not in steps or explainer_mode)):
                     skipped_stages[e["stage"]] = e["detail"]
         except Exception:  # noqa: BLE001 - never break the page for a plan error
             skipped_stages = {}
@@ -3865,7 +3878,8 @@ def create_app(cfg) -> Flask:
         page = render_template(
             "studio_detail.html", script_readiness=readiness, fix_preview=fix_preview, fix_enabled=fix_enabled,
             fix_providers=fix_providers, fix_default=fix_default, prod=prod, steps=steps, history=history,
-            skipped_stages=skipped_stages,
+            skipped_stages=skipped_stages, explainer_mode=explainer_mode,
+            scene_review=scene_review, scene_plan_exists=scene_plan_exists,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
             style_variant_eff=studio.style_variant(cfg, pid=pid),
@@ -3903,6 +3917,7 @@ def create_app(cfg) -> Flask:
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
             source_video=source_video, attach_sources=attach_sources,
             human_review=human_review.load(pdir),
+            review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
             llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
             default_provider=default_provider, stage_providers=stage_providers,
@@ -5004,6 +5019,30 @@ def create_app(cfg) -> Flask:
         return _studio_url(
             pid, msg=f"Cleared {len(names)} saved version(s){dropped}")
 
+    @app.post("/studio/<int:pid>/scenes/generate")
+    def studio_scenes_generate(pid):
+        """Explainer productions: writer drafts plan.json, the code checks it,
+        the judge reviews it (web chat sites, or API providers)."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        if not studio.find_srt(studio.prod_dir(cfg, pid)):
+            return _studio_url(pid, error="Generate the subtitles first")
+        transport = "webchat" if request.form.get("transport") == "webchat" else None
+        provider = autorun._stage_provider(
+            cfg, pid, "shots",
+            override=(request.form.get("provider") or "").strip() or None)
+        _job = sjob._real()
+
+        def worker():
+            autorun.raise_result(autorun.run_stage_and_advance(
+                cfg, pid, "shots", {
+                    "provider": provider, "transport": transport,
+                    "log": sjob.log.append,
+                    "cancel": (lambda _j=_job: _j.cancel)}))
+
+        sjob.start(worker, "explainer scene plan")
+        return _studio_url(pid, msg="Scene plan started - the job log shows each round")
+
     @app.post("/studio/<int:pid>/shotlist/generate")
     def studio_shotlist_generate(pid):
         if sjob.running:
@@ -5545,18 +5584,40 @@ def create_app(cfg) -> Flask:
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         pdir = studio.prepare_project_folder(cfg, pid)
+        explainer = autorun.explainer_production(cfg, pid)
         if not studio.find_audio(pdir) or not studio.find_srt(pdir) \
-                or not studio.find_images(pid_dir=pdir):
+                or (not explainer and not studio.find_images(pid_dir=pdir)):
             return _studio_url(
-                pid, error="Need audio, subtitles and images first")
+                pid, error=("Need audio and subtitles first" if explainer
+                            else "Need audio, subtitles and images first"))
         # render even with opening clips missing (the stills fill the gaps)?
         # an explicit user choice from the merge panel's second button.
         with_stills = request.form.get("render_with_stills") == "1"
-        gap = autorun._merge_pause_reason(cfg, pid, with_stills=with_stills)
+        gap = (None if explainer else
+               autorun._merge_pause_reason(cfg, pid, with_stills=with_stills))
         if gap and with_stills:
             # with_stills only bypasses the clip gate; images still block
             return _studio_url(pid, error="Cannot render: " + gap)
         _job = sjob._real()
+        draft = explainer and request.form.get("draft") == "1"
+
+        def draft_worker():
+            from .video.explainer import render as xrender
+            from .video.explainer.validate import ExplainerError
+
+            class _Cancel:
+                def is_set(self_, _j=_job):
+                    return bool(_j.cancel)
+            try:
+                xrender.render_video(str(pdir), audio=str(studio.find_audio(pdir)), final=False,
+                                     draft=True, log=sjob.log.append, cancel=_Cancel())
+            except ExplainerError as exc:
+                raise RuntimeError("explainer: " + " | ".join(exc.errors[:6])) from None
+
+        if draft:
+            sjob.start(draft_worker, "explainer draft (half size, out/preview.mp4)")
+            return _studio_url(pid, msg="Drawing a half-size draft; it is saved as out/preview.mp4 "
+                                         "and does not replace the finished video.")
 
         def worker():
             # the merge itself renders any missing images first
@@ -5575,6 +5636,11 @@ def create_app(cfg) -> Flask:
         finally:
             conn.close()
         label = studio.RENDER_TARGET_LABELS[target]
+        if explainer:
+            sjob.start(worker, "explainer video (drawing the scenes)")
+            return _studio_url(
+                pid, msg="Explainer render started - the job log shows each "
+                         "scene as it is drawn")
         if gap:
             sjob.start(worker, f"image rendering (missing images), then "
                                f"preview + {label} export")
@@ -6313,5 +6379,7 @@ def create_app(cfg) -> Flask:
     video_routes.register(app, cfg)
     from . import explainer_routes
     explainer_routes.register(app, cfg)
+    from . import explainer_channel
+    explainer_channel.register(app, cfg)
 
     return app

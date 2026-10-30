@@ -89,7 +89,8 @@ Doc-level: `"style": "whiteboard"` picks the light-board theme
 
 `asset` is `builtin:<name>` (person, house, bank, coin_stack, bulb, calendar,
 folder, leaf, tree, wrench, piggy_bank, chart_up, chart_down, bill, check,
-circle, underline, arrow_right) or a project-relative JSON file:
+circle, underline, arrow_right), `lucide:<name>` (about 2000 line icons - see
+"Icon library" below) or a project-relative JSON file:
 
     {"viewBox": [100, 100],
      "strokes": [
@@ -106,6 +107,34 @@ centerline strokes, not filled silhouettes; keep character identity stable
 across a recurring character. Provenance: built-ins are drawn for this
 project; record licensing for anything you import.
 
+**Icon library** (`lucide:<name>`): the Lucide line-icon set (v1.64, ISC
+license - `icons/LICENSE-lucide.txt`; checked in as `icons/lucide.json`, so no
+Node or extra Python packages are needed). Each icon is drawn stroke by stroke
+like any other asset, 5 units wide in the 100x100 asset box.
+
+    {"id": "pig", "type": "stroke_asset", "asset": "lucide:piggy-bank",
+     "box": [0.43, 0.26, 0.14, 0.25]}
+
+Find names by word or meaning (every word must match a name or a tag):
+
+    .venv\Scripts\python.exe -m whisperradar.video.explainer.cli icons server
+    .venv\Scripts\python.exe -m whisperradar.video.explainer.cli icons savings
+    .venv\Scripts\python.exe -m whisperradar.video.explainer.cli icons arrow down
+
+Names are forgiving about case and spaces (`lucide:Piggy Bank`); a name that
+does not exist is a validation error that lists the closest ones. Keep icon
+boxes roughly square in pixels (a 0.14 x 0.25 box on a 1920x1080 canvas is
+269 x 270 px) - the icon is scaled to fit and centred in its box. To refresh
+or extend the set: `npm install lucide-static`, then
+`python scripts/build_lucide_library.py <path>\node_modules\lucide-static`
+(needs `pip install svgelements`; only that script uses it).
+
+**Chalkboard theme**: `"theme": "chalkboard"` (with `"style": "whiteboard"`)
+draws chalk-white lines on a near-black board, with a light-blue accent for
+`"style": "accent"` objects. The light board remains the whiteboard default.
+A worked example with the same narration as the light-board demo:
+`docs/explainer/demo/chalkboard-demo/`.
+
 **Handwriting** (`type: "handwriting"`): real single-line glyphs (A-Z, a-z,
 0-9, `.,!?:;-$%&()/'` + more), drawn in reading order with pen lifts. Missing
 glyphs are a validation error — shorten the text or set
@@ -117,6 +146,120 @@ universal-language claim.
 stroke objects erase stroke-by-stroke in reverse; other objects fade. Plan
 one idea at a time: draw the subject, add the relationship, annotate; keep
 connected objects on the board and erase the rest before it gets crowded.
+
+### Colours and hand-drawn shapes (whiteboard / chalkboard)
+
+Every object takes `"color"`: a chalk name (`white yellow green red orange blue
+pink purple grey`), a theme role (`accent positive negative muted`) or `#RRGGBB`.
+The names pick brighter chalk on dark boards and darker ink on light ones.
+
+`"type": "shape"` draws hand-wobbled geometry from a name, so a script generator
+never writes coordinates. The wobble is seeded from the object id (same id, same
+drawing). Use `draw_strokes` to draw it and `emphasis` to make it glow.
+
+| kind | placed by | options |
+|---|---|---|
+| `card` | `box` | `filled` (dark inside) |
+| `oval` | `box` | |
+| `underline` | `box` (bottom edge) | |
+| `highlight` | `box` | `opacity` (default 0.38) |
+| `brace` | `box` | `side`: `right` or `left` (tip direction) |
+| `arrow` | `points` `[[x1,y1],[x2,y2]]` | `curve` -1..1 |
+| `line` | `points` | `dashed` |
+| `check`, `cross` | `box` | |
+
+Demo: `docs/explainer/demo/chalkboard-shapes/` (an original timeline scene).
+
+### Recipes: write a short plan, get the whole explainer.json
+
+Instead of placing every object, write `plan.json` next to `subtitles.srt` and run
+
+    python -m whisperradar.video.explainer.cli build <production folder>
+
+It places everything, picks colours, schedules the pen cue by cue (compressing
+the drawing speed when needed, never below readable) and writes `explainer.json`,
+then validates it. Same plan + same subtitles gives the same file. Layouts:
+`row`, `steps` (numbered), `timeline`, `stack`, `hero`, `compare` (two sides with
+check/cross points). Options: `title`, `footer`, `connect` (`arrow`/`dashed`/`none`),
+`cards`, `focus` (dim the previous item as the next one appears). Each item takes
+`label`, `icon` (a Lucide name), `color`, `note`, `cue`; items without a cue are
+spread over the scene. Too much for the time gives a readable error
+("use fewer items, or earlier cues"). Demo: `docs/explainer/demo/recipes-demo/`.
+
+### Rendering inside WhisperRadar
+
+A production folder with `plan.json` or `explainer.json` is an explainer production.
+In the Studio its shot list, references, images and motion stages are skipped (also by
+auto-run). On the **Render** stage the button **Render explainer video** builds
+`explainer.json` from `plan.json` + the subtitles when the plan is newer, draws every scene
+(finished scenes are cached, so a re-render only redraws what changed), joins them, mixes in
+the narration and writes `out/final/final.mp4`. Progress shows per scene in the job log.
+Same code as `cli render-demo` (`video/explainer/render.py`). Plans can anchor scenes and
+items to the narration by quoting words (`"start"`, `"at"`) instead of cue numbers.
+
+### Scene plan: writer, checker, judge
+
+On an explainer channel the **Shots** stage becomes the **scene plan**. The writer (web-chat site or API
+provider, like the other stages) drafts `plan.json` from the narration, quoting the words where each scene
+and item appears. The app finds those words in the subtitles and runs the same builder/validator as render
+(words not in the narration, scene too crowded for its time, unknown icon, first scene not at the start):
+faults go back to the writer as a short list. When the code is satisfied a **judge** (a different model)
+scores the teaching (right picture for the sentence, nothing invented, short labels, variety, pacing,
+colour meaning) and its faults/fixes go back to the writer, up to 5 rounds; the best plan is kept as
+`plan.json` with the verdict in `plan_review.json`. Code: `whisperradar/explainer_scenes.py`. Auto-run does
+this stage too (`autorun._run_scenes`).
+
+### Colours and fonts (channel settings)
+
+Channel settings (My channels > Channel type & explainer; also Video options) hold: heading colour, text
+colour (a chalk colour name or `#RRGGBB`) and board colour (`#RRGGBB`), with a live preview. Recipes draw
+titles in the colour name `heading` and labels in `text`, which resolve to the channel's colours (chalk
+yellow / white by default). Scenes already drawn keep their cache until the look changes.
+Fonts shipped in `fonts/` (all OFL, licences in `fonts/licenses/`): Gaegu, Patrick Hand, Kalam, Caveat,
+Architects Daughter, Shadows Into Light, Indie Flower, Gloria Hallelujah, Handlee, Neucha, Covered By Your
+Grace, Comic Neue, Amatic SC, Delius.
+
+### Where the look is set: channel settings (saved in the database)
+
+Theme and fonts are **channel settings**, not file settings: open
+**Video options** (global, or a channel's own page) and use the **Explainer look**
+group: *theme*, *hand font*, *heading font*, *body font*. They are saved in the
+database (`video_options`, per own channel over global) and written into each
+production's `imgtovideo.json` (`explainer` section), which the explainer reads.
+Blank = inherit. A production's own `explainer.json` `theme` / `fonts` still
+wins for that one production, so a script generator never has to set them.
+
+### Spotlight: dim and undim
+
+`{"target": "card1", "action": "dim", "at": {...}, "duration_ms": 400, "amount": 0.7}`
+fades a drawing, shape or handwriting back (amount 0.1 to 0.95); `undim` brings it
+home. Dim everything except the thing being talked about.
+
+### Handwriting: real hand fonts or the pen strokes
+
+`handwriting` objects write in one of two ways. Each channel (or object) picks:
+
+- **A real hand font** (`.ttf`): the text writes on left to right, line by line,
+  with a pen nib at the writing edge, and rubs out in reverse. No glyph limit
+  (`=`, `$`, accents work). This is the default on the `chalkboard` theme.
+- **`"strokes"`**: the built-in pen-stroke letters (limited character set, each
+  letter drawn stroke by stroke).
+
+The channel setting above is the normal way. To override one production, use
+`explainer.json`:
+
+```json
+"fonts": {"hand": "Caveat-Bold.ttf", "heading": "Gaegu-Bold.ttf", "body": "Gaegu-Bold.ttf"}
+```
+
+`"hand": "strokes"` selects the pen strokes. A single object can override with
+`"font": "Kalam-Bold.ttf"` or `"font": "strokes"`. Fonts are found in the repo
+`fonts/` folder or the production folder. Shipped (all SIL OFL, see
+`fonts/licenses/`): Gaegu-Bold, PatrickHand-Regular, Kalam-Bold, Caveat-Bold,
+ArchitectsDaughter-Regular, ShadowsIntoLight-Regular. Drop any other `.ttf` in
+`fonts/` and name it. Brace `side` may also be `top` or `bottom` for horizontal
+braces.
+
 
 ## 3. The workflow
 
@@ -180,6 +323,25 @@ Good handwriting-style pairings for whiteboard mode (all OFL): **Caveat**, **Sha
 
 ## 7. Themes
 
-`finance_dark` (default), `nature_parchment`, `living_warm` ship in
+`finance_dark` (default), `nature_parchment`, `living_warm`, `whiteboard_light`
+and `chalkboard` ship in
 `video/explainer/themes.py`. Add a theme there (data only) and reference it
 by name.
+
+## Remotion scenes (optional, experimental)
+
+Most scenes are drawn by the built-in pen renderer. A scene can instead use the
+Remotion backend for things the pen cannot do. Today there is one component:
+
+```json
+{"id": "fit", "start": "now the same seven", "layout": "fit_chart",
+ "title": "What fits in 24 GB?", "limit": 24, "unit": "GB", "bits": 4,
+ "items": [{"label": "7B", "params_b": 7, "at": "..."}, {"label": "70B", "params_b": 70, "at": "..."}]}
+```
+
+Sizes are calculated (parameters x bits / 8) and bars past the limit turn red.
+Setup, once: install Node.js, then run `npm ci` in `tools/remotion`. Remotion is
+free for teams of up to three people; check its licence if that changes.
+Clips are cached separately in `out/remotion`, Stop works as for other scenes,
+and normal channels are unaffected. Remotion scenes render at 1920x1080 or at
+half size (960x540).

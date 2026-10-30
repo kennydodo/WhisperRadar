@@ -34,11 +34,26 @@ def _whiteboard() -> ThemeSpec:
     return default_whiteboard_theme("whiteboard_light")
 
 
+def _chalkboard() -> ThemeSpec:
+    """Dark board, chalk-white strokes (the look of the faceless whiteboard
+    explainer channels). Name it explicitly: "theme": "chalkboard"."""
+    t = default_whiteboard_theme("chalkboard")
+    t.background = "#12161A"
+    t.foreground = "#F2EFE6"
+    t.muted = "#8E96A0"
+    t.accent = "#7FC8F8"
+    t.positive = "#8FD9A8"
+    t.negative = "#FF9B8A"
+    t.heading_font = t.body_font = t.hand_font = "Gaegu-Bold.ttf"
+    return t
+
+
 THEMES = {
     "finance_dark": lambda: default_theme("finance_dark"),
     "nature_parchment": _nature,
     "living_warm": _living,
     "whiteboard_light": _whiteboard,
+    "chalkboard": _chalkboard,
 }
 
 DEFAULT_THEME = "finance_dark"
