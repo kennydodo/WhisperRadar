@@ -510,7 +510,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
         if isinstance(s.get("footer"), dict):
             s["footer"] = dict(s["footer"])
             anchor(s["footer"], where="footer")
-        for key in ("counter", "zoom"):
+        for key in ("counter", "zoom", "motion"):
             if isinstance(s.get(key), dict):
                 s[key] = dict(s[key])
                 anchor(s[key], where=key)
@@ -539,11 +539,11 @@ def resolve_anchors(plan: dict, cues) -> dict:
     return out
 
 
-REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot")
+REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code")
 FIT_CHART_MS = 1900          # a bar finishes growing, and its labels appear, within this
 
 
-def _remotion_scene(raw: dict, idx: int, cue_ms: dict) -> dict:
+def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
     """A scene drawn by the Remotion backend: no objects, just a validated block."""
     sid = re.sub(r"[^A-Za-z0-9_\-]", "", str(raw.get("id") or f"s{idx + 1}")) or f"s{idx + 1}"
     if not sid[0].isalpha():
@@ -591,6 +591,20 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict) -> dict:
         must_finish(st, cm, "the counter")
         params = {"from": c.get("from", 0), "to": c.get("to"), "unit": c.get("unit", ""),
                   "label": c.get("label", ""), "start_ms": int(st), "count_ms": cm}
+    elif layout in ("pipeline", "generation", "code"):
+        m = dict(raw.get("motion") or {})
+        st = rel_ms(m, "the animation")
+        run = int(m.get("run_ms") or min(max(dur - st - TAIL_MS, 3000), 12000))
+        must_finish(st, run, "the animation")
+        params = {k: v for k, v in raw.items() if k in ("title", "sub", "note", "stages", "tasks", "rows",
+                                                          "filename", "lines", "highlights")}
+        params["start_ms"] = int(st)
+        if layout == "code":
+            params["type_ms"] = int(m.get("type_ms") or min(run, 5000))
+            params["highlights"] = [dict(h, start_ms=int(h.get("start_ms", params["type_ms"]))) for h in
+                                    (raw.get("highlights") or []) if isinstance(h, dict)]
+        else:
+            params["run_ms"] = run
     else:
         z = dict(raw.get("zoom") or {})
         st = rel_ms(z, "the zoom")
@@ -602,6 +616,8 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict) -> dict:
     block = {"component": raw["layout"], "params": params}
     if raw.get("fade"):
         block["fade"] = raw["fade"]
+    if raw.get("motion_style") or style:
+        block["style"] = raw.get("motion_style") or style
     errs = remotion_backend.check_block(block, f"Scene {sid}")
     if errs:
         raise ExplainerError(errs)
@@ -692,7 +708,7 @@ def build(plan: dict, cues, look=None) -> dict:
     for idx, raw in enumerate(plan["scenes"]):
         if isinstance(raw, dict) and raw.get("layout") in REMOTION_LAYOUTS:
             try:
-                scenes.append(_remotion_scene(raw, idx, cue_ms))
+                scenes.append(_remotion_scene(raw, idx, cue_ms, plan.get("motion_style")))
             except ExplainerError as exc:
                 errors.extend(exc.errors)
             continue
