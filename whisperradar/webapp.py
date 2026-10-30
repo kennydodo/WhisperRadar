@@ -3939,7 +3939,6 @@ def create_app(cfg) -> Flask:
             default_render_mode=eff["render_mode"],
             default_engine=studio.effective_engine(eff["engine"],
                                                    eff["render_mode"]),
-            review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
             own_channel_name=eff["own_channel_name"],
             channel_ws=studio.channel_writing_style_for(cfg, prod),
             flow_project_url_default=(eff["flow_project_url"] or
