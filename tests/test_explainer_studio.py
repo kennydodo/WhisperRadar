@@ -150,12 +150,17 @@ class ExplainerPageTests(unittest.TestCase):
         with mock.patch.object(autorun, "run_stage_and_advance", side_effect=fake), \
                 mock.patch.object(autorun, "raise_result", lambda r: None):
             self.client.post(f"/studio/{self.pid}/scenes/generate",
-                             data={"transport": "webchat", "writer": "zai", "judge": "deepseek_judge"})
+                             data={"transport": "webchat", "writer": "zai", "judge": "deepseek_judge",
+                                   "zai_model": "5.3", "zai_thinking": "High", "deepseek_deepthink": "off"})
             for _ in range(50):
                 if seen:
                     break
                 __import__("time").sleep(0.1)
         self.assertEqual((seen.get("writer"), seen.get("judge")), ("zai", "deepseek_judge"))
+        self.assertEqual(seen["chat_options"]["zai"], {"thinking": "High", "model": "5.3"})
+        self.assertFalse(seen["chat_options"]["deepseek"]["deepthink"])
+        self.assertIn('name="zai_model"', html)                    # same model / thinking controls as the shotlist form
+        self.assertIn('name="deepseek_deepthink"', html)
 
     def test_an_unknown_chat_site_is_refused(self):
         (self.pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")

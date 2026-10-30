@@ -5034,13 +5034,14 @@ def create_app(cfg) -> Flask:
                     return _studio_url(pid, error="Unknown chat site")
         else:
             judge = None                                  # the API judge follows the chosen provider
+        chat_options = _chat_options(request.form) if transport == "webchat" and request.form.get("zai_model") else None
         _job = sjob._real()
 
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "shots", {
                     "provider": provider, "transport": transport,
-                    "writer": writer, "judge": judge,
+                    "writer": writer, "judge": judge, "chat_options": chat_options,
                     "log": sjob.log.append,
                     "cancel": (lambda _j=_job: _j.cancel)}))
 

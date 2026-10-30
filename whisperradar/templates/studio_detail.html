@@ -926,16 +926,23 @@
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
               onsubmit="return wrConfirmSubmit(this, 'Write the scene plan in the web chat (writer, then judge)?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
           <input type="hidden" name="transport" value="webchat">
-          <label title="Which chat writes the plan for this run. Settings default = the writer chosen in Settings.">Writer
-            <select name="writer"><option value="">Settings default</option><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
-          <label title="Which chat judges it for this run.">Judge
-            <select name="judge"><option value="">Settings default</option><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <span class="muted" style="font-size:12px">No API - drive chat sites (blank = the pair chosen in Settings):</span>
+          <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <label>Writer <select name="writer"><option value="">Settings default</option>{% for key, name in review_sites %}<option value="{{ key }}">{{ name }}</option>{% endfor %}</select></label>
+            <label>Model <select name="zai_model" title="z.ai model for this run (used when z.ai writes or judges)"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
+            <label>Deep Think <select name="zai_thinking" title="z.ai's Deep Think level for this run. Low is fastest; Max can think for many minutes"><option value="Low">Low</option><option value="High">High</option><option value="Max">Max</option></select></label>
+          </div>
+          <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <label>Judge <select name="judge"><option value="">Settings default</option>{% for key, name in review_sites %}<option value="{{ key }}">{{ name }}</option>{% endfor %}</select></label>
+            <label>DeepThink <select name="deepseek_deepthink" title="DeepSeek's DeepThink switch for this run"><option value="on">On</option><option value="off">Off</option></select></label>
+          </div>
           <button type="submit" class="green" {{ 'disabled' if job.running or not srt else '' }}>
             {{ 'Working...' if job.running else ('Redo scene plan (web chat)' if scene_plan_exists else 'Write scene plan (web chat)') }}
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
               onsubmit="return wrConfirmSubmit(this, 'Write the scene plan with the API providers?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
+          <span class="muted" style="font-size:12px">With an API LLM:</span>
           {{ provider_select('shots') }}
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not srt else '' }}>Write scene plan (API)</button>
         </form>
