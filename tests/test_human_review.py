@@ -402,7 +402,7 @@ class GPTClaudeGuardTests(__import__('unittest').TestCase):
 
     def test_prompt_covers_retention_purpose_accuracy_and_no_fixed_length(self):
         prompt=hr.prompt('reviewer','Title','Style',ORIGINAL,research='Source material')
-        for phrase in ['WHOLE current script','purpose immediately after the hook','pacing',
+        for phrase in ['WHOLE current script','opening against the selected approach','pacing',
                        'simple spoken English','No fixed word count','resolved_ids','claimed_result','Source material']:
             self.assertIn(phrase,prompt)
 
@@ -481,6 +481,21 @@ class ReferenceStyleWorkflowTests(Base):
 
     def transport(self):
         return Fake(deepseek=[json.dumps(BRIEF),delivery_verdict()],zai=[marked(REVISED)])
+
+    def test_opening_choice_reaches_claude_and_reviewer(self):
+        from whisperradar import openings, db
+        conn = db.connect(self.cfg.db_path)
+        prod = db.get_production(conn, self.pid)
+        config = openings.snapshot(conn, ["explain", "compare"])
+        db.update_production(conn, self.pid, opening_config=json.dumps(config))
+        conn.close()
+        t = Fake(deepseek=[json.dumps(BRIEF), delivery_verdict()],
+                 zai=[marked("<!-- opening-style:compare -->\n" + REVISED)])
+        self.run_new(t)
+        self.assertIn("SELECTED OPENING APPROACH", t.calls[1]['prompt'])
+        self.assertIn("[compare]", t.calls[2]['prompt'])
+        self.assertNotIn("[explain]", t.calls[2]['prompt'])
+        self.assertNotIn("opening-style", (self.pdir/'script.md').read_text())
 
     def test_all_channels_require_analysis_then_creative_pass_then_review(self):
         t=self.transport();out=self.run_new(t)

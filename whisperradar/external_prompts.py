@@ -196,7 +196,8 @@ _SCRIPT_REPLY_FORMAT = (
     "line, no headings, no scene labels, no notes before or after it. If you "
     "reach your length limit, stop at the end of a paragraph; I will reply "
     "\"continue\" and you resume from the next paragraph without repeating "
-    "anything.")
+    "anything. The requested opening-style metadata comment is the only allowed "
+    "exception to plain narration; put it before the script, never speak it.")
 
 
 def style_extraction_prompt(cfg, pid: int, title: str = "") -> str:

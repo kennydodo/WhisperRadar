@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opening choices · WhisperRadar</title>{% include '_opening_css.html' %}</head><body><main>
+<nav><a href="{{ '/my-channels' if kind == 'channel' else '/studio/' ~ ident }}">← Back</a> · <a href="/opening-styles">Manage Opening Styles</a></nav>
+<h1>Opening choices</h1><h2>{{ title }}</h2>
+<p>Select one or several approaches. The writer chooses one that suits the video; it does not combine every selected style. The writer, Claude rewrite and judge receive the same opening instructions.</p>
+{% if msg %}<p class="success" role="status">{{ msg }}</p>{% endif %}{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if kind == 'production' %}<p class="muted">This production keeps a saved copy when you save or first generate a prompt. Changing channel defaults or library text later does not change that copy. These choices apply when you next generate or review the script; saving does not rewrite it.</p>
+{% if value.chosen %}<p>Recorded opening: <strong>{% for s in value.styles if s.id == value.chosen %}{{ s.name }}{% endfor %}</strong></p>{% endif %}{% endif %}
+<form method="post" action="{{ base }}">
+{% for s in styles %}<div class="card choice"><label><input type="checkbox" name="styles" value="{{ s.id }}" {% if s.id in selected %}checked{% endif %}>{{ s.name }}</label><p class="muted">{{ s.instructions }}</p></div>{% endfor %}
+{% if kind == 'production' %}<div class="card"><label>Choose a specific opening (optional)<select name="chosen"><option value="">Let the writer choose from the checked styles</option>{% for s in styles %}<option value="{{ s.id }}" {% if s.id == value.chosen %}selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></label>
+<label>Custom opening instructions for this production<textarea name="custom" maxlength="12000">{{ value.custom }}</textarea></label><p class="muted">These override conflicting opening guidance. To reuse them on other channels, save a named custom style in the library.</p></div>{% endif %}
+<button>Save opening choices</button></form>
+{% if kind == 'production' %}<form method="post" action="{{ base }}" class="card"><input type="hidden" name="action" value="refresh"><p>Replace this production's opening choices with the channel's current choices. This also clears the chosen style and production-only instructions.</p><button>Use current channel choices</button></form>{% endif %}
+</main></body></html>

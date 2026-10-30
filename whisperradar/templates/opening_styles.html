@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Opening Styles · WhisperRadar</title>
+{% include '_opening_css.html' %}</head><body><main>
+<nav><a href="/my-channels">My Channels</a> · <a href="/studio">Studio</a></nav>
+<h1>Opening Styles</h1>
+<p>Save approaches for how a video begins. Choose one or several on each channel. Multiple selections are alternatives: the writer chooses one for the topic.</p>
+{% if msg %}<p class="success" role="status">{{ msg }}</p>{% endif %}{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<h2>Create a custom opening style</h2>
+<form method="post" action="/opening-styles/save" class="card">
+<label>Name<input name="name" maxlength="100" required placeholder="e.g. Technical question first"></label>
+<label>Opening instructions<textarea name="instructions" maxlength="12000" required placeholder="Describe the approach, pacing and what to avoid. These are instructions, not a repeated opening sentence."></textarea></label>
+<label>Example (optional)<textarea name="example" maxlength="2000"></textarea></label>
+<button>Save custom style</button></form>
+<h2>Standard styles</h2>
+{% for s in styles if s.builtin %}<article class="card"><h3>{{ s.name }}</h3><p>{{ s.instructions }}</p><p class="muted">Example: {{ s.example }}</p>
+<details><summary>Duplicate as a custom style</summary><form method="post" action="/opening-styles/save">
+<label>Name<input name="name" value="{{ s.name }} — custom" maxlength="100" required></label>
+<label>Opening instructions<textarea name="instructions" maxlength="12000" required>{{ s.instructions }}</textarea></label>
+<label>Example<textarea name="example" maxlength="2000">{{ s.example }}</textarea></label><button>Save custom copy</button></form></details></article>{% endfor %}
+<h2>Your custom styles</h2>
+{% for s in styles if not s.builtin %}<details class="card"><summary>{{ s.name }}</summary><form method="post" action="/opening-styles/save">
+<input type="hidden" name="id" value="{{ s.id }}"><label>Name<input name="name" value="{{ s.name }}" maxlength="100" required></label>
+<label>Opening instructions<textarea name="instructions" maxlength="12000" required>{{ s.instructions }}</textarea></label>
+<label>Example<textarea name="example" maxlength="2000">{{ s.example }}</textarea></label><button>Save changes</button></form>
+<p class="muted">Edits apply to future production snapshots. Existing productions keep their saved instructions until you explicitly refresh them.</p></details>{% else %}<p class="muted">No custom styles saved yet.</p>{% endfor %}
+</main></body></html>

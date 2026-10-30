@@ -457,6 +457,8 @@ def _collect_plan(transport, site: str, reply: str, log,
 
 def save_script(cfg, pid: int, text: str, detail: str, advance: bool) -> None:
     from . import textfiles
+    from . import openings
+    text = openings.capture(cfg, pid, text)
     pdir = studio.prod_dir(cfg, pid)
     textfiles.write_text(pdir / "script.md", text.strip() + "\n")
     from . import script_readiness
@@ -579,7 +581,10 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     judge_open = False          # the judge keeps ONE chat, like the writer
     while True:
         rnd += 1
-        script = _clean_script(reply)
+        from . import openings
+        script = _clean_script(openings.capture(cfg, pid, reply))
+        writer_dir = handover.instruction(cfg, ctx["prod"], "script")
+        judge_dir = handover.instruction(cfg, ctx["prod"], "script_judge")
         words = _wc(script)
         if words < 20:
             raise StageFailed(

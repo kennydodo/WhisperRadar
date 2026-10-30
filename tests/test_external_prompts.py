@@ -427,13 +427,13 @@ class LengthAndStyleTests(Base):
             self.assertIn("ACCURATE NUMBERS", text)
             self.assertIn("FICTIONAL DISCLOSURE", text)
             self.assertIn("PROMISE AND DELIVERY", text)
-            self.assertIn("CLEAR PURPOSE AFTER THE HOOK", text)
-            self.assertIn("what the viewer will learn or understand", text)
+            self.assertIn("OPENING FIT", text)
+            self.assertIn("SELECTED OPENING APPROACH", text)
             self.assertIn("sources actually checked", text)
         self.assertIn("BOTH conflicting passages", j)
         self.assertIn("provide a simpler replacement", j)
-        self.assertIn("leaves that purpose", j)
-        self.assertIn("Accept a purpose already clear in the hook", j)
+        self.assertIn("Assess the opening against the selected opening approach", j)
+        self.assertIn("A purpose can be implied", j)
 
     def test_judge_flags_a_cut_off_script(self):
         j = ep.script_judge_prompt(self.cfg, self.pid, "It stops mid")

@@ -1859,3 +1859,22 @@ starter in plain text. Saved as packaging/first_comment.txt and included in kit
 pinned_comment/first_comment and completion result, with a Finished download link.
 Existing pinned_comment inputs remain accepted. Do not post/pin automatically;
 no backfill of existing packages. Keywords remain >=20 distinct and <=500 chars.
+
+
+## Opening Styles (2026-10-30)
+
+`/opening-styles` manages standard approaches and named custom instructions.
+Channel checkboxes at `/my-channels/<id>/opening` are alternatives, not a blended
+formula. `/studio/<id>/opening` overrides them, adds production-only instructions,
+or explicitly refreshes current channel choices. `openings.py` freezes full
+instructions in `productions.opening_config` at first script prompt or explicit
+save; later channel/library edits do not silently change that snapshot.
+Writer metadata `<!-- opening-style:ID -->` records one allowed approach and is
+removed before judging/saving narration. Single choices are recorded directly.
+Old/manual replies without metadata remain accepted (no invented choice).
+`handover.instruction` supplies the policy to script writer/judge paths; GPT-Claude
+review receives it per role. It overrides conflicting reference/channel OPENING
+guidance only. Purpose-after-hook is channel-selectable, not a universal rule.
+Defaults: Alicia and To Live and More purpose; AI Guy direct/demo/comparison;
+POV story; Nature discovery; Presence/Steadier Mind reflective; others channel.
+Tests: `test_openings.py`, opening integration cases in webstages/human_review.

@@ -26,7 +26,7 @@ MANIFEST = "production.json"
 FIELDS = ("title", "genre", "notes", "extra_prompt", "stage", "llm_provider",
           "stage_extras", "stage_providers", "render_mode", "voice",
           "style_override", "bible_override", "style_variant", "visual_density",
-          "handover")
+          "handover", "opening_config")
 ROOT_FILES = ("script.md", "style.md", "bible.md", "writing_style.md",
               "research_notes.json", "research_notes.md", "source_transcript.txt",
               "source_analysis.json", "script_readiness.json", "subtitles.srt",

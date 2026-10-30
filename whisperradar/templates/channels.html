@@ -89,6 +89,7 @@
 </head>
 <body>
 <nav class="topnav">
+  <a href="/opening-styles">Opening Styles</a>
   <span class="brand">WhisperRadar</span>
   <a href="/">Dashboard</a>
   <a href="/watched">Watched Channels</a>
@@ -181,7 +182,7 @@
       {% for ch in own_channels %}
       <tr>
         <td><input type="checkbox" class="exp-pick" name="id" value="{{ ch['id'] }}" form="export-form" onchange="updateOwnBar()"></td>
-        <td>{{ ch["name"] }}
+        <td>{{ ch["name"] }} <a href="/my-channels/{{ ch['id'] }}/opening" style="font-size:12px">Opening choices</a>
           {% if ch["description"] %}<div class="muted" style="font-size:12px">{{ ch["description"] }}</div>{% endif %}
           <div class="muted mono" style="font-size:11px">
             {{ ch["default_engine"] or "inherit" }} &middot; {{ ch["default_render_mode"] or "inherit" }}

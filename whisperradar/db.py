@@ -305,6 +305,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          # loads it into every production (never generated)
                          ("writing_style", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
+    _add_column_if_missing(conn, "own_channels", "opening_styles", "TEXT")
+    _add_column_if_missing(conn, "productions", "opening_config", "TEXT")
     # how long a recorded step took (seconds); NULL for steps recorded before
     # this existed or outside a job
     _add_column_if_missing(conn, "production_steps", "duration_seconds", "REAL")
@@ -947,7 +949,7 @@ _PROD_FIELDS = {"youtube_video_id", "title", "genre", "stage", "status", "notes"
                 "flow_project_id", "autorun", "last_attempt_at",
                 "style_override", "bible_override", "published_at",
                 "style_variant", "visual_density",
-                "handover"}
+                "handover", "opening_config"}
 
 
 def stage_extra(prod, stage: str) -> str:
@@ -1167,6 +1169,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 # monitored competitor/source channels) so the two never mix.
 
 _OWN_CHANNEL_FIELDS = {
+    "opening_styles",
     "flow_account",
     "name", "description", "genre", "youtube_handle", "active",
     "handover_default", "video_options",

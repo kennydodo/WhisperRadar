@@ -723,6 +723,8 @@ def _run_script(cfg, pid: int, provider: str | None = None,
             # attempt whose structure/pacing scores cratered as a direct
             # result - see script_continuation_prompt's docstring.
             text = text + more
+        from . import openings
+        text = openings.capture(cfg, pid, text)
         words = len(re.findall(r"\w+", text))
         overlap = studio.overlap_ratio(text, source_text)
         runs = studio.overlap_runs(text, source_text) if overlap > 0 else []

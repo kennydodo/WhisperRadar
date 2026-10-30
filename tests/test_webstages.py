@@ -57,6 +57,19 @@ class ScriptLoopTests(Base):
         finally:
             conn.close()
 
+    def test_opening_choice_is_shared_with_judge_and_stripped_before_save(self):
+        conn = db.connect(self.cfg.db_path)
+        db.update_own_channel(conn, self.chan, opening_styles=json.dumps(["explain", "compare"]))
+        conn.close()
+        t = Fake(zai=["<!-- opening-style:compare -->\n" + words(100)], deepseek=[verdict(9)])
+        out = self.run_loop(t)
+        self.assertNotIn("opening-style", out)
+        self.assertIn("[compare]", t.calls[1]["prompt"])
+        self.assertNotIn("[explain]", t.calls[1]["prompt"])
+        conn = db.connect(self.cfg.db_path)
+        self.assertEqual(json.loads(db.get_production(conn, self.pid)["opening_config"])["chosen"], "compare")
+        conn.close()
+
     def test_passes_first_round_and_saves(self):
         t = Fake(zai=[words(100)], deepseek=[verdict(9)])
         before = self.stage()

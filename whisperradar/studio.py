@@ -3923,11 +3923,11 @@ SCRIPT_EDITORIAL_DEFAULTS = """DEFAULT SCRIPT RULES (apply alongside channel sty
 - SETUP AND PAYOFF: resolve important setups. Show change through behaviour,
   earned progress and setbacks. When a character harms someone, show appropriate
   repair rather than treating private insight as enough.
-- CLEAR PURPOSE AFTER THE HOOK: immediately after the hook, naturally explain
-  what the viewer will learn or understand, why it matters, and how the story
-  or explanation will help. Keep this brief and suited to the channel's voice;
-  do not force an "In this video" introduction, a numbered preview, or a separate
-  heading. The hook itself may establish this purpose; avoid repeating it.
+- OPENING FIT: follow the selected opening approach when supplied. Otherwise
+  use an opening suited to the topic and channel. Make the relevance clear
+  through the content; no universal hook sequence or separate purpose paragraph
+  is required. A selected hook-and-purpose approach may require a brief purpose
+  statement, but do not repeat a purpose already clear in the hook.
 - PROMISE AND DELIVERY: deliver the title/opening promise and every promised
   step or benefit. Practical instructions must agree with the story's lessons.
 - PURPOSEFUL PACING: remove repeated explanations and multiple endings. Keep
@@ -3943,12 +3943,11 @@ Apply the DEFAULT SCRIPT RULES to this draft before scoring. For each issue,
 quote the exact SCRIPT passage, explain the problem, and give a specific fix.
 For a contradiction, identify BOTH conflicting passages. For mismatched figures,
 show the relevant arithmetic/assumptions and where the writer must reconcile it.
-Check the hook and the transition immediately after it for a clear viewer
-purpose: what they will learn or understand, why it matters, and how the story
-or explanation helps. If the opening earns attention but leaves that purpose
-unclear, quote the opening/transition and request a brief natural clarification
-in must_fix. Accept a purpose already clear in the hook; do not demand a formula,
-a separate promise paragraph, or repeated explanations.
+Assess the opening against the selected opening approach, topic and channel.
+Check interest, relevance and progression. A purpose can be implied through a
+question, scene, comparison or explanation; require an immediate purpose statement
+only when the selected approach calls for it. Do not impose a different channel's
+opening formula or demand a repeated promise paragraph.
 For difficult English, provide a simpler replacement. Do not label a subjective
 preference as a factual error. Separate required corrections from optional polish
 using must_fix and feedback. Material contradictions, misleading unsupported
@@ -4675,7 +4674,8 @@ Rules:
   interpretation adds something the audience could not infer. A callback,
   emotional resolution, and thematic payoff may happen in one scene; do not
   write a separate conclusion for each.
-- Hook the viewer in the first 15 seconds, following the style guide's hook pattern.
+- Earn attention early using the selected opening approach. When no approach is
+  selected, follow the channel's opening style.
 - Aim around {target_words} words as a flexible guide, not a requirement.
   Let the topic's depth and natural pacing determine the final length. Never pad
   a complete script or cut useful content to match a number. Conversational,
@@ -4692,7 +4692,8 @@ Rules:
   closing call to action is the only promotion; never invent a product, course or
   offer.
 
-Output ONLY the script text."""
+Output ONLY the script text, preceded by the opening-style metadata comment
+only when the selected opening instructions request one."""
 
 
 # Notes are built PART BY PART. One call over a whole transcript used to hit a

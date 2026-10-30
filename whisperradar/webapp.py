@@ -3923,8 +3923,8 @@ def create_app(cfg) -> Flask:
             native_download=autorun.is_flow_native(eff),
             default_render_mode=eff["render_mode"],
             default_engine=studio.effective_engine(eff["engine"],
-            review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
                                                    eff["render_mode"]),
+            review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
             own_channel_name=eff["own_channel_name"],
             channel_ws=studio.channel_writing_style_for(cfg, prod),
             flow_project_url_default=(eff["flow_project_url"] or
@@ -4494,6 +4494,11 @@ def create_app(cfg) -> Flask:
             if not text:
                 return _studio_url(pid, error="Nothing to save")
             text = textfiles.normalize_newlines(text)
+            from . import openings
+            try:
+                text = openings.capture(cfg, pid, text)
+            except ValueError as exc:
+                return _studio_url(pid, error=str(exc))
             textfiles.write_text(pdir / "script.md", text + "\n")
             from . import script_readiness
             script_readiness.ensure(pdir)
@@ -6298,6 +6303,8 @@ def create_app(cfg) -> Flask:
                      daemon=True).start()
     from . import look_routes
     look_routes.register(app, cfg, research_job)
+    from . import opening_routes
+    opening_routes.register(app, cfg)
     from . import instructions_routes
     instructions_routes.register(app, cfg)
     from . import exploding_routes

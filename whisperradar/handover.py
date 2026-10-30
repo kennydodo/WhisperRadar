@@ -47,7 +47,12 @@ def instruction(cfg, prod, key: str) -> str:
     """The extra direction for plan / plan_judge / script / script_judge: the
     production's own text (Your instructions on the production page)."""
     from . import db
-    return (db.stage_extra(prod, key) or "").strip()
+    note = (db.stage_extra(prod, key) or "").strip()
+    if key in ("script", "script_judge"):
+        from . import openings
+        policy = openings.instruction(cfg, prod, writer=key == "script")
+        return "\n\n".join(x for x in (note, policy) if x)
+    return note
 
 
 # ------------------------------------------------------------ script stage
