@@ -1,10 +1,25 @@
-# Flow references: found by Flow's caption, never uploaded again (2026-10-16)
+# Flow references: canonical names with caption compatibility
+
+## Update (2026-10-30)
+
+Reference jobs now implement `nameAssets: true`. After saving a generated image,
+FlowBatch re-identifies that exact result, opens its detail editor, saves the
+shotlist key (for example `CH_AYA`), returns to the gallery, and verifies the name
+in the asset library. The recorded mapping then uses that canonical name.
+Ordinary shot jobs do not rename assets. A rename failure logs a warning and
+keeps the caption mapping without generating or uploading a second copy.
+Existing caption-named references are not bulk-renamed.
+
+The controls were inspected in Flow's live detail editor; automated coverage is
+offline. Verify one newly generated reference on the next normal refs run.
+
+## Original caption compatibility behaviour (2026-10-16)
 
 Measured with `npm run assets` on production 39's project: Flow lists a generated
 image under a caption it writes itself ("Two apes sitting hunched",
 "Mammoth standing on plain backgr…" - long ones are truncated with an ellipsis),
-while an uploaded file keeps its file name (`CH_EVERYMAN.png`). The refs stage
-cannot name its tiles, so the images stage never found them by ref name and
+while an uploaded file keeps its file name (`CH_EVERYMAN.png`). The refs stage originally
+could not name its tiles, so the images stage never found them by ref name and
 uploaded the local files into the project: every ref existed twice.
 
 ## How it works now

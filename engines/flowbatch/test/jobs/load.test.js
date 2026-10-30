@@ -329,3 +329,15 @@ test('refAssets gives a generated reference its Flow caption', (t) => {
   assert.equal(bg.assetName, undefined);
   assert.equal(job.recordAssetTitles, true);
 });
+
+test('nameAssets is recognized and opt-in', (t) => {
+  const dir = makeTempDir(); t.after(() => removeDir(dir));
+  const warnings = captureWarnings(t);
+  for (const enabled of [true, false, undefined]) {
+    const job = loadJob(writeJob(dir, 'names.json', {
+      nameAssets: enabled, images: [{ file: 'CH_AYA.png', prompt: 'woman' }],
+    }));
+    assert.equal(job.nameAssets, enabled === true);
+  }
+  assert.equal(warnings.some((warning) => warning.includes('nameAssets')), false);
+});

@@ -1647,6 +1647,45 @@ export class FlowDriver {
     return false;
   }
 
+  async renameAsset(entry, name) {
+    if (!name || !entry?.key) throw new Error('Renaming requires an identified generated asset and a name.');
+    const titles = await this.assetTitles();
+    if (titles.some((title) => titlesMatch(title, name))) {
+      throw new Error(`A project asset already uses "${name}"; refusing an ambiguous reference name.`);
+    }
+    const snapshot = await this.snapshotAssets();
+    const matches = snapshot.entries.filter((candidate) => candidate.key === entry.key);
+    if (!snapshot.selector || matches.length !== 1) {
+      throw new Error(`Cannot uniquely locate the generated asset for "${name}"; no other tile was renamed.`);
+    }
+    const tile = this.page.locator(snapshot.selector).nth(matches[0].index);
+    await tile.scrollIntoViewIfNeeded();
+    await tile.click();
+    let editorOpened = false;
+    try {
+      await this.page.waitForURL(/\/edit\//, { timeout: this.timeouts.readyMs || 15000 });
+      editorOpened = true;
+      const input = await this.find('assetNameInput');
+      await input.locator.click();
+      await input.locator.fill(name);
+      const save = await this.find('assetNameSave');
+      await save.locator.click();
+      await save.locator.waitFor({ state: 'hidden', timeout: 10000 });
+      if (await input.locator.inputValue() !== name) throw new Error(`Flow did not save reference name "${name}".`);
+    } finally {
+      if (editorOpened) {
+        const close = await this.find('assetEditorClose');
+        await close.locator.click();
+        await this.page.waitForURL((url) => !url.pathname.includes('/edit/'), { timeout: 15000 });
+      }
+    }
+    const savedTitles = await this.assetTitles();
+    if (savedTitles.filter((title) => title === name).length !== 1) {
+      throw new Error(`Could not verify the saved reference name "${name}" in Flow's asset library.`);
+    }
+    return name;
+  }
+
   async downloadAsset(tileIndex, destPath, { selector }) {
     const start = this.downloads.length;
     const tile = this.page.locator(selector).nth(tileIndex);

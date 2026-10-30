@@ -36,6 +36,18 @@
     "div[contenteditable='true']"
   ],
 
+  "assetNameInput": [
+    "header input[aria-label='Editable text']",
+    "header input.editable-text-input",
+    "header flow-editable-text input"
+  ],
+  "assetNameSave": [
+    "header button[aria-label='Done']"
+  ],
+  "assetEditorClose": [
+    "button[aria-label='Done editing']",
+    "button[aria-label='Back button to go to previous page']"
+  ],
   "projectTitle": [
     "input.editable-text-input",
     "flow-editable-text input",

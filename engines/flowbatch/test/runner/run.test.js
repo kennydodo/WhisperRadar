@@ -51,11 +51,11 @@ function makeSettings({ timeouts = {}, generation = {} } = {}) {
   };
 }
 
-async function runFixture(t, { items, driver, settings = makeSettings(), options = {}, presetDone = [] }) {
+async function runFixture(t, { items, driver, settings = makeSettings(), options = {}, presetDone = [], jobOptions = {} }) {
   const dir = makeTempDir();
   t.after(() => removeDir(dir));
   const outputsDir = path.join(dir, 'out');
-  const job = { name: 'test-job', items, outputsDir, projectUrl: null, refMode: null };
+  const job = { name: 'test-job', items, outputsDir, projectUrl: null, refMode: null, jobPath: path.join(dir, 'job.json'), ...jobOptions };
   const state = RunState.open(path.join(dir, 'state.json'), {
     jobName: job.name,
     jobPath: path.join(dir, 'job.json'),
@@ -423,3 +423,30 @@ test('a known project opens by URL instead of navigating', async (t) => {
   assert.equal(callsNamed(driver, 'goto').length, 0);
   assert.equal(callsNamed(driver, 'ensureProject').length, 0);
 });
+
+for (const renameFails of [false, true]) {
+  test(`reference naming: failure=${renameFails}`, async (t) => {
+    let reads = 0;
+    const driver = makeDriver({
+      waitForNewAssets: async () => ({ added: [{ key: 'new', index: 7 }], selector: 'grid' }),
+      fetchAssetBytes: async () => PNG,
+      assetTitles: async () => reads++ ? ['Woman standing'] : [],
+      renameAsset: async (entry, name) => {
+        assert.equal(entry.key, 'new'); assert.equal(name, 'CH_AYA');
+        if (renameFails) throw new Error('rename unavailable');
+        return name;
+      },
+    });
+    const { result, job, state } = await runFixture(t, {
+      items: [item('CH_AYA')], driver,
+      jobOptions: { nameAssets: true, recordAssetTitles: true },
+      settings: makeSettings({ generation: { retries: 2 } }),
+    });
+    assert.equal(result.ok, 1);
+    assert.equal(callsNamed(driver, 'generate').length, 1);
+    assert.equal(callsNamed(driver, 'renameAsset').length, 1);
+    const map = JSON.parse(fs.readFileSync(path.join(path.dirname(job.jobPath), 'refs_titles.json')));
+    assert.equal(map.CH_AYA, renameFails ? 'Woman standing' : 'CH_AYA');
+    assert.equal(state.isDone('CH_AYA'), true);
+  });
+}

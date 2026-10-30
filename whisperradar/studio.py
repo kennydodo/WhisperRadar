@@ -1344,13 +1344,9 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
         "name": f"wr-{pid}-refs",
         "outputsDir": str(pdir / "refs"),
         "refMode": "reuse",
-        # Intended: FlowBatch renames each generated tile after its ref so the
-        # later prepare finds it by name. NOTE: FlowBatch does not implement
-        # `nameAssets` yet (load.js ignores it), so prepare still attaches the
-        # local files - but now inside the SAME project the refs were made in.
+        # Rename the generated Flow asset to its shotlist key; keep the recorded
+        # title mapping for older projects and a rename that Flow cannot confirm.
         "nameAssets": True,
-        # FlowBatch records the caption Flow gives each generated image (it cannot
-        # be named): refs_titles.json beside this job, read back after the run
         "recordAssetTitles": True,
         "defaults": {"mode": "image", "agent": False, "aspectRatio": "16:9",
                      "outputs": 1, "refMode": "reuse"},

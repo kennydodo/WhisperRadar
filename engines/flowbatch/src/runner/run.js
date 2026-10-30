@@ -336,13 +336,24 @@ export async function runJob({ job, driver, state, settings, options }) {
         }
 
         let assetTitle = null;
-        if (job.recordAssetTitles && titlesBefore) {
+        if (job.nameAssets && outcome.added.length === 1) {
+          try {
+            assetTitle = await driver.renameAsset(outcome.added[0], item.outputName);
+            log.info(`Named Flow reference ${item.outputName}.`);
+          } catch (error) {
+            // The image is already saved. A naming failure must never regenerate it.
+            log.warn(`Reference ${item.outputName} was saved but could not be renamed: ${error.message}`);
+          }
+        } else if (job.nameAssets) {
+          log.warn(`Cannot assign one reference name to ${outcome.added.length} results; use outputs: 1.`);
+        }
+        if (job.recordAssetTitles && titlesBefore && !assetTitle) {
           const titlesAfter = await driver.assetTitles().catch(() => null);
           assetTitle = titlesAfter ? uniqueNewTitle(titlesBefore, titlesAfter) : null;
           if (assetTitle) log.info(`Flow named ${item.outputName}: "${assetTitle}"`);
           else log.warn(`Could not tell which library title belongs to ${item.outputName}; the images stage will fall back to the older name check for it.`);
-          recordAssetTitle(job, item.outputName, assetTitle);
         }
+        if (job.recordAssetTitles) recordAssetTitle(job, item.outputName, assetTitle);
 
         state.update(item.id, { status: STATUS.done, files: saved, error: null, assetTitle });
         state.save();

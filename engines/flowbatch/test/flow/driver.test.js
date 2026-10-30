@@ -438,3 +438,49 @@ test('ensureProject with forceNew refuses to reuse a project it cannot leave', a
     /Refusing to reuse it/,
   );
 });
+
+function renameFixture({ matches = [{ key: 'new', index: 4 }], titles = [], saved = ['CH_AYA'], saveError = null } = {}) {
+  const calls = [];
+  const input = { click: async () => {}, fill: async (name) => calls.push(['fill', name]), inputValue: async () => 'CH_AYA' };
+  const controls = {
+    assetNameInput: input,
+    assetNameSave: { click: async () => { if (saveError) throw saveError; }, waitFor: async () => {} },
+    assetEditorClose: { click: async () => calls.push(['close']) },
+  };
+  let reads = 0;
+  const driver = {
+    assetTitles: async () => reads++ ? saved : titles,
+    snapshotAssets: async () => ({ selector: 'tiles', entries: matches }),
+    timeouts: { readyMs: 1 },
+    page: {
+      locator: (selector) => ({ nth: (index) => ({
+        scrollIntoViewIfNeeded: async () => {}, click: async () => calls.push(['tile', selector, index]),
+      }) }),
+      waitForURL: async () => {},
+    },
+    find: async (key) => ({ locator: controls[key] }),
+  };
+  return { driver, calls };
+}
+
+test('renameAsset locates the stable result, saves and verifies its library name', async () => {
+  const { driver, calls } = renameFixture();
+  assert.equal(await FlowDriver.prototype.renameAsset.call(driver, { key: 'new', index: 0 }, 'CH_AYA'), 'CH_AYA');
+  assert.deepEqual(calls, [['tile', 'tiles', 4], ['fill', 'CH_AYA'], ['close']]);
+});
+
+test('renameAsset rejects missing, ambiguous or already-used names before clicking', async () => {
+  for (const options of [{ matches: [] }, { matches: [{ key: 'new', index: 0 }, { key: 'new', index: 1 }] }, { titles: ['CH_AYA'] }]) {
+    const { driver, calls } = renameFixture(options);
+    await assert.rejects(FlowDriver.prototype.renameAsset.call(driver, { key: 'new', index: 0 }, 'CH_AYA'));
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('renameAsset closes the editor on failure and rejects unverified names', async () => {
+  const broken = renameFixture({ saveError: new Error('save failed') });
+  await assert.rejects(FlowDriver.prototype.renameAsset.call(broken.driver, { key: 'new' }, 'CH_AYA'), /save failed/);
+  assert.deepEqual(broken.calls.at(-1), ['close']);
+  const missing = renameFixture({ saved: ['Woman standing'] });
+  await assert.rejects(FlowDriver.prototype.renameAsset.call(missing.driver, { key: 'new' }, 'CH_AYA'), /Could not verify/);
+});
