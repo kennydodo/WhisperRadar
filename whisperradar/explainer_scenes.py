@@ -319,7 +319,8 @@ def _split_faults(found: list) -> tuple:
 
 
 _NUMS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
-_COUNT = re.compile(r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+(?:[a-z-]+\s+){0,2}?(stages?|levels?|layers?|steps?|passes|rounds?)\b", re.I)
+_ADJ = r"(?:(?:ordered|separate|sequential|different|distinct|parallel|internal|additional|more|extra|such|numbered|coarse|finer|learned|processing|successive|dependent)\s+){0,2}"
+_COUNT = re.compile(r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+" + _ADJ + r"(stages?|levels?|layers?|steps?|passes|rounds?)\b", re.I)
 _NOUN_FOR = {"pipeline": ("stage", "step"), "levels": ("level", "layer")}
 _LIMIT = {"pipeline": (2, 8), "levels": (2, 4)}
 
@@ -335,20 +336,37 @@ def count_faults(resolved: dict, cues: list) -> list:
         drawn = len(s.get("stages") if lay == "pipeline" else s.get("levels") or [])
         a, b = s["cue_range"]
         said = " ".join(texts.get(i, "") for i in range(a, b + 1))
+        stated = []
         for m in _COUNT.finditer(said):
-            n = int(m.group(1)) if m.group(1).isdigit() else _NUMS[m.group(1).lower()]
-            if not m.group(2).lower().rstrip("s") in _NOUN_FOR[lay] or n == drawn:
-                continue
-            lo, hi = _LIMIT[lay]
-            if lo <= n <= hi:
-                faults.append(f"scene {s.get('id')}: the narrator says '{m.group(0)}' but the {lay} draws {drawn}; "
-                              f"draw exactly {n}")
-            else:
-                faults.append(f"scene {s.get('id')}: the narrator says '{m.group(0)}', which a {lay} scene cannot draw "
-                              f"({lo}-{hi} supported); use a steps or row scene with exactly {n} items instead of "
-                              "changing the count")
-            break
+            if m.group(2).lower().rstrip("s").rstrip("e") .startswith(tuple(n[:4] for n in _NOUN_FOR[lay])):
+                stated.append((int(m.group(1)) if m.group(1).isdigit() else _NUMS[m.group(1).lower()], m.group(0)))
+        if not stated or drawn in [n for n, _ in stated]:
+            continue                                     # nothing stated, or the drawn count is one the narrator says
+        n, phrase = max(stated)
+        lo, hi = _LIMIT[lay]
+        if lo <= n <= hi:
+            faults.append(f"scene {s.get('id')}: the narrator says '{phrase}' but the {lay} draws {drawn}; draw exactly {n}")
+        else:
+            faults.append(f"scene {s.get('id')}: the narrator says '{phrase}', which a {lay} scene cannot draw "
+                          f"({lo}-{hi} supported); use a steps or row scene with exactly {n} items instead of "
+                          "changing the count")
     return faults
+
+
+_FAULT_SCENE = re.compile(r"^[Ss]cene (\S+?):")
+
+
+def drop_faulty_scenes(plan: dict, faults: list, most: int = 3) -> tuple:
+    """Last resort after the final round: remove the few scenes the checker still rejects (never the
+    first). Their words stay covered by the scene before, and the judge sees the gap. -> (plan, ids)."""
+    bad = {m.group(1) for m in (_FAULT_SCENE.match(f) for f in faults) if m}
+    scenes = plan.get("scenes") or []
+    drop = [str(sc.get("id")) for i, sc in enumerate(scenes) if i > 0 and str(sc.get("id")) in bad]
+    if not drop or len(drop) > most:
+        return plan, []
+    out = dict(plan)
+    out["scenes"] = [sc for sc in scenes if str(sc.get("id")) not in drop]
+    return out, drop
 
 
 def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms: list = None) -> list[str]:
@@ -472,6 +490,14 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         faults, advisory = _split_faults(check(plan, cues, total, look, terms))
         for a in advisory:
             log("note (does not block the judge): " + a)
+        if faults and rnd == rounds:
+            trimmed_plan, dropped = drop_faulty_scenes(plan, faults)
+            if dropped:
+                again, _adv = _split_faults(check(trimmed_plan, cues, total, look, terms))
+                if not again:
+                    log(f"round {rnd}: could not fix scene(s) {', '.join(dropped)} in {rounds} rounds - removed "
+                        "(the scene before stays on screen); the judge will see the gap")
+                    plan, faults = trimmed_plan, []
         if faults:
             log(f"round {rnd}: {len(faults)} fault(s) from the checker, e.g. {faults[0][:140]}")
             rank = (0, -len(faults))

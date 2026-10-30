@@ -232,3 +232,31 @@ class JudgeSeesMotionScenesTests(unittest.TestCase):
         for needle in ("Left to right", "one word after another", "a rough outline first", "a broad outline",
                        "Stage 2 (4 workers, locked", "needs the result", "a.py", "the batch size"):
             self.assertIn(needle, text)
+
+
+class LastResortTests(unittest.TestCase):
+    def test_a_scene_the_checker_keeps_rejecting_is_dropped_not_the_whole_run(self):
+        plan = {"scenes": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
+        out, dropped = es.drop_faulty_scenes(plan, ["Scene b: the footer starts too late"])
+        self.assertEqual(dropped, ["b"])
+        self.assertEqual([s["id"] for s in out["scenes"]], ["a", "c"])
+        self.assertEqual(es.drop_faulty_scenes(plan, ["Scene a: x"])[1], [])               # never the first scene
+        self.assertEqual(es.drop_faulty_scenes(plan, ["the reply has no scenes"])[1], [])   # not about one scene
+
+    def test_a_footer_said_too_late_is_moved_earlier_not_rejected(self):
+        from whisperradar.video.explainer import recipes
+        srt = "".join(f"{i}\n00:00:{(i - 1) * 5:02d},000 --> 00:00:{i * 5 - 1:02d},500\nWords number {i} are said here.\n\n"
+                      for i in range(1, 5))
+        cs = es._cue_objs(studio.parse_srt_cues(srt))
+        plan = {"scenes": [{"id": "g", "cue_range": [1, 4], "layout": "generation", "motion": {"cue": 1},
+                            "footer": {"text": "Late words", "cue": 4},
+                            "rows": [{"label": "A", "mode": "sequential", "words": list("abcd")}]}]}
+        p = recipes.build(plan, cs)["scenes"][0]["remotion"]["params"]
+        self.assertLess(p["footer"]["start_ms"], 19000)
+
+    def test_two_needs_stage_is_not_a_stage_count(self):
+        from whisperradar.video.explainer import recipes
+        cs = studio.parse_srt_cues("1\n00:00:00,000 --> 00:00:08,000\nIt has eight stages. If stage two needs stage one it waits.\n\n")
+        res = recipes.resolve_anchors({"scenes": [{"id": "p", "cue_range": [1, 1], "layout": "pipeline",
+                                                   "stages": [{"label": str(i), "workers": 1} for i in range(8)]}]}, es._cue_objs(cs))
+        self.assertEqual(es.count_faults(res, cs), [])
