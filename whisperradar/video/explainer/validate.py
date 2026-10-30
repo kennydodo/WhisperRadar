@@ -249,6 +249,11 @@ def _parse_object(raw, scene_id, errors, project_folder, theme=None):
             errors.append(f"{where}: dashed is for line shapes and filled "
                           "is for card shapes.")
             return None
+        fit_to = raw.get("fit_to", "")
+        if fit_to and (not isinstance(fit_to, str) or kind not in ("underline", "highlight")):
+            errors.append(f"{where}: fit_to (the id of the text it should match) is for underline and highlight shapes.")
+            return None
+        obj.fit_to = fit_to or ""
         curve = raw.get("curve", 0.12)
         if not _is_num(curve) or not (-1.0 <= float(curve) <= 1.0):
             errors.append(f"{where}: curve must be a number from -1 to 1.")

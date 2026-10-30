@@ -235,6 +235,7 @@ class ObjectSpec:
     filled: bool = False                  # shape card: dark inside
     opacity: float = 1.0                  # shape: ink opacity 0..1
     font: str = ""                        # handwriting: "" = scene default, "strokes", or a .ttf
+    fit_to: str = ""                      # underline / highlight: id of the handwriting object whose written width it matches
 
     def to_dict(self) -> dict:
         d = {"id": self.id, "type": self.type, "box": list(self.box)}
@@ -250,6 +251,8 @@ class ObjectSpec:
                 d["curve"] = self.curve
             if self.side:
                 d["side"] = self.side
+            if self.fit_to:
+                d["fit_to"] = self.fit_to
             if self.filled:
                 d["filled"] = True
             if self.opacity != 1.0:

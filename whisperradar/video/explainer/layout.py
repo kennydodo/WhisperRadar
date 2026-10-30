@@ -181,7 +181,38 @@ def layout_scene(scene, theme: sc.ThemeSpec, canvas: tuple,
         out.objects.append(lo)
     if errors:
         raise ExplainerError(errors)
+    _fit_shapes(out, theme, project_folder)
     return out
+
+
+def _fit_shapes(out, theme, project_folder: str) -> None:
+    """An underline or highlight with fit_to is as wide as the text it belongs to is actually
+    written (the font decides that, not the character count)."""
+    from . import pipe
+    by_id = {lo.spec.id: lo for lo in out.objects}
+    W, H = out.canvas
+    for lo in out.objects:
+        spec = lo.spec
+        if spec.type != sc.SHAPE or not spec.fit_to:
+            continue
+        tgt = by_id.get(spec.fit_to)
+        if tgt is None or tgt.spec.type != sc.HANDWRITING or tgt.spec.font == "strokes":
+            continue
+        font = find_font(tgt.spec.font or theme.hand_font, project_folder)
+        if not font:
+            continue
+        weight = theme.stroke_width / 5.0 * pipe.WEIGHT_FACTOR.get(getattr(theme, "text_weight", ""), 0.0)
+        tw = pipe.text_width_px(font, tgt.spec.text, tgt.box_px, weight,
+                                pipe.TRACKING_EM.get(getattr(theme, "letter_spacing", ""), 0.04))
+        tx, _ty, _tw, _th = tgt.box_px
+        x, y, w, h = lo.box_px
+        pad = int(round(0.012 * W))
+        if spec.kind == "highlight":
+            nx, nw = tx - pad, tw + 2 * pad
+        else:
+            nx, nw = tx, tw + pad
+        nw = max(8, min(nw, W - nx - int(0.03 * W)))
+        lo.box_px = (nx, y, nw, h)
 
 
 def layout_doc(doc, compiled_scenes, project_folder: str = "") -> list:

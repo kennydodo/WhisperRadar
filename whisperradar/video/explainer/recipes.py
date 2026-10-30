@@ -120,7 +120,7 @@ def _title(s, sid, els):
                      group="title"))
     w = min(0.86, len(t) * 0.027 + 0.02)
     els.append(_shape(f"{sid}_tline", "underline", cue, "orange", "title",
-                      box=[0.07, 0.06, w, 0.125], dur=450))
+                      box=[0.07, 0.06, w, 0.125], dur=450, fit_to=f"{sid}_title"))
     return 0.27
 
 
@@ -143,7 +143,7 @@ def _row(s, sid, els, top, numbered=False, timeline=False):
     two = any(_lines(i.get("label", ""))[1] == 2 for i in items)
     lh = 0.15 if two else 0.095
     note_h = 0.07 if any(i.get("note") for i in items) else 0
-    block = ih + 0.03 + lh + (0.01 + note_h if note_h else 0)
+    block = ih + (0.115 if timeline else 0.03) + lh + (0.01 + note_h if note_h else 0)   # timeline: line, nodes, then label
     avail_top, avail_bot = top, s["_bot"]
     y_icon = avail_top + max(0.0, (avail_bot - avail_top - block) / 2)
     if timeline:
@@ -230,14 +230,15 @@ def _stack(s, sid, els, top):
 
 def _hero(s, sid, els, top):
     it = s["items"][0]
-    ih = 0.34
-    iw = ih * WN
     cue = _item_cue(s, s["items"], 0)
     col = _color(it, 0)
     y = top + (0.06 if not s.get("title") else 0.0)
+    label, nl = _lines(it.get("label", ""), 26)
+    below = (0.2 if nl == 2 else 0.12) + (0.03 + (0.07 if it.get("note") else 0.0))
+    ih = max(0.14, min(0.34, s["_bot"] - y - below - 0.03))      # the icon gives way so the words clear the footer
+    iw = ih * WN
     if it.get("icon"):
         els.append(_icon(f"{sid}_ic0", _asset(it["icon"]), [0.5 - iw / 2, y, iw, ih], col, cue, "i0", sid))
-    label, nl = _lines(it.get("label", ""), 26)
     els.append(_text(f"{sid}_lb0", label, [0.08, y + ih + 0.03, 0.84, 0.2 if nl == 2 else 0.12],
                      "text", cue, "i0"))
     if it.get("note"):
@@ -296,7 +297,8 @@ def _footer(s, sid, els):
     cue = int(f.get("cue") or s["cue_range"][1])
     if f.get("highlight", True):
         els.append(_shape(f"{sid}_fhl", "highlight", cue, "yellow", "footer", dur=450,
-                          box=[0.08, 0.76, min(0.84, len(f["text"]) * 0.028 + 0.06), 0.075]))
+                          box=[0.08, 0.76, min(0.84, len(f["text"]) * 0.028 + 0.06), 0.075],
+                          fit_to=f"{sid}_ft"))
     els.append(_text(f"{sid}_ft", f["text"], [0.1, 0.76, 0.8, 0.075], "text", cue, "footer"))
 
 
@@ -619,8 +621,8 @@ def _sid(raw, idx):
 def _simplify_step(scene, step):
     """Take one decoration off an over-full scene. Returns what was removed, or "" when nothing is left."""
     items = scene.get("items") or []
-    if step == 0 and scene.get("footer"):
-        scene.pop("footer")
+    if step == 0 and scene.get("footer") and not (isinstance(scene["footer"], dict) and scene["footer"].get("key")):
+        scene.pop("footer")                          # a footer that shows a spoken key term stays
         return "its footer"
     if step <= 1 and any(isinstance(i, dict) and i.get("icon") for i in items):
         for i in items:

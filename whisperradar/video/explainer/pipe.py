@@ -329,14 +329,15 @@ def _tracked_width(font, ln, track):
     return sum(font.getlength(ch) for ch in ln) + track * max(0, len(ln) - 1)
 
 
-def _write_layer(font_path, text, box_px, canvas_px, weight, tracking=0.04):
-    """Greyscale mask of the whole text plus each line's x-extent: built once
-    per (font, text, box) and reused for every frame of the write-on."""
+def text_width_px(font_path, text, box_px, weight, tracking=0.04) -> int:
+    """Width in pixels of the widest line as _write_layer will write it in this box."""
+    return int(_fit_text(font_path, text, box_px, weight, tracking)[5])
+
+
+def _fit_text(font_path, text, box_px, weight, tracking):
+    """(font, size, stroke, track, lines, widest) - the size the text is written at: as tall as the box
+    allows, shrunk until the widest line fits the box width."""
     from PIL import ImageFont
-    key = (font_path, text, box_px, canvas_px, weight, tracking)
-    hit = _WRITE_CACHE.get(key)
-    if hit is not None:
-        return hit
     x, y, w, h = box_px
     lines = text.split("\n")
     probe = ImageFont.truetype(font_path, 100).getmetrics()
@@ -350,6 +351,20 @@ def _write_layer(font_path, text, box_px, canvas_px, weight, tracking=0.04):
         if max(widths) <= w or size <= 8:
             break
         size = int(size * 0.92)
+    return font, size, sw, track, lines, max(widths)
+
+
+def _write_layer(font_path, text, box_px, canvas_px, weight, tracking=0.04):
+    """Greyscale mask of the whole text plus each line's x-extent: built once
+    per (font, text, box) and reused for every frame of the write-on."""
+    from PIL import ImageFont
+    key = (font_path, text, box_px, canvas_px, weight, tracking)
+    hit = _WRITE_CACHE.get(key)
+    if hit is not None:
+        return hit
+    x, y, w, h = box_px
+    font, size, sw, track, lines, _widest = _fit_text(font_path, text, box_px, weight, tracking)
+    widths = [_tracked_width(font, ln, track) + 2 * sw for ln in lines]
     ascent, descent = font.getmetrics()
     lh = max(size * 1.2, ascent + descent + 2 * sw)   # tails of g/y/p must stay inside the line
     mask = Image.new("L", canvas_px, 0)
