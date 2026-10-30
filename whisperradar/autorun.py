@@ -1047,7 +1047,8 @@ def _motion_breakdown_line(shots: list) -> str:
     return "motion: " + ", ".join(parts) if parts else ""
 
 
-def _run_scenes(cfg, pid: int, provider, log, cancel, transport, writer=None, judge=None) -> None:
+def _run_scenes(cfg, pid: int, provider, log, cancel, transport, writer=None, judge=None,
+                chat_options=None) -> None:
     """The shots stage of an explainer production: write plan.json (writer +
     checker + judge). The scenes are built from it when the video is rendered."""
     from . import explainer_scenes
@@ -1056,6 +1057,7 @@ def _run_scenes(cfg, pid: int, provider, log, cancel, transport, writer=None, ju
     if transport == "webchat":
         w, j, o = _webchat_pair(cfg)
         w, j = writer or w, judge or j                      # this run's choice, else the Settings pair
+        o = chat_options or o                               # model / thinking chosen on the page, else the last used
         log(f"scene plan: {w} writes, {j} judges")
         explainer_scenes.webchat_job(cfg, pid, w, j, log, stop, o)
     else:
@@ -1070,9 +1072,10 @@ def _run_scenes(cfg, pid: int, provider, log, cancel, transport, writer=None, ju
 
 def _run_shots(cfg, pid: int, provider: str | None = None,
                log=None, cancel=None, transport: str | None = None,
-               writer: str | None = None, judge: str | None = None) -> None:
+               writer: str | None = None, judge: str | None = None,
+               chat_options: dict | None = None) -> None:
     if explainer_production(cfg, pid):
-        _run_scenes(cfg, pid, provider, log, cancel, transport, writer, judge)
+        _run_scenes(cfg, pid, provider, log, cancel, transport, writer, judge, chat_options)
         return
     if transport == "webchat":
         from . import webstages
