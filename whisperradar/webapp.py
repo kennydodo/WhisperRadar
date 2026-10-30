@@ -5049,6 +5049,21 @@ def create_app(cfg) -> Flask:
         sjob.start(worker, "explainer scene plan")
         return _studio_url(pid, msg="Scene plan started - the job log shows each round")
 
+    @app.post("/studio/<int:pid>/explainer/stop")
+    def studio_explainer_stop(pid):
+        """Stop the running explainer job: the scene plan (after the current chat reply or
+        round, plan.json stays as it was) or a video render (the scene being drawn is
+        abandoned, finished scene clips are kept for the next render)."""
+        kind = str(sjob.kind or "")
+        if not sjob.running or not kind.startswith("explainer"):
+            return _studio_url(pid, error="No explainer job is running")
+        sjob.cancel = True
+        if kind.startswith("explainer scene plan"):
+            return _studio_url(pid, msg="Stopping the scene plan after the current reply - "
+                                        "the saved plan.json is not changed")
+        return _studio_url(pid, msg="Stopping the render - scenes already drawn are kept "
+                                    "and reused next time")
+
     @app.post("/studio/<int:pid>/shotlist/generate")
     def studio_shotlist_generate(pid):
         if sjob.running:

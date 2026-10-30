@@ -104,6 +104,37 @@ class ExplainerPageTests(unittest.TestCase):
         self.assertIn("Render explainer video", html)
         self.assertNotIn("Build preview + export to", html)
 
+    def test_stop_button_shows_only_while_an_explainer_job_runs(self):
+        from whisperradar import webapp
+        self.assertNotIn("Stop scene plan", self.client.get(f"/studio/{self.pid}?stage=shots").get_data(as_text=True))
+        r = self.client.post(f"/studio/{self.pid}/explainer/stop")
+        self.assertIn("No explainer job", __import__("urllib.parse").parse.unquote(r.headers["Location"]))
+
+    def test_stop_button_appears_and_cancels_a_running_scene_plan(self):
+        import threading
+        import urllib.parse
+        from whisperradar import autorun
+        (self.pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
+        (self.pdir / "plan.json").write_text("{}", encoding="utf-8")        # makes it an explainer production
+        started, release, seen = threading.Event(), threading.Event(), {}
+
+        def fake(cfg, pid, stage, opts):
+            seen["cancel"] = opts["cancel"]
+            started.set()
+            release.wait(10)
+            return {}
+        with mock.patch.object(autorun, "run_stage_and_advance", side_effect=fake), \
+                mock.patch.object(autorun, "raise_result", lambda r: None):
+            self.client.post(f"/studio/{self.pid}/scenes/generate", data={"transport": "webchat"})
+            self.assertTrue(started.wait(5))
+            html = self.client.get(f"/studio/{self.pid}?stage=shots").get_data(as_text=True)
+            self.assertIn("Stop scene plan", html)
+            self.assertFalse(seen["cancel"]())
+            r = self.client.post(f"/studio/{self.pid}/explainer/stop")
+            self.assertIn("Stopping the scene plan", urllib.parse.unquote(r.headers["Location"]))
+            self.assertTrue(seen["cancel"]())
+            release.set()
+
     def test_normal_production_unchanged(self):
         html = self.client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
         self.assertNotIn("Render explainer video", html)
