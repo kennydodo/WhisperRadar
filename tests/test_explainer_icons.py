@@ -178,3 +178,11 @@ class RenderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SmoothIconTests(unittest.TestCase):
+    def test_lucide_curves_are_flattened_finely(self):
+        from whisperradar.video.explainer import strokes_library as sl
+        self.assertLessEqual(sl.LUCIDE_TOL, 0.1)
+        asset = sl.load_lucide("circle")
+        self.assertGreater(sum(len(s.points) for s in asset.strokes), 40)

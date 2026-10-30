@@ -222,6 +222,7 @@ def load_file(path: str) -> StrokeAsset:
 LUCIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icons",
                            "lucide.json")
 LUCIDE_WIDTH = 5.0           # pen width in the 100x100 asset box (like the built-ins)
+LUCIDE_TOL = 0.05           # curve flattening error in the 100x100 box; icons get enlarged, so keep it fine (smooth, not faceted)
 LUCIDE_PAUSE = 0.12          # relative pen lift between an icon's strokes
 _TOKEN = re.compile(r"[MLCQ]|-?\d+(?:\.\d+)?")
 
@@ -302,7 +303,7 @@ def load_lucide(name: str) -> StrokeAsset:
         strokes.append(stroke_from_path_commands(
             cmds, width=LUCIDE_WIDTH, weight=1.0,
             pause_after=LUCIDE_PAUSE if i < last else 0.0,   # no wasted pause at the end
-            fill=False, tol=0.5))
+            fill=False, tol=LUCIDE_TOL))
     return StrokeAsset(strokes=strokes, viewBox=(100.0, 100.0),
                        name=f"lucide:{key}")
 
