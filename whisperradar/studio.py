@@ -396,6 +396,20 @@ def find_bible(pid_dir: Path) -> Path | None:
     return p if p.exists() else None
 
 
+def production_uses_images(conn, prod) -> bool:
+    """False when the production's channel type has no image pipeline (explainer)."""
+    from . import channel_types
+    from .video import settings_spec
+    try:
+        oc = prod["own_channel_id"]
+    except (IndexError, KeyError, TypeError):
+        oc = None
+    try:
+        return channel_types.uses_images(settings_spec.effective(conn, oc))
+    except Exception:  # noqa: BLE001 - a settings problem must not stop seeding
+        return True
+
+
 def seed_production(cfg, conn, prod, log=None) -> dict:
     """Seed a production folder with the channel's art direction.
 
@@ -424,6 +438,12 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
         (pdir / "writing_style.md").write_text(ws + "\n", encoding="utf-8")
         seeded_ws = True
         log("loaded writing_style.md from the channel's saved writing style")
+
+    if not production_uses_images(conn, prod):
+        # an explainer draws its own scenes: the channel's visual style, character bible
+        # and reference images are not copied in (they stay saved on the channel)
+        return {"bible": False, "style": False, "refs": 0, "source": "",
+                "writing_style": seeded_ws, "skipped": "explainer channel"}
 
     bible_dir: Path | None = None
     refs_dir: Path | None = None

@@ -57,6 +57,7 @@ def explainer_production(cfg, pid: int) -> bool:
     if is_explainer(pdir):
         return True
     try:
+        from . import channel_types
         from .video import settings_spec
         conn = _connect(cfg)
         try:
@@ -65,12 +66,12 @@ def explainer_production(cfg, pid: int) -> bool:
                 oc = row["own_channel_id"] if row is not None else None
             except (IndexError, KeyError):
                 oc = None
-            mode = settings_spec.effective(conn, oc).get("visual_mode")
+            plans = channel_types.plans_scenes(settings_spec.effective(conn, oc))
         finally:
             conn.close()
     except Exception:  # noqa: BLE001 - never block a page on a settings error
         return False
-    return mode in ("motion_graphics", "whiteboard")
+    return plans
 
 
 def _connect(cfg):

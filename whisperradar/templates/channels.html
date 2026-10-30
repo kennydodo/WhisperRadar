@@ -327,7 +327,7 @@
                        placeholder="inherit" style="width:110px"
                        title="1.0 = as the voice engine made it. Applied with ffmpeg right after the voice is generated (the pitch stays). Natural range: about 0.9-1.15.">
               </label>
-              <label>image engine
+              <label data-needs="images">image engine
                 <select name="default_engine" class="engine-select">
                   <option value="">inherit</option>
                   {% for opt in ['renderly', 'flowbatch'] %}
@@ -336,7 +336,7 @@
                 </select>
               </label>
               {% if flow_accounts_enabled %}
-              <label>Flow account
+              <label data-needs="images">Flow account
                 <select name="flow_account">
                   <option value="">inherit (Settings)</option>
                   {% for account in ['1', '2'] %}
@@ -353,7 +353,7 @@
                   {% endfor %}
                 </select>
               </label>
-              <label>frame density
+              <label data-needs="images">frame density
                 <select name="visual_density" title="How crowded the images may be. The shotlist planner is told the limit and the review rejects prompts that go past it.">
                   <option value="">Rich (no limit)</option>
                   {% for k, label in densities if k != 'rich' %}
@@ -372,24 +372,24 @@
                   {% endif %}
                 </select>
               </label>
-              <label>missing references
+              <label data-needs="images">missing references
                 <select name="generate_references">
                   <option value="">inherit</option>
                   <option value="1" {{ 'selected' if ch['generate_references'] == 1 else '' }}>on the fly</option>
                   <option value="0" {{ 'selected' if ch['generate_references'] == 0 else '' }}>skip the refs stage</option>
                 </select>
               </label>
-              <label title="Animate the first part of each video: Flow image-to-video clips for the opening shots. Off = this channel is untouched (no Motion clips step).">animated opening
+              <label data-needs="images" title="Animate the first part of each video: Flow image-to-video clips for the opening shots. Off = this channel is untouched (no Motion clips step).">animated opening
                 <select name="animate_enabled">
                   <option value="0" {{ 'selected' if not ch['animate_enabled'] else '' }}>off</option>
                   <option value="1" {{ 'selected' if ch['animate_enabled'] else '' }}>on</option>
                 </select>
               </label>
-              <label title="How much of the video to animate, in seconds ({{ animate_min }}-{{ animate_max }}). The window ends on a shot boundary at or just after this length.">animate first (s)
+              <label data-needs="images" title="How much of the video to animate, in seconds ({{ animate_min }}-{{ animate_max }}). The window ends on a shot boundary at or just after this length.">animate first (s)
                 <input type="number" name="animate_seconds" min="{{ animate_min }}" max="{{ animate_max }}" step="5"
                        value="{{ ch['animate_seconds'] if ch['animate_seconds'] else animate_default }}" style="width:80px">
               </label>
-              <label title="Flow video model (720p, 8 s clips)">animation model
+              <label data-needs="images" title="Flow video model (720p, 8 s clips)">animation model
                 <select name="animate_model">
                   {% for m in animate_models %}
                   <option value="{{ m }}" {{ 'selected' if (ch['animate_model'] or animate_models[0]) == m else '' }}>{{ m }}</option>
@@ -418,7 +418,7 @@
               </label>
             </div>
             </details>
-            <details class="grp" id="edit-{{ ch['id'] }}-creative">
+            <details class="grp" data-needs="images" id="edit-{{ ch['id'] }}-creative">
               <summary>Visual style, bible &amp; references <span class="muted">how images look, characters, seed folders</span></summary>
             <div class="inline" style="margin-top:8px">
               <label style="flex:1 1 45%">visual style - how the images look (seeds style.md; not the script's writing style)
@@ -452,7 +452,7 @@
               </label>
             </div>
             </details>
-            <details class="grp" id="edit-{{ ch['id'] }}-brief">
+            <details class="grp" data-needs="images" id="edit-{{ ch['id'] }}-brief">
               <summary>Planning brief <span class="muted">motion &amp; pacing, hold range, presentation</span></summary>
             <div class="muted" style="font-size:12px; margin:10px 0 6px">
               Planning brief - how this channel's shots are paced and staged.
@@ -763,15 +763,25 @@
             </div>
             <div class="inline">
               <label>channel type
-                <select name="explainer_mode" id="xp-mode-{{ ch['id'] }}" class="xp-mode" data-global="{{ xg.mode or 'images' }}" data-box="xp-box-{{ ch['id'] }}">
-                  <option value="">inherit (global: {{ xg.mode or 'images' }})</option>
-                  {% for m, label in explainer_choices.modes %}
-                  <option value="{{ m }}" {{ 'selected' if xv.get('mode') == m else '' }}>{{ label }}</option>
+                <select name="explainer_channel_type" id="xp-type-{{ ch['id'] }}" class="xp-type"
+                        data-global="{{ xg.type }}">
+                  <option value="">inherit (global: {{ xg.type }})</option>
+                  {% for k, label in explainer_choices.types %}
+                  <option value="{{ k }}" data-images="{{ 1 if explainer_choices.type_caps[k].images else 0 }}" data-scenes="{{ 1 if explainer_choices.type_caps[k].scenes else 0 }}" data-formats="{{ 1 if explainer_choices.type_formats[k] else 0 }}" {{ 'selected' if xv.get('channel_type') == k else '' }}>{{ label }}</option>
                   {% endfor %}
                 </select>
               </label>
+              <label id="xp-fmt-{{ ch['id'] }}" data-needs="formats" title="How the drawn scenes look. Remembered when you switch to another type.">presentation
+                <select name="explainer_format">
+                  <option value="">default</option>
+                  {% for t, fmts in explainer_choices.type_formats.items() %}{% for f, label in fmts %}
+                  <option value="{{ f }}" data-type="{{ t }}" {{ 'selected' if xv.get('format') == f else '' }}>{{ label }}</option>
+                  {% endfor %}{% endfor %}
+                </select>
+              </label>
             </div>
-            <div id="xp-box-{{ ch['id'] }}">
+            <div class="muted" style="font-size:12px">Changing the type hides what it does not use; nothing is deleted, so switching back finds your visual style, bible and references as they were.</div>
+            <div id="xp-box-{{ ch['id'] }}" data-needs="scenes">
             <div class="inline">
               <label>theme
                 <select name="explainer_theme">
@@ -995,22 +1005,27 @@
   // read a real filesystem path itself) and drop the result into the field.
 
   // Explainer group: preview each picked font (the hand-drawn line shows the pen-strokes choice as plain text)
-  // the explainer look only matters for an explainer channel
-  function wrXpMode(sel) {
-    var box = document.getElementById(sel.getAttribute('data-box'));
-    if (!box) return;
-    var mode = sel.value || sel.getAttribute('data-global');
-    box.style.display = (mode === 'images') ? 'none' : '';
-    // an explainer channel draws its pictures itself, so the image-look and image-motion groups do not apply
-    var chId = sel.id.replace('xp-mode-', '');
-    ['creative', 'brief'].forEach(function (g) {
-      var d = document.getElementById('edit-' + chId + '-' + g);
-      if (d) d.style.display = (mode === 'images') ? '' : 'none';
+  // Channel type: show only what the type uses (data-needs = images | scenes | formats).
+  // Hidden fields are still posted, so nothing saved is lost by switching type.
+  var XP_CAPS = {{ explainer_choices.type_caps | tojson }};
+  var XP_FORMATS = {{ explainer_choices.type_formats | tojson }};
+  function wrXpType(sel) {
+    var key = sel.value || sel.getAttribute('data-global');
+    var caps = XP_CAPS[key] || {images: true, scenes: false};
+    var has = {images: !!caps.images, scenes: !!caps.scenes, formats: (XP_FORMATS[key] || []).length > 0};
+    var form = sel.closest('form') || document;
+    form.querySelectorAll('[data-needs]').forEach(function (el) {
+      el.style.display = has[el.getAttribute('data-needs')] ? '' : 'none';
+    });
+    var fmt = form.querySelector('select[name=explainer_format]');
+    if (fmt) Array.prototype.forEach.call(fmt.options, function (o) {
+      var t = o.getAttribute('data-type');
+      o.hidden = !!t && t !== key;
     });
   }
-  document.querySelectorAll('select.xp-mode').forEach(function (sel) {
-    sel.addEventListener('change', function () { wrXpMode(sel); });
-    wrXpMode(sel);
+  document.querySelectorAll('select.xp-type').forEach(function (sel) {
+    sel.addEventListener('change', function () { wrXpType(sel); });
+    wrXpType(sel);
   });
   function wrXpFont(sel) {
     var t = document.getElementById(sel.getAttribute('data-target'));

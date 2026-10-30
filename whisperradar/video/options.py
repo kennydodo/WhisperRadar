@@ -170,6 +170,7 @@ class ExplainerOptions:
     text_color: str = ""            # labels, points, footers: name or #RRGGBB ("" = white)
     background: str = ""            # the board: #RRGGBB ("" = the theme's)
     text_weight: str = ""           # hand-written text: thin | normal | bold ("" = thin)
+    format: str = ""                # whiteboard | motion_graphics: how an explainer channel is presented
     letter_spacing: str = ""        # tight | normal | wide ("" = normal)
     pen_speed: str = ""             # slow | normal | fast ("" = normal): how fast the pen draws
     scenes_per_video: str = ""      # few | normal | many ("" = normal): how many scenes the planner aims for
@@ -192,6 +193,7 @@ class ProjectOptions:
     # visual mode (doc 16.1): images (default, unchanged behavior),
     # motion_graphics / whiteboard (explainer.json scenes). An explicit mode
     # is never silently overridden by a sidecar's presence.
+    channel_type: str = ""          # standard | explainer ("" = from visual_mode); see channel_types.py
     visual_mode: str = "images"
     text: TextOptions = field(default_factory=TextOptions)
     explainer: ExplainerOptions = field(default_factory=ExplainerOptions)
@@ -298,6 +300,11 @@ class ProjectOptions:
                 errors.append(f"Explainer {_name} must be {', '.join(_ok[:-1])} or {_ok[-1]}.")
         if self.planner not in ("v1", "v2"):
             errors.append('Planner must be "v1" or "v2".')
+        from .. import channel_types as _ct
+        if self.channel_type and self.channel_type not in _ct.TYPES:
+            errors.append("Channel type must be one of " + ", ".join(_ct.keys()) + ".")
+        if self.explainer.format and self.explainer.format not in ("whiteboard", "motion_graphics"):
+            errors.append("Explainer format must be whiteboard or motion_graphics.")
         if self.visual_mode not in VISUAL_MODES:
             errors.append("Visual mode must be one of "
                           f"{', '.join(VISUAL_MODES)}.")

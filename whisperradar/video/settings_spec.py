@@ -62,6 +62,8 @@ CHOICES = {
     "sound.default_pop": [p[0] for p in opt.POP_VARIANTS],
     "planner": ["v1", "v2"],
     "visual_mode": list(opt.VISUAL_MODES),
+    "channel_type": __import__("whisperradar.channel_types", fromlist=["keys"]).keys(),
+    "explainer.format": ["whiteboard", "motion_graphics"],
     "text.auto_style": ["caption", "stat", "title", "label", "lower-third"],
     "text.auto_position": ["top-left", "top-center", "top-right", "middle-left", "center",
                            "middle-right", "bottom-left", "bottom-center", "bottom-right"],
@@ -102,6 +104,12 @@ HELP = {
     "text.auto_min_seconds": "An automatic value stays on screen at least this long.",
     "text.auto_max_seconds": "An automatic value never stays longer than this.",
     "output.fps": "Frames per second of the final video.",
+    "channel_type": "What the channel makes: standard (pictures and clips) or explainer (drawn scenes from "
+                    "a scene plan). Explainers skip the visual style, character bible, references, image "
+                    "generation and image camera motion; their saved values are kept. Blank = decided by "
+                    "the older visual mode below.",
+    "explainer.format": "How an explainer channel is presented: whiteboard (hand-drawn) or motion_graphics "
+                        "(straight lines, charts, counters). Blank = the visual mode below, else whiteboard.",
     "visual_mode": "images = stills/clips (default). motion_graphics or "
                    "whiteboard = the production is an explainer: scenes come "
                    "from explainer.json anchored to subtitles.srt.",
@@ -292,7 +300,8 @@ def effective(conn, own_channel_id) -> dict:
     vals = load_global(conn)
     if own_channel_id not in (None, ""):
         vals.update(load_channel(conn, own_channel_id))
-    return vals
+    from .. import channel_types
+    return channel_types.normalize(vals)
 
 
 # ---- merge into the production's imgtovideo.json ----------------------------

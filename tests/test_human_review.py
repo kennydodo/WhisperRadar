@@ -497,6 +497,22 @@ class ReferenceStyleWorkflowTests(Base):
         self.assertNotIn("[explain]", t.calls[2]['prompt'])
         self.assertNotIn("opening-style", (self.pdir/'script.md').read_text())
 
+    def test_opening_choice_reaches_claude_and_reviewer_on_an_explainer_channel(self):
+        from whisperradar import openings, db
+        from whisperradar.video import settings_spec as ss
+        conn = db.connect(self.cfg.db_path)
+        oc = db.create_own_channel(conn, "Explainer chan")
+        ss.save_channel(conn, oc, {"channel_type": "explainer", "visual_mode": "whiteboard"})
+        db.update_production(conn, self.pid, own_channel_id=oc,
+                             opening_config=json.dumps(openings.snapshot(conn, ["explain", "compare"])))
+        conn.close()
+        t = Fake(deepseek=[json.dumps(BRIEF), delivery_verdict()],
+                 zai=[marked("<!-- opening-style:compare -->\n" + REVISED)])
+        self.run_new(t)
+        self.assertIn("SELECTED OPENING APPROACH", t.calls[1]['prompt'])
+        self.assertIn("[compare]", t.calls[2]['prompt'])
+        self.assertNotIn("opening-style", (self.pdir/'script.md').read_text())
+
     def test_all_channels_require_analysis_then_creative_pass_then_review(self):
         t=self.transport();out=self.run_new(t)
         self.assertEqual([c['site'] for c in t.calls],['deepseek','zai','deepseek'])

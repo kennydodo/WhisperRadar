@@ -5,6 +5,23 @@ images, no video-generation models, no paid services (except your existing TTS
 hook). The narration audio and its SRT are the master clock; scenes are
 declarative JSON; every animation is deterministic.
 
+## 0a. Channel type
+
+A channel has one **channel type** (My channels > a channel > Channel type & explainer, or Video options ->
+`channel_type`):
+
+| Type | What the channel makes | What it uses |
+|---|---|---|
+| `standard` | Pictures and clips | visual style, character bible, references, image generation, image camera motion, shotlist |
+| `explainer` | Drawn scenes | a scene plan instead of the shotlist; presentation is `explainer.format` (whiteboard or motion graphics) |
+
+Both types share writing style, opening choices, script, GPT-Claude review, accuracy checks, voice, audio,
+subtitles and packaging. For an explainer the image-only settings are hidden and bypassed: the channel's
+visual style, bible and references are not copied into new productions and the refs / images / motion stages
+are skipped. **Nothing is deleted** when you switch a channel's type: those values stay saved and are used
+again if you switch back. A channel that only has the older `visual_mode` is read as the matching type, so no
+migration is needed. More types can be added in `whisperradar/channel_types.py`.
+
 ## 0. Choosing a visual mode
 
 Per production/channel (Video options -> `visual_mode`):

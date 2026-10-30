@@ -79,15 +79,36 @@ class ExplainerChannelTests(unittest.TestCase):
 
     def test_channel_type_normal_or_explainer(self):
         html = self.client.get("/my-channels").get_data(as_text=True)
-        self.assertIn('name="explainer_mode"', html)
-        self.assertIn("normal channel", html)
-        self.post(explainer_mode="whiteboard", explainer_theme="chalkboard")
+        self.assertIn('name="explainer_channel_type"', html)
+        self.assertIn("Normal channel", html)
+        self.post(explainer_channel_type="explainer", explainer_format="whiteboard",
+                  explainer_theme="chalkboard")
+        self.assertEqual(self.saved()["channel_type"], "explainer")
         self.assertEqual(self.saved()["visual_mode"], "whiteboard")
-        self.post(explainer_mode="images")
-        self.assertEqual(self.saved(), {"visual_mode": "images"})
-        self.post(explainer_mode="")
-        self.assertEqual(self.saved(), {})
+        self.assertEqual(self.saved()["explainer.format"], "whiteboard")
+        self.post(explainer_channel_type="explainer", explainer_format="motion_graphics")
+        self.assertEqual(self.saved()["visual_mode"], "motion_graphics")
+        self.post(explainer_channel_type="standard", explainer_format="motion_graphics")
+        self.assertEqual(self.saved()["visual_mode"], "images")
+        self.assertEqual(self.saved()["explainer.format"], "motion_graphics")   # remembered, unused
+        self.post(explainer_channel_type="")                      # inherit: type cleared, format still remembered
+        self.assertEqual(self.saved(), {"explainer.format": "motion_graphics"})
+        self.assertIn("error=", self.post(explainer_channel_type="movie").headers["Location"])
+
+    def test_the_old_mode_field_still_works(self):
+        self.post(explainer_mode="whiteboard")
+        self.assertEqual(self.saved()["channel_type"], "explainer")
+        self.assertEqual(self.saved()["visual_mode"], "whiteboard")
         self.assertIn("error=", self.post(explainer_mode="movie").headers["Location"])
+
+    def test_a_channel_with_only_the_old_visual_mode_shows_as_its_type(self):
+        from whisperradar.video import settings_spec as ss
+        conn = db.connect(self.cfg.db_path)
+        ss.save_channel(conn, self.oc, {"visual_mode": "motion_graphics"})
+        conn.close()
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertRegex(html, r'value="explainer"[^>]*selected')
+        self.assertRegex(html, r'value="motion_graphics"[^>]*selected')
 
     def test_pen_strokes_and_blank_inherit(self):
         self.post(explainer_hand_font="strokes", explainer_theme="chalkboard")
