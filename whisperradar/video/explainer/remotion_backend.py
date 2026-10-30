@@ -122,18 +122,113 @@ def _check_screenshot(p: dict, where: str) -> list:
     return errs
 
 
-COMPONENTS = {"fit_chart": _check_fit_chart, "counter": _check_counter, "screenshot": _check_screenshot}
+def _text(v, n) -> bool:
+    return isinstance(v, str) and 0 < len(v.strip()) <= n
+
+
+def _check_pipeline(p: dict, where: str) -> list:
+    errs = []
+    st = p.get("stages")
+    if not isinstance(st, list) or not 2 <= len(st) <= 3:
+        return [f"{where}: stages must be a list of 2-3 stages."]
+    for k, x in enumerate(st, 1):
+        if not isinstance(x, dict) or not _text(x.get("label"), 22):
+            errs.append(f"{where}: stage {k} needs a label of 22 characters at most.")
+            continue
+        if not isinstance(x.get("workers"), int) or isinstance(x.get("workers"), bool) or not 1 <= x["workers"] <= 8:
+            errs.append(f"{where}: stage {k} workers must be a whole number 1-8.")
+        if "work" in x and (not _pos(x["work"]) or x["work"] > 10):
+            errs.append(f"{where}: stage {k} work must be a number 0-10 (relative time per task).")
+    if not isinstance(p.get("tasks"), int) or isinstance(p.get("tasks"), bool) or not 4 <= p["tasks"] <= 24:
+        errs.append(f"{where}: tasks must be a whole number 4-24.")
+    if not _ms(p.get("start_ms")) or not _ms(p.get("run_ms")) or p.get("run_ms", 0) < 3000:
+        errs.append(f"{where}: start_ms >= 0 and run_ms >= 3000 are needed.")
+    for key, n in (("title", 48), ("sub", 70), ("note", 70)):
+        if key in p and not isinstance(p[key], str) or len(p.get(key) or "") > n:
+            errs.append(f"{where}: {key} must be text of {n} characters at most.")
+    return errs
+
+
+GEN_MODES = ("sequential", "plan_then_fill")
+
+
+def _check_generation(p: dict, where: str) -> list:
+    errs = []
+    rows = p.get("rows")
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 2:
+        return [f"{where}: rows must be a list of 1-2 rows."]
+    for k, r in enumerate(rows, 1):
+        if not isinstance(r, dict) or not _text(r.get("label"), 34):
+            errs.append(f"{where}: row {k} needs a label of 34 characters at most.")
+            continue
+        if r.get("mode") not in GEN_MODES:
+            errs.append(f"{where}: row {k} mode must be one of {', '.join(GEN_MODES)}.")
+        w = r.get("words")
+        if (not isinstance(w, list) or not 4 <= len(w) <= 14 or not all(_text(x, 12) for x in w)):
+            errs.append(f"{where}: row {k} words must be 4-14 short words (12 characters at most).")
+    if not _ms(p.get("start_ms")) or not _ms(p.get("run_ms")) or p.get("run_ms", 0) < 3000:
+        errs.append(f"{where}: start_ms >= 0 and run_ms >= 3000 are needed.")
+    for key, n in (("title", 48), ("sub", 70), ("note", 70)):
+        if key in p and not isinstance(p[key], str) or len(p.get(key) or "") > n:
+            errs.append(f"{where}: {key} must be text of {n} characters at most.")
+    return errs
+
+
+def _check_code(p: dict, where: str) -> list:
+    errs = []
+    ln = p.get("lines")
+    if not isinstance(ln, list) or not 2 <= len(ln) <= 12 or not all(isinstance(x, str) and len(x) <= 64 for x in ln):
+        errs.append(f"{where}: lines must be 2-12 lines of 64 characters at most.")
+        ln = []
+    if not _text(p.get("filename"), 40):
+        errs.append(f"{where}: filename must be short text.")
+    if not _ms(p.get("start_ms")) or not _ms(p.get("type_ms")) or p.get("type_ms", 0) < 800:
+        errs.append(f"{where}: start_ms >= 0 and type_ms >= 800 are needed.")
+    for h in p.get("highlights") or []:
+        if (not isinstance(h, dict) or not isinstance(h.get("line"), int) or not 1 <= h["line"] <= max(len(ln), 1)
+                or not _ms(h.get("start_ms")) or len(str(h.get("note", ""))) > 40):
+            errs.append(f"{where}: each highlight needs line (1-{len(ln)}), start_ms and an optional note (40 characters).")
+            break
+    for key, n in (("title", 48), ("sub", 70)):
+        if key in p and not isinstance(p[key], str) or len(p.get(key) or "") > n:
+            errs.append(f"{where}: {key} must be text of {n} characters at most.")
+    return errs
+
+
+COMPONENTS = {"fit_chart": _check_fit_chart, "counter": _check_counter, "screenshot": _check_screenshot,
+              "pipeline": _check_pipeline, "generation": _check_generation, "code": _check_code}
+
+# Motion style presets are data: a channel picks a preset and may override colours.
+STYLE_PRESETS = ("tech", "warm", "light")
+
+
+def check_style(style, where: str) -> list:
+    if style is None:
+        return []
+    if not isinstance(style, dict) or set(style) - {"preset", "colors"}:
+        return [f'{where}: motion_style must be {{"preset": ..., "colors": {{...}}}}.']
+    if style.get("preset") not in (None,) + STYLE_PRESETS:
+        return [f"{where}: motion_style preset must be one of {', '.join(STYLE_PRESETS)}."]
+    cols = style.get("colors") or {}
+    ok = ("accent", "accent2", "good", "bad", "panel", "line", "text", "dim", "bg2")
+    import re
+    if not isinstance(cols, dict) or any(k not in ok or not re.fullmatch(r"#[0-9a-fA-F]{6}", str(v)) for k, v in cols.items()):
+        return [f"{where}: motion_style colors must be #rrggbb values for {', '.join(ok)}."]
+    return []
 
 
 def check_block(block, where: str) -> list:
     """Errors for a scene's `remotion` block ([] when fine)."""
-    if not isinstance(block, dict) or set(block) - {"component", "params", "fade"}:
+    if not isinstance(block, dict) or set(block) - {"component", "params", "fade", "style"}:
         return [f'{where}: remotion must be {{"component": ..., "params": {{...}}}}.']
     fade = block.get("fade")
     if fade is not None:
         if (not isinstance(fade, dict) or set(fade) - {"in_ms", "out_ms"}
                 or not all(_ms(v) and v <= 2000 for v in fade.values())):
             return [f"{where}: fade must be {{\"in_ms\": n, \"out_ms\": n}} with each 0-2000."]
+    bad = check_style(block.get("style"), where)
+    if bad:
+        return bad
     name = block.get("component")
     if name not in COMPONENTS:
         return [f"{where}: unknown Remotion component {name!r} (known: {', '.join(sorted(COMPONENTS))})."]
@@ -159,28 +254,85 @@ def project_hash() -> str:
 
 
 def _theme_props(doc) -> dict:
+    """The channel's look, read from the theme: colours, which fonts, hand-drawn or graphic.
+    Nothing about a channel is decided inside the Remotion components."""
     t = doc.theme
+
+    def colour(v):
+        return v if v and str(v).startswith("#") else None
     out = {"background": t.background}
-    for key, val in (("heading", getattr(t, "heading_color", None)),
-                     ("text", getattr(t, "text_color", None))):
-        if val and str(val).startswith("#"):
+    for key, val in (("heading", colour(getattr(t, "heading_color", None))),
+                     ("text", colour(getattr(t, "text_color", None)))):
+        if val:
             out[key] = val
+    look = {"bg": t.background, "fg": t.foreground, "muted": t.muted, "accent": t.accent,
+            "good": t.positive, "bad": t.negative}
+    for key, val in (("heading", out.get("heading")), ("text", out.get("text"))):
+        if val:
+            look[key] = val
+    out["look"] = look
+    out["hand"] = getattr(t, "line_style", "") != "straight"      # straight = graphic channel
+    out["font_files"] = {"heading": t.heading_font, "body": t.body_font,
+                         "note": (t.hand_font if out["hand"] and t.hand_font else t.body_font),
+                         "mono": t.mono_font}
     return out
 
 
 def scene_props(compiled, doc, fps: float) -> dict:
     block = compiled.spec.remotion
+    theme = _theme_props(doc)
+    st = block.get("style") or {}
+    if st.get("colors"):
+        theme["look"].update({k: v for k, v in st["colors"].items() if k in ("accent", "good", "bad")})
+        if st["colors"].get("text"):
+            theme["look"]["text"] = st["colors"]["text"]
+        if st["colors"].get("accent2"):
+            theme["look"]["heading"] = st["colors"]["accent2"]
     return {"component": block["component"], "params": block["params"], "fade": block.get("fade"),
             "frames": int(compiled.end_frame - compiled.start_frame), "fps": float(fps),
-            "theme": _theme_props(doc)}
+            "theme": theme}
+
+
+FONT_MAX = 3 * 1024 * 1024
+
+
+def _fonts(props: dict, project_folder: str):
+    """-> (keyed, run): theme.font_files names are resolved to files, hashed for the cache key
+    and inlined as data URIs for the run. A font that cannot be found is skipped (the
+    components fall back to a clean system font), never an error."""
+    import base64
+    from .layout import find_font
+    files = props["theme"].pop("font_files", {}) or {}
+    keyed, run, names = {}, {}, {}
+    for role, name in files.items():
+        if not name:
+            continue
+        path = find_font(name, project_folder)
+        if not path or not os.path.isfile(path) or os.path.getsize(path) > FONT_MAX:
+            continue
+        with open(path, "rb") as fh:
+            data = fh.read()
+        fam = "WR" + role.capitalize()
+        names[role] = fam
+        keyed[fam] = {"file": os.path.basename(path), "sha": hashlib.sha256(data).hexdigest()}
+        mime = "font/otf" if path.lower().endswith(".otf") else "font/ttf"
+        run[fam] = f"data:{mime};base64," + base64.b64encode(data).decode()
+    props["theme"]["fonts"] = names
+    return keyed, run
 
 
 def _prepare_assets(props: dict, project_folder: str):
     """-> (props for the cache key, props for the renderer). A screenshot is read from the
     production folder, checked, hashed for the key and inlined as a data URI for the run."""
+    props = json.loads(json.dumps(props))
+    fkey, frun = _fonts(props, project_folder)
     img = props["params"].get("image") if props["component"] == "screenshot" else None
     if not img:
-        return props, props
+        keyed = json.loads(json.dumps(props))
+        keyed["theme"]["fontData"] = fkey
+        run = json.loads(json.dumps(props))
+        run["theme"]["fontData"] = frun
+        return keyed, run
     root = os.path.realpath(project_folder)
     path = os.path.realpath(os.path.join(root, img))
     if os.path.commonpath([root, path]) != root or not os.path.isfile(path):
@@ -196,7 +348,9 @@ def _prepare_assets(props: dict, project_folder: str):
         "image/webp" if path.lower().endswith(".webp") else "image/jpeg")
     keyed = json.loads(json.dumps(props))
     keyed["params"]["image"] = {"path": img, "sha": hashlib.sha256(data).hexdigest()}
+    keyed["theme"]["fontData"] = fkey
     run = json.loads(json.dumps(props))
+    run["theme"]["fontData"] = frun
     run["params"]["image"] = f"data:{mime};base64," + base64.b64encode(data).decode()
     return keyed, run
 

@@ -65,6 +65,13 @@ FORMAT = """\
    "items": [{"label": "GPU VRAM", "layers": 20, "at": "words"}, {"label": "CPU RAM", "layers": 12, "at": "words"}]},
   {"id": "fit", "start": "...", "layout": "fit_chart", "limit": 24, "unit": "GB", "bits": 4, "fade": {"out_ms": 400},
    "items": [{"label": "7B", "params_b": 7, "at": "words"}, {"label": "70B", "params_b": 70, "at": "words"}]},
+  {"id": "run", "start": "...", "layout": "pipeline", "title": "short", "tasks": 8, "motion": {"at": "words"},
+   "stages": [{"label": "Stage 1", "workers": 8, "work": 1}, {"label": "Stage 2", "workers": 4, "work": 1, "waits_for_all": true}]},
+  {"id": "order", "start": "...", "layout": "generation", "title": "short", "motion": {"at": "words"},
+   "rows": [{"label": "Way A", "mode": "sequential", "words": ["a", "b", "c", "d", "e", "f"]},
+            {"label": "Way B", "mode": "plan_then_fill", "words": ["a", "b", "c", "d", "e", "f"]}]},
+  {"id": "src", "start": "...", "layout": "code", "title": "short", "filename": "train.py", "motion": {"at": "words"},
+   "lines": ["def f(x):", "    return x"], "highlights": [{"line": 2, "start_ms": 3000, "note": "short"}]},
   {"id": "num", "start": "...", "layout": "counter", "title": "optional",
    "counter": {"from": 0, "to": 14, "unit": "GB", "label": "a 7B model at 16-bit", "at": "words"}}
  ]}"""
@@ -76,6 +83,12 @@ LAYOUTS (pick the one that teaches the sentence):
 - stack: 3-4 short lines, one per row, each with an icon (lists of facts or tiers); a footer fits under it.
 - hero: ONE big icon with one short sentence (a rule, a warning, the key idea). The label may be up to ~50 characters.
 - compare: exactly two sides, each with a header, an icon and 1-3 short points (right vs wrong, A vs B, before vs after).
+MOTION SCENES (the viewer watches the idea happen; use them where the narrator describes a process, a comparison of how two things work, or evidence):
+- First ask for every scene: what will the viewer understand by watching this that the words alone do not show? If the answer is only "they read the same point", pick a motion scene or a better picture.
+- pipeline: tasks (4-24) flow through 2-3 stages; each stage has "workers" (1-8) and a relative "work" per task; "waits_for_all": true makes a stage wait until the whole stage before it is finished (shown locked). Use it for parallel work, queues, bottlenecks, "level 2 waits for level 1".
+- generation: 1-2 rows of 4-14 short words, each row "mode": "sequential" (one after another) or "plan_then_fill" (a rough outline first, then the gaps). Use it to show two ways of producing the same thing side by side.
+- code: 2-12 lines (64 characters at most) typed out, with "highlights" (line, start_ms, short note) on the line that matters. Use it only for real code or a real excerpt the narrator discusses, never invented.
+- "motion": {"at": words, "run_ms": optional} is where the animation starts. Give each scene 6+ seconds. Colours, fonts and line style come from the channel; never choose them. At most one or two motion scenes in a row; titles under 48 characters.
 NUMBER SCENES (only when the narrator states the quantities; the app draws them to scale and checks the arithmetic):
 - memory: a box (GPU memory, RAM, a budget) filled by up to 4 segments, widths proportional to "gb". Segments must add up to at most "capacity" (else the scene is rejected). Use the narrator's numbers; set "exact": true when the narrator gave them, leave it off to show an "illustrative numbers" tag. "grows_from" (last segment only) makes it grow from a smaller size.
 - precision: the same model at different bit sizes, 1-4 rows. Give "params_b" (billions) and each row's "bits"; the app computes size = params x bits / 8. Never type the sizes yourself.
