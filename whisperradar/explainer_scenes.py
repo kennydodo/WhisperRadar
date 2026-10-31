@@ -438,14 +438,19 @@ _LEADING_SID_RE = re.compile(r"^\s*(?:scene\s+)?([A-Za-z][\w-]*?)\s*:")
 _FINDING_TEXT_KEYS = ("problem", "fault", "finding", "text", "note", "change")
 
 
-def _structured_text(e: dict) -> str:
-    """A structured finding {"scene": id, "severity": ..., "problem"/"change": text} as one line."""
+def _structured_finding(e: dict) -> str | None:
+    """A structured finding as one line, or None when it is MALFORMED: an object finding
+    must carry non-empty text (problem/fault/finding/text/note/change for a fault,
+    change/text/problem for a fix). Malformed entries are never discarded silently - the
+    caller keeps them as blocking."""
     scene = str(e.get("scene") or e.get("scene_id") or e.get("id") or "").strip()
     text = ""
     for key in _FINDING_TEXT_KEYS:
         if e.get(key):
             text = str(e[key]).strip()
             break
+    if not text:
+        return None
     if text and scene and not re.match(r"(?i)^scene\s", text) \
             and not text.lower().startswith(scene.lower() + ":"):
         text = f"scene {scene}: {text}"
@@ -454,8 +459,9 @@ def _structured_text(e: dict) -> str:
 
 def split_verdict_faults(entries) -> tuple:
     """(blocking, minor) findings. A structured finding {"scene", "severity", "problem"} is
-    classified by its severity (missing severity = blocking). String findings are read
-    conservatively, clause by clause (split on ';'):
+    classified by its severity (missing severity = blocking); one without usable text is
+    MALFORMED and stays blocking (an empty entry must never let approval through).
+    String findings are read conservatively, clause by clause (split on ';'):
     - cosmetic only when explicitly marked: the whole finding starts with a minor word, or
       ends with a bare '; minor' mark
     - a 'minor ...' clause with content, appended after substantive clauses, is a MIXED
@@ -467,8 +473,9 @@ def split_verdict_faults(entries) -> tuple:
     blocking, minor = [], []
     for e in entries or []:
         if isinstance(e, dict):
-            text = _structured_text(e)
-            if not text:
+            text = _structured_finding(e)
+            if text is None:
+                blocking.append(json.dumps(e, ensure_ascii=False, sort_keys=True))
                 continue
             sev = str(e.get("severity") or "").strip().lower()
             (minor if sev == "minor" else blocking).append(text)
@@ -498,7 +505,10 @@ def split_verdict_faults(entries) -> tuple:
 
 def _verdict_usable(verdict) -> bool:
     """A verdict only counts when every required field is present and correctly typed:
-    a finite numeric score 1-10 (not bool), a genuine boolean pass, and faults/fixes lists."""
+    a finite numeric score 1-10 (not bool), a genuine boolean pass, and faults/fixes lists
+    whose entries all carry usable text (a string with content, or an object with a
+    non-empty problem/change). Malformed entries make the whole verdict unusable so the
+    judge is asked to resend instead of the app guessing."""
     if not isinstance(verdict, dict) or not verdict:
         return False
     if type(verdict.get("pass")) is not bool:
@@ -509,29 +519,42 @@ def _verdict_usable(verdict) -> bool:
         return False
     for key in ("faults", "fixes"):
         value = verdict.get(key)
-        if not isinstance(value, list) or not all(isinstance(x, (str, dict)) for x in value):
+        if not isinstance(value, list):
             return False
+        for x in value:
+            if isinstance(x, str):
+                if not x.strip():
+                    return False
+            elif isinstance(x, dict):
+                if _structured_finding(x) is None:
+                    return False
+            else:
+                return False
     return True
 
 
 _VERDICT_RESEND = (
     'Your last reply was not the required verdict object. Reply again with ONE JSON object and '
     'nothing else: {"score": <number 1-10>, "pass": true or false, "faults": [...], "fixes": [...]}. '
-    '"faults" and "fixes" are always present, [] when empty. A fault or fix is either a string '
-    '"scene id: text" or an object {"scene": "<id>", "severity": "minor" or "blocking", '
-    '"problem"/"change": "<text>"}.')
+    '"faults" and "fixes" are always present, [] when empty. A fault or fix is either a non-empty '
+    'string "scene id: text" or an object {"scene": "<id>", "severity": "minor" or "blocking", '
+    '"problem"/"change": "<text>"} - every entry needs its text, an empty object or empty string '
+    'is rejected.')
 
 
 def _blocking_fix_texts(fixes) -> list:
-    """String fixes always block; a structured fix blocks unless it is explicitly 'minor'."""
+    """String fixes always block; a structured fix blocks unless it is explicitly 'minor'.
+    A malformed fix object is kept as its raw JSON so the empty entry still blocks."""
     out = []
     for f in fixes or []:
         if isinstance(f, dict):
+            text = _structured_finding(f)
+            if text is None:
+                out.append(json.dumps(f, ensure_ascii=False, sort_keys=True))
+                continue
             if str(f.get("severity") or "").strip().lower() == "minor":
                 continue
-            text = _structured_text(f)
-            if text:
-                out.append(text)
+            out.append(text)
         elif str(f).strip():
             out.append(str(f).strip())
     return out

@@ -106,6 +106,20 @@ class RevisionTests(unittest.TestCase):
         self.assertTrue(es.review_passes({'score': 9, 'pass': True, 'faults': [], 'fixes': [
             {'scene': 'b', 'severity': 'minor', 'change': 'shade the background'}]}))
 
+    def test_empty_or_textless_findings_cannot_allow_approval(self):
+        # GPT: reject empty or malformed finding objects - never discard them silently
+        raw = json.dumps({'scene': 'a'}, ensure_ascii=False, sort_keys=True)
+        self.assertEqual(es.split_verdict_faults([{'scene': 'a'}]), ([raw], []))
+        self.assertEqual(es.split_verdict_faults([{'severity': 'minor'}]), ([raw2 := json.dumps({'severity': 'minor'}, sort_keys=True)], []))
+        self.assertEqual(es._blocking_fix_texts([{'scene': 'a'}]), [raw])
+        self.assertEqual(es._blocking_fix_texts([{'severity': 'minor', 'change': '  '}]),
+                         [json.dumps({'severity': 'minor', 'change': '  '}, sort_keys=True)])
+        self.assertFalse(es._verdict_usable({'score': 9, 'pass': True, 'faults': [{'scene': 'a'}], 'fixes': []}))
+        self.assertFalse(es._verdict_usable({'score': 9, 'pass': True, 'faults': [''], 'fixes': []}))
+        self.assertFalse(es.review_passes({'score': 9, 'pass': True, 'faults': [{'scene': 'a'}], 'fixes': []}))
+        self.assertFalse(es.review_passes({'score': 9, 'pass': True, 'faults': [], 'fixes': [{'scene': 'a', 'change': '  '}]}))
+        self.assertFalse(es.review_passes({'score': 9, 'pass': True, 'faults': [''], 'fixes': []}))
+
     def test_malformed_verdicts_never_pass(self):
         # GPT review case 3: missing or wrongly typed required fields can never approve
         base = {'score': 9, 'pass': True, 'faults': [], 'fixes': []}
@@ -116,6 +130,10 @@ class RevisionTests(unittest.TestCase):
                     {'score': 9, 'pass': True, 'faults': 'none', 'fixes': []},
                     {'score': 9, 'pass': True, 'faults': [], 'fixes': None},
                     {'score': 9, 'pass': True, 'faults': [42], 'fixes': []},
+                    {'score': 9, 'pass': True, 'faults': [{'scene': 'a'}], 'fixes': []},
+                    {'score': 9, 'pass': True, 'faults': [], 'fixes': [{'scene': 'a'}]},
+                    {'score': 9, 'pass': True, 'faults': [''], 'fixes': []},
+                    {'score': 9, 'pass': True, 'faults': [], 'fixes': ['   ']},
                     {'score': 9, 'pass': 'true', 'faults': [], 'fixes': []},
                     {'score': True, 'pass': True, 'faults': [], 'fixes': []},
                     {'score': '9', 'pass': True, 'faults': [], 'fixes': []},
@@ -258,6 +276,18 @@ class PromotionTests(unittest.TestCase):
                                    {'score': 9, 'pass': True, 'faults': [], 'fixes': []}])
         es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=2)
         self.assertEqual([r for r, _ in self.log if r == 'judge'].count('judge'), 2)
+        review = json.loads((self.pdir / 'plan_review.json').read_text())
+        self.assertEqual(review['status'], 'approved')
+
+    def test_malformed_finding_object_triggers_a_resent_verdict(self):
+        # GPT: an object finding without problem text is malformed - the judge must resend,
+        # the entry itself can never be dropped or waved through
+        ask = self._ask([plan()], [{'score': 9, 'pass': True, 'faults': [{'scene': 'a'}], 'fixes': []},
+                                   {'score': 9, 'pass': True, 'faults': [], 'fixes': []}])
+        logs = []
+        es.run_scenes(self.cfg, self.pid, ask, log=logs.append, rounds=2)
+        self.assertEqual([r for r, _ in self.log if r == 'judge'].count('judge'), 2)
+        self.assertTrue(any('resend' in m for m in logs))
         review = json.loads((self.pdir / 'plan_review.json').read_text())
         self.assertEqual(review['status'], 'approved')
 
