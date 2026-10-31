@@ -20,6 +20,14 @@ from whisperradar.config import load_config
 from whisperradar.webapp import create_app
 
 ROOT = Path(__file__).resolve().parents[1]
+KEYWORDS = ['ancient food preservation', 'prehistoric food storage', 'hunter gatherer food',
+            'Stone Age food', 'food before refrigerators', 'early human diet',
+            'history of food preservation', 'preserving meat', 'drying food',
+            'smoking food', 'ancient food storage', 'preventing food spoilage',
+            'prehistoric survival', 'ancient human survival', 'traditional food preservation',
+            'food preservation methods', 'storing food without electricity',
+            'prehistoric daily life', 'hunter gatherer survival', 'early human food storage']
+
 
 
 class GPTPackagingTests(unittest.TestCase):
@@ -56,16 +64,96 @@ class GPTPackagingTests(unittest.TestCase):
         wr_tmp.cleanup(self.tmp)
 
     def result(self):
-        return {"title": "How Did Ancient Humans Preserve Food?",
-                "titles": [{"text": text, "why": "Test angle"} for text in ("How Did Ancient Humans Preserve Food?", "Food Before Fridges", "Keeping Food Through Winter", "Ancient Food Storage")],
+        return {"first_comment": "Which food would have been hardest to keep fresh without a refrigerator?", "keywords": ", ".join(KEYWORDS), "title": "How Did Ancient Humans Preserve Food?",
+                "titles": [{"text": text, "why": "Test angle"} for text in ("How Did Ancient Humans Preserve Food?", "Food Before Fridges")],
                 "description": "What did early humans do before refrigerators? " * 7,
                 "thumbnails": [{"path": str(self.generated), "text": text,
                                 "prompt": "Test prompt"}
-                               for text in ("NO FRIDGE?", "FOOD FOR LATER?", "BEAT THE ROT?", "SAVE THE FOOD?")]}
+                               for text in ("NO FRIDGE?", "FOOD FOR LATER?")]}
 
     def job(self):
         gp.queue(self.cfg, self.pid)
+        job = gp.claim(self.cfg)
+        self.approve_job(job)
         return gp.claim(self.cfg)
+
+    def approve_job(self, job):
+        result = self.result()
+        proposal = {"pairs": [dict(title=t["text"], why=t["why"], text=i["text"],
+            idea="A distinct faithful concept", prompt="Test prompt") for t, i in zip(result["titles"], result["thumbnails"])],
+            "research": "Inspected sample references; CTR unavailable"}
+        gp.propose(self.cfg, job["id"], job["claim_token"], proposal)
+        gp.approve(self.cfg, job["id"])
+
+    def test_youtube_queued_production_can_prepare_packaging(self):
+        db.update_production(self.conn, self.pid, status="youtube_queued")
+        job = self.job()
+        self.assertEqual(job["context"]["production_id"], self.pid)
+        gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
+
+    def test_single_pair_allowed_and_four_new_images_rejected(self):
+        gp.queue(self.cfg, self.pid)
+        job = gp.claim(self.cfg)
+        r = self.result()
+        pair = dict(title=r["title"], why="script fit", text=r["thumbnails"][0]["text"], idea="concept", prompt="prompt")
+        with self.assertRaisesRegex(ValueError, "one or two"):
+            gp.propose(self.cfg, job["id"], job["claim_token"], {"pairs": [pair]*4, "research": "notes"})
+        gp.propose(self.cfg, job["id"], job["claim_token"], {"pairs": [pair], "research": "notes"})
+        gp.approve(self.cfg, job["id"])
+        job = gp.claim(self.cfg)
+        r["titles"] = r["titles"][:1]
+        r["thumbnails"] = r["thumbnails"][:1]
+        saved = gp.complete(self.cfg, job["id"], job["claim_token"], r)
+        self.assertEqual(len(saved["thumbnails"]), 1)
+
+    def test_import_must_preserve_approved_headlines_and_pair_recommendation(self):
+        job = self.job()
+        for mode in ("headline", "recommendation"):
+            r = self.result()
+            if mode == "headline":
+                r["thumbnails"][0]["text"] = "NOT APPROVED"
+            else:
+                r["recommended_thumbnail"] = 2
+            with self.assertRaises(ValueError):
+                gp.complete(self.cfg, job["id"], job["claim_token"], r)
+            self.assertFalse((self.pdir / "packaging").exists())
+
+    def test_unapproved_images_are_rejected(self):
+        gp.queue(self.cfg, self.pid)
+        job = gp.claim(self.cfg)
+        with self.assertRaisesRegex(ValueError, "Approve headline"):
+            gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
+        self.assertFalse((self.pdir / "packaging").exists())
+
+    def test_proposal_waits_for_human_and_rejects_changed_content(self):
+        gp.queue(self.cfg, self.pid)
+        job = gp.claim(self.cfg)
+        result = self.result()
+        proposal = {"pairs": [dict(title=t["text"], why=t["why"], text=i["text"],
+                    idea="concept", prompt="prompt") for t, i in zip(result["titles"], result["thumbnails"])],
+                    "research": "Reference URLs and no CTR evidence"}
+        gp.propose(self.cfg, job["id"], job["claim_token"], proposal)
+        self.assertIsNone(gp.claim(self.cfg))
+        self.assertEqual(gp.queue(self.cfg, self.pid)["id"], job["id"])
+        page = self.client.get("/gpt-pro/queue")
+        self.assertIn(b"Approve these headlines", page.data)
+        self.assertEqual(self.client.post(f"/gpt-pro/jobs/{job['id']}/approve").status_code, 403)
+        (self.pdir / "script.md").write_text("Changed")
+        with self.assertRaisesRegex(ValueError, "changed"):
+            gp.approve(self.cfg, job["id"])
+
+    def test_legacy_root_files_remain_readable_but_new_outputs_are_grouped(self):
+        legacy = self.pdir / "thumbnails"
+        legacy.mkdir()
+        (legacy / "thumbs.json").write_text(json.dumps({"concepts": [{"id": str(i)} for i in range(4)]}))
+        self.assertEqual(len(thumbnails.load_thumbs(self.pdir)["concepts"]), 4)
+        (self.pdir / "title.txt").write_text("Old title")
+        job = self.job()
+        gp.complete(self.cfg, job["id"], job["claim_token"], self.result())
+        self.assertEqual((self.pdir / "title.txt").read_text(), "Old title")
+        self.assertTrue((self.pdir / "packaging/title.txt").is_file())
+        self.assertTrue((self.pdir / "packaging/packaging.json").is_file())
+        self.assertEqual(len(thumbnails.load_thumbs(self.pdir)["concepts"]), 2)
 
     def test_button_on_finished_and_thumbnail_pages(self):
         for url in ("/finished", f"/studio/{self.pid}/thumbnails"):
@@ -161,6 +249,12 @@ class GPTPackagingTests(unittest.TestCase):
         self.assertIn(b"production-context", page.data)
         self.assertIn(b"Final script about preserving food.", page.data)
         self.assertIn(b"Packaging result JSON", self.client.get("/gpt-pro/worker").data)
+        with self.client.session_transaction() as session:
+            claim = session["gpt_packaging_claim"]
+        self.approve_job({"id": claim["id"], "claim_token": claim["token"]})
+        fresh = gp.claim(self.cfg)
+        with self.client.session_transaction() as session:
+            session["gpt_packaging_claim"] = {"id": fresh["id"], "token": fresh["claim_token"]}
         page = self.client.post("/gpt-pro/worker", data={"action": "complete",
                                "csrf": token, "result": json.dumps(self.result())})
         self.assertIn(b"Completed", page.data)
@@ -180,13 +274,77 @@ class GPTPackagingTests(unittest.TestCase):
         if response.status_code == 302:
             self.assertIn("login", response.location)
 
+    def test_fewer_than_twenty_keywords_rejected_before_output_is_written(self):
+        job=self.job();result=self.result();result['keywords']=', '.join(KEYWORDS[:19])
+        with self.assertRaisesRegex(ValueError,'at least 20'):
+            gp.complete(self.cfg,job['id'],job['claim_token'],result)
+        self.assertFalse((self.pdir/'packaging'/'keywords.txt').exists())
+        self.assertEqual(gp.latest(self.cfg,self.pid)['status'],'running')
+
+    def test_case_and_whitespace_duplicates_do_not_count_towards_twenty(self):
+        job=self.job();result=self.result()
+        result['keywords']=', '.join(KEYWORDS[:19]+['  ANCIENT  FOOD PRESERVATION '])
+        with self.assertRaisesRegex(ValueError,'at least 20'):
+            gp.complete(self.cfg,job['id'],job['claim_token'],result)
+
+    def test_keywords_exactly_500_characters_are_accepted(self):
+        job=self.job();result=self.result()
+        text=', '.join(KEYWORDS)
+        result['keywords']=text + 'x'*(500-len(text))
+        saved=gp.complete(self.cfg,job['id'],job['claim_token'],result)
+        self.assertEqual(len(saved['keywords']),500)
+        self.assertEqual(len(saved['keywords'].split(', ')),20)
+
+    def test_keywords_501_characters_rejected_without_writing_outputs(self):
+        job=self.job();result=self.result()
+        text=', '.join(KEYWORDS)
+        result['keywords']=text + 'x'*(501-len(text))
+        with self.assertRaisesRegex(ValueError,'500 characters'):
+            gp.complete(self.cfg,job['id'],job['claim_token'],result)
+        self.assertFalse((self.pdir/'packaging'/'keywords.txt').exists())
+        self.assertEqual(gp.latest(self.cfg,self.pid)['status'],'running')
+
+    def test_first_comment_saved_separately_and_available_on_finished_page(self):
+        job=self.job();result=self.result()
+        saved=gp.complete(self.cfg,job['id'],job['claim_token'],result)
+        target=self.pdir/'packaging'/'first_comment.txt'
+        self.assertEqual(target.read_text(encoding='utf-8').strip(),result['first_comment'])
+        self.assertEqual(saved['first_comment_file'],str(target))
+        self.assertFalse((self.pdir/'first_comment.txt').exists())
+        self.assertEqual(packaging.load_kit(self.pdir)['pinned_comment'],result['first_comment'])
+        self.assertIn(b'download>first comment</a>',self.client.get('/finished').data)
+        self.assertNotIn(result['first_comment'],prodfiles.path(self.pdir,'description.txt').read_text(encoding='utf-8'))
+
+    def test_missing_first_comment_rejected_before_output_writes(self):
+        job=self.job();result=self.result();result.pop('first_comment')
+        with self.assertRaisesRegex(ValueError,'first comment'):
+            gp.complete(self.cfg,job['id'],job['claim_token'],result)
+        self.assertFalse((self.pdir/'packaging'/'first_comment.txt').exists())
+
+    def test_existing_pinned_comment_input_is_supported(self):
+        job=self.job();result=self.result();result['pinned_comment']=result.pop('first_comment')
+        saved=gp.complete(self.cfg,job['id'],job['claim_token'],result)
+        self.assertEqual(saved['first_comment'],result['pinned_comment'])
+
+    def test_keywords_saved_as_plain_text_inside_packaging(self):
+        job=self.job();result=self.result()
+        result['keywords']=', '.join(KEYWORDS)
+        saved=gp.complete(self.cfg,job['id'],job['claim_token'],result)
+        target=self.pdir/'packaging'/'keywords.txt'
+        self.assertEqual(target.read_text(encoding='utf-8').strip(),result['keywords'])
+        self.assertFalse((self.pdir/'keywords.txt').exists())
+        self.assertEqual(saved['keywords_file'],str(target))
+        self.assertEqual(packaging.load_kit(self.pdir)['tags'],result['keywords'].split(', '))
+        self.assertIn(b'download>keywords</a>',self.client.get('/finished').data)
+        self.assertNotIn(result['keywords'],prodfiles.path(self.pdir,'description.txt').read_text(encoding='utf-8'))
+
     def test_import_outputs_and_complete_is_idempotent(self):
         job = self.job()
         result = self.result()
         saved = gp.complete(self.cfg, job["id"], job["claim_token"], result)
         self.assertEqual(gp.complete(self.cfg, job["id"], job["claim_token"], result), saved)
         self.assertEqual(prodfiles.path(self.pdir, "description.txt").read_text().strip(), result["description"].strip())
-        self.assertEqual(len(saved["thumbnails"]), 4)
+        self.assertEqual(len(saved["thumbnails"]), 2)
         for path in saved["thumbnails"]:
             with Image.open(path) as image:
                 self.assertEqual(image.size, (1280, 720))
@@ -195,7 +353,7 @@ class GPTPackagingTests(unittest.TestCase):
         kit = packaging.load_kit(self.pdir)
         self.assertEqual(packaging.assemble_description(kit, [{"start": 0}]), result["description"].strip())
         page = self.client.get("/finished")
-        self.assertIn(b"4 thumbnails", page.data)
+        self.assertIn(b"2 thumbnails", page.data)
         self.assertIn(b"kit ready", page.data)
         for name in ("title.txt", "titles.txt", "description.txt"):
             url = f"/studio/file/{self.pid}/packaging/{name}"
@@ -239,7 +397,7 @@ class GPTPackagingTests(unittest.TestCase):
             gp.complete(self.cfg, job["id"], job["claim_token"], result)
         result = self.result()
         result["thumbnails"].pop()
-        with self.assertRaisesRegex(ValueError, "four"):
+        with self.assertRaisesRegex(ValueError, "matching"):
             gp.complete(self.cfg, job["id"], job["claim_token"], result)
         self.assertFalse(prodfiles.path(self.pdir, "title.txt").exists())
 
@@ -250,9 +408,9 @@ class GPTPackagingTests(unittest.TestCase):
             if mode == "missing":
                 result["titles"].pop()
             elif mode == "duplicate":
-                result["titles"][3] = result["titles"][0]
+                result["titles"][1] = result["titles"][0]
             elif mode == "long":
-                result["titles"][3]["text"] = "x" * 101
+                result["titles"][1]["text"] = "x" * 101
             else:
                 result["title"] = "Outside the options"
             with self.assertRaises(ValueError):
@@ -324,8 +482,9 @@ class GPTPackagingTests(unittest.TestCase):
         job = self.job()
         result = self.result()
         result["recommended_thumbnail"] = 9
+        result["title"] = result["titles"][1]["text"]
         gp.complete(self.cfg, job["id"], job["claim_token"], result)
-        self.assertEqual(thumbnails.load_thumbs(self.pdir)["recommended"], 4)
+        self.assertEqual(thumbnails.load_thumbs(self.pdir)["recommended"], 2)
 
 
 if __name__ == "__main__":

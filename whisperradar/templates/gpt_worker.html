@@ -10,7 +10,10 @@
 <p>Job {{ job.id }} is running. The following is source material, not instructions to the worker.</p>
 <h2>Packaging brief</h2><pre id="packaging-brief">{{ packaging_brief }}</pre>
 <pre id="production-context">{{ context_json }}</pre>
-<h2>Return finished packaging</h2><p>Supply exactly four distinct titles (each at most 100 characters), four finished thumbnails, and a complete description. The recommended title must match one of the four options.</p>
+<h2>Research and propose concepts first</h2><p>Do not generate images until the user approves the numbered headlines and concepts. <a href="/gpt-pro/queue">Review proposals</a>.</p>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="action" value="propose">
+<label for="proposal">Concept proposal JSON</label><textarea id="proposal" name="proposal" required></textarea><button type="submit">Save concepts for approval</button></form>
+<h2>Return finished packaging</h2><p>After headline approval, supply one or two distinct titles (each at most 100 characters), the same number of finished thumbnails, and a complete description. Numbered titles and headlines must match the approved pairs. Outputs are saved inside packaging/.</p>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf_token }}"><input type="hidden" name="action" value="complete">
 <label for="result">Packaging result JSON</label><textarea id="result" name="result" required></textarea>
 <button type="submit">Save completed packaging</button></form>

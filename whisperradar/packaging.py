@@ -179,11 +179,11 @@ def parse_kit(raw: dict) -> dict:
             seen.add(h.lower())
             hs.append(h)
     kit["hashtags"] = hs
-    tg = raw.get("tags") or []
+    tg = raw.get("keywords") or raw.get("tags") or []
     if isinstance(tg, str):
         tg = [x for x in re.split(r"[,\n]", tg)]
     kit["tags"] = [str(x).strip().lstrip("#") for x in tg if str(x).strip()]
-    kit["pinned_comment"] = str(raw.get("pinned_comment") or "").strip()
+    kit["pinned_comment"] = str(raw.get("first_comment") or raw.get("pinned_comment") or "").strip()
     kit["notes"] = str(raw.get("notes") or "").strip()
     return kit
 
