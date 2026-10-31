@@ -13,6 +13,8 @@ setLevel('silent');
 const FINAL = 'https://flow-content.google/image/result';
 const FINAL_2 = 'https://flow-content.google/image/result-2';
 const PLACEHOLDER = 'https://flow.google.com/asb/placeholder';
+const PROXY = 'https://flow.google.com/asb/ANqvLOfinished=s1600-rw';
+const PROXY_OLD = 'https://flow.google.com/asb/ANqvLOprevious=s1600-rw';
 
 const SELECTORS = {
   assetTile: ['tile'],
@@ -80,6 +82,46 @@ test('waitForNewAssets claims a new finished result', async () => {
 
   assert.equal(out.added.length, 1);
   assert.equal(out.added[0].src, FINAL);
+});
+
+test('waitForNewAssets claims a proxy-served finished result (Nano Banana 2.1 gallery)', async () => {
+  const page = makePage({ requestHandler: () => Buffer.from('proxy-bytes') });
+  page.set('tile', [{ src: PROXY, text: 'a finished result', redo: true }]);
+  const out = await makeDriver(page).waitForNewAssets({ entries: [] }, 1, { timeout: 0 });
+
+  assert.equal(out.added.length, 1);
+  assert.equal(out.added[0].src, PROXY);
+});
+
+test('waitForNewAssets holds a proxy tile while Flow is still generating', async () => {
+  const page = makePage({ requestHandler: () => Buffer.from('preview-bytes') });
+  page.set('tile', [{ src: PROXY, text: 'a result', redo: true }]);
+  page.set('generating', [{ text: 'Generating…' }]);
+  await assert.rejects(
+    makeDriver(page).waitForNewAssets({ entries: [] }, 1, { timeout: 0 }),
+    /No new result tile/,
+  );
+});
+
+test('waitForNewAssets ignores the in-progress placeholder tile', async () => {
+  const page = makePage({ requestHandler: () => Buffer.from('placeholder-bytes') });
+  page.set('tile', [{ src: PLACEHOLDER, text: '', redo: false }]);
+  await assert.rejects(
+    makeDriver(page).waitForNewAssets({ entries: [] }, 1, { timeout: 0 }),
+    /No new result tile/,
+  );
+});
+
+test('waitForNewAssets never adopts a stale proxy tile that swaps its src', async () => {
+  const page = makePage({ requestHandler: () => Buffer.from('shared-bytes') });
+  page.set('tile', [{ src: PROXY, text: 'stale tile', redo: true }]);
+  const before = {
+    entries: [{ key: PROXY_OLD, src: PROXY_OLD, hasImage: true, uploaded: false, canRedo: true, text: '' }],
+  };
+  await assert.rejects(
+    makeDriver(page).waitForNewAssets(before, 1, { timeout: 0 }),
+    /No new result tile/,
+  );
 });
 
 test('waitForNewAssets ignores a reference tile labelled with its filename', async () => {

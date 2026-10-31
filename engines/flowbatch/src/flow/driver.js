@@ -53,12 +53,15 @@ function isFinalResultUrl(src) {
 }
 
 /**
- * Recovery only. A freshly rendered tile exposes the flow-content.google CDN
- * URL, but a RELOADED project gallery serves every tile through a signed
- * same-origin proxy (https://flow.google.com/asb/...=s1600-rw) - those tiles
- * are finished results too, they just lost their CDN URL when the page was
- * reloaded. Generation's "new result" detection must keep insisting on the
- * CDN URL (a stale tile may never look new); recovery is allowed both.
+ * A finished result OR a grid placeholder: Flow's gallery serves both through the
+ * signed same-origin proxy (https://flow.google.com/asb/...). Recovery has always
+ * accepted it, and since Flow's 2026-10-30 update (Nano Banana 2.1 gallery) freshly
+ * generated tiles ALSO carry only the proxy src - the CDN src never appears - so
+ * generation detection accepts it too. A proxy tile may be an in-progress
+ * placeholder, so waitForNewAssets claims one only once the tile carries the redo
+ * control (generations only) AND the generating indicator is gone. A stale tile can
+ * never be adopted either way: its bytes are hashed in the baseline
+ * (noteSeenAssets) and ownNewAssets rejects seen hashes.
  */
 function isRecoverableAssetSrc(src) {
   if (isFinalResultUrl(src)) return true;
@@ -1541,14 +1544,26 @@ export class FlowDriver {
       const changed = latest.entries.filter(
         (entry) => !beforeKeys.has(entry.key) && !isReferenceTile(entry),
       );
-      // A result is served from the finished-asset host, never a grid placeholder.
-      const fresh = changed.filter((entry) => isFinalResultUrl(entry.src));
+      // A result carries a finished-asset src, never a grid placeholder. Flow's
+      // 2026-10-30 UI serves freshly generated tiles through the signed asb
+      // proxy immediately (no CDN src any more), so accept it here too - byte
+      // ownership (noteSeenAssets/ownNewAssets) is what stops a stale tile from
+      // being adopted, and the asb src never looks "changed" for a tile that
+      // was already on the page because its key would be in beforeKeys.
+      const fresh = changed.filter((entry) => isRecoverableAssetSrc(entry.src));
       if (fresh.length > 0) lastFresh = fresh;
       // A result must carry the redo control that only generated tiles have, and
       // its bytes must never have been seen this run. A tile that cannot be
       // positively identified is not accepted - the item times out and is retried
       // rather than silently saving the wrong image.
-      const candidates = fresh.filter((entry) => entry.hasImage && entry.canRedo);
+      const generating = await this.exists('generatingIndicator', { timeout: 0 });
+      // A proxy-served tile can also be the in-progress placeholder (both live on
+      // flow.google.com/asb/): claim a proxy result only once the generating
+      // indicator is gone. CDN results keep the immediate claim.
+      const candidates = fresh.filter(
+        (entry) => entry.hasImage && entry.canRedo
+          && (isFinalResultUrl(entry.src) || !generating),
+      );
       // The newest non-reference candidate is the result. It is not always at
       // index 0: a reference tile can mount after the generation and land above
       // it, which is how a real result was skipped and the item timed out. Entries
@@ -1580,7 +1595,6 @@ export class FlowDriver {
         log.debug(`New assets detected: ${added.length}${expected ? `/${expected}` : ''}`);
       }
 
-      const generating = await this.exists('generatingIndicator', { timeout: 0 });
       const settled =
         added.length >= expected || (added.length > 0 && !generating && Date.now() - lastGrowthAt >= settleMs);
       if (settled) return { ...latest, added };
@@ -1605,7 +1619,12 @@ export class FlowDriver {
     // what proves the tile is a generation rather than a reference, and keeping it
     // mandatory is what makes a wrong save impossible - without it the item times
     // out as before rather than risking a reference being written as the result.
-    const salvagePool = lastFresh.filter((entry) => entry.canRedo);
+    // A proxy-served tile is only salvaged once the generating indicator is gone,
+    // so an in-progress placeholder is never saved as the result.
+    const stillGenerating = await this.exists('generatingIndicator', { timeout: 0 });
+    const salvagePool = lastFresh.filter(
+      (entry) => entry.canRedo && (isFinalResultUrl(entry.src) || !stillGenerating),
+    );
     const salvaged = await this.ownNewAssets(salvagePool.slice(0, Math.max(1, expected)));
     if (salvaged.length > 0) {
       log.warn(
