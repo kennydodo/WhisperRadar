@@ -12,6 +12,7 @@ scenes that changed.
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
 import time
@@ -52,9 +53,12 @@ def needs_build(folder: str) -> bool:
         return True
     try:                                   # built by an older builder: rebuild so its fixes apply
         with open(out, encoding="utf-8-sig") as fh:
-            built_by = json.load(fh).get("builder")
+            existing = json.load(fh)
+        built_by = existing.get("builder")
         if built_by is not None and built_by != recipes.BUILDER_VERSION:
             return True
+        if built_by is None and generated_from_plan(folder, existing):
+            return True                    # an unmarked file the builder made: migrate (backed up first)
     except (OSError, ValueError, AttributeError):
         return True
     newest = os.path.getmtime(plan)
@@ -62,6 +66,30 @@ def needs_build(folder: str) -> bool:
     if srt:
         newest = max(newest, os.path.getmtime(srt))
     return newest > os.path.getmtime(out)
+
+
+def _fingerprint_doc(doc: dict) -> list:
+    """What the plan decides, independent of builder geometry or timing: per scene its id, its
+    component or layout objects and every text/label/asset. Hand edits change these."""
+    out = []
+    for sc in doc.get("scenes") or []:
+        objs = sorted((o.get("id"), o.get("type"), o.get("text") or o.get("label") or o.get("asset") or "")
+                      for o in sc.get("objects") or [] if isinstance(o, dict))
+        rem = sc.get("remotion") or {}
+        out.append((sc.get("id"), rem.get("component"), objs))
+    return out
+
+
+def generated_from_plan(folder: str, existing: dict) -> bool:
+    """True when an explainer.json without a builder stamp is what the builder makes from this
+    folder's plan.json (same scenes, objects and texts) - i.e. not a hand-made or hand-edited file."""
+    try:
+        with open(os.path.join(folder, "plan.json"), encoding="utf-8-sig") as fh:
+            plan = json.load(fh)
+        fresh = recipes.build(plan, _load_cues(folder), validate_mod.project_look(folder))
+    except Exception:  # noqa: BLE001 - when in doubt, never overwrite
+        return False
+    return _fingerprint_doc(existing) == _fingerprint_doc(fresh)
 
 
 def build_from_plan(folder: str, log=print) -> int:
@@ -78,50 +106,87 @@ def build_from_plan(folder: str, log=print) -> int:
     with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1)
         fh.write("\n")
-    os.replace(tmp, os.path.join(folder, "explainer.json"))
+    target = os.path.join(folder, "explainer.json")
+    if os.path.isfile(target):                 # never lose a previous file: keep it beside the new one
+        try:
+            with open(target, encoding="utf-8-sig") as fh:
+                prev_by = json.load(fh).get("builder")
+        except (OSError, ValueError, AttributeError):
+            prev_by = None
+        if prev_by != recipes.BUILDER_VERSION:
+            import shutil
+            shutil.copy2(target, os.path.join(folder, f"explainer.before-rebuild-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    os.replace(tmp, target)
     log(f"[explainer] built explainer.json from plan.json: {len(doc['scenes'])} scene(s)")
     return len(doc["scenes"])
 
 
-VISUAL_HEAD_S = 3.0        # how much of each clip's start the coverage check looks at
-VISUAL_MIN_S = 0.5         # background-only longer than this is reported
+VISUAL_FPS = 10            # frames per second the coverage scan samples
+VISUAL_MIN_S = 0.3         # a background-only stretch longer than this is reported
+CONTENT_CONTRAST = 60      # a frame has content when some pixel differs from the board this much (luma)
 
 
-def head_blank_seconds(path: str, background: str, ffmpeg: str = "ffmpeg", head: float = VISUAL_HEAD_S) -> float:
-    """Seconds at the start of a clip where the frame is only the board colour (no drawing, text
-    or diagram). Frames are sampled at 10 fps at 160x90; a frame counts as content when more than
-    0.2% of its pixels differ clearly from the board colour."""
-    h = (background or "#000000").lstrip("#")
-    bg = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
-    w_, h_ = 160, 90
-    proc = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-t", f"{head:.2f}", "-i", path,
-                           "-vf", f"fps=10,scale={w_}:{h_}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-                          capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    data, size = proc.stdout, w_ * h_ * 3
-    blank = 0
-    for f in range(len(data) // size):
-        fr = data[f * size:(f + 1) * size]
-        diff = sum(1 for i in range(0, size, 3)
-                   if abs(fr[i] - bg[0]) + abs(fr[i + 1] - bg[1]) + abs(fr[i + 2] - bg[2]) > 60)
-        if diff > w_ * h_ * 0.002:
-            break
-        blank += 1
-    return blank / 10.0
+def _luma(hex_colour: str) -> float:
+    h = (hex_colour or "#000000").lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.299 * r + 0.587 * g + 0.114 * b
 
 
-def visual_coverage(clips: list, compiled: list, background: str, ffmpeg: str = "ffmpeg") -> dict:
-    """Per scene, how long its clip opens on the bare board. Pen scenes are drawn on the board colour;
-    Remotion scenes draw their own backdrop, so only pen clips are measured here (the planner's
-    check covers Remotion openings)."""
-    rows, empty = [], []
-    for path, cs in zip(clips, compiled):
-        if getattr(cs.spec, "remotion", None):
-            continue
-        sec = head_blank_seconds(path, background, ffmpeg)
-        rows.append({"scene": cs.spec.id, "blank_head_seconds": sec})
-        if sec > VISUAL_MIN_S:
-            empty.append({"scene": cs.spec.id, "seconds": sec})
-    return {"checked": rows, "empty": empty}
+def blank_spans(path: str, background: str, ffmpeg: str = "ffmpeg", fps: int = VISUAL_FPS,
+                min_s: float = VISUAL_MIN_S) -> list:
+    """[(start, end)] seconds where a video shows nothing but the board/backdrop. A frame counts as
+    content when its brightest (dark board) or darkest (light board) pixel differs from the board
+    colour by CONTENT_CONTRAST - text, icons, bars and lines do; the board and the motion scenes'
+    faint grid backdrop do not. Raises RuntimeError when the video cannot be scanned: a failed scan
+    is never reported as clean."""
+    if not os.path.isfile(path):
+        raise RuntimeError(f"cannot scan {path}: the file does not exist")
+    proc = subprocess.run([ffmpeg, "-hide_banner", "-nostats", "-i", path, "-an", "-vf",
+                           f"fps={fps},scale=480:-2,signalstats,metadata=print:file=-", "-f", "null", "-"],
+                          capture_output=True, text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    ymax = [int(x) for x in re.findall(r"lavfi\.signalstats\.YMAX=(\d+)", proc.stdout)]
+    ymin = [int(x) for x in re.findall(r"lavfi\.signalstats\.YMIN=(\d+)", proc.stdout)]
+    if proc.returncode != 0 or not ymax or len(ymin) != len(ymax):
+        raise RuntimeError(f"cannot scan {os.path.basename(path)}: ffmpeg exit {proc.returncode} "
+                           f"{(proc.stderr or '')[-200:].strip()}")
+    bg = _luma(background)
+    dark = bg < 128
+    spans, start = [], None
+    for i, (hi, lo) in enumerate(zip(ymax, ymin)):
+        content = (hi - bg >= CONTENT_CONTRAST) if dark else (bg - lo >= CONTENT_CONTRAST)
+        if not content and start is None:
+            start = i
+        if content and start is not None:
+            spans.append((start, i))
+            start = None
+    if start is not None:
+        spans.append((start, len(ymax)))
+    return [(a / fps, b / fps) for a, b in spans if (b - a) / fps > min_s]
+
+
+def head_blank_seconds(path: str, background: str, ffmpeg: str = "ffmpeg") -> float:
+    """Seconds a clip opens on the bare board (raises when it cannot be scanned)."""
+    spans = blank_spans(path, background, ffmpeg, min_s=0.0)
+    return spans[0][1] if spans and spans[0][0] == 0 else 0.0
+
+
+def visual_coverage(video: str, compiled: list, fps: float, background: str, ffmpeg: str = "ffmpeg") -> dict:
+    """Scan the whole joined video for background-only stretches and name the scene each falls in.
+    {"verified": bool, "error": str, "empty": [{scene, start, end, seconds}]}"""
+    try:
+        spans = blank_spans(video, background, ffmpeg)
+    except RuntimeError as exc:
+        return {"verified": False, "error": str(exc), "empty": []}
+    bounds, t = [], 0.0
+    for cs in compiled:
+        d = cs.duration_frames / fps
+        bounds.append((cs.spec.id, t, t + d))
+        t += d
+    empty = []
+    for a, b in spans:
+        sid = next((s for s, x, y in bounds if x <= a < y), bounds[-1][0] if bounds else "")
+        empty.append({"scene": sid, "start": round(a, 2), "end": round(b, 2), "seconds": round(b - a, 2)})
+    return {"verified": True, "error": "", "empty": empty}
 
 
 def _fps_for(folder: str) -> float:
@@ -144,11 +209,11 @@ PEN_JOIN_HOLD_S = 0.3      # a pen scene opens on the board while its first stro
 
 
 def join_fades(compiled: list, mode: str = "") -> list:
-    """Seconds of cross-fade at each join (len = scenes - 1; 0 = a hard cut). "scene fade" fades
-    every join; otherwise only a join INTO a pen scene gets PEN_JOIN_HOLD_S."""
+    """Seconds of cross-fade at each join (len = scenes - 1). "scene fade" sets it; otherwise every
+    join holds the outgoing picture under the incoming one for PEN_JOIN_HOLD_S, because both pen
+    scenes (first stroke) and motion scenes (fade-in) open faint."""
     d = FADE_S.get(mode or "")
-    return [d if d else (0.0 if getattr(compiled[i + 1].spec, "remotion", None) else PEN_JOIN_HOLD_S)
-            for i in range(len(compiled) - 1)]
+    return [d or PEN_JOIN_HOLD_S for _ in range(len(compiled) - 1)]
 
 
 def crossfade_graph(durations: list, fps: float, fades) -> str:
@@ -258,15 +323,23 @@ def render_video(folder: str, audio: str = "", final: bool = True,
         # re-encode on concat: stream copy can drop frames at boundaries
         _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
               "-safe", "0", "-i", concat_path] + enc, "joining the scenes")
+    log("[explainer] checking that the screen is never empty...")
+    report = visual_coverage(rough, compiled, fps, doc.theme.background, ffmpeg)
     try:
-        report = visual_coverage(clips, compiled, doc.theme.background, ffmpeg)
+        os.makedirs(os.path.join(folder, "out"), exist_ok=True)
         with open(os.path.join(folder, "out", "visual_coverage.json"), "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=1)
+    except OSError:
+        pass
+    if not report["verified"]:
+        log(f"[explainer] WARNING visual coverage NOT VERIFIED: {report['error']}")
+    elif report["empty"]:
         for r in report["empty"]:
-            log(f"[explainer] WARNING scene '{r['scene']}': only the bare board for the first "
-                f"{r['seconds']:.1f} s - give it a title or anchor its first element earlier")
-    except Exception as exc:  # noqa: BLE001 - the check never breaks a finished render
-        log(f"[explainer] visual coverage check skipped: {exc}")
+            m, sec = divmod(r["start"], 60)
+            log(f"[explainer] WARNING empty screen {int(m)}:{sec:04.1f} for {r['seconds']:.1f} s "
+                f"(scene '{r['scene']}')")
+    else:
+        log("[explainer] visual coverage: no empty screen anywhere in the video")
     if not audio:
         return rough
     out_path = (os.path.join(folder, "out", "final", "final.mp4") if final

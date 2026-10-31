@@ -367,17 +367,20 @@ drawn). Icons are Lucide names; an unknown icon is simply left out.
 without moving any reveal off its words:
 
 - a scene with a title writes the title at once;
-- an untitled scene whose first item comes later than 1.5 s: the scene before it stays on screen
-  until that first item, and the new scene starts there (the very first scene of a video, which has
-  nothing before it, starts its first item at once instead);
-- the planner's checker rejects a scene that would open empty for more than 2 s, and the writer is
-  told to give every scene a title;
-- "scene fade" cross-fades joins (the outgoing picture stays under the incoming one), never a dip to
-  the bare board, and every scene keeps its start time;
-- after joining, the start of every pen clip is scanned for bare-board frames; anything over 0.5 s is
-  logged and listed in `out/visual_coverage.json`;
-- `explainer.json` carries the builder version and is rebuilt on the next render when the builder
-  changed, so fixes reach existing productions (hand-made files without the stamp are left alone).
+- an untitled scene whose first content comes later than its start (by any amount): the scene
+  before it stays on screen until that content, and the new scene starts there. Only the very first
+  scene of a video, which has nothing before it, starts its first element at once instead;
+- the planner's checker rejects a scene that would open empty for more than 0.5 s (one fade-in);
+- every join holds the outgoing picture under the incoming one for 0.3 s ("scene fade" sets a
+  longer cross-fade), never a dip to the bare board; every scene keeps its start time;
+- after joining, the WHOLE video is scanned (10 frames a second): a frame counts as content when
+  some pixel differs from the board colour clearly (text, icons, bars, lines - not the faint grid
+  backdrop). Every empty stretch over 0.3 s is logged with its time and scene and written to
+  `out/visual_coverage.json`. A scan that cannot run says "NOT VERIFIED", never "clean";
+- `explainer.json` carries the builder version and is rebuilt when the builder changed. An older
+  file without the stamp is rebuilt only when it is exactly what the builder makes from the plan
+  (same scenes, objects and texts); a hand-edited file is left alone. A replaced file is always kept
+  as `explainer.before-rebuild-<time>.json`.
 
 **Genre packs** (`explainer.scene_genre`, per channel on My channels > Explainer):
 

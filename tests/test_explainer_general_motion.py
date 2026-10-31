@@ -181,7 +181,14 @@ class NeverAnEmptyScreen(unittest.TestCase):
         late = {"id": "late", "start": "Rent takes 1200", "layout": "bars", "illustrative": True,
                 "items": [{"label": "Food", "value": 450, "at": "Food takes"},
                           {"label": "Savings", "value": 600, "at": "Savings get"}]}
-        faults = es.empty_start_faults(recipes.build(plan(late), es._cue_objs(CUES)), CUES)
+        built = recipes.build(plan(late), es._cue_objs(CUES))
+        # the opening bars draw from the first frame (nothing before the first scene to hold)
+        self.assertEqual(built["scenes"][0]["remotion"]["params"]["items"][0]["at_ms"], 0)
+        self.assertEqual(es.empty_start_faults(built, CUES), [])
+        slow = {"id": "slow", "start": "Rent takes 1200", "layout": "pipeline", "tasks": 8,
+                "motion": {"at": "Food takes"},
+                "stages": [{"label": "A", "workers": 2, "work": 1}, {"label": "B", "workers": 2, "work": 1}]}
+        faults = es.empty_start_faults(recipes.build(plan(slow), es._cue_objs(CUES)), CUES)
         self.assertTrue(faults and "nothing is on screen" in faults[0])
         self.assertEqual(es.empty_start_faults(recipes.build(plan(dict(late, title="Budget")), es._cue_objs(CUES)), CUES), [])
 
@@ -275,9 +282,117 @@ class ContinuousPicture(unittest.TestCase):
 
 
 class JoinFades(unittest.TestCase):
-    def test_only_joins_into_pen_scenes_are_held_by_default(self):
+    def test_every_join_is_held_by_default(self):
         from types import SimpleNamespace as NS
         from whisperradar.video.explainer import render
         pen, motion = NS(spec=NS(remotion=None)), NS(spec=NS(remotion={"component": "bars"}))
-        self.assertEqual(render.join_fades([motion, pen, motion, pen]), [0.3, 0.0, 0.3])
+        self.assertEqual(render.join_fades([motion, pen, motion, pen]), [0.3, 0.3, 0.3])
         self.assertEqual(render.join_fades([motion, pen, motion], "long"), [0.5, 0.5])
+
+
+class ClosingTheGaps(unittest.TestCase):
+    """GPT's second review of the production 118 fix: no tolerance band, safe migration,
+    whole-video scan, and a failed scan is never clean."""
+    CUE_MS = NeverAnEmptyScreen.CUE_MS
+
+    def test_a_short_gap_is_held_too(self):
+        # 1.4 s between the scene's start and its first content used to pass; now it is held
+        lines = ["First part of the talk is here.", "Second line starts the new idea", "and the point lands here."]
+        cues = [{"index": 1, "start": srt(0), "end": srt(3.9), "text": lines[0]},
+                {"index": 2, "start": srt(4.0), "end": srt(5.35), "text": lines[1]},
+                {"index": 3, "start": srt(5.4), "end": srt(9), "text": lines[2]}]
+        a = {"id": "a", "start": "First part of", "layout": "hero", "title": "Intro",
+             "items": [{"label": "Intro", "icon": "flag", "at": "First part of"}]}
+        h = {"id": "h", "start": "Second line starts", "layout": "hero",
+             "items": [{"label": "The point", "icon": "target", "at": "the point lands"}]}
+        doc = recipes.build(plan(a, h), es._cue_objs(cues))
+        cue_ms = {c.index: (int(round(c.start_seconds * 1000)), int(round(c.end_seconds * 1000))) for c in es._cue_objs(cues)}
+        self.assertEqual(doc["scenes"][1]["cue_range"][0], 3)
+        self.assertEqual(recipes.first_visible_ms(doc["scenes"][1], cue_ms), 0)
+        self.assertEqual(es.empty_start_faults(doc, cues), [])
+
+    def _folder(self, plan_dict):
+        import json as _json, os, tempfile
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "plan.json"), "w") as fh:
+            _json.dump(plan_dict, fh)
+        with open(os.path.join(d, "subtitles.srt"), "w") as fh:
+            fh.write("\n\n".join(f"{c['index']}\n{c['start']} --> {c['end']}\n{c['text']}" for c in CUES) + "\n")
+        return d
+
+    def test_unmarked_generated_file_is_migrated_with_a_backup(self):
+        import json as _json, os, time, glob
+        from whisperradar.video.explainer import render
+        d = self._folder(plan(BARS, FLOW))
+        render.build_from_plan(d, log=lambda _: None)
+        path = os.path.join(d, "explainer.json")
+        doc = _json.load(open(path))
+        doc.pop("builder")                                       # as an older builder wrote it
+        _json.dump(doc, open(path, "w"))
+        os.utime(path, (time.time() + 5, time.time() + 5))       # newer than the plan
+        self.assertTrue(render.needs_build(d))
+        render.build_from_plan(d, log=lambda _: None)
+        self.assertTrue(glob.glob(os.path.join(d, "explainer.before-rebuild-*.json")))
+        self.assertEqual(_json.load(open(path))["builder"], recipes.BUILDER_VERSION)
+
+    def test_hand_edited_unmarked_file_is_left_alone(self):
+        import json as _json, os, time
+        from whisperradar.video.explainer import render
+        d = self._folder(plan(dict(BARS), {"id": "h", "start": "A browser asks", "layout": "hero", "title": "T",
+                                           "items": [{"label": "Ask first", "icon": "globe", "at": "A browser asks"}]}))
+        render.build_from_plan(d, log=lambda _: None)
+        path = os.path.join(d, "explainer.json")
+        doc = _json.load(open(path))
+        doc.pop("builder")
+        for o in doc["scenes"][1]["objects"]:
+            if o.get("text") == "Ask first":
+                o["text"] = "Ask the cache first"                # a hand edit
+        _json.dump(doc, open(path, "w"))
+        os.utime(path, (time.time() + 5, time.time() + 5))
+        self.assertFalse(render.needs_build(d))
+
+    def _video(self, vf, name, bg="#1d2a24"):
+        import os, subprocess, tempfile, shutil
+        if not shutil.which("ffmpeg"):
+            self.skipTest("no ffmpeg")
+        p = os.path.join(tempfile.mkdtemp(), name)
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=c={bg}:s=640x360:r=30:d=6,{vf}",
+                        "-pix_fmt", "yuv420p", p], check=True)
+        return p
+
+    def test_whole_video_scan_finds_a_gap_in_the_middle(self):
+        from whisperradar.video.explainer import render
+        v = self._video("drawbox=x=40:y=40:w=200:h=60:c=yellow:t=fill:enable='not(between(t,2,3.2))'", "mid.mp4")
+        spans = render.blank_spans(v, "#1d2a24")
+        self.assertEqual(len(spans), 1)
+        self.assertAlmostEqual(spans[0][0], 2.0, delta=0.15)
+        self.assertAlmostEqual(spans[0][1], 3.2, delta=0.15)
+
+    def test_faint_backdrop_is_not_content_but_a_title_is(self):
+        from whisperradar.video.explainer import render
+        grid = self._video("drawgrid=w=64:h=64:t=1:c=0x2a3a33", "grid.mp4", bg="#12161A")
+        self.assertEqual(render.blank_spans(grid, "#12161A"), [(0.0, 6.0)])
+        titled = self._video("drawgrid=w=64:h=64:t=1:c=0x2a3a33,drawbox=x=40:y=40:w=200:h=8:c=white:t=fill", "t.mp4", bg="#12161A")
+        self.assertEqual(render.blank_spans(titled, "#12161A"), [])
+
+    def test_light_board(self):
+        from whisperradar.video.explainer import render
+        v = self._video("drawbox=x=40:y=40:w=200:h=60:c=black:t=fill:enable='gte(t,1)'", "light.mp4", bg="#F7F4EC")
+        spans = render.blank_spans(v, "#F7F4EC")
+        self.assertEqual(len(spans), 1)
+        self.assertAlmostEqual(spans[0][1], 1.0, delta=0.15)
+
+    def test_a_failed_scan_is_not_verified(self):
+        from types import SimpleNamespace as NS
+        from whisperradar.video.explainer import render
+        with self.assertRaises(RuntimeError):
+            render.blank_spans("/no/such/video.mp4", "#1d2a24")
+        rep = render.visual_coverage("/no/such/video.mp4", [NS(duration_frames=30, spec=NS(id="a"))], 30, "#1d2a24")
+        self.assertFalse(rep["verified"])
+        self.assertTrue(rep["error"])
+
+    def test_every_join_holds_the_outgoing_picture(self):
+        from types import SimpleNamespace as NS
+        from whisperradar.video.explainer import render
+        pen, motion = NS(spec=NS(remotion=None)), NS(spec=NS(remotion={"component": "bars"}))
+        self.assertEqual(render.join_fades([motion, pen, motion, pen]), [0.3, 0.3, 0.3])

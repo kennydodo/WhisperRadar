@@ -1103,7 +1103,7 @@ def number_faults(resolved: dict, cues: list) -> list:
     return faults
 
 
-EMPTY_START_MS = 2000
+EMPTY_START_MS = 500     # one fade-in; anything longer at a scene's start is an empty screen
 
 
 def empty_start_faults(built: dict, cues: list) -> list:

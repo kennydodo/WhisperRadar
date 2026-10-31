@@ -611,13 +611,22 @@ def _general_params(raw: dict, sid: str, layout: str, cr, cue_ms: dict, start: i
     m = raw.get("motion") if isinstance(raw.get("motion"), dict) else {}
     st = max(at_of(m, 400), 400)
     latest = dur - TAIL_MS
+    first_key = _FIRST_OF.get(layout, (None,))[0]
+    if not raw.get("title") and first_key and raw.get(first_key):
+        # untitled: its first element is what opens the scene (the builder starts the scene on that
+        # element's line), so it draws from the scene's first frame, not part-way into the line
+        lst = [dict(x) if isinstance(x, dict) else x for x in raw[first_key]]
+        if isinstance(lst[0], dict):
+            lst[0].pop("cue_frac", None)
+            lst[0]["_opens"] = True
+        raw = dict(raw, **{first_key: lst})
 
     def beats(seq, anim, label, step=1200):
         out, prev = [], None
         for k, x in enumerate(seq):
             x = dict(x) if isinstance(x, dict) else {"label": str(x)}
             t = at_of(x, st + k * step)
-            t = max(t, st if k == 0 else 0)
+            t = 0 if x.pop("_opens", False) else max(t, st if k == 0 else 0)
             if prev is not None and t < prev + BEAT_GAP_MS:
                 t = prev + BEAT_GAP_MS
             a = anim(x) if callable(anim) else anim
@@ -981,8 +990,8 @@ def simplify_overfull(plan: dict, cues, decoration_only: bool = False) -> tuple:
 PEN_FACTOR = {"slow": 1.3, "normal": 1.0, "fast": 0.75}
 # Bump when the builder's output changes for the same plan (new placement, timing or safety rules):
 # explainer.json files built by an older builder are rebuilt on the next render.
-BUILDER_VERSION = "2026-10-31.hold-previous"
-LEAD_MS = 1500           # a pen scene never shows an empty board longer than this at its start
+BUILDER_VERSION = "2026-10-31.continuous"
+LEAD_MS = 0              # an untitled scene whose first content is later than its start at all is held
 
 
 def _lead_in(s, els, cue_ms):
@@ -1040,7 +1049,7 @@ def _hold_previous(scenes: list, cue_ms: dict) -> list:
         k = _first_content_cue(cur)
         if not (cr and pr and k) or k <= cr[0] or k not in cue_ms or cr[0] not in cue_ms:
             continue
-        if cue_ms[k][0] - cue_ms[cr[0]][0] > LEAD_MS and pr[1] == cr[0] - 1:
+        if cue_ms[k][0] - cue_ms[cr[0]][0] > LEAD_MS and pr[1] == cr[0] - 1 and k <= cr[1]:
             held.append((cur.get("id"), (cue_ms[k][0] - cue_ms[cr[0]][0]) / 1000))
             prev["cue_range"] = [pr[0], k - 1]
             cur["cue_range"] = [k, cr[1]]
