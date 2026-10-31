@@ -168,3 +168,35 @@ Slice 2 done (planner side, same branch): channel setting "text drawn by the ren
 Still open: the built-in (API) shotlist judge's alignment audit does not know that stats/labels may live in `overlays` instead of the image prompt (it may mark a prompt "missing" the number); channel font/style settings in the dashboard (font lives in the project's imgtovideo.json `text`); Premiere/CapCut exports; C# engine; a real production test; the shotlist skeleton branch would need the overlay lines in its reply format.
 
 - Shared fonts folder `fonts/` (done on feat/text-overlays): `text.font` is found as a path, in the project fonts_dir, or in `fonts/`; with nothing set, the first font in `fonts/` is used, then Arial Bold. Still open: per-channel font dropdown in the dashboard.
+
+## 13. TODO - scene-plan resume handoff (owner brief 2026-10-31, work in D:\Repos\WhisperRadar on master)
+
+The seeded resume (run_scenes, `explainer_scenes.py` ~755-795: when plan.json/plan_candidate.json
+exists, the loop judges the existing plan before any writer contact) broke the chat handoff:
+
+1. **First writer contact must open a NEW chat.** On a seeded run the writer never opened a chat,
+   so the first correction goes out via `_revise` -> `ask("writer", ..., new_chat=False)`. In the
+   web-chat transport that raises `ChatLost` (`webchat.py` Transport.ask ~2603-2632: "the chat this
+   answer belongs to is not open") or lands in a stale chat URL from saved chats. Rule: the first
+   `ask("writer", ...)` of a run must use new_chat=True and carry the plan, narration and findings;
+   reuse that chat (new_chat=False) only afterwards. Track "writer established" per run, not per
+   function.
+2. **Writer and judge on the SAME site must not share a conversation.** `webchat_job` keys the
+   transport by site name (`t.ask(sites[role], ...)`, explainer_scenes.py ~899-924; `webchat.py`
+   Transport._urls is keyed per site), so writer == judge (e.g. both deepseek) interleaves both
+   roles in one thread and the judge chat is lost. Key the chat per ROLE (writer/judge), or give
+   the transport two keys per site.
+3. **The latest transport failure must be visible separately from older saved reviews.** A failed
+   round trip (`webstages.py` transport wrapper ~98-119 re-raises after logging) leaves the studio
+   page showing the OLD plan_review.json state. Record the run failure distinctly (e.g. the
+   production warning or a small last-run status next to plan_review.json) so the page shows
+   "latest run failed: <error>" apart from older review verdicts; load_review stays untouched.
+
+Constraints: preserve plan.json on any failure (the existing candidate/digest guard);
+do NOT regenerate production 115 automatically - offline tests only. Add regression tests:
+judge-first resume (seed present, judge runs, writer chat opens fresh on first correction),
+first writer contact, subsequent corrections reuse the same chat, same-site writer+judge keep
+separate conversations (fake transport keyed by role), transport failure surfaced separately and
+plan preserved. Keep the verdict strictness from c46ad47/127e171 (explicit severity, scoped
+negations, malformed-verdict resend). Verify with tests/test_explainer_reliability.py and
+tests/test_explainer_scenes.py; owner reviews the result independently before any live run.
