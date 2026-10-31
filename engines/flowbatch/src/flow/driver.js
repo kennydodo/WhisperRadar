@@ -57,11 +57,11 @@ function isFinalResultUrl(src) {
  * signed same-origin proxy (https://flow.google.com/asb/...). Recovery has always
  * accepted it, and since Flow's 2026-10-30 update (Nano Banana 2.1 gallery) freshly
  * generated tiles ALSO carry only the proxy src - the CDN src never appears - so
- * generation detection accepts it too. A proxy tile may be an in-progress
- * placeholder, so waitForNewAssets claims one only once the tile carries the redo
- * control (generations only) AND the generating indicator is gone. A stale tile can
- * never be adopted either way: its bytes are hashed in the baseline
- * (noteSeenAssets) and ownNewAssets rejects seen hashes.
+ * generation detection accepts it too. The discriminator between a finished result
+ * and an in-progress placeholder is the tile's redo control (placeholder tiles have
+ * none), which waitForNewAssets already requires; a stale tile can never be adopted
+ * either way: its bytes are hashed in the baseline (noteSeenAssets) and
+ * ownNewAssets rejects seen hashes.
  */
 function isRecoverableAssetSrc(src) {
   if (isFinalResultUrl(src)) return true;
@@ -1556,14 +1556,15 @@ export class FlowDriver {
       // its bytes must never have been seen this run. A tile that cannot be
       // positively identified is not accepted - the item times out and is retried
       // rather than silently saving the wrong image.
-      const generating = await this.exists('generatingIndicator', { timeout: 0 });
-      // A proxy-served tile can also be the in-progress placeholder (both live on
-      // flow.google.com/asb/): claim a proxy result only once the generating
-      // indicator is gone. CDN results keep the immediate claim.
-      const candidates = fresh.filter(
-        (entry) => entry.hasImage && entry.canRedo
-          && (isFinalResultUrl(entry.src) || !generating),
-      );
+      //
+      // A proxy-served tile may be the in-progress placeholder, but the
+      // generatingIndicator selector cannot tell them apart: its first candidate
+      // is the DISABLED generate button, which Flow keeps disabled in the DOM
+      // whenever the prompt box is empty - i.e. always after a generation. The
+      // redo control is the real discriminator (uploads never have one, the
+      // placeholder never has one, finished results always do), so the claim
+      // relies on it plus unseen bytes, exactly as for CDN results.
+      const candidates = fresh.filter((entry) => entry.hasImage && entry.canRedo);
       // The newest non-reference candidate is the result. It is not always at
       // index 0: a reference tile can mount after the generation and land above
       // it, which is how a real result was skipped and the item timed out. Entries
@@ -1619,12 +1620,10 @@ export class FlowDriver {
     // what proves the tile is a generation rather than a reference, and keeping it
     // mandatory is what makes a wrong save impossible - without it the item times
     // out as before rather than risking a reference being written as the result.
-    // A proxy-served tile is only salvaged once the generating indicator is gone,
-    // so an in-progress placeholder is never saved as the result.
-    const stillGenerating = await this.exists('generatingIndicator', { timeout: 0 });
-    const salvagePool = lastFresh.filter(
-      (entry) => entry.canRedo && (isFinalResultUrl(entry.src) || !stillGenerating),
-    );
+    // The generatingIndicator selector is NOT used here: its first candidate is
+    // the disabled generate button, which stays in the DOM whenever the prompt
+    // box is empty - it cannot tell "generating" from "idle".
+    const salvagePool = lastFresh.filter((entry) => entry.canRedo);
     const salvaged = await this.ownNewAssets(salvagePool.slice(0, Math.max(1, expected)));
     if (salvaged.length > 0) {
       log.warn(

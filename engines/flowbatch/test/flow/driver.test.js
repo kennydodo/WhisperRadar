@@ -93,14 +93,16 @@ test('waitForNewAssets claims a proxy-served finished result (Nano Banana 2.1 ga
   assert.equal(out.added[0].src, PROXY);
 });
 
-test('waitForNewAssets holds a proxy tile while Flow is still generating', async () => {
-  const page = makePage({ requestHandler: () => Buffer.from('preview-bytes') });
-  page.set('tile', [{ src: PROXY, text: 'a result', redo: true }]);
-  page.set('generating', [{ text: 'Generating…' }]);
-  await assert.rejects(
-    makeDriver(page).waitForNewAssets({ entries: [] }, 1, { timeout: 0 }),
-    /No new result tile/,
-  );
+test('waitForNewAssets claims a proxy result even with a disabled generate button on the page', async () => {
+  // the generatingIndicator candidate 'button.generate-icon-button.mat-mdc-button-disabled'
+  // stays in the DOM while the prompt box is empty - it must not block the claim
+  const page = makePage({ requestHandler: () => Buffer.from('proxy-bytes') });
+  page.set('tile', [{ src: PROXY, text: 'a finished result', redo: true }]);
+  page.set('generating', [{ text: '' }]);
+  const out = await makeDriver(page).waitForNewAssets({ entries: [] }, 1, { timeout: 0 });
+
+  assert.equal(out.added.length, 1);
+  assert.equal(out.added[0].src, PROXY);
 });
 
 test('waitForNewAssets ignores the in-progress placeholder tile', async () => {
