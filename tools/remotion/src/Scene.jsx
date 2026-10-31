@@ -16,9 +16,9 @@ import {Backdrop, usePal} from './motion.jsx';
 
 // Allowlisted components. The Python side validates names and parameters
 // before anything reaches here; unknown names render nothing.
-const REGISTRY = {fit_chart: FitChart, counter: Counter, screenshot: ScreenshotZoom};
+const REGISTRY = {fit_chart: FitChart, screenshot: ScreenshotZoom};
 const MOTION = {pipeline: Pipeline, generation: Generation, code: CodePanel, levels: Levels,
-  bars: Bars, flow: Flow, line: Line, grid: Grid, split: Split};
+  bars: Bars, flow: Flow, line: Line, grid: Grid, split: Split, counter: Counter};
 
 export const Scene = ({component, params, theme, fade}) => {
   const f = useCurrentFrame();

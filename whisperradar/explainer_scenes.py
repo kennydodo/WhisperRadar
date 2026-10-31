@@ -203,6 +203,7 @@ RULE_LINES = [
     (None, "- A scene lasts about 12-40 seconds. Change the picture when the narration changes idea, not on every sentence. Scene count for this video: about {low}-{high}."),
     (None, "- An item appears when the narrator says it: \"at\" is the words where it is said. Never anchor an item in the last 3 seconds of its scene, and give every item at least 2.5 seconds before the scene ends. Fewer items beat crowded scenes."),
     (None, "- Do not anchor two scenes on the same sentence. Items in a scene go in narration order."),
+    (None, "- THE SCREEN IS NEVER EMPTY: every scene shows something from its first second - give it a \"title\" (motion scenes too), or anchor its first element to the scene's opening words. A blank board while the narrator talks is rejected."),
     (None, "TEXT:"),
     (None, "- Labels are 2-4 words (at most 32 characters), plain words, no sentences, no emoji. Numbers and units are welcome (7B, 14 GB, $1,200)."),
     (None, "- Use an icon from the list; another valid Lucide icon name is fine if you are sure of it. An icon must add meaning (a thing, a place, an action), not just repeat the label's noun or decorate. Leave \"icon\" off when no icon helps."),
@@ -1102,6 +1103,23 @@ def number_faults(resolved: dict, cues: list) -> list:
     return faults
 
 
+EMPTY_START_MS = 2000
+
+
+def empty_start_faults(built: dict, cues: list) -> list:
+    """There is always something on screen: a scene that would open on an empty board for more
+    than EMPTY_START_MS is a fault (pen scenes are already pulled forward by the builder)."""
+    cue_ms = {int(c["index"]): (int(studio._srt_seconds(c["start"]) * 1000), int(studio._srt_seconds(c["end"]) * 1000))
+              for c in cues}
+    out = []
+    for sc in built.get("scenes") or []:
+        gap = recipes.first_visible_ms(sc, cue_ms)
+        if gap > EMPTY_START_MS:
+            out.append(f"scene {sc.get('id')}: nothing is on screen for the first {gap / 1000:.1f} s - give it a "
+                       "title, or anchor its first element to the scene's opening words")
+    return out
+
+
 def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms: list = None) -> list[str]:
     """Faults the code can find: the recipe builder's readable errors plus pacing."""
     if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
@@ -1133,6 +1151,7 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms
             faults.append(explainer_terms.fault_text(gap, mmss))
     faults.extend(count_faults(resolved, cues))
     faults.extend(number_faults(resolved, cues))
+    faults.extend(empty_start_faults(built, cues))
     faults.extend(motion_faults(resolved, cues, total_seconds, look))
     if resolved["scenes"][0]["cue_range"][0] != int(cues[0]["index"]):
         faults.append("the first scene must start with the very first words of the narration")

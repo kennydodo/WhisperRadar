@@ -752,6 +752,15 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
         must_finish(st, cm, "the counter")
         params = {"from": c.get("from", 0), "to": c.get("to"), "unit": c.get("unit", ""),
                   "label": c.get("label", ""), "start_ms": int(st), "count_ms": cm}
+        for key in ("title", "sub"):                 # the scene's heading was dropped before
+            if raw.get(key):
+                params[key] = str(raw[key])
+        ft = raw.get("footer")
+        ft = {"text": ft} if isinstance(ft, str) else ft
+        if isinstance(ft, dict) and ft.get("text"):
+            fa = ft.get("cue")
+            fs = (max(cue_ms[fa][0] - start, 0) if fa in cue_ms and cr[0] <= fa <= cr[1] else st + cm)
+            params["footer"] = {"text": str(ft["text"]), "start_ms": int(min(fs, max(dur - TAIL_MS - 700, 0)))}
     elif layout in ("pipeline", "generation", "code", "levels"):
         m = dict(raw.get("motion") or {})
         st = rel_ms(m, "the animation")
@@ -970,6 +979,48 @@ def simplify_overfull(plan: dict, cues, decoration_only: bool = False) -> tuple:
 
 
 PEN_FACTOR = {"slow": 1.3, "normal": 1.0, "fast": 0.75}
+LEAD_MS = 1500           # a pen scene never shows an empty board longer than this at its start
+
+
+def _lead_in(s, els, cue_ms):
+    """Something is on screen from a scene's first moment: without a title, the first item (and
+    anything anchored with it) starts at the scene's first words instead of waiting for its own,
+    when those come more than LEAD_MS later."""
+    if not els or s.get("title"):
+        return
+    c0 = s["cue_range"][0]
+    first = min(e.cue for e in els)
+    if first in cue_ms and c0 in cue_ms and cue_ms[first][0] - cue_ms[c0][0] > LEAD_MS:
+        for e in els:
+            if e.cue == first:
+                e.cue = c0
+
+
+def first_visible_ms(scene: dict, cue_ms: dict) -> int:
+    """How long a built scene shows nothing at its start (ms). Pen scenes: the first drawing
+    event; Remotion scenes: 0 with a title, else the earliest step of the animation."""
+    cr = scene.get("cue_range") or [0, 0]
+    start = cue_ms.get(cr[0], (0, 0))[0]
+    block = scene.get("remotion")
+    if block:
+        p = block.get("params") or {}
+        if p.get("title"):
+            return 0
+        # these draw nothing until their first step; the others draw their frame (axes, board,
+        # ring, stage boxes, empty slots, the number) from start_ms
+        first_of = {"bars": "items", "flow": "nodes", "levels": "levels"}.get(block.get("component"))
+        if first_of:
+            times = [x.get("at_ms") for x in p.get(first_of) or [] if isinstance(x, dict)]
+            times = [t for t in times if isinstance(t, (int, float))]
+            return int(min(times)) if times else 0
+        return int(p.get("start_ms") or 0)
+    starts = []
+    for ev in scene.get("events") or []:
+        at = ev.get("at") or {}
+        if at.get("cue") in cue_ms:
+            base = cue_ms[at["cue"]][0 if at.get("edge", "start") == "start" else 1]
+            starts.append(base + int(ev.get("offset_ms") or 0) - start)
+    return int(min(starts)) if starts else 0
 
 
 def build(plan: dict, cues, look=None) -> dict:
@@ -992,6 +1043,7 @@ def build(plan: dict, cues, look=None) -> dict:
             continue
         try:
             s, els = _scene_elements(raw, idx)
+            _lead_in(s, els, cue_ms)
             pen = PEN_FACTOR.get(str((look or {}).get("pen_speed") or "normal"), 1.0)
             if pen != 1.0:
                 for e in els:

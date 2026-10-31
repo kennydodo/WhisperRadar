@@ -91,6 +91,9 @@ def _check_counter(p: dict, where: str) -> list:
         errs.append(f"{where}: start_ms must be a whole number >= 0.")
     if not _ms(p.get("count_ms")) or p.get("count_ms", 0) < 300:
         errs.append(f"{where}: count_ms must be at least 300.")
+    for key, n in (("title", 48), ("sub", 70)):
+        if key in p and (not isinstance(p[key], str) or len(p[key]) > n):
+            errs.append(f"{where}: {key} must be text of {n} characters at most.")
     return errs
 
 

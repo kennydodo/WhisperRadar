@@ -159,3 +159,38 @@ class AnalogyRows(unittest.TestCase):
         self.assertEqual(rb.check_block({"component": "generation", "params": good}, "s"), [])
         bad = {"rows": [dict(row, analogy="yes")], "start_ms": 0, "run_ms": 3000}
         self.assertTrue(rb.check_block({"component": "generation", "params": bad}, "s"))
+
+
+class NeverAnEmptyScreen(unittest.TestCase):
+    CUE_MS = {c.index: (int(round(c.start_seconds * 1000)), int(round(c.end_seconds * 1000))) for c in es._cue_objs(CUES)}
+
+    def test_untitled_pen_scene_draws_from_its_first_moment(self):
+        hero = {"id": "h", "start": "Rent takes 1200", "layout": "hero",
+                "items": [{"label": "The rest is what is left", "icon": "wallet", "at": "The rest is left"}]}
+        doc = recipes.build(plan(hero), es._cue_objs(CUES))
+        self.assertLessEqual(recipes.first_visible_ms(doc["scenes"][0], self.CUE_MS), recipes.LEAD_MS)
+
+    def test_titled_scene_is_left_alone(self):
+        hero = {"id": "h", "start": "Rent takes 1200", "layout": "hero", "title": "Budget",
+                "items": [{"label": "Left over", "icon": "wallet", "at": "The rest is left"}]}
+        doc = recipes.build(plan(hero), es._cue_objs(CUES))
+        item_ev = [e for e in doc["scenes"][0]["events"] if "title" not in e["target"] and "tline" not in e["target"]][0]
+        self.assertEqual(item_ev["at"]["cue"], 10)          # still on its own words
+
+    def test_untitled_motion_scene_with_a_late_start_is_a_fault(self):
+        late = {"id": "late", "start": "Rent takes 1200", "layout": "bars", "illustrative": True,
+                "items": [{"label": "Food", "value": 450, "at": "Food takes"},
+                          {"label": "Savings", "value": 600, "at": "Savings get"}]}
+        faults = es.empty_start_faults(recipes.build(plan(late), es._cue_objs(CUES)), CUES)
+        self.assertTrue(faults and "nothing is on screen" in faults[0])
+        self.assertEqual(es.empty_start_faults(recipes.build(plan(dict(late, title="Budget")), es._cue_objs(CUES)), CUES), [])
+
+    def test_counter_keeps_its_title_and_footer(self):
+        c = {"id": "c", "start": "Imagine method A", "layout": "counter", "title": "NCM: 21x faster",
+             "counter": {"from": 0, "to": 21, "unit": "x", "label": "faster than what?", "at": "method A takes"},
+             "footer": {"text": "Called an LLM killer", "at": "Method B takes"}}
+        p = recipes.build(plan(c), es._cue_objs(CUES))["scenes"][0]["remotion"]["params"]
+        self.assertEqual(p["title"], "NCM: 21x faster")
+        self.assertEqual(p["footer"]["text"], "Called an LLM killer")
+        self.assertGreaterEqual(p["footer"]["start_ms"], 3900)
+        self.assertEqual(rb.check_block({"component": "counter", "params": p}, "s"), [])
