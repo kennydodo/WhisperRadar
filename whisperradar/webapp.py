@@ -5079,6 +5079,8 @@ def create_app(cfg) -> Flask:
     def studio_shotlist_generate(pid):
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
+        if autorun.explainer_production(cfg, pid):
+            return _studio_url(pid, error="This explainer channel uses a scene plan. Use Write scene plan instead.")
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:

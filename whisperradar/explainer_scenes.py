@@ -29,6 +29,8 @@ from .video.explainer import recipes
 from .video.explainer.validate import ExplainerError
 
 MAX_ROUNDS = 5
+CONTINUE_MESSAGE = ("Continue the same scene-plan JSON as text, not a file. Output only the remaining "
+                    "scenes after the last complete one and close every bracket.")
 # longest label each layout can show; stack rows and hero lines are wide, the others share a row
 LABEL_MAX = {"stack": 48, "hero": 60, "compare": 40}
 MIN_SCORE = 8.0
@@ -36,12 +38,12 @@ MIN_SCORE = 8.0
 ICONS = (
     "box blocks layers puzzle file folder database server hard-drive cpu gpu memory-stick monitor laptop "
     "smartphone cloud globe wifi lock shield key user users message-square mail bell bookmark book-open "
-    "image video music mic camera calculator ruler scale gauge hourglass clock calendar zap flame battery "
+    "image video file-music mic camera calculator ruler scale gauge hourglass clock calendar zap flame battery "
     "sun moon thermometer wrench hammer settings sliders-horizontal search eye lightbulb brain target flag "
-    "rocket trophy star heart thumbs-up thumbs-down triangle-alert circle-check circle-x circle-help info "
+    "rocket trophy star heart thumbs-up thumbs-down triangle-alert circle-check circle-x message-circle-question-mark info "
     "wallet credit-card dollar-sign coins piggy-bank trending-up trending-down chart-bar chart-line "
-    "chart-pie shopping-cart store house building car plane train bike truck map-pin route compass "
-    "list-checks clipboard-list pencil trash-2 download upload refresh-cw repeat split merge arrow-right "
+    "chart-pie shopping-cart store house building car plane train-front bike truck map-pin route compass "
+    "list-checks clipboard-list pencil trash download upload refresh-cw repeat split merge arrow-right "
     "turtle snail rabbit leaf sprout tree-pine droplet shield-check badge-check scissors package gift "
     "graduation-cap briefcase handshake megaphone newspaper code terminal bug bot sparkles wand"
 ).split()
@@ -787,9 +789,28 @@ def webchat_job(cfg, pid: int, writer: str, judge: str, log, should_stop=lambda:
     with ws.web_transport(cfg, log, options) as t:
         t.set_stop(should_stop)
 
+        n = [0]
+
         def ask(role, text, new_chat):
             log(f"{sites[role]}: sending {len(text):,} characters")
-            return t.ask(sites[role], text, (), new_chat=new_chat, ready=ws._has_json)
+            reply = t.ask(sites[role], text, (), new_chat=new_chat, ready=ws._has_json)
+            n[0] += 1
+            tag = f"scene_{role}_reply_{n[0]}"
+            ws._dump(cfg, pid, tag + "_1", reply)          # raw replies for debugging (webchat_debug)
+            if role != "writer":
+                return reply
+            # like the shotlist: a long plan is often cut off by the chat - send 'continue'
+            # while the JSON is really incomplete, and join the pieces
+            body = ws._json_chunk(reply, True)
+            for i in range(ws.MAX_CONTINUES):
+                if _plan_from(body) is not None or "{" not in body:
+                    break
+                log(f"{sites[role]}: the plan is cut off ({len(body):,} characters read) - "
+                    f"sending 'continue' ({i + 1}/{ws.MAX_CONTINUES})")
+                more = t.ask(sites[role], CONTINUE_MESSAGE, (), new_chat=False, ready=ws._has_json)
+                ws._dump(cfg, pid, f"{tag}_{i + 2}", more)
+                body = ws._join_chunks(body, ws._json_chunk(more, False))
+            return body
         try:
             return run_scenes(cfg, pid, ask, log, should_stop)
         finally:
