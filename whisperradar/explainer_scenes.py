@@ -258,17 +258,15 @@ def _revise(ask, plan, faults, narration):
 
 
 def review_passes(verdict: dict) -> bool:
-    """Approved only on pass + score >= 8 with no BLOCKING finding: self-answered entries
-    ('...fine; no fault here — remove') and cosmetic ones ('; minor') never block approval,
-    but an unmarked fix the judge wants applied does."""
-    score = verdict.get("score")
+    """Approved only on a fully-typed verdict (see _verdict_usable) with pass=true,
+    score >= 8 and no BLOCKING finding: self-answered entries ('...fine; no fault here —
+    remove') and explicitly-minor ones never block, an unmarked fix the judge wants
+    applied does. A malformed verdict can never pass."""
+    if not _verdict_usable(verdict):
+        return False
     blocking, _minor = split_verdict_faults(verdict.get("faults"))
-    fixes = verdict.get("fixes")
-    blocking_fixes = [f for f in (fixes if isinstance(fixes, list) else [])
-                      if not _MINOR_MARK_RE.search(str(f).split(";")[-1].strip())]
-    return (isinstance(score, (int, float)) and not isinstance(score, bool)
-            and math.isfinite(score) and MIN_SCORE <= score <= 10
-            and verdict.get("pass") is True and not blocking and not blocking_fixes)
+    return (verdict["pass"] is True and MIN_SCORE <= verdict["score"] <= 10
+            and not blocking and not _blocking_fix_texts(verdict.get("fixes")))
 
 
 def _atomic_json(path, data):
@@ -289,10 +287,11 @@ THE PLAN AS IT WILL BE DRAWN (scene, layout, what appears, and the narration it 
 {summary}
 
 Reply with ONE JSON object and nothing else:
-{{"score": 8.5, "pass": true, "faults": ["scene id: specific problem"], "fixes": ["scene id: the specific change"]}}
+{{"score": 8.5, "pass": true, "faults": [{{"scene": "id", "severity": "blocking", "problem": "specific problem"}}], "fixes": [{{"scene": "id", "change": "the specific change"}}]}}
+Every finding may be an object with scene, severity ("blocking" or "minor") and problem/change text - use the object form when you want a note marked cosmetic; a finding WITHOUT severity always counts as blocking. Plain strings ("scene id: specific problem") are accepted and count as blocking unless they end with "; minor" as their only clause.
 The summary includes COMPILED animation parameters with scene-relative milliseconds: these are what the renderer receives. Judge that output, not an imagined animation. This is a specification review, not a claim to have watched rendered pixels.
 Distinguish tasks, workers, stages and speed multipliers; these counts are different quantities. Illustrative cell counts are allowed when clearly labelled schematic, not measured architecture. Names must be shown when spoken; expansions are needed when the narrator explains them, not necessarily before. A motion comparison needs consistent example text, but paraphrases that preserve the meaning are not factual errors. Request only changes needed to explain the subject, not motion on every warning or list.
-"pass" must be an explicit boolean. It is true only when the score is {min_score:g} or higher and nothing important is left to fix. The faults array holds ONLY findings you want changed, each naming its scene id. Scenes you checked and found correct must NOT appear in faults - do not write "no fault" or "fine" entries; the app treats them as noise. A cosmetic, nice-to-have finding (in faults or fixes) ends with "; minor" and does not block approval. Never narrate your per-scene audit in the JSON: unchecked-in detail belongs in your thinking, not in faults. Name the scene id in every fault and fix. Do not rewrite the whole plan."""
+"pass" must be an explicit boolean (true/false, never a string). score must be a number 1-10. "faults" and "fixes" must always be present as arrays, empty [] when nothing is wrong. The faults array holds ONLY findings you want changed, each naming its scene id. Scenes you checked and found correct must NOT appear in faults - do not write "no fault" or "fine" entries; the app treats them as noise. Never narrate your per-scene audit in the JSON: unchecked-in detail belongs in your thinking, not in faults. Name the scene id in every fault and fix. Do not rewrite the whole plan."""
 
 
 def summary_text(plan: dict, cues: list[dict]) -> str:
@@ -422,36 +421,120 @@ def _split_faults(found: list) -> tuple:
 
 
 _NO_FAULT_RE = re.compile(
-    r"\bno fault\b|\bnot a (?:real |spec |major )?fault\b|\bnothing (?:left )?to (?:fix|change)\b"
+    r"\bno faults?\b(?!\s+(?:with|in|about|regarding|on|for|except|beyond|apart|around|against)\b)"
+    r"|\bnot a (?:real |spec |major )?fault\b(?!\s+(?:with|in|about|regarding|on|for|except|beyond|apart|around)\b)"
+    r"|\bnothing (?:left )?to (?:fix|change)\b"
     r"|\bno fix(?:es)? (?:needed|required)\b", re.I)
 _VERDICT_RE = re.compile(
-    r"^(?:so\s+|all\s+|looks\s+)?(?:fine|good|acceptable|correct|okay|ok)\b[\s.!?]*"
-    r"(?:[—–-]\s*remove)?[\s.!?]*$", re.I)
-_MINOR_MARK_RE = re.compile(r"(?:^|[;,])\s*minor\b", re.I)
+    r"(?:^|[,.;:!?]\s*|\s[—–-]\s*)"
+    r"(?:(?:so|all|thus|still|therefore)\s+)?(?:(?:looks|is|are|seems)\s+)?"
+    r"(?:fine|good|acceptable|correct|okay|ok)\b"
+    r"(?:\s*(?:[—–-]\s*)?remove\.?)?[\s.!?]*$", re.I)
+_MINOR_WORD_RE = re.compile(r"^(?:minor|cosmetic|nitpick|nit|non-blocking)\b", re.I)
+_MINOR_TAIL_RE = re.compile(r"(?:^|[;,])\s*minor\b[\s.!?]*$", re.I)
+_ID_PREFIX_RE = re.compile(r"^\s*(?:scene\s+)?[A-Za-z][\w-]{0,39}\s*:\s*", re.I)
 _LEADING_SID_RE = re.compile(r"^\s*(?:scene\s+)?([A-Za-z][\w-]*?)\s*:")
+
+_FINDING_TEXT_KEYS = ("problem", "fault", "finding", "text", "note", "change")
+
+
+def _structured_text(e: dict) -> str:
+    """A structured finding {"scene": id, "severity": ..., "problem"/"change": text} as one line."""
+    scene = str(e.get("scene") or e.get("scene_id") or e.get("id") or "").strip()
+    text = ""
+    for key in _FINDING_TEXT_KEYS:
+        if e.get(key):
+            text = str(e[key]).strip()
+            break
+    if text and scene and not re.match(r"(?i)^scene\s", text) \
+            and not text.lower().startswith(scene.lower() + ":"):
+        text = f"scene {scene}: {text}"
+    return text
 
 
 def split_verdict_faults(entries) -> tuple:
-    """(blocking, minor): judges narrate their per-scene audit, so the verdict carries entries the
-    judge answers itself ('...so fine; no fault here — remove') and cosmetic ones it marks 'minor'.
-    An entry only counts as self-answered when its LAST clause is the verdict ('; good',
-    'so fine — remove') or an explicit negation ('no fault here'): praise words elsewhere
-    ('...although the colours are good') never hide a complaint, and 'minor' marks a cosmetic
-    finding only as a trailing clause, never from anywhere in the sentence."""
+    """(blocking, minor) findings. A structured finding {"scene", "severity", "problem"} is
+    classified by its severity (missing severity = blocking). String findings are read
+    conservatively, clause by clause (split on ';'):
+    - cosmetic only when explicitly marked: the whole finding starts with a minor word, or
+      ends with a bare '; minor' mark
+    - a 'minor ...' clause with content, appended after substantive clauses, is a MIXED
+      finding and stays blocking ('title overlaps...; minor colour issue too')
+    - self-answered (dropped) only when the LAST clause is a bare verdict ('; good',
+      'so fine — remove') or an unscoped negation ('no fault here — remove'); a scoped
+      negation ('wrong count; no fault with the colours') does not dismiss the finding
+    Praise words anywhere else never change the class."""
     blocking, minor = [], []
     for e in entries or []:
+        if isinstance(e, dict):
+            text = _structured_text(e)
+            if not text:
+                continue
+            sev = str(e.get("severity") or "").strip().lower()
+            (minor if sev == "minor" else blocking).append(text)
+            continue
         text = str(e).strip()
         if not text:
             continue
-        tail = text.split(";")[-1].strip()
-        tail_clauses = [tail] + ([tail.split(",")[-1].strip()] if "," in tail else [])
-        self_answered = (any(_VERDICT_RE.match(c) for c in tail_clauses)
-                         or any(_NO_FAULT_RE.search(c) for c in tail_clauses))
-        if _MINOR_MARK_RE.search(tail):
-            minor.append(text)
-        elif not self_answered:
-            blocking.append(text)
+        body = _ID_PREFIX_RE.sub("", text, count=1).strip()
+        clauses = [c.strip() for c in body.split(";") if c.strip()]
+        if not clauses:
+            continue
+        last = clauses[-1]
+        if _MINOR_WORD_RE.match(last) and len(clauses) == 1:
+            minor.append(text)                    # the whole finding is explicitly minor
+            continue
+        if _MINOR_TAIL_RE.search(text):
+            minor.append(text)                    # ends with a bare '; minor' severity mark
+            continue
+        if _MINOR_WORD_RE.match(last):
+            blocking.append(text)                 # a minor note appended to substance: mixed
+            continue
+        if _NO_FAULT_RE.search(last) or _VERDICT_RE.search(last):
+            continue                              # the judge closed this finding itself
+        blocking.append(text)
     return blocking, minor
+
+
+def _verdict_usable(verdict) -> bool:
+    """A verdict only counts when every required field is present and correctly typed:
+    a finite numeric score 1-10 (not bool), a genuine boolean pass, and faults/fixes lists."""
+    if not isinstance(verdict, dict) or not verdict:
+        return False
+    if type(verdict.get("pass")) is not bool:
+        return False
+    score = verdict.get("score")
+    if isinstance(score, bool) or not isinstance(score, (int, float)) \
+            or not math.isfinite(score) or not 1 <= score <= 10:
+        return False
+    for key in ("faults", "fixes"):
+        value = verdict.get(key)
+        if not isinstance(value, list) or not all(isinstance(x, (str, dict)) for x in value):
+            return False
+    return True
+
+
+_VERDICT_RESEND = (
+    'Your last reply was not the required verdict object. Reply again with ONE JSON object and '
+    'nothing else: {"score": <number 1-10>, "pass": true or false, "faults": [...], "fixes": [...]}. '
+    '"faults" and "fixes" are always present, [] when empty. A fault or fix is either a string '
+    '"scene id: text" or an object {"scene": "<id>", "severity": "minor" or "blocking", '
+    '"problem"/"change": "<text>"}.')
+
+
+def _blocking_fix_texts(fixes) -> list:
+    """String fixes always block; a structured fix blocks unless it is explicitly 'minor'."""
+    out = []
+    for f in fixes or []:
+        if isinstance(f, dict):
+            if str(f.get("severity") or "").strip().lower() == "minor":
+                continue
+            text = _structured_text(f)
+            if text:
+                out.append(text)
+        elif str(f).strip():
+            out.append(str(f).strip())
+    return out
 
 
 def _pair_fixes(faults: list[str], fixes: list) -> list[str]:
@@ -693,6 +776,11 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         summary = summary_text(plan, cues)
         verdict = studio._parse_json_object(
             ask("judge", judge_prompt(narration, plan, summary), True), want=("score",)) or {}
+        if not _verdict_usable(verdict):
+            log("judge: the verdict was missing score/pass/faults/fixes or had wrong types "
+                "- asking the judge to resend it")
+            verdict = studio._parse_json_object(
+                ask("judge", _VERDICT_RESEND, False), want=("score",)) or {}
         try:
             raw_score = verdict.get("score")
             score = float(raw_score) if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool) else None
@@ -719,7 +807,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             break
         fixes = verdict.get("fixes")
         fixes = fixes if isinstance(fixes, list) else []
-        notes = _pair_fixes(blocking, fixes)
+        notes = _pair_fixes(blocking, _blocking_fix_texts(fixes))
         if not notes:
             notes = ["Review was not approved; resolve the teaching problems without changing correct scenes."]
         # oscillation guard: a scene already revised twice and flagged again would churn - freeze

@@ -44,11 +44,11 @@ class RevisionTests(unittest.TestCase):
             'scene hook: expansion is given later, so fine; no fault here — remove',
             'scene tokens: drawn matches with three icons; good',
             'overall: somewhat slide-deck-like, but not a major fault',
-            'scene gpu-parallel: label placement could be clearer; minor'],
-            'fixes': ['scene gpu-parallel: move the label out of the GPU panel; minor']}
+            {'scene': 'gpu-parallel', 'severity': 'minor', 'problem': 'label placement could be clearer'}],
+            'fixes': [{'scene': 'gpu-parallel', 'severity': 'minor', 'change': 'move the label out of the GPU panel'}]}
         self.assertTrue(es.review_passes(passing))
         self.assertEqual(es.split_verdict_faults(passing['faults']),
-                         ([], ['scene gpu-parallel: label placement could be clearer; minor']))
+                         ([], ['scene gpu-parallel: label placement could be clearer']))
         self.assertFalse(es.review_passes(dict(passing, faults=['scene b: a spoken item is missing on screen'])))
         self.assertFalse(es.review_passes(dict(passing, fixes=['scene b: add the missing item'])))
         self.assertEqual(es.split_verdict_faults(['scene diffusion: beats exceed run_ms']),
@@ -66,6 +66,62 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(es.split_verdict_faults(complaints), (complaints, []))
         verdict = {'score': 9, 'pass': True, 'faults': complaints, 'fixes': []}
         self.assertFalse(es.review_passes(verdict))
+
+    def test_mixed_finding_with_minor_clause_stays_blocking(self):
+        # GPT review case 1: a cosmetic comment must not downgrade a separate substantive error
+        blocking, minor = es.split_verdict_faults(
+            ['scene-a: title overlaps the important result; minor colour issue too'])
+        self.assertEqual(blocking, ['scene-a: title overlaps the important result; minor colour issue too'])
+        self.assertEqual(minor, [])
+        self.assertFalse(es.review_passes(
+            {'score': 9, 'pass': True,
+             'faults': ['scene-a: title overlaps the important result; minor colour issue too'],
+             'fixes': []}))
+
+    def test_scoped_no_fault_does_not_dismiss_the_finding(self):
+        # GPT review case 2: 'no fault with the colours' only dismisses the colours
+        complaints = [
+            'scene-a: wrong count; no fault with the colours',
+            'scene-b: the label is missing; no fault in the footer',
+            'scene-c: arithmetic is off; not a fault with the icons',
+        ]
+        self.assertEqual(es.split_verdict_faults(complaints), (complaints, []))
+        # an UNSCOPED negation still closes the finding
+        self.assertEqual(es.split_verdict_faults(['scene-a: labels match; no fault here — remove']), ([], []))
+
+    def test_structured_findings_are_classified_by_explicit_severity(self):
+        blocking, minor = es.split_verdict_faults([
+            {'scene': 'a', 'severity': 'minor', 'problem': 'colour could be calmer'},
+            {'scene': 'b', 'problem': 'the spoken item is missing on screen'},
+            {'scene': 'c', 'severity': 'blocking', 'problem': 'count is wrong'},
+        ])
+        self.assertEqual(blocking, ['scene b: the spoken item is missing on screen',
+                                    'scene c: count is wrong'])
+        self.assertEqual(minor, ['scene a: colour could be calmer'])
+        self.assertFalse(es.review_passes({'score': 9, 'pass': True, 'faults': [
+            {'scene': 'b', 'problem': 'the spoken item is missing on screen'}], 'fixes': []}))
+        # a structured fix marked minor never blocks; an unmarked one does
+        self.assertFalse(es.review_passes({'score': 9, 'pass': True, 'faults': [], 'fixes': [
+            {'scene': 'b', 'change': 'add the missing item'}]}))
+        self.assertTrue(es.review_passes({'score': 9, 'pass': True, 'faults': [], 'fixes': [
+            {'scene': 'b', 'severity': 'minor', 'change': 'shade the background'}]}))
+
+    def test_malformed_verdicts_never_pass(self):
+        # GPT review case 3: missing or wrongly typed required fields can never approve
+        base = {'score': 9, 'pass': True, 'faults': [], 'fixes': []}
+        self.assertTrue(es.review_passes(base))
+        for bad in [{'score': 9, 'pass': True},
+                    {'score': 9, 'pass': True, 'faults': []},
+                    {'score': 9, 'pass': True, 'fixes': []},
+                    {'score': 9, 'pass': True, 'faults': 'none', 'fixes': []},
+                    {'score': 9, 'pass': True, 'faults': [], 'fixes': None},
+                    {'score': 9, 'pass': True, 'faults': [42], 'fixes': []},
+                    {'score': 9, 'pass': 'true', 'faults': [], 'fixes': []},
+                    {'score': True, 'pass': True, 'faults': [], 'fixes': []},
+                    {'score': '9', 'pass': True, 'faults': [], 'fixes': []},
+                    {'score': 11, 'pass': True, 'faults': [], 'fixes': []},
+                    {'score': 0, 'pass': True, 'faults': [], 'fixes': []}]:
+            self.assertFalse(es.review_passes(bad), bad)
 
     def test_minor_only_counts_as_an_explicit_trailing_mark(self):
         blocking, minor = es.split_verdict_faults([
@@ -196,8 +252,23 @@ class PromotionTests(unittest.TestCase):
             es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=1)
         self.assertEqual((self.pdir/'plan.json').read_text(), 'manual edit')
 
+    def test_malformed_verdict_is_resent_to_the_judge_once(self):
+        # GPT review case 3: a malformed verdict triggers a corrected judge response
+        ask = self._ask([plan()], [{'score': 9, 'pass': True},
+                                   {'score': 9, 'pass': True, 'faults': [], 'fixes': []}])
+        es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=2)
+        self.assertEqual([r for r, _ in self.log if r == 'judge'].count('judge'), 2)
+        review = json.loads((self.pdir / 'plan_review.json').read_text())
+        self.assertEqual(review['status'], 'approved')
+
+    def test_a_verdict_still_malformed_after_the_resent_never_promotes(self):
+        ask = self._ask([plan()], [{'score': 9, 'pass': True}, {'score': 9}])
+        with self.assertRaisesRegex(RuntimeError, 'needs revision'):
+            es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=1)
+        self.assertFalse((self.pdir/'plan.json').exists())
+
     def test_unusable_verdict_never_promotes_a_plan(self):
-        ask = self._ask([plan()], [{'score': 9}])
+        ask = self._ask([plan()], [{'score': 9}, {'score': 9}])
         with self.assertRaisesRegex(RuntimeError, 'needs revision'):
             es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=1)
         self.assertFalse((self.pdir/'plan.json').exists())
