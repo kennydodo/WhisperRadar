@@ -50,6 +50,13 @@ def needs_build(folder: str) -> bool:
     out = os.path.join(folder, "explainer.json")
     if not os.path.isfile(out):
         return True
+    try:                                   # built by an older builder: rebuild so its fixes apply
+        with open(out, encoding="utf-8-sig") as fh:
+            built_by = json.load(fh).get("builder")
+        if built_by is not None and built_by != recipes.BUILDER_VERSION:
+            return True
+    except (OSError, ValueError, AttributeError):
+        return True
     newest = os.path.getmtime(plan)
     srt = _find_srt(folder)
     if srt:

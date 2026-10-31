@@ -979,6 +979,9 @@ def simplify_overfull(plan: dict, cues, decoration_only: bool = False) -> tuple:
 
 
 PEN_FACTOR = {"slow": 1.3, "normal": 1.0, "fast": 0.75}
+# Bump when the builder's output changes for the same plan (new placement, timing or safety rules):
+# explainer.json files built by an older builder are rebuilt on the next render.
+BUILDER_VERSION = "2026-10-31.never-empty"
 LEAD_MS = 1500           # a pen scene never shows an empty board longer than this at its start
 
 
@@ -1059,7 +1062,7 @@ def build(plan: dict, cues, look=None) -> dict:
     if errors:
         raise ExplainerError(errors)
     doc = {"schema_version": sc.SCHEMA_VERSION, "style": sc.STYLE_WHITEBOARD, "scenes": scenes,
-           "canvas": {"width": 1920, "height": 1080}}
+           "canvas": {"width": 1920, "height": 1080}, "builder": BUILDER_VERSION}
     if plan.get("theme"):
         doc["theme"] = plan["theme"]
     if isinstance(plan.get("fonts"), dict):

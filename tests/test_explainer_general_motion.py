@@ -194,3 +194,23 @@ class NeverAnEmptyScreen(unittest.TestCase):
         self.assertEqual(p["footer"]["text"], "Called an LLM killer")
         self.assertGreaterEqual(p["footer"]["start_ms"], 3900)
         self.assertEqual(rb.check_block({"component": "counter", "params": p}, "s"), [])
+
+
+class RebuildAfterBuilderChanges(unittest.TestCase):
+    def test_older_builder_output_is_rebuilt(self):
+        import json as _json, os, tempfile, time
+        from whisperradar.video.explainer import render
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "plan.json"), "w") as fh:
+            fh.write("{}")
+        time.sleep(0.01)
+        out = os.path.join(d, "explainer.json")
+        with open(out, "w") as fh:
+            _json.dump({"scenes": [], "builder": recipes.BUILDER_VERSION}, fh)
+        self.assertFalse(render.needs_build(d))                 # current builder, newer than the plan
+        with open(out, "w") as fh:
+            _json.dump({"scenes": [], "builder": "an-old-builder"}, fh)
+        self.assertTrue(render.needs_build(d))                  # built by an older builder
+        with open(out, "w") as fh:
+            _json.dump({"scenes": []}, fh)                      # no marker (hand-made/imported): timestamps decide
+        self.assertFalse(render.needs_build(d))
