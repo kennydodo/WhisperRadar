@@ -20,7 +20,9 @@ FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mo
           ("text_color", "explainer.text_color"), ("background", "explainer.background"),
           ("text_weight", "explainer.text_weight"), ("letter_spacing", "explainer.letter_spacing"),
           ("pen_speed", "explainer.pen_speed"), ("scenes_per_video", "explainer.scenes_per_video"),
-          ("diagram_style", "explainer.diagram_style"), ("scene_fade", "explainer.scene_fade"))
+          ("diagram_style", "explainer.diagram_style"), ("scene_fade", "explainer.scene_fade"),
+          ("scene_genre", "explainer.scene_genre"), ("motion_min_share", "explainer.motion_min_share"),
+          ("text_run_max", "explainer.text_run_max"), ("text_run_seconds", "explainer.text_run_seconds"))
 CHALK = {"white": "#F4F1E8", "yellow": "#F2D75B", "green": "#7FD08A", "red": "#F0746B",
          "orange": "#F5A04A", "blue": "#6BB6F0", "pink": "#F08CC4", "purple": "#B49BF0",
          "grey": "#9C998F"}

@@ -51,6 +51,7 @@ CHOICES = {
     "explainer.scenes_per_video": ["few", "normal", "many"],
     "explainer.diagram_style": ["balanced", "icons", "minimal"],
     "explainer.scene_fade": ["none", "short", "long"],
+    "explainer.scene_genre": ["tech"],
     "explainer.heading_font": _font_choices(),
     "explainer.body_font": _font_choices(),
     "motion.easing": list(m.EASINGS),
@@ -93,6 +94,15 @@ HELP = {
                                "or minimal (words and numbers, few icons). Blank = balanced.",
     "explainer.scene_fade": "A soft dip to the board colour where one pen-drawn scene gives way to the next: "
                             "none (a hard cut), short (0.25 s) or long (0.5 s). Scenes keep their length. Blank = none.",
+    "explainer.scene_genre": "Which kind of explainer this is: it picks the scene set and the motion rule the "
+                             "planner is held to (only tech exists so far). Blank = tech.",
+    "explainer.motion_min_share": "Percent of the narration time that must be drawn as a mechanism, diagram, "
+                                  "code, chart, counter or evidence scene instead of text. Checked on videos of "
+                                  "4 minutes or more. Blank = the genre's rule (tech: 20). 0 = no minimum.",
+    "explainer.text_run_max": "Most text-only scenes (row, steps, timeline, compare, stack, hero) allowed in a "
+                              "row. Blank = the genre's rule (tech: 6). 0 = no limit.",
+    "explainer.text_run_seconds": "Longest stretch, in seconds, of text-only scenes in a row. Blank = the "
+                                  "genre's rule (tech: 120). 0 = no limit.",
     "explainer.background": "Colour of the board as #RRGGBB (for example #0F2A24 for a green chalkboard). "
                             "Blank = the theme's board.",
     "text.auto_values": "Show the numbers, years and amounts the narration says on screen "

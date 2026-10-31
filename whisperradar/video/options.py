@@ -176,6 +176,10 @@ class ExplainerOptions:
     scenes_per_video: str = ""      # few | normal | many ("" = normal): how many scenes the planner aims for
     scene_fade: str = ""            # none | short | long ("" = none): dip to the board colour between pen scenes
     diagram_style: str = ""         # balanced | icons | minimal ("" = balanced): how picture-heavy scenes are
+    scene_genre: str = ""           # tech | ... ("" = tech): which motion rule and scene set the planner follows
+    motion_min_share: str = ""      # percent of narration time that must show a mechanism/diagram ("" = genre rule, 0 = off)
+    text_run_max: str = ""          # most text-only scenes in a row ("" = genre rule, 0 = off)
+    text_run_seconds: str = ""      # longest stretch of text-only scenes in seconds ("" = genre rule, 0 = off)
 
 
 @dataclass
@@ -298,6 +302,18 @@ class ProjectOptions:
                                  ("scene fade", self.explainer.scene_fade, ("none", "short", "long"))):
             if _val and _val not in _ok:
                 errors.append(f"Explainer {_name} must be {', '.join(_ok[:-1])} or {_ok[-1]}.")
+        for _name, _val, _top in (("motion share", self.explainer.motion_min_share, 100.0),
+                                  ("text-only run", self.explainer.text_run_max, 1000.0),
+                                  ("text-only seconds", self.explainer.text_run_seconds, 100000.0)):
+            if _val != "":
+                try:
+                    ok = 0 <= float(str(_val).replace(",", ".")) <= _top
+                except ValueError:
+                    ok = False
+                if not ok:
+                    errors.append(f"Explainer {_name} must be a number from 0 to {_top:g} (0 = off).")
+        if self.explainer.scene_genre and self.explainer.scene_genre not in ("tech",):
+            errors.append("Explainer scene genre must be tech.")
         if self.planner not in ("v1", "v2"):
             errors.append('Planner must be "v1" or "v2".')
         from .. import channel_types as _ct

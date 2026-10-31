@@ -813,9 +813,12 @@ def motion_rule(look: dict | None) -> dict:
                      ("text_seconds", "text_run_seconds")):
         if look.get(src) not in (None, ""):
             try:
-                rule[key] = float(look[src]) if key != "text_run" else int(look[src])
+                val = float(str(look[src]).replace(",", "."))
             except (TypeError, ValueError):
-                pass
+                continue
+            if key == "min_share" and val > 1:
+                val /= 100.0                    # the channel form takes a percent (20), code may pass 0.2
+            rule[key] = int(val) if key == "text_run" else val
     return rule
 
 

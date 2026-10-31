@@ -72,6 +72,24 @@ class ExplainerChannelTests(unittest.TestCase):
         self.assertIn('value="fast" selected', html)
         self.assertIn("pen speed", html)
 
+    def test_motion_rule_is_saved_and_shown(self):
+        r = self.post(explainer_scene_genre="tech", explainer_motion_min_share="35",
+                      explainer_text_run_max="4", explainer_text_run_seconds="0")
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self.saved(), {"explainer.scene_genre": "tech", "explainer.motion_min_share": "35",
+                                        "explainer.text_run_max": "4", "explainer.text_run_seconds": "0"})
+        html = self.client.get("/my-channels").get_data(as_text=True)
+        self.assertIn("Motion rule", html)
+        self.assertIn('name="explainer_motion_min_share"', html)
+        self.assertIn('value="35"', html)
+
+    def test_bad_motion_rule_is_refused(self):
+        for field, bad in (("explainer_motion_min_share", "150"), ("explainer_text_run_max", "many"),
+                           ("explainer_text_run_seconds", "-5"), ("explainer_scene_genre", "finance")):
+            r = self.post(**{field: bad})
+            self.assertIn("error=", r.headers["Location"], field)
+        self.assertEqual(self.saved(), {})
+
     def test_bad_pen_speed_is_refused(self):
         r = self.post(explainer_pen_speed="warp")
         self.assertIn("error=", r.headers["Location"])

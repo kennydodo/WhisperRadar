@@ -47,6 +47,13 @@ class MotionMix(unittest.TestCase):
         self.assertEqual(es.motion_faults(r, c, t, {"text_run_max": 0, "text_run_seconds": 0}), [])
         self.assertEqual(es.motion_rule({"motion_min_share": "0.4"})["min_share"], 0.4)
 
+    def test_percent_from_the_channel_form(self):
+        self.assertEqual(es.motion_rule({"motion_min_share": "35"})["min_share"], 0.35)
+        self.assertEqual(es.motion_rule({"text_run_max": "4", "text_run_seconds": "0"})["text_run"], 4)
+        r, c, t = build(["row", "pipeline", "row", "row", "row", "row", "pipeline", "row"])
+        self.assertTrue(es.motion_faults(r, c, t, {"motion_min_share": "60", "text_run_max": "0", "text_run_seconds": "0"}))
+        self.assertEqual(es.motion_faults(r, c, t, {"motion_min_share": "0"}), [])
+
     def test_judge_sees_measured_mix(self):
         r, c, t = build(["row", "pipeline", "row", "row"])
         line = es.motion_summary(r, c)
