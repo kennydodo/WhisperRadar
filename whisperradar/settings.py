@@ -346,6 +346,15 @@ SPEC: list[dict] = [
                 "regenerated with the judge's feedback.",
     },
     {
+        "key": "scene_plan_min_rating", "type": "float", "default": 0.0,
+        "min": 0.0, "max": 10.0,
+        "label": "Explainer scene plan: minimum score",
+        "help": "The explainer scene-plan judge rates each plan 1-10; a plan is only "
+                "approved at or above this score with nothing blocking. 0 = the same "
+                "as the script minimum rating (the channel's, else the global). A "
+                "channel can set its own value.",
+    },
+    {
         "key": "plan_min_rating", "type": "float", "default": 9.5,
         "min": 1.0, "max": 10.0,
         "label": "Packaging: minimum score",
@@ -624,7 +633,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         "autorun_resume", "resume_cooldown_minutes", "resume_per_run",
     ]),
     ("Script & shotlist", [
-        "script_min_rating", "plan_min_rating", "script_max_overlap",
+        "script_min_rating", "scene_plan_min_rating", "plan_min_rating", "script_max_overlap",
         "script_hard_overlap",
         "script_max_attempts", "script_judge_provider",
         "script_judge_temperature",
@@ -741,6 +750,19 @@ def row_get(row, key, default=None):
     return default if value is None or value == "" else value
 
 
+def _scene_plan_bar(own, glob) -> float:
+    """The explainer scene-plan pass mark: the channel's own value, else the global one; a value
+    of 0 (or none set) follows the script minimum rating, resolved the same way."""
+    for raw in (row_get(own, "scene_plan_min_rating"), glob.get("scene_plan_min_rating")):
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            return v
+    return float(row_get(own, "script_min_rating", glob["script_min_rating"]))
+
+
 def for_production(conn, prod) -> dict:
     """Effective values for a production, most specific wins:
     global settings <- the production's own channel <- the production.
@@ -801,6 +823,8 @@ def for_production(conn, prod) -> dict:
         # script quality gate (see the SPEC help text for the semantics)
         "script_min_rating": float(row_get(own, "script_min_rating",
                                             glob["script_min_rating"])),
+        # explainer scene plan: channel value, else global; 0 or unset = the script bar
+        "scene_plan_min_rating": _scene_plan_bar(own, glob),
         # packaging plan / publish kit / thumbnail concepts share one bar
         "plan_min_rating": float(glob["plan_min_rating"]),
         "script_max_overlap": float(row_get(own, "script_max_overlap",

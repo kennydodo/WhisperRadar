@@ -42,7 +42,23 @@ CONTINUE_MESSAGE = ("Continue the same scene-plan JSON as text, not a file. Outp
                     "scenes after the last complete one and close every bracket.")
 # longest label each layout can show; stack rows and hero lines are wide, the others share a row
 LABEL_MAX = {"stack": 48, "hero": 60, "compare": 40}
-MIN_SCORE = 8.0
+MIN_SCORE = 8.0          # fallback only, when no setting is reachable (tests, direct calls)
+
+
+def pass_mark(cfg, pid: int) -> float:
+    """The scene-plan pass mark from the settings (Settings > Explainer scene plan: minimum score,
+    or the production's channel; 0 there = the script minimum rating). MIN_SCORE only when the
+    settings cannot be read."""
+    try:
+        from . import db, settings
+        conn = db.connect(cfg.db_path)
+        try:
+            v = float(settings.for_production(conn, db.get_production(conn, pid))["scene_plan_min_rating"])
+        finally:
+            conn.close()
+        return v if 1.0 <= v <= 10.0 else MIN_SCORE
+    except Exception:  # noqa: BLE001 - never fail a run over reading the bar
+        return MIN_SCORE
 
 ICONS = (
     "box blocks layers puzzle file folder database server hard-drive cpu gpu memory-stick monitor laptop "
@@ -485,7 +501,7 @@ def _severity(entry):
     return None
 
 
-def verdict_problems(verdict: dict) -> list[str]:
+def verdict_problems(verdict: dict, min_score: float = MIN_SCORE) -> list[str]:
     """What is wrong with a well-typed verdict, to be sent back to the judge. Every finding and fix
     needs an explicit severity (a missing or unknown one is NEVER read as minor), and the verdict must
     not contradict itself."""
@@ -501,30 +517,30 @@ def verdict_problems(verdict: dict) -> list[str]:
     if verdict.get("pass") is True and blocking:
         problems.append(f'"pass" is true but {len(blocking)} finding(s) are marked blocking')
     if verdict.get("pass") is True and isinstance(verdict.get("score"), (int, float)) \
-            and verdict["score"] < MIN_SCORE:
-        problems.append(f'"pass" is true but the score is below {MIN_SCORE:g}')
+            and verdict["score"] < min_score:
+        problems.append(f'"pass" is true but the score is below {min_score:g}')
     if verdict.get("pass") is False and not blocking and not problems:
         problems.append('"pass" is false but no finding is marked blocking - name what must change, or pass')
     return problems
 
 
-def clarify_prompt(problems: list[str]) -> str:
+def clarify_prompt(problems: list[str], min_score: float = MIN_SCORE) -> str:
     return ("Your verdict cannot be used as written:\n" + "\n".join("- " + p for p in problems)
             + "\nReply again with ONE JSON object and nothing else: {\"score\": <1-10>, \"pass\": true|false, "
               "\"faults\": [{\"scene\": \"id\", \"severity\": \"blocking\"|\"minor\", \"problem\": \"...\"}], "
               "\"fixes\": [{\"scene\": \"id\", \"severity\": \"blocking\"|\"minor\", \"change\": \"...\"}]}. "
               "blocking = must change before the video is made; minor = cosmetic, safe to ship. "
-              "pass may be true only when nothing is blocking and the score is at least %g." % MIN_SCORE)
+              "pass may be true only when nothing is blocking and the score is at least %g." % min_score)
 
 
-def review_passes(verdict: dict) -> bool:
+def review_passes(verdict: dict, min_score: float = MIN_SCORE) -> bool:
     """Approved only on a fully-typed verdict (see _verdict_usable) with explicit severities
-    (verdict_problems empty), pass=true, score >= 8 and nothing blocking: only findings and fixes
+    (verdict_problems empty), pass=true, score >= the pass mark and nothing blocking: only findings and fixes
     EXPLICITLY marked minor are cosmetic. A malformed or contradictory verdict can never pass."""
-    if not _verdict_usable(verdict) or verdict_problems(verdict):
+    if not _verdict_usable(verdict) or verdict_problems(verdict, min_score):
         return False
     blocking, _minor = split_verdict_faults(verdict.get("faults"))
-    return (verdict["pass"] is True and MIN_SCORE <= verdict["score"] <= 10
+    return (verdict["pass"] is True and min_score <= verdict["score"] <= 10
             and not blocking and not _blocking_fix_texts(verdict.get("fixes")))
 
 
@@ -1254,7 +1270,7 @@ def _clear_generated(pdir, log) -> None:
 
 def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
                should_stop: Callable[[], bool] = lambda: False,
-               rounds: int = MAX_ROUNDS, start: str = "auto") -> dict:
+               rounds: int = MAX_ROUNDS, start: str = "auto", min_score: float | None = None) -> dict:
     """ask(role, text, new_chat) -> reply text, for role 'writer' or 'judge'.
     Every result is saved as a candidate bound to the narration, the writer's inputs and the active
     plan it began from. Only the judge's approval replaces plan.json here; a draft below the bar
@@ -1267,7 +1283,9 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
     look, terms, direction = inp["look"], inp["terms"], inp["direction"]
     if terms:
         log("key terms to show on screen: " + ", ".join(t["term"] for t in terms))
-    meta = {"narration_fp": inp["narration_fp"], "input_fp": inp["input_fp"],
+    bar = float(min_score) if min_score is not None else pass_mark(cfg, pid)
+    log(f"judge pass mark: {bar:g} (from the settings)")
+    meta = {"min_score": bar, "narration_fp": inp["narration_fp"], "input_fp": inp["input_fp"],
             "base_digest": sps.active_digest(pdir), "start_mode": start}
     cand = sps.candidate_state(pdir, inp["narration_fp"], inp["input_fp"])
     seeded = _seed_plan(pdir, start, cand, log)
@@ -1335,20 +1353,20 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             raise RuntimeError("Stopped by you.")
         summary = summary_text(plan, cues, look)
         verdict = studio._parse_json_object(
-            ask("judge", judge_prompt(narration, plan, summary), True), want=("score",)) or {}
+            ask("judge", judge_prompt(narration, plan, summary, bar), True), want=("score",)) or {}
         if not _verdict_usable(verdict):
             log("judge: the verdict was missing score/pass/faults/fixes or had wrong types "
                 "- asking the judge to resend it")
             verdict = studio._parse_json_object(
                 ask("judge", _VERDICT_RESEND, False), want=("score",)) or {}
-        problems = verdict_problems(verdict) if _verdict_usable(verdict) else []
+        problems = verdict_problems(verdict, bar) if _verdict_usable(verdict) else []
         if problems:
             log("judge: the verdict needs clarification - " + problems[0][:120]
                 + (f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""))
             again = studio._parse_json_object(
-                ask("judge", clarify_prompt(problems), False), want=("score",)) or {}
+                ask("judge", clarify_prompt(problems, bar), False), want=("score",)) or {}
             if _verdict_usable(again):
-                verdict, problems = again, verdict_problems(again)
+                verdict, problems = again, verdict_problems(again, bar)
             else:
                 problems = problems + ["the clarified verdict was not usable"]
         try:
@@ -1365,13 +1383,13 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         blocking, minor = split_verdict_faults(reported)
         for m in minor:
             log("judge note (cosmetic, not blocking): " + m[:160])
-        rank = (2 if review_passes(verdict) else 1, score if score is not None else 0.0,
+        rank = (2 if review_passes(verdict, bar) else 1, score if score is not None else 0.0,
                 -len(blocking))
         if best is None or rank >= best[0]:
             best, kept_verdict, kept_problems = (rank, plan), verdict, problems
         if score is None:
             log("the judge gave no usable score; the draft remains unapproved")
-        if review_passes(verdict):
+        if review_passes(verdict, bar):
             break
         if problems:
             log("the judge's verdict stayed ambiguous or contradictory - not guessing: the draft needs a "
@@ -1412,7 +1430,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         raise RuntimeError("The active scene plan changed during this run; it was not overwritten.")
     if studio.parse_srt_cues(srt.read_text(encoding="utf-8-sig")) != cues:
         raise RuntimeError("The subtitles changed during this run; the candidate was not promoted.")
-    approved = not left and not problems and review_passes(verdict)
+    approved = not left and not problems and review_passes(verdict, bar)
     digest = sps.plan_digest(final)
     raw_faults = verdict.get("faults") if isinstance(verdict.get("faults"), list) else []
     v_blocking, v_minor = split_verdict_faults(raw_faults)

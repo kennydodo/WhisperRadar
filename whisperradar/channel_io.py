@@ -32,7 +32,7 @@ _INT = {"active": (0, 1), "default_upscale": (0, 4),
         "generate_references": (0, 1), "autorun_enabled": (0, 1),
         "animate_enabled": (0, 1), "animate_seconds": (30, 180),
         "brief_reveal": (0, 2), "brief_text_overlays": (0, 1)}
-_FLOAT = {"script_min_rating": (1.0, 10.0), "script_max_overlap": (0.0, 1.0),
+_FLOAT = {"script_min_rating": (1.0, 10.0), "scene_plan_min_rating": (0.0, 10.0), "script_max_overlap": (0.0, 1.0),
           "shotlist_min_alignment": (0.0, 1.0), "brief_min_hold": (0.0, 600.0),
           "brief_max_hold": (0.0, 600.0), "narration_speed": (0.5, 2.0)}
 _JSON = {"watched_channels", "brief_custom", "brief_types"}

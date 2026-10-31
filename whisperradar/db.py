@@ -251,6 +251,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("style", "TEXT"),
                          ("bible", "TEXT"),
                          ("script_min_rating", "REAL"),
+                         ("scene_plan_min_rating", "REAL"),
                          # narration speed (ffmpeg atempo after the voice is made); NULL = inherit
                          ("narration_speed", "REAL"),
                          ("script_max_overlap", "REAL"),
@@ -1186,7 +1187,7 @@ _OWN_CHANNEL_FIELDS = {
     "run_window_start", "run_window_end", "candidate_window_days",
     "producer_llm_provider",
     "script_min_rating", "script_max_overlap", "script_max_attempts",
-    "script_judge_provider",
+    "script_judge_provider", "scene_plan_min_rating",
     "shotlist_min_alignment", "shotlist_max_attempts",
     "shotlist_judge_provider", "render_target", "render_resolution",
     "generate_references", "flow_native_upscale", "brief_motion", "brief_presentation",
@@ -1265,7 +1266,7 @@ APPLY_ALL_FIELDS = frozenset({
     "generate_references", "narration_speed", "per_day", "producer_llm_provider",
     "render_resolution", "render_target", "run_window_end",
     "run_window_start", "script_judge_provider", "script_max_attempts",
-    "script_max_overlap", "script_min_rating", "shotlist_judge_provider",
+    "script_max_overlap", "script_min_rating", "scene_plan_min_rating", "shotlist_judge_provider",
     "shotlist_max_attempts", "shotlist_min_alignment", "topic_pick",
 })
 
