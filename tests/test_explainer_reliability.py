@@ -54,6 +54,29 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(es.split_verdict_faults(['scene diffusion: beats exceed run_ms']),
                          (['scene diffusion: beats exceed run_ms'], []))
 
+    def test_praise_words_inside_a_complaint_never_discard_it(self):
+        # found in review of prod 115 read-only: the old filter matched 'good'/'fine'
+        # anywhere in the last clause and silently dropped these real faults
+        complaints = [
+            'pipeline-eight: the stage count is wrong, although the colours are good',
+            'scene ncm-definition: the explanation of levels is missing; other labels are fine',
+            'scene b: the arithmetic is wrong, but the icons look good',
+            'scene c: count mismatch, though the wording is fine',
+        ]
+        self.assertEqual(es.split_verdict_faults(complaints), (complaints, []))
+        verdict = {'score': 9, 'pass': True, 'faults': complaints, 'fixes': []}
+        self.assertFalse(es.review_passes(verdict))
+
+    def test_minor_only_counts_as_an_explicit_trailing_mark(self):
+        blocking, minor = es.split_verdict_faults([
+            'scene a: label is long; minor',
+            'scene b: the arithmetic is off',
+            'scene c: anchor outside the scene',
+        ])
+        self.assertEqual(blocking, ['scene b: the arithmetic is off', 'scene c: anchor outside the scene'])
+        self.assertEqual(minor, ['scene a: label is long; minor'])
+        self.assertFalse(es.review_passes({'score': 9, 'pass': True, 'faults': ['scene a: label is long, other labels minor issues aside'], 'fixes': []}))
+
     def test_fixes_pair_with_their_own_fault_not_by_position(self):
         notes = es._pair_fixes(
             ['scene b: unclear', 'scene a: missing label'],

@@ -263,7 +263,7 @@ def review_passes(verdict: dict) -> bool:
     blocking, _minor = split_verdict_faults(verdict.get("faults"))
     fixes = verdict.get("fixes")
     blocking_fixes = [f for f in (fixes if isinstance(fixes, list) else [])
-                      if not _MINOR_RE.search(str(f).split(";")[-1])]
+                      if not _MINOR_MARK_RE.search(str(f).split(";")[-1].strip())]
     return (isinstance(score, (int, float)) and not isinstance(score, bool)
             and math.isfinite(score) and MIN_SCORE <= score <= 10
             and verdict.get("pass") is True and not blocking and not blocking_fixes)
@@ -420,25 +420,35 @@ def _split_faults(found: list) -> tuple:
 
 
 _NO_FAULT_RE = re.compile(
-    r"\bno fault\b|\bnot a (?:spec |real |major )?fault\b|\bnothing (?:left )?to (?:fix|change)\b"
-    r"|\bfine\b|\bgood\b|\bremove\s*$", re.I)
-_MINOR_RE = re.compile(r"\bminor\b", re.I)
+    r"\bno fault\b|\bnot a (?:real |spec |major )?fault\b|\bnothing (?:left )?to (?:fix|change)\b"
+    r"|\bno fix(?:es)? (?:needed|required)\b", re.I)
+_VERDICT_RE = re.compile(
+    r"^(?:so\s+|all\s+|looks\s+)?(?:fine|good|acceptable|correct|okay|ok)\b[\s.!?]*"
+    r"(?:[—–-]\s*remove)?[\s.!?]*$", re.I)
+_MINOR_MARK_RE = re.compile(r"(?:^|[;,])\s*minor\b", re.I)
 _LEADING_SID_RE = re.compile(r"^\s*(?:scene\s+)?([A-Za-z][\w-]*?)\s*:")
 
 
 def split_verdict_faults(entries) -> tuple:
     """(blocking, minor): judges narrate their per-scene audit, so the verdict carries entries the
     judge answers itself ('...so fine; no fault here — remove') and cosmetic ones it marks 'minor'.
-    Neither may block approval or drive revisions; only findings the judge wants changed do."""
+    An entry only counts as self-answered when its LAST clause is the verdict ('; good',
+    'so fine — remove') or an explicit negation ('no fault here'): praise words elsewhere
+    ('...although the colours are good') never hide a complaint, and 'minor' marks a cosmetic
+    finding only as a trailing clause, never from anywhere in the sentence."""
     blocking, minor = [], []
     for e in entries or []:
         text = str(e).strip()
         if not text:
             continue
-        tail = text.split(";")[-1]
-        if _NO_FAULT_RE.search(tail):
-            continue
-        (minor if _MINOR_RE.search(tail) else blocking).append(text)
+        tail = text.split(";")[-1].strip()
+        tail_clauses = [tail] + ([tail.split(",")[-1].strip()] if "," in tail else [])
+        self_answered = (any(_VERDICT_RE.match(c) for c in tail_clauses)
+                         or any(_NO_FAULT_RE.search(c) for c in tail_clauses))
+        if _MINOR_MARK_RE.search(tail):
+            minor.append(text)
+        elif not self_answered:
+            blocking.append(text)
     return blocking, minor
 
 
