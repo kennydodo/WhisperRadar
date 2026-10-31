@@ -74,6 +74,47 @@ class StartOverTests(unittest.TestCase):
         resp = self._post("not-a-stage")
         self.assertIn("error=", resp.headers["Location"])
 
+    def _explainer_outputs(self):
+        names = ("plan.json", "plan_review.json", "plan_candidate.json",
+                 "plan_candidate_review.json", "explainer.json")
+        for name in names:
+            (self.pdir / name).write_text("{}", encoding="utf-8")
+        debug = self.pdir / "_work" / "webchat_debug"
+        debug.mkdir(parents=True, exist_ok=True)
+        (debug / "scene_writer_reply_1.txt").write_text("old scene plan", encoding="utf-8")
+        (debug / "script_writer_reply_1.txt").write_text("keep script reply", encoding="utf-8")
+        return names, debug
+
+    def test_start_over_shots_clears_all_explainer_results_and_resume_inputs(self):
+        from whisperradar import explainer_scenes
+        names, debug = self._explainer_outputs()
+        (self.pdir / "notes.md").write_text("keep notes", encoding="utf-8")
+        refs = self.pdir / "refs"
+        refs.mkdir()
+        (refs / "CH_AYA.png").write_bytes(b"supplied reference")
+        resp = self._post("shots")
+        self.assertIn("msg=", resp.headers["Location"])
+        for name in names + ("shotlist.json",):
+            self.assertFalse((self.pdir / name).exists(), name)
+        self.assertFalse((debug / "scene_writer_reply_1.txt").exists())
+        self.assertTrue((debug / "script_writer_reply_1.txt").exists())
+        for name in ("script.md", "audio.mp3", "subtitles.srt", "notes.md", "refs/CH_AYA.png"):
+            self.assertTrue((self.pdir / name).exists(), name)
+        self.assertEqual(explainer_scenes.load_review(self.pdir), {})
+        # A subsequent reset is safe and cannot resurrect the candidate.
+        self.assertIn("msg=", self._post("shots").headers["Location"])
+
+    def test_start_over_earlier_stage_also_clears_explainer_outputs(self):
+        names, _ = self._explainer_outputs()
+        self._post("srt")
+        self.assertTrue(all(not (self.pdir / name).exists() for name in names))
+        self.assertTrue((self.pdir / "audio.mp3").exists())
+
+    def test_start_over_render_keeps_the_explainer_plan_and_review(self):
+        names, _ = self._explainer_outputs()
+        self._post("merge")
+        self.assertTrue(all((self.pdir / name).exists() for name in names))
+
     def test_every_reachable_stage_is_now_accepted(self):
         # style/script/images were already accepted before this fix; the new
         # part is audio/srt/shots/refs/merge being valid too
