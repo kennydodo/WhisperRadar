@@ -615,7 +615,7 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
         st = rel_ms(m, "the animation")
         if not m.get("run_ms") and st + 3000 > dur - TAIL_MS:
             st = max(400, dur - TAIL_MS - 3000)               # said late in the scene: start a little earlier
-        run = int(m.get("run_ms") or min(max(dur - st - TAIL_MS, 3000), 12000))
+        run = int(m.get("run_ms") or min(max(dur - st - TAIL_MS, 3000), 18000))
         must_finish(st, run, "the animation")
         params = {k: v for k, v in raw.items() if k in ("title", "sub", "note", "stages", "tasks", "rows",
                                                           "filename", "lines", "highlights", "levels", "decoder",

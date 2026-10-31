@@ -115,6 +115,7 @@ MOTION SCENES (the viewer watches the idea happen; use them where the narrator d
 - code: 2-12 lines (64 characters at most) typed out, with "highlights" (line, start_ms, short note) on the line that matters. Use it only for real code or a real excerpt the narrator discusses, never invented.
 - ONE DIAGRAM, MANY BEATS: a motion scene may last 20-60 seconds and keep the same diagram while the narrator moves through several points. Tie each change to the words that cause it: pipeline stages take "at" (the stage unlocks and starts when those words are said), generation rows take "beats" (a list of {"at": words}, one per pass: the outline, the next detail, the last detail; sequential rows take 2: where the writing starts and ends), code highlights take "at". Anchors for different steps must be words said in different places (at least half a second apart, never inside one short phrase). Every motion scene may carry a "footer" ({"text", "at"}): the one sentence that should stay on screen for the point. Row words must all be real final text, never "___" or placeholders: the animation already shows every slot empty until its step. Without an anchor a step is spaced evenly, which does not follow the narrator, so always anchor them.
 - "motion": {"at": words, "run_ms": optional} is where the animation starts. Give each scene 6+ seconds. Colours, fonts and line style come from the channel; never choose them. At most one or two motion scenes in a row; titles under 48 characters.
+- MOTION MIX (the app measures this and rejects plans that miss it): at least {motion_share} of the narration time must be drawn as a mechanism, diagram, code, chart, counter or evidence scene (everything except row, steps, timeline, compare, stack and hero), and never more than {text_run} text-only scenes (row, steps, timeline, compare, stack, hero) or {text_seconds} seconds of them in a row. Evaluation, caveats, tests and examples can be drawn too: a generation scene shows a filled board or sentence, a counter shows a stated number, a fit_chart shows a stated ratio, a code scene shows a real excerpt, a pipeline shows what waits for what.
 NUMBER SCENES (only when the narrator states the quantities; the app draws them to scale and checks the arithmetic):
 - memory: a box (GPU memory, RAM, a budget) filled by up to 4 segments, widths proportional to "gb". Segments must add up to at most "capacity" (else the scene is rejected). Use the narrator's numbers; set "exact": true when the narrator gave them, leave it off to show an "illustrative numbers" tag. "grows_from" (last segment only) makes it grow from a smaller size.
 - precision: the same model at different bit sizes, 1-4 rows. Give "params_b" (billions) and each row's "bits"; the app computes size = params x bits / 8. Never type the sizes yourself.
@@ -170,9 +171,19 @@ def look_hint(look: dict) -> str:
     return STYLE_HINT.get((look or {}).get("diagram_style") or "", "")
 
 
+def _rules_text(low, high, rule) -> str:
+    text = RULES.replace("{low}", str(low)).replace("{high}", str(high))
+    if rule:
+        return (text.replace("{motion_share}", f"{float(rule.get('min_share') or 0):.0%}")
+                .replace("{text_run}", str(int(rule.get("text_run") or 0)))
+                .replace("{text_seconds}", f"{float(rule.get('text_seconds') or 0):.0f}"))
+    return "\n".join(x for x in text.split("\n") if not x.startswith("- MOTION MIX"))
+
+
 def writer_prompt(narration: str, total_seconds: float, direction: str = "",
-                  look: str = "", density: str = "normal") -> str:
+                  look: str = "", density: str = "normal", rule: dict | None = None) -> str:
     low, high = counts(total_seconds, density)
+    rule = MOTION_RULES["tech"] if rule is None and total_seconds >= MOTION_MIN_SECONDS else (rule or {})
     return f"""You are the visual planner of a hand-drawn whiteboard/chalkboard explainer video. A narrator reads the script below; you decide WHAT IS DRAWN while each part is spoken. Think like a great teacher at a board: one clear picture per idea, drawn as the words are said.
 
 The video is {total_seconds / 60:.1f} minutes long. Return a scene plan as JSON in exactly this shape:
@@ -181,7 +192,7 @@ The video is {total_seconds / 60:.1f} minutes long. Return a scene plan as JSON 
 
 ICONS (Lucide names): {" ".join(ICONS)}
 
-{RULES.replace("{low}", str(low)).replace("{high}", str(high))}
+{_rules_text(low, high, rule)}
 {("CHANNEL LOOK: " + look + chr(10)) if look else ""}{("EXTRA DIRECTION: " + direction.strip() + chr(10)) if direction.strip() else ""}
 NARRATION (the times in brackets are only for pacing; do not copy them):
 {narration}
@@ -467,7 +478,7 @@ Distinguish tasks, workers, stages and speed multipliers; these counts are diffe
 "pass" must be an explicit boolean (true/false, never a string). score must be a number 1-10. "faults" and "fixes" must always be present as arrays, empty [] when nothing is wrong. The faults array holds ONLY findings you want changed, each naming its scene id. Scenes you checked and found correct must NOT appear in faults - do not write "no fault" or "fine" entries; the app treats them as noise. Never narrate your per-scene audit in the JSON: unchecked-in detail belongs in your thinking, not in faults. Name the scene id in every fault and fix. Do not rewrite the whole plan."""
 
 
-def summary_text(plan: dict, cues: list[dict]) -> str:
+def summary_text(plan: dict, cues: list[dict], look: dict | None = None) -> str:
     """One block per scene for the judge: what is drawn and the words it covers."""
     texts = {int(c["index"]): c["text"].strip() for c in cues}
     resolved = recipes.resolve_anchors(plan, _cue_objs(cues))
@@ -523,7 +534,7 @@ def summary_text(plan: dict, cues: list[dict]) -> str:
         out.append(f"scene {s.get('id')} ({s.get('layout')}"
                    + (f", title '{s['title']}'" if s.get("title") else "") + ")\n"
                    f"  narration: {said}\n  drawn: {' | '.join(drawn)}")
-    return "\n".join(out)
+    return motion_summary(resolved, cues, look) + "\n" + "\n".join(out)
 
 
 class _Cue:
@@ -787,6 +798,88 @@ def count_faults(resolved: dict, cues: list) -> list:
     return faults
 
 
+TEXT_LAYOUTS = frozenset({"row", "steps", "timeline", "compare", "stack", "hero"})
+# What a genre must SHOW rather than list. Unknown genres have no rule (finance and others get their own
+# set later); a channel can override with look["motion_min_share"] / ["text_run_max"] / ["text_run_seconds"]
+# (0 turns a limit off) and pick its genre with look["scene_genre"]. Videos under 4 minutes are exempt.
+MOTION_RULES = {"tech": {"min_share": 0.20, "text_run": 6, "text_seconds": 120.0}}
+MOTION_MIN_SECONDS = 240.0
+
+
+def motion_rule(look: dict | None) -> dict:
+    look = look or {}
+    rule = dict(MOTION_RULES.get(str(look.get("scene_genre") or "tech"), {}))
+    for key, src in (("min_share", "motion_min_share"), ("text_run", "text_run_max"),
+                     ("text_seconds", "text_run_seconds")):
+        if look.get(src) not in (None, ""):
+            try:
+                rule[key] = float(look[src]) if key != "text_run" else int(look[src])
+            except (TypeError, ValueError):
+                pass
+    return rule
+
+
+def motion_measure(resolved: dict, cues: list) -> dict:
+    """Seconds per scene and the measured mix: {total, visual, share, runs: [(ids, seconds)], per}."""
+    by = {int(c["index"]): c for c in cues}
+    per = []
+    for sc in resolved.get("scenes") or []:
+        a, b = sc.get("cue_range") or (0, 0)
+        if a in by and b in by:
+            sec = studio._srt_seconds(by[b]["end"]) - studio._srt_seconds(by[a]["start"])
+        else:
+            sec = 0.0
+        per.append((str(sc.get("id")), sc.get("layout"), max(0.0, sec)))
+    total = sum(x[2] for x in per) or 1.0
+    visual = sum(x[2] for x in per if x[1] not in TEXT_LAYOUTS)
+    runs, cur = [], []
+    for sid, lay, sec in per:
+        if lay in TEXT_LAYOUTS:
+            cur.append((sid, sec))
+        else:
+            if cur:
+                runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    return {"total": total, "visual": visual, "share": visual / total, "per": per,
+            "runs": [([i for i, _ in r], sum(s for _, s in r)) for r in runs]}
+
+
+def motion_faults(resolved: dict, cues: list, total_seconds: float, look: dict | None = None) -> list:
+    """The enforced motion mix: no long stretch of text-only scenes and a minimum share of mechanism /
+    diagram / evidence time. Each fault names the scene ids so the writer can change exactly those."""
+    rule = motion_rule(look)
+    if not rule or total_seconds < MOTION_MIN_SECONDS:
+        return []
+    m = motion_measure(resolved, cues)
+    out = []
+    max_n, max_s = int(rule.get("text_run") or 0), float(rule.get("text_seconds") or 0)
+    for ids, sec in m["runs"]:
+        if (max_n and len(ids) > max_n) or (max_s and sec > max_s):
+            out.append(f"scenes {', '.join(ids)}: {len(ids)} text-only scenes in a row ({sec:.0f} s) - at most "
+                       f"{max_n} or {max_s:.0f} s; turn at least {max(1, len(ids) - max_n)} of them into a mechanism, "
+                       "diagram, code, chart, counter or evidence scene (or merge neighbours) so the viewer sees "
+                       "something happen, keeping every point the narrator makes")
+    need = float(rule.get("min_share") or 0)
+    if need and m["share"] < need:
+        text = sorted((x for x in m["per"] if x[1] in TEXT_LAYOUTS), key=lambda x: -x[2])[:6]
+        out.append(f"scenes {', '.join(x[0] for x in text)}: only {m['share']:.0%} of the narration time shows a "
+                   f"mechanism, diagram, code, chart, counter or evidence scene (at least {need:.0%} needed); "
+                   "redraw the ones where the narrator describes how something works, what waits for what, a "
+                   "number, a ratio or a worked example")
+    return out
+
+
+def motion_summary(resolved: dict, cues: list, look: dict | None = None) -> str:
+    """One line for the judge: what the app measured."""
+    m = motion_measure(resolved, cues)
+    runs = sorted(m["runs"], key=lambda r: -r[1])[:1]
+    longest = f"; longest text-only stretch {len(runs[0][0])} scenes / {runs[0][1]:.0f} s" if runs else ""
+    return (f"MEASURED MIX: {m['share']:.0%} of the narration time is a mechanism/diagram/code/chart/evidence "
+            f"scene, the rest is text layouts{longest}.")
+
+
 _FAULT_SCENE = re.compile(r"^[Ss]cene (\S+?):")
 
 
@@ -833,6 +926,7 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms
             mmss = str(starts.get(gap["cue"], "")).split(",")[0].lstrip("0:") or "0:00"
             faults.append(explainer_terms.fault_text(gap, mmss))
     faults.extend(count_faults(resolved, cues))
+    faults.extend(motion_faults(resolved, cues, total_seconds, look))
     if resolved["scenes"][0]["cue_range"][0] != int(cues[0]["index"]):
         faults.append("the first scene must start with the very first words of the narration")
     for s in plan["scenes"]:
@@ -1009,7 +1103,8 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             break
         reply = ask("writer", writer_prompt(narration, total, direction,
                                             look_hint(look) + _terms_hint(terms),
-                                            look.get("scenes_per_video") or "normal"), True)
+                                            look.get("scenes_per_video") or "normal",
+                                            motion_rule(look) if total >= MOTION_MIN_SECONDS else {}), True)
         plan = _plan_from(reply)
         if plan is None:
             log("writer: no readable plan in the reply - asking once more")
@@ -1046,7 +1141,7 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             continue
         if should_stop():
             raise RuntimeError("Stopped by you.")
-        summary = summary_text(plan, cues)
+        summary = summary_text(plan, cues, look)
         verdict = studio._parse_json_object(
             ask("judge", judge_prompt(narration, plan, summary), True), want=("score",)) or {}
         if not _verdict_usable(verdict):

@@ -3,14 +3,15 @@ import {Footer, Heading, prog, useMs, usePal} from '../motion.jsx';
 
 // Coarse to fine: a short broad level first, then longer levels that split it into more and
 // more cells, then a decoder that turns the result into text. Each level appears on its words.
-const X0 = 210, W = 1500, CH = 62;
+const X0 = 210, W = 1500, CH = 80;
 
 export const Levels = ({title, sub, levels, decoder, result, footer, theme}) => {
   const pal = usePal(theme);
   const ms = useMs();
   const cols = [pal.accent, pal.accent2, pal.good, pal.bad];
   const n = levels.length;
-  const Y0 = 300, DY = n === 4 ? 110 : 140;
+  const DY = n === 4 ? 150 : 180;
+  const Y0 = Math.round(Math.max(250, (1000 - (n * DY + 190)) / 2 + 70));      // centred in the frame
   const cellW = (c) => W / c - 12;
   const cx = (c, i) => X0 + (i + 0.5) * (W / c);
   const lines = [];
@@ -27,7 +28,7 @@ export const Levels = ({title, sub, levels, decoder, result, footer, theme}) => 
       }
     }
     return <React.Fragment key={k}>
-      <div style={{position: 'absolute', left: X0, top: y - 34, fontFamily: pal.sansF, fontSize: 24, color: pal.dim, opacity: a}}>{lv.label}</div>
+      <div style={{position: 'absolute', left: X0, top: y - 42, fontFamily: pal.sansF, fontSize: 30, color: pal.text, opacity: a * 0.8}}>{lv.label}</div>
       {Array.from({length: lv.cells}, (_, i) => {
         const p = prog(ms, lv.at_ms, 450);
         return <div key={i} style={{position: 'absolute', left: cx(lv.cells, i) - cellW(lv.cells) / 2, top: y,
@@ -43,11 +44,11 @@ export const Levels = ({title, sub, levels, decoder, result, footer, theme}) => 
     <Heading title={title} sub={sub} pal={pal} />
     <svg style={{position: 'absolute', left: 0, top: 0}} width={1920} height={1080}>{lines}</svg>
     {rowsEl}
-    {decoder ? <div style={{position: 'absolute', left: 710, top: dy, width: 500, height: 70, borderRadius: 16,
+    {decoder ? <div style={{position: 'absolute', left: 680, top: dy, width: 560, height: 84, borderRadius: 16,
       border: `2px solid ${pal.line}`, background: pal.panel, opacity: da, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: pal.sansF, fontSize: 30, color: pal.text}}>↓ {decoder.label}</div> : null}
-    {result ? <div style={{position: 'absolute', left: 210, width: 1500, top: dy + 100, textAlign: 'center', opacity: ra,
-      fontFamily: pal.monoF, fontSize: 34, color: pal.good}}>{result.text}</div> : null}
+      fontFamily: pal.sansF, fontSize: 36, color: pal.text}}>↓ {decoder.label}</div> : null}
+    {result ? <div style={{position: 'absolute', left: 210, width: 1500, top: dy + 116, textAlign: 'center', opacity: ra,
+      fontFamily: pal.monoF, fontSize: 44, color: pal.good}}>{result.text}</div> : null}
     {footer ? <Footer footer={footer} pal={pal} /> : null}
   </>;
 };

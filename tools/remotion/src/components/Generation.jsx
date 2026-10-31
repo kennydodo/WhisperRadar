@@ -34,22 +34,25 @@ export const Generation = ({title, sub, rows, start_ms, run_ms, note, footer, th
   const ms = useMs();
   const rt = ms - start_ms;
   const passCol = [pal.accent, pal.accent2, pal.good, pal.accent];
+  const single = rows.length === 1;                          // one row: bigger, in the middle of the frame
+  const CHt = single ? 92 : 62, RHt = single ? 116 : 82, LAB = single ? 40 : 30;
   const out = rows.map((row, r) => {
     const sc = schedule(row.mode, row.words.length, run_ms, row.beats_ms, start_ms);
     const shown = row.words.filter((_, i) => rt >= sc.at[i]).length;
     const stepNow = row.mode === 'sequential' ? shown : Math.max(0, ...row.words.map((_, i) => (rt >= sc.at[i] ? sc.pass[i] : 0)));
     const finished = rt >= sc.end;
-    const y = 270 + r * 330;
+    const nrows = Math.ceil(row.words.length / 7);
+    const y = single ? Math.round(Math.max(230, (1080 - (96 + nrows * RHt)) / 2 - 40)) : 270 + r * 330;
     const a = prog(ms, start_ms + r * 200, 600);
     const cells = row.words.map((w, i) => {
       const on = rt >= sc.at[i];
       const p = clamp01((rt - sc.at[i]) / 380);
       const col = row.mode === 'sequential' ? pal.accent : passCol[(sc.pass[i] - 1) % passCol.length];
-      const x = 110 + (i % 7) * 240, yy = y + 92 + Math.floor(i / 7) * 82;
+      const x = 110 + (i % 7) * 240, yy = y + 92 + Math.floor(i / 7) * RHt;
       return (
-        <div key={i} style={{position: 'absolute', left: x, top: yy, width: 220, height: 62, borderRadius: 14,
+        <div key={i} style={{position: 'absolute', left: x, top: yy, width: 220, height: CHt, borderRadius: 14,
           border: `2px ${on ? 'solid' : 'dashed'} ${on ? col : pal.line}`, background: on ? `${col}22` : 'transparent',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: pal.monoF, fontSize: Math.min(26, Math.floor(200 / (Math.max(w.length, 1) * 0.62))),
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: pal.monoF, fontSize: Math.min(single ? 32 : 26, Math.floor(200 / (Math.max(w.length, 1) * 0.62))),
           color: pal.text, boxShadow: on && p < 1 ? `0 0 ${30 * (1 - p)}px ${col}` : 'none'}}>
           <span style={{opacity: on ? p : 0, transform: `scale(${0.85 + 0.15 * p})`}}>{w}</span>
         </div>
@@ -57,7 +60,7 @@ export const Generation = ({title, sub, rows, start_ms, run_ms, note, footer, th
     });
     return (
       <div key={r} style={{opacity: a}}>
-        <div style={{position: 'absolute', left: 110, top: y, fontFamily: pal.sansF, fontWeight: 650, fontSize: 30, color: pal.text}}>{row.label}</div>
+        <div style={{position: 'absolute', left: 110, top: y, fontFamily: pal.sansF, fontWeight: 650, fontSize: LAB, color: pal.text}}>{row.label}</div>
         <div style={{position: 'absolute', right: 110, top: y, fontFamily: pal.monoF, fontSize: 28,
           color: finished ? pal.good : pal.dim}}>{finished ? '✓ done in ' : 'step '}{stepNow}{finished ? (stepNow === 1 ? ' step' : ' steps') : ''}</div>
         {cells}

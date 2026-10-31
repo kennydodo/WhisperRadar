@@ -21,22 +21,30 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, foo
     [JSON.stringify(stages), tasks, run_ms, start_ms]);
   const t = ms;
   const n = stages.length;
-  const z = n <= 3 ? 1 : n <= 5 ? 0.72 : 0.56;                 // many stages: everything gets smaller
-  const GAP = Math.round(130 * z), TOP = 290, WR = Math.round(36 * z), CW = Math.round(92 * z);
-  const H0 = Math.round(190 * z), RH = Math.round(100 * z), CH = Math.round(56 * z), CS = Math.round(48 * z);
+  const z = n <= 3 ? 1 : n <= 5 ? 0.72 : 0.56;
+  const fz = n <= 3 ? 1 : n <= 5 ? 0.88 : 0.82;                // text scale: stays readable with many stages
+  const GAP = n <= 3 ? 130 : n <= 5 ? 94 : 56, CW = n <= 3 ? 92 : n <= 5 ? 76 : 50;
   const COLW = Math.min(620, Math.floor((1700 - (n - 1) * GAP) / n));
+  const perOf = (workers) => Math.min(workers, Math.max(1, Math.floor((COLW - 40) / CW)), 4);
+  const maxRows = Math.max(...stages.map((x) => Math.ceil(x.workers / perOf(x.workers))));
+  const Hb1 = 150 + maxRows * 100 + 20 + 40 + 112;
+  const zv = Math.max(z, Math.min(1.15, 540 / Hb1));            // use the height: bigger rows and rings when there is room
+  const H0 = Math.round(190 * zv), RH = Math.round(100 * zv), CH = Math.max(46, Math.round(56 * zv)), CS = Math.max(40, Math.round(48 * zv));
+  const WR = Math.min(Math.round(36 * zv), Math.floor(CW / 2) - 5);
+  const Hb = H0 - 40 + maxRows * RH + 20 + 40 + 3 * CH;
+  const TOP = Math.round(230 + Math.max(0, 610 - Hb) / 2);        // the whole picture sits in the middle of the frame
   const x0 = (1920 - (n * COLW + (n - 1) * GAP)) / 2;
   const colX = (s) => x0 + s * (COLW + GAP);
   const wpos = (s, w) => {
-    const per = Math.min(stages[s].workers, Math.max(1, Math.floor((COLW - 40) / CW)), 4);
+    const per = perOf(stages[s].workers);
     const col = w % per, row = Math.floor(w / per);
     return [colX(s) + COLW / 2 - ((per - 1) * CW) / 2 + col * CW, TOP + H0 + row * RH];
   };
-  const maxRows = Math.max(...stages.map((x) => Math.ceil(x.workers / Math.min(4, Math.max(1, Math.floor((COLW - 40) / CW))))));
   const trayY = TOP + H0 + maxRows * RH + 40;
+  const costly = stages.some((x) => (x.work || 1) !== (stages[0].work || 1));
   const done = [];
   const boxes = stages.map((st, s) => {
-    const rows = Math.ceil(st.workers / Math.min(4, Math.max(1, Math.floor((COLW - 40) / CW))));
+    const rows = Math.ceil(st.workers / perOf(st.workers));
     const blocked = s > 0 && t < sim.barriers[s];
     const release = st.waits_for_all && s > 0 ? clamp01((t - sim.barriers[s]) / 0.25) : 1;
     const appear = prog(ms, start_ms - 200 + s * 150, 500);
@@ -46,9 +54,11 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, foo
         borderRadius: 20, background: pal.panel, border: `2px ${blocked ? 'dashed' : 'solid'} ${blocked ? pal.bad : pal.line}`,
         opacity: appear * (blocked ? 0.62 : 1), transform: `translateY(${(1 - appear) * 20}px)`,
         boxShadow: busyCount ? `0 0 ${14 + busyCount * 3}px ${pal.accent}55` : 'none'}}>
-        <div style={{position: 'absolute', left: Math.round(26 * z), top: Math.round(20 * z), fontFamily: pal.sansF, fontWeight: 650, fontSize: Math.round(34 * z), color: pal.text}}>{st.label}</div>
-        <div style={{position: 'absolute', left: Math.round(26 * z), top: Math.round(66 * z), fontFamily: pal.monoF, fontSize: Math.round(24 * z),
+        <div style={{position: 'absolute', left: 22, top: 16, fontFamily: pal.sansF, fontWeight: 650, fontSize: Math.round(34 * fz), color: pal.text}}>{st.label}</div>
+        <div style={{position: 'absolute', left: 22, top: Math.round(16 + 34 * fz * 1.25), fontFamily: pal.monoF, fontSize: Math.round(24 * fz),
           color: blocked ? pal.bad : pal.accent}}>{blocked ? '🔒 waiting' : z < 1 ? `${busyCount}/${st.workers} busy` : `${st.workers} workers · ${busyCount} busy`}</div>
+        {costly ? <div style={{position: 'absolute', left: 22, top: Math.round(16 + 34 * fz * 1.25 + 24 * fz * 1.45), fontFamily: pal.monoF,
+          fontSize: Math.round(22 * fz), color: (st.work || 1) > 1 ? pal.accent2 : pal.dim}}>work ×{st.work || 1}</div> : null}
       </div>
     );
   });
@@ -82,10 +92,10 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, foo
         const slot = waiting[s]++;
         const prev = s > 0 ? sim.plan[s - 1][i] : null;
         const [px, py] = prev ? wpos(s - 1, prev.worker) : [colX(0) + 40, trayY - 120];
-        const perRow = Math.max(3, Math.floor((COLW - 30) / CH)); const tx = colX(s) + 24 + (slot % perRow) * CH, ty = trayY + Math.floor(slot / perRow) * CH;
+        const perRow = Math.max(4, Math.floor((COLW - 30) / CH)); const tx = colX(s) + 24 + (slot % perRow) * CH, ty = trayY + Math.floor(slot / perRow) * CH;
         const mv = prev ? clamp01((t - prev.end) / Math.max(1, sim.travelMs)) : 1;
         const e = mv * mv * (3 - 2 * mv);
-        if (slot < perRow * 2) chips.push(<Chip size={CS} font={pal.monoF} key={i} x={lerp(px, tx, e)} y={lerp(py, ty, e)} color={colr} label={i + 1} />);
+        if (slot < perRow * 3) chips.push(<Chip size={CS} font={pal.monoF} key={i} x={lerp(px, tx, e)} y={lerp(py, ty, e)} color={colr} label={i + 1} />);
         placed = true;
       } else if (t < p.end) {
         const [x, y] = wpos(s, p.worker);
@@ -109,7 +119,7 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, foo
       </svg>;
     })}
     {boxes}{workers}{chips}
-    <div style={{position: 'absolute', left: 110, right: 110, top: 880, display: 'flex', alignItems: 'center', gap: 24, opacity: ao}}>
+    <div style={{position: 'absolute', left: 110, right: 110, top: Math.min(910, TOP + Hb + 56), display: 'flex', alignItems: 'center', gap: 24, opacity: ao}}>
       <div style={{fontFamily: pal.sansF, fontSize: 26, color: pal.dim, width: 120}}>Finished</div>
       <div style={{flex: 1, height: 18, borderRadius: 9, background: pal.panel, border: `1px solid ${pal.line}`, overflow: 'hidden'}}>
         <div style={{width: `${(fin / tasks) * 100}%`, height: '100%', background: `linear-gradient(90deg, ${pal.accent}, ${pal.good})`,
