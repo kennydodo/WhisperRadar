@@ -15,6 +15,11 @@ loop works over the web-chat transport and over a plain API provider.
 from __future__ import annotations
 
 import json
+import copy
+import hashlib
+import math
+import os
+import time
 import re
 from typing import Callable
 
@@ -92,6 +97,7 @@ MOTION SCENES (the viewer watches the idea happen; use them where the narrator d
 - A video made mostly of hero, stack and row scenes is a slide deck. Wherever the narrator explains how something works, how two ways differ, what waits for what, or shows evidence, use a motion scene, about one for every 60-90 seconds of narration. Hero, stack and row are for the short statements between them. Prefer fewer, longer scenes (15-40 seconds) over many 3-6 second ones.
 - First ask for every scene: what will the viewer understand by watching this that the words alone do not show? If the answer is only "they read the same point", pick a motion scene or a better picture.
 - levels: a broad level first, then finer levels that split it into more cells, then an optional decoder and the resulting text; "levels": [{"label", "cells" (1-16, more each level), "at": words}], "decoder": {"label", "at"}, "result": {"text", "at"}. Use it for hierarchies, coarse-to-fine, layers, zooming in. Give each level its own words.
+- REVISION SAFETY: never remove a teaching point to fit a template. Use fewer decorative elements, a different supported layout, or a longer scene boundary. Illustrative diagrams must be labelled schematic; never imply measured speed from decorative motion. Stages, workers and tasks are different quantities.
 - COUNTS ARE THE NARRATOR'S: if the narration says eight stages, draw eight; never change a count or a relationship to fit a component. If a component cannot draw it (levels: 2-4, pipeline: 2-8, a row: 4-14 words), use a steps or row scene with the exact count, and say in the footer what is simplified. The app rejects a drawn count that differs from the stated one.
 - pipeline: tasks (4-24) flow through 2-8 stages (as many as the narrator names: if the narration says eight stages, draw eight; labels of 14 characters when there are more than three); each stage has "workers" (1-8) and a relative "work" per task; "waits_for_all": true makes a stage wait until the whole stage before it is finished (shown locked). Use it for parallel work, queues, bottlenecks, "level 2 waits for level 1".
 - generation: 1-2 rows of 4-14 short words, each row "mode": "sequential" (one after another) or "plan_then_fill" (a rough outline first, then the gaps). Use it to show two ways of producing the same thing side by side.
@@ -171,12 +177,102 @@ NARRATION (the times in brackets are only for pacing; do not copy them):
 """
 
 
-def fix_prompt(plan: dict, faults: list[str]) -> str:
-    lines = "\n".join(f"- {f}" for f in faults[:20])
-    return ("Your scene plan has problems found by the checker. Fix ONLY these, keep everything else exactly "
-            "as it is, and reply with the COMPLETE corrected plan as one JSON object in one ```json block "
-            "(text in this chat, no file).\n\nPROBLEMS:\n" + lines + "\n\nYOUR PLAN:\n"
+def _ids_in(text: str, plan: dict) -> set:
+    """The plan's scene ids a fault/note/fix mentions. Ids of 1-2 characters only count when they
+    are addressed directly ('scene b: ...' or 'b: ...') so common short words never match."""
+    ids = [str(s.get("id", "")) for s in plan.get("scenes", [])]
+    found = set()
+    for sid in ids:
+        if not sid:
+            continue
+        esc = re.escape(sid)
+        if len(sid) <= 2:
+            if re.search(r"scene\s+" + esc + r"\b|(?<![\w-])" + esc + r"\s*:", str(text), re.I):
+                found.add(sid)
+        elif re.search(r"(?<![\w-])" + esc + r"(?![\w-])", str(text), re.I):
+            found.add(sid)
+    return found
+
+
+def revision_ids(plan: dict, faults: list[str]) -> set[str]:
+    """Only named scenes may change. A fault that names no scene id is guidance, not a licence to
+    rewrite every scene; the plan only opens fully when nothing at all is addressable."""
+    ids = [str(s.get("id", "")) for s in plan.get("scenes", [])]
+    selected = set()
+    for fault in faults:
+        found = _ids_in(fault, plan)
+        selected.update(found)
+        if found and re.search(r"boundary|boundaries|outside.*scene|scene.*start|merge|split", fault, re.I):
+            for sid in found:
+                k = ids.index(sid)
+                selected.update(ids[max(0, k - 1):k + 2])
+    return selected or set(ids)
+
+
+def fix_prompt(plan: dict, faults: list[str], narration: str = "") -> str:
+    lines = "\n".join("- " + str(f) for f in faults)
+    allowed = sorted(revision_ids(plan, faults))
+    return ("Correct the listed scenes, preserving every other scene exactly. Do not delete scenes, "
+            "change their IDs or reorder them. You may change layout, labels and anchors inside the allowed scenes. "
+            "Return ONLY {\"scenes\": [complete replacement scene objects]} in one JSON block. "
+            "Unchanged scenes may be omitted; they will be retained locally. A full plan is accepted only if "
+            "all unrelated scenes are unchanged. Use a supported layout or adjust the allowed scene boundaries when timing is impossible; never "
+            "silently omit teaching content. Use exact narration anchors; never invent timings or evidence.\n"
+            "ALLOWED SCENE IDS: " + json.dumps(allowed) + "\nPROBLEMS:\n" + lines
+            + "\nTIMED NARRATION:\n" + narration + "\nCURRENT PLAN:\n"
             + json.dumps(plan, ensure_ascii=False, indent=1))
+
+
+def merge_revision(plan: dict, reply: dict, allowed: set[str]) -> dict:
+    """Accept a scene patch or unchanged full-plan response, never silent collateral edits."""
+    original = {str(s.get("id")): s for s in plan["scenes"]}
+    replacements = {}
+    for scene in reply.get("scenes", []):
+        sid = str(scene.get("id", ""))
+        if sid not in original or sid in replacements:
+            raise ValueError("Replacement scenes must have unique existing IDs; got " + sid)
+        if sid not in allowed and scene != original[sid]:
+            raise ValueError("Unrelated scene changed: " + sid)
+        replacements[sid] = scene
+    if not replacements:
+        raise ValueError("No replacement scene objects were returned")
+    out = copy.deepcopy(plan)
+    out["scenes"] = [copy.deepcopy(replacements.get(str(s.get("id")), s)) for s in plan["scenes"]]
+    return out
+
+
+def _revise(ask, plan, faults, narration):
+    prompt = fix_prompt(plan, faults, narration)
+    for attempt in range(2):
+        fixed = _plan_from(ask("writer", prompt, False))
+        try:
+            if fixed is None:
+                raise ValueError("No readable scene patch")
+            return merge_revision(plan, fixed, revision_ids(plan, faults))
+        except ValueError as exc:
+            if attempt:
+                raise RuntimeError("Scene revision rejected; existing plan preserved: " + str(exc)) from exc
+            prompt = "Your revision was rejected: " + str(exc) + "\n" + fix_prompt(plan, faults, narration)
+
+
+def review_passes(verdict: dict) -> bool:
+    """Approved only on pass + score >= 8 with no BLOCKING finding: self-answered entries
+    ('...fine; no fault here — remove') and cosmetic ones ('; minor') never block approval,
+    but an unmarked fix the judge wants applied does."""
+    score = verdict.get("score")
+    blocking, _minor = split_verdict_faults(verdict.get("faults"))
+    fixes = verdict.get("fixes")
+    blocking_fixes = [f for f in (fixes if isinstance(fixes, list) else [])
+                      if not _MINOR_RE.search(str(f).split(";")[-1])]
+    return (isinstance(score, (int, float)) and not isinstance(score, bool)
+            and math.isfinite(score) and MIN_SCORE <= score <= 10
+            and verdict.get("pass") is True and not blocking and not blocking_fixes)
+
+
+def _atomic_json(path, data):
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
 
 
 def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE) -> str:
@@ -192,18 +288,20 @@ THE PLAN AS IT WILL BE DRAWN (scene, layout, what appears, and the narration it 
 
 Reply with ONE JSON object and nothing else:
 {{"score": 8.5, "pass": true, "faults": ["scene id: specific problem"], "fixes": ["scene id: the specific change"]}}
-"pass" is true only when the score is {min_score:g} or higher and nothing important is left to fix. Name the scene id in every fault and fix. Do not rewrite the whole plan."""
+The summary includes COMPILED animation parameters with scene-relative milliseconds: these are what the renderer receives. Judge that output, not an imagined animation. This is a specification review, not a claim to have watched rendered pixels.
+Distinguish tasks, workers, stages and speed multipliers; these counts are different quantities. Illustrative cell counts are allowed when clearly labelled schematic, not measured architecture. Names must be shown when spoken; expansions are needed when the narrator explains them, not necessarily before. A motion comparison needs consistent example text, but paraphrases that preserve the meaning are not factual errors. Request only changes needed to explain the subject, not motion on every warning or list.
+"pass" must be an explicit boolean. It is true only when the score is {min_score:g} or higher and nothing important is left to fix. The faults array holds ONLY findings you want changed, each naming its scene id. Scenes you checked and found correct must NOT appear in faults - do not write "no fault" or "fine" entries; the app treats them as noise. A cosmetic, nice-to-have finding (in faults or fixes) ends with "; minor" and does not block approval. Never narrate your per-scene audit in the JSON: unchecked-in detail belongs in your thinking, not in faults. Name the scene id in every fault and fix. Do not rewrite the whole plan."""
 
 
 def summary_text(plan: dict, cues: list[dict]) -> str:
     """One block per scene for the judge: what is drawn and the words it covers."""
     texts = {int(c["index"]): c["text"].strip() for c in cues}
     resolved = recipes.resolve_anchors(plan, _cue_objs(cues))
+    compiled = {s["id"]: s for s in recipes.build(plan, _cue_objs(cues)).get("scenes", [])}
     out = []
     for s in resolved["scenes"]:
         a, b = s["cue_range"]
         said = " ".join(texts.get(i, "") for i in range(a, b + 1))
-        said = said if len(said) < 420 else said[:400] + " ..."
         drawn = []
         for it in s.get("items") or []:
             drawn.append(f"{it.get('label')} [{it.get('icon', '-')}]")
@@ -245,6 +343,9 @@ def summary_text(plan: dict, cues: list[dict]) -> str:
             drawn.append(f"counter {c.get('from', 0)} -> {c.get('to')} {c.get('unit', '')} '{c.get('label', '')}'")
         if isinstance(s.get("footer"), dict):
             drawn.append("footer: " + str(s["footer"].get("text", "")))
+        motion = compiled.get(s.get("id"), {}).get("remotion")
+        if motion:
+            drawn.append("COMPILED animation (scene-relative ms): " + json.dumps(motion, ensure_ascii=False))
         out.append(f"scene {s.get('id')} ({s.get('layout')}"
                    + (f", title '{s['title']}'" if s.get("title") else "") + ")\n"
                    f"  narration: {said}\n  drawn: {' | '.join(drawn)}")
@@ -318,6 +419,49 @@ def _split_faults(found: list) -> tuple:
     return [f for f in found if f not in advisory], advisory
 
 
+_NO_FAULT_RE = re.compile(
+    r"\bno fault\b|\bnot a (?:spec |real |major )?fault\b|\bnothing (?:left )?to (?:fix|change)\b"
+    r"|\bfine\b|\bgood\b|\bremove\s*$", re.I)
+_MINOR_RE = re.compile(r"\bminor\b", re.I)
+_LEADING_SID_RE = re.compile(r"^\s*(?:scene\s+)?([A-Za-z][\w-]*?)\s*:")
+
+
+def split_verdict_faults(entries) -> tuple:
+    """(blocking, minor): judges narrate their per-scene audit, so the verdict carries entries the
+    judge answers itself ('...so fine; no fault here — remove') and cosmetic ones it marks 'minor'.
+    Neither may block approval or drive revisions; only findings the judge wants changed do."""
+    blocking, minor = [], []
+    for e in entries or []:
+        text = str(e).strip()
+        if not text:
+            continue
+        tail = text.split(";")[-1]
+        if _NO_FAULT_RE.search(tail):
+            continue
+        (minor if _MINOR_RE.search(tail) else blocking).append(text)
+    return blocking, minor
+
+
+def _pair_fixes(faults: list[str], fixes: list) -> list[str]:
+    """Attach each fix to the fault it belongs to (same scene id). Judges list fewer fixes than
+    faults once minor notes are filtered, so pairing by position cross-wired the instructions."""
+    notes = [str(f) for f in faults]
+    taken = set()
+    for fix in fixes or []:
+        m = _LEADING_SID_RE.match(str(fix))
+        target = None
+        if m:
+            pat = r"(?<![\w-])" + re.escape(m.group(1)) + r"(?![\w-])"
+            target = next((i for i, f in enumerate(notes)
+                           if i not in taken and re.search(pat, f, re.I)), None)
+        if target is None:
+            notes.append(str(fix))
+        else:
+            notes[target] = notes[target] + "  FIX: " + str(fix)
+            taken.add(target)
+    return notes
+
+
 _NUMS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
 _ADJ = r"(?:(?:ordered|separate|sequential|different|distinct|parallel|internal|additional|more|extra|such|numbered|coarse|finer|learned|processing|successive|dependent)\s+){0,2}"
 _COUNT = re.compile(r"\b(\d+|two|three|four|five|six|seven|eight|nine|ten)\s+" + _ADJ + r"(stages?|levels?|layers?|steps?|passes|rounds?)\b", re.I)
@@ -373,6 +517,11 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms
     """Faults the code can find: the recipe builder's readable errors plus pacing."""
     if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
         return ["the reply has no \"scenes\" list"]
+    ids = [s.get("id") if isinstance(s, dict) else None for s in plan["scenes"]]
+    if any(not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", sid) for sid in ids):
+        return ["Every scene needs an id beginning with a letter, using letters, digits, '_' or '-' only."]
+    if len(set(ids)) != len(ids):
+        return ["Scene ids must be unique; duplicate ids make targeted corrections ambiguous."]
     faults = []
     try:
         built = recipes.build(plan, _cue_objs(cues), look)
@@ -435,12 +584,31 @@ def _plan_from(reply: str):
     return normalize_plan(d) if d and isinstance(d.get("scenes"), list) else None
 
 
+def _seed_plan(pdir) -> tuple | None:
+    """-> (plan, source name): the active plan (your reviewed baseline) or the best machine
+    candidate, so a re-run continues from what exists instead of re-drafting every scene.
+    Delete plan.json (or Start over) to force a fresh draft."""
+    for name in ("plan.json", "plan_candidate.json"):
+        path = pdir / name
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and isinstance(data.get("scenes"), list) and data["scenes"]:
+            return normalize_plan(copy.deepcopy(data)), name
+    return None
+
+
 def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
                should_stop: Callable[[], bool] = lambda: False,
                rounds: int = MAX_ROUNDS) -> dict:
     """ask(role, text, new_chat) -> reply text, for role 'writer' or 'judge'.
-    Saves plan.json (+ plan_review.json) in the production folder."""
+    Saves every result as a candidate; only explicit approval replaces plan.json."""
     pdir = studio.prod_dir(cfg, pid)
+    active = pdir / "plan.json"
+    initial_plan = active.read_bytes() if active.exists() else None
     srt = studio.find_srt(pdir)
     if not srt:
         raise RuntimeError("Generate the subtitles first (the scenes are timed from them)")
@@ -465,39 +633,40 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
     terms = explainer_terms.key_terms(cues, title or "")
     if terms:
         log("key terms to show on screen: " + ", ".join(t["term"] for t in terms))
-    log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - asking the writer")
-    reply = ask("writer", writer_prompt(narration, total, direction or "", look_hint(look) + _terms_hint(terms),
-                                              look.get("scenes_per_video") or "normal"), True)
-    plan = _plan_from(reply)
-    if plan is None:
-        log("writer: no readable plan in the reply - asking once more")
-        reply = ask("writer", "That was not the JSON object I asked for. Reply with ONLY the scene plan "
-                              "object {\"theme\": ..., \"scenes\": [...]} in one ```json block.", False)
+    seeded = _seed_plan(pdir)
+    plan = None
+    if seeded is not None:
+        plan, source = seeded
+        log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - checking the existing plan "
+            f"({source}, {len(plan['scenes'])} scenes) before asking the writer")
+    else:
+        log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - asking the writer")
+    for attempt in range(2):
+        if plan is not None:
+            break
+        reply = ask("writer", writer_prompt(narration, total, direction or "",
+                                            look_hint(look) + _terms_hint(terms),
+                                            look.get("scenes_per_video") or "normal"), True)
         plan = _plan_from(reply)
-    if plan is None:
-        raise RuntimeError("the writer never gave a readable scene plan")
+        if plan is None:
+            log("writer: no readable plan in the reply - asking once more")
+            reply = ask("writer", "That was not the JSON object I asked for. Reply with ONLY the scene plan "
+                                  "object {\"theme\": ..., \"scenes\": [...]} in one ```json block.", False)
+            plan = _plan_from(reply)
+        if plan is None:
+            raise RuntimeError("the writer never gave a readable scene plan")
     best = None            # (rank, plan): a judged plan beats one the checker rejected
     verdict, kept_verdict = {}, {}
+    revised_times: dict = {}    # scene id -> how often it was already sent back (oscillation guard)
     for rnd in range(1, rounds + 1):
         if should_stop():
             raise RuntimeError("Stopped by you.")
         plan, added = _fix_terms(plan, cues, terms)
         for note in added:
             log("auto-fix: " + note)
-        plan, trimmed = recipes.simplify_overfull(plan, _cue_objs(cues))
-        for note in trimmed:
-            log("auto-fix: " + note)
         faults, advisory = _split_faults(check(plan, cues, total, look, terms))
         for a in advisory:
             log("note (does not block the judge): " + a)
-        if faults and rnd == rounds:
-            trimmed_plan, dropped = drop_faulty_scenes(plan, faults)
-            if dropped:
-                again, _adv = _split_faults(check(trimmed_plan, cues, total, look, terms))
-                if not again:
-                    log(f"round {rnd}: could not fix scene(s) {', '.join(dropped)} in {rounds} rounds - removed "
-                        "(the scene before stays on screen); the judge will see the gap")
-                    plan, faults = trimmed_plan, []
         if faults:
             log(f"round {rnd}: {len(faults)} fault(s) from the checker, e.g. {faults[0][:140]}")
             rank = (0, -len(faults))
@@ -505,48 +674,96 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
                 best, kept_verdict = (rank, plan), {}
             if rnd == rounds:
                 break
-            fixed = _plan_from(ask("writer", fix_prompt(plan, faults), False))
-            if fixed is None:
-                log("writer: the corrected plan was not readable - keeping the last one")
-                break
-            plan = fixed
+            plan = _revise(ask, plan, faults, narration)
             continue
+        if should_stop():
+            raise RuntimeError("Stopped by you.")
         summary = summary_text(plan, cues)
         verdict = studio._parse_json_object(
             ask("judge", judge_prompt(narration, plan, summary), True), want=("score",)) or {}
         try:
-            score = float(verdict.get("score"))
+            raw_score = verdict.get("score")
+            score = float(raw_score) if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool) else None
+            if score is not None and (not math.isfinite(score) or not 1 <= score <= 10):
+                score = None
         except (TypeError, ValueError):
             score = None
         log(f"round {rnd}: judge scored {score if score is not None else 'nothing'}"
             + (f" - {len(verdict.get('faults') or [])} fault(s)" if verdict.get("faults") else ""))
-        rank = (1, score if score is not None else 0.0)
-        if best is None or rank > best[0]:
+        reported = verdict.get("faults")
+        reported = reported if isinstance(reported, list) else []
+        blocking, minor = split_verdict_faults(reported)
+        for m in minor:
+            log("judge note (cosmetic, not blocking): " + m[:160])
+        rank = (2 if review_passes(verdict) else 1, score if score is not None else 0.0,
+                -len(blocking))
+        if best is None or rank >= best[0]:
             best, kept_verdict = (rank, plan), verdict
         if score is None:
-            log("the judge gave no usable score - keeping this plan (it passed the checker)")
-            break
-        if score >= MIN_SCORE and verdict.get("pass") is not False:
+            log("the judge gave no usable score; the draft remains unapproved")
+        if review_passes(verdict):
             break
         if rnd == rounds:
             break
-        notes = [f"{a}  FIX: {b}" for a, b in zip(verdict.get("faults") or [],
-                                                   (verdict.get("fixes") or []) + [""] * 20)]
-        fixed = _plan_from(ask("writer", fix_prompt(plan, notes or ["raise the quality"]), False))
-        if fixed is None:
+        fixes = verdict.get("fixes")
+        fixes = fixes if isinstance(fixes, list) else []
+        notes = _pair_fixes(blocking, fixes)
+        if not notes:
+            notes = ["Review was not approved; resolve the teaching problems without changing correct scenes."]
+        # oscillation guard: a scene already revised twice and flagged again would churn - freeze
+        # it this round; when nothing but frozen scenes remains, stop instead of going in circles
+        open_ids = revision_ids(plan, notes)
+        stuck = {sid for sid in open_ids if revised_times.get(sid, 0) >= 2}
+        if stuck:
+            log(f"round {rnd}: scene(s) {', '.join(sorted(stuck))} were already revised and are still "
+                "flagged - frozen for this round to avoid churn")
+            notes = [n for n in notes if _ids_in(n, plan) - stuck]
+            for sid in open_ids - stuck:
+                revised_times[sid] = revised_times.get(sid, 0) + 1
+        else:
+            for sid in open_ids:
+                revised_times[sid] = revised_times.get(sid, 0) + 1
+        if not notes:
+            log(f"round {rnd}: only already-revised scenes are still flagged - keeping the plan as "
+                "it stands; edit those scenes by hand or drop them if they cannot fit")
             break
-        plan = fixed
+        plan = _revise(ask, plan, notes, narration)
     final = best[1] if best else plan
     verdict = kept_verdict
     left, _advice = _split_faults(check(final, cues, total, look, terms))
-    (pdir / "plan.json").write_text(json.dumps(final, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    (pdir / "plan_review.json").write_text(json.dumps(
-        {"score": verdict.get("score"), "faults": verdict.get("faults") or [],
-         "fixes": verdict.get("fixes") or [], "checker_faults_left": left}, indent=1), encoding="utf-8")
-    log(f"plan.json saved: {len(final['scenes'])} scene(s)"
-        + (f" - {len(left)} checker fault(s) still open, see the log" if left else ""))
-    if left:
-        raise RuntimeError("the plan still has faults: " + " | ".join(left[:4]))
+    if should_stop():
+        raise RuntimeError("Stopped by you.")
+    if (active.read_bytes() if active.exists() else None) != initial_plan:
+        raise RuntimeError("The active scene plan changed during this run; it was not overwritten.")
+    if studio.parse_srt_cues(srt.read_text(encoding="utf-8-sig")) != cues:
+        raise RuntimeError("The subtitles changed during this run; the candidate was not promoted.")
+    approved = not left and review_passes(verdict)
+    digest = hashlib.sha256(json.dumps(final, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    raw_faults = verdict.get("faults") if isinstance(verdict.get("faults"), list) else []
+    v_blocking, v_minor = split_verdict_faults(raw_faults)
+    review = {"status": "approved" if approved else "needs_revision", "pass": approved,
+              "score": verdict.get("score") if isinstance(verdict.get("score"), (int, float)) and not isinstance(verdict.get("score"), bool) and math.isfinite(verdict["score"]) else None,
+              "faults": v_blocking + v_minor,
+              "fixes": verdict.get("fixes") if isinstance(verdict.get("fixes"), list) else [], "checker_faults_left": left,
+              "review_basis": "compiled_specification", "visual_review": "not_performed",
+              "plan_digest": digest, "candidate_file": "plan_candidate.json",
+              "active_plan_preserved": not approved and (pdir / "plan.json").exists()}
+    _atomic_json(pdir / "plan_candidate.json", final)
+    _atomic_json(pdir / "plan_candidate_review.json", review)
+    _atomic_json(pdir / "plan_review.json", review)
+    if not approved:
+        detail = " | ".join(left[:3]) if left else (" | ".join(v_blocking[:3]) if v_blocking
+                                                    else f"judge score {verdict.get('score')}; approval required")
+        raise RuntimeError("Scene plan needs revision: " + detail +
+                           ". Draft saved as plan_candidate.json; existing plan.json was not replaced.")
+    active = pdir / "plan.json"
+    if active.exists():
+        backup = pdir / "backups" / ("scene-plan-" + str(time.time_ns()))
+        backup.mkdir(parents=True, exist_ok=False)
+        (backup / "plan.json").write_bytes(active.read_bytes())
+    _atomic_json(active, final)
+    log(f"Scene plan approved: {len(final['scenes'])} scenes, judge score {verdict['score']}. "
+        "Render a short preview to verify appearance and motion before the full video.")
     return final
 
 
@@ -583,6 +800,17 @@ def api_job(cfg, pid: int, provider: str | None, judge: str | None, log,
 def load_review(pdir) -> dict:
     """The last judge verdict saved next to plan.json ({} when none)."""
     try:
-        return json.loads((pdir / "plan_review.json").read_text(encoding="utf-8"))
+        result = json.loads((pdir / "plan_review.json").read_text(encoding="utf-8"))
+        if result.get("status") == "approved":
+            try:
+                active = json.loads((pdir / "plan.json").read_text(encoding="utf-8"))
+                digest = hashlib.sha256(json.dumps(active, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+            except (OSError, ValueError):
+                digest = None
+            if not digest or digest != result.get("plan_digest"):
+                result = dict(result, status="needs_revision", **{"pass": False})
+                result["faults"] = ["The active plan changed after approval; review it again."]
+                result["candidate_file"] = None
+        return result
     except (OSError, ValueError):
         return {}

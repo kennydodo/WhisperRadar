@@ -672,6 +672,7 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
                     at = beat_ms(d, key)
                     d["at_ms"] = int(at if at is not None else (lv[-1]["at_ms"] + 1500 if lv else st))
                     d.pop("at", None), d.pop("cue", None)
+                    must_finish(d["at_ms"], 1200, key)
                     params[key] = d
         if layout == "pipeline":
             stages = []
@@ -694,6 +695,25 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
                     row["beats_ms"] = bs
                 rows.append(row)
             params["rows"] = rows
+        if layout == "pipeline":
+            last = max([st] + [g.get("at_ms", st) for g in params["stages"]])
+            needed = max(run, last - st + 1200)
+            if m.get("run_ms") and needed > run:
+                raise ExplainerError([f"Scene {sid}: the stage anchor is after the animation window; "
+                                      "extend motion.run_ms or choose earlier stage words."])
+            must_finish(st, needed, "the anchored pipeline")
+            params["run_ms"] = int(needed)
+        if layout == "generation":
+            last = max([st] + [b for row in params["rows"] for b in (row.get("beats_ms") or [])])
+            needed = max(run, last - st + 1200)
+            must_finish(st, needed, "the anchored steps")
+            params["run_ms"] = int(needed)      # the window covers every beat, so the spec reads true
+        if layout == "levels":
+            last = max([st] + [x["at_ms"] for x in params["levels"]]
+                       + [params[k]["at_ms"] for k in ("decoder", "result") if k in params])
+            needed = max(run, last - st + 1200)
+            must_finish(st, needed, "the anchored levels")
+            params["run_ms"] = int(needed)
     else:
         z = dict(raw.get("zoom") or {})
         st = rel_ms(z, "the zoom")
