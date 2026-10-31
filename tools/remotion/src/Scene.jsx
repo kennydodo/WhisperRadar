@@ -7,12 +7,18 @@ import {Pipeline} from './components/Pipeline.jsx';
 import {Generation} from './components/Generation.jsx';
 import {CodePanel} from './components/CodePanel.jsx';
 import {Levels} from './components/Levels.jsx';
+import {Bars} from './components/Bars.jsx';
+import {Flow} from './components/Flow.jsx';
+import {Line} from './components/Line.jsx';
+import {Grid} from './components/Grid.jsx';
+import {Split} from './components/Split.jsx';
 import {Backdrop, usePal} from './motion.jsx';
 
 // Allowlisted components. The Python side validates names and parameters
 // before anything reaches here; unknown names render nothing.
 const REGISTRY = {fit_chart: FitChart, counter: Counter, screenshot: ScreenshotZoom};
-const MOTION = {pipeline: Pipeline, generation: Generation, code: CodePanel, levels: Levels};
+const MOTION = {pipeline: Pipeline, generation: Generation, code: CodePanel, levels: Levels,
+  bars: Bars, flow: Flow, line: Line, grid: Grid, split: Split};
 
 export const Scene = ({component, params, theme, fade}) => {
   const f = useCurrentFrame();

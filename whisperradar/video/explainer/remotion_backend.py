@@ -241,9 +241,156 @@ def _check_code(p: dict, where: str) -> list:
     return errs
 
 
+# ---- general motion components (any topic: tech, finance, ...) --------------------------
+
+def _num_ok(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and abs(v) < 1e15
+
+
+def _common_text(p: dict, where: str) -> list:
+    errs = []
+    for key, n in (("title", 48), ("sub", 70), ("unit", 8), ("prefix", 3)):
+        if key in p and (not isinstance(p[key], str) or len(p[key]) > n):
+            errs.append(f"{where}: {key} must be text of {n} characters at most.")
+    return errs
+
+
+def _beats_ok(seq, where, what) -> list:
+    if any(not _ms(x.get("at_ms")) for x in seq if isinstance(x, dict)):
+        return [f"{where}: every {what} needs at_ms (a narration anchor)."]
+    return []
+
+
+def _check_bars(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    it = p.get("items")
+    if not isinstance(it, list) or not 2 <= len(it) <= 6:
+        return errs + [f"{where}: bars needs 2-6 items."]
+    for k, x in enumerate(it, 1):
+        if not isinstance(x, dict) or not _text(x.get("label"), 28):
+            errs.append(f"{where}: bar {k} needs a label of 28 characters at most.")
+        elif not _num_ok(x.get("value")) or x["value"] < 0:
+            errs.append(f"{where}: bar {k} ({x['label']}) needs a value of 0 or more (the narrator's number).")
+        elif "note" in x and not _text(x["note"], 40):
+            errs.append(f"{where}: bar {k} note must be 40 characters at most.")
+    errs += _beats_ok(it, where, "bar")
+    lim = p.get("limit")
+    if lim is not None and (not isinstance(lim, dict) or not _num_ok(lim.get("value")) or lim["value"] <= 0
+                            or not _text(lim.get("label"), 24) or not _ms(lim.get("at_ms"))):
+        errs.append(f"{where}: limit must be {{\"label\" (24 characters), \"value\" > 0, an anchor}}.")
+    r = p.get("ratio_to")
+    if r is not None and (not isinstance(r, int) or isinstance(r, bool) or not 1 <= r <= len(it)):
+        errs.append(f"{where}: ratio_to must be the number (1-{len(it)}) of the bar the others are compared to.")
+    return errs
+
+
+def _check_flow(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    nodes = p.get("nodes")
+    if not isinstance(nodes, list) or not 2 <= len(nodes) <= 6:
+        return errs + [f"{where}: flow needs 2-6 nodes."]
+    cap = 18 if len(nodes) <= 4 else 13
+    for k, x in enumerate(nodes, 1):
+        if not isinstance(x, dict) or not _text(x.get("label"), cap):
+            errs.append(f"{where}: node {k} needs a label of {cap} characters at most.")
+        elif "sub" in x and not _text(x["sub"], 22):
+            errs.append(f"{where}: node {k} sub must be 22 characters at most.")
+    errs += _beats_ok(nodes, where, "node")
+    sends = p.get("sends") or []
+    if not isinstance(sends, list) or len(sends) > 4:
+        return errs + [f"{where}: sends must be a list of at most 4."]
+    for k, x in enumerate(sends, 1):
+        if not isinstance(x, dict) or not _text(x.get("label"), 16):
+            errs.append(f"{where}: send {k} needs a label of 16 characters at most (what moves).")
+            continue
+        for key in ("from", "to"):
+            v = x.get(key)
+            if v is not None and (not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= len(nodes)):
+                errs.append(f"{where}: send {k} {key} must be a node number 1-{len(nodes)}.")
+        if (x.get("from") or 1) == (x.get("to") or len(nodes)):
+            errs.append(f"{where}: send {k} goes from a node to itself.")
+        if "back" in x and x["back"] is not None and not _text(x["back"], 16):
+            errs.append(f"{where}: send {k} back must be a label of 16 characters at most.")
+    errs += _beats_ok(sends, where, "send")
+    return errs
+
+
+def _check_line(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    x = p.get("x")
+    if not isinstance(x, list) or not 2 <= len(x) <= 24 or not all(_text(str(v), 10) for v in x):
+        return errs + [f"{where}: x must be 2-24 short labels (years, months, steps)."]
+    ser = p.get("series")
+    if not isinstance(ser, list) or not 1 <= len(ser) <= 3:
+        return errs + [f"{where}: series must be 1-3 lines."]
+    for k, s in enumerate(ser, 1):
+        if not isinstance(s, dict) or not isinstance(s.get("values"), list) or len(s["values"]) != len(x) \
+                or not all(_num_ok(v) for v in s["values"]):
+            errs.append(f"{where}: series {k} needs one number per x label ({len(x)}).")
+        elif "label" in s and not _text(s["label"], 24):
+            errs.append(f"{where}: series {k} label must be 24 characters at most.")
+    for k, m in enumerate(p.get("marks") or [], 1):
+        if (not isinstance(m, dict) or not isinstance(m.get("x"), int) or isinstance(m.get("x"), bool)
+                or not 1 <= m["x"] <= len(x) or not _text(m.get("text"), 30) or not _ms(m.get("at_ms"))):
+            errs.append(f"{where}: mark {k} needs x (1-{len(x)}), text (30 characters) and an anchor.")
+    if not _ms(p.get("start_ms")) or not _ms(p.get("run_ms")) or p.get("run_ms", 0) < 1500:
+        errs.append(f"{where}: start_ms >= 0 and run_ms >= 1500 are needed.")
+    return errs
+
+
+def _check_grid(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    r, c = p.get("rows"), p.get("cols")
+    if not all(isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 12 for v in (r, c)):
+        return errs + [f"{where}: rows and cols must be whole numbers 1-12."]
+    steps = p.get("steps")
+    if not isinstance(steps, list) or not 1 <= len(steps) <= 4:
+        return errs + [f"{where}: grid needs 1-4 steps."]
+    used = 0
+    for k, s in enumerate(steps, 1):
+        if not isinstance(s, dict) or not _text(s.get("label"), 26):
+            errs.append(f"{where}: step {k} needs a label of 26 characters at most.")
+            continue
+        if not isinstance(s.get("cells"), int) or isinstance(s.get("cells"), bool) or s["cells"] < 1:
+            errs.append(f"{where}: step {k} cells must be a whole number of 1 or more.")
+            continue
+        used += s["cells"]
+        sy = s.get("symbols")
+        if sy is not None and (not isinstance(sy, list) or not sy or not all(_text(str(v), 3) for v in sy)):
+            errs.append(f"{where}: step {k} symbols must be a list of 1-3 character texts.")
+    if used > r * c:
+        errs.append(f"{where}: the steps fill {used} cells but the board has only {r * c} ({r} x {c}).")
+    errs += _beats_ok(steps, where, "step")
+    return errs
+
+
+def _check_split(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    it = p.get("items")
+    if not isinstance(it, list) or not 2 <= len(it) <= 6:
+        return errs + [f"{where}: split needs 2-6 parts."]
+    for k, x in enumerate(it, 1):
+        if not isinstance(x, dict) or not _text(x.get("label"), 24):
+            errs.append(f"{where}: part {k} needs a label of 24 characters at most.")
+        elif not _num_ok(x.get("value")) or x["value"] <= 0:
+            errs.append(f"{where}: part {k} ({x['label']}) needs a value greater than 0.")
+    errs += _beats_ok(it, where, "part")
+    tot = p.get("total")
+    if tot is not None:
+        if not _num_ok(tot) or tot <= 0:
+            errs.append(f"{where}: total must be a number greater than 0.")
+        elif not errs and sum(x["value"] for x in it) > tot * 1.0001:
+            errs.append(f"{where}: the parts add up to {sum(x['value'] for x in it):g}, more than the total {tot:g}.")
+    for key, n in (("center", 26), ("total_label", 26), ("rest_label", 24)):
+        if key in p and p[key] is not None and not _text(p[key], n):
+            errs.append(f"{where}: {key} must be {n} characters at most.")
+    return errs
+
+
 COMPONENTS = {"fit_chart": _check_fit_chart, "counter": _check_counter, "screenshot": _check_screenshot,
               "pipeline": _check_pipeline, "generation": _check_generation, "code": _check_code,
-              "levels": _check_levels}
+              "levels": _check_levels, "bars": _check_bars, "flow": _check_flow, "line": _check_line,
+              "grid": _check_grid, "split": _check_split}
 
 # Motion style presets are data: a channel picks a preset and may override colours.
 STYLE_PRESETS = ("tech", "warm", "light")

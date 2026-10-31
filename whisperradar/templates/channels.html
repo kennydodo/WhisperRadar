@@ -872,18 +872,19 @@
             </div>
             <div class="muted" style="font-size:12px; margin:10px 0 4px">
               Motion rule - how much of an explainer must <em>show</em> something instead of listing it
-              (checked on videos of 4 minutes or more; blank = the genre's rule, 0 = off).
+              (checked on videos of 90 seconds or more; blank = the genre's rule, 0 = off).
             </div>
             <div class="inline">
               <label>scene genre
                 <select name="explainer_scene_genre">
                   <option value="">inherit{% if xg.get('scene_genre') %} (global: {{ xg.get('scene_genre') }}){% else %} (tech){% endif %}</option>
                   <option value="tech" {{ 'selected' if xv.get('scene_genre') == 'tech' else '' }}>tech</option>
+                  <option value="finance" {{ 'selected' if xv.get('scene_genre') == 'finance' else '' }}>finance</option>
                 </select>
               </label>
-              {% for key, label, dflt in [('motion_min_share', 'min. motion share (%)', '20'),
-                                          ('text_run_max', 'max text-only scenes in a row', '6'),
-                                          ('text_run_seconds', 'max text-only seconds in a row', '120')] %}
+              {% for key, label, dflt in [('motion_min_share', 'min. motion share (%)', '50'),
+                                          ('text_run_max', 'max text-only scenes in a row', '3'),
+                                          ('text_run_seconds', 'max text-only seconds in a row', '75')] %}
               <label>{{ label }}
                 <input type="number" name="explainer_{{ key }}" min="0" step="any" style="width:110px"
                        value="{{ xv.get(key) if xv.get(key) not in (none, '') else '' }}"

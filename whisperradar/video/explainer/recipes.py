@@ -444,6 +444,16 @@ class _Stream:
             for t in _tokens(c.text):
                 self.words.append((t, c.index))
         self.last_cue = cues[-1].index if cues else 0
+        self.first_of, self.count_of = {}, {}
+        for i, (_, c) in enumerate(self.words):
+            self.first_of.setdefault(c, i)
+            self.count_of[c] = self.count_of.get(c, 0) + 1
+
+    def frac(self, i: int) -> float:
+        """Where word i sits inside its subtitle line, 0..1 (so a beat can land on its words, not the line start)."""
+        c = self.words[i][1]
+        n = self.count_of.get(c, 1)
+        return round((i - self.first_of.get(c, i)) / n, 3) if n > 1 else 0.0
 
     def find(self, snippet, start=0, what=""):
         want = _tokens(snippet)
@@ -500,8 +510,11 @@ def resolve_anchors(plan: dict, cues) -> dict:
         def anchor(d, key="at", where=""):
             if isinstance(d, dict) and d.get(key) and d.get("cue") is None:
                 try:
-                    _, c = stream.find(d[key], base, f"{label} {where}")
+                    i, c = stream.find(d[key], base, f"{label} {where}")
                     d["cue"] = c
+                    frac = stream.frac(i)
+                    if frac:
+                        d["cue_frac"] = frac
                 except ExplainerError as exc:
                     errors.extend(exc.errors)
         s["items"] = [dict(i) for i in (s.get("items") or [])]
@@ -518,7 +531,10 @@ def resolve_anchors(plan: dict, cues) -> dict:
             if isinstance(s.get(key), dict):
                 s[key] = dict(s[key])
                 anchor(s[key], where=key)
-        for key in ("stages", "highlights", "levels"):
+        if isinstance(s.get("limit"), dict):
+            s["limit"] = dict(s["limit"])
+            anchor(s["limit"], where="limit")
+        for key in ("stages", "highlights", "levels", "nodes", "sends", "steps", "marks", "series"):
             if isinstance(s.get(key), list):
                 s[key] = [dict(x) if isinstance(x, dict) else x for x in s[key]]
                 for k, x in enumerate(s[key]):
@@ -558,8 +574,134 @@ def resolve_anchors(plan: dict, cues) -> dict:
     return out
 
 
-REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code", "levels")
+# General motion layouts work for any topic (tech, finance, ...); the others are specialised.
+GENERAL_LAYOUTS = ("bars", "flow", "line", "grid", "split")
+REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code", "levels") + GENERAL_LAYOUTS
 FIT_CHART_MS = 1900          # a bar finishes growing, and its labels appear, within this
+
+
+# animation lengths the components use (ms): keep in step with tools/remotion/src/components
+BAR_MS, FLOW_HOP_MS, FLOW_DWELL_MS, SPLIT_MS, CELL_MS = 1300, 650, 350, 900, 350
+BEAT_GAP_MS = 600            # two things anchored to the same subtitle line appear this far apart
+
+
+def _icon_paths(name):
+    """A Lucide icon as SVG paths for the Remotion components; None when unknown (decoration only)."""
+    if not isinstance(name, str) or not name.strip():
+        return None
+    icons = strokes_library._lucide()
+    key = strokes_library._lucide_key(name.split(":", 1)[-1])
+    return list(icons[key]["strokes"]) if key in icons else None
+
+
+def _general_params(raw: dict, sid: str, layout: str, cr, cue_ms: dict, start: int, dur: int) -> dict:
+    """bars / flow / line / grid / split -> component params with scene-relative ms.
+    Narration anchors become at_ms; two anchors on the same subtitle line are spread out; an anchor
+    said so late that its animation could not finish is moved earlier (never past the scene)."""
+    def at_of(spec, default):
+        cue = spec.get("cue") if isinstance(spec, dict) else None
+        if cue is None:
+            return default
+        if cue not in cue_ms or not cr[0] <= cue <= cr[1]:
+            raise ExplainerError([f"Scene {sid}: \"{spec.get('at', '')}\" is anchored outside the scene."])
+        a, b = cue_ms[cue]
+        frac = spec.get("cue_frac") if isinstance(spec.get("cue_frac"), (int, float)) else 0.0
+        return max(int(a + max(0.0, min(0.95, frac)) * (b - a) - start), 0)
+
+    m = raw.get("motion") if isinstance(raw.get("motion"), dict) else {}
+    st = max(at_of(m, 400), 400)
+    latest = dur - TAIL_MS
+
+    def beats(seq, anim, label, step=1200):
+        out, prev = [], None
+        for k, x in enumerate(seq):
+            x = dict(x) if isinstance(x, dict) else {"label": str(x)}
+            t = at_of(x, st + k * step)
+            t = max(t, st if k == 0 else 0)
+            if prev is not None and t < prev + BEAT_GAP_MS:
+                t = prev + BEAT_GAP_MS
+            a = anim(x) if callable(anim) else anim
+            if t + a > latest:
+                t = latest - a
+                if prev is not None and t < prev + 250 or t < 0:
+                    raise ExplainerError([f"Scene {sid}: too much for the time - the {label}s cannot all appear "
+                                          "and finish before the scene ends; use fewer, or a longer scene."])
+            x["at_ms"] = int(t)
+            prev = t
+            for key in ("at", "cue", "cue_frac"):
+                x.pop(key, None)
+            out.append(x)
+        return out
+
+    keep = {"bars": ("title", "sub", "unit", "prefix", "ratio_to", "illustrative"),
+            "flow": ("title", "sub"),
+            "line": ("title", "sub", "unit", "prefix", "x", "zero", "illustrative"),
+            "grid": ("title", "sub", "rows", "cols", "show_share", "illustrative"),
+            "split": ("title", "sub", "unit", "prefix", "total", "total_label", "rest_label", "center",
+                      "illustrative")}[layout]
+    params = {k: raw[k] for k in keep if raw.get(k) not in (None, "")}
+    params["start_ms"] = int(st)
+
+    def clean(x, fields):
+        out = {k: x[k] for k in fields if x.get(k) not in (None, "")}
+        if "icon" in fields:
+            out.pop("icon", None)
+            ip = _icon_paths(x.get("icon"))
+            if ip:
+                out["icon_paths"] = ip
+        return out
+
+    if layout in ("bars", "split"):
+        anim = BAR_MS if layout == "bars" else SPLIT_MS
+        items = beats(raw.get("items") or [], anim, "bar" if layout == "bars" else "part")
+        params["items"] = [dict(clean(x, ("label", "value", "note", "color", "icon", "decimals")),
+                                at_ms=x["at_ms"]) for x in items]
+        if layout == "bars" and isinstance(raw.get("limit"), dict):
+            lim = beats([raw["limit"]], 600, "limit")[0]
+            params["limit"] = dict(clean(lim, ("label", "value")), at_ms=lim["at_ms"])
+    elif layout == "flow":
+        nodes = beats(raw.get("nodes") or [], 600, "node", step=700)
+        params["nodes"] = [dict(clean(x, ("label", "sub", "color", "icon")), at_ms=x["at_ms"]) for x in nodes]
+        n = len(nodes)
+
+        def send_ms(x):
+            hops = max(1, abs((x.get("to") or n) - (x.get("from") or 1)))
+            one = hops * FLOW_HOP_MS + FLOW_DWELL_MS
+            return one * (2 if x.get("back") else 1)
+        first = (nodes[-1]["at_ms"] + 600) if nodes else st
+        sends = beats(raw.get("sends") or [], send_ms, "send")
+        for x in sends:                       # a token never leaves before the boxes it travels through are drawn
+            x["at_ms"] = max(x["at_ms"], min(first, latest - send_ms(x)))
+        params["sends"] = [dict(clean(x, ("label", "back", "from", "to", "color")), at_ms=x["at_ms"]) for x in sends]
+    elif layout == "line":
+        run = int(m.get("run_ms") or min(max(latest - st, 2500), 9000))
+        if st + run > latest:
+            st = max(0, latest - run)
+            params["start_ms"] = int(st)
+        if st + run > latest:
+            raise ExplainerError([f"Scene {sid}: too much for the time - the line needs {run} ms to draw."])
+        params["run_ms"] = run
+        series = []
+        for k, x in enumerate(raw.get("series") or []):
+            x = dict(x) if isinstance(x, dict) else {}
+            y = clean(x, ("label", "values", "color", "decimals"))
+            if x.get("cue") is not None and k > 0:
+                y["at_ms"] = min(max(at_of(x, st), st), max(st, latest - 1500))
+            series.append(y)
+        params["series"] = series
+        marks = beats(raw.get("marks") or [], 600, "mark")
+        params["marks"] = [dict(clean(x, ("x", "text", "series")), at_ms=x["at_ms"]) for x in marks]
+    elif layout == "grid":
+        steps = beats(raw.get("steps") or [], lambda x: min(1400, int(x.get("cells") or 1) * 35) + CELL_MS, "step")
+        params["steps"] = [dict(clean(x, ("label", "cells", "color", "symbols")), at_ms=x["at_ms"]) for x in steps]
+    ft = raw.get("footer")
+    if isinstance(ft, str):
+        ft = {"text": ft}
+    if isinstance(ft, dict) and ft.get("text"):
+        fs = at_of(ft, st + 600)
+        fs = min(fs, max(latest - 700, st))
+        params["footer"] = {"text": str(ft["text"]), "start_ms": int(fs)}
+    return params
 
 
 def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
@@ -714,6 +856,8 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
             needed = max(run, last - st + 1200)
             must_finish(st, needed, "the anchored levels")
             params["run_ms"] = int(needed)
+    elif layout in GENERAL_LAYOUTS:
+        params = _general_params(raw, sid, layout, cr, cue_ms, start, dur)
     else:
         z = dict(raw.get("zoom") or {})
         st = rel_ms(z, "the zoom")
@@ -754,8 +898,8 @@ def _simplify_step(scene, step):
             if isinstance(i, dict):
                 i.pop("icon", None)
         return "the item icons"
-    if scene.get("layout") in _MECHANISM:
-        return ""                                  # the numbers must keep adding up
+    if scene.get("layout") in _MECHANISM + GENERAL_LAYOUTS:
+        return ""                                  # the numbers must keep adding up; every part is a point
     sides = scene.get("sides") or []
     if step <= 2 and any(isinstance(sd, dict) and sd.get("points") for sd in sides):
         for sd in sides:

@@ -57,86 +57,153 @@ ICONS = (
     "graduation-cap briefcase handshake megaphone newspaper code terminal bug bot sparkles wand"
 ).split()
 
-FORMAT = """\
-{"theme": "chalkboard",
- "scenes": [
-  {"id": "short-name", "start": "first words of the narration where this scene begins",
-   "layout": "row" | "steps" | "timeline" | "stack" | "hero" | "compare",
+# ---- the scene vocabulary, per genre ------------------------------------------------------
+# Every genre gets the text layouts and the GENERAL motion layouts (any topic). A genre adds its
+# specialised motion layouts. The writer only ever sees the layouts of its genre.
+TEXT_SET = ("row", "steps", "timeline", "stack", "hero", "compare")
+GENERAL_SET = ("flow", "bars", "line", "split", "grid", "counter")
+GENRE_LAYOUTS = {
+    "tech": TEXT_SET + GENERAL_SET + ("pipeline", "generation", "levels", "code",
+                                      "memory", "precision", "offload", "fit_chart"),
+    "finance": TEXT_SET + GENERAL_SET,
+}
+
+
+def genre_of(look) -> str:
+    """The channel's scene genre ("" or unknown = tech)."""
+    g = str((look or {}).get("scene_genre") or "tech") if isinstance(look, dict) else str(look or "tech")
+    return g if g in GENRE_LAYOUTS else "tech"
+
+
+# One example per layout (shown to the writer only when its genre has that layout).
+FORMAT_EXAMPLES = [
+    ("flow", """  {"id": "path", "start": "first words of the narration where this scene begins", "layout": "flow", "title": "short",
+   "nodes": [{"label": "Browser", "icon": "globe", "at": "words"}, {"label": "Cache", "sub": "fast copy", "icon": "database", "at": "words"},
+             {"label": "Server", "icon": "server", "at": "words"}],
+   "sends": [{"label": "request", "back": "page", "at": "words"}, {"label": "request", "to": 2, "back": "hit", "at": "words"}],
+   "footer": {"text": "one short takeaway", "at": "words"}}"""),
+    ("bars", """  {"id": "speed", "start": "...", "layout": "bars", "title": "short", "unit": "s", "ratio_to": 1,
+   "items": [{"label": "Method A", "value": 21, "at": "words", "color": "red"}, {"label": "Method B", "value": 1, "at": "words", "color": "green"}],
+   "limit": {"label": "budget", "value": 10, "at": "words"}}"""),
+    ("line", """  {"id": "growth", "start": "...", "layout": "line", "title": "short", "prefix": "$", "illustrative": true,
+   "x": ["25", "35", "45", "55", "65"], "series": [{"label": "Start at 25", "values": [0, 14784, 43865, 101073, 213610]}],
+   "marks": [{"x": 5, "text": "$213,610 at 65", "at": "words"}], "motion": {"at": "words"}}"""),
+    ("split", """  {"id": "budget", "start": "...", "layout": "split", "title": "short", "prefix": "$", "total": 3000, "rest_label": "Left over",
+   "items": [{"label": "Rent", "value": 1200, "at": "words", "color": "red"}, {"label": "Savings", "value": 600, "at": "words", "color": "green"}]}"""),
+    ("grid", """  {"id": "board", "start": "...", "layout": "grid", "title": "short", "rows": 9, "cols": 9, "motion": {"at": "words"},
+   "steps": [{"label": "One cell", "cells": 1, "at": "words", "color": "yellow", "symbols": ["5"]},
+             {"label": "Whole board", "cells": 80, "at": "words", "color": "blue"}]}"""),
+    ("counter", """  {"id": "num", "start": "...", "layout": "counter", "title": "optional",
+   "counter": {"from": 0, "to": 14, "unit": "GB", "label": "a 7B model at 16-bit", "at": "words"}}"""),
+    ("pipeline", """  {"id": "run", "start": "...", "layout": "pipeline", "title": "short", "tasks": 8, "motion": {"at": "words"},
+   "stages": [{"label": "Stage 1", "workers": 8, "work": 1}, {"label": "Stage 2", "workers": 4, "work": 1, "waits_for_all": true, "at": "words"}]}"""),
+    ("generation", """  {"id": "order", "start": "...", "layout": "generation", "title": "short", "motion": {"at": "words"},
+   "rows": [{"label": "Way A", "mode": "sequential", "words": ["a", "b", "c", "d", "e", "f"]},
+            {"label": "Way B", "mode": "plan_then_fill", "beats": [{"at": "words"}, {"at": "words"}, {"at": "words"}],
+             "words": ["a", "b", "c", "d", "e", "f"]}]}"""),
+    ("levels", """  {"id": "tree", "start": "...", "layout": "levels", "title": "short", "motion": {"at": "words"},
+   "levels": [{"label": "Broad", "cells": 2, "at": "words"}, {"label": "Finer", "cells": 6, "at": "words"}],
+   "decoder": {"label": "Decoder", "at": "words"}, "result": {"text": "the final text", "at": "words"}}"""),
+    ("code", """  {"id": "src", "start": "...", "layout": "code", "title": "short", "filename": "train.py", "motion": {"at": "words"},
+   "lines": ["def f(x):", "    return x"], "highlights": [{"line": 2, "at": "words", "note": "short"}]}"""),
+    ("memory", """  {"id": "mem", "start": "...", "layout": "memory", "title": "optional", "capacity": 24, "unit": "GB",
+   "capacity_label": "24 GB graphics card", "exact": true,
+   "items": [{"label": "Model weights", "gb": 14, "at": "words"},
+             {"label": "Context cache", "gb": 6, "grows_from": 1.5, "at": "words"}]}"""),
+    ("precision", """  {"id": "bits", "start": "...", "layout": "precision", "params_b": 7,
+   "items": [{"label": "16-bit", "bits": 16, "at": "words"}, {"label": "4-bit", "bits": 4, "at": "words"}]}"""),
+    ("offload", """  {"id": "layers", "start": "...", "layout": "offload", "layers": 32,
+   "items": [{"label": "GPU VRAM", "layers": 20, "at": "words"}, {"label": "CPU RAM", "layers": 12, "at": "words"}]}"""),
+    ("fit_chart", """  {"id": "fit", "start": "...", "layout": "fit_chart", "limit": 24, "unit": "GB", "bits": 4, "fade": {"out_ms": 400},
+   "items": [{"label": "7B", "params_b": 7, "at": "words"}, {"label": "70B", "params_b": 70, "at": "words"}]}"""),
+    ("stack", """  {"id": "short-name", "start": "...", "layout": "row" | "steps" | "timeline" | "stack" | "hero",
    "title": "optional heading, 2-5 words",
    "items": [{"label": "2-4 words", "icon": "lucide-icon-name", "at": "words of the narration when it appears",
               "color": "optional: white yellow green red orange blue pink purple grey", "note": "optional small line"}],
    "footer": {"text": "one short takeaway", "at": "words of the narration"},
-   "connect": "arrow" | "dashed" | "none", "focus": false},
-  {"id": "versus", "start": "...", "layout": "compare",
+   "connect": "arrow" | "dashed" | "none", "focus": false}"""),
+    ("compare", """  {"id": "versus", "start": "...", "layout": "compare",
    "sides": [{"header": "Left", "icon": "rocket", "at": "words", "color": "green",
               "points": [{"text": "short point", "at": "words", "mark": "check"}]},
              {"header": "Right", "icon": "snail", "at": "words", "color": "red",
-              "points": [{"text": "short point", "at": "words", "mark": "cross"}]}]},
-  {"id": "mem", "start": "...", "layout": "memory", "title": "optional", "capacity": 24, "unit": "GB",
-   "capacity_label": "24 GB graphics card", "exact": true,
-   "items": [{"label": "Model weights", "gb": 14, "at": "words"},
-             {"label": "Context cache", "gb": 6, "grows_from": 1.5, "at": "words"}]},
-  {"id": "bits", "start": "...", "layout": "precision", "params_b": 7,
-   "items": [{"label": "16-bit", "bits": 16, "at": "words"}, {"label": "4-bit", "bits": 4, "at": "words"}]},
-  {"id": "split", "start": "...", "layout": "offload", "layers": 32,
-   "items": [{"label": "GPU VRAM", "layers": 20, "at": "words"}, {"label": "CPU RAM", "layers": 12, "at": "words"}]},
-  {"id": "fit", "start": "...", "layout": "fit_chart", "limit": 24, "unit": "GB", "bits": 4, "fade": {"out_ms": 400},
-   "items": [{"label": "7B", "params_b": 7, "at": "words"}, {"label": "70B", "params_b": 70, "at": "words"}]},
-  {"id": "run", "start": "...", "layout": "pipeline", "title": "short", "tasks": 8, "motion": {"at": "words"},
-   "stages": [{"label": "Stage 1", "workers": 8, "work": 1}, {"label": "Stage 2", "workers": 4, "work": 1, "waits_for_all": true, "at": "words"}]},
-  {"id": "order", "start": "...", "layout": "generation", "title": "short", "motion": {"at": "words"},
-   "rows": [{"label": "Way A", "mode": "sequential", "words": ["a", "b", "c", "d", "e", "f"]},
-            {"label": "Way B", "mode": "plan_then_fill", "beats": [{"at": "words"}, {"at": "words"}, {"at": "words"}],
-             "words": ["a", "b", "c", "d", "e", "f"]}]},
-  {"id": "tree", "start": "...", "layout": "levels", "title": "short", "motion": {"at": "words"},
-   "levels": [{"label": "Broad", "cells": 2, "at": "words"}, {"label": "Finer", "cells": 6, "at": "words"}],
-   "decoder": {"label": "Decoder", "at": "words"}, "result": {"text": "the final text", "at": "words"}},
-  {"id": "src", "start": "...", "layout": "code", "title": "short", "filename": "train.py", "motion": {"at": "words"},
-   "lines": ["def f(x):", "    return x"], "highlights": [{"line": 2, "at": "words", "note": "short"}]},
-  {"id": "num", "start": "...", "layout": "counter", "title": "optional",
-   "counter": {"from": 0, "to": 14, "unit": "GB", "label": "a 7B model at 16-bit", "at": "words"}}
- ]}"""
+              "points": [{"text": "short point", "at": "words", "mark": "cross"}]}]}"""),
+]
 
-RULES = """\
-LAYOUTS (pick the one that teaches the sentence):
-- row: 2-4 things side by side (parts, ingredients, options). Add connect "arrow" for a flow, "none" for a set.
-- steps: 3-5 numbered steps in order. timeline: 3-5 points in time.
-- stack: 3-4 short lines, one per row, each with an icon (lists of facts or tiers); a footer fits under it.
-- hero: ONE big icon with one short sentence (a rule, a warning, the key idea). The label may be up to ~50 characters.
-- compare: exactly two sides, each with a header, an icon and 1-3 short points (right vs wrong, A vs B, before vs after).
-MOTION SCENES (the viewer watches the idea happen; use them where the narrator describes a process, a comparison of how two things work, or evidence):
-- A video made mostly of hero, stack and row scenes is a slide deck. Wherever the narrator explains how something works, how two ways differ, what waits for what, or shows evidence, use a motion scene, about one for every 60-90 seconds of narration. Hero, stack and row are for the short statements between them. Prefer fewer, longer scenes (15-40 seconds) over many 3-6 second ones.
-- First ask for every scene: what will the viewer understand by watching this that the words alone do not show? If the answer is only "they read the same point", pick a motion scene or a better picture.
-- levels: a broad level first, then finer levels that split it into more cells, then an optional decoder and the resulting text; "levels": [{"label", "cells" (1-16, more each level), "at": words}], "decoder": {"label", "at"}, "result": {"text", "at"}. Use it for hierarchies, coarse-to-fine, layers, zooming in. Give each level its own words.
-- REVISION SAFETY: never remove a teaching point to fit a template. Use fewer decorative elements, a different supported layout, or a longer scene boundary. Illustrative diagrams must be labelled schematic; never imply measured speed from decorative motion. Stages, workers and tasks are different quantities.
-- COUNTS ARE THE NARRATOR'S: if the narration says eight stages, draw eight; never change a count or a relationship to fit a component. If a component cannot draw it (levels: 2-4, pipeline: 2-8, a row: 4-14 words), use a steps or row scene with the exact count, and say in the footer what is simplified. The app rejects a drawn count that differs from the stated one.
-- pipeline: tasks (4-24) flow through 2-8 stages (as many as the narrator names: if the narration says eight stages, draw eight; labels of 14 characters when there are more than three); each stage has "workers" (1-8) and a relative "work" per task; "waits_for_all": true makes a stage wait until the whole stage before it is finished (shown locked). Use it for parallel work, queues, bottlenecks, "level 2 waits for level 1".
-- generation: 1-2 rows of 4-14 short words, each row "mode": "sequential" (one after another) or "plan_then_fill" (a rough outline first, then the gaps). Use it to show two ways of producing the same thing side by side.
-- code: 2-12 lines (64 characters at most) typed out, with "highlights" (line, start_ms, short note) on the line that matters. Use it only for real code or a real excerpt the narrator discusses, never invented.
-- ONE DIAGRAM, MANY BEATS: a motion scene may last 20-60 seconds and keep the same diagram while the narrator moves through several points. Tie each change to the words that cause it: pipeline stages take "at" (the stage unlocks and starts when those words are said), generation rows take "beats" (a list of {"at": words}, one per pass: the outline, the next detail, the last detail; sequential rows take 2: where the writing starts and ends), code highlights take "at". Anchors for different steps must be words said in different places (at least half a second apart, never inside one short phrase). Every motion scene may carry a "footer" ({"text", "at"}): the one sentence that should stay on screen for the point. Row words must all be real final text, never "___" or placeholders: the animation already shows every slot empty until its step. Without an anchor a step is spaced evenly, which does not follow the narrator, so always anchor them.
-- "motion": {"at": words, "run_ms": optional} is where the animation starts. Give each scene 6+ seconds. Colours, fonts and line style come from the channel; never choose them. At most one or two motion scenes in a row; titles under 48 characters.
-- MOTION MIX (the app measures this and rejects plans that miss it): at least {motion_share} of the narration time must be drawn as a mechanism, diagram, code, chart, counter or evidence scene (everything except row, steps, timeline, compare, stack and hero), and never more than {text_run} text-only scenes (row, steps, timeline, compare, stack, hero) or {text_seconds} seconds of them in a row. Evaluation, caveats, tests and examples can be drawn too: a generation scene shows a filled board or sentence, a counter shows a stated number, a fit_chart shows a stated ratio, a code scene shows a real excerpt, a pipeline shows what waits for what.
-NUMBER SCENES (only when the narrator states the quantities; the app draws them to scale and checks the arithmetic):
-- memory: a box (GPU memory, RAM, a budget) filled by up to 4 segments, widths proportional to "gb". Segments must add up to at most "capacity" (else the scene is rejected). Use the narrator's numbers; set "exact": true when the narrator gave them, leave it off to show an "illustrative numbers" tag. "grows_from" (last segment only) makes it grow from a smaller size.
-- precision: the same model at different bit sizes, 1-4 rows. Give "params_b" (billions) and each row's "bits"; the app computes size = params x bits / 8. Never type the sizes yourself.
-- offload: a model's layers split across two memories (two zones that add up to "layers"). Labels must be short (about 10 characters for a small zone). Say it is simplified; real tools place layers differently.
-- fit_chart: bars of model size (params_b x bits / 8) against a memory "limit" (4 models at most; over the limit turns red). counter: one big number counting from "from" to "to" with a short label. Both are drawn by a second renderer; "fade" ({"in_ms", "out_ms"}, each up to 2000) is optional. Use at most one or two of these per video.
-- Do not use a number scene for a number the narrator never says. Numbers must match the narration exactly (units too).
-PACING AND ANCHORS:
-- The FIRST scene must start with the very first words of the narration; later scenes follow in order. Together the scenes cover the whole narration.
-- "start" and every "at" are copied word for word from the narration (3 or more consecutive words, no need for punctuation) and each must be findable only in its own place: never an "at" from another scene.
-- A scene lasts about 8-25 seconds. Change the picture when the narration changes idea, not on every sentence. Scene count for this video: about {low}-{high}.
-- An item appears when the narrator says it: "at" is the words where it is said. Never anchor an item in the last 3 seconds of its scene, and give every item at least 2.5 seconds before the scene ends. Fewer items beat crowded scenes.
-- Do not anchor two scenes on the same sentence. Items in a scene go in narration order.
-TEXT:
-- Labels are 2-4 words (at most 32 characters), plain words, no sentences, no emoji. Numbers and units are welcome (7B, 14 GB).
-- Use an icon from the list; another valid Lucide icon name is fine if you are sure of it. Every item should have an icon.
-- NAMES ARE SHOWN: when the narrator says a name, acronym or key term (for example NCM, LLM, VRAM), or spells it out ("NCM stands for Next-Concept Modeling"), write it on screen in the scene that covers those words - as the title, a label, the hero line or the footer - spelled as the narrator says it, and add what it stands for when the narrator says that. A viewer must never hear a key term that is not shown.
-- Use colour to carry meaning (green = good, red = problem, orange = caution, blue = neutral info, yellow = the key thing); leave "color" off when unsure, the app picks.
-- Never invent facts. Labels restate what the narrator says.
-- An icon must add meaning (a thing, a place, an action), not just repeat the label's noun or decorate. Leave "icon" off when no icon helps.
-- Use "connect": "arrow" only when the items really happen in order or feed each other; use "none" for a set of separate things.
-- Do NOT output cue numbers or timings. Output ONLY the JSON object, in one ```json block, as text in this chat (no file)."""
+
+def format_text(genre: str = "tech") -> str:
+    allowed = GENRE_LAYOUTS.get(genre, GENRE_LAYOUTS["tech"])
+    return ('{"theme": "chalkboard",\n "scenes": [\n'
+            + ",\n".join(t for lay, t in FORMAT_EXAMPLES if lay in allowed) + "\n ]}")
+
+
+FORMAT = format_text("tech")
+
+# Rule lines tagged with the layout they are about; a line about a layout the genre does not have
+# is left out. Untagged lines (None) always apply.
+RULE_LINES = [
+    (None, "PICK THE PICTURE BY THE KIND OF IDEA - the viewer should WATCH the idea happen. Most of the video is motion scenes; text scenes are the short pauses between them:"),
+    ("flow", "- something is handed on, asked for or moves (a request, a payment, a file, data, money, a signal, a decision passing through people or systems) -> flow"),
+    ("bars", "- numbers set against each other (times, prices, sizes, scores, costs, before/after) -> bars"),
+    ("line", "- something changes over time or grows (compound growth, a price, a trend, a curve, adoption, scaling) -> line"),
+    ("split", "- parts of one whole (a budget, a portfolio, fees out of a payment, a memory budget, a day) -> split"),
+    ("grid", "- a count out of a total (7 in 10, 1 of 81 cells), a board, a matrix, many identical units, coverage -> grid"),
+    ("counter", "- one big number the narrator states -> counter"),
+    ("pipeline", "- work spread over workers, queues, bottlenecks, one stage waiting for another -> pipeline"),
+    ("generation", "- two ways of producing the same text or sequence -> generation"),
+    ("levels", "- coarse to fine, a hierarchy, zooming in -> levels"),
+    ("code", "- real code the narrator discusses -> code"),
+    ("memory", "- what fits in a memory (GPU, RAM) with the narrator's sizes -> memory / precision / offload / fit_chart"),
+    (None, "- ONLY when none of these fits: a rule, warning or the one key sentence -> hero; two things compared point by point -> compare; ordered steps -> steps; separate facts -> stack or row. A video made mostly of hero, stack, row and compare scenes is a slide deck and is rejected."),
+    (None, "- First ask for every scene: what will the viewer understand by watching this that the words alone do not show? If the answer is only \"they read the same point\", pick a motion scene."),
+    (None, "- MOTION MIX (the app measures this and rejects plans that miss it): at least {motion_share} of the narration time must be motion scenes (everything except row, steps, timeline, compare, stack and hero), and never more than {text_run} text-only scenes or {text_seconds} seconds of them in a row. Claims, evaluations, caveats and examples can be drawn too: timings and results as bars, a share as split or grid, a trend as line, who passes what to whom as flow."),
+    (None, "TEXT LAYOUTS (the short pauses between motion scenes):"),
+    (None, "- row: 2-4 things side by side. Add connect \"arrow\" for a flow, \"none\" for a set. steps: 3-5 numbered steps in order. timeline: 3-5 points in time."),
+    (None, "- stack: 3-4 short lines, one per row, each with an icon; a footer fits under it. hero: ONE big icon with one short sentence (the label may be up to ~50 characters)."),
+    (None, "- compare: exactly two sides, each with a header, an icon and 1-3 short points (right vs wrong, A vs B, before vs after)."),
+    (None, "MOTION LAYOUTS:"),
+    ("flow", "- flow: 2-6 boxes in a row (\"nodes\": label up to 18 characters, 13 with 5-6 nodes; optional \"sub\" line and \"icon\"), each appearing on its words. \"sends\" (0-4): on its words a labelled token (what moves: \"request\", \"$100\", \"file\") travels from node \"from\" (default 1) to node \"to\" (default the last), lighting each box it passes; \"back\" (a label) makes it return (\"response\", \"receipt\", \"hit\"). Use it for requests and responses, payments, supply chains, data passing through steps, who asks whom."),
+    ("bars", "- bars: 2-6 bars (\"items\": label up to 28 characters, \"value\", optional \"note\", \"icon\", \"color\"), each growing on its words with its value counting up; \"unit\" (s, GB, %, x) and \"prefix\" ($, EUR sign); \"ratio_to\": the number of the bar the others are compared to (shows x21 or 1/21); \"limit\": a dashed line (a budget, a memory size)."),
+    ("line", "- line: \"x\" (2-24 labels: years, ages, months, steps) and 1-3 \"series\" with one value per x label; the line draws from left to right from \"motion\".at over the scene; \"marks\" ({\"x\": label number, \"text\", \"at\"}) pop up on their words. The narrator rarely says every value: then set \"illustrative\": true, and keep any value the narrator does say exact."),
+    ("split", "- split: one whole and its 2-6 parts (\"items\" with \"value\"), each part sweeping into a ring on its words, with values and shares; \"total\" (when the narrator gives the whole) leaves the rest as a gap named by \"rest_label\"; \"center\" is a short label under the total."),
+    ("grid", "- grid: a board of \"rows\" x \"cols\" (each 1-12) and 1-4 \"steps\" that fill the next \"cells\" on their words (\"label\", \"cells\", \"color\", optional \"symbols\": 1-3 character texts shown in the filled cells, such as digits); \"show_share\": true adds \"x of total, %\". Use it for 7-in-10 statistics, puzzle boards, matrices, many identical units."),
+    ("counter", "- counter: one big number counting from \"from\" to \"to\" with a short label."),
+    ("pipeline", "- pipeline: tasks (4-24) flow through 2-8 stages (as many as the narrator names: if the narration says eight stages, draw eight; labels of 14 characters when there are more than three); each stage has \"workers\" (1-8) and a relative \"work\" per task; \"waits_for_all\": true makes a stage wait until the whole stage before it is finished (shown locked). Use it for parallel work, queues, bottlenecks, \"level 2 waits for level 1\"."),
+    ("generation", "- generation: 1-2 rows of 4-14 short words, each row \"mode\": \"sequential\" (one after another) or \"plan_then_fill\" (a rough outline first, then the gaps). Use it to show two ways of producing the same thing side by side. Row words must all be real final text, never \"___\" or placeholders."),
+    ("levels", "- levels: a broad level first, then finer levels that split it into more cells, then an optional decoder and the resulting text; \"levels\": [{\"label\", \"cells\" (1-16, more each level), \"at\": words}], \"decoder\": {\"label\", \"at\"}, \"result\": {\"text\", \"at\"}. Use it for hierarchies, coarse-to-fine, layers, zooming in. Give each level its own words."),
+    ("code", "- code: 2-12 lines (64 characters at most) typed out, with \"highlights\" (line, short note, \"at\") on the line that matters. Use it only for real code or a real excerpt the narrator discusses, never invented."),
+    (None, "- ONE DIAGRAM, MANY BEATS: a motion scene may last 20-60 seconds and keep the same picture while the narrator moves through several points. Tie each change to the words that cause it (\"at\" on nodes, sends, bars, parts, steps, marks, stages, levels, highlights; generation rows take \"beats\": 2-3 {\"at\": words}). Anchors for different steps must be words said in different places. Every motion scene may carry a \"footer\" ({\"text\", \"at\"}): the one sentence that should stay on screen for the point. Without an anchor a step is spaced evenly, which does not follow the narrator, so always anchor them."),
+    (None, "- \"motion\": {\"at\": words} is where the animation starts. Give each motion scene 8+ seconds. Colours, fonts and line style come from the channel; \"color\" on an item only carries meaning. Avoid the same layout three times in a row; titles under 48 characters."),
+    (None, "- REVISION SAFETY: never remove a teaching point to fit a template. Use fewer decorative elements, a different supported layout, or a longer scene boundary. Illustrative diagrams must be labelled schematic; never imply measured speed from decorative motion. Stages, workers and tasks are different quantities."),
+    (None, "- COUNTS ARE THE NARRATOR'S: if the narration says eight stages, draw eight; never change a count or a relationship to fit a component. If a component cannot draw it, pick another motion layout that can (a flow of up to 6 boxes, a grid, bars) and, only when none can, a steps or row scene with the exact count; say in the footer what is simplified. The app rejects a drawn count that differs from the stated one."),
+    (None, "NUMBERS (the app checks them):"),
+    (None, "- bars, split, line, counter and the number scenes show the narrator's numbers exactly (units too); never invent one. A number that is an example rather than a fact (\"imagine it takes 21 seconds\"), or a shape the narrator only describes (\"it keeps rising\"), is drawn with \"illustrative\": true, which puts an \"illustrative\" tag on screen. Do not use a number scene for a number the narrator never says."),
+    ("memory", "- memory: a box (GPU memory, RAM, a budget) filled by up to 4 segments, widths proportional to \"gb\". Segments must add up to at most \"capacity\" (else the scene is rejected). Set \"exact\": true when the narrator gave the numbers, leave it off to show an \"illustrative numbers\" tag. \"grows_from\" (last segment only) makes it grow from a smaller size."),
+    ("precision", "- precision: the same model at different bit sizes, 1-4 rows. Give \"params_b\" (billions) and each row's \"bits\"; the app computes size = params x bits / 8 (the arithmetic is checked). Never type the sizes yourself."),
+    ("offload", "- offload: a model's layers split across two memories (two zones that add up to \"layers\"). Labels must be short (about 10 characters for a small zone). Say it is simplified; real tools place layers differently."),
+    ("fit_chart", "- fit_chart: bars of model size (params_b x bits / 8) against a memory \"limit\" (4 models at most; over the limit turns red). \"fade\" ({\"in_ms\", \"out_ms\"}, each up to 2000) is optional."),
+    (None, "PACING AND ANCHORS:"),
+    (None, "- The FIRST scene must start with the very first words of the narration; later scenes follow in order. Together the scenes cover the whole narration."),
+    (None, "- \"start\" and every \"at\" are copied word for word from the narration (3 or more consecutive words, no need for punctuation) and each must be findable only in its own place: never an \"at\" from another scene."),
+    (None, "- A scene lasts about 12-40 seconds. Change the picture when the narration changes idea, not on every sentence. Scene count for this video: about {low}-{high}."),
+    (None, "- An item appears when the narrator says it: \"at\" is the words where it is said. Never anchor an item in the last 3 seconds of its scene, and give every item at least 2.5 seconds before the scene ends. Fewer items beat crowded scenes."),
+    (None, "- Do not anchor two scenes on the same sentence. Items in a scene go in narration order."),
+    (None, "TEXT:"),
+    (None, "- Labels are 2-4 words (at most 32 characters), plain words, no sentences, no emoji. Numbers and units are welcome (7B, 14 GB, $1,200)."),
+    (None, "- Use an icon from the list; another valid Lucide icon name is fine if you are sure of it. An icon must add meaning (a thing, a place, an action), not just repeat the label's noun or decorate. Leave \"icon\" off when no icon helps."),
+    (None, "- NAMES ARE SHOWN: when the narrator says a name, acronym or key term (for example NCM, LLM, VRAM, ETF, APR), or spells it out (\"NCM stands for Next-Concept Modeling\"), write it on screen in the scene that covers those words - as the title, a label, the hero line or the footer - spelled as the narrator says it, and add what it stands for when the narrator says that. A viewer must never hear a key term that is not shown."),
+    (None, "- Use colour to carry meaning (green = good, red = problem, orange = caution, blue = neutral info, yellow = the key thing); leave \"color\" off when unsure, the app picks."),
+    (None, "- Never invent facts. Labels restate what the narrator says."),
+    (None, "- Use \"connect\": \"arrow\" only when the items really happen in order or feed each other; use \"none\" for a set of separate things."),
+    (None, "- Do NOT output cue numbers or timings. Output ONLY the JSON object, in one ```json block, as text in this chat (no file)."),
+]
+
+
+def rules_for(genre: str = "tech") -> str:
+    allowed = GENRE_LAYOUTS.get(genre, GENRE_LAYOUTS["tech"])
+    return "\n".join(t for lay, t in RULE_LINES if lay is None or lay in allowed)
+
+
+RULES = rules_for("tech")
 
 
 def _timed_narration(cues: list[dict]) -> str:
@@ -148,9 +215,9 @@ def _timed_narration(cues: list[dict]) -> str:
     return "\n".join(out)
 
 
-DENSITY = {"few": (38, 17), "normal": (25, 11), "many": (18, 8)}   # seconds per scene: (low end, high end)
+DENSITY = {"few": (45, 22), "normal": (32, 14), "many": (22, 10)}   # seconds per scene: (low end, high end)
 STYLE_HINT = {
-    "icons": "DIAGRAM STYLE: picture-heavy - give most points a fitting icon and prefer rows, steps and compare scenes.",
+    "icons": "DIAGRAM STYLE: picture-heavy - give most points a fitting icon (flow boxes and bars take icons too).",
     "minimal": "DIAGRAM STYLE: minimal - few icons; lean on words, numbers, charts and mechanism scenes; skip decoration.",
 }
 
@@ -171,8 +238,8 @@ def look_hint(look: dict) -> str:
     return STYLE_HINT.get((look or {}).get("diagram_style") or "", "")
 
 
-def _rules_text(low, high, rule) -> str:
-    text = RULES.replace("{low}", str(low)).replace("{high}", str(high))
+def _rules_text(low, high, rule, genre: str = "tech") -> str:
+    text = rules_for(genre).replace("{low}", str(low)).replace("{high}", str(high))
     if rule:
         return (text.replace("{motion_share}", f"{float(rule.get('min_share') or 0):.0%}")
                 .replace("{text_run}", str(int(rule.get("text_run") or 0)))
@@ -180,19 +247,27 @@ def _rules_text(low, high, rule) -> str:
     return "\n".join(x for x in text.split("\n") if not x.startswith("- MOTION MIX"))
 
 
+GENRE_INTRO = {
+    "tech": "The subject is technology: show how systems work - what passes from where to where, what waits for what, what it costs, how big it is.",
+    "finance": "The subject is money: show it move and grow - where it flows, how it splits, how it changes over time, how amounts compare. Every amount is the narrator's, or tagged illustrative.",
+}
+
+
 def writer_prompt(narration: str, total_seconds: float, direction: str = "",
-                  look: str = "", density: str = "normal", rule: dict | None = None) -> str:
+                  look: str = "", density: str = "normal", rule: dict | None = None, genre: str = "tech") -> str:
     low, high = counts(total_seconds, density)
-    rule = MOTION_RULES["tech"] if rule is None and total_seconds >= MOTION_MIN_SECONDS else (rule or {})
-    return f"""You are the visual planner of a hand-drawn whiteboard/chalkboard explainer video. A narrator reads the script below; you decide WHAT IS DRAWN while each part is spoken. Think like a great teacher at a board: one clear picture per idea, drawn as the words are said.
+    genre = genre if genre in GENRE_LAYOUTS else "tech"
+    if rule is None:
+        rule = MOTION_RULES.get(genre, {}) if total_seconds >= MOTION_MIN_SECONDS else {}
+    return f"""You are the visual planner of a hand-drawn whiteboard/chalkboard explainer video. A narrator reads the script below; you decide WHAT IS DRAWN while each part is spoken. Think like a great teacher at a board who animates the idea instead of writing it down: the viewer watches things move, fill, grow and pass along, drawn as the words are said. {GENRE_INTRO.get(genre, "")}
 
 The video is {total_seconds / 60:.1f} minutes long. Return a scene plan as JSON in exactly this shape:
 
-{FORMAT}
+{format_text(genre)}
 
 ICONS (Lucide names): {" ".join(ICONS)}
 
-{_rules_text(low, high, rule)}
+{_rules_text(low, high, rule, genre)}
 {("CHANNEL LOOK: " + look + chr(10)) if look else ""}{("EXTRA DIRECTION: " + direction.strip() + chr(10)) if direction.strip() else ""}
 NARRATION (the times in brackets are only for pacing; do not copy them):
 {narration}
@@ -462,7 +537,7 @@ def _atomic_json(path, data):
 def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE) -> str:
     return f"""You are a strict reviewer of an explainer video's scene plan (hand-drawn whiteboard style). A narrator reads the NARRATION; the plan says what is drawn while each part is spoken. The code already checked the format and the timing. You judge the TEACHING.
 
-Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (flow = steps/row with arrows, rule or warning = hero, two things compared = compare, tiers or lists = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does. (10) you are given the exact animation specification of every motion scene (stages, rows, levels, code, footer, step anchors): check that counts match the narration, every slot is real text, each step is anchored to the words that cause it, nothing the narrator says is left out, and that watching it teaches the idea; judge only what the specification says is drawn, never call a scene 'only a footer' when it lists animation. (9) the video does not read as a slide deck: where the narration explains a process, a comparison of how two things work, a dependency or evidence, the scene is a motion scene (pipeline, generation, code) whose steps are anchored to the narrator's words; a long run of hero/stack/row scenes over such narration is a fault. (8) every key name or acronym the narrator says (and what it stands for, when spelled out) is written on screen in the scene where it is said; a missing one is a fault.
+Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (something handed on or requested = flow, numbers set against each other = bars, change over time = line, parts of a whole = split, a count out of a total or a board = grid; a rule or warning = hero, two things compared point by point = compare, a plain list = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does. (10) you are given the exact animation specification of every motion scene (stages, rows, levels, code, footer, step anchors): check that counts match the narration, every slot is real text, each step is anchored to the words that cause it, nothing the narrator says is left out, and that watching it teaches the idea; judge only what the specification says is drawn, never call a scene 'only a footer' when it lists animation. (9) the video does not read as a slide deck: where the narration explains a process, a hand-off, a quantity, a comparison of numbers, a change over time, a share, a dependency or evidence, the scene is a motion scene (flow, bars, line, split, grid, counter, pipeline, generation, levels, code, ...) whose steps are anchored to the narrator's words; a hero/stack/row/compare scene over such narration is a fault, and text scenes should be the short pauses between motion scenes, not most of the video. Numbers in bars, split and line must be the narrator's, or the scene is tagged illustrative. (8) every key name or acronym the narrator says (and what it stands for, when spelled out) is written on screen in the scene where it is said; a missing one is a fault.
 
 NARRATION:
 {narration}
@@ -476,6 +551,45 @@ EVERY fault and EVERY fix is an object with scene, severity and problem/change t
 The summary includes COMPILED animation parameters with scene-relative milliseconds: these are what the renderer receives. Judge that output, not an imagined animation. This is a specification review, not a claim to have watched rendered pixels.
 Distinguish tasks, workers, stages and speed multipliers; these counts are different quantities. Illustrative cell counts are allowed when clearly labelled schematic, not measured architecture. Names must be shown when spoken; expansions are needed when the narrator explains them, not necessarily before. A motion comparison needs consistent example text, but paraphrases that preserve the meaning are not factual errors. Request only changes needed to explain the subject, not motion on every warning or list.
 "pass" must be an explicit boolean (true/false, never a string). score must be a number 1-10. "faults" and "fixes" must always be present as arrays, empty [] when nothing is wrong. The faults array holds ONLY findings you want changed, each naming its scene id. Scenes you checked and found correct must NOT appear in faults - do not write "no fault" or "fine" entries; the app treats them as noise. Never narrate your per-scene audit in the JSON: unchecked-in detail belongs in your thinking, not in faults. Name the scene id in every fault and fix. Do not rewrite the whole plan."""
+
+
+def _no_icons(node):
+    """The compiled block without icon outlines (paths are noise for a reviewer)."""
+    if isinstance(node, dict):
+        return {k: ("<icon>" if k == "icon_paths" else _no_icons(v)) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_no_icons(v) for v in node]
+    return node
+
+
+def _general_summary(s: dict) -> list:
+    """What the general motion layouts draw, in words, for the judge."""
+    lay, out = s.get("layout"), []
+    tag = " (tagged illustrative)" if s.get("illustrative") else ""
+    if lay == "flow":
+        out.append("animated flow of boxes: " + " -> ".join(str(n.get("label")) for n in s.get("nodes") or [] if isinstance(n, dict)))
+        for x in s.get("sends") or []:
+            if isinstance(x, dict):
+                out.append(f"token '{x.get('label')}' travels box {x.get('from') or 1} -> {x.get('to') or 'last'}"
+                           + (f" and returns as '{x['back']}'" if x.get("back") else "") + f" on '{x.get('at', '')}'")
+    elif lay == "bars":
+        out.append(f"animated bars{tag}: " + "; ".join(f"{i.get('label')} = {s.get('prefix', '')}{i.get('value')}{s.get('unit', '')}"
+                                                      for i in s.get("items") or [] if isinstance(i, dict))
+                   + (f"; limit line {s['limit'].get('label')} = {s['limit'].get('value')}" if isinstance(s.get("limit"), dict) else "")
+                   + (f"; ratios against bar {s['ratio_to']}" if s.get("ratio_to") else ""))
+    elif lay == "split":
+        out.append(f"animated ring of parts{tag}" + (f" of a total {s.get('total')}" if s.get("total") else "") + ": "
+                   + "; ".join(f"{i.get('label')} = {i.get('value')}" for i in s.get("items") or [] if isinstance(i, dict)))
+    elif lay == "line":
+        out.append(f"animated line chart{tag} over {s.get('x')}: " + "; ".join(
+            f"{x.get('label', 'line')} {x.get('values')}" for x in s.get("series") or [] if isinstance(x, dict)))
+        for m in s.get("marks") or []:
+            if isinstance(m, dict):
+                out.append(f"mark at x {m.get('x')}: {m.get('text')}")
+    elif lay == "grid":
+        out.append(f"animated {s.get('rows')}x{s.get('cols')} grid{tag}: " + "; ".join(
+            f"{x.get('label')} fills {x.get('cells')} cells" for x in s.get("steps") or [] if isinstance(x, dict)))
+    return out
 
 
 def summary_text(plan: dict, cues: list[dict], look: dict | None = None) -> str:
@@ -494,7 +608,7 @@ def summary_text(plan: dict, cues: list[dict], look: dict | None = None) -> str:
             pts = "; ".join(str(p.get("text", "")) for p in sd.get("points") or [] if isinstance(p, dict))
             drawn.append(f"{sd.get('header')} [{sd.get('icon', '-')}]: {pts}")
         for key in ("capacity", "params_b", "layers", "limit", "bits"):
-            if s.get(key) is not None:
+            if s.get(key) is not None and not isinstance(s[key], dict):
                 drawn.append(f"{key}={s[key]}{s.get('unit', '') if key in ('capacity', 'limit') else ''}")
         for it in s.get("items") or []:
             extra = [f"{k}={it[k]}" for k in ("gb", "bits", "layers", "params_b") if it.get(k) is not None]
@@ -511,7 +625,7 @@ def summary_text(plan: dict, cues: list[dict], look: dict | None = None) -> str:
                 + (", locked until the stage before is finished" if g.get("waits_for_all") else "")
                 + (", starts on '" + str(g["at"]) + "'" if g.get("at") else "") + ")"
                 for g in s["stages"] if isinstance(g, dict)))
-        for r in s.get("rows") or []:
+        for r in s.get("rows") if isinstance(s.get("rows"), list) else []:
             if isinstance(r, dict) and r.get("words"):
                 how = ("one word after another, left to right" if r.get("mode") == "sequential"
                        else "a rough outline first, then the gaps are filled")
@@ -528,9 +642,10 @@ def summary_text(plan: dict, cues: list[dict], look: dict | None = None) -> str:
             drawn.append(f"counter {c.get('from', 0)} -> {c.get('to')} {c.get('unit', '')} '{c.get('label', '')}'")
         if isinstance(s.get("footer"), dict):
             drawn.append("footer: " + str(s["footer"].get("text", "")))
+        drawn.extend(_general_summary(s))
         motion = compiled.get(s.get("id"), {}).get("remotion")
         if motion:
-            drawn.append("COMPILED animation (scene-relative ms): " + json.dumps(motion, ensure_ascii=False))
+            drawn.append("COMPILED animation (scene-relative ms): " + json.dumps(_no_icons(motion), ensure_ascii=False))
         out.append(f"scene {s.get('id')} ({s.get('layout')}"
                    + (f", title '{s['title']}'" if s.get("title") else "") + ")\n"
                    f"  narration: {said}\n  drawn: {' | '.join(drawn)}")
@@ -793,17 +908,19 @@ def count_faults(resolved: dict, cues: list) -> list:
             faults.append(f"scene {s.get('id')}: the narrator says '{phrase}' but the {lay} draws {drawn}; draw exactly {n}")
         else:
             faults.append(f"scene {s.get('id')}: the narrator says '{phrase}', which a {lay} scene cannot draw "
-                          f"({lo}-{hi} supported); use a steps or row scene with exactly {n} items instead of "
-                          "changing the count")
+                          f"({lo}-{hi} supported); use a flow (2-6 boxes), a grid, or a steps scene with exactly "
+                          f"{n} items instead of changing the count")
     return faults
 
 
 TEXT_LAYOUTS = frozenset({"row", "steps", "timeline", "compare", "stack", "hero"})
-# What a genre must SHOW rather than list. Unknown genres have no rule (finance and others get their own
-# set later); a channel can override with look["motion_min_share"] / ["text_run_max"] / ["text_run_seconds"]
-# (0 turns a limit off) and pick its genre with look["scene_genre"]. Videos under 4 minutes are exempt.
-MOTION_RULES = {"tech": {"min_share": 0.20, "text_run": 6, "text_seconds": 120.0}}
-MOTION_MIN_SECONDS = 240.0
+# What a genre must SHOW rather than list: at least half the narration time is motion, and text-only
+# scenes come in short runs. Unknown genres have no rule; a channel can override with
+# look["motion_min_share"] / ["text_run_max"] / ["text_run_seconds"] (0 turns a limit off) and pick its
+# genre with look["scene_genre"]. Videos under 90 seconds are exempt.
+MOTION_RULES = {"tech": {"min_share": 0.50, "text_run": 3, "text_seconds": 75.0},
+                "finance": {"min_share": 0.50, "text_run": 3, "text_seconds": 75.0}}
+MOTION_MIN_SECONDS = 90.0
 
 
 def motion_rule(look: dict | None) -> dict:
@@ -861,16 +978,16 @@ def motion_faults(resolved: dict, cues: list, total_seconds: float, look: dict |
     for ids, sec in m["runs"]:
         if (max_n and len(ids) > max_n) or (max_s and sec > max_s):
             out.append(f"scenes {', '.join(ids)}: {len(ids)} text-only scenes in a row ({sec:.0f} s) - at most "
-                       f"{max_n} or {max_s:.0f} s; turn at least {max(1, len(ids) - max_n)} of them into a mechanism, "
-                       "diagram, code, chart, counter or evidence scene (or merge neighbours) so the viewer sees "
-                       "something happen, keeping every point the narrator makes")
+                       f"{max_n} or {max_s:.0f} s; turn at least {max(1, len(ids) - max_n)} of them into a motion scene "
+                       "(flow, bars, line, split, grid, counter or the genre's own) or merge neighbours, so the viewer "
+                       "sees something happen, keeping every point the narrator makes")
     need = float(rule.get("min_share") or 0)
     if need and m["share"] < need:
         text = sorted((x for x in m["per"] if x[1] in TEXT_LAYOUTS), key=lambda x: -x[2])[:6]
-        out.append(f"scenes {', '.join(x[0] for x in text)}: only {m['share']:.0%} of the narration time shows a "
-                   f"mechanism, diagram, code, chart, counter or evidence scene (at least {need:.0%} needed); "
-                   "redraw the ones where the narrator describes how something works, what waits for what, a "
-                   "number, a ratio or a worked example")
+        out.append(f"scenes {', '.join(x[0] for x in text)}: only {m['share']:.0%} of the narration time is a "
+                   f"motion scene (at least {need:.0%} needed); redraw the ones where the narrator describes "
+                   "something handed on or asked for (flow), numbers or a ratio (bars), a change over time (line), "
+                   "parts of a whole (split), a count out of a total (grid) or how something works")
     return out
 
 
@@ -879,8 +996,8 @@ def motion_summary(resolved: dict, cues: list, look: dict | None = None) -> str:
     m = motion_measure(resolved, cues)
     runs = sorted(m["runs"], key=lambda r: -r[1])[:1]
     longest = f"; longest text-only stretch {len(runs[0][0])} scenes / {runs[0][1]:.0f} s" if runs else ""
-    return (f"MEASURED MIX: {m['share']:.0%} of the narration time is a mechanism/diagram/code/chart/evidence "
-            f"scene, the rest is text layouts{longest}.")
+    return (f"MEASURED MIX: {m['share']:.0%} of the narration time is a motion scene, "
+            f"the rest is text layouts{longest}.")
 
 
 _FAULT_SCENE = re.compile(r"^[Ss]cene (\S+?):")
@@ -897,6 +1014,76 @@ def drop_faulty_scenes(plan: dict, faults: list, most: int = 3) -> tuple:
     out = dict(plan)
     out["scenes"] = [sc for sc in scenes if str(sc.get("id")) not in drop]
     return out, drop
+
+
+_NUMWORDS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+             "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30,
+             "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100,
+             "thousand": 1000, "half": 0.5, "quarter": 0.25, "dozen": 12}
+_SCALE = {"hundred": 1e2, "thousand": 1e3, "k": 1e3, "million": 1e6, "m": 1e6, "billion": 1e9, "bn": 1e9,
+          "b": 1e9, "trillion": 1e12, "t": 1e12}
+_NUM_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?|\.\d+)\s*(hundred|thousand|million|billion|trillion|bn|k|m|b|t)?\b", re.I)
+NUMBER_LAYOUTS = {"bars": "items", "split": "items", "line": "series"}
+
+
+def said_numbers(text: str) -> set:
+    """Every number the narrator says, with its scale and with the scale dropped ("1.5 million" ->
+    1.5 and 1500000), plus number words and halves of percentages ("50 percent" -> 50 and 0.5)."""
+    out = set()
+    for m in _NUM_RE.finditer(text):
+        try:
+            v = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        out.add(v)
+        if m.group(2):
+            out.add(v * _SCALE[m.group(2).lower()])
+        out.add(v / 100)
+    words = re.findall(r"[a-z]+", text.lower())
+    for i, w in enumerate(words):
+        if w in _NUMWORDS:
+            v = float(_NUMWORDS[w])
+            out.add(v)
+            nxt = words[i + 1] if i + 1 < len(words) else ""
+            if nxt in _SCALE and nxt not in ("m", "b", "t", "k"):
+                out.add(v * _SCALE[nxt])
+    return out
+
+
+def _close(v: float, said: set) -> bool:
+    return any(abs(v - n) <= max(1e-9, abs(n) * 0.005) for n in said)
+
+
+def number_faults(resolved: dict, cues: list) -> list:
+    """A number drawn in bars / split / line must be one the narrator says in that scene, unless the
+    scene is tagged illustrative (the viewer then sees an "illustrative" tag)."""
+    texts = {int(c["index"]): c["text"] for c in cues}
+    faults = []
+    for s in resolved.get("scenes") or []:
+        lay = s.get("layout")
+        if lay not in NUMBER_LAYOUTS or s.get("illustrative") is True:
+            continue
+        a, b = s.get("cue_range") or (0, -1)
+        said = said_numbers(" ".join(texts.get(i, "") for i in range(a, b + 1)))
+        drawn = []
+        if lay == "line":
+            for ser in s.get("series") or []:
+                if isinstance(ser, dict):
+                    drawn += [(v, ser.get("label") or "line") for v in ser.get("values") or []]
+        else:
+            drawn = [(it.get("value"), it.get("label")) for it in s.get("items") or [] if isinstance(it, dict)]
+            if lay == "split" and s.get("total") is not None:
+                drawn.append((s.get("total"), "total"))
+            if isinstance(s.get("limit"), dict):
+                drawn.append((s["limit"].get("value"), s["limit"].get("label")))
+        bad = [(v, lab) for v, lab in drawn
+               if isinstance(v, (int, float)) and not isinstance(v, bool) and not _close(float(v), said)]
+        if bad:
+            shown = ", ".join(f"{v:g} ({lab})" for v, lab in bad[:4])
+            faults.append(f"scene {s.get('id')}: {shown} {'is' if len(bad) == 1 else 'are'} not said by the narrator in "
+                          "this scene; draw only the narrator's numbers, or set \"illustrative\": true when they are "
+                          "an example or only show the shape")
+    return faults
 
 
 def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms: list = None) -> list[str]:
@@ -929,6 +1116,7 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms
             mmss = str(starts.get(gap["cue"], "")).split(",")[0].lstrip("0:") or "0:00"
             faults.append(explainer_terms.fault_text(gap, mmss))
     faults.extend(count_faults(resolved, cues))
+    faults.extend(number_faults(resolved, cues))
     faults.extend(motion_faults(resolved, cues, total_seconds, look))
     if resolved["scenes"][0]["cue_range"][0] != int(cues[0]["index"]):
         faults.append("the first scene must start with the very first words of the narration")
@@ -1107,7 +1295,8 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         reply = ask("writer", writer_prompt(narration, total, direction,
                                             look_hint(look) + _terms_hint(terms),
                                             look.get("scenes_per_video") or "normal",
-                                            motion_rule(look) if total >= MOTION_MIN_SECONDS else {}), True)
+                                            motion_rule(look) if total >= MOTION_MIN_SECONDS else {},
+                                            genre_of(look)), True)
         plan = _plan_from(reply)
         if plan is None:
             log("writer: no readable plan in the reply - asking once more")

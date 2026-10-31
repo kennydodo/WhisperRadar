@@ -100,6 +100,16 @@ def scene_text(scene: dict) -> str:
         parts.append(scene["footer"].get("text", ""))
     if isinstance(scene.get("counter"), dict):
         parts.append(scene["counter"].get("label", ""))
+    for key in ("nodes", "steps", "series", "sends", "marks", "stages", "levels"):   # motion layouts
+        for x in scene.get(key) or []:
+            if isinstance(x, dict):
+                parts += [str(x.get(k, "")) for k in ("label", "sub", "text", "back") if x.get(k)]
+    for key in ("limit", "decoder", "result"):
+        if isinstance(scene.get(key), dict):
+            parts += [str(scene[key].get(k, "")) for k in ("label", "text") if scene[key].get(k)]
+    for key in ("center", "total_label", "rest_label", "filename"):
+        if scene.get(key):
+            parts.append(str(scene[key]))
     return " ".join(str(p) for p in parts if p)
 
 

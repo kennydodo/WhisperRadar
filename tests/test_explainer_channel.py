@@ -85,7 +85,7 @@ class ExplainerChannelTests(unittest.TestCase):
 
     def test_bad_motion_rule_is_refused(self):
         for field, bad in (("explainer_motion_min_share", "150"), ("explainer_text_run_max", "many"),
-                           ("explainer_text_run_seconds", "-5"), ("explainer_scene_genre", "finance")):
+                           ("explainer_text_run_seconds", "-5"), ("explainer_scene_genre", "cooking")):
             r = self.post(**{field: bad})
             self.assertIn("error=", r.headers["Location"], field)
         self.assertEqual(self.saved(), {})

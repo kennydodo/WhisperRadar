@@ -345,10 +345,38 @@ and `chalkboard` ship in
 `video/explainer/themes.py`. Add a theme there (data only) and reference it
 by name.
 
+## Motion scenes for any topic (general layouts) and genre packs
+
+The scene planner picks a picture by the *kind* of idea, not by topic. Five general motion
+layouts work for any subject and are drawn by the Remotion backend; each step appears on the
+narrator's words (`"at"`), and words inside one subtitle line land on their own moment.
+
+| layout | shows | main fields |
+|---|---|---|
+| `flow` | something handed on: a request, a payment, data | `nodes` (2-6 boxes, `label`, `sub`, `icon`), `sends` (0-4 tokens: `label`, `from`, `to`, `back`) |
+| `bars` | numbers set against each other | `items` (2-6: `label`, `value`), `unit`, `prefix`, `ratio_to`, `limit` |
+| `line` | change over time, growth | `x` (labels), `series` (1-3, one value per label), `marks` |
+| `split` | parts of one whole (budget, portfolio) | `items` (2-6 parts), `total`, `rest_label`, `center` |
+| `grid` | a count out of a total, a board, a matrix | `rows` x `cols` (1-12 each), `steps` (1-4: `label`, `cells`, `symbols`) |
+
+Numbers in `bars`, `split` and `line` must be numbers the narrator says in that scene; the
+checker rejects others unless the scene has `"illustrative": true` (an "illustrative" tag is
+drawn). Icons are Lucide names; an unknown icon is simply left out.
+
+**Genre packs** (`explainer.scene_genre`, per channel on My channels > Explainer):
+
+- `tech` (default): text layouts + the general layouts + pipeline, generation, levels, code,
+  memory, precision, offload, fit_chart.
+- `finance`: text layouts + the general layouts (no tech-only scenes in the writer's prompt).
+
+**Motion rule** (both genres): at least 50% of the narration time is motion scenes, at most
+3 text-only scenes (row, steps, timeline, compare, stack, hero) or 75 s of them in a row;
+checked on videos of 90 s or more. A channel can change or switch off each number.
+
 ## Remotion scenes (optional, experimental)
 
 Most scenes are drawn by the built-in pen renderer. A scene can instead use the
-Remotion backend for things the pen cannot do. Today there is one component:
+Remotion backend for things the pen cannot do (see the general layouts above). One more example:
 
 ```json
 {"id": "fit", "start": "now the same seven", "layout": "fit_chart",

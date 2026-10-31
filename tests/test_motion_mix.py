@@ -24,7 +24,7 @@ class MotionMix(unittest.TestCase):
         self.assertIn("s1", " ".join(faults))
 
     def test_good_mix_passes(self):
-        r, c, t = build(["row", "steps", "pipeline", "row", "levels", "compare", "pipeline", "hero"])
+        r, c, t = build(["row", "flow", "pipeline", "row", "levels", "compare", "bars", "hero"])
         self.assertEqual(es.motion_faults(r, c, t), [])
 
     def test_share_shortfall(self):
@@ -34,17 +34,22 @@ class MotionMix(unittest.TestCase):
         self.assertTrue(any("only 10%" in f for f in faults), faults)
 
     def test_short_video_exempt(self):
-        r, c, t = build(["row"] * 6, each=20.0)
+        r, c, t = build(["row"] * 4, each=20.0)
         self.assertLess(t, es.MOTION_MIN_SECONDS)
         self.assertEqual(es.motion_faults(r, c, t), [])
 
     def test_unknown_genre_has_no_rule(self):
         r, c, t = build(["row"] * 10)
-        self.assertEqual(es.motion_faults(r, c, t, {"scene_genre": "finance"}), [])
+        self.assertEqual(es.motion_faults(r, c, t, {"scene_genre": "lifestyle"}), [])
+
+    def test_finance_has_the_same_rule(self):
+        r, c, t = build(["row"] * 10)
+        self.assertTrue(es.motion_faults(r, c, t, {"scene_genre": "finance"}))
 
     def test_look_overrides(self):
         r, c, t = build(["row"] * 8 + ["pipeline"] * 4)
-        self.assertEqual(es.motion_faults(r, c, t, {"text_run_max": 0, "text_run_seconds": 0}), [])
+        self.assertEqual(es.motion_faults(r, c, t, {"text_run_max": 0, "text_run_seconds": 0,
+                                                    "motion_min_share": "30"}), [])
         self.assertEqual(es.motion_rule({"motion_min_share": "0.4"})["min_share"], 0.4)
 
     def test_percent_from_the_channel_form(self):
@@ -52,7 +57,8 @@ class MotionMix(unittest.TestCase):
         self.assertEqual(es.motion_rule({"text_run_max": "4", "text_run_seconds": "0"})["text_run"], 4)
         r, c, t = build(["row", "pipeline", "row", "row", "row", "row", "pipeline", "row"])
         self.assertTrue(es.motion_faults(r, c, t, {"motion_min_share": "60", "text_run_max": "0", "text_run_seconds": "0"}))
-        self.assertEqual(es.motion_faults(r, c, t, {"motion_min_share": "0"}), [])
+        self.assertEqual(es.motion_faults(r, c, t, {"motion_min_share": "0", "text_run_max": "0",
+                                                    "text_run_seconds": "0"}), [])
 
     def test_judge_sees_measured_mix(self):
         r, c, t = build(["row", "pipeline", "row", "row"])
@@ -62,9 +68,67 @@ class MotionMix(unittest.TestCase):
 
     def test_writer_prompt_states_numbers(self):
         long = es.writer_prompt("x", 600)
-        self.assertIn("at least 20% of the narration time", long)
+        self.assertIn("at least 50% of the narration time", long)
         self.assertNotIn("{motion_share}", long)
-        self.assertNotIn("MOTION MIX", es.writer_prompt("x", 100))
+        self.assertNotIn("MOTION MIX", es.writer_prompt("x", 60))
+
+    def test_prompt_no_longer_rations_motion(self):
+        long = es.writer_prompt("x", 600)
+        for gone in ("one for every 60-90 seconds", "At most one or two motion scenes in a row",
+                     "Use at most one or two of these per video", "prefer rows, steps and compare"):
+            self.assertNotIn(gone, long)
+        for layout in ("flow:", "bars:", "line:", "split:", "grid:"):
+            self.assertIn(layout, long)
+
+
+class GenrePacks(unittest.TestCase):
+    def test_finance_sees_only_general_layouts(self):
+        p = es.writer_prompt("x", 600, genre="finance")
+        for layout in ("flow:", "bars:", "line:", "split:", "grid:", "counter:"):
+            self.assertIn(layout, p)
+        for layout in ("pipeline:", "generation:", "memory:", "precision:", "fit_chart", '"layout": "code"'):
+            self.assertNotIn(layout, p)
+        self.assertIn("The subject is money", p)
+
+    def test_tech_keeps_its_specialised_layouts(self):
+        p = es.writer_prompt("x", 600, genre="tech")
+        for layout in ("pipeline:", "generation:", "memory:", "flow:", "bars:"):
+            self.assertIn(layout, p)
+
+    def test_genre_of(self):
+        self.assertEqual(es.genre_of({"scene_genre": "finance"}), "finance")
+        self.assertEqual(es.genre_of({}), "tech")
+        self.assertEqual(es.genre_of({"scene_genre": "cooking"}), "tech")
+
+
+class NumberCheck(unittest.TestCase):
+    def _scene(self, said, **sc):
+        cues = [{"index": 1, "start": srt_time(0), "end": srt_time(20), "text": said}]
+        return {"scenes": [dict({"id": "n", "cue_range": (1, 1)}, **sc)]}, cues
+
+    def test_said_numbers_pass(self):
+        r, c = self._scene("Method A takes 21 seconds, method B takes 1 second and yours half a second.",
+                           layout="bars", items=[{"label": "A", "value": 21}, {"label": "B", "value": 1},
+                                                 {"label": "You", "value": 0.5}])
+        self.assertEqual(es.number_faults(r, c), [])
+
+    def test_scaled_and_grouped_numbers(self):
+        r, c = self._scene("Rent is $1,200 of a 3 thousand dollar salary, and 1.5 million people do it.",
+                           layout="split", total=3000, items=[{"label": "Rent", "value": 1200},
+                                                              {"label": "People", "value": 1500000}])
+        self.assertEqual(es.number_faults(r, c), [])
+
+    def test_invented_number_is_a_fault_unless_illustrative(self):
+        r, c = self._scene("Method A is much slower.", layout="bars",
+                           items=[{"label": "A", "value": 21}, {"label": "B", "value": 1}])
+        f = es.number_faults(r, c)
+        self.assertTrue(f and "21 (A)" in f[0] and "illustrative" in f[0])
+        r["scenes"][0]["illustrative"] = True
+        self.assertEqual(es.number_faults(r, c), [])
+
+    def test_line_values_checked(self):
+        r, c = self._scene("It keeps rising.", layout="line", x=["a", "b"], series=[{"values": [1, 9]}])
+        self.assertTrue(es.number_faults(r, c))
 
 
 if __name__ == "__main__":

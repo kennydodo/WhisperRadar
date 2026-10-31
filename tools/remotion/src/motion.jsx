@@ -105,3 +105,37 @@ export const Footer = ({footer, pal}) => {
     <div style={{fontFamily: pal.sansF, fontSize: 32, color: pal.text}}>{footer.text}</div>
   </div>;
 };
+
+// A small "illustrative" tag: numbers that are an example, not a measurement.
+export const Illustrative = ({pal, show}) => show ? <div style={{position: 'absolute', right: 110, top: 74,
+  fontFamily: pal.sansF, fontSize: 22, letterSpacing: 1, textTransform: 'uppercase', color: pal.dim,
+  border: `1.5px dashed ${pal.dim}`, borderRadius: 8, padding: '6px 12px'}}>illustrative</div> : null;
+
+// A Lucide icon (paths in a 100x100 box, sent by Python), drawn on as it appears.
+export const Icon = ({paths, size = 64, color, p = 1}) => paths && paths.length ? (
+  <svg width={size} height={size} viewBox="0 0 100 100" style={{overflow: 'visible'}}>
+    {paths.map((d, i) => <path key={i} d={d} fill="none" stroke={color} strokeWidth={6} strokeLinecap="round"
+      strokeLinejoin="round" pathLength={1} strokeDasharray={1}
+      strokeDashoffset={1 - clamp01(p * paths.length - i)} />)}
+  </svg>) : null;
+
+// Colour by meaning: an item's "color" is a role or chalk name; otherwise the series cycles.
+const CHALK = {yellow: '#FFD23F', green: '#5EE08A', red: '#FF6B6B', orange: '#FF9F43', blue: '#6EC1FF',
+  pink: '#FF8FD0', purple: '#B49BFF', grey: '#8E96A0', white: '#F2EFE6'};
+export const roleColor = (pal, c, i = 0) => {
+  if (c === 'good' || c === 'positive') return pal.good;
+  if (c === 'bad' || c === 'negative') return pal.bad;
+  if (c === 'accent') return pal.accent;
+  if (c === 'muted') return pal.dim;
+  if (c && CHALK[c]) return CHALK[c];
+  if (c && /^#[0-9a-f]{6}$/i.test(c)) return c;
+  return [pal.accent, pal.accent2, pal.good, '#FF9F43', '#B49BFF', '#FF8FD0'][i % 6];
+};
+
+// Numbers as people say them: 1,250 / 0.5 / 12.3 with an optional prefix ($) and unit (GB, s, %).
+export const fmtNum = (v, prefix = '', unit = '', decimals = null) => {
+  const d = decimals != null ? decimals : Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 10 ? 1 : 2;
+  const s = Number(v).toLocaleString('en-US', {maximumFractionDigits: d, minimumFractionDigits: 0});
+  const sp = unit && !['%', '×', 'x'].includes(unit) ? ' ' : '';
+  return `${prefix}${s}${unit ? sp + unit : ''}`;
+};

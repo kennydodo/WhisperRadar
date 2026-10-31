@@ -176,7 +176,7 @@ class ExplainerOptions:
     scenes_per_video: str = ""      # few | normal | many ("" = normal): how many scenes the planner aims for
     scene_fade: str = ""            # none | short | long ("" = none): dip to the board colour between pen scenes
     diagram_style: str = ""         # balanced | icons | minimal ("" = balanced): how picture-heavy scenes are
-    scene_genre: str = ""           # tech | ... ("" = tech): which motion rule and scene set the planner follows
+    scene_genre: str = ""           # tech | finance ("" = tech): which motion rule and scene set the planner follows
     motion_min_share: str = ""      # percent of narration time that must show a mechanism/diagram ("" = genre rule, 0 = off)
     text_run_max: str = ""          # most text-only scenes in a row ("" = genre rule, 0 = off)
     text_run_seconds: str = ""      # longest stretch of text-only scenes in seconds ("" = genre rule, 0 = off)
@@ -312,8 +312,8 @@ class ProjectOptions:
                     ok = False
                 if not ok:
                     errors.append(f"Explainer {_name} must be a number from 0 to {_top:g} (0 = off).")
-        if self.explainer.scene_genre and self.explainer.scene_genre not in ("tech",):
-            errors.append("Explainer scene genre must be tech.")
+        if self.explainer.scene_genre and self.explainer.scene_genre not in ("tech", "finance"):
+            errors.append("Explainer scene genre must be tech or finance.")
         if self.planner not in ("v1", "v2"):
             errors.append('Planner must be "v1" or "v2".')
         from .. import channel_types as _ct
