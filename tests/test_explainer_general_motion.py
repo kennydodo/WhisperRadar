@@ -396,3 +396,50 @@ class ClosingTheGaps(unittest.TestCase):
         from whisperradar.video.explainer import render
         pen, motion = NS(spec=NS(remotion=None)), NS(spec=NS(remotion={"component": "bars"}))
         self.assertEqual(render.join_fades([motion, pen, motion, pen]), [0.3, 0.3, 0.3])
+
+
+class MigrationKeepsRemotionEdits(unittest.TestCase):
+    """GPT's third review: a hand edit inside a Remotion scene must never be rebuilt away."""
+    _folder = ClosingTheGaps._folder
+
+    def _unstamped(self, edit=None):
+        import json as _json, os, time
+        from whisperradar.video.explainer import render
+        d = self._folder(plan(BARS, FLOW, SPLIT))
+        render.build_from_plan(d, log=lambda _: None)
+        path = os.path.join(d, "explainer.json")
+        doc = _json.load(open(path))
+        doc.pop("builder")
+        if edit:
+            edit(doc)
+        _json.dump(doc, open(path, "w"))
+        os.utime(path, (time.time() + 5, time.time() + 5))
+        return render.needs_build(d)
+
+    def _params(self, doc, sid):
+        return next(s for s in doc["scenes"] if s["id"] == sid)["remotion"]["params"]
+
+    def test_untouched_generated_remotion_file_migrates(self):
+        self.assertTrue(self._unstamped())
+
+    def test_edited_chart_label_is_preserved(self):
+        self.assertFalse(self._unstamped(lambda d: self._params(d, "t")["items"][0].update(label="Method A (old)")))
+
+    def test_edited_chart_value_is_preserved(self):
+        self.assertFalse(self._unstamped(lambda d: self._params(d, "t")["items"][1].update(value=2)))
+
+    def test_edited_flow_node_and_unit_are_preserved(self):
+        self.assertFalse(self._unstamped(lambda d: self._params(d, "f")["nodes"][2].update(label="Origin")))
+        self.assertFalse(self._unstamped(lambda d: self._params(d, "m").update(prefix="EUR ")))
+
+    def test_added_or_removed_content_is_preserved(self):
+        self.assertFalse(self._unstamped(lambda d: self._params(d, "t").update(ratio_to=2)))
+        self.assertFalse(self._unstamped(lambda d: self._params(d, "m")["items"].pop()))
+
+    def test_only_timing_differs_still_migrates(self):
+        # builder-computed timing is not content: a newer builder may place beats differently
+        self.assertTrue(self._unstamped(lambda d: self._params(d, "t")["items"][1].update(at_ms=1234)))
+
+    def test_field_a_newer_builder_adds_still_migrates(self):
+        # an old builder did not write e.g. a counter's title; missing builder fields are not edits
+        self.assertTrue(self._unstamped(lambda d: self._params(d, "f").pop("footer")))

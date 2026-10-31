@@ -68,28 +68,64 @@ def needs_build(folder: str) -> bool:
     return newest > os.path.getmtime(out)
 
 
-def _fingerprint_doc(doc: dict) -> list:
-    """What the plan decides, independent of builder geometry or timing: per scene its id, its
-    component or layout objects and every text/label/asset. Hand edits change these."""
-    out = []
-    for sc in doc.get("scenes") or []:
-        objs = sorted((o.get("id"), o.get("type"), o.get("text") or o.get("label") or o.get("asset") or "")
-                      for o in sc.get("objects") or [] if isinstance(o, dict))
-        rem = sc.get("remotion") or {}
-        out.append((sc.get("id"), rem.get("component"), objs))
-    return out
+# Keys the builder computes (timing, placement) and may change between versions: never content.
+_BUILT_KEYS = {"at_ms", "start_ms", "run_ms", "count_ms", "type_ms", "zoom_ms", "beats_ms", "offset_ms",
+               "duration_ms", "box", "points", "x", "y", "w", "h", "fit_to", "shot_id", "cue_range", "events"}
+
+
+def _content(v):
+    """A scene part without the builder-computed keys (recursively)."""
+    if isinstance(v, dict):
+        return {k: _content(x) for k, x in v.items() if k not in _BUILT_KEYS}
+    if isinstance(v, list):
+        return [_content(x) for x in v]
+    return v
+
+
+def _contained(old, new) -> bool:
+    """Every content value in `old` is what the builder makes now (`new`). Keys a newer builder
+    adds are allowed; a changed value, an extra key or a different list length is a hand edit."""
+    if isinstance(old, dict):
+        return isinstance(new, dict) and all(k in new and _contained(x, new[k]) for k, x in old.items())
+    if isinstance(old, list):
+        return isinstance(new, list) and len(old) == len(new) and all(_contained(a, b) for a, b in zip(old, new))
+    if isinstance(old, (int, float)) and isinstance(new, (int, float)) and not isinstance(old, bool):
+        return abs(old - new) < 1e-9
+    return old == new
+
+
+def _same_content(existing: dict, fresh: dict) -> bool:
+    """True when `existing` says nothing the builder would not say from the plan: same scenes in the
+    same order, the same drawn objects with the same texts, colours and assets, and Remotion blocks
+    whose labels, values, units, notes and other parameters are all what the builder makes."""
+    a, b = existing.get("scenes") or [], fresh.get("scenes") or []
+    if [s.get("id") for s in a] != [s.get("id") for s in b]:
+        return False
+    for sa, sb in zip(a, b):
+        ra, rb = sa.get("remotion"), sb.get("remotion")
+        if bool(ra) != bool(rb):
+            return False
+        if ra:
+            if ra.get("component") != rb.get("component") or not _contained(_content(ra), _content(rb)):
+                return False
+            continue
+        oa = {o.get("id"): o for o in sa.get("objects") or [] if isinstance(o, dict)}
+        ob = {o.get("id"): o for o in sb.get("objects") or [] if isinstance(o, dict)}
+        if set(oa) != set(ob) or not all(_contained(_content(oa[k]), _content(ob[k])) for k in oa):
+            return False
+    return True
 
 
 def generated_from_plan(folder: str, existing: dict) -> bool:
     """True when an explainer.json without a builder stamp is what the builder makes from this
-    folder's plan.json (same scenes, objects and texts) - i.e. not a hand-made or hand-edited file."""
+    folder's plan.json - i.e. not a hand-made or hand-edited file (pen or Remotion scenes)."""
     try:
         with open(os.path.join(folder, "plan.json"), encoding="utf-8-sig") as fh:
             plan = json.load(fh)
         fresh = recipes.build(plan, _load_cues(folder), validate_mod.project_look(folder))
     except Exception:  # noqa: BLE001 - when in doubt, never overwrite
         return False
-    return _fingerprint_doc(existing) == _fingerprint_doc(fresh)
+    return _same_content(existing, fresh)
 
 
 def build_from_plan(folder: str, log=print) -> int:
