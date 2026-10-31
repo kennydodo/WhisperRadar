@@ -25,6 +25,10 @@ export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [],
   const ticks = [];
   for (let v = lo; v <= hi + step / 2; v += step) ticks.push(v);
   const labelEvery = Math.ceil(n / 8);
+  // where each finished line puts its value + name: spread so two lines ending close never overlap
+  const ends = series.map((s, k) => ({k, y: Y(s.values[n - 1])})).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) ends[i].y = Math.max(ends[i].y, ends[i - 1].y + 70);
+  const endY = Object.fromEntries(ends.map((e) => [e.k, e.y]));
   return <>
     <Heading title={title} sub={sub} pal={pal} />
     <Illustrative pal={pal} show={illustrative} />
@@ -35,7 +39,7 @@ export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [],
       </g>)}
       {x.map((lab, i) => i % labelEvery === 0 || i === n - 1 ? <text key={i} x={X(i)} y={PY1 + 44} textAnchor="middle" opacity={axes}
         fontFamily={pal.sansF} fontSize={26} fill={pal.dim}>{lab}</text> : null)}
-      {unit ? <text x={PX0 - 20} y={PY0 - 34} textAnchor="end" fontFamily={pal.sansF} fontSize={24} fill={pal.dim} opacity={axes}>{unit}</text> : null}
+      {unit ? <text x={PX0 - 20} y={PY1 + 44} textAnchor="end" fontFamily={pal.sansF} fontSize={24} fill={pal.dim} opacity={axes}>{unit}</text> : null}
       {series.map((s, k) => {
         const col = roleColor(pal, s.color, k);
         const sStart = s.at_ms != null ? s.at_ms : start_ms;
@@ -54,9 +58,12 @@ export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [],
           <path d={d} fill="none" stroke={col} strokeWidth={6} strokeLinejoin="round" strokeLinecap="round"
             style={{filter: `drop-shadow(0 0 8px ${col})`}} />
           <circle cx={head[0]} cy={head[1]} r={11} fill={col} />
-          <text x={head[0] + (done ? 22 : 0)} y={head[1] - 24} textAnchor={done ? 'start' : 'middle'} fontFamily={pal.monoF}
-            fontWeight={700} fontSize={32} fill={col}>{fmtNum(val, prefix, unit === '%' ? '%' : '', s.decimals)}</text>
-          {done && s.label ? <text x={head[0] + 22} y={head[1] + 16} fontFamily={pal.sansF} fontSize={26} fill={pal.text}>{s.label}</text> : null}
+          {done ? <>
+            <text x={head[0] + 26} y={endY[k] - 6} fontFamily={pal.monoF} fontWeight={700} fontSize={32} fill={col}>
+              {fmtNum(val, prefix, unit === '%' ? '%' : '', s.decimals)}</text>
+            {s.label ? <text x={head[0] + 26} y={endY[k] + 26} fontFamily={pal.sansF} fontSize={26} fill={pal.text}>{s.label}</text> : null}
+          </> : <text x={head[0]} y={head[1] - 24} textAnchor="middle" fontFamily={pal.monoF}
+            fontWeight={700} fontSize={32} fill={col}>{fmtNum(val, prefix, unit === '%' ? '%' : '', s.decimals)}</text>}
         </g>;
       })}
       {marks.map((m, k) => {
@@ -73,7 +80,7 @@ export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [],
       const p = prog(ms, m.at_ms, 500);
       const xi = Math.max(0, Math.min(n - 1, m.x - 1));
       const left = Math.min(1500, Math.max(150, X(xi) - 160));
-      return <div key={k} style={{position: 'absolute', left, width: 320, top: PY0 - 74, textAlign: 'center', opacity: p,
+      return <div key={k} style={{position: 'absolute', left, width: 320, top: PY0 - 112, textAlign: 'center', opacity: p,
         transform: `translateY(${(1 - p) * 10}px)`, fontFamily: pal.noteF, fontSize: 28, color: pal.accent2}}>{m.text}</div>;
     })}
     {footer ? <Footer footer={footer} pal={pal} /> : null}
