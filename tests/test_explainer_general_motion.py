@@ -142,3 +142,11 @@ class ReviewTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShapeOnlyLine(unittest.TestCase):
+    def test_shape_flag_reaches_the_component_and_is_checked(self):
+        p = compiled(dict(LINE, shape=True))["l"]["params"]
+        self.assertIs(p["shape"], True)
+        self.assertTrue(rb.check_block({"component": "line", "params": dict(p, shape="yes")}, "s"))
+        self.assertIn("shape only", es.summary_text(plan(dict(LINE, shape=True)), CUES))

@@ -179,7 +179,7 @@ RULE_LINES = [
     (None, "MOTION LAYOUTS:"),
     ("flow", "- flow: 2-6 boxes in a row (\"nodes\": label up to 18 characters, 13 with 5-6 nodes; optional \"sub\" line and \"icon\"), each appearing on its words. \"sends\" (0-4): on its words a labelled token (what moves: \"request\", \"$100\", \"file\") travels from node \"from\" (default 1) to node \"to\" (default the last), lighting each box it passes; \"back\" (a label) makes it return (\"response\", \"receipt\", \"hit\"). Use it for requests and responses, payments, supply chains, data passing through steps, who asks whom."),
     ("bars", "- bars: 2-6 bars (\"items\": label up to 28 characters, \"value\", optional \"note\", \"icon\", \"color\"), each growing on its words with its value counting up; \"unit\" (s, GB, %, x) and \"prefix\" ($, EUR sign); \"ratio_to\": the number of the bar the others are compared to (shows x21 or 1/21); \"limit\": a dashed line (a budget, a memory size)."),
-    ("line", "- line: \"x\" (2-24 labels: years, ages, months, steps) and 1-3 \"series\" with one value per x label; the line draws from left to right from \"motion\".at over the scene; \"marks\" ({\"x\": label number, \"text\", \"at\"}) pop up on their words. The narrator rarely says every value: then set \"illustrative\": true, and keep any value the narrator does say exact."),
+    ("line", "- line: \"x\" (2-24 labels: years, ages, months, steps) and 1-3 \"series\" with one value per x label; the line draws from left to right from \"motion\".at over the scene; \"marks\" ({\"x\": label number, \"text\", \"at\"}) pop up on their words. The narrator rarely says every value: then set \"illustrative\": true, and keep any value the narrator does say exact. When the narrator only describes a shape (\"quality drops if rounds are too few\"), also set \"shape\": true: the curve is drawn without any numbers, so nothing looks measured."),
     ("split", "- split: one whole and its 2-6 parts (\"items\" with \"value\"), each part sweeping into a ring on its words, with values and shares; \"total\" (when the narrator gives the whole) leaves the rest as a gap named by \"rest_label\"; \"center\" is a short label under the total."),
     ("grid", "- grid: a board of \"rows\" x \"cols\" (each 1-12) and 1-4 \"steps\" that fill the next \"cells\" on their words (\"label\", \"cells\", \"color\", optional \"symbols\": 1-3 character texts shown in the filled cells, such as digits); \"show_share\": true adds \"x of total, %\". Use it for 7-in-10 statistics, puzzle boards, matrices, many identical units."),
     ("counter", "- counter: one big number counting from \"from\" to \"to\" with a short label."),
@@ -597,7 +597,7 @@ def _general_summary(s: dict) -> list:
         out.append(f"animated ring of parts{tag}" + (f" of a total {s.get('total')}" if s.get("total") else "") + ": "
                    + "; ".join(f"{i.get('label')} = {i.get('value')}" for i in s.get("items") or [] if isinstance(i, dict)))
     elif lay == "line":
-        out.append(f"animated line chart{tag} over {s.get('x')}: " + "; ".join(
+        out.append(f"animated line chart{tag}{' (shape only, no numbers shown)' if s.get('shape') else ''} over {s.get('x')}: " + "; ".join(
             f"{x.get('label', 'line')} {x.get('values')}" for x in s.get("series") or [] if isinstance(x, dict)))
         for m in s.get("marks") or []:
             if isinstance(m, dict):

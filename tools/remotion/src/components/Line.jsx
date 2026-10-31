@@ -10,7 +10,7 @@ const niceStep = (span) => {
   return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw;
 };
 
-export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [], start_ms, run_ms, illustrative, zero = true, footer, theme}) => {
+export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [], start_ms, run_ms, illustrative, zero = true, shape = false, footer, theme}) => {
   const pal = usePal(theme);
   const ms = useMs();
   const all = series.flatMap((s) => s.values);
@@ -35,7 +35,7 @@ export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [],
     <svg style={{position: 'absolute', left: 0, top: 0}} width={1920} height={1080}>
       {ticks.map((v, i) => <g key={i} opacity={axes}>
         <line x1={PX0} x2={PX1} y1={Y(v)} y2={Y(v)} stroke={pal.line} strokeWidth={i === 0 ? 3 : 1.5} strokeDasharray={i === 0 ? undefined : '4 8'} />
-        <text x={PX0 - 20} y={Y(v) + 9} textAnchor="end" fontFamily={pal.monoF} fontSize={24} fill={pal.dim}>{fmtNum(v, prefix, '', step < 1 ? 2 : 0)}</text>
+        {shape ? null : <text x={PX0 - 20} y={Y(v) + 9} textAnchor="end" fontFamily={pal.monoF} fontSize={24} fill={pal.dim}>{fmtNum(v, prefix, '', step < 1 ? 2 : 0)}</text>}
       </g>)}
       {x.map((lab, i) => i % labelEvery === 0 || i === n - 1 ? <text key={i} x={X(i)} y={PY1 + 44} textAnchor="middle" opacity={axes}
         fontFamily={pal.sansF} fontSize={26} fill={pal.dim}>{lab}</text> : null)}
@@ -59,10 +59,10 @@ export const Line = ({title, sub, x, series, unit = '', prefix = '', marks = [],
             style={{filter: `drop-shadow(0 0 8px ${col})`}} />
           <circle cx={head[0]} cy={head[1]} r={11} fill={col} />
           {done ? <>
-            <text x={head[0] + 26} y={endY[k] - 6} fontFamily={pal.monoF} fontWeight={700} fontSize={32} fill={col}>
-              {fmtNum(val, prefix, unit === '%' ? '%' : '', s.decimals)}</text>
-            {s.label ? <text x={head[0] + 26} y={endY[k] + 26} fontFamily={pal.sansF} fontSize={26} fill={pal.text}>{s.label}</text> : null}
-          </> : <text x={head[0]} y={head[1] - 24} textAnchor="middle" fontFamily={pal.monoF}
+            {shape ? null : <text x={head[0] + 26} y={endY[k] - 6} fontFamily={pal.monoF} fontWeight={700} fontSize={32} fill={col}>
+              {fmtNum(val, prefix, unit === '%' ? '%' : '', s.decimals)}</text>}
+            {s.label ? <text x={head[0] + 26} y={endY[k] + (shape ? 10 : 26)} fontFamily={pal.sansF} fontSize={shape ? 30 : 26} fill={shape ? col : pal.text}>{s.label}</text> : null}
+          </> : shape ? null : <text x={head[0]} y={head[1] - 24} textAnchor="middle" fontFamily={pal.monoF}
             fontWeight={700} fontSize={32} fill={col}>{fmtNum(val, prefix, unit === '%' ? '%' : '', s.decimals)}</text>}
         </g>;
       })}

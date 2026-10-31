@@ -635,7 +635,7 @@ def _general_params(raw: dict, sid: str, layout: str, cr, cue_ms: dict, start: i
 
     keep = {"bars": ("title", "sub", "unit", "prefix", "ratio_to", "illustrative"),
             "flow": ("title", "sub"),
-            "line": ("title", "sub", "unit", "prefix", "x", "zero", "illustrative"),
+            "line": ("title", "sub", "unit", "prefix", "x", "zero", "illustrative", "shape"),
             "grid": ("title", "sub", "rows", "cols", "show_share", "illustrative"),
             "split": ("title", "sub", "unit", "prefix", "total", "total_label", "rest_label", "center",
                       "illustrative")}[layout]

@@ -335,6 +335,8 @@ def _check_line(p: dict, where: str) -> list:
             errs.append(f"{where}: mark {k} needs x (1-{len(x)}), text (30 characters) and an anchor.")
     if not _ms(p.get("start_ms")) or not _ms(p.get("run_ms")) or p.get("run_ms", 0) < 1500:
         errs.append(f"{where}: start_ms >= 0 and run_ms >= 1500 are needed.")
+    if "shape" in p and not isinstance(p["shape"], bool):
+        errs.append(f"{where}: shape must be true or false.")
     return errs
 
 
