@@ -150,3 +150,12 @@ class ShapeOnlyLine(unittest.TestCase):
         self.assertIs(p["shape"], True)
         self.assertTrue(rb.check_block({"component": "line", "params": dict(p, shape="yes")}, "s"))
         self.assertIn("shape only", es.summary_text(plan(dict(LINE, shape=True)), CUES))
+
+
+class AnalogyRows(unittest.TestCase):
+    def test_analogy_must_be_a_boolean(self):
+        row = {"label": "Broad first", "mode": "plan_then_fill", "words": ["a", "b", "c", "d"]}
+        good = {"rows": [dict(row, analogy=True)], "start_ms": 0, "run_ms": 3000}
+        self.assertEqual(rb.check_block({"component": "generation", "params": good}, "s"), [])
+        bad = {"rows": [dict(row, analogy="yes")], "start_ms": 0, "run_ms": 3000}
+        self.assertTrue(rb.check_block({"component": "generation", "params": bad}, "s"))

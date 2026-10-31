@@ -61,8 +61,10 @@ export const Generation = ({title, sub, rows, start_ms, run_ms, note, footer, th
     return (
       <div key={r} style={{opacity: a}}>
         <div style={{position: 'absolute', left: 110, top: y, fontFamily: pal.sansF, fontWeight: 650, fontSize: LAB, color: pal.text}}>{row.label}</div>
-        <div style={{position: 'absolute', right: 110, top: y, fontFamily: pal.monoF, fontSize: 28,
-          color: finished ? pal.good : pal.dim}}>{finished ? '✓ done in ' : 'step '}{stepNow}{finished ? (stepNow === 1 ? ' step' : ' steps') : ''}</div>
+        {row.analogy ? <div style={{position: 'absolute', right: 110, top: y, fontFamily: pal.sansF, fontSize: 24,
+          color: pal.dim, border: `1.5px dashed ${pal.dim}`, borderRadius: 8, padding: '2px 10px'}}>analogy</div>
+        : <div style={{position: 'absolute', right: 110, top: y, fontFamily: pal.monoF, fontSize: 28,
+          color: finished ? pal.good : pal.dim}}>{finished ? '✓ done in ' : 'step '}{stepNow}{finished ? (stepNow === 1 ? ' step' : ' steps') : ''}</div>}
         {cells}
       </div>
     );

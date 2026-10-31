@@ -180,6 +180,8 @@ def _check_generation(p: dict, where: str) -> list:
         elif any(not any(ch.isalnum() for ch in x) for x in w):
             errs.append(f"{where}: row {k} words must all be real text; a blank like '___' never gets filled in. "
                         "Write the final word for every slot (the animation shows each one empty until its step).")
+        if "analogy" in r and not isinstance(r["analogy"], bool):
+            errs.append(f"{where}: row {k} analogy must be true or false.")
         bm = r.get("beats_ms")
         if bm is not None and (not isinstance(bm, list) or not 1 <= len(bm) <= 3 or not all(_ms(v) for v in bm)
                                or sorted(bm) != bm):
@@ -318,8 +320,8 @@ def _check_flow(p: dict, where: str) -> list:
 def _check_line(p: dict, where: str) -> list:
     errs = _common_text(p, where)
     x = p.get("x")
-    if not isinstance(x, list) or not 2 <= len(x) <= 24 or not all(_text(str(v), 10) for v in x):
-        return errs + [f"{where}: x must be 2-24 short labels (years, months, steps)."]
+    if not isinstance(x, list) or not 2 <= len(x) <= 24 or not all(_text(str(v), 14) for v in x):
+        return errs + [f"{where}: x must be 2-24 short labels of 14 characters at most (years, months, steps)."]
     ser = p.get("series")
     if not isinstance(ser, list) or not 1 <= len(ser) <= 3:
         return errs + [f"{where}: series must be 1-3 lines."]
