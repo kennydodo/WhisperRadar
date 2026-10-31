@@ -912,39 +912,53 @@
       <div class="help" style="margin-bottom:8px">Explainer video: instead of a shot list, the writer drafts a
         <b>scene plan</b> (what is drawn while each part is spoken), the app checks it against the subtitles
         (words, timing, icons), and the judge reviews the teaching. No images are needed.</div>
-      {% if scene_review.latest_run and scene_review.latest_run.status in ['failed', 'stopped'] %}
-      <div class="warn" style="margin-bottom:8px"><b>Latest scene-plan run {{ scene_review.latest_run.status }}.</b>
-        {% if scene_review.latest_run.role %}Role: {{ scene_review.latest_run.role }}.{% endif %}
-        <div>{{ scene_review.latest_run.error }}</div>
-        <div>The saved review below belongs to an earlier completed attempt; it is not this run's result.</div>
-      </div>
+      {% set ss = scene_state %}
+      <div style="margin-bottom:8px"><b>Scene plan:</b>
+        <span class="badge {{ 'done' if ss.state in ['approved', 'manually_accepted'] else '' }}">{{ ss.label }}</span>
+        {% if ss.state == 'manually_accepted' %}<span class="muted"> — accepted by you with the judge's findings unresolved; not judge-approved</span>
+        {% elif ss.state == 'approved' %}<span class="muted"> — approved from the compiled specification; a rendered preview still needs a visual review</span>
+        {% elif ss.state == 'transport_failed' %}<span class="muted"> — the chat/browser failed; this is not a verdict on the plan</span>
+        {% elif ss.state == 'stopped' %}<span class="muted"> — stopped by you or interrupted; the work so far is kept</span>{% endif %}
+        {% if scene_plan_exists %}&middot; <a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a>
+        &middot; <a href="/studio/{{ prod['id'] }}?stage=merge">Render</a>{% endif %}</div>
+      {% if ss.run and ss.run.error and ss.state in ['transport_failed', 'stopped'] %}
+      <div class="warn" style="margin-bottom:8px"><b>Latest run {{ 'failed (transport)' if ss.state == 'transport_failed' else 'stopped' }}.</b>
+        {% if ss.run.role %}Role: {{ ss.run.role }}.{% endif %}<div>{{ ss.run.error }}</div></div>
       {% endif %}
-      {% if scene_review.status == 'needs_revision' %}
-      <div class="warn" style="margin-bottom:8px"><b>Saved draft needs revision — not approved.</b>
-        {% if scene_review.score is not none %}Judge score: {{ scene_review.score }}.{% endif %}
-        {% if scene_review.candidate_file %}Draft saved as <code>{{ scene_review.candidate_file }}</code>.{% endif %}
-        {% if scene_review.active_plan_preserved %}The previous plan.json is still active.{% endif %}
-        {% for f in (scene_review.checker_faults_left or []) + (scene_review.faults or []) %}<div>{{ f }}</div>{% endfor %}
-      </div>
-      {% endif %}
-      {% if scene_plan_exists %}
-      <div style="margin-bottom:8px"><span class="badge done">plan.json exists</span>
-        {% if scene_review.status == 'approved' %}<span class="badge done">Plan approved</span><span class="muted"> — rendered preview still needs visual review</span>
-        {% elif scene_review.status != 'needs_revision' and scene_review and scene_review.score is not none %}<span class="muted">previous judge score {{ scene_review.score }} (legacy review)</span>{% endif %}
-        &middot; <a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a>
-        &middot; <a href="/studio/{{ prod['id'] }}?stage=merge">Render</a></div>
-      {% if scene_review.status != 'needs_revision' and scene_review and (scene_review.faults or scene_review.checker_faults_left) %}
+      {% if ss.candidate.exists %}
       <div class="warn" style="margin-bottom:8px">
-        {% for f in (scene_review.checker_faults_left or []) + (scene_review.faults or []) %}<div>{{ f }}</div>{% endfor %}
+        <b>Draft {{ 'saved (needs revision)' if ss.candidate.status == 'needs_revision' else ('in progress' if ss.candidate.status == 'in_progress' else ss.candidate.status) }}</b>
+        {% if ss.candidate.review.score is not none and ss.candidate.review.score is defined %}— judge score {{ ss.candidate.review.score }}{% endif %}
+        {% if ss.candidate.stale %}<div><b>Stale:</b> {{ ss.candidate.reason }}. It cannot be continued or accepted; revise the active plan or start fresh.</div>{% endif %}
+        {% for f in ss.findings %}<div>{{ f if f is string else (f.problem or f.change or f) }}</div>{% endfor %}
+        {% for f in (ss.candidate.review.verdict_problems or []) %}<div>Judge verdict problem: {{ f }}</div>{% endfor %}
+        <details style="margin-top:6px"><summary>Preview the draft ({{ candidate_scenes|length }} scenes) &middot; <a href="/studio/{{ prod['id'] }}/scenes/candidate.json" target="_blank">raw JSON</a></summary>
+          <table class="mono" style="font-size:12px"><tr><th>scene</th><th>layout</th><th>cues</th><th>title</th></tr>
+          {% for x in candidate_scenes %}<tr><td>{{ x.id }}</td><td>{{ x.layout }}</td><td>{{ x.cues[0] ~ '–' ~ x.cues[1] if x.cues else '' }}</td><td>{{ x.title }}</td></tr>{% endfor %}</table>
+        </details>
+        {% if ss.can_accept %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/accept" style="margin-top:6px"
+              onsubmit="return wrConfirmSubmit(this, 'Accept this draft as the active plan? It is recorded as a manual acceptance, not a judge approval. The current plan is backed up.')">
+          <input type="hidden" name="digest" value="{{ ss.candidate.digest }}">
+          <label><input type="checkbox" name="ack" value="yes" required> I have read the unresolved findings above and accept this plan anyway</label>
+          <button type="submit" class="secondary">Accept candidate</button>
+        </form>
+        {% endif %}
       </div>
       {% endif %}
-      {% else %}
+      {% if not scene_plan_exists and not ss.candidate.exists %}
       <div class="muted" style="margin-bottom:8px">No scene plan yet.</div>
       {% endif %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
-              onsubmit="return wrConfirmSubmit(this, 'Write the scene plan in the web chat (writer, then judge)?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
+              onsubmit="return wrConfirmSubmit(this, 'Write the scene plan in the web chat (writer, then judge)? The active plan.json is only replaced when the judge approves it or you accept a draft.')">
           <input type="hidden" name="transport" value="webchat">
+          {% set start_picker %}<label>Next <select name="start" title="What the run starts from">
+            <option value="auto">Automatic (latest usable draft, else active plan, else new)</option>
+            <option value="continue" {{ 'disabled' if not ss.can_continue else '' }}>Continue latest draft</option>
+            <option value="revise_active" {{ 'disabled' if not ss.can_revise_active else '' }}>Revise active plan</option>
+            <option value="fresh">Start fresh (draft anew; old draft goes to backups)</option></select></label>{% endset %}
+          {{ start_picker }}
           <span class="muted" style="font-size:12px">No API - drive chat sites (blank = the pair chosen in Settings):</span>
           <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <label>Writer <select name="writer"><option value="">Settings default</option>{% for key, name in review_sites %}<option value="{{ key }}">{{ name }}</option>{% endfor %}</select></label>
@@ -960,8 +974,9 @@
           </button>
         </form>
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
-              onsubmit="return wrConfirmSubmit(this, 'Write the scene plan with the API providers?{{ ' This replaces the existing plan.json.' if scene_plan_exists else '' }}')">
+              onsubmit="return wrConfirmSubmit(this, 'Write the scene plan with the API providers? The active plan.json is only replaced when the judge approves it or you accept a draft.')">
           <span class="muted" style="font-size:12px">With an API LLM:</span>
+          {{ start_picker }}
           {{ provider_select('shots') }}
           <button type="submit" class="secondary" {{ 'disabled' if job.running or not srt else '' }}>Write scene plan (API)</button>
         </form>

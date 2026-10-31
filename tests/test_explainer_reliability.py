@@ -41,14 +41,15 @@ class RevisionTests(unittest.TestCase):
 
     def test_self_answered_or_minor_faults_do_not_block_approval(self):
         passing = {'score': 8, 'pass': True, 'faults': [
-            'scene hook: expansion is given later, so fine; no fault here — remove',
-            'scene tokens: drawn matches with three icons; good',
-            'overall: somewhat slide-deck-like, but not a major fault',
+            {'scene': 'overall', 'severity': 'minor', 'problem': 'somewhat slide-deck-like, not a major fault'},
             {'scene': 'gpu-parallel', 'severity': 'minor', 'problem': 'label placement could be clearer'}],
             'fixes': [{'scene': 'gpu-parallel', 'severity': 'minor', 'change': 'move the label out of the GPU panel'}]}
         self.assertTrue(es.review_passes(passing))
         self.assertEqual(es.split_verdict_faults(passing['faults']),
-                         ([], ['scene gpu-parallel: label placement could be clearer']))
+                         ([], ['scene overall: somewhat slide-deck-like, not a major fault',
+                               'scene gpu-parallel: label placement could be clearer']))
+        # a plain string has no explicit severity: never read as minor, the judge is asked again
+        self.assertTrue(es.verdict_problems(dict(passing, faults=['scene b: fine; no fault here — remove'])))
         self.assertFalse(es.review_passes(dict(passing, faults=['scene b: a spoken item is missing on screen'])))
         self.assertFalse(es.review_passes(dict(passing, fixes=['scene b: add the missing item'])))
         self.assertEqual(es.split_verdict_faults(['scene diffusion: beats exceed run_ms']),
@@ -181,12 +182,14 @@ class PromotionTests(unittest.TestCase):
 
     def test_verdict_noise_is_dropped_from_the_saved_review(self):
         ask = self._ask([plan()], [{'score': 7, 'pass': False, 'faults': [
-            'scene b: unclear', 'scene a: fine; no fault here — remove', 'overall: not a major fault'],
-            'fixes': ['scene b: clarify title']}])
-        with self.assertRaisesRegex(RuntimeError, 'needs revision'):
+            {'scene': 'b', 'severity': 'blocking', 'problem': 'unclear'},
+            {'scene': 'overall', 'severity': 'minor', 'problem': 'not a major fault'}],
+            'fixes': [{'scene': 'b', 'severity': 'blocking', 'change': 'clarify title'}]}])
+        with self.assertRaises(es.NeedsRevision):
             es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=1)
-        review = json.loads((self.pdir / 'plan_review.json').read_text())
-        self.assertEqual(review['faults'], ['scene b: unclear'])
+        review = json.loads((self.pdir / 'plan_candidate_review.json').read_text())
+        self.assertEqual(review['faults'], ['scene b: unclear', 'scene overall: not a major fault'])
+        self.assertFalse((self.pdir / 'plan_review.json').exists())   # no review of an ACTIVE plan was made
         self.assertFalse((self.pdir / 'plan.json').exists())
 
     def test_seed_plan_continues_from_the_saved_plan_instead_of_redrafting(self):
@@ -205,7 +208,8 @@ class PromotionTests(unittest.TestCase):
     def test_a_scene_revised_twice_and_flagged_again_is_frozen_not_looped(self):
         changed = copy.deepcopy(plan()['scenes'][1])
         changed['title'] = 'Still vague'
-        verdict = {'score': 7, 'pass': False, 'faults': ['scene b: too thin'], 'fixes': ['scene b: add a point']}
+        verdict = {'score': 7, 'pass': False, 'faults': [{'scene': 'b', 'severity': 'blocking', 'problem': 'too thin'}],
+                   'fixes': [{'scene': 'b', 'severity': 'blocking', 'change': 'add a point'}]}
         ask = self._ask([plan(), {'scenes': [changed]}, {'scenes': [changed]}, {'scenes': [changed]}],
                         [verdict, verdict, verdict])
         logs = []
@@ -228,12 +232,14 @@ class PromotionTests(unittest.TestCase):
         active = self.pdir/'plan.json'
         active.write_text('{"previous":"keep exact bytes"}', encoding='utf-8')
         before = active.read_bytes()
-        ask = self._ask([plan()], [{'score': 7, 'pass': False, 'faults': ['b: unclear'], 'fixes': ['b: explain']}])
-        with self.assertRaisesRegex(RuntimeError, 'needs revision'):
-            es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=1)
+        ask = self._ask([plan()], [{'score': 7, 'pass': False,
+                                    'faults': [{'scene': 'b', 'severity': 'blocking', 'problem': 'unclear'}],
+                                    'fixes': [{'scene': 'b', 'severity': 'blocking', 'change': 'explain'}]}])
+        with self.assertRaises(es.NeedsRevision):
+            es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=1, start='fresh')
         self.assertEqual(active.read_bytes(), before)
         self.assertTrue((self.pdir/'plan_candidate.json').exists())
-        review = json.loads((self.pdir/'plan_review.json').read_text())
+        review = json.loads((self.pdir/'plan_candidate_review.json').read_text())
         self.assertEqual(review['status'], 'needs_revision')
         self.assertTrue(review['active_plan_preserved'])
 
@@ -243,9 +249,10 @@ class PromotionTests(unittest.TestCase):
         changed = copy.deepcopy(plan()['scenes'][1])
         changed['title'] = 'Check fit'
         ask = self._ask([plan(), {'scenes': [changed]}], [
-            {'score': 7, 'pass': False, 'faults': ['b: unclear title'], 'fixes': ['b: clarify title']},
+            {'score': 7, 'pass': False, 'faults': [{'scene': 'b', 'severity': 'blocking', 'problem': 'unclear title'}],
+             'fixes': [{'scene': 'b', 'severity': 'blocking', 'change': 'clarify title'}]},
             {'score': 9, 'pass': True, 'faults': [], 'fixes': []}])
-        result = es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=2)
+        result = es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=2, start='fresh')
         self.assertEqual(result['scenes'][0], plan()['scenes'][0])
         self.assertEqual(result['scenes'][1]['title'], 'Check fit')
         backups = list((self.pdir/'backups').glob('*/plan.json'))
@@ -257,7 +264,10 @@ class PromotionTests(unittest.TestCase):
 
     def test_no_automatic_content_deletion_is_used_to_pass_the_checker(self):
         ask = self._ask([plan()], [{'score': 9, 'pass': True, 'faults': [], 'fixes': []}])
-        with patch.object(recipes, 'simplify_overfull', side_effect=AssertionError('content removal')):
+        def decoration_only(p, cues, decoration_only=False):
+            self.assertTrue(decoration_only, 'content removal')
+            return p, []
+        with patch.object(recipes, 'simplify_overfull', side_effect=decoration_only):
             es.run_scenes(self.cfg, self.pid, ask, log=lambda _: None, rounds=1)
 
     def test_manual_edit_during_judging_is_preserved(self):

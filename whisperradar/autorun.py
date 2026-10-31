@@ -1048,21 +1048,25 @@ def _motion_breakdown_line(shots: list) -> str:
 
 
 def _run_scenes(cfg, pid: int, provider, log, cancel, transport, writer=None, judge=None,
-                chat_options=None) -> None:
+                chat_options=None, start: str = "auto") -> None:
     """The shots stage of an explainer production: write plan.json (writer +
     checker + judge). The scenes are built from it when the video is rendered."""
     from . import explainer_scenes
     log = log or (lambda m: None)
     stop = _bounded_stop(cancel)
-    if transport == "webchat":
-        w, j, o = _webchat_pair(cfg)
-        w, j = writer or w, judge or j                      # this run's choice, else the Settings pair
-        o = chat_options or o                               # model / thinking chosen on the page, else the last used
-        log(f"scene plan: {w} writes, {j} judges")
-        explainer_scenes.webchat_job(cfg, pid, w, j, log, stop, o)
-    else:
-        judge = studio.judge_provider(cfg, provider, judge)
-        explainer_scenes.api_job(cfg, pid, provider, judge, log, stop)
+    try:
+        if transport == "webchat":
+            w, j, o = _webchat_pair(cfg)
+            w, j = writer or w, judge or j                  # this run's choice, else the Settings pair
+            o = chat_options or o                           # model / thinking chosen on the page, else the last used
+            log(f"scene plan: {w} writes, {j} judges")
+            explainer_scenes.webchat_job(cfg, pid, w, j, log, stop, o, start=start)
+        else:
+            judge = studio.judge_provider(cfg, provider, judge)
+            explainer_scenes.api_job(cfg, pid, provider, judge, log, stop, start=start)
+    except explainer_scenes.NeedsRevision as exc:
+        # an unapproved draft is a decision for the user, never something to advance past
+        raise _Paused(str(exc)) from exc
     conn = _connect(cfg)
     try:
         db.add_step(conn, pid, "shots", "auto", detail="explainer scene plan")
@@ -1073,9 +1077,9 @@ def _run_scenes(cfg, pid: int, provider, log, cancel, transport, writer=None, ju
 def _run_shots(cfg, pid: int, provider: str | None = None,
                log=None, cancel=None, transport: str | None = None,
                writer: str | None = None, judge: str | None = None,
-               chat_options: dict | None = None) -> None:
+               chat_options: dict | None = None, start: str = "auto") -> None:
     if explainer_production(cfg, pid):
-        _run_scenes(cfg, pid, provider, log, cancel, transport, writer, judge, chat_options)
+        _run_scenes(cfg, pid, provider, log, cancel, transport, writer, judge, chat_options, start)
         return
     if transport == "webchat":
         from . import webstages
@@ -2327,6 +2331,13 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
         return {"stage": stage, "action": "skip",
                 "detail": "explainer video: scenes come from the scene plan"}
     if explainer and stage == "shots":
+        from . import explainer_scenes
+        life = explainer_scenes.lifecycle_for(cfg, pid)
+        if life["candidate"]["exists"] and life["candidate"]["status"] == "needs_revision" \
+                and not life["candidate"]["stale"]:
+            return {"stage": stage, "action": "pause",
+                    "detail": "scene plan draft needs revision - open Shots to revise it, accept it manually "
+                              "or start fresh (auto-run never advances an unapproved draft)"}
         if is_explainer(pdir):
             return {"stage": stage, "action": "skip",
                     "detail": "scene plan (plan.json / explainer.json) exists"}

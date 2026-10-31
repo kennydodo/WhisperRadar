@@ -25,10 +25,19 @@ from typing import Callable
 
 from . import studio
 from . import explainer_terms
+from . import scene_plan_state as sps
 from .video.explainer import recipes
 from .video.explainer.validate import ExplainerError
 
 MAX_ROUNDS = 5
+class NeedsRevision(RuntimeError):
+    """The run finished and the draft was saved, but it is not approved. NOT a transport failure."""
+
+
+class AcceptError(RuntimeError):
+    """A manual acceptance that was refused (stale, invalid, repeated, not acknowledged)."""
+
+
 CONTINUE_MESSAGE = ("Continue the same scene-plan JSON as text, not a file. Output only the remaining "
                     "scenes after the last complete one and close every bracket.")
 # longest label each layout can show; stack rows and hero lines are wide, the others share a row
@@ -211,58 +220,222 @@ def revision_ids(plan: dict, faults: list[str]) -> set[str]:
     return selected or set(ids)
 
 
-def fix_prompt(plan: dict, faults: list[str], narration: str = "") -> str:
-    lines = "\n".join("- " + str(f) for f in faults)
-    allowed = sorted(revision_ids(plan, faults))
-    return ("Correct the listed scenes, preserving every other scene exactly. Do not delete scenes, "
-            "change their IDs or reorder them. You may change layout, labels and anchors inside the allowed scenes. "
-            "Return ONLY {\"scenes\": [complete replacement scene objects]} in one JSON block. "
-            "Unchanged scenes may be omitted; they will be retained locally. A full plan is accepted only if "
-            "all unrelated scenes are unchanged. Use a supported layout or adjust the allowed scene boundaries when timing is impossible; never "
-            "silently omit teaching content. Use exact narration anchors; never invent timings or evidence.\n"
-            "ALLOWED SCENE IDS: " + json.dumps(allowed) + "\nPROBLEMS:\n" + lines
-            + "\nTIMED NARRATION:\n" + narration + "\nCURRENT PLAN:\n"
-            + json.dumps(plan, ensure_ascii=False, indent=1))
-
-
-def merge_revision(plan: dict, reply: dict, allowed: set[str]) -> dict:
-    """Accept a scene patch or unchanged full-plan response, never silent collateral edits."""
-    original = {str(s.get("id")): s for s in plan["scenes"]}
-    replacements = {}
-    for scene in reply.get("scenes", []):
-        sid = str(scene.get("id", ""))
-        if sid not in original or sid in replacements:
-            raise ValueError("Replacement scenes must have unique existing IDs; got " + sid)
-        if sid not in allowed and scene != original[sid]:
-            raise ValueError("Unrelated scene changed: " + sid)
-        replacements[sid] = scene
-    if not replacements:
-        raise ValueError("No replacement scene objects were returned")
-    out = copy.deepcopy(plan)
-    out["scenes"] = [copy.deepcopy(replacements.get(str(s.get("id")), s)) for s in plan["scenes"]]
+def region_ids(plan: dict, allowed: set) -> set:
+    """The scenes that may be restructured: the named ones and their immediate neighbours."""
+    ids = [str(x.get("id", "")) for x in plan.get("scenes", [])]
+    out = set(allowed)
+    for k, sid in enumerate(ids):
+        if sid in allowed:
+            out.update(ids[max(0, k - 1):k + 2])
     return out
 
 
-def _revise(ask, plan, faults, narration):
+def fix_prompt(plan: dict, faults: list[str], narration: str = "") -> str:
+    lines = "\n".join("- " + str(f) for f in faults)
+    allowed = sorted(revision_ids(plan, faults))
+    region = sorted(region_ids(plan, set(allowed)))
+    return ("Correct the listed scenes, preserving every other scene exactly. Do not change ids of scenes you keep or "
+            "reorder them. You may change layout, labels and anchors inside the allowed scenes.\n"
+            "When timing or teaching needs it you may SPLIT a scene into several or MERGE neighbours: "
+            "return the new or merged scene objects in \"scenes\" (new unique ids) and list the ids they replace in "
+            "\"remove\". Only the allowed scenes and their immediate neighbours (RESTRUCTURE REGION) may be restructured. "
+            "The scenes you return for a restructure must together cover every narration cue the replaced scenes covered, "
+            "and every footer, label and note that explained something must still appear. Never drop a scene or an "
+            "explanation just to get the check to pass; use a supported layout or adjust boundaries instead.\n"
+            "Return ONLY {\"scenes\": [complete replacement or new scene objects], \"remove\": [ids, optional]} in one JSON block. "
+            "Unchanged scenes may be omitted; they are retained locally. A full plan is accepted only if "
+            "all unrelated scenes are unchanged. Use exact narration anchors; never invent timings or evidence.\n"
+            "ALLOWED SCENE IDS: " + json.dumps(allowed) + "\nRESTRUCTURE REGION: " + json.dumps(region)
+            + "\nPROBLEMS:\n" + lines
+            + "\nTIMED NARRATION:\n" + narration + "\nCURRENT PLAN:\n"
+            + json.dumps(plan, ensure_ascii=False))
+
+
+def _ranges(scenes, cues) -> list:
+    """Each scene's (first cue, last cue) - resolved from its word anchors when cues are known
+    (most scenes are anchored by words, not cue numbers), else the raw cue_range, else None."""
+    scenes = [copy.deepcopy(x) for x in scenes]
+    if cues:
+        try:
+            done = recipes.resolve_anchors({"scenes": scenes}, _cue_objs(cues))["scenes"]
+            scenes = done if len(done) == len(scenes) else scenes
+        except Exception:  # noqa: BLE001 - an unplaceable scene is the checker's finding, not ours
+            pass
+    out = []
+    for sc in scenes:
+        r = sc.get("cue_range") if isinstance(sc, dict) else None
+        ok = isinstance(r, (list, tuple)) and len(r) == 2 and all(isinstance(x, int) for x in r)
+        out.append((r[0], r[1]) if ok else None)
+    return out
+
+
+def _cue_cover(ranges) -> set:
+    out = set()
+    for r in ranges:
+        if r:
+            out.update(range(r[0], r[1] + 1))
+    return out
+
+
+def _explanatory_texts(node, out=None) -> list:
+    """Footers, labels, notes and texts inside a scene: what explains, not what decorates."""
+    out = [] if out is None else out
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in ("label", "note", "text") and isinstance(v, str) and len(v.strip()) >= 3:
+                out.append(v.strip())
+            else:
+                _explanatory_texts(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            _explanatory_texts(v, out)
+    return out
+
+
+def _start_of(scene) -> int:
+    r = scene.get("cue_range") if isinstance(scene, dict) else None
+    return r[0] if isinstance(r, (list, tuple)) and r and isinstance(r[0], int) else 10 ** 9
+
+
+def merge_revision(plan: dict, reply: dict, allowed: set[str], region: set[str] | None = None,
+                   cues: list | None = None) -> dict:
+    """Accept a scene patch or unchanged full-plan response, never silent collateral edits.
+    With a restructure region the writer may also split or merge: new scene ids in "scenes" and
+    replaced ids in "remove", limited to the region, keeping every narration cue covered and
+    every explanatory text on screen."""
+    original = {str(s.get("id")): s for s in plan["scenes"]}
+    order = [str(s.get("id")) for s in plan["scenes"]]
+    region = set(region) if region is not None else None
+    remove = reply.get("remove") or []
+    if not isinstance(remove, list) or not all(isinstance(x, str) for x in remove):
+        raise ValueError('"remove" must be a list of scene ids')
+    if remove and region is None:
+        raise ValueError("Scenes cannot be removed in this revision")
+    replacements, added = {}, []
+    for scene in reply.get("scenes", []):
+        sid = str(scene.get("id", ""))
+        if sid in original:
+            if sid in replacements:
+                raise ValueError("Replacement scenes must have unique existing IDs; got " + sid)
+            replacements[sid] = scene
+        elif region is not None and sid and sid not in [str(a.get("id")) for a in added]:
+            added.append(scene)
+        else:
+            raise ValueError("Replacement scenes must have unique existing IDs; got " + sid)
+    restructure = bool(remove or added)
+    for sid, scene in replacements.items():
+        if scene == original[sid]:
+            continue
+        if sid in allowed:
+            continue
+        if restructure and region is not None and sid in region:
+            continue                      # an immediate neighbour taking part in a split/merge
+        raise ValueError("Unrelated scene changed: " + sid)
+    for rid in remove:
+        if rid not in original:
+            raise ValueError("Cannot remove unknown scene " + rid)
+        if region is None or rid not in region:
+            raise ValueError("Cannot remove scene " + rid + ": outside the scenes you may restructure")
+        if rid in replacements:
+            raise ValueError("Scene " + rid + " is both replaced and removed")
+    if not (replacements or added or remove):
+        raise ValueError("No replacement scene objects were returned")
+    kept = [replacements.get(sid, original[sid]) for sid in order if sid not in remove]
+    for sc in added:
+        start = (_ranges([sc], cues) or [None])[0]
+        start = start[0] if start else _start_of(sc)
+        pos = next((k for k, x in enumerate(kept)
+                    if ((_ranges([x], cues) or [None])[0] or (_start_of(x),))[0] > start), len(kept))
+        kept.insert(pos, sc)
+    if restructure:
+        before = dict(zip(order, _ranges(plan["scenes"], cues)))
+        lost = _cue_cover(before.get(r) for r in remove) | _cue_cover(
+            before.get(sid) for sid, sc in replacements.items() if sc != original[sid])
+        kept_ranges = _ranges(kept, cues)
+        after = _cue_cover(kept_ranges)
+        if not lost <= after:
+            gone = sorted(lost - after)
+            raise ValueError("The restructure leaves narration cue(s) %s with no scene" % gone[:6])
+        changed = {str(sc.get("id")) for sc in added} | {sid for sid, sc in replacements.items() if sc != original[sid]}
+        new_starts = [r[0] for sc, r in zip(kept, kept_ranges) if r and str(sc.get("id")) in changed]
+        old_starts = [r[0] for sid, r in before.items() if r and (sid in remove or sid in changed)]
+        if new_starts and old_starts and min(new_starts) > min(old_starts):
+            raise ValueError("The restructure starts at narration cue %d but the replaced scenes started at cue %d; "
+                             "those words would be handed to the previous scene (cue coverage lost)"
+                             % (min(new_starts), min(old_starts)))
+        touched = [original[r] for r in remove] + [original[sid] for sid, sc in replacements.items() if sc != original[sid]]
+        blob = json.dumps(added + [replacements[sid] for sid in replacements if replacements[sid] != original[sid]],
+                          ensure_ascii=False).lower()
+        missing = [t for sc in touched for t in _explanatory_texts(sc) if t.lower() not in blob]
+        if missing:
+            raise ValueError("The restructure dropped explanatory text that must stay on screen: "
+                             + "; ".join(repr(m) for m in missing[:5]))
+    out = copy.deepcopy(plan)
+    out["scenes"] = copy.deepcopy(kept)
+    return out
+
+
+def _revise(ask, plan, faults, narration, cues=None):
     prompt = fix_prompt(plan, faults, narration)
+    allowed = revision_ids(plan, faults)
+    region = region_ids(plan, allowed)
     for attempt in range(2):
         fixed = _plan_from(ask("writer", prompt, False))
         try:
             if fixed is None:
                 raise ValueError("No readable scene patch")
-            return merge_revision(plan, fixed, revision_ids(plan, faults))
+            return merge_revision(plan, fixed, allowed, region, cues)
         except ValueError as exc:
             if attempt:
                 raise RuntimeError("Scene revision rejected; existing plan preserved: " + str(exc)) from exc
             prompt = "Your revision was rejected: " + str(exc) + "\n" + fix_prompt(plan, faults, narration)
 
 
+def _severity(entry):
+    """'blocking' | 'minor' | None (missing or anything else: ambiguous)."""
+    if isinstance(entry, dict):
+        v = str(entry.get("severity") or "").strip().lower()
+        return v if v in ("blocking", "minor") else None
+    return None
+
+
+def verdict_problems(verdict: dict) -> list[str]:
+    """What is wrong with a well-typed verdict, to be sent back to the judge. Every finding and fix
+    needs an explicit severity (a missing or unknown one is NEVER read as minor), and the verdict must
+    not contradict itself."""
+    problems = []
+    faults = verdict.get("faults") if isinstance(verdict.get("faults"), list) else []
+    fixes = verdict.get("fixes") if isinstance(verdict.get("fixes"), list) else []
+    for kind, rows in (("fault", faults), ("fix", fixes)):
+        for k, e in enumerate(rows, 1):
+            if _severity(e) is None:
+                text = e if isinstance(e, str) else json.dumps(e, ensure_ascii=False)
+                problems.append(f'{kind} {k} has no explicit severity ("blocking" or "minor"): {text[:80]}')
+    blocking = [e for e in faults + fixes if _severity(e) == "blocking"]
+    if verdict.get("pass") is True and blocking:
+        problems.append(f'"pass" is true but {len(blocking)} finding(s) are marked blocking')
+    if verdict.get("pass") is True and isinstance(verdict.get("score"), (int, float)) \
+            and verdict["score"] < MIN_SCORE:
+        problems.append(f'"pass" is true but the score is below {MIN_SCORE:g}')
+    if verdict.get("pass") is False and not blocking and not problems:
+        problems.append('"pass" is false but no finding is marked blocking - name what must change, or pass')
+    return problems
+
+
+def clarify_prompt(problems: list[str]) -> str:
+    return ("Your verdict cannot be used as written:\n" + "\n".join("- " + p for p in problems)
+            + "\nReply again with ONE JSON object and nothing else: {\"score\": <1-10>, \"pass\": true|false, "
+              "\"faults\": [{\"scene\": \"id\", \"severity\": \"blocking\"|\"minor\", \"problem\": \"...\"}], "
+              "\"fixes\": [{\"scene\": \"id\", \"severity\": \"blocking\"|\"minor\", \"change\": \"...\"}]}. "
+              "blocking = must change before the video is made; minor = cosmetic, safe to ship. "
+              "pass may be true only when nothing is blocking and the score is at least %g." % MIN_SCORE)
+
+
 def review_passes(verdict: dict) -> bool:
-    """Approved only on a fully-typed verdict (see _verdict_usable) with pass=true,
-    score >= 8 and no BLOCKING finding: self-answered entries ('...fine; no fault here —
-    remove') and explicitly-minor ones never block, an unmarked fix the judge wants
-    applied does. A malformed verdict can never pass."""
-    if not _verdict_usable(verdict):
+    """Approved only on a fully-typed verdict (see _verdict_usable) with explicit severities
+    (verdict_problems empty), pass=true, score >= 8 and nothing blocking: only findings and fixes
+    EXPLICITLY marked minor are cosmetic. A malformed or contradictory verdict can never pass."""
+    if not _verdict_usable(verdict) or verdict_problems(verdict):
         return False
     blocking, _minor = split_verdict_faults(verdict.get("faults"))
     return (verdict["pass"] is True and MIN_SCORE <= verdict["score"] <= 10
@@ -287,8 +460,8 @@ THE PLAN AS IT WILL BE DRAWN (scene, layout, what appears, and the narration it 
 {summary}
 
 Reply with ONE JSON object and nothing else:
-{{"score": 8.5, "pass": true, "faults": [{{"scene": "id", "severity": "blocking", "problem": "specific problem"}}], "fixes": [{{"scene": "id", "change": "the specific change"}}]}}
-Every finding may be an object with scene, severity ("blocking" or "minor") and problem/change text - use the object form when you want a note marked cosmetic; a finding WITHOUT severity always counts as blocking. Plain strings ("scene id: specific problem") are accepted and count as blocking unless they end with "; minor" as their only clause.
+{{"score": 8.5, "pass": true, "faults": [{{"scene": "id", "severity": "blocking", "problem": "specific problem"}}], "fixes": [{{"scene": "id", "severity": "minor", "change": "the specific change"}}]}}
+EVERY fault and EVERY fix is an object with scene, severity and problem/change text. severity is "blocking" (must change before the video is made) or "minor" (cosmetic; safe to ship as it is). A finding without a severity, or a plain string, is rejected and you will be asked again. "pass" may be true only when nothing is marked blocking and the score is at least {min_score:g}; "pass": false needs at least one blocking finding.
 The summary includes COMPILED animation parameters with scene-relative milliseconds: these are what the renderer receives. Judge that output, not an imagined animation. This is a specification review, not a claim to have watched rendered pixels.
 Distinguish tasks, workers, stages and speed multipliers; these counts are different quantities. Illustrative cell counts are allowed when clearly labelled schematic, not measured architecture. Names must be shown when spoken; expansions are needed when the narrator explains them, not necessarily before. A motion comparison needs consistent example text, but paraphrases that preserve the meaning are not factual errors. Request only changes needed to explain the subject, not motion on every warning or list.
 "pass" must be an explicit boolean (true/false, never a string). score must be a number 1-10. "faults" and "fixes" must always be present as arrays, empty [] when nothing is wrong. The faults array holds ONLY findings you want changed, each naming its scene id. Scenes you checked and found correct must NOT appear in faults - do not write "no fault" or "fine" entries; the app treats them as noise. Never narrate your per-scene audit in the JSON: unchecked-in detail belongs in your thinking, not in faults. Name the scene id in every fault and fix. Do not rewrite the whole plan."""
@@ -537,9 +710,8 @@ _VERDICT_RESEND = (
     'Your last reply was not the required verdict object. Reply again with ONE JSON object and '
     'nothing else: {"score": <number 1-10>, "pass": true or false, "faults": [...], "fixes": [...]}. '
     '"faults" and "fixes" are always present, [] when empty. A fault or fix is either a non-empty '
-    'string "scene id: text" or an object {"scene": "<id>", "severity": "minor" or "blocking", '
-    '"problem"/"change": "<text>"} - every entry needs its text, an empty object or empty string '
-    'is rejected.')
+    'object {"scene": "<id>", "severity": "minor" or "blocking", "problem"/"change": "<text>"} - '
+    'every entry needs its severity and its text; an empty object, empty string or plain string is rejected.')
 
 
 def _blocking_fix_texts(fixes) -> list:
@@ -702,31 +874,8 @@ def _plan_from(reply: str):
     return normalize_plan(d) if d and isinstance(d.get("scenes"), list) else None
 
 
-def _seed_plan(pdir) -> tuple | None:
-    """-> (plan, source name): the active plan (your reviewed baseline) or the best machine
-    candidate, so a re-run continues from what exists instead of re-drafting every scene.
-    Delete plan.json (or Start over) to force a fresh draft."""
-    for name in ("plan.json", "plan_candidate.json"):
-        path = pdir / name
-        if not path.exists():
-            continue
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if isinstance(data, dict) and isinstance(data.get("scenes"), list) and data["scenes"]:
-            return normalize_plan(copy.deepcopy(data)), name
-    return None
-
-
-def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
-               should_stop: Callable[[], bool] = lambda: False,
-               rounds: int = MAX_ROUNDS) -> dict:
-    """ask(role, text, new_chat) -> reply text, for role 'writer' or 'judge'.
-    Saves every result as a candidate; only explicit approval replaces plan.json."""
-    pdir = studio.prod_dir(cfg, pid)
-    active = pdir / "plan.json"
-    initial_plan = active.read_bytes() if active.exists() else None
+def load_inputs(cfg, pid: int, pdir) -> dict:
+    """Everything a run (and the page) needs to know about the narration and the writer's inputs."""
     srt = studio.find_srt(pdir)
     if not srt:
         raise RuntimeError("Generate the subtitles first (the scenes are timed from them)")
@@ -749,20 +898,116 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
     from .video.explainer import validate as _val
     look = _val.project_look(str(pdir))
     terms = explainer_terms.key_terms(cues, title or "")
+    return {"srt": srt, "cues": cues, "total": total, "narration": narration, "direction": direction or "",
+            "title": title or "", "look": look, "terms": terms,
+            "narration_fp": sps.narration_fingerprint(narration),
+            "input_fp": sps.inputs_fingerprint(direction or "", look_hint(look) + _terms_hint(terms), title or "")}
+
+
+def lifecycle_for(cfg, pid: int, job_running: bool = False) -> dict:
+    """The state shown on the page; without subtitles there is nothing to compare drafts against."""
+    pdir = studio.prod_dir(cfg, pid)
+    try:
+        inp = load_inputs(cfg, pid, pdir)
+        return sps.lifecycle(pdir, inp["narration_fp"], inp["input_fp"], job_running)
+    except RuntimeError:
+        return sps.lifecycle(pdir, "", "", job_running)
+
+
+START_MODES = ("auto", "continue", "revise_active", "fresh")
+
+
+def _seed_plan(pdir, start: str = "auto", cand: dict | None = None, log=lambda m: None) -> tuple | None:
+    """-> (plan, source name) or None for a fresh draft.
+      continue       the latest draft, only when it is still applicable (not stale)
+      revise_active  the active plan.json
+      fresh          nothing: draft anew
+      auto           the applicable draft, else the active plan, else a fresh draft
+    A candidate is chosen by its bound fingerprints, never by file name or modification time."""
+    if start not in START_MODES:
+        raise RuntimeError("Unknown start mode: " + str(start))
+    active = sps.read_json(pdir / "plan.json")
+    usable = lambda d: isinstance(d, dict) and isinstance(d.get("scenes"), list) and d["scenes"]
+    if start == "fresh":
+        return None
+    if start == "revise_active":
+        if not usable(active):
+            raise RuntimeError("There is no active plan to revise. Choose Start fresh.")
+        return normalize_plan(copy.deepcopy(active)), "plan.json"
+    if cand and cand.get("exists") and cand["status"] in ("needs_revision", "in_progress"):
+        if not cand["stale"] and usable(cand["plan"]):
+            return normalize_plan(copy.deepcopy(cand["plan"])), "plan_candidate.json"
+        if start == "continue":
+            raise RuntimeError("The saved draft is stale (" + cand["reason"] + "). "
+                               "Choose Revise active plan or Start fresh.")
+        log("the saved draft is stale (" + cand["reason"] + ") - not used")
+    elif start == "continue":
+        raise RuntimeError("There is no draft to continue. Choose Revise active plan or Start fresh.")
+    if usable(active):
+        return normalize_plan(copy.deepcopy(active)), "plan.json"
+    return None
+
+
+def _backup_dir(pdir, tag: str):
+    d = pdir / "backups" / f"{tag}-{time.time_ns()}"
+    d.mkdir(parents=True, exist_ok=False)
+    return d
+
+
+def _clear_generated(pdir, log) -> None:
+    """Start fresh: the draft, its review and the last run record move into backups/. The ACTIVE
+    plan.json (and its review) stays until a new plan is approved or accepted."""
+    names = ["plan_candidate.json", "plan_candidate_review.json", "scene_plan_run.json"]
+    present = [n for n in names if (pdir / n).exists()]
+    if present:
+        d = _backup_dir(pdir, "scene-plan-fresh")
+        for n in present:
+            os.replace(pdir / n, d / n)
+        sps.audit(pdir, "fresh_start", moved=present, backup=d.name)
+        log("fresh start: previous draft and run record moved to backups/" + d.name)
+
+
+def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
+               should_stop: Callable[[], bool] = lambda: False,
+               rounds: int = MAX_ROUNDS, start: str = "auto") -> dict:
+    """ask(role, text, new_chat) -> reply text, for role 'writer' or 'judge'.
+    Every result is saved as a candidate bound to the narration, the writer's inputs and the active
+    plan it began from. Only the judge's approval replaces plan.json here; a draft below the bar
+    ends the run with NeedsRevision and waits for a revision or a manual acceptance."""
+    pdir = studio.prod_dir(cfg, pid)
+    active = pdir / "plan.json"
+    initial_plan = active.read_bytes() if active.exists() else None
+    inp = load_inputs(cfg, pid, pdir)
+    srt, cues, total, narration = inp["srt"], inp["cues"], inp["total"], inp["narration"]
+    look, terms, direction = inp["look"], inp["terms"], inp["direction"]
     if terms:
         log("key terms to show on screen: " + ", ".join(t["term"] for t in terms))
-    seeded = _seed_plan(pdir)
+    meta = {"narration_fp": inp["narration_fp"], "input_fp": inp["input_fp"],
+            "base_digest": sps.active_digest(pdir), "start_mode": start}
+    cand = sps.candidate_state(pdir, inp["narration_fp"], inp["input_fp"])
+    seeded = _seed_plan(pdir, start, cand, log)
+    if start == "fresh":
+        _clear_generated(pdir, log)
     plan = None
     if seeded is not None:
         plan, source = seeded
-        log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - checking the existing plan "
-            f"({source}, {len(plan['scenes'])} scenes) before asking the writer")
+        meta["seed_source"] = source
+        log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - continuing from {source} "
+            f"({len(plan['scenes'])} scenes); the checker and judge look at it before the writer is asked")
     else:
         log(f"scene plan: {len(cues)} cues, {total / 60:.1f} min - asking the writer")
+
+    def save_progress(p):
+        """Keep the work so a stop or a transport failure never loses the draft."""
+        sps.write_json(pdir / "plan_candidate.json", p)
+        sps.write_json(pdir / "plan_candidate_review.json", dict(
+            meta, status="in_progress", plan_digest=sps.plan_digest(p), faults=[], fixes=[],
+            checker_faults_left=[], saved_at=time.time()))
+
     for attempt in range(2):
         if plan is not None:
             break
-        reply = ask("writer", writer_prompt(narration, total, direction or "",
+        reply = ask("writer", writer_prompt(narration, total, direction,
                                             look_hint(look) + _terms_hint(terms),
                                             look.get("scenes_per_video") or "normal"), True)
         plan = _plan_from(reply)
@@ -773,8 +1018,9 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             plan = _plan_from(reply)
         if plan is None:
             raise RuntimeError("the writer never gave a readable scene plan")
+        save_progress(plan)
     best = None            # (rank, plan): a judged plan beats one the checker rejected
-    verdict, kept_verdict = {}, {}
+    verdict, kept_verdict, kept_problems = {}, {}, []
     revised_times: dict = {}    # scene id -> how often it was already sent back (oscillation guard)
     for rnd in range(1, rounds + 1):
         if should_stop():
@@ -782,6 +1028,9 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         plan, added = _fix_terms(plan, cues, terms)
         for note in added:
             log("auto-fix: " + note)
+        plan, trimmed = recipes.simplify_overfull(plan, _cue_objs(cues), decoration_only=True)
+        for note in trimmed:
+            log("auto-fix (decoration only): " + note)
         faults, advisory = _split_faults(check(plan, cues, total, look, terms))
         for a in advisory:
             log("note (does not block the judge): " + a)
@@ -789,10 +1038,11 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
             log(f"round {rnd}: {len(faults)} fault(s) from the checker, e.g. {faults[0][:140]}")
             rank = (0, -len(faults))
             if best is None or rank > best[0]:
-                best, kept_verdict = (rank, plan), {}
+                best, kept_verdict, kept_problems = (rank, plan), {}, []
             if rnd == rounds:
                 break
-            plan = _revise(ask, plan, faults, narration)
+            plan = _revise(ask, plan, faults, narration, cues)
+            save_progress(plan)
             continue
         if should_stop():
             raise RuntimeError("Stopped by you.")
@@ -804,6 +1054,16 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
                 "- asking the judge to resend it")
             verdict = studio._parse_json_object(
                 ask("judge", _VERDICT_RESEND, False), want=("score",)) or {}
+        problems = verdict_problems(verdict) if _verdict_usable(verdict) else []
+        if problems:
+            log("judge: the verdict needs clarification - " + problems[0][:120]
+                + (f" (+{len(problems) - 1} more)" if len(problems) > 1 else ""))
+            again = studio._parse_json_object(
+                ask("judge", clarify_prompt(problems), False), want=("score",)) or {}
+            if _verdict_usable(again):
+                verdict, problems = again, verdict_problems(again)
+            else:
+                problems = problems + ["the clarified verdict was not usable"]
         try:
             raw_score = verdict.get("score")
             score = float(raw_score) if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool) else None
@@ -821,10 +1081,14 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         rank = (2 if review_passes(verdict) else 1, score if score is not None else 0.0,
                 -len(blocking))
         if best is None or rank >= best[0]:
-            best, kept_verdict = (rank, plan), verdict
+            best, kept_verdict, kept_problems = (rank, plan), verdict, problems
         if score is None:
             log("the judge gave no usable score; the draft remains unapproved")
         if review_passes(verdict):
+            break
+        if problems:
+            log("the judge's verdict stayed ambiguous or contradictory - not guessing: the draft needs a "
+                "revision or a manual decision")
             break
         if rnd == rounds:
             break
@@ -848,11 +1112,12 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
                 revised_times[sid] = revised_times.get(sid, 0) + 1
         if not notes:
             log(f"round {rnd}: only already-revised scenes are still flagged - keeping the plan as "
-                "it stands; edit those scenes by hand or drop them if they cannot fit")
+                "it stands; accept it manually or revise it by hand")
             break
-        plan = _revise(ask, plan, notes, narration)
+        plan = _revise(ask, plan, notes, narration, cues)
+        save_progress(plan)
     final = best[1] if best else plan
-    verdict = kept_verdict
+    verdict, problems = kept_verdict, kept_problems
     left, _advice = _split_faults(check(final, cues, total, look, terms))
     if should_stop():
         raise RuntimeError("Stopped by you.")
@@ -860,40 +1125,97 @@ def run_scenes(cfg, pid: int, ask: Callable, log: Callable[[str], None] = print,
         raise RuntimeError("The active scene plan changed during this run; it was not overwritten.")
     if studio.parse_srt_cues(srt.read_text(encoding="utf-8-sig")) != cues:
         raise RuntimeError("The subtitles changed during this run; the candidate was not promoted.")
-    approved = not left and review_passes(verdict)
-    digest = hashlib.sha256(json.dumps(final, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    approved = not left and not problems and review_passes(verdict)
+    digest = sps.plan_digest(final)
     raw_faults = verdict.get("faults") if isinstance(verdict.get("faults"), list) else []
     v_blocking, v_minor = split_verdict_faults(raw_faults)
-    review = {"status": "approved" if approved else "needs_revision", "pass": approved,
-              "score": verdict.get("score") if isinstance(verdict.get("score"), (int, float)) and not isinstance(verdict.get("score"), bool) and math.isfinite(verdict["score"]) else None,
-              "faults": v_blocking + v_minor,
-              "fixes": verdict.get("fixes") if isinstance(verdict.get("fixes"), list) else [], "checker_faults_left": left,
-              "review_basis": "compiled_specification", "visual_review": "not_performed",
-              "plan_digest": digest, "candidate_file": "plan_candidate.json",
-              "active_plan_preserved": not approved and (pdir / "plan.json").exists()}
-    _atomic_json(pdir / "plan_candidate.json", final)
-    _atomic_json(pdir / "plan_candidate_review.json", review)
-    _atomic_json(pdir / "plan_review.json", review)
+    score_out = verdict.get("score")
+    score_out = score_out if isinstance(score_out, (int, float)) and not isinstance(score_out, bool) \
+        and math.isfinite(score_out) else None
+    review = dict(meta, status="approved" if approved else "needs_revision", **{"pass": approved},
+                  score=score_out, faults=v_blocking + v_minor,
+                  fixes=verdict.get("fixes") if isinstance(verdict.get("fixes"), list) else [],
+                  checker_faults_left=left, verdict_problems=problems,
+                  review_basis="compiled_specification", visual_review="not_performed",
+                  plan_digest=digest, candidate_file="plan_candidate.json",
+                  active_plan_preserved=not approved and active.exists(), judge_approved=approved,
+                  reviewed_at=time.time())
+    sps.write_json(pdir / "plan_candidate.json", final)
+    sps.write_json(pdir / "plan_candidate_review.json", review)
     if not approved:
-        detail = " | ".join(left[:3]) if left else (" | ".join(v_blocking[:3]) if v_blocking
-                                                    else f"judge score {verdict.get('score')}; approval required")
-        raise RuntimeError("Scene plan needs revision: " + detail +
-                           ". Draft saved as plan_candidate.json; existing plan.json was not replaced.")
-    active = pdir / "plan.json"
+        detail = " | ".join(left[:3]) if left else (" | ".join(v_blocking[:3]) if v_blocking else
+                  (" | ".join(problems[:2]) if problems else f"judge score {verdict.get('score')}; approval required"))
+        raise NeedsRevision("Scene plan needs revision: " + detail +
+                            ". The draft is saved - preview it on the page, revise it, or accept it manually; "
+                            "the active plan.json was not replaced.")
+    backup_name = None
     if active.exists():
-        backup = pdir / "backups" / ("scene-plan-" + str(time.time_ns()))
-        backup.mkdir(parents=True, exist_ok=False)
-        (backup / "plan.json").write_bytes(active.read_bytes())
+        d = _backup_dir(pdir, "scene-plan")
+        (d / "plan.json").write_bytes(active.read_bytes())
+        backup_name = d.name
     _atomic_json(active, final)
+    sps.write_json(pdir / "plan_review.json", review)
+    sps.audit(pdir, "approved", plan_digest=digest, score=score_out, backup=backup_name)
     log(f"Scene plan approved: {len(final['scenes'])} scenes, judge score {verdict['score']}. "
         "Render a short preview to verify appearance and motion before the full video.")
     return final
 
 
+def accept_candidate(cfg, pid: int, acknowledged: bool, expected_digest: str | None = None) -> dict:
+    """Manual acceptance of a draft the judge did not approve. Refused when the draft is stale, changed
+    since it was previewed, already accepted or active, technically invalid, or when the user did not
+    acknowledge the unresolved findings. Records a backup and an audit line; the plan is labelled
+    manually accepted, NEVER judge-approved."""
+    pdir = studio.prod_dir(cfg, pid)
+    inp = load_inputs(cfg, pid, pdir)
+    cand = sps.candidate_state(pdir, inp["narration_fp"], inp["input_fp"])
+    if not cand["exists"]:
+        raise AcceptError("There is no draft to accept.")
+    if cand["status"] == "accepted" or cand["digest"] == sps.active_digest(pdir):
+        raise AcceptError("This draft is already the active plan; nothing was changed.")
+    if cand["status"] != "needs_revision":
+        raise AcceptError(f"Only a finished draft can be accepted (this one is '{cand['status']}'). "
+                          "Continue it first.")
+    if cand["stale"]:
+        raise AcceptError("This draft is stale: " + cand["reason"] + ". Revise or start fresh.")
+    if expected_digest and expected_digest != cand["digest"]:
+        raise AcceptError("The draft changed since you previewed it. Reload the page and look again.")
+    plan = normalize_plan(copy.deepcopy(cand["plan"]))
+    left, _ = _split_faults(check(plan, inp["cues"], inp["total"], inp["look"], inp["terms"]))
+    if left:
+        raise AcceptError("Technical validation failed, so it cannot be accepted: " + " | ".join(left[:3]))
+    review = cand["review"]
+    findings = list(review.get("faults") or []) + list(review.get("verdict_problems") or [])
+    if not acknowledged:
+        raise AcceptError("Confirm that you understand the judge did not approve this plan "
+                          f"({len(findings)} unresolved finding(s)).")
+    active = pdir / "plan.json"
+    backup_name = None
+    if active.exists():
+        d = _backup_dir(pdir, "scene-plan")
+        (d / "plan.json").write_bytes(active.read_bytes())
+        if (pdir / "plan_review.json").exists():
+            (d / "plan_review.json").write_bytes((pdir / "plan_review.json").read_bytes())
+        backup_name = d.name
+    _atomic_json(active, plan)
+    accepted = {"status": "manually_accepted", "pass": False, "judge_approved": False,
+                "plan_digest": sps.plan_digest(plan), "accepted_at": time.time(),
+                "acknowledged_findings": findings, "judge_score": review.get("score"),
+                "candidate_review": review, "review_basis": "manual_acceptance"}
+    sps.write_json(pdir / "plan_review.json", accepted)
+    sps.write_json(pdir / "plan_candidate_review.json", dict(review, status="accepted"))
+    run = sps.read_json(pdir / "scene_plan_run.json") or {}
+    run.update(status="manually_accepted", finished_at=time.time())
+    sps.write_json(pdir / "scene_plan_run.json", run)
+    sps.audit(pdir, "manual_accept", plan_digest=accepted["plan_digest"], judge_score=review.get("score"),
+              acknowledged_findings=findings, backup=backup_name, judge_approved=False)
+    return accepted
+
+
 # ---- transports --------------------------------------------------------------------------
 
 def webchat_job(cfg, pid: int, writer: str, judge: str, log, should_stop=lambda: False,
-                options: dict | None = None) -> dict:
+                options: dict | None = None, start: str = "auto") -> dict:
     """Writer and judge are chat sites driven in the browser (the normal route)."""
     from . import webstages as ws
     from .scene_chat import SceneChats
@@ -929,13 +1251,16 @@ def webchat_job(cfg, pid: int, writer: str, judge: str, log, should_stop=lambda:
                     body = ws._join_chunks(body, ws._json_chunk(more, False))
                 return body
             try:
-                result = run_scenes(cfg, pid, ask, log, should_stop)
+                result = run_scenes(cfg, pid, ask, log, should_stop, start=start)
                 run.update(status="approved", finished_at=time.time())
                 return result
             except Exception as exc:
                 stopped = should_stop()
-                run.update(status="stopped" if stopped else "failed", finished_at=time.time(),
-                           role=chats.last_role, error=str(exc), active_plan_preserved=True)
+                # a draft below the bar is "needs_revision", a browser/chat problem is "failed"
+                kind = "stopped" if stopped else ("needs_revision" if isinstance(exc, NeedsRevision) else "failed")
+                run.update(status=kind, finished_at=time.time(),
+                           role=None if kind == "needs_revision" else chats.last_role, error=str(exc),
+                           active_plan_preserved=True)
                 raise
             finally:
                 _atomic_json(pdir / "scene_plan_run.json", run)
@@ -952,36 +1277,44 @@ def webchat_job(cfg, pid: int, writer: str, judge: str, log, should_stop=lambda:
 
 
 def api_job(cfg, pid: int, provider: str | None, judge: str | None, log,
-            should_stop=lambda: False) -> dict:
+            should_stop=lambda: False, start: str = "auto") -> dict:
     """Writer and judge are API providers (studio.llm_generate)."""
     names = {"writer": provider, "judge": judge or provider}
+    pdir = studio.prod_dir(cfg, pid)
+    run = {"status": "running", "started_at": time.time(), "writer": names["writer"], "judge": names["judge"]}
+    _atomic_json(pdir / "scene_plan_run.json", run)
 
     def ask(role, text, new_chat):
         log(f"{names[role] or 'default LLM'}: sending {len(text):,} characters ({role})")
+        run["role"] = role
         return studio.llm_generate(cfg, text, provider=names[role])
-    return run_scenes(cfg, pid, ask, log, should_stop)
+    try:
+        result = run_scenes(cfg, pid, ask, log, should_stop, start=start)
+        run.update(status="approved", finished_at=time.time())
+        return result
+    except Exception as exc:
+        kind = "stopped" if should_stop() else ("needs_revision" if isinstance(exc, NeedsRevision) else "failed")
+        run.update(status=kind, finished_at=time.time(), error=str(exc), active_plan_preserved=True)
+        raise
+    finally:
+        _atomic_json(pdir / "scene_plan_run.json", run)
 
 
 def load_review(pdir) -> dict:
-    """The last judge verdict saved next to plan.json ({} when none)."""
-    try:
-        result = json.loads((pdir / "plan_review.json").read_text(encoding="utf-8"))
-        if result.get("status") == "approved":
-            try:
-                active = json.loads((pdir / "plan.json").read_text(encoding="utf-8"))
-                digest = hashlib.sha256(json.dumps(active, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-            except (OSError, ValueError):
-                digest = None
-            if not digest or digest != result.get("plan_digest"):
-                result = dict(result, status="needs_revision", **{"pass": False})
-                result["faults"] = ["The active plan changed after approval; review it again."]
-                result["candidate_file"] = None
-    except (OSError, ValueError):
-        result = {}
-    try:
-        latest = json.loads((pdir / "scene_plan_run.json").read_text(encoding="utf-8"))
-        if isinstance(latest, dict):
-            result["latest_run"] = latest
-    except (OSError, ValueError):
-        pass
+    """The latest review for the page and for tests: the active plan's review (approved or manually
+    accepted, only while plan.json is still the reviewed one), or the draft's review while a draft
+    waits for a decision. {} when none."""
+    result = sps.read_json(pdir / "plan_review.json") or {}
+    if result.get("status") in ("approved", "manually_accepted"):
+        active = sps.read_json(pdir / "plan.json")
+        if active is None or sps.plan_digest(active) != result.get("plan_digest"):
+            result = dict(result, status="needs_revision", **{"pass": False})
+            result["faults"] = ["The active plan changed after approval; review it again."]
+            result["candidate_file"] = None
+    cand = sps.read_json(pdir / "plan_candidate_review.json") or {}
+    if cand.get("status") == "needs_revision":
+        result = dict(cand)
+    latest = sps.read_json(pdir / "scene_plan_run.json")
+    if latest:
+        result["latest_run"] = latest
     return result

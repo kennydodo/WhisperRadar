@@ -75,7 +75,8 @@ class ScenePlanTests(unittest.TestCase):
 
     def test_judge_feedback_goes_to_the_writer(self):
         ask = self._ask([plan(), plan()],
-                        [{"score": 5, "pass": False, "faults": ["scene b: too thin"], "fixes": ["add a point"]},
+                        [{"score": 5, "pass": False, "faults": [{"scene": "b", "severity": "blocking", "problem": "too thin"}],
+                          "fixes": [{"scene": "b", "severity": "blocking", "change": "add a point"}]},
                          {"score": 8.5, "pass": True, "faults": [], "fixes": []}])
         es.run_scenes(self.cfg, self.pid, ask, log=lambda m: None, rounds=4)
         writer_msgs = [t for r, t in self.log if r == "writer"]

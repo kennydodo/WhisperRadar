@@ -3866,6 +3866,12 @@ def create_app(cfg) -> Flask:
         from . import explainer_scenes as _xs
         scene_review = _xs.load_review(pdir) if explainer_mode else {}
         scene_plan_exists = (pdir / "plan.json").is_file()
+        scene_state, candidate_scenes = {}, []
+        if explainer_mode:
+            scene_state = _xs.lifecycle_for(cfg, pid, bool(sjob.running and "scene plan" in str(sjob.kind or "")))
+            cp = scene_state["candidate"].get("plan") or {}
+            candidate_scenes = [{"id": x.get("id"), "layout": x.get("layout") or "-", "title": x.get("title") or "",
+                                 "cues": x.get("cue_range")} for x in cp.get("scenes", []) if isinstance(x, dict)]
         try:
             for e in autorun.build_plan(cfg, pid):
                 if (e["stage"] in ("shots", "refs", "images", "motion")
@@ -3887,6 +3893,7 @@ def create_app(cfg) -> Flask:
             fix_providers=fix_providers, fix_default=fix_default, prod=prod, steps=steps, history=history,
             skipped_stages=skipped_stages, explainer_mode=explainer_mode,
             scene_review=scene_review, scene_plan_exists=scene_plan_exists,
+            scene_state=scene_state, candidate_scenes=candidate_scenes,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
             style_variant_eff=studio.style_variant(cfg, pid=pid),
@@ -5049,18 +5056,47 @@ def create_app(cfg) -> Flask:
         else:
             judge = None                                  # the API judge follows the chosen provider
         chat_options = _chat_options(request.form) if transport == "webchat" and request.form.get("zai_model") else None
+        start = (request.form.get("start") or "auto").strip()
+        if start not in ("auto", "continue", "revise_active", "fresh"):
+            return _studio_url(pid, error="Unknown start mode")
         _job = sjob._real()
 
         def worker():
             autorun.raise_result(autorun.run_stage_and_advance(
                 cfg, pid, "shots", {
                     "provider": provider, "transport": transport,
-                    "writer": writer, "judge": judge, "chat_options": chat_options,
+                    "writer": writer, "judge": judge, "chat_options": chat_options, "start": start,
                     "log": sjob.log.append,
                     "cancel": (lambda _j=_job: _j.cancel)}))
 
         sjob.start(worker, "explainer scene plan")
         return _studio_url(pid, msg="Scene plan started - the job log shows each round")
+
+    @app.post("/studio/<int:pid>/scenes/accept")
+    def studio_scenes_accept(pid):
+        """Manually accept the saved scene-plan draft (recorded as a user override, never as the
+        judge's approval)."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        from . import explainer_scenes as _xs
+        try:
+            _xs.accept_candidate(cfg, pid, request.form.get("ack") == "yes",
+                                 (request.form.get("digest") or "").strip() or None)
+        except _xs.AcceptError as exc:
+            return _studio_url(pid, error=str(exc))
+        except RuntimeError as exc:
+            return _studio_url(pid, error=str(exc))
+        return _studio_url(pid, msg="Draft accepted manually - the plan is labelled 'Manually accepted', "
+                                    "not judge-approved. A backup and an audit line were saved.")
+
+    @app.get("/studio/<int:pid>/scenes/candidate.json")
+    def studio_scenes_candidate(pid):
+        path = studio.prod_dir(cfg, pid) / "plan_candidate.json"
+        if not path.is_file():
+            abort(404)
+        resp = make_response(path.read_text(encoding="utf-8"))
+        resp.headers["Content-Type"] = "application/json; charset=utf-8"
+        return resp
 
     @app.post("/studio/<int:pid>/explainer/stop")
     def studio_explainer_stop(pid):

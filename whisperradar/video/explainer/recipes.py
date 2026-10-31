@@ -768,10 +768,23 @@ def _simplify_step(scene, step):
     return ""
 
 
-def simplify_overfull(plan: dict, cues) -> tuple:
+def _icons_step(scene):
+    """Decoration only: item icons. Never a footer, label, point or scene."""
+    items = scene.get("items") or []
+    if any(isinstance(i, dict) and i.get("icon") for i in items):
+        for i in items:
+            if isinstance(i, dict):
+                i.pop("icon", None)
+        return "the item icons"
+    return ""
+
+
+def simplify_overfull(plan: dict, cues, decoration_only: bool = False) -> tuple:
     """(plan, notes): a copy of the plan where scenes that cannot be drawn in time
     lose decoration one piece at a time (footer, icons, compare points, last item)
-    until they fit. Nothing else is changed; notes say what was removed."""
+    until they fit. Nothing else is changed; notes say what was removed.
+    decoration_only: remove item icons and nothing else - explanatory labels, footers and
+    whole scenes are never dropped automatically (the writer splits or merges instead)."""
     import copy
     plan = copy.deepcopy(plan)
     notes, steps = [], {}
@@ -790,11 +803,13 @@ def simplify_overfull(plan: dict, cues) -> tuple:
                 if not isinstance(raw, dict) or _sid(raw, idx) not in bad:
                     continue
                 key = _sid(raw, idx)
-                what = _simplify_step(raw, steps.get(key, 0))
+                what = _icons_step(raw) if decoration_only else _simplify_step(raw, steps.get(key, 0))
                 steps[key] = steps.get(key, 0) + 1
                 if what:
                     notes.append(f"scene {key}: removed {what} (it did not fit the narration time)")
                     moved = True
+            if not moved and decoration_only:
+                break
             if not moved:
                 # nothing left to take off: the scene is simply too short for any picture.
                 # Remove it; the scene before it stays on screen through those words.

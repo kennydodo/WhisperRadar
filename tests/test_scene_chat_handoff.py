@@ -110,8 +110,8 @@ class HandoffIntegrationTests(unittest.TestCase):
         saved = plan()
         (self.pdir/'plan.json').write_text(json.dumps(saved), encoding='utf-8')
         change = dict(saved['scenes'][1], title='Check model fit')
-        replies = [json.dumps({'score': 7, 'pass': False, 'faults': ['scene b: title unclear'],
-                               'fixes': ['scene b: improve title']}),
+        replies = [json.dumps({'score': 7, 'pass': False, 'faults': [{'scene': 'b', 'severity': 'blocking', 'problem': 'title unclear'}],
+                               'fixes': [{'scene': 'b', 'severity': 'blocking', 'change': 'improve title'}]}),
                    json.dumps({'scenes': [change]}),
                    json.dumps({'score': 9, 'pass': True, 'faults': [], 'fixes': []})]
         t = Transport(replies)
@@ -143,8 +143,8 @@ class HandoffIntegrationTests(unittest.TestCase):
         from whisperradar.webapp import create_app
         response = create_app(self.cfg).test_client().get(f'/studio/{self.pid}?stage=shots')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Latest scene-plan run failed', response.data)
-        self.assertIn(b'earlier completed attempt', response.data)
+        self.assertIn(b'Transport failed', response.data)           # the chat failed: not a verdict on the plan
+        self.assertNotIn(b'Needs revision', response.data)
 
     def test_failure_before_browser_start_is_recorded(self):
         @contextlib.contextmanager
@@ -159,7 +159,8 @@ class HandoffIntegrationTests(unittest.TestCase):
         before = json.dumps(plan())
         (self.pdir/'plan.json').write_text(before, encoding='utf-8')
         t = Transport([
-            json.dumps({'score': 7, 'pass': False, 'faults': ['scene b: unclear'], 'fixes': ['scene b: clarify']}),
+            json.dumps({'score': 7, 'pass': False, 'faults': [{'scene': 'b', 'severity': 'blocking', 'problem': 'unclear'}],
+                               'fixes': [{'scene': 'b', 'severity': 'blocking', 'change': 'clarify'}]}),
             webchat.NeedsSignIn('Writer needs sign-in')])
         with self._transport(t), patch.object(webstages, '_dump'), self.assertRaises(webchat.NeedsSignIn):
             es.webchat_job(self.cfg, self.pid, 'claude', 'deepseek', lambda _: None)
