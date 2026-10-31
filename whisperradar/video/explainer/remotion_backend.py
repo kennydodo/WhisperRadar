@@ -444,14 +444,24 @@ def _stop(proc) -> None:
         time.sleep(0.1)
     if proc.poll() is None:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
-                           creationflags=_NOWIN)
+            try:
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
+                               creationflags=_NOWIN, timeout=3)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            # Sandboxed Windows sessions may deny taskkill. Never wait forever
+            # for an owned renderer after the tree-kill attempt failed.
+            if proc.poll() is None:
+                proc.kill()
         else:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
             except OSError:
                 proc.kill()
-        proc.wait()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("The owned renderer did not stop after cancellation.") from exc
 
 
 def run(cmd: list, cancel_event=None, poll_s: float = 0.2) -> int:

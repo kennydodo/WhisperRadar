@@ -207,15 +207,16 @@ class RetimeTests(unittest.TestCase):
         import shutil
         import subprocess
         ff = shutil.which("ffmpeg")
-        if not ff:
-            self.skipTest("ffmpeg not available")
+        probe = shutil.which("ffprobe")
+        if not ff or not probe:
+            self.skipTest("ffmpeg and ffprobe are required")
         tmp = tempfile.mkdtemp()
         src, dst = os.path.join(tmp, "a.mp4"), os.path.join(tmp, "b.mp4")
         subprocess.run([ff, "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=0x12161A:s=64x64:r=30:d=1",
                         "-vf", "scale=out_range=pc,format=yuvj420p", "-c:v", "libx264", "-video_track_timescale", "90000",
                         src], check=True)
         rb._retime(ff, src, dst)
-        out = subprocess.run([ff.replace("ffmpeg", "ffprobe"), "-v", "error", "-select_streams", "v",
+        out = subprocess.run([probe, "-v", "error", "-select_streams", "v",
                               "-show_entries", "stream=pix_fmt,time_base,color_range", "-of", "csv=p=0", dst],
                              capture_output=True, text=True).stdout
         self.assertIn("yuv420p", out)

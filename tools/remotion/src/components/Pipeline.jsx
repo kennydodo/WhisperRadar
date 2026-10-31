@@ -1,40 +1,11 @@
 import React from 'react';
+import {pipelineSchedule} from '../pipelineSchedule.mjs';
 import {Footer, Heading, Note, clamp01, lerp, prog, useMs, usePal} from '../motion.jsx';
 
 // Tasks flow through stages. Each stage has N workers; a stage can wait for the whole
 // previous stage to finish (a barrier). The run is simulated here, deterministically,
 // so the picture shows what the numbers cause: eight workers busy, a later stage blocked.
 
-function simulate(stages, tasks, runMs, startMs, k0) {
-  const unit = 1, travel = 0.18;
-  const ready = Array.from({length: tasks}, (_, i) => i * 0.04);
-  const plan = stages.map(() => []);
-  const barriers = stages.map(() => 0);
-  let prevEnd = 0;
-  for (let s = 0; s < stages.length; s++) {
-    const st = stages[s];
-    const W = Math.max(1, st.workers);
-    const free = Array(W).fill(0);
-    const dur = (st.work || 1) * unit;
-    const hold = st.at_ms != null && k0 ? Math.max(0, (st.at_ms - startMs) / k0) : 0;   // narration says it here
-    const barrier = Math.max(hold, st.waits_for_all && s > 0 ? Math.max(...ready) : 0);
-    const order = ready.map((r, i) => [r, i]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const ends = Array(tasks).fill(0);
-    for (const [r, i] of order) {
-      let w = 0;
-      for (let k = 1; k < W; k++) if (free[k] < free[w]) w = k;
-      const start = Math.max(r, free[w], barrier);
-      free[w] = start + dur;
-      plan[s][i] = {worker: w, start, end: start + dur, arrive: r};
-      ends[i] = start + dur + travel;
-    }
-    barriers[s] = barrier;
-    for (let i = 0; i < tasks; i++) ready[i] = ends[i];
-    prevEnd = Math.max(...ends);
-  }
-  const k = k0 || runMs / prevEnd;
-  return {plan, k, total: prevEnd, barriers};
-}
 
 const Chip = ({x, y, color, label, glow, scale = 1, opacity = 1, font, size = 48}) => (
   <div style={{position: 'absolute', left: x - size / 2, top: y - size / 2, width: size, height: size, borderRadius: 12,
@@ -46,11 +17,9 @@ const Chip = ({x, y, color, label, glow, scale = 1, opacity = 1, font, size = 48
 export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, footer, theme}) => {
   const pal = usePal(theme);
   const ms = useMs();
-  const sim = React.useMemo(() => {
-    const free = simulate(stages.map((s) => ({...s, at_ms: null})), tasks, run_ms, start_ms, 0);
-    return simulate(stages.map((s) => ({...s})), tasks, run_ms, start_ms, free.k);
-  }, [JSON.stringify(stages), tasks, run_ms, start_ms]);
-  const t = Math.max(0, ms - start_ms) / sim.k;                    // simulation time
+  const sim = React.useMemo(() => pipelineSchedule(stages, tasks, run_ms, start_ms),
+    [JSON.stringify(stages), tasks, run_ms, start_ms]);
+  const t = ms;
   const n = stages.length;
   const z = n <= 3 ? 1 : n <= 5 ? 0.72 : 0.56;                 // many stages: everything gets smaller
   const GAP = Math.round(130 * z), TOP = 290, WR = Math.round(36 * z), CW = Math.round(92 * z);
@@ -63,7 +32,7 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, foo
     const col = w % per, row = Math.floor(w / per);
     return [colX(s) + COLW / 2 - ((per - 1) * CW) / 2 + col * CW, TOP + H0 + row * RH];
   };
-  const maxRows = Math.max(...stages.map((x) => Math.ceil(x.workers / 4)));
+  const maxRows = Math.max(...stages.map((x) => Math.ceil(x.workers / Math.min(4, Math.max(1, Math.floor((COLW - 40) / CW))))));
   const trayY = TOP + H0 + maxRows * RH + 40;
   const done = [];
   const boxes = stages.map((st, s) => {
@@ -114,7 +83,7 @@ export const Pipeline = ({title, sub, stages, tasks, start_ms, run_ms, note, foo
         const prev = s > 0 ? sim.plan[s - 1][i] : null;
         const [px, py] = prev ? wpos(s - 1, prev.worker) : [colX(0) + 40, trayY - 120];
         const perRow = Math.max(3, Math.floor((COLW - 30) / CH)); const tx = colX(s) + 24 + (slot % perRow) * CH, ty = trayY + Math.floor(slot / perRow) * CH;
-        const mv = prev ? clamp01((t - prev.end) / 0.18) : 1;
+        const mv = prev ? clamp01((t - prev.end) / Math.max(1, sim.travelMs)) : 1;
         const e = mv * mv * (3 - 2 * mv);
         if (slot < perRow * 2) chips.push(<Chip size={CS} font={pal.monoF} key={i} x={lerp(px, tx, e)} y={lerp(py, ty, e)} color={colr} label={i + 1} />);
         placed = true;

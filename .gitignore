@@ -10,3 +10,7 @@ engines/renderly-api/tools/realesrgan/device_cache.json
 # explainer render artifacts (regenerable: render-demo)
 x/
 docs/explainer/demo/*/out/
+
+# runtime artifacts
+.remotion/
+diag/

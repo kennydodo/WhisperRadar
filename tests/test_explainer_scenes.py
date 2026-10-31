@@ -218,19 +218,13 @@ class TooShortSceneTests(unittest.TestCase):
 
 
 class JudgeSeesMotionScenesTests(unittest.TestCase):
-    def test_summary_lists_what_a_motion_scene_animates(self):
-        plan = {"scenes": [
-            {"id": "g", "cue_range": [1, 1], "layout": "generation", "title": "Orders", "rows": [
-                {"label": "Left to right", "mode": "sequential", "words": ["Hi", "team", "meeting"]},
-                {"label": "Plan first", "mode": "plan_then_fill", "words": ["Hi", "team", "meeting"],
-                 "beats": [{"at": "a broad outline"}]}]},
-            {"id": "p", "cue_range": [1, 1], "layout": "pipeline", "title": "Waiting", "tasks": 8, "stages": [
-                {"label": "Stage 1", "workers": 8}, {"label": "Stage 2", "workers": 4, "waits_for_all": True, "at": "needs the result"}]},
-            {"id": "c", "cue_range": [1, 1], "layout": "code", "title": "Code", "filename": "a.py", "lines": ["x = 1", "y = 2"],
-             "highlights": [{"line": 2, "note": "the batch size"}]}]}
-        text = es.summary_text(plan, [{"index": 1, "start": "00:00:00,000", "end": "00:00:04,000", "text": "Hello there, a broad outline needs the result today."}])
-        for needle in ("Left to right", "one word after another", "a rough outline first", "a broad outline",
-                       "Stage 2 (4 workers, locked", "needs the result", "a.py", "the batch size"):
+    def test_summary_lists_the_compiled_animation_and_complete_narration(self):
+        cues = studio.parse_srt_cues("1\n00:00:00,000 --> 00:00:30,000\n" + "Explain this clearly. " * 30 + "Keep the last important condition.\n\n")
+        p = {"scenes": [{"id": "g", "cue_range": [1, 1], "layout": "generation", "title": "Example",
+                        "rows": [{"label": "Left to right", "mode": "sequential", "words": ["Hi", "team", "meeting", "Thursday"]}],
+                        "footer": {"text": "Illustrative only", "cue": 1}}]}
+        text = es.summary_text(p, cues)
+        for needle in ("COMPILED animation", "start_ms", "run_ms", "Illustrative only", "Keep the last important condition."):
             self.assertIn(needle, text)
 
 

@@ -909,12 +909,21 @@
       <div class="help" style="margin-bottom:8px">Explainer video: instead of a shot list, the writer drafts a
         <b>scene plan</b> (what is drawn while each part is spoken), the app checks it against the subtitles
         (words, timing, icons), and the judge reviews the teaching. No images are needed.</div>
+      {% if scene_review.status == 'needs_revision' %}
+      <div class="warn" style="margin-bottom:8px"><b>Latest draft needs revision — not approved.</b>
+        {% if scene_review.score is not none %}Judge score: {{ scene_review.score }}.{% endif %}
+        {% if scene_review.candidate_file %}Draft saved as <code>{{ scene_review.candidate_file }}</code>.{% endif %}
+        {% if scene_review.active_plan_preserved %}The previous plan.json is still active.{% endif %}
+        {% for f in (scene_review.checker_faults_left or []) + (scene_review.faults or []) %}<div>{{ f }}</div>{% endfor %}
+      </div>
+      {% endif %}
       {% if scene_plan_exists %}
       <div style="margin-bottom:8px"><span class="badge done">plan.json exists</span>
-        {% if scene_review and scene_review.score is not none %}<span class="muted">judge score {{ scene_review.score }}</span>{% endif %}
+        {% if scene_review.status == 'approved' %}<span class="badge done">Plan approved</span><span class="muted"> — rendered preview still needs visual review</span>
+        {% elif scene_review.status != 'needs_revision' and scene_review and scene_review.score is not none %}<span class="muted">previous judge score {{ scene_review.score }} (legacy review)</span>{% endif %}
         &middot; <a href="/explainer?pid={{ prod['id'] }}">Validate / storyboard</a>
         &middot; <a href="/studio/{{ prod['id'] }}?stage=merge">Render</a></div>
-      {% if scene_review and (scene_review.faults or scene_review.checker_faults_left) %}
+      {% if scene_review.status != 'needs_revision' and scene_review and (scene_review.faults or scene_review.checker_faults_left) %}
       <div class="warn" style="margin-bottom:8px">
         {% for f in (scene_review.checker_faults_left or []) + (scene_review.faults or []) %}<div>{{ f }}</div>{% endfor %}
       </div>
