@@ -83,6 +83,47 @@ def build_from_plan(folder: str, log=print) -> int:
     return len(doc["scenes"])
 
 
+VISUAL_HEAD_S = 3.0        # how much of each clip's start the coverage check looks at
+VISUAL_MIN_S = 0.5         # background-only longer than this is reported
+
+
+def head_blank_seconds(path: str, background: str, ffmpeg: str = "ffmpeg", head: float = VISUAL_HEAD_S) -> float:
+    """Seconds at the start of a clip where the frame is only the board colour (no drawing, text
+    or diagram). Frames are sampled at 10 fps at 160x90; a frame counts as content when more than
+    0.2% of its pixels differ clearly from the board colour."""
+    h = (background or "#000000").lstrip("#")
+    bg = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    w_, h_ = 160, 90
+    proc = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-t", f"{head:.2f}", "-i", path,
+                           "-vf", f"fps=10,scale={w_}:{h_}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                          capture_output=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    data, size = proc.stdout, w_ * h_ * 3
+    blank = 0
+    for f in range(len(data) // size):
+        fr = data[f * size:(f + 1) * size]
+        diff = sum(1 for i in range(0, size, 3)
+                   if abs(fr[i] - bg[0]) + abs(fr[i + 1] - bg[1]) + abs(fr[i + 2] - bg[2]) > 60)
+        if diff > w_ * h_ * 0.002:
+            break
+        blank += 1
+    return blank / 10.0
+
+
+def visual_coverage(clips: list, compiled: list, background: str, ffmpeg: str = "ffmpeg") -> dict:
+    """Per scene, how long its clip opens on the bare board. Pen scenes are drawn on the board colour;
+    Remotion scenes draw their own backdrop, so only pen clips are measured here (the planner's
+    check covers Remotion openings)."""
+    rows, empty = [], []
+    for path, cs in zip(clips, compiled):
+        if getattr(cs.spec, "remotion", None):
+            continue
+        sec = head_blank_seconds(path, background, ffmpeg)
+        rows.append({"scene": cs.spec.id, "blank_head_seconds": sec})
+        if sec > VISUAL_MIN_S:
+            empty.append({"scene": cs.spec.id, "seconds": sec})
+    return {"checked": rows, "empty": empty}
+
+
 def _fps_for(folder: str) -> float:
     from whisperradar.video import options as options_mod
     opts = options_mod.load_or_default(os.path.join(folder, "imgtovideo.json"))
@@ -98,26 +139,49 @@ def _run(args, what):
 FADE_S = {"short": 0.25, "long": 0.5}
 
 
-def fade_filter(doc, compiled, clips, fps, mode) -> str:
-    """ffmpeg -vf that dips to the board colour at each join between two pen
-    scenes (a scene's length never changes, so the narration stays in step).
-    "" when off or there is nothing to fade."""
+PEN_JOIN_HOLD_S = 0.3      # a pen scene opens on the board while its first stroke starts: hold the
+                           # outgoing picture under it this long, so a join never flashes the bare board
+
+
+def join_fades(compiled: list, mode: str = "") -> list:
+    """Seconds of cross-fade at each join (len = scenes - 1; 0 = a hard cut). "scene fade" fades
+    every join; otherwise only a join INTO a pen scene gets PEN_JOIN_HOLD_S."""
     d = FADE_S.get(mode or "")
-    if not d or len(clips) < 2:
-        return ""
-    from whisperradar.video import tool_locator
-    from whisperradar.video.ffprobe import ffprobe_duration_seconds
-    probe = tool_locator.resolve("ffprobe", "ffprobe")
-    colour = "0x" + doc.theme.background.lstrip("#")
-    parts, t = [], 0.0
-    for i, c in enumerate(clips[:-1]):
-        t += ffprobe_duration_seconds(c, probe)
-        a, b = compiled[i].spec, compiled[i + 1].spec
-        if getattr(a, "remotion", None) or getattr(b, "remotion", None):
-            continue                      # motion scenes fade themselves
-        parts.append(f"fade=t=out:st={t - d:.3f}:d={d}:color={colour}")
-        parts.append(f"fade=t=in:st={t:.3f}:d={d}:color={colour}")
-    return ",".join(parts)
+    return [d if d else (0.0 if getattr(compiled[i + 1].spec, "remotion", None) else PEN_JOIN_HOLD_S)
+            for i in range(len(compiled) - 1)]
+
+
+def crossfade_graph(durations: list, fps: float, fades) -> str:
+    """filter_complex joining every clip; a join with a fade > 0 cross-fades: the outgoing scene's
+    last frame is held under the incoming scene, which fades in over it. A join with 0 is a hard cut.
+    Every scene still starts at its own time (offsets are the original durations), the total length
+    is unchanged, and the picture never dips to the bare board. Output label [v]."""
+    n = len(durations)
+    if not isinstance(fades, (list, tuple)):
+        fades = [float(fades)] * (n - 1)
+    parts = []
+    for i in range(n):
+        pad = f",tpad=stop_mode=clone:stop_duration={fades[i]:.3f}" if i < n - 1 and fades[i] > 0 else ""
+        parts.append(f"[{i}:v]fps={fps:g},format=yuv420p,settb=AVTB,setpts=PTS-STARTPTS{pad}[s{i}]")
+    if n == 1:
+        parts.append("[s0]null[v]")
+        return ";".join(parts)
+    last, t = "s0", 0.0
+    for i in range(1, n):
+        t += durations[i - 1]
+        out = "v" if i == n - 1 else f"x{i}"
+        if fades[i - 1] > 0:
+            parts.append(f"[{last}][s{i}]xfade=transition=fade:duration={fades[i - 1]:.3f}:offset={t:.3f}[{out}]")
+        else:
+            parts.append(f"[{last}][s{i}]concat=n=2:v=1:a=0[{out}]")
+        last = out
+    return ";".join(parts)
+
+
+def fade_filter(doc, compiled, clips, fps, mode) -> str:
+    """Kept for callers that only want to know whether joins are faded: "" when off. The joins
+    themselves are cross-faded by crossfade_graph (never a dip to the board colour)."""
+    return "crossfade" if FADE_S.get(mode or "") and len(clips) >= 2 else ""
 
 
 def render_video(folder: str, audio: str = "", final: bool = True,
@@ -178,13 +242,31 @@ def render_video(folder: str, audio: str = "", final: bool = True,
         for c in clips:
             fh.write("file '" + os.path.abspath(c).replace("'", "'\\''") + "'\n")
     rough = os.path.join(prep.cache_dir(folder), "rough_draft.mp4" if draft else "rough.mp4")
-    vf = fade_filter(doc, compiled, clips, fps, validate_mod.project_look(folder).get("scene_fade"))
+    fades = join_fades(compiled, validate_mod.project_look(folder).get("scene_fade"))
     log("[explainer] joining the scenes...")
-    # re-encode on concat: stream copy can drop frames at boundaries
-    _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
-          "-safe", "0", "-i", concat_path] + (["-vf", vf] if vf else []) + ["-c:v", "libx264", "-preset",
-          "veryfast", "-crf", "18", "-bf", "0", "-pix_fmt", "yuv420p", rough],
-         "joining the scenes")
+    enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-bf", "0", "-pix_fmt", "yuv420p", rough]
+    if any(f > 0 for f in fades):
+        # hold the outgoing picture under the incoming one at those joins; every start time unchanged
+        durations = [c.duration_frames / fps for c in compiled]
+        inputs = []
+        for c in clips:
+            inputs += ["-i", c]
+        _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y"] + inputs
+             + ["-filter_complex", crossfade_graph(durations, fps, fades), "-map", "[v]"] + enc,
+             "joining the scenes")
+    else:
+        # re-encode on concat: stream copy can drop frames at boundaries
+        _run([ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-f", "concat",
+              "-safe", "0", "-i", concat_path] + enc, "joining the scenes")
+    try:
+        report = visual_coverage(clips, compiled, doc.theme.background, ffmpeg)
+        with open(os.path.join(folder, "out", "visual_coverage.json"), "w", encoding="utf-8") as fh:
+            json.dump(report, fh, indent=1)
+        for r in report["empty"]:
+            log(f"[explainer] WARNING scene '{r['scene']}': only the bare board for the first "
+                f"{r['seconds']:.1f} s - give it a title or anchor its first element earlier")
+    except Exception as exc:  # noqa: BLE001 - the check never breaks a finished render
+        log(f"[explainer] visual coverage check skipped: {exc}")
     if not audio:
         return rough
     out_path = (os.path.join(folder, "out", "final", "final.mp4") if final

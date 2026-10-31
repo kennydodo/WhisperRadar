@@ -214,3 +214,70 @@ class RebuildAfterBuilderChanges(unittest.TestCase):
         with open(out, "w") as fh:
             _json.dump({"scenes": []}, fh)                      # no marker (hand-made/imported): timestamps decide
         self.assertFalse(render.needs_build(d))
+
+
+class ContinuousPicture(unittest.TestCase):
+    """Brief for production 118: never the bare board, without moving any reveal."""
+    CUE_MS = NeverAnEmptyScreen.CUE_MS
+
+    def _two(self, second):
+        first = {"id": "a", "start": "Imagine method A", "layout": "stack", "title": "Timings",
+                 "items": [{"label": "Method A", "icon": "clock", "at": "method A takes"}]}
+        return recipes.build(plan(first, second), es._cue_objs(CUES))
+
+    def test_previous_scene_holds_until_the_untitled_scene_has_content(self):
+        hero = {"id": "h", "start": "Rent takes 1200", "layout": "hero",
+                "items": [{"label": "What is left over", "icon": "wallet", "at": "The rest is left"}]}
+        a, h = self._two(hero)["scenes"]
+        self.assertEqual(h["cue_range"][0], 10)                 # starts with its first content ...
+        self.assertEqual(a["cue_range"][1], 9)                  # ... the scene before stays up until then
+        self.assertEqual(recipes.first_visible_ms(h, self.CUE_MS), 0)
+        ev = [e for e in h["events"] if e["action"] == "draw_strokes"]
+        self.assertTrue(all(e["at"]["cue"] == 10 for e in ev))  # the reveal itself did not move
+
+    def test_untitled_compare_holds_too(self):
+        cmp_ = {"id": "c", "start": "Rent takes 1200", "layout": "compare",
+                "sides": [{"header": "Rent", "icon": "house", "at": "Food takes",
+                           "points": [{"text": "1200", "at": "Food takes"}]},
+                          {"header": "Savings", "icon": "piggy-bank", "at": "Savings get", "points": []}]}
+        a, c = self._two(cmp_)["scenes"]
+        self.assertEqual(c["cue_range"][0], 8)
+        self.assertEqual(a["cue_range"][1], 7)
+
+    def test_titled_or_prompt_scene_is_not_held(self):
+        hero = {"id": "h", "start": "Rent takes 1200", "layout": "hero", "title": "Left over",
+                "items": [{"label": "What is left over", "icon": "wallet", "at": "The rest is left"}]}
+        a, h = self._two(hero)["scenes"]
+        self.assertEqual(h["cue_range"][0], 7)
+
+    def test_crossfade_keeps_every_scene_start(self):
+        from whisperradar.video.explainer import render
+        g = render.crossfade_graph([2.0, 1.5, 2.0], 30, 0.5)
+        mixed = render.crossfade_graph([2.0, 1.5, 2.0], 30, [0.0, 0.3])
+        self.assertIn("concat=n=2", mixed)                       # a hard cut stays a cut
+        self.assertIn("duration=0.300:offset=3.500", mixed)      # into a pen scene: held, on time
+        self.assertIn("xfade=transition=fade:duration=0.500:offset=2.000", g)
+        self.assertIn("offset=3.500", g)                         # the third scene starts at 2.0 + 1.5
+        self.assertIn("tpad=stop_mode=clone", g)                 # the outgoing picture is held, no dip
+        self.assertNotIn("color=", g)
+
+    def test_head_blank_scan(self):
+        import shutil, subprocess, tempfile, os
+        from whisperradar.video.explainer import render
+        if not shutil.which("ffmpeg"):
+            self.skipTest("no ffmpeg")
+        d = tempfile.mkdtemp()
+        clip = os.path.join(d, "c.mp4")
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                        "color=c=#1d2a24:s=320x180:r=30:d=2,drawbox=x=40:y=40:w=120:h=60:c=yellow:t=fill:enable='gte(t,1)'",
+                        "-pix_fmt", "yuv420p", clip], check=True)
+        self.assertAlmostEqual(render.head_blank_seconds(clip, "#1d2a24"), 1.0, delta=0.15)
+
+
+class JoinFades(unittest.TestCase):
+    def test_only_joins_into_pen_scenes_are_held_by_default(self):
+        from types import SimpleNamespace as NS
+        from whisperradar.video.explainer import render
+        pen, motion = NS(spec=NS(remotion=None)), NS(spec=NS(remotion={"component": "bars"}))
+        self.assertEqual(render.join_fades([motion, pen, motion, pen]), [0.3, 0.0, 0.3])
+        self.assertEqual(render.join_fades([motion, pen, motion], "long"), [0.5, 0.5])

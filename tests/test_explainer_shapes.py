@@ -391,17 +391,17 @@ class StraightLinesTests(unittest.TestCase):
 
 
 class SceneFadeTests(unittest.TestCase):
-    def test_fade_filter_dips_at_pen_joins_only(self):
+    def test_scene_fade_cross_fades_and_never_dips_to_the_board(self):
+        # production 118 review: a dip to the bare board colour is an empty screen; joins now
+        # cross-fade (the outgoing picture stays under the incoming one) and keep every start time
         from types import SimpleNamespace as NS
-        from unittest import mock
         from whisperradar.video.explainer import render
         doc = NS(theme=NS(background="#101418"))
-        comp = [NS(spec=NS(remotion=None)), NS(spec=NS(remotion=None)),
-                NS(spec=NS(remotion={"component": "counter"}))]
-        with mock.patch("whisperradar.video.ffprobe.ffprobe_duration_seconds", return_value=4.0):
-            vf = render.fade_filter(doc, comp, ["a", "b", "c"], 15, "short")
-            self.assertEqual(vf.count("fade="), 2)        # only the pen-to-pen join
-            self.assertIn("fade=t=out:st=3.750:d=0.25:color=0x101418", vf)
-            self.assertIn("fade=t=in:st=4.000", vf)
-            self.assertEqual(render.fade_filter(doc, comp, ["a", "b", "c"], 15, ""), "")
-            self.assertEqual(render.fade_filter(doc, comp, ["a"], 15, "long"), "")
+        comp = [NS(spec=NS(remotion=None))] * 3
+        self.assertEqual(render.fade_filter(doc, comp, ["a", "b", "c"], 15, "short"), "crossfade")
+        self.assertEqual(render.fade_filter(doc, comp, ["a", "b", "c"], 15, ""), "")
+        self.assertEqual(render.fade_filter(doc, comp, ["a"], 15, "long"), "")
+        g = render.crossfade_graph([4.0, 4.0, 4.0], 15, 0.25)
+        self.assertNotIn("color=0x101418", g)
+        self.assertIn("offset=4.000", g)
+        self.assertIn("offset=8.000", g)

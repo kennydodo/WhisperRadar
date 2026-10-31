@@ -981,7 +981,7 @@ def simplify_overfull(plan: dict, cues, decoration_only: bool = False) -> tuple:
 PEN_FACTOR = {"slow": 1.3, "normal": 1.0, "fast": 0.75}
 # Bump when the builder's output changes for the same plan (new placement, timing or safety rules):
 # explainer.json files built by an older builder are rebuilt on the next render.
-BUILDER_VERSION = "2026-10-31.never-empty"
+BUILDER_VERSION = "2026-10-31.hold-previous"
 LEAD_MS = 1500           # a pen scene never shows an empty board longer than this at its start
 
 
@@ -997,6 +997,54 @@ def _lead_in(s, els, cue_ms):
         for e in els:
             if e.cue == first:
                 e.cue = c0
+
+
+_FIRST_OF = {"bars": ("items",), "flow": ("nodes",), "levels": ("levels",)}
+
+
+def _first_content_cue(raw: dict):
+    """The cue of the first thing an untitled scene draws, or None when it draws from its start
+    (a title, or a Remotion component that shows its frame at once)."""
+    if raw.get("title"):
+        return None
+    lay = raw.get("layout")
+    if lay in LAYOUTS:
+        keys = ("items", "sides")
+    elif lay in _FIRST_OF:
+        keys = _FIRST_OF[lay]
+    else:
+        return None
+    cues = []
+    for k in keys:
+        for x in raw.get(k) or []:
+            if isinstance(x, dict) and isinstance(x.get("cue"), int):
+                cues.append(x["cue"])
+            for p in (x.get("points") or []) if isinstance(x, dict) else []:
+                if isinstance(p, dict) and isinstance(p.get("cue"), int):
+                    cues.append(p["cue"])
+    if isinstance(raw.get("footer"), dict) and isinstance(raw["footer"].get("cue"), int):
+        cues.append(raw["footer"]["cue"])
+    return min(cues) if cues else None
+
+
+def _hold_previous(scenes: list, cue_ms: dict) -> list:
+    """Continuous picture without moving any reveal: when an untitled scene would open on an
+    empty board for more than LEAD_MS, the scene before it stays on screen until the new scene's
+    first content, and the new scene starts there. Returns [(scene id, held seconds)]."""
+    held = []
+    for i in range(1, len(scenes)):
+        cur, prev = scenes[i], scenes[i - 1]
+        if not (isinstance(cur, dict) and isinstance(prev, dict)):
+            continue
+        cr, pr = cur.get("cue_range"), prev.get("cue_range")
+        k = _first_content_cue(cur)
+        if not (cr and pr and k) or k <= cr[0] or k not in cue_ms or cr[0] not in cue_ms:
+            continue
+        if cue_ms[k][0] - cue_ms[cr[0]][0] > LEAD_MS and pr[1] == cr[0] - 1:
+            held.append((cur.get("id"), (cue_ms[k][0] - cue_ms[cr[0]][0]) / 1000))
+            prev["cue_range"] = [pr[0], k - 1]
+            cur["cue_range"] = [k, cr[1]]
+    return held
 
 
 def first_visible_ms(scene: dict, cue_ms: dict) -> int:
@@ -1036,6 +1084,9 @@ def build(plan: dict, cues, look=None) -> dict:
         raise ExplainerError(["plan.json needs a non-empty scenes list."])
     cue_ms = {c.index: (int(round(c.start_seconds * 1000)), int(round(c.end_seconds * 1000)))
               for c in cues}
+    plan = dict(plan, scenes=[dict(x, cue_range=list(x["cue_range"])) if isinstance(x, dict) and x.get("cue_range")
+                              else x for x in plan["scenes"]])
+    _hold_previous(plan["scenes"], cue_ms)
     scenes, errors = [], []
     for idx, raw in enumerate(plan["scenes"]):
         if isinstance(raw, dict) and raw.get("layout") in REMOTION_LAYOUTS:
@@ -1046,7 +1097,8 @@ def build(plan: dict, cues, look=None) -> dict:
             continue
         try:
             s, els = _scene_elements(raw, idx)
-            _lead_in(s, els, cue_ms)
+            if idx == 0:
+                _lead_in(s, els, cue_ms)          # nothing before the first scene to hold
             pen = PEN_FACTOR.get(str((look or {}).get("pen_speed") or "normal"), 1.0)
             if pen != 1.0:
                 for e in els:

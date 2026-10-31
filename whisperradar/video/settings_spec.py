@@ -92,8 +92,9 @@ HELP = {
                                   "(a new picture more often). Blank = normal.",
     "explainer.diagram_style": "How picture-heavy the scenes are: balanced, icons (an icon with most points) "
                                "or minimal (words and numbers, few icons). Blank = balanced.",
-    "explainer.scene_fade": "A soft dip to the board colour where one pen-drawn scene gives way to the next: "
-                            "none (a hard cut), short (0.25 s) or long (0.5 s). Scenes keep their length. Blank = none.",
+    "explainer.scene_fade": "A cross-fade where one scene gives way to the next: the outgoing picture stays "
+                            "under the incoming one (never a dip to the bare board): none (a hard cut), short "
+                            "(0.25 s) or long (0.5 s). Every scene keeps its start time. Blank = none.",
     "explainer.scene_genre": "Which kind of explainer this is: it picks the scene set and the motion rule the "
                              "planner is held to: tech (systems, AI, software) or finance (money, investing; no tech-only scenes). Blank = tech.",
     "explainer.motion_min_share": "Percent of the narration time that must be drawn as a motion scene (flow, bars, "

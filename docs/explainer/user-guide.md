@@ -363,6 +363,22 @@ Numbers in `bars`, `split` and `line` must be numbers the narrator says in that 
 checker rejects others unless the scene has `"illustrative": true` (an "illustrative" tag is
 drawn). Icons are Lucide names; an unknown icon is simply left out.
 
+**The screen is never empty.** Every scene shows meaningful content from its first frame,
+without moving any reveal off its words:
+
+- a scene with a title writes the title at once;
+- an untitled scene whose first item comes later than 1.5 s: the scene before it stays on screen
+  until that first item, and the new scene starts there (the very first scene of a video, which has
+  nothing before it, starts its first item at once instead);
+- the planner's checker rejects a scene that would open empty for more than 2 s, and the writer is
+  told to give every scene a title;
+- "scene fade" cross-fades joins (the outgoing picture stays under the incoming one), never a dip to
+  the bare board, and every scene keeps its start time;
+- after joining, the start of every pen clip is scanned for bare-board frames; anything over 0.5 s is
+  logged and listed in `out/visual_coverage.json`;
+- `explainer.json` carries the builder version and is rebuilt on the next render when the builder
+  changed, so fixes reach existing productions (hand-made files without the stamp are left alone).
+
 **Genre packs** (`explainer.scene_genre`, per channel on My channels > Explainer):
 
 - `tech` (default): text layouts + the general layouts + pipeline, generation, levels, code,
