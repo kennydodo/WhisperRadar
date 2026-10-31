@@ -76,7 +76,8 @@ class StartOverTests(unittest.TestCase):
 
     def _explainer_outputs(self):
         names = ("plan.json", "plan_review.json", "plan_candidate.json",
-                 "plan_candidate_review.json", "explainer.json")
+                 "plan_candidate_review.json", "explainer.json",
+                 "scene_plan_run.json", "scene_plan_chats.json")
         for name in names:
             (self.pdir / name).write_text("{}", encoding="utf-8")
         debug = self.pdir / "_work" / "webchat_debug"

@@ -896,36 +896,59 @@ def webchat_job(cfg, pid: int, writer: str, judge: str, log, should_stop=lambda:
                 options: dict | None = None) -> dict:
     """Writer and judge are chat sites driven in the browser (the normal route)."""
     from . import webstages as ws
+    from .scene_chat import SceneChats
     sites = {"writer": writer, "judge": judge}
-    with ws.web_transport(cfg, log, options) as t:
-        t.set_stop(should_stop)
+    pdir = studio.prod_dir(cfg, pid)
+    run = {"status": "running", "started_at": time.time(), "writer": writer, "judge": judge}
+    _atomic_json(pdir / "scene_plan_run.json", run)
+    try:
+        with ws.web_transport(cfg, log, options) as t:
+            t.set_stop(should_stop)
 
-        n = [0]
+            chats = SceneChats(t, sites, log, should_stop)
+            n = [0]
 
-        def ask(role, text, new_chat):
-            log(f"{sites[role]}: sending {len(text):,} characters")
-            reply = t.ask(sites[role], text, (), new_chat=new_chat, ready=ws._has_json)
-            n[0] += 1
-            tag = f"scene_{role}_reply_{n[0]}"
-            ws._dump(cfg, pid, tag + "_1", reply)          # raw replies for debugging (webchat_debug)
-            if role != "writer":
-                return reply
-            # like the shotlist: a long plan is often cut off by the chat - send 'continue'
-            # while the JSON is really incomplete, and join the pieces
-            body = ws._json_chunk(reply, True)
-            for i in range(ws.MAX_CONTINUES):
-                if _plan_from(body) is not None or "{" not in body:
-                    break
-                log(f"{sites[role]}: the plan is cut off ({len(body):,} characters read) - "
-                    f"sending 'continue' ({i + 1}/{ws.MAX_CONTINUES})")
-                more = t.ask(sites[role], CONTINUE_MESSAGE, (), new_chat=False, ready=ws._has_json)
-                ws._dump(cfg, pid, f"{tag}_{i + 2}", more)
-                body = ws._join_chunks(body, ws._json_chunk(more, False))
-            return body
-        try:
-            return run_scenes(cfg, pid, ask, log, should_stop)
-        finally:
-            ws.save_chats(cfg, pid, t)
+            def ask(role, text, new_chat):
+                log(f"{sites[role]}: sending {len(text):,} characters")
+                reply = chats.ask(role, text, new_chat, ready=ws._has_json)
+                n[0] += 1
+                tag = f"scene_{role}_reply_{n[0]}"
+                ws._dump(cfg, pid, tag + "_1", reply)          # raw replies for debugging (webchat_debug)
+                if role != "writer":
+                    return reply
+                # like the shotlist: a long plan is often cut off by the chat - send 'continue'
+                # while the JSON is really incomplete, and join the pieces
+                body = ws._json_chunk(reply, True)
+                for i in range(ws.MAX_CONTINUES):
+                    if _plan_from(body) is not None or "{" not in body:
+                        break
+                    log(f"{sites[role]}: the plan is cut off ({len(body):,} characters read) - "
+                        f"sending 'continue' ({i + 1}/{ws.MAX_CONTINUES})")
+                    more = chats.ask(role, CONTINUE_MESSAGE, False, ready=ws._has_json, continuation=True)
+                    ws._dump(cfg, pid, f"{tag}_{i + 2}", more)
+                    body = ws._join_chunks(body, ws._json_chunk(more, False))
+                return body
+            try:
+                result = run_scenes(cfg, pid, ask, log, should_stop)
+                run.update(status="approved", finished_at=time.time())
+                return result
+            except Exception as exc:
+                stopped = should_stop()
+                run.update(status="stopped" if stopped else "failed", finished_at=time.time(),
+                           role=chats.last_role, error=str(exc), active_plan_preserved=True)
+                raise
+            finally:
+                _atomic_json(pdir / "scene_plan_run.json", run)
+                _atomic_json(pdir / "scene_plan_chats.json", {
+                    role: {"site": sites[role], "url": url} for role, url in chats.role_urls.items()})
+                ws.save_chats(cfg, pid, t)
+    except Exception as exc:
+        if run["status"] in ("running", "approved"):
+            preserved = run["status"] != "approved"
+            run.update(status="stopped" if should_stop() else "failed", error=str(exc),
+                       finished_at=time.time(), active_plan_preserved=preserved)
+            _atomic_json(pdir / "scene_plan_run.json", run)
+        raise
 
 
 def api_job(cfg, pid: int, provider: str | None, judge: str | None, log,
@@ -953,6 +976,12 @@ def load_review(pdir) -> dict:
                 result = dict(result, status="needs_revision", **{"pass": False})
                 result["faults"] = ["The active plan changed after approval; review it again."]
                 result["candidate_file"] = None
-        return result
     except (OSError, ValueError):
-        return {}
+        result = {}
+    try:
+        latest = json.loads((pdir / "scene_plan_run.json").read_text(encoding="utf-8"))
+        if isinstance(latest, dict):
+            result["latest_run"] = latest
+    except (OSError, ValueError):
+        pass
+    return result

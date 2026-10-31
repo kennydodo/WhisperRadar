@@ -169,7 +169,16 @@ Still open: the built-in (API) shotlist judge's alignment audit does not know th
 
 - Shared fonts folder `fonts/` (done on feat/text-overlays): `text.font` is found as a path, in the project fonts_dir, or in `fonts/`; with nothing set, the first font in `fonts/` is used, then Arial Bold. Still open: per-channel font dropdown in the dashboard.
 
-## 13. TODO - scene-plan resume handoff (owner brief 2026-10-31, work in D:\Repos\WhisperRadar on master)
+## 13. Implemented - scene-plan resume handoff (2026-10-31, D:\Repos\WhisperRadar on master)
+
+Status: implemented in `scene_chat.py` and the scene-plan web-chat adapter. First contact is
+fresh per role; subsequent calls restore that role's URL on the shared browser transport.
+ChatLost preflight errors retry once with full context; sign-in errors and lost partial-reply
+continuations do not retry blindly. Sites forcing a single reused chat (Qwen) require different
+writer/judge sites. `scene_plan_run.json` surfaces current failures independently of saved reviews;
+`scene_plan_chats.json` records role URLs. Start over clears both. Offline integration tests are
+in `tests/test_scene_chat_handoff.py`; production 115 has not been regenerated automatically.
+The original requirements below are retained as context.
 
 The seeded resume (run_scenes, `explainer_scenes.py` ~755-795: when plan.json/plan_candidate.json
 exists, the loop judges the existing plan before any writer contact) broke the chat handoff:

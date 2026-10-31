@@ -420,7 +420,7 @@ RESET_FILES = {
     "shots": ["shotlist.json", "shotlist.json.bak", "batch_sheet.txt",
               "prompts.txt", "plan.json", "plan_review.json",
               "plan_candidate.json", "plan_candidate_review.json",
-              "explainer.json"],
+              "explainer.json", "scene_plan_run.json", "scene_plan_chats.json"],
     "images": [],
     "motion": [],
     "merge": ["final.mp4"],

@@ -912,8 +912,15 @@
       <div class="help" style="margin-bottom:8px">Explainer video: instead of a shot list, the writer drafts a
         <b>scene plan</b> (what is drawn while each part is spoken), the app checks it against the subtitles
         (words, timing, icons), and the judge reviews the teaching. No images are needed.</div>
+      {% if scene_review.latest_run and scene_review.latest_run.status in ['failed', 'stopped'] %}
+      <div class="warn" style="margin-bottom:8px"><b>Latest scene-plan run {{ scene_review.latest_run.status }}.</b>
+        {% if scene_review.latest_run.role %}Role: {{ scene_review.latest_run.role }}.{% endif %}
+        <div>{{ scene_review.latest_run.error }}</div>
+        <div>The saved review below belongs to an earlier completed attempt; it is not this run's result.</div>
+      </div>
+      {% endif %}
       {% if scene_review.status == 'needs_revision' %}
-      <div class="warn" style="margin-bottom:8px"><b>Latest draft needs revision — not approved.</b>
+      <div class="warn" style="margin-bottom:8px"><b>Saved draft needs revision — not approved.</b>
         {% if scene_review.score is not none %}Judge score: {{ scene_review.score }}.{% endif %}
         {% if scene_review.candidate_file %}Draft saved as <code>{{ scene_review.candidate_file }}</code>.{% endif %}
         {% if scene_review.active_plan_preserved %}The previous plan.json is still active.{% endif %}
