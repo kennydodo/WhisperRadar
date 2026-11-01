@@ -1,0 +1,44 @@
+{# Speed buttons for the <video> just above this include (same parent). The choice is remembered per browser. #}
+<div class="speedbar" style="margin-top:6px; font-size:13px; display:flex; gap:6px; align-items:center; flex-wrap:wrap">
+  <span class="muted">Speed</span>
+  {% for s in ['0.5', '1', '1.25', '1.5', '2', '3', '4'] %}
+  <button type="button" class="secondary" data-speed="{{ s }}" style="width:auto; padding:2px 9px">{{ s }}&times;</button>
+  {% endfor %}
+  <span class="muted speedinfo" style="font-size:12px"></span>
+</div>
+<script>
+(function () {
+  var bar = document.currentScript.previousElementSibling;
+  var video = bar && bar.parentNode.querySelector('video');
+  if (!video) return;
+  var KEY = 'wr_preview_speed', info = bar.querySelector('.speedinfo');
+  function show(rate) {
+    var btns = bar.querySelectorAll('button[data-speed]');
+    for (var i = 0; i < btns.length; i++) {
+      var on = parseFloat(btns[i].getAttribute('data-speed')) === rate;
+      btns[i].style.outline = on ? '2px solid var(--accent)' : 'none';
+    }
+    if (info) {
+      var d = video.duration;
+      var s = (isFinite(d) && d > 0 && rate > 0) ? d / rate : 0;
+      info.textContent = !s ? '' : (s < 90 ? 'about ' + Math.round(s) + ' s' : 'about ' + Math.round(s / 60) + ' min')
+        + ' to watch all of it';
+    }
+  }
+  function set(rate) {
+    video.playbackRate = rate;
+    video.defaultPlaybackRate = rate;          // survives seeking and reloading the source
+    try { localStorage.setItem(KEY, String(rate)); } catch (e) {}
+    show(rate);
+  }
+  bar.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('button[data-speed]');
+    if (b) set(parseFloat(b.getAttribute('data-speed')));
+  });
+  var saved = 1;
+  try { saved = parseFloat(localStorage.getItem(KEY)) || 1; } catch (e) {}
+  video.addEventListener('loadedmetadata', function () { set(saved); });
+  video.addEventListener('ratechange', function () { show(video.playbackRate); });
+  set(saved);
+})();
+</script>

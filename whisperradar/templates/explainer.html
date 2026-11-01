@@ -81,7 +81,8 @@ then renders explainer scenes from audio + subtitles.srt.</p>
 
 {% if preview %}
 <h2>Preview <span class="muted">(out\preview.mp4, narration included)</span></h2>
-<video controls width="720" src="/explainer/{{ pid }}/preview.mp4"></video>
+<div><video controls width="720" src="/explainer/{{ pid }}/preview.mp4"></video>
+{% include "_playback_speed.html" %}</div>
 {% endif %}
 
 <h2>How it works</h2>

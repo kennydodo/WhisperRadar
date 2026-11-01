@@ -1465,7 +1465,8 @@
 
     {% elif stage == "merge" %}
       {% if review_video %}
-      <div class="artifact"><video controls src="{{ review_video_url }}"></video></div>
+      <div class="artifact"><video controls src="{{ review_video_url }}"></video>
+        {% include "_playback_speed.html" %}</div>
       {% elif not nle_projects %}
       <div class="muted" style="margin-bottom:8px">No preview yet. Build the preview draft + {{ render_target_label }} project with ImgToVideo, or upload a final video.</div>
       {% endif %}

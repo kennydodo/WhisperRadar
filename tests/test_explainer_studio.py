@@ -104,6 +104,18 @@ class ExplainerPageTests(unittest.TestCase):
         self.assertIn("Render explainer video", html)
         self.assertNotIn("Build preview + export to", html)
 
+    def test_review_video_has_speed_buttons_only_when_there_is_a_video(self):
+        (self.pdir / "plan.json").write_text("{}", encoding="utf-8")
+        html = self.client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
+        self.assertNotIn("data-speed", html)
+        (self.pdir / "out").mkdir(exist_ok=True)
+        (self.pdir / "out" / "preview.mp4").write_bytes(b"\x00" * 16)
+        html = self.client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
+        self.assertIn("<video", html)
+        for rate in ("0.5", "1.5", "2", "3", "4"):
+            self.assertIn(f'data-speed="{rate}"', html)
+        self.assertIn("playbackRate", html)
+
     def test_stop_button_shows_only_while_an_explainer_job_runs(self):
         from whisperradar import webapp
         self.assertNotIn("Stop scene plan", self.client.get(f"/studio/{self.pid}?stage=shots").get_data(as_text=True))
