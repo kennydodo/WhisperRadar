@@ -10,7 +10,7 @@ export const Levels = ({title, sub, levels, decoder, result, footer, theme}) => 
   const ms = useMs();
   const cols = [pal.accent, pal.accent2, pal.good, pal.bad];
   const n = levels.length;
-  const DY = n === 4 ? 150 : 180;
+  const DY = n === 4 ? 170 : 210;
   const Y0 = Math.round(Math.max(250, (1000 - (n * DY + 190)) / 2 + 70));      // centred in the frame
   const cellW = (c) => W / c - 12;
   const cx = (c, i) => X0 + (i + 0.5) * (W / c);
@@ -28,7 +28,8 @@ export const Levels = ({title, sub, levels, decoder, result, footer, theme}) => 
       }
     }
     return <React.Fragment key={k}>
-      <div style={{position: 'absolute', left: X0, top: y - 42, fontFamily: pal.sansF, fontSize: 30, color: pal.text, opacity: a * 0.8}}>{lv.label}</div>
+      <div style={{position: 'absolute', left: X0, top: y - 66, fontFamily: pal.sansF, fontSize: 30, lineHeight: '38px', color: pal.text,
+        opacity: a * 0.9, background: pal.bg2 || pal.panel, padding: '2px 14px 2px 0', borderRadius: 8}}>{lv.label}</div>
       {Array.from({length: lv.cells}, (_, i) => {
         const p = prog(ms, lv.at_ms, 450);
         return <div key={i} style={{position: 'absolute', left: cx(lv.cells, i) - cellW(lv.cells) / 2, top: y,
