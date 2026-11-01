@@ -523,6 +523,10 @@ def resolve_anchors(plan: dict, cues) -> dict:
         if isinstance(s.get("footer"), dict):
             s["footer"] = dict(s["footer"])
             anchor(s["footer"], where="footer")
+        if isinstance(s.get("points"), list):
+            s["points"] = [dict(x) if isinstance(x, dict) else {"text": str(x)} for x in s["points"]]
+            for k, x in enumerate(s["points"]):
+                anchor(x, where=f"point {k + 1}")
         for key in ("counter", "zoom", "motion"):
             if isinstance(s.get(key), dict):
                 s[key] = dict(s[key])
@@ -883,6 +887,28 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
         must_finish(st, zm, "the zoom")
         params = {"image": raw.get("image"), "box": z.get("box"), "start_ms": int(st), "zoom_ms": zm,
                   "caption": raw.get("caption", "")}
+    if isinstance(raw.get("points"), list) and raw["points"]:
+        pts = []
+        for k, x in enumerate(raw["points"]):
+            x = x if isinstance(x, dict) else {"text": str(x)}
+            cue = x.get("cue")
+            if cue is None or cue not in cue_ms or not cr[0] <= cue <= cr[1]:
+                raise ExplainerError([f"Scene {sid}: point {k + 1} is anchored outside the scene."])
+            at = max(cue_ms[cue][0] - start, 150)
+            text = str(x.get("text") or "")
+            hold = 900 + 320 * len(text.split())            # time to read it once it is fully shown
+            if raw.get("points_mode") == "written":
+                hold = int(hold * 1.6) + 800                # a written reveal takes about a second to finish
+            if at + hold > dur - TAIL_MS:
+                raise ExplainerError([f"Scene {sid}: point {k + 1} ({text[:30]}) starts too late to be read before "
+                                      f"the scene ends (needs about {hold / 1000:.1f} s on screen); give it earlier "
+                                      "words or shorten it."])
+            pts.append({"text": str(x.get("text") or ""), "start_ms": int(at)})
+        params["points"] = pts
+        if raw.get("points_mode"):
+            params["points_mode"] = str(raw["points_mode"])
+        if raw.get("points_place"):
+            params["points_place"] = str(raw["points_place"])
     from . import remotion_backend
     block = {"component": raw["layout"], "params": params}
     if raw.get("fade"):
@@ -1033,6 +1059,9 @@ def _first_content_cue(raw: dict):
                     cues.append(p["cue"])
     if isinstance(raw.get("footer"), dict) and isinstance(raw["footer"].get("cue"), int):
         cues.append(raw["footer"]["cue"])
+    for x in raw.get("points") or []:
+        if isinstance(x, dict) and isinstance(x.get("cue"), int):
+            cues.append(x["cue"])
     return min(cues) if cues else None
 
 

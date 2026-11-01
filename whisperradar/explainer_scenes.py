@@ -1180,6 +1180,8 @@ def normalize_plan(plan: dict) -> dict:
             s.pop("footer", None)
         if isinstance(s.get("items"), list):
             s["items"] = [obj(i, "label") for i in s["items"] if i not in (None, "")]
+        if isinstance(s.get("points"), list):
+            s["points"] = [obj(i, "text") for i in s["points"] if i not in (None, "")]
         if isinstance(s.get("sides"), list):
             s["sides"] = [sd for sd in s["sides"] if isinstance(sd, dict)]
             for sd in s["sides"]:

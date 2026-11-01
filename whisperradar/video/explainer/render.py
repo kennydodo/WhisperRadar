@@ -73,10 +73,15 @@ _BUILT_KEYS = {"at_ms", "start_ms", "run_ms", "count_ms", "type_ms", "zoom_ms", 
                "duration_ms", "box", "points", "x", "y", "w", "h", "fit_to", "shot_id", "cue_range", "events"}
 
 
+def _is_text_points(v) -> bool:
+    """Scene `points` (spoken bullets: [{text, start_ms}]) are content; stroke `points` are coordinates."""
+    return isinstance(v, list) and bool(v) and all(isinstance(x, dict) and "text" in x for x in v)
+
+
 def _content(v):
     """A scene part without the builder-computed keys (recursively)."""
     if isinstance(v, dict):
-        return {k: _content(x) for k, x in v.items() if k not in _BUILT_KEYS}
+        return {k: _content(x) for k, x in v.items() if k not in _BUILT_KEYS or (k == "points" and _is_text_points(x))}
     if isinstance(v, list):
         return [_content(x) for x in v]
     return v

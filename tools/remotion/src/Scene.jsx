@@ -12,7 +12,7 @@ import {Flow} from './components/Flow.jsx';
 import {Line} from './components/Line.jsx';
 import {Grid} from './components/Grid.jsx';
 import {Split} from './components/Split.jsx';
-import {Backdrop, usePal} from './motion.jsx';
+import {Backdrop, PointsColumn, usePal} from './motion.jsx';
 
 // Allowlisted components. The Python side validates names and parameters
 // before anything reaches here; unknown names render nothing.
@@ -33,13 +33,27 @@ export const Scene = ({component, params, theme, fade}) => {
     <AbsoluteFill style={{background: t.background}}>
       <style>{`@font-face{font-family:Handlee;src:url(${staticFile('Handlee-Regular.ttf')})}` + Object.entries(t.fontData || {}).map(([k, u]) => `@font-face{font-family:"${k}";src:url(${u})}`).join('')}</style>
       <AbsoluteFill style={{opacity: Math.max(0, Math.min(fin, fout))}}>
-        {C ? (isMotion ? <MotionWrap C={C} params={params} t={t} /> : <C {...params} theme={t} />) : null}
+        {C ? (isMotion ? <MotionWrap C={C} name={component} params={params} t={t} /> : <C {...params} theme={t} />) : null}
       </AbsoluteFill>
     </AbsoluteFill>
   );
 };
 
-const MotionWrap = ({C, params, t}) => {
+const SIDE = new Set(['counter', 'bars', 'flow']);   // simple diagrams give up their left quarter
+const MotionWrap = ({C, name, params, t}) => {
   const pal = usePal(t);
-  return <Backdrop pal={pal}><C {...params} theme={t} /></Backdrop>;
+  const pts = Array.isArray(params.points) && params.points.length ? params.points : null;
+  if (!pts) return <Backdrop pal={pal}><C {...params} theme={t} /></Backdrop>;
+  const place = params.points_place || (SIDE.has(name) && !(name === 'flow' && (params.nodes || []).length > 3) ? 'side' : 'below');
+  const mode = params.points_mode || 'appear';
+  // side: the diagram gives up its left quarter; below: a strip under the diagram, which keeps most of the width
+  const box = place === 'side'
+    ? {transform: 'scale(0.74)', transformOrigin: 'top right'}
+    : {transform: 'scale(0.86)', transformOrigin: 'top center'};
+  return <Backdrop pal={pal}>
+    <div style={{position: 'absolute', left: 0, top: 0, width: 1920, height: 1080, ...box}}>
+      <C {...params} theme={t} />
+    </div>
+    <PointsColumn points={pts} mode={mode} place={place} pal={pal} />
+  </Backdrop>;
 };

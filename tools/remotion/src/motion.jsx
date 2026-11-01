@@ -139,3 +139,31 @@ export const fmtNum = (v, prefix = '', unit = '', decimals = null) => {
   const sp = unit && !['%', '×', 'x'].includes(unit) ? ' ' : '';
   return `${prefix}${s}${unit ? sp + unit : ''}`;
 };
+
+
+// Spoken points beside the diagram: short bullets that appear on the narrator's words. Typed text
+// that fades in; a channel with a handwritten look gets a left-to-right "written" wipe instead.
+// mode "all": every point is on screen from the start (dim) and the one being spoken is lit.
+export const PointsColumn = ({points, mode, place = 'side', pal}) => {
+  const ms = useMs();
+  const written = pal.hand && mode === 'written';
+  const all = mode === 'all';
+  const cur = points.reduce((m, pt, i) => (ms >= pt.start_ms ? i : m), -1);
+  const top = place === 'below';
+  const wrapStyle = top
+    ? {position: 'absolute', left: 110, right: 110, top: 930, display: 'flex', flexDirection: 'row', gap: 48}
+    : {position: 'absolute', left: 64, top: 210, width: 500, display: 'flex', flexDirection: 'column', gap: 34};
+  return <div style={wrapStyle}>
+    {points.map((pt, i) => {
+      const a = prog(ms, pt.start_ms, written ? 800 : 300);
+      const lit = all ? (i === cur ? 1 : i < cur ? 0.8 : 0.35) : a;
+      const shown = all ? 1 : a;
+      return <div key={i} style={{display: 'flex', gap: 18, alignItems: 'flex-start', flex: top ? 1 : undefined, opacity: shown * (all ? lit : 1),
+        transform: all || written ? 'none' : `translateY(${(1 - a) * 8}px)`}}>
+        <div style={{width: 14, height: 14, borderRadius: 7, marginTop: 17, flex: '0 0 14px', background: pal.accent2}} />
+        <div style={{fontFamily: written ? pal.noteF : pal.sansF, fontSize: top ? 34 : 40, lineHeight: 1.2, color: pal.text,
+          clipPath: written ? `inset(0 ${Math.round((1 - a) * 100)}% 0 0)` : 'none'}}>{pt.text}</div>
+      </div>;
+    })}
+  </div>;
+};

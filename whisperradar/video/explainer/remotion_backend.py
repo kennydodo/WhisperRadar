@@ -166,6 +166,38 @@ def _check_footer(p: dict, where: str) -> list:
     return []
 
 
+POINTS_MODES = ("appear", "all", "written")
+POINTS_MAX = {"appear": 4, "written": 4, "all": 5}      # 1-3 is normal; more is crowded, above all on a phone
+POINTS_PLACES = ("side", "below")
+
+
+def _check_points(p: dict, where: str) -> list:
+    """Short spoken points shown beside the diagram, each on its own cue."""
+    pts = p.get("points")
+    if pts is None:
+        return []
+    mode = p.get("points_mode", "appear")
+    if mode not in POINTS_MODES:
+        return [f"{where}: points_mode must be one of {', '.join(POINTS_MODES)}."]
+    if p.get("points_place", "side") not in POINTS_PLACES:
+        return [f"{where}: points_place must be one of {', '.join(POINTS_PLACES)}."]
+    if not isinstance(pts, list) or not pts:
+        return [f"{where}: points must be a list of {{text, start_ms}}."]
+    if len(pts) > POINTS_MAX[mode]:
+        return [f"{where}: {len(pts)} points are too many to read while listening (at most {POINTS_MAX[mode]} "
+                f"in mode {mode}); split the scene or keep the points that carry the idea."]
+    errs, last = [], None
+    for k, x in enumerate(pts):
+        if not isinstance(x, dict) or not _text(x.get("text"), 60) or not _ms(x.get("start_ms")):
+            errs.append(f"{where}: point {k + 1} needs text of 60 characters at most and a start time.")
+            continue
+        if last is not None and x["start_ms"] - last < 500:
+            errs.append(f"{where}: points {k} and {k + 1} are anchored to the same moment of the narration "
+                        "(less than 500 ms apart); anchor each to words said in a different place.")
+        last = x["start_ms"]
+    return errs
+
+
 def _check_generation(p: dict, where: str) -> list:
     errs = []
     rows = p.get("rows")
@@ -436,7 +468,7 @@ def check_block(block, where: str) -> list:
     params = block.get("params")
     if not isinstance(params, dict):
         return [f"{where}: remotion.params must be an object."]
-    return COMPONENTS[name](params, where) + _check_footer(params, where)
+    return COMPONENTS[name](params, where) + _check_footer(params, where) + _check_points(params, where)
 
 
 # ---- fingerprint and cache --------------------------------------------------------
