@@ -3867,8 +3867,9 @@ def create_app(cfg) -> Flask:
         from . import explainer_scenes as _xs
         scene_review = _xs.load_review(pdir) if explainer_mode else {}
         scene_plan_exists = (pdir / "plan.json").is_file()
-        scene_state, candidate_scenes = {}, []
+        scene_state, candidate_scenes, plan_text = {}, [], ""
         if explainer_mode:
+            plan_text = _read_text(pdir / "plan.json" if scene_plan_exists else None)
             scene_state = _xs.lifecycle_for(cfg, pid, bool(sjob.running and "scene plan" in str(sjob.kind or "")))
             cp = scene_state["candidate"].get("plan") or {}
             candidate_scenes = [{"id": x.get("id"), "layout": x.get("layout") or "-", "title": x.get("title") or "",
@@ -5038,25 +5039,20 @@ def create_app(cfg) -> Flask:
     @app.post("/studio/<int:pid>/scenes/generate")
     def studio_scenes_generate(pid):
         """Explainer productions: writer drafts plan.json, the code checks it,
-        the judge reviews it (web chat sites, or API providers)."""
+        the judge reviews it (web chat sites only - there is no API route for scene plans)."""
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         if not studio.find_srt(studio.prod_dir(cfg, pid)):
             return _studio_url(pid, error="Generate the subtitles first")
-        transport = "webchat" if request.form.get("transport") == "webchat" else None
-        provider = autorun._stage_provider(
-            cfg, pid, "shots",
-            override=(request.form.get("provider") or "").strip() or None)
+        transport = "webchat"
+        provider = None
         writer = (request.form.get("writer") or "").strip() or None
         judge = (request.form.get("judge") or "").strip() or None
-        if transport == "webchat":
-            from . import webchat as _wc
-            for site in (writer, judge):
-                if site and site not in _wc.SITES:
-                    return _studio_url(pid, error="Unknown chat site")
-        else:
-            judge = None                                  # the API judge follows the chosen provider
-        chat_options = _chat_options(request.form) if transport == "webchat" and request.form.get("zai_model") else None
+        from . import webchat as _wc
+        for site in (writer, judge):
+            if site and site not in _wc.SITES:
+                return _studio_url(pid, error="Unknown chat site")
+        chat_options = _chat_options(request.form) if request.form.get("zai_model") else None
         start = (request.form.get("start") or "auto").strip()
         if start not in ("auto", "continue", "revise_active", "fresh"):
             return _studio_url(pid, error="Unknown start mode")
@@ -5072,6 +5068,38 @@ def create_app(cfg) -> Flask:
 
         sjob.start(worker, "explainer scene plan")
         return _studio_url(pid, msg="Scene plan started - the job log shows each round")
+
+    @app.post("/studio/<int:pid>/scenes/save")
+    def studio_scenes_save(pid):
+        """Save a hand-edited plan.json from the Plan box. It must be valid JSON with scenes and pass the
+        same code checks as a written plan (soft advice is allowed); the previous plan is kept as
+        plan_before_edit.json and the edit is recorded in plan_audit.jsonl."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        pdir = studio.prod_dir(cfg, pid)
+        raw = request.form.get("plan") or ""
+        try:
+            plan = json.loads(raw)
+        except ValueError as exc:
+            return _studio_url(pid, error=f"Not saved - this is not valid JSON ({str(exc)[:100]})")
+        if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
+            return _studio_url(pid, error='Not saved - the plan needs a "scenes" list.')
+        srt = studio.find_srt(pdir)
+        if not srt:
+            return _studio_url(pid, error="Not saved - generate the subtitles first.")
+        from . import explainer_storyboard as _sbe, scene_plan_state as _sps
+        from .video.explainer import validate as _ev
+        cues = studio.parse_srt_cues(Path(srt).read_text(encoding="utf-8-sig"))
+        if not cues:
+            return _studio_url(pid, error="Not saved - the subtitles are empty.")
+        hard, advice = _sbe.faults(plan, cues, studio._srt_seconds(cues[-1]["end"]), _ev.project_look(str(pdir)))
+        if hard:
+            return _studio_url(pid, error="Not saved - " + "; ".join(hard)[:400])
+        _sbe.save(pdir, plan)
+        _sps.audit(pdir, "manual_edit", scenes=len(plan["scenes"]), plan_digest=_sps.plan_digest(plan))
+        note = (" Note: " + "; ".join(advice)[:300]) if advice else ""
+        return _studio_url(pid, msg=f"Plan saved ({len(plan['scenes'])} scenes). "
+                           "The previous plan is kept as plan_before_edit.json." + note)
 
     @app.post("/studio/<int:pid>/scenes/accept")
     def studio_scenes_accept(pid):

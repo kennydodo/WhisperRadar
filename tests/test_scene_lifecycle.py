@@ -183,6 +183,12 @@ class SeverityTests(Base):
         self.assertEqual(review['status'], 'needs_revision')
 
 
+def api_job(cfg, pid, writer, judge, log, should_stop=lambda: False, start='auto'):
+    """Drive the scene plan with the (patched) studio.llm_generate, recording the run like the app does."""
+    return es.run_job(cfg, pid, lambda role, text, new_chat: studio.llm_generate(cfg, text),
+                      {'writer': writer, 'judge': judge}, log, should_stop, start=start)
+
+
 class LifecycleTests(Base):
     def api(self, replies=None):
         """An API pair: the writer drafts once and answers revisions with a small patch, the judge always blocks."""
@@ -202,7 +208,7 @@ class LifecycleTests(Base):
 
     def test_a_draft_below_the_bar_is_needs_revision_not_a_failure(self):
         with self.api(), self.assertRaises(es.NeedsRevision):
-            es.api_job(self.cfg, self.pid, 'p', 'p', lambda _: None, start='fresh')
+            api_job(self.cfg, self.pid, 'p', 'p', lambda _: None, start='fresh')
         life = self.life()
         self.assertEqual((life['state'], life['label']), ('needs_revision', 'Needs revision'))
         self.assertEqual(life['run']['status'], 'needs_revision')
@@ -211,7 +217,7 @@ class LifecycleTests(Base):
 
     def test_a_connection_problem_is_transport_failed(self):
         with self.api([RuntimeError('connection reset')]), self.assertRaises(RuntimeError) as cm:
-            es.api_job(self.cfg, self.pid, 'p', 'p', lambda _: None)
+            api_job(self.cfg, self.pid, 'p', 'p', lambda _: None)
         self.assertNotIsInstance(cm.exception, es.NeedsRevision)
         life = self.life()
         self.assertEqual((life['state'], life['label']), ('transport_failed', 'Transport failed'))
@@ -223,7 +229,7 @@ class LifecycleTests(Base):
             flag['stop'] = True                               # the user presses Stop during the writer's reply
             return j(plan())
         with patch.object(studio, 'llm_generate', gen), self.assertRaisesRegex(RuntimeError, 'Stopped by you'):
-            es.api_job(self.cfg, self.pid, 'p', 'p', lambda _: None, should_stop=lambda: flag['stop'])
+            api_job(self.cfg, self.pid, 'p', 'p', lambda _: None, should_stop=lambda: flag['stop'])
         life = self.life()
         self.assertEqual((life['state'], life['label']), ('stopped', 'Stopped'))
         self.assertTrue(life['can_continue'])
@@ -411,8 +417,8 @@ class AutoRunTests(Base):
 
     def test_needs_revision_pauses_the_stage_instead_of_failing_or_advancing(self):
         with patch.object(autorun, 'explainer_production', return_value=True), \
-                patch.object(studio, 'judge_provider', return_value='p'), \
-                patch.object(es, 'api_job', side_effect=es.NeedsRevision('Scene plan needs revision: x')):
+                patch.object(autorun, '_webchat_pair', return_value=('w', 'j', {})), \
+                patch.object(es, 'webchat_job', side_effect=es.NeedsRevision('Scene plan needs revision: x')):
             result = autorun.run_stage(self.cfg, self.pid, 'shots', {})
         self.assertTrue(result.startswith('paused:'), result)
 

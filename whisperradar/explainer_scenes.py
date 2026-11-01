@@ -1602,20 +1602,20 @@ def webchat_job(cfg, pid: int, writer: str, judge: str, log, should_stop=lambda:
         raise
 
 
-def api_job(cfg, pid: int, provider: str | None, judge: str | None, log,
-            should_stop=lambda: False, start: str = "auto") -> dict:
-    """Writer and judge are API providers (studio.llm_generate)."""
-    names = {"writer": provider, "judge": judge or provider}
+def run_job(cfg, pid: int, ask, names: dict, log, should_stop=lambda: False, start: str = "auto") -> dict:
+    """Run the scene plan with any ask(role, text, new_chat) -> reply and record how the run ended in
+    scene_plan_run.json. The app itself drives chat sites (webchat_job); this is the same bookkeeping
+    without a browser, used by tests and scripts."""
     pdir = studio.prod_dir(cfg, pid)
-    run = {"status": "running", "started_at": time.time(), "writer": names["writer"], "judge": names["judge"]}
+    run = {"status": "running", "started_at": time.time(), "writer": names.get("writer"), "judge": names.get("judge")}
     _atomic_json(pdir / "scene_plan_run.json", run)
 
-    def ask(role, text, new_chat):
-        log(f"{names[role] or 'default LLM'}: sending {len(text):,} characters ({role})")
+    def tracked(role, text, new_chat):
+        log(f"{names.get(role) or role}: sending {len(text):,} characters ({role})")
         run["role"] = role
-        return studio.llm_generate(cfg, text, provider=names[role])
+        return ask(role, text, new_chat)
     try:
-        result = run_scenes(cfg, pid, ask, log, should_stop, start=start)
+        result = run_scenes(cfg, pid, tracked, log, should_stop, start=start)
         run.update(status="approved", finished_at=time.time())
         return result
     except Exception as exc:

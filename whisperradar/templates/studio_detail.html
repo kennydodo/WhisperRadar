@@ -359,7 +359,7 @@
   <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</div>
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
 
-  {% set STAGE_DISPLAY = {'style': 'writing style', 'shots': 'shotlist', 'srt': 'subtitles',
+  {% set STAGE_DISPLAY = {'style': 'writing style', 'shots': ('plan' if explainer_mode else 'shotlist'), 'srt': 'subtitles',
                           'refs': 'references', 'motion': 'motion clips',
                           'merge': 'merge & export'} %}
   {% set RESET_BLURB = {
@@ -959,7 +959,7 @@
             <option value="revise_active" {{ 'disabled' if not ss.can_revise_active else '' }}>Revise active plan</option>
             <option value="fresh">Start fresh (draft anew; old draft goes to backups)</option></select></label>{% endset %}
           {{ start_picker }}
-          <span class="muted" style="font-size:12px">No API - drive chat sites (blank = the pair chosen in Settings):</span>
+          <span class="muted" style="font-size:12px">Drive the chat sites (blank = the pair chosen in Settings):</span>
           <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <label>Writer <select name="writer"><option value="">Settings default</option>{% for key, name in review_sites %}<option value="{{ key }}">{{ name }}</option>{% endfor %}</select></label>
             <label>Model <select name="zai_model" title="z.ai model for this run (used when z.ai writes or judges)"><option value="flash">GLM-5.3-Flash</option><option value="5.3">GLM-5.3</option><option value="5.2">GLM-5.2</option></select></label>
@@ -973,13 +973,6 @@
             {{ 'Working...' if job.running else ('Redo scene plan (web chat)' if scene_plan_exists else 'Write scene plan (web chat)') }}
           </button>
         </form>
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/scenes/generate"
-              onsubmit="return wrConfirmSubmit(this, 'Write the scene plan with the API providers? The active plan.json is only replaced when the judge approves it or you accept a draft.')">
-          <span class="muted" style="font-size:12px">With an API LLM:</span>
-          {{ start_picker }}
-          {{ provider_select('shots') }}
-          <button type="submit" class="secondary" {{ 'disabled' if job.running or not srt else '' }}>Write scene plan (API)</button>
-        </form>
         {% if job.running and (job.kind or '').startswith('explainer') %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/explainer/stop"
               onsubmit="return wrConfirmSubmit(this, '{{ 'Stop the scene plan? It stops after the current reply and plan.json is not changed.' if 'scene plan' in (job.kind or '') else 'Stop the render? Scenes already drawn are kept for the next render.' }}')">
@@ -987,6 +980,18 @@
         </form>
         {% endif %}
       </div>
+      {% if scene_plan_exists %}
+      <form method="post" action="/studio/{{ prod['id'] }}/scenes/save" style="margin-top:14px">
+        <div style="font-weight:600; margin-bottom:4px">Plan <span class="muted" style="font-weight:400">(plan.json - edit it by hand if you like; it is checked before it is saved)</span></div>
+        <textarea name="plan" style="min-height:200px" placeholder="plan.json - write the scene plan above, or paste one here">{{ plan_text }}</textarea>
+        <div class="muted" data-counter-for="plan" style="font-size:12px;margin-top:4px"></div>
+        <script>(function(){var t=document.currentScript.parentNode.querySelector('textarea[name="plan"]'),o=document.querySelector('[data-counter-for="plan"]');if(!t||!o)return;function u(){var v=t.value||'',w=(v.trim().match(/\S+/g)||[]).length;o.textContent=w.toLocaleString()+' words · '+v.length.toLocaleString()+' characters';}t.addEventListener('input',u);u();})();</script>
+        <div class="actions">
+          <button type="submit" {{ 'disabled' if job.running else '' }}>Save plan</button>
+          <a class="btn secondary" style="font-size:12px" href="/explainer/{{ prod['id'] }}/plan">Edit scene by scene</a>
+        </div>
+      </form>
+      {% endif %}
 
     {% elif stage == "shots" %}
       {% if coverage_gap %}
@@ -1952,7 +1957,7 @@
     const body = document.getElementById('autorunbody');
     const icons = { run: '▶', skip: '✓', pause: '⏸' };
     const colors = { run: 'var(--accent)', skip: 'var(--green)', pause: 'var(--amber)' };
-    const STAGE_LABEL = { shots: 'shotlist' };
+    const STAGE_LABEL = { shots: '{{ 'plan' if explainer_mode else 'shotlist' }}' };
     let html = '<div class="muted" style="margin-bottom:8px">Executes every remaining stage in order (done ones are skipped) and always stops before review:</div><ul style="margin:0 0 10px; padding-left:4px; list-style:none">';
     let credits = 0, hasMerge = false;
     for (const e of data.plan) {
@@ -1971,7 +1976,7 @@
         html += '<li style="padding:6px 0 10px 22px"><label>Write the character/reference bible now (recurring characters, environments, wardrobe, objects):</label>' +
           '<textarea id="ar_bible_text" style="min-height:70px" placeholder="e.g. MAYA - woman in her 30s, black hair, mustard scarf..."></textarea>' +
           '<div class="row" style="margin-top:6px"><button type="button" class="secondary" onclick="arSaveBible()">Save bible</button>' +
-          '<a class="muted" style="font-size:12px; align-self:center" href="/studio/' + AR_PID + '?stage=shots" onclick="closeAutorunModal()">open the shotlist stage instead</a></div></li>';
+          '<a class="muted" style="font-size:12px; align-self:center" href="/studio/' + AR_PID + '?stage=shots" onclick="closeAutorunModal()">open the {{ 'plan' if explainer_mode else 'shotlist' }} stage instead</a></div></li>';
       }
       if (e.action === 'pause' && e.stage !== 'audio' &&
           !(e.stage === 'shots' && e.detail.indexOf('bible') !== -1)) {
@@ -2003,7 +2008,7 @@
         data.providers.map(function (p) {
           return '<option value="' + p + '">' + p + ' (force for every text stage)</option>';
         }).join('');
-      html += '<label style="display:block; margin:10px 0 0">LLM for the text stages (style, script, shotlist)' +
+      html += '<label style="display:block; margin:10px 0 0">LLM for the text stages (style, script, {{ 'plan' if explainer_mode else 'shotlist' }})' +
         '<select id="ar_provider">' + opts + '</select>' +
         '<span class="muted" style="font-size:12px">leave on "Use each stage\'s own pick" to keep whatever you chose per stage; only override here to force one LLM for the whole run</span></label>';
     }

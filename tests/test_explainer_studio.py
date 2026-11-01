@@ -162,6 +162,40 @@ class ExplainerPageTests(unittest.TestCase):
         self.assertIn('name="zai_model"', html)                    # same model / thinking controls as the shotlist form
         self.assertIn('name="deepseek_deepthink"', html)
 
+    def test_plan_box_replaces_the_api_form_and_saves_checked_edits(self):
+        import urllib.parse
+        (self.pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
+        (self.pdir / "plan.json").write_text(json.dumps(PLAN), encoding="utf-8")
+        html = self.client.get(f"/studio/{self.pid}?stage=shots").get_data(as_text=True)
+        self.assertIn('name="plan"', html)
+        self.assertIn(f'/studio/{self.pid}/scenes/save', html)
+        self.assertIn("Save plan", html)
+        self.assertNotIn("Write scene plan (API)", html)
+        self.assertNotIn("With an API LLM", html)
+        self.assertNotIn("Save shotlist", html)
+        # a stage called "plan", not "shotlist", in the explainer's stage list
+        self.assertIn("STAGE_LABEL = { shots: 'plan' }", html)
+        edited = json.loads(json.dumps(PLAN))
+        edited["scenes"][0]["title"] = "Edited by hand"
+        r = self.client.post(f"/studio/{self.pid}/scenes/save", data={"plan": json.dumps(edited)})
+        self.assertIn("Plan saved", urllib.parse.unquote(r.headers["Location"]))
+        self.assertEqual(json.loads((self.pdir / "plan.json").read_text())["scenes"][0]["title"], "Edited by hand")
+        self.assertTrue((self.pdir / "plan_before_edit.json").exists())
+        self.assertIn("manual_edit", (self.pdir / "plan_audit.jsonl").read_text())
+
+    def test_plan_box_refuses_bad_json_and_unfindable_words(self):
+        import urllib.parse
+        (self.pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
+        (self.pdir / "plan.json").write_text(json.dumps(PLAN), encoding="utf-8")
+        before = (self.pdir / "plan.json").read_text()
+        r = self.client.post(f"/studio/{self.pid}/scenes/save", data={"plan": "{not json"})
+        self.assertIn("not valid JSON", urllib.parse.unquote(r.headers["Location"]))
+        bad = json.loads(json.dumps(PLAN))
+        bad["scenes"][0]["start"] = "words that are never said"
+        r = self.client.post(f"/studio/{self.pid}/scenes/save", data={"plan": json.dumps(bad)})
+        self.assertIn("Not saved", urllib.parse.unquote(r.headers["Location"]))
+        self.assertEqual((self.pdir / "plan.json").read_text(), before)
+
     def test_an_unknown_chat_site_is_refused(self):
         (self.pdir / "subtitles.srt").write_text(SRT, encoding="utf-8")
         r = self.client.post(f"/studio/{self.pid}/scenes/generate", data={"transport": "webchat", "writer": "nope"})
