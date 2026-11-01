@@ -1,4 +1,4 @@
-{# Speed buttons for the <video> just above this include (same parent). The choice is remembered per browser. #}
+{# Speed buttons for the <video> or <audio> just above this include (same parent). The choice is remembered per browser. #}
 <div class="speedbar" style="margin-top:6px; font-size:13px; display:flex; gap:6px; align-items:center; flex-wrap:wrap">
   <span class="muted">Speed</span>
   {% for s in ['0.5', '1', '1.25', '1.5', '2', '3', '4'] %}
@@ -9,7 +9,7 @@
 <script>
 (function () {
   var bar = document.currentScript.previousElementSibling;
-  var video = bar && bar.parentNode.querySelector('video');
+  var video = bar && bar.parentNode.querySelector('video, audio');
   if (!video) return;
   var KEY = 'wr_preview_speed', info = bar.querySelector('.speedinfo');
   function show(rate) {

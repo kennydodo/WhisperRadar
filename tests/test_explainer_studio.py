@@ -116,6 +116,15 @@ class ExplainerPageTests(unittest.TestCase):
             self.assertIn(f'data-speed="{rate}"', html)
         self.assertIn("playbackRate", html)
 
+    def test_audio_stage_has_speed_buttons_only_when_there_is_audio(self):
+        html = self.client.get(f"/studio/{self.pid}?stage=audio").get_data(as_text=True)
+        self.assertNotIn("data-speed", html)
+        (self.pdir / "audio.mp3").write_bytes(b"\x00" * 16)
+        html = self.client.get(f"/studio/{self.pid}?stage=audio").get_data(as_text=True)
+        self.assertIn("<audio", html)
+        self.assertIn('data-speed="2"', html)
+        self.assertIn("video, audio", html)
+
     def test_stop_button_shows_only_while_an_explainer_job_runs(self):
         from whisperradar import webapp
         self.assertNotIn("Stop scene plan", self.client.get(f"/studio/{self.pid}?stage=shots").get_data(as_text=True))

@@ -731,7 +731,8 @@
 
     {% elif stage == "audio" %}
       {% if audio %}
-      <div class="artifact"><audio controls src="/studio/file/{{ prod['id'] }}/{{ audio.name }}"></audio></div>
+      <div class="artifact"><audio controls src="/studio/file/{{ prod['id'] }}/{{ audio.name }}"></audio>
+        {% include "_playback_speed.html" %}</div>
       {% else %}
       <div class="muted" style="margin-bottom:8px">No audio yet.</div>
       {% endif %}
