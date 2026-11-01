@@ -88,9 +88,15 @@ identify the topic, naturally include the primary phrase, and explain the
 specific value delivered. Work relevant secondary phrases into useful sentences
 only where the script supports them. Keep the viewer's language and channel
 tone. Do not add keyword dumps, repetitive variants, irrelevant trends, or
-unverified claims. Add a small set of relevant hashtags. Use supplied subtitle
-or chapter timings for accurate chapters; omit timed chapters when reliable
-timings are unavailable rather than inventing timestamps. Keep research notes
+unverified claims. Add a small set of relevant hashtags. CHAPTERS ARE REQUIRED
+when usable subtitles or reliable chapter timings are supplied. Read the timed
+narration and include a Chapters block inside the complete description, starting
+at 0:00 with at least three meaningful sections in increasing time order. Verify
+every section start against the supplied subtitles; leave at least 10 seconds
+between chapters and before the end. Use concise titles describing the section.
+Do not omit chapters merely because timing verification takes work. Only omit
+timed chapters when reliable timings are missing or unusable; explain that
+limitation in notes rather than inventing timestamps. Keep research notes
 and internal SEO reasoning out of the public description.
 
 THUMBNAILS: Communicate the same topic and promise visually. Use short readable

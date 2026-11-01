@@ -75,7 +75,8 @@ fallbacks, API keys, browsers, SVG/code-generated substitute artwork, or modify
 the production. If the built-in image tool is unavailable, fail honestly.
 Return ONLY a JSON object (no Markdown) with: title (recommended, <=100 chars),
 titles (one or two distinct objects with text <=100 chars and why), description
-(complete publish-ready text, 200-4500 chars, with relevant chapters/hashtags),
+(complete publish-ready text, 200-4500 chars; include verified timestamped chapters
+starting at 0:00 whenever usable subtitles are supplied, plus relevant hashtags),
 thumbnails (one or two objects with path, text, prompt, idea),
 recommended_thumbnail (1-2), keywords (at least 20 distinct relevant search phrases, plain comma-separated text, maximum 500 characters total including commas and spaces), first_comment (short, topic-specific conversation starter for the user to post), notes. title must equal one of titles[].text.
 Each thumbnail path must identify a real generated PNG under the local

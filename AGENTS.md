@@ -1924,3 +1924,14 @@ guidance only. Purpose-after-hook is channel-selectable, not a universal rule.
 Defaults: Alicia and To Live and More purpose; AI Guy direct/demo/comparison;
 POV story; Nature discovery; Presence/Steadier Mind reflective; others channel.
 Tests: `test_openings.py`, opening integration cases in webstages/human_review.
+
+
+## Manual agent collaboration handoff (2026-10-31)
+For user-directed manual script and explainer-plan work, read
+`docs/manual-production-workflow.md` and the production's
+`manual_review/handoff.md` first. Create a missing handoff using
+`docs/manual-production-handoff-template.md`; update it after meaningful reviews
+or revisions. Record exact artifact versions, open/resolved findings, user
+decisions and the next owner. Do not modify running-render inputs or represent
+manual review as an automated judge approval. This adds documentation only;
+it does not launch webchat, render, or change the app's stage/approval state.
