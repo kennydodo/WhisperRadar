@@ -1541,6 +1541,15 @@
           <input type="file" name="video_file" accept="video/*" required>
           <button type="submit" class="secondary">Upload final video</button>
         </form>
+        {% if preview %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render_final"
+              onsubmit="return wrConfirmSubmit(this, 'Render the final video at {{ final_size_label }}? This takes much longer than the preview. The preview and the project export are not changed.')">
+          <button type="submit" class="green" {{ 'disabled' if job.running else '' }}
+                  title="After you have reviewed the preview: the finished video at the channel's size, ready to upload without going through an editor.">
+            {{ 'Re-render final video' if final else 'Render final video' }}{% if final_size_label %} ({{ final_size_label }}){% endif %}
+          </button>
+        </form>
+        {% endif %}
       </div>
       {% endif %}
 
@@ -1565,6 +1574,14 @@
       <div class="note" style="margin:8px 0">No thumbnail was generated for this production{% if not plan_exists %} (it was started before / without the packaging plan, which is what normally seeds one){% endif %}. Generate thumbnail concepts here &mdash; it runs in the web chat, like the other creative stages.</div>
       {% endif %}
       <div class="actions">
+        {% if not explainer_mode and preview %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render_final"
+              onsubmit="return wrConfirmSubmit(this, 'Render the final video at {{ final_size_label }}? This takes much longer than the preview.')">
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>
+            {{ 'Re-render final video' if final else 'Render final video' }}{% if final_size_label %} ({{ final_size_label }}){% endif %}
+          </button>
+        </form>
+        {% endif %}
         <a class="btn" href="/studio/{{ prod['id'] }}/thumbnails" title="Thumbnails, titles and the description from GPT Pro">
           Thumbnails (GPT)</a>
         <form method="post" action="/studio/{{ prod['id'] }}/review/approve">

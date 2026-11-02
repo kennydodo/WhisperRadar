@@ -3932,6 +3932,8 @@ def create_app(cfg) -> Flask:
             brief_presentation=eff.get("brief_presentation") or "",
             render_target=eff["render_target"],
             render_target_label=studio.RENDER_TARGET_LABELS[eff["render_target"]],
+            final_size_label=studio.RENDER_RESOLUTION_LABELS.get(
+                str(eff.get("render_resolution") or "").lower(), ""),
             source_video=source_video, attach_sources=attach_sources,
             human_review=human_review.load(pdir),
             review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
@@ -5756,6 +5758,47 @@ def create_app(cfg) -> Flask:
                                         f"missing clips)")
         sjob.start(worker, f"preview + {label} export (ImgToVideo)")
         return _studio_url(pid, msg=f"Preview build + {label} export started")
+
+    @app.post("/studio/<int:pid>/video/render_final")
+    def studio_video_render_final(pid):
+        """Full-size finished video for a normal channel (out/final/final.mp4),
+        at the channel's / general Render resolution. Run after the preview has
+        been reviewed; the preview and the NLE export are not touched."""
+        if sjob.running:
+            return _studio_url(pid, error="A job is already running")
+        if autorun.explainer_production(cfg, pid):
+            return _studio_url(pid, error="An explainer video is already rendered full size - "
+                                          "use 'Render explainer video'.")
+        pdir = studio.prepare_project_folder(cfg, pid)
+        if not studio.find_audio(pdir) or not studio.find_srt(pdir) \
+                or not studio.find_images(pid_dir=pdir):
+            return _studio_url(pid, error="Need audio, subtitles and images first")
+        if not studio.find_preview(pdir):
+            return _studio_url(pid, error="Build and review the preview first; the final "
+                                          "render starts from the same plan.")
+        _job = sjob._real()
+
+        class _Cancel:
+            def is_set(self_, _j=_job):
+                return bool(_j.cancel)
+
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            eff = settings.for_production(conn, db.get_production(conn, pid))
+        finally:
+            conn.close()
+        size = studio.RENDER_RESOLUTION_LABELS.get(
+            str(eff.get("render_resolution") or "").lower(), "the channel's size")
+
+        def worker():
+            studio.run_final_render(cfg, pdir, animate=bool(eff.get("animate_enabled")),
+                                    window_seconds=eff.get("animate_seconds"),
+                                    log=sjob.log.append, cancel=_Cancel())
+
+        sjob.start(worker, f"final video ({size})")
+        return _studio_url(pid, msg=f"Final render started at {size}; the job log shows progress. "
+                                    "The preview and the project export are unchanged.")
 
     @app.post("/studio/<int:pid>/images/upload")
     def studio_images_upload(pid):

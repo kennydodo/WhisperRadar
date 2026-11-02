@@ -290,6 +290,22 @@ def fade_filter(doc, compiled, clips, fps, mode) -> str:
     return "crossfade" if FADE_S.get(mode or "") and len(clips) >= 2 else ""
 
 
+def output_canvas(folder: str, doc_canvas: tuple) -> tuple:
+    """The size the finished video is drawn at: the channel's / general Render resolution, which
+    the Studio writes into imgtovideo.json (output.width/height) before a render. Only the 16:9
+    sizes a scene can be drawn at count (1080p, 2K, 4K); anything else - no file, Flow native, a
+    portrait size - keeps the document's own canvas (1080p)."""
+    try:
+        with open(os.path.join(folder, "imgtovideo.json"), encoding="utf-8") as fh:
+            out = (json.load(fh) or {}).get("output") or {}
+        size = (int(out.get("width")), int(out.get("height")))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return tuple(doc_canvas)
+    if size in ((1920, 1080), (2560, 1440), (3840, 2160)):
+        return size
+    return tuple(doc_canvas)
+
+
 def render_video(folder: str, audio: str = "", final: bool = True,
                  log=print, cancel=None, draft: bool = False) -> str:
     """Render every scene, join them and add the narration. Returns the path.
@@ -328,6 +344,12 @@ def render_video(folder: str, audio: str = "", final: bool = True,
         final = False
         canvas = (doc.canvas[0] // 2, doc.canvas[1] // 2)
         log(f"[explainer] draft: scenes are drawn at {canvas[0]}x{canvas[1]}")
+    else:
+        canvas = output_canvas(folder, doc.canvas)
+        if tuple(canvas) == tuple(doc.canvas):
+            canvas = None
+        else:
+            log(f"[explainer] scenes are drawn at {canvas[0]}x{canvas[1]} (the channel's render resolution)")
     clips, n, t0 = [], len(compiled), time.time()
     for i, cs in enumerate(compiled, 1):
         before = time.time()

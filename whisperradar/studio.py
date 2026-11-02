@@ -2720,19 +2720,9 @@ def _run_imgtovideo_cli(cli: Path, args: list[str], timeout: int = 14400):
     return result
 
 
-def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
-                     animate: bool | None = None,
-                     window_seconds: float | None = None) -> dict:
-    """Merge with ImgToVideo.Cli (headless): build the fast preview draft,
-    then export the NLE project for `target`. Returns
-    {preview, target, project} - preview is the playable out\\preview.mp4,
-    project is the exported XML/draft folder."""
-    cli = _imgtovideo_cli(cfg)
-    if not cli and not _python_video(cfg):
-        raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
-    if target not in RENDER_TARGETS:
-        target = RENDER_TARGETS[0]
-
+def _prepare_merge_inputs(pid_dir: Path, animate: bool | None = None,
+                          window_seconds: float | None = None) -> None:
+    """What the preview build and the final render both start from."""
     # project layout expectations: audio\narration.<ext>, *.srt at root.
     # Always refresh narration from the current audio artifact - a stale copy
     # here would shadow the real audio (the loader prefers audio\).
@@ -2753,6 +2743,64 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
             gate["window_seconds"] = float(window_seconds)
         (pid_dir / "motion_gate.json").write_text(
             json.dumps(gate), encoding="utf-8")
+
+
+def run_final_render(cfg, pid_dir: Path, animate: bool | None = None,
+                     window_seconds: float | None = None, log=None,
+                     cancel=None) -> Path:
+    """Render the FULL-SIZE finished video (out/final/final.mp4, plus
+    captions.srt beside it) for a normal (non-explainer) production. The size
+    is the channel's / general Render resolution already written into
+    imgtovideo.json; the preview stays at 960x540. Run it after the preview has
+    been reviewed. Returns the path of final.mp4."""
+    say = log or (lambda _m: None)
+    _prepare_merge_inputs(pid_dir, animate, window_seconds)
+    if _python_video(cfg):
+        from .video import plan as _plan, render_project as _rp
+        planned = _plan.plan_project(str(pid_dir))
+        if not planned.success:
+            errs = [i.message for i in planned.issues if i.severity == "Error"]
+            errs += list(planned.config_errors or [])
+            raise RuntimeError("planning failed: " + "; ".join(errs)[:600])
+        last = [-10]
+
+        def progress(fraction):
+            pct = int(float(fraction) * 100)
+            if pct >= last[0] + 10:
+                last[0] = pct - pct % 10
+                say(f"[final] {last[0]}%")
+
+        say("[final] rendering the full-size video (this takes much longer than the preview)")
+        ok, _out, errors = _rp.render_final(str(pid_dir), preview=False, progress=progress,
+                                            cancel_event=cancel)
+        if not ok:
+            raise RuntimeError("final render failed: " + "; ".join(errors)[-600:])
+    else:
+        cli = _imgtovideo_cli(cfg)
+        if not cli:
+            raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
+        _run_imgtovideo_cli(cli, ["render-final", str(pid_dir)])
+    final = find_final(pid_dir)
+    if not final:
+        raise RuntimeError("final render finished but no final.mp4 was found")
+    say(f"[final] done: {final}")
+    return final
+
+
+def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
+                     animate: bool | None = None,
+                     window_seconds: float | None = None) -> dict:
+    """Merge with ImgToVideo.Cli (headless): build the fast preview draft,
+    then export the NLE project for `target`. Returns
+    {preview, target, project} - preview is the playable out\\preview.mp4,
+    project is the exported XML/draft folder."""
+    cli = _imgtovideo_cli(cfg)
+    if not cli and not _python_video(cfg):
+        raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
+    if target not in RENDER_TARGETS:
+        target = RENDER_TARGETS[0]
+
+    _prepare_merge_inputs(pid_dir, animate, window_seconds)
 
     # 1. fast preview draft - the reviewable cut
     if _python_video(cfg):

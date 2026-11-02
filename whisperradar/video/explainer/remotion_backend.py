@@ -595,12 +595,17 @@ def fingerprint(props: dict, width: int, height: int, pjhash: str = None) -> str
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
+# Sizes a scene can be drawn at: the 1080p base, its half-size draft, and the larger 16:9 sizes of
+# the channel's Render resolution setting (2K = 4/3 of the base, 4K = 2x).
+SCALES = {(1920, 1080): 1.0, (960, 540): 0.5, (2560, 1440): 4 / 3, (3840, 2160): 2.0}
+
+
 def scale_for(width: int, height: int) -> float:
-    for s in (1.0, 0.5):
-        if (width, height) == (round(BASE_W * s), round(BASE_H * s)):
-            return s
-    raise ExplainerError([f"Remotion scenes render at {BASE_W}x{BASE_H} or {BASE_W // 2}x{BASE_H // 2} "
-                          f"(got {width}x{height})."])
+    try:
+        return SCALES[(int(width), int(height))]
+    except (KeyError, TypeError, ValueError):
+        sizes = ", ".join(f"{w}x{h}" for w, h in SCALES)
+        raise ExplainerError([f"Remotion scenes render at {sizes} (got {width}x{height})."]) from None
 
 
 # ---- running node -------------------------------------------------------------------
