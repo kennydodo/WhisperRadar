@@ -369,9 +369,9 @@
     'srt': 'deletes the subtitles and shotlist, then re-transcribes from the kept audio',
     'shots': 'deletes the shotlist and re-plans it from the kept subtitles',
     'refs': 'deletes the reference images WhisperRadar generated (supplied refs are kept) and re-generates them',
-    'images': 'deletes the rendered images and the merge output (preview + NLE export), then re-renders everything (fills the gaps)',
+    'images': 'deletes the rendered images and the merge output (video + NLE export), then re-renders everything (fills the gaps)',
     'motion': 'deletes the animated-opening clips (clips\\) and makes them again from the rendered images',
-    'merge': 'just re-does the final preview/NLE export',
+    'merge': 'just re-does the NLE export',
   } %}
   {% set RESETTABLE = stages[:stages.index('review')] if 'review' in stages else stages %}
   {# a finished production sits on 'review', which is not resettable: its last
@@ -1469,7 +1469,7 @@
       <div class="artifact"><video controls src="{{ review_video_url }}"></video>
         {% include "_playback_speed.html" %}</div>
       {% elif not nle_projects %}
-      <div class="muted" style="margin-bottom:8px">No preview yet. Build the preview draft + {{ render_target_label }} project with ImgToVideo, or upload a final video.</div>
+      <div class="muted" style="margin-bottom:8px">No video yet. Render the final video, export the {{ render_target_label }} project with ImgToVideo, or upload a final video.</div>
       {% endif %}
       {% if nle_projects %}
       <div class="muted" style="margin:8px 0">
@@ -1519,10 +1519,10 @@
       {% else %}
       <div class="actions">
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render"
-              onsubmit="return wrConfirmSubmit(this, 'Build the preview draft and export the {{ render_target_label }} project with ImgToVideo?')">
+              onsubmit="return wrConfirmSubmit(this, 'Export the {{ render_target_label }} project with ImgToVideo?')">
           <button type="submit" class="green" {{ 'disabled' if job.running or not (hooks.merge and audio and srt and images) else '' }}
-                  title="{{ 'Headless: analyze -> plan -> out.preview.mp4 + ' ~ render_target_label ~ ' project' if hooks.merge and audio and srt and images and not job.running else ('A job is already running' if job.running else 'Needs audio, subtitles and images done (and studio.imgtovideo_repo set)') }}">
-            {{ 'Working...' if job.running else 'Build preview + export to ' ~ render_target_label }}
+                  title="{{ 'Headless: analyze -> plan -> ' ~ render_target_label ~ ' project' if hooks.merge and audio and srt and images and not job.running else ('A job is already running' if job.running else 'Needs audio, subtitles and images done (and studio.imgtovideo_repo set)') }}">
+            {{ 'Working...' if job.running else 'Export to ' ~ render_target_label }}
           </button>
         </form>
         {% if motion_info.enabled and motion_info.clips %}
@@ -1541,15 +1541,13 @@
           <input type="file" name="video_file" accept="video/*" required>
           <button type="submit" class="secondary">Upload final video</button>
         </form>
-        {% if preview %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render_final"
-              onsubmit="return wrConfirmSubmit(this, 'Render the final video at {{ final_size_label }}? This takes much longer than the preview. The preview and the project export are not changed.')">
-          <button type="submit" class="green" {{ 'disabled' if job.running else '' }}
-                  title="After you have reviewed the preview: the finished video at the channel's size, ready to upload without going through an editor.">
+              onsubmit="return wrConfirmSubmit(this, 'Render the final video at {{ final_size_label }}? The project export is not changed.')">
+          <button type="submit" class="green" {{ 'disabled' if job.running or not (audio and srt and images) else '' }}
+                  title="The finished video at the channel's size, ready to upload without going through an editor. It is also the file you review.">
             {{ 'Re-render final video' if final else 'Render final video' }}{% if final_size_label %} ({{ final_size_label }}){% endif %}
           </button>
         </form>
-        {% endif %}
       </div>
       {% endif %}
 
@@ -1562,21 +1560,21 @@
         <li>Shotlist: {% if steps.get("shots") %}<span class="badge done">done</span> {% if shotlist_count %}<span class="muted">{{ shotlist_count }} image(s) planned</span>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Images: {% if steps.get("images") %}<span class="badge done">done</span> <span class="muted">{{ images|length }} file(s)</span>{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         {% endif %}
-        <li>Preview / final video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if review_video %}<a href="{{ review_video_url }}">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
+        <li>Video: {% if steps.get("merge") %}<span class="badge done">done</span> {% if review_video %}<a href="{{ review_video_url }}">open</a>{% endif %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>NLE export: {% if nle_projects %}{% for n in nle_projects %}{% if n.url %}<a href="{{ n.url }}">{{ n.label }}</a>{% elif n.zip_url %}<a href="{{ n.zip_url }}">{{ n.label }} (.zip)</a>{% else %}<span class="mono">{{ n.rel }}</span>{% endif %}{% if not loop.last %} &middot; {% endif %}{% endfor %}{% else %}<span class="badge pending">missing</span>{% endif %}</li>
         <li>Publish kit: {% if kit_ready %}<span class="badge done">ready</span>{% else %}<span class="badge pending">missing</span>{% endif %} &middot; <a href="/studio/{{ prod['id'] }}/kit">open</a></li>
         <li>Thumbnail: {% if thumb_count %}<span class="badge done">{{ thumb_count }} thumbnail(s)</span>{% else %}<span class="badge pending">none yet</span>{% endif %} &middot; <a href="/studio/{{ prod['id'] }}/thumbnails">thumbnails (GPT)</a></li>
       </ul>
       {% if not steps.get("merge") %}
-      <div class="warn" style="margin:8px 0">The merge stage is not in the system yet. Build the preview + NLE export, or upload a final video, before approving.</div>
+      <div class="warn" style="margin:8px 0">The merge stage is not in the system yet. Render the final video (or export the project), or upload a final video, before approving.</div>
       {% endif %}
       {% if not thumb_count %}
       <div class="note" style="margin:8px 0">No thumbnail was generated for this production{% if not plan_exists %} (it was started before / without the packaging plan, which is what normally seeds one){% endif %}. Generate thumbnail concepts here &mdash; it runs in the web chat, like the other creative stages.</div>
       {% endif %}
       <div class="actions">
-        {% if not explainer_mode and preview %}
+        {% if not explainer_mode %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/video/render_final"
-              onsubmit="return wrConfirmSubmit(this, 'Render the final video at {{ final_size_label }}? This takes much longer than the preview.')">
+              onsubmit="return wrConfirmSubmit(this, 'Render the final video at {{ final_size_label }}?')">
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>
             {{ 'Re-render final video' if final else 'Render final video' }}{% if final_size_label %} ({{ final_size_label }}){% endif %}
           </button>

@@ -2067,7 +2067,7 @@ def upscale_images(cfg, pid: int, log=None, cancel=None) -> dict:
 def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
                cancel=None, with_stills: bool = False) -> None:
     """mode: 'hook' = studio.merge_command only (merge route),
-    'cli' = ImgToVideo.Cli preview build + NLE export (video/render route),
+    'cli' = ImgToVideo NLE export (video/render route),
     None = whatever is configured (auto-run).
     with_stills: render even with opening clips missing - the clips that
     exist are used, the stills fill the rest (the user's explicit choice;
@@ -2121,13 +2121,13 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
             raise RuntimeError("merge produced no video")
         detail = "final.mp4"
     else:
-        # preview draft + NLE project for the global render target
+        # NLE project for the render target (the video itself is the final render)
         eff_m = _effective(cfg, pid)
         target = eff_m["render_target"]
         result = studio.run_merge_render(
             cfg, pdir, target, animate=bool(eff_m.get("animate_enabled")),
             window_seconds=eff_m.get("animate_seconds"))
-        detail = (f"preview + {studio.RENDER_TARGET_LABELS[target]} project")
+        detail = f"{studio.RENDER_TARGET_LABELS[target]} project"
     conn = _connect(cfg)
     try:
         db.add_step(conn, pid, "merge", "auto", detail=detail)
@@ -2485,7 +2485,7 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
     if stage == "merge":
         if studio.merge_done(pdir):
             return {"stage": stage, "action": "skip",
-                    "detail": "preview/NLE export already exists"}
+                    "detail": "video/NLE export already exists"}
         gap = _merge_pause_reason(cfg, pid)
         if gap:
             # the pre-render gate: images are filled by the images stage
@@ -2501,9 +2501,8 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
                               "- can take a long time"}
         target = _effective(cfg, pid)["render_target"]
         return {"stage": stage, "action": "run",
-                "detail": f"preview build + "
-                          f"{studio.RENDER_TARGET_LABELS[target]} export via "
-                          f"ImgToVideo - can take a long time"}
+                "detail": f"{studio.RENDER_TARGET_LABELS[target]} export via "
+                          f"ImgToVideo"}
     return {"stage": stage, "action": "pause",
             "detail": f"unknown stage '{stage}'"}
 

@@ -2751,8 +2751,9 @@ def run_final_render(cfg, pid_dir: Path, animate: bool | None = None,
     """Render the FULL-SIZE finished video (out/final/final.mp4, plus
     captions.srt beside it) for a normal (non-explainer) production. The size
     is the channel's / general Render resolution already written into
-    imgtovideo.json; the preview stays at 960x540. Run it after the preview has
-    been reviewed. Returns the path of final.mp4."""
+    imgtovideo.json. It is the only video render for a normal channel (there is
+    no separate preview), so it can run before or after the merge step's NLE
+    export. Returns the path of final.mp4."""
     say = log or (lambda _m: None)
     _prepare_merge_inputs(pid_dir, animate, window_seconds)
     if _python_video(cfg):
@@ -2770,7 +2771,7 @@ def run_final_render(cfg, pid_dir: Path, animate: bool | None = None,
                 last[0] = pct - pct % 10
                 say(f"[final] {last[0]}%")
 
-        say("[final] rendering the full-size video (this takes much longer than the preview)")
+        say("[final] rendering the full-size video (this can take a while)")
         ok, _out, errors = _rp.render_final(str(pid_dir), preview=False, progress=progress,
                                             cancel_event=cancel)
         if not ok:
@@ -2790,10 +2791,11 @@ def run_final_render(cfg, pid_dir: Path, animate: bool | None = None,
 def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
                      animate: bool | None = None,
                      window_seconds: float | None = None) -> dict:
-    """Merge with ImgToVideo.Cli (headless): build the fast preview draft,
-    then export the NLE project for `target`. Returns
-    {preview, target, project} - preview is the playable out\\preview.mp4,
-    project is the exported XML/draft folder."""
+    """Merge (headless): export the NLE project for `target`. No preview video
+    is rendered any more - the finished video is made once, full size, by
+    run_final_render and is what gets reviewed. Returns {preview, target,
+    project}: preview is only an out\\preview.mp4 left over from an earlier
+    run (None otherwise), project is the exported XML/draft folder."""
     cli = _imgtovideo_cli(cfg)
     if not cli and not _python_video(cfg):
         raise RuntimeError("Set studio.imgtovideo_repo in config.yaml")
@@ -2802,20 +2804,8 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
 
     _prepare_merge_inputs(pid_dir, animate, window_seconds)
 
-    # 1. fast preview draft - the reviewable cut
-    if _python_video(cfg):
-        log.info("merge: preview built by the PYTHON video engine "
-                 "(studio.video_engine: python)")
-        _python_preview(pid_dir)
-    else:
-        log.info("merge: preview built by the C# ImgToVideo.Cli "
-                 "(studio.video_engine is not 'python')")
-        _run_imgtovideo_cli(cli, ["render-final", str(pid_dir), "--preview"])
-    preview = find_preview(pid_dir)
-    if not preview:
-        raise RuntimeError("preview build finished but no preview.mp4 found")
-
-    # 2. NLE project for the chosen target
+    # NLE project for the chosen target (it plans and resolves the stills and
+    # sound effects itself - nothing here needs a rendered preview)
     if _python_video(cfg):
         from .video import nle_export
         if target == "capcut":
@@ -2830,7 +2820,7 @@ def run_merge_render(cfg, pid_dir: Path, target: str = "premiere",
         raise RuntimeError(
             f"{RENDER_TARGET_LABELS[target]} export finished but no project "
             f"file was found")
-    return {"preview": preview, "target": target, "project": project}
+    return {"preview": find_preview(pid_dir), "target": target, "project": project}
 
 
 # Output resolution presets written into the production's imgtovideo.json as

@@ -562,9 +562,8 @@ SPEC: list[dict] = [
                           "flow-native": "1376x768 (Flow native)"},
         "label": "Render resolution",
         "help": "Output resolution written into the production's "
-                "imgtovideo.json (output.width/height) for the preview build "
-                "and the NLE export. 2K is ImgToVideo's own default. The "
-                "preview draft stays at 960x540 for speed.",
+                "imgtovideo.json (output.width/height) for the final video "
+                "and the NLE export. 2K is ImgToVideo's own default.",
     },
     {
         "key": "flow_native_upscale", "type": "choice", "default": "off",
@@ -584,11 +583,10 @@ SPEC: list[dict] = [
         "choice_labels": {"premiere": "Premiere Pro",
                           "capcut": "Final Cut (CapCut)"},
         "label": "Render target",
-        "help": "What the merge stage exports to. Both targets first build a "
-                "fast preview draft (out\\preview.mp4) you can watch in the "
-                "dashboard, then write an NLE project: Premiere Pro = an FCP7 "
+        "help": "What the merge stage exports to: Premiere Pro = an FCP7 "
                 "XML to import (File > Import); Final Cut (CapCut) = a CapCut "
-                "draft folder to copy into CapCut's draft root.",
+                "draft folder to copy into CapCut's draft root. The finished "
+                "video itself is made by Render final video.",
     },
     {
         "key": "topic_pick", "type": "choice", "default": "newest",

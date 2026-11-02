@@ -104,25 +104,23 @@ class FinalRenderTests(unittest.TestCase):
         app.testing = True
         return app.test_client()
 
-    def test_button_needs_a_preview_and_names_the_size(self):
+    def test_button_is_there_without_a_preview_and_names_the_size(self):
         client = self._client()
         self._project(preview=False)
-        html = client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
-        self.assertNotIn("/video/render_final", html)
-        (self.pdir / "out").mkdir(exist_ok=True)
-        (self.pdir / "out" / "preview.mp4").write_bytes(b"\x00" * 16)
+        self.assertFalse((self.pdir / "out" / "preview.mp4").exists())
         html = client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
         self.assertIn(f"/studio/{self.pid}/video/render_final", html)
         self.assertIn("Render final video", html)
+        self.assertNotIn("Build preview", html)
         import re
         self.assertRegex(html, r"Render final video \(\d+x\d+")
 
-    def test_route_refuses_without_a_preview_and_runs_with_one(self):
+    def test_route_needs_inputs_but_not_a_preview(self):
         client = self._client()
-        self._project(preview=False)
         r = client.post(f"/studio/{self.pid}/video/render_final", follow_redirects=True)
-        self.assertIn("preview first", r.get_data(as_text=True))
-        self._project(preview=True)
+        self.assertIn("Need audio, subtitles and images", r.get_data(as_text=True))
+        self._project(preview=False)
+        (self.pdir / "out").mkdir(exist_ok=True)
         called = []
 
         def fake(cfg, pdir, **kw):
@@ -139,6 +137,65 @@ class FinalRenderTests(unittest.TestCase):
                 time.sleep(0.1)
         self.assertIn("Final render started", r.get_data(as_text=True))
         self.assertTrue(called)
+
+    def test_merge_exports_the_project_without_rendering_a_preview(self):
+        self._project(preview=False)
+        exported = []
+
+        def fake_export(folder):
+            out = Path(folder) / "out"
+            out.mkdir(exist_ok=True)
+            (out / "premiere.xml").write_text("<xmeml/>", encoding="utf-8")
+            exported.append(folder)
+            return str(out / "premiere.xml")
+
+        with mock.patch("whisperradar.video.render_project.render_final") as render, \
+                mock.patch("whisperradar.video.nle_export.export_premiere", side_effect=fake_export):
+            result = studio.run_merge_render(self.cfg, self.pdir, "premiere")
+        render.assert_not_called()
+        self.assertEqual(len(exported), 1)
+        self.assertIsNone(result["preview"])
+        self.assertEqual(result["project"].name, "premiere.xml")
+        self.assertFalse((self.pdir / "out" / "preview.mp4").exists())
+        self.assertTrue(studio.merge_done(self.pdir))
+
+    def test_merge_capcut_target_also_skips_the_preview(self):
+        self._project(preview=False)
+        with mock.patch("whisperradar.video.render_project.render_final") as render, \
+                mock.patch("whisperradar.video.nle_export.export_capcut") as cc, \
+                mock.patch.object(studio, "nle_project", return_value=self.pdir / "out" / "capcut"):
+            result = studio.run_merge_render(self.cfg, self.pdir, "capcut")
+        render.assert_not_called()
+        cc.assert_called_once()
+        self.assertEqual(result["target"], "capcut")
+
+    def test_merge_keeps_an_old_preview_file_untouched(self):
+        self._project(preview=True)
+        old = self.pdir / "out" / "preview.mp4"
+
+        def fake_export(folder):
+            (Path(folder) / "out" / "premiere.xml").write_text("<xmeml/>", encoding="utf-8")
+
+        with mock.patch("whisperradar.video.nle_export.export_premiere", side_effect=fake_export):
+            result = studio.run_merge_render(self.cfg, self.pdir, "premiere")
+        self.assertEqual(old.read_bytes(), b"\x00" * 16)
+        self.assertEqual(result["preview"], old)
+
+    def test_review_plays_the_final_video(self):
+        client = self._client()
+        self._project(preview=False)
+        final = self.pdir / "out" / "final"
+        final.mkdir(parents=True)
+        (final / "final.mp4").write_bytes(b"x")
+        html = client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
+        self.assertIn("/out/final/final.mp4", html)
+        self.assertIn("Re-render final video", html)
+
+    def test_auto_run_describes_the_merge_without_a_preview(self):
+        from whisperradar import autorun
+        self._project(preview=False)
+        entry = autorun.stage_action(self.cfg, self.pid, "merge")
+        self.assertNotIn("preview", entry["detail"].lower())
 
     def test_explainer_production_is_refused(self):
         client = self._client()

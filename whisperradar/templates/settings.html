@@ -230,11 +230,10 @@
     {% endif %}
     {% if group_name == "Video render" %}
     <div class="muted" style="font-size:12px; margin-bottom:12px">
-      The merge stage builds a fast <b>preview draft</b>
-      (<span class="mono">out\preview.mp4</span>, playable on the production
-      page) and then exports the NLE project for the target below. Review and
-      publishing happen after editing in that app, so the export is the
-      deliverable - not a rendered MP4.
+      The merge stage exports the NLE project for the target below.
+      The finished video (<span class="mono">out\final\final.mp4</span>) is
+      made by <b>Render final video</b> on the production page, at the
+      Render resolution, and is what you review.
       All the other ImgToVideo options (shot length, motion, transitions,
       encoder, sound...) are on <a href="/video-options">Video options</a>.
     </div>

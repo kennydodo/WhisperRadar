@@ -102,7 +102,7 @@ class ExplainerPageTests(unittest.TestCase):
         (self.pdir / "plan.json").write_text("{}", encoding="utf-8")
         html = self.client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
         self.assertIn("Render explainer video", html)
-        self.assertNotIn("Build preview + export to", html)
+        self.assertNotIn("Export to", html)
 
     def test_review_video_has_speed_buttons_only_when_there_is_a_video(self):
         (self.pdir / "plan.json").write_text("{}", encoding="utf-8")
@@ -225,7 +225,7 @@ class ExplainerPageTests(unittest.TestCase):
     def test_normal_production_unchanged(self):
         html = self.client.get(f"/studio/{self.pid}?stage=merge").get_data(as_text=True)
         self.assertNotIn("Render explainer video", html)
-        self.assertIn("Build preview + export to", html)
+        self.assertIn("Export to", html)
 
     def test_image_stage_says_not_needed(self):
         (self.pdir / "plan.json").write_text("{}", encoding="utf-8")

@@ -5746,24 +5746,24 @@ def create_app(cfg) -> Flask:
                          "scene as it is drawn")
         if gap:
             sjob.start(worker, f"image rendering (missing images), then "
-                               f"preview + {label} export")
+                               f"{label} export")
             return _studio_url(
                 pid, msg="Images are missing - rendering them first, then "
-                         f"the preview + {label} export")
+                         f"the {label} export")
         if with_stills:
-            sjob.start(worker, f"preview + {label} export (stills stand in "
+            sjob.start(worker, f"{label} export (stills stand in "
                                f"for the missing clips)")
-            return _studio_url(pid, msg=f"Preview build + {label} export "
+            return _studio_url(pid, msg=f"{label} export "
                                         f"started (stills stand in for the "
                                         f"missing clips)")
-        sjob.start(worker, f"preview + {label} export (ImgToVideo)")
-        return _studio_url(pid, msg=f"Preview build + {label} export started")
+        sjob.start(worker, f"{label} export (ImgToVideo)")
+        return _studio_url(pid, msg=f"{label} export started")
 
     @app.post("/studio/<int:pid>/video/render_final")
     def studio_video_render_final(pid):
         """Full-size finished video for a normal channel (out/final/final.mp4),
-        at the channel's / general Render resolution. Run after the preview has
-        been reviewed; the preview and the NLE export are not touched."""
+        at the channel's / general Render resolution. This is the only video
+        render for a normal channel (no preview); the NLE export is not touched."""
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         if autorun.explainer_production(cfg, pid):
@@ -5773,9 +5773,6 @@ def create_app(cfg) -> Flask:
         if not studio.find_audio(pdir) or not studio.find_srt(pdir) \
                 or not studio.find_images(pid_dir=pdir):
             return _studio_url(pid, error="Need audio, subtitles and images first")
-        if not studio.find_preview(pdir):
-            return _studio_url(pid, error="Build and review the preview first; the final "
-                                          "render starts from the same plan.")
         _job = sjob._real()
 
         class _Cancel:
@@ -5798,7 +5795,7 @@ def create_app(cfg) -> Flask:
 
         sjob.start(worker, f"final video ({size})")
         return _studio_url(pid, msg=f"Final render started at {size}; the job log shows progress. "
-                                    "The preview and the project export are unchanged.")
+                                    "The project export is unchanged.")
 
     @app.post("/studio/<int:pid>/images/upload")
     def studio_images_upload(pid):
