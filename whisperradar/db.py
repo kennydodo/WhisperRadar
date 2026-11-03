@@ -1,6 +1,7 @@
 """SQLite storage for channels, videos and run history."""
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -232,6 +233,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN voice TEXT")
     if "own_channel_id" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN own_channel_id INTEGER")
+    if "channel_no" not in cols:
+        # the production's number inside its own channel (channel A #1, #2 ...;
+        # channel B #1 ...). Display only: the id stays the key everywhere.
+        conn.execute("ALTER TABLE productions ADD COLUMN channel_no INTEGER")
+    _backfill_channel_numbers(conn)
     if "handover" not in cols:
         # JSON {"plan": template id, "script": template id}: what the judge
         # passes to the writer (handover.py); NULL = the default template
@@ -997,6 +1003,63 @@ def set_stage_provider(conn, pid: int, stage: str, name: str | None) -> None:
     update_production(conn, pid, stage_providers=json.dumps(data))
 
 
+def _backfill_channel_numbers(conn) -> None:
+    """Give every production without a channel number the next one in its
+    channel, oldest first. Idempotent; numbers are never reused or shifted."""
+    rows = conn.execute(
+        "SELECT id, own_channel_id FROM productions WHERE channel_no IS NULL"
+        " ORDER BY created_at, id").fetchall()
+    for r in rows:
+        conn.execute("UPDATE productions SET channel_no = ? WHERE id = ?",
+                     (take_channel_no(conn, r[1]), r[0]))
+    if rows:
+        conn.commit()
+
+
+def take_channel_no(conn, own_channel_id) -> int:
+    """Hand out the next number in a channel. A counter per channel (0 = no
+    channel) makes sure a deleted production's number is never given again."""
+    conn.execute("CREATE TABLE IF NOT EXISTS channel_counters ("
+                 "chan INTEGER PRIMARY KEY, last_no INTEGER NOT NULL)")
+    key = own_channel_id or 0
+    seen = conn.execute(
+        "SELECT MAX(channel_no) FROM productions WHERE "
+        + ("own_channel_id IS NULL" if not key else "own_channel_id = ?"),
+        () if not key else (key,)).fetchone()[0] or 0
+    row = conn.execute("SELECT last_no FROM channel_counters WHERE chan = ?",
+                       (key,)).fetchone()
+    number = max(seen, row[0] if row else 0) + 1
+    conn.execute("INSERT INTO channel_counters (chan, last_no) VALUES (?, ?)"
+                 " ON CONFLICT(chan) DO UPDATE SET last_no = excluded.last_no",
+                 (key, number))
+    return number
+
+
+def channel_codes(channels) -> dict:
+    """Short code per channel from its name's initials ("The Nature Made Us"
+    -> TNMU); a clash gets a digit so every code is unique."""
+    codes: dict = {}
+    used: set = set()
+    for ch in channels:
+        words = [w for w in re.findall(r"[A-Za-z0-9]+", ch["name"] or "")
+                 if w.lower() not in ("and", "of")]
+        base = ("".join(w[0] for w in words).upper() or "CH")[:6]
+        code, n = base, 2
+        while code in used:
+            code, n = f"{base}{n}", n + 1
+        used.add(code)
+        codes[ch["id"]] = code
+    return codes
+
+
+def production_label(prod, codes: dict) -> str:
+    """"TNMU-12" for a production in a channel, "#id" when it has none."""
+    ch, no = prod["own_channel_id"], prod["channel_no"]
+    if ch in codes and no:
+        return f"{codes[ch]}-{no}"
+    return f"#{prod['id']}"
+
+
 def create_production(conn, title: str, genre: str = "general",
                       source_video_id: str | None = None,
                       work_dir: str | None = None) -> int:
@@ -1006,10 +1069,11 @@ def create_production(conn, title: str, genre: str = "general",
     # table, so relying on it here would keep inserting UTC.
     cur = conn.execute(
         "INSERT INTO productions (title, genre, source_video_id, work_dir,"
-        " stage, created_at, updated_at)"
+        " stage, created_at, updated_at, channel_no)"
         " VALUES (?, ?, ?, ?, 'style', datetime('now', 'localtime'),"
-        " datetime('now', 'localtime'))",
-        (title, genre or "general", source_video_id, work_dir),
+        " datetime('now', 'localtime'), ?)",
+        (title, genre or "general", source_video_id, work_dir,
+         take_channel_no(conn, None)),
     )
     conn.commit()
     return cur.lastrowid
@@ -1032,6 +1096,14 @@ def update_production(conn, pid: int, **fields) -> None:
             raise ValueError(f"Unknown production field: {key}")
         cols.append(f"{key} = ?")
         vals.append(value)
+    if "own_channel_id" in fields:
+        current = conn.execute("SELECT own_channel_id FROM productions WHERE id = ?",
+                               (pid,)).fetchone()
+        if current is not None and current[0] != fields["own_channel_id"]:
+            # a new channel means the next free number there; the old number
+            # belongs to the old channel
+            cols.append("channel_no = ?")
+            vals.append(take_channel_no(conn, fields["own_channel_id"]))
     cols.append("updated_at = datetime('now', 'localtime')")
     vals.append(pid)
     conn.execute(f"UPDATE productions SET {', '.join(cols)} WHERE id = ?", vals)

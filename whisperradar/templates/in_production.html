@@ -140,7 +140,7 @@
     {% endif %}
     <tr class="prodrow" data-chan="{{ r.channel }}">
       <td><span class="badge chan">{{ r.channel }}</span></td>
-      <td>#{{ r.id }}</td>
+      <td title="Internal number #{{ r.id }}">{{ r.label }}</td>
       <td><a href="/studio/{{ r.id }}">{{ r.title }}</a></td>
       <td>
         <span class="badge {{ 'off' if r.skipped else 'genre' }}"{% if r.skipped %} title="Skipped: {{ r.skipped }}"{% endif %}>{{ r.stage }}</span>

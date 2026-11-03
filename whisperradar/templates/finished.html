@@ -143,7 +143,7 @@
       <tbody>
         {% for item in items %}
         <tr>
-          <td class="title"><a href="/studio/{{ item.row['id'] }}">{{ item.row["title"] }}</a></td>
+          <td class="title"><a href="/studio/{{ item.row['id'] }}">{{ item.row["title"] }}</a> <span class="muted" style="font-size:12px" title="Internal number #{{ item.row['id'] }}">{{ item.label }}</span></td>
           <td>{% if item.own_channel %}<span class="badge chan">{{ item.own_channel }}</span>{% else %}<span class="muted">-</span>{% endif %}</td>
           <td class="muted date" title="{{ item.row['published_at'] if item.row['status'] == 'published' else item.row['updated_at'] }}">{{ ((item.row["published_at"] if item.row["status"] == "published" else item.row["updated_at"]) or "")[:16] }}</td>
           <td class="status">
