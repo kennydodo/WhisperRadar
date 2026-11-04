@@ -2335,12 +2335,16 @@ def create_app(cfg) -> Flask:
             if db.get_own_channel(conn, name):
                 return redirect("/my-channels?error=" + quote(
                     f"A channel named '{name}' already exists"))
-            oc_id = db.create_own_channel(
-                conn, name, writing_style=writing_style,
-                description=(request.form.get("description") or "").strip(),
-                genre=(request.form.get("genre") or "").strip() or "general",
-                youtube_handle=(request.form.get("youtube_handle") or "").strip(),
-            )
+            try:
+                oc_id = db.create_own_channel(
+                    conn, name, writing_style=writing_style,
+                    description=(request.form.get("description") or "").strip(),
+                    genre=(request.form.get("genre") or "").strip() or "general",
+                    youtube_handle=(request.form.get("youtube_handle") or "").strip(),
+                    code=(request.form.get("code") or "").strip(),
+                )
+            except ValueError as exc:
+                return redirect("/my-channels?error=" + quote(str(exc)))
             created = db.get_own_channel(conn, oc_id)
             result = studio.sync_renderly_channel(cfg, conn, created)
         finally:
@@ -2495,6 +2499,8 @@ def create_app(cfg) -> Flask:
         for key in ("name", "description", "genre", "youtube_handle"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip()
+        if (request.form.get("code") or "").strip():
+            fields["code"] = request.form["code"]
         if "genre" in fields and not fields["genre"]:
             fields["genre"] = "general"
         if "watched_present" in request.form:
@@ -2659,7 +2665,10 @@ def create_app(cfg) -> Flask:
         try:
             if not db.get_own_channel(conn, oc_id):
                 return redirect("/my-channels?error=Unknown+channel")
-            db.update_own_channel(conn, oc_id, **fields)
+            try:
+                db.update_own_channel(conn, oc_id, **fields)
+            except ValueError as exc:
+                return redirect("/my-channels?error=" + quote(str(exc)))
             if "explainer_present" in request.form:
                 from . import explainer_channel
                 bad = explainer_channel.save(conn, oc_id, request.form)

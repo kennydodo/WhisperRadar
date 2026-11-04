@@ -319,6 +319,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("writing_style", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "own_channels", "opening_styles", "TEXT")
+    # permanent short label for the channel (NATURE, TLM ...): production
+    # labels are CODE-number and survive a rename
+    _add_column_if_missing(conn, "own_channels", "code", "TEXT")
+    _assign_channel_codes(conn)
     _add_column_if_missing(conn, "productions", "opening_config", "TEXT")
     # how long a recorded step took (seconds); NULL for steps recorded before
     # this existed or outside a job
@@ -1035,20 +1039,55 @@ def take_channel_no(conn, own_channel_id) -> int:
     return number
 
 
+# codes picked by the owner for the channels that exist today; everything
+# else gets initials. Only used once, when a channel has no code yet.
+PREFERRED_CODES = {"the nature made us": "NATURE", "to live and more": "TLM",
+                   "simply ai explained": "AI"}
+
+
+def normalize_channel_code(raw) -> str:
+    code = re.sub(r"\s+", "", str(raw or "")).upper()
+    if not re.fullmatch(r"[A-Z0-9]{1,8}", code):
+        raise ValueError("A channel code is 1-8 letters or digits, e.g. NATURE or TLM")
+    return code
+
+
+def derive_channel_code(name: str, taken) -> str:
+    """Initials of the name (never reused: a clash gets a digit)."""
+    taken = {t.upper() for t in taken}
+    preferred = PREFERRED_CODES.get((name or "").strip().lower())
+    words = [w for w in re.findall(r"[A-Za-z0-9]+", name or "")
+             if w.lower() not in ("and", "of")]
+    base = preferred or ("".join(w[0] for w in words).upper() or "CH")[:6]
+    code, n = base, 2
+    while code in taken:
+        code, n = f"{base}{n}", n + 1
+    return code
+
+
+def _assign_channel_codes(conn) -> None:
+    """Give every channel without a code one, once; then keep codes unique."""
+    rows = conn.execute("SELECT id, name, code FROM own_channels ORDER BY id").fetchall()
+    taken = {r[2].upper() for r in rows if r[2]}
+    changed = False
+    for r in rows:
+        if not r[2]:
+            code = derive_channel_code(r[1], taken)
+            taken.add(code)
+            conn.execute("UPDATE own_channels SET code = ? WHERE id = ?", (code, r[0]))
+            changed = True
+    if changed:
+        conn.commit()
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_own_channels_code"
+                 " ON own_channels(code COLLATE NOCASE)")
+
+
 def channel_codes(channels) -> dict:
-    """Short code per channel from its name's initials ("The Nature Made Us"
-    -> TNMU); a clash gets a digit so every code is unique."""
+    """id -> the channel's stored code (initials only if somehow missing)."""
     codes: dict = {}
-    used: set = set()
     for ch in channels:
-        words = [w for w in re.findall(r"[A-Za-z0-9]+", ch["name"] or "")
-                 if w.lower() not in ("and", "of")]
-        base = ("".join(w[0] for w in words).upper() or "CH")[:6]
-        code, n = base, 2
-        while code in used:
-            code, n = f"{base}{n}", n + 1
-        used.add(code)
-        codes[ch["id"]] = code
+        stored = ch["code"] if "code" in ch.keys() else None
+        codes[ch["id"]] = stored or derive_channel_code(ch["name"], codes.values())
     return codes
 
 
@@ -1248,7 +1287,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 # monitored competitor/source channels) so the two never mix.
 
 _OWN_CHANNEL_FIELDS = {
-    "opening_styles",
+    "opening_styles", "code",
     "flow_account", "frame",
     "name", "description", "genre", "youtube_handle", "active",
     "handover_default", "video_options",
@@ -1303,6 +1342,13 @@ def get_own_channel(conn, key):
 
 def create_own_channel(conn, name: str, **fields) -> int:
     values = {k: v for k, v in fields.items() if k in _OWN_CHANNEL_FIELDS}
+    taken = [r[0] for r in conn.execute("SELECT code FROM own_channels WHERE code IS NOT NULL")]
+    if values.get("code"):
+        values["code"] = normalize_channel_code(values["code"])
+        if values["code"] in {t.upper() for t in taken}:
+            raise ValueError(f"The code {values['code']} is already used by another channel")
+    else:
+        values["code"] = derive_channel_code(name, taken)
     cols = ["name", *values]
     marks = ",".join("?" for _ in cols)
     cur = conn.execute(
@@ -1318,6 +1364,12 @@ def update_own_channel(conn, oc_id: int, **fields) -> None:
     for key, value in fields.items():
         if key not in _OWN_CHANNEL_FIELDS:
             raise ValueError(f"Unknown own_channel field: {key}")
+        if key == "code":
+            value = normalize_channel_code(value)
+            clash = conn.execute("SELECT name FROM own_channels WHERE code = ?"
+                                 " COLLATE NOCASE AND id != ?", (value, oc_id)).fetchone()
+            if clash:
+                raise ValueError(f"The code {value} is already used by {clash[0]}")
         cols.append(f"{key} = ?")
         vals.append(value)
     if not cols:
