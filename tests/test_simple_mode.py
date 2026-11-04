@@ -18,7 +18,7 @@ from whisperradar.config import load_config  # noqa: E402
 from whisperradar.webapp import create_app  # noqa: E402
 
 HIDDEN_ON_SCRIPT = ("Use an API LLM for the script", "GPT-Claude Script Review",
-                    "Notes prompt", "Save as research notes")
+                    "Notes prompt", "Save as research notes", "Save notes")
 KEPT_ON_SCRIPT = ("Run script in web chat", "Use an external LLM (ChatGPT / Claude) for the script",
                   "Target words", "Writer prompt", "Judge prompt",
                   "Additional direction for the LLM")
@@ -53,6 +53,7 @@ class SimpleModeTests(unittest.TestCase):
         shots = self.page("shots")
         self.assertIn("Plan from the script (beats)", shots)
         self.assertIn("Or the old way", shots)
+        self.assertIn("Use an API LLM for the shotlist", shots)
 
     def test_script_page_in_simple_mode(self):
         self.set_mode(True)
@@ -71,6 +72,8 @@ class SimpleModeTests(unittest.TestCase):
         text = self.page("shots")
         self.assertNotIn("Plan from the script (beats)", text)
         self.assertNotIn("Or the old way", text)
+        self.assertNotIn("Use an API LLM for the shotlist", text)
+        self.assertNotIn("Save notes", text)
         self.assertIn("Shotlist with a judge", text)
         self.assertIn("/webchat/shots", text)
 

@@ -1124,6 +1124,7 @@
         <textarea class="extout" readonly style="min-height:200px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
         <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
       </details>
+      {% if not simple_mode %}
       <details class="extbox" style="margin:14px 0">
         <summary style="cursor:pointer; font-weight:600">Use an API LLM for the shotlist</summary>
         <div style="margin-top:8px">
@@ -1142,6 +1143,7 @@
       </div>
         </div>
       </details>
+      {% endif %}
       <form method="post" action="/studio/{{ prod['id'] }}/shotlist/save">
         <textarea name="shotlist" style="min-height:200px" placeholder="shotlist.json - plan it with the LLM or write it by hand">{{ shotlist_text }}</textarea>
         <div class="muted" data-counter-for="shotlist" style="font-size:12px;margin-top:4px"></div>
@@ -1681,6 +1683,7 @@
     {% endif %}
   </div>
 
+  {% if not simple_mode %}
   <div class="panel">
     <h2 style="margin-top:0">Notes</h2>
     <form method="post" action="/studio/{{ prod['id'] }}/notes">
@@ -1688,6 +1691,7 @@
       <div class="actions"><button type="submit" class="secondary">Save notes</button></div>
     </form>
   </div>
+  {% endif %}
 
   <h2>History</h2>
   <div class="panel">
