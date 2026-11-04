@@ -615,11 +615,26 @@ SPEC.extend([
      "choices": ["1", "2"], "choice_labels": {"1": "Flow Account 1 (existing login)", "2": "Flow Account 2"},
      "label": "Default Flow account", "help": "Used for new, unassigned productions only when multiple accounts are enabled. Existing projects keep their original account."},
 ])
+SPEC.append({
+    "key": "simple_mode", "type": "bool", "default": False,
+    "label": "Simple mode (basics only)",
+    "help": "Hides what is not needed day to day - nothing is deleted and "
+            "every setting, table and file is kept. Script page: only the "
+            "web-chat run, the external-LLM prompts, target words and "
+            "additional direction (no API box, no research notes, no "
+            "GPT-Claude review). Shotlist: only the judge way (the beats "
+            "plan is hidden). Auto Run's merge step renders the final video "
+            "instead of exporting a Premiere/CapCut project (the project "
+            "export buttons stay on the production page). Untick it to see "
+            "everything again.",
+})
+
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 
 # The settings page renders these groups in order; a key missing from every
 # group lands in "Other", so adding a SPEC entry can never hide it.
 GROUPS: list[tuple[str, list[str]]] = [
+    ("Simple mode", ["simple_mode"]),
     ("LLM", ["llm_default", "producer_llm_provider", "llm_fallback_provider",
              "ai33_api_key", "ai33_base_url"]),
     ("Auto Run", [
@@ -801,6 +816,9 @@ def for_production(conn, prod) -> dict:
                         or glob["default_render_mode"]),
         "upscale": derived if derived is not None else configured,
         "upscale_warning": upscale_warning,
+        # Settings > Simple mode (global): stills download at Flow's size and
+        # are upscaled once, just before the final render
+        "simple_mode": bool(glob.get("simple_mode")),
         # Flow native: the level one local Real-ESRGAN pass upscales the
         # downloaded stills to (per channel; only used when the resolved
         # render resolution is "flow-native")
@@ -876,8 +894,8 @@ def for_production(conn, prod) -> dict:
         # Per channel only - no global setting; nothing set = today's brief.
         "brief_motion": row_get(own, "brief_motion") or None,
         # shot-type caps and host-in-frame shares: per channel only
-        "brief_types": briefs.effective_types(
-            None, row_get(own, "brief_types")),
+        "brief_types": briefs.scene_closeup_only(briefs.effective_types(
+            None, row_get(own, "brief_types"))),
         "brief_presentation": row_get(own, "brief_presentation") or "",
         # reveal shots (items shown one at a time) in the planning brief:
         # per channel only, off unless the channel turns them on

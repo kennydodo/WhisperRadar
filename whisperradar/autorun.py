@@ -160,9 +160,17 @@ def _upscale_for(eff) -> int:
     resolution means NONE (0): the stills are downloaded at Flow's master
     size (1376x768) - any upscaling happens afterwards, as one local pass
     (post_download_tier). Otherwise the channel/global upscale setting."""
-    if is_flow_native(eff):
-        return 0
+    if is_flow_native(eff) or eff.get("simple_mode"):
+        return 0           # simple mode: native download, upscale at render
     return eff["upscale"]
+
+
+def _download_upscale_tier(eff) -> str:
+    """The local pass that runs right after the downloads: none in simple
+    mode (the one pass runs just before the final render instead)."""
+    if eff.get("simple_mode"):
+        return "off"
+    return post_download_tier(eff)
 
 
 def post_download_tier(eff) -> str:
@@ -188,6 +196,8 @@ def manual_upscale_tier(eff) -> str:
 
 def _upscale_text(eff) -> str:
     """How the images step is described in a plan/step detail."""
+    if eff.get("simple_mode"):
+        return "native size; upscaled just before the final render"
     post = post_download_tier(eff)
     if post != "off":
         return f"native size, then local Real-ESRGAN {post}"
@@ -244,6 +254,15 @@ def _source_transcript_text(cfg, pid: int) -> str:
     if row and row["transcript_path"] and Path(row["transcript_path"]).exists():
         return Path(row["transcript_path"]).read_text(encoding="utf-8")
     return ""
+
+
+def _simple_mode(cfg) -> bool:
+    """Settings > Simple mode: the basics only (see settings.py)."""
+    conn = _connect(cfg)
+    try:
+        return bool(settings.load(conn).get("simple_mode"))
+    finally:
+        conn.close()
 
 
 def _effective(cfg, pid: int) -> dict:
@@ -1728,7 +1747,7 @@ def _run_images(cfg, pid: int, mode: str | None = None,
     # pass upscales them once the batch has finished (below) - so the download
     # phase is never stalled by upscaling, the Renderly backend upscaler is
     # never involved, and the pass can be re-run from the images stage.
-    post_tier = post_download_tier(eff)
+    post_tier = _download_upscale_tier(eff)
     upscale_after_download = post_tier != "off"
     if is_flow_native(eff) and flow_upscale is None:
         flow_upscale = 0       # never fall back to the engine's own tier
@@ -1976,7 +1995,7 @@ def recover_images(cfg, pid: int, log=None, cancel=None) -> dict:
     # Flow native: recovery adopts the gallery's masters and the same single
     # local pass runs at the end, exactly like the images stage - so the two
     # download paths behave identically.
-    post_tier = post_download_tier(eff)
+    post_tier = _download_upscale_tier(eff)
     download_then_upscale = post_tier != "off"
     try:
         services.MANAGER.ensure(cfg, services.services_for(engine, mode),
@@ -2064,6 +2083,25 @@ def upscale_images(cfg, pid: int, log=None, cancel=None) -> dict:
     return result
 
 
+def upscale_before_render(cfg, pid: int, pdir: Path, log=None, cancel=None):
+    """Simple mode only: the stills were downloaded at Flow's size, so bring
+    them to the selected render resolution now, with ONE local Real-ESRGAN
+    pass (files already at the level are skipped, so re-rendering never
+    upscales twice). Returns the pass's result, or None when it does not
+    apply (normal mode, or nothing to upscale to)."""
+    eff = _effective(cfg, pid)
+    if not eff.get("simple_mode"):
+        return None
+    tier = manual_upscale_tier(eff)
+    if tier == "off":
+        return None
+    say = log or (lambda m: None)
+    say(f"[final] upscaling the images to {tier} before rendering (local Real-ESRGAN)")
+    if cancel is not None and not callable(cancel):
+        cancel = cancel.is_set
+    return studio.upscale_images_locally(cfg, pdir, tier=tier, log=say, cancel=cancel)
+
+
 def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
                cancel=None, with_stills: bool = False) -> None:
     """mode: 'hook' = studio.merge_command only (merge route),
@@ -2120,6 +2158,22 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
         if not out.exists():
             raise RuntimeError("merge produced no video")
         detail = "final.mp4"
+    elif mode is None and _simple_mode(cfg):
+        # simple mode: auto-run's merge is the FINAL VIDEO at the selected
+        # size, not a Premiere/CapCut project (those stay one click away)
+        eff_m = _effective(cfg, pid)
+
+        class _FinalCancel:
+            def is_set(self):
+                return bool(cancel() if callable(cancel) else
+                            (cancel.is_set() if cancel is not None else False))
+
+        upscale_before_render(cfg, pid, pdir, log=log, cancel=cancel)
+        studio.run_final_render(
+            cfg, pdir, animate=bool(eff_m.get("animate_enabled")),
+            window_seconds=eff_m.get("animate_seconds"), log=log,
+            cancel=_FinalCancel())
+        detail = "final video"
     else:
         # NLE project for the render target (the video itself is the final render)
         eff_m = _effective(cfg, pid)

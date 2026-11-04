@@ -874,6 +874,21 @@ def effective_types(global_max: dict | None, channel_raw,
     return spec or None
 
 
+def scene_closeup_only(spec) -> dict:
+    """Shot types are reduced to SCN and CU: every other type is capped at 0,
+    diagrams/infographics together at 0, and no host-in-frame rules apply.
+    The channel's saved limits are untouched (hidden, not deleted); this only
+    overrides what a production runs with."""
+    spec = dict(spec or {})
+    caps = {c: 0 for c in TYPE_CODES if c not in ("SCN", "CU")}
+    for c in ("SCN", "CU"):
+        v = (spec.get("max") or {}).get(c)
+        if v is not None:
+            caps[c] = v
+    out = {"max": caps, "graphics_max": 0}
+    return out
+
+
 # Motion codes whose only table rows belong to a diagram/comparison type: when
 # that type is banned the code needs another visual to be reachable at all.
 _FALLBACK_ROWS = {

@@ -2193,6 +2193,7 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             all_own = db.list_own_channels(conn)
+            simple_mode = bool(settings.load(conn).get("simple_mode"))
             own_state = "paused" if request.args.get("state") == "paused" else "active"
             own_channels = [c for c in all_own
                             if (c["active"] if own_state == "active" else not c["active"])]
@@ -2225,6 +2226,7 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            simple_mode=simple_mode,
             **explainer_ctx,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
@@ -3740,6 +3742,7 @@ def create_app(cfg) -> Flask:
             if not prod:
                 abort(404)
             eff = settings.for_production(conn, prod)
+            simple_mode = bool(settings.load(conn).get("simple_mode"))
             own_channels = db.list_own_channels(conn)
             prod_label = db.production_label(prod, db.channel_codes(own_channels))
             steps = db.latest_steps(conn, pid)
@@ -3948,6 +3951,7 @@ def create_app(cfg) -> Flask:
                 str(eff.get("render_resolution") or "").lower(), ""),
             source_video=source_video, attach_sources=attach_sources,
             human_review=human_review.load(pdir),
+            simple_mode=simple_mode,
             review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
             llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
@@ -5801,6 +5805,9 @@ def create_app(cfg) -> Flask:
             str(eff.get("render_resolution") or "").lower(), "the channel's size")
 
         def worker():
+            # simple mode: the stills are at Flow's size - upscale them once now
+            autorun.upscale_before_render(cfg, pid, pdir, log=sjob.log.append,
+                                          cancel=lambda: bool(_job.cancel))
             studio.run_final_render(cfg, pdir, animate=bool(eff.get("animate_enabled")),
                                     window_seconds=eff.get("animate_seconds"),
                                     log=sjob.log.append, cancel=_Cancel())
