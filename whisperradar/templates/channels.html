@@ -675,6 +675,33 @@
             <h4 class="brief-sec" style="margin:18px 0 4px; padding-top:8px; border-top:1px solid var(--border, #8884); font-size:13px">3. Shot types &amp; host <span class="muted" style="font-weight:normal">share of each shot type, host in frame</span></h4>
             {% set bt = ch['brief_types'] | typesjson %}
             <input type="hidden" name="types_form" value="1">
+            {% if simple_mode %}
+            <details class="type-limits" open style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px">
+              <summary style="cursor:pointer; font-weight:600">Scene and close-up limits</summary>
+              <div class="muted" style="font-size:12px; margin:6px 0">
+                How much of the video each of these shot types may take (percent of ALL shots; empty = no limit,
+                0 = never used). Any other shot-type or host limits already saved on this channel stay in force;
+                simple mode only hides their fields.
+              </div>
+              <div class="inline">
+                {% for code in ('SCN', 'CU') %}
+                <label title="{{ brief_type_codes.get(code, '') }}">{{ code }} max %
+                  <input type="number" min="0" max="100" step="1" name="type_max_{{ code }}" style="width:70px"
+                         value="{{ ((bt.get('max') or {}).get(code) if (bt.get('max') or {}).get(code) is not none else '') }}">
+                </label>
+                {% endfor %}
+              </div>
+              {# the hidden limits are posted back unchanged so saving never wipes them #}
+              <input type="hidden" name="type_max_graphics" value="{{ (bt.get('graphics_max') if bt.get('graphics_max') is not none else '') }}">
+              {% for code in brief_type_codes if code not in ('SCN', 'CU') %}
+              <input type="hidden" name="type_max_{{ code }}" value="{{ ((bt.get('max') or {}).get(code) if (bt.get('max') or {}).get(code) is not none else '') }}">
+              {% endfor %}
+              <input type="hidden" name="type_host_ref" value="{{ bt.get('host_ref') or '' }}">
+              {% for code in brief_type_codes %}
+              <input type="hidden" name="type_host_{{ code }}" value="{{ ((bt.get('host') or {}).get(code) if (bt.get('host') or {}).get(code) is not none else '') }}">
+              {% endfor %}
+            </details>
+            {% else %}
             <details class="type-limits" open style="margin-top:8px; padding:8px 10px; border:1px dashed var(--border, #888); border-radius:6px">
               <summary style="cursor:pointer; font-weight:600">Diagrams, infographics and the host</summary>
               <div class="muted" style="font-size:12px; margin:6px 0">
@@ -713,6 +740,7 @@
                 {% endfor %}
               </div>
             </details>
+            {% endif %}
             <h4 class="brief-sec" style="margin:18px 0 4px; padding-top:8px; border-top:1px solid var(--border, #8884); font-size:13px">4. Reveals, text &amp; sound <span class="muted" style="font-weight:normal"></span></h4>
             <div class="inline" style="gap:28px">
               <label>reveal shots

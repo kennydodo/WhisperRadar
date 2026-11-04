@@ -2,6 +2,8 @@
 chat, the external-LLM prompts, target words and additional direction; the
 beats plan is hidden (the judge shotlist stays); Auto Run's merge renders the
 final video instead of exporting a Premiere project."""
+import json
+import re
 import sys
 import tempfile
 import unittest
@@ -120,6 +122,64 @@ class SimpleModeTests(unittest.TestCase):
         final, nle = self._merge(True, mode="cli")
         self.assertTrue(nle.called)
         self.assertFalse(final.called)
+
+
+class SimpleModeShotTypeTests(unittest.TestCase):
+    """Channel settings, simple mode: only the SCN and CU limits are shown; the
+    other shot-type / host limits stay saved, in force and untouched."""
+
+    SPEC = {"graphics_max": 25, "max": {"INF": 0, "CMP": 0},
+            "host_ref": "CH_JOE", "host": {"SCN": 100, "INF": 0}}
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = load_config(ROOT / "config.yaml")
+        self.cfg.db_path = Path(self.tmp.name) / "wr.db"
+        self.cfg.studio_dir = Path(self.tmp.name) / "studio"
+        self.conn = db.connect(self.cfg.db_path)
+        db.init_db(self.conn)
+        self.chan = db.create_own_channel(self.conn, "Chan", writing_style="Calm.")
+        db.update_own_channel(self.conn, self.chan, brief_types=json.dumps(self.SPEC))
+        self.client = create_app(self.cfg).test_client()
+
+    def tearDown(self):
+        self.conn.close()
+        wr_tmp.cleanup(self.tmp)
+
+    def page(self):
+        return self.client.get("/my-channels").get_data(as_text=True)
+
+    def test_normal_mode_shows_everything(self):
+        text = self.page()
+        for bit in ("Diagrams, infographics and the host", "INF max %", "host reference name",
+                    "diagrams + infographics together, max %"):
+            self.assertIn(bit, text, bit)
+
+    def test_simple_mode_shows_only_scn_and_cu(self):
+        settings.save(self.conn, {"simple_mode": "1"})
+        text = self.page()
+        self.assertIn("Scene and close-up limits", text)
+        self.assertIn("SCN max %", text)
+        self.assertIn("CU max %", text)
+        for gone in ("Diagrams, infographics and the host", "INF max %", "CMP max %",
+                     "host reference name", "diagrams + infographics together, max %",
+                     "with host %"):
+            self.assertNotIn(gone, text, gone)
+
+    def test_saving_in_simple_mode_keeps_the_hidden_limits(self):
+        settings.save(self.conn, {"simple_mode": "1"})
+        text = self.page()
+        form = {"id": str(self.chan), "types_form": "1"}
+        for m in re.finditer(r'<input[^>]*name="(type_[A-Za-z_]+)"[^>]*>', text):
+            val = re.search(r'value="([^"]*)"', m.group(0))
+            form[m.group(1)] = val.group(1) if val else ""
+        form["type_max_SCN"] = "30"
+        self.client.post("/my-channels/brief", data=form)
+        spec = json.loads(db.get_own_channel(self.conn, self.chan)["brief_types"])
+        self.assertEqual(spec["graphics_max"], 25)
+        self.assertEqual(spec["max"], {"INF": 0, "CMP": 0, "SCN": 30})
+        self.assertEqual(spec["host_ref"], "CH_JOE")
+        self.assertEqual(spec["host"], {"SCN": 100, "INF": 0})
 
 
 class SimpleModeUpscaleTests(unittest.TestCase):

@@ -2193,6 +2193,7 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         try:
             all_own = db.list_own_channels(conn)
+            simple_mode = bool(settings.load(conn).get("simple_mode"))
             own_state = "paused" if request.args.get("state") == "paused" else "active"
             own_channels = [c for c in all_own
                             if (c["active"] if own_state == "active" else not c["active"])]
@@ -2225,6 +2226,7 @@ def create_app(cfg) -> Flask:
             conn.close()
         return render_template(
             "channels.html", own_channels=own_channels, links=links,
+            simple_mode=simple_mode,
             **explainer_ctx,
             style_variants=[(k, studio.STYLE_VARIANT_LABELS[k])
                             for k in studio.STYLE_VARIANTS],
