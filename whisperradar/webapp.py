@@ -2335,12 +2335,16 @@ def create_app(cfg) -> Flask:
             if db.get_own_channel(conn, name):
                 return redirect("/my-channels?error=" + quote(
                     f"A channel named '{name}' already exists"))
-            oc_id = db.create_own_channel(
-                conn, name, writing_style=writing_style,
-                description=(request.form.get("description") or "").strip(),
-                genre=(request.form.get("genre") or "").strip() or "general",
-                youtube_handle=(request.form.get("youtube_handle") or "").strip(),
-            )
+            try:
+                oc_id = db.create_own_channel(
+                    conn, name, writing_style=writing_style,
+                    description=(request.form.get("description") or "").strip(),
+                    genre=(request.form.get("genre") or "").strip() or "general",
+                    youtube_handle=(request.form.get("youtube_handle") or "").strip(),
+                    code=(request.form.get("code") or "").strip(),
+                )
+            except ValueError as exc:
+                return redirect("/my-channels?error=" + quote(str(exc)))
             created = db.get_own_channel(conn, oc_id)
             result = studio.sync_renderly_channel(cfg, conn, created)
         finally:
@@ -2495,6 +2499,8 @@ def create_app(cfg) -> Flask:
         for key in ("name", "description", "genre", "youtube_handle"):
             if key in request.form:
                 fields[key] = (request.form.get(key) or "").strip()
+        if (request.form.get("code") or "").strip():
+            fields["code"] = request.form["code"]
         if "genre" in fields and not fields["genre"]:
             fields["genre"] = "general"
         if "watched_present" in request.form:
@@ -2659,7 +2665,10 @@ def create_app(cfg) -> Flask:
         try:
             if not db.get_own_channel(conn, oc_id):
                 return redirect("/my-channels?error=Unknown+channel")
-            db.update_own_channel(conn, oc_id, **fields)
+            try:
+                db.update_own_channel(conn, oc_id, **fields)
+            except ValueError as exc:
+                return redirect("/my-channels?error=" + quote(str(exc)))
             if "explainer_present" in request.form:
                 from . import explainer_channel
                 bad = explainer_channel.save(conn, oc_id, request.form)
@@ -3093,6 +3102,7 @@ def create_app(cfg) -> Flask:
         db.init_db(conn)
         own_channels = db.list_own_channels(conn)
         own_by_id = {c["id"]: c["name"] for c in own_channels}
+        codes = db.channel_codes(own_channels)
 
         sort = request.args.get("sort") or "date"
         if sort not in ("date", "channel", "title"):
@@ -3144,6 +3154,7 @@ def create_app(cfg) -> Flask:
                             "chosen": bool(tdata.get("chosen"))}
                            if tdata["concepts"] else None),
                 "row": p,
+                "label": db.production_label(p, codes),
                 "own_channel": own_by_id.get(p["own_channel_id"]) or "",
                 "kit": kit if kit.get("title") else None,
                 "gpt_job": gpt_jobs.get(p["id"]),
@@ -3730,6 +3741,7 @@ def create_app(cfg) -> Flask:
                 abort(404)
             eff = settings.for_production(conn, prod)
             own_channels = db.list_own_channels(conn)
+            prod_label = db.production_label(prod, db.channel_codes(own_channels))
             steps = db.latest_steps(conn, pid)
             history = db.step_history(conn, pid)
             source_video = (db.get_video(conn, prod["source_video_id"])
@@ -3892,7 +3904,7 @@ def create_app(cfg) -> Flask:
         fix_enabled = cli_llm.load(cfg)["show_fixes"]
         page = render_template(
             "studio_detail.html", script_readiness=readiness, fix_preview=fix_preview, fix_enabled=fix_enabled,
-            fix_providers=fix_providers, fix_default=fix_default, prod=prod, steps=steps, history=history,
+            fix_providers=fix_providers, fix_default=fix_default, prod=prod, prod_label=prod_label, steps=steps, history=history,
             skipped_stages=skipped_stages, explainer_mode=explainer_mode,
             scene_review=scene_review, scene_plan_exists=scene_plan_exists,
             scene_state=scene_state, candidate_scenes=candidate_scenes,
@@ -6020,6 +6032,7 @@ def create_app(cfg) -> Flask:
         try:
             channels = db.list_own_channels(conn)
             own_by_id = {c["id"]: c["name"] for c in channels}
+            codes = db.channel_codes(channels)
             paused = {c["id"] for c in channels if not c["active"]}
             # finished work and paused channels do not belong here
             prods = [p for p in db.list_productions(conn)
@@ -6047,6 +6060,7 @@ def create_app(cfg) -> Flask:
             rows.append({
                 "id": p["id"],
                 "channel": own_by_id.get(p["own_channel_id"]) or "No channel",
+                "label": db.production_label(p, codes),
                 "title": (p["title"] or "")[:100],
                 "stage": p["stage"],
                 # a stage that will be skipped (no motion clips for this

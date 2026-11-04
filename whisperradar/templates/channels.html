@@ -143,6 +143,9 @@
       </datalist>
       <input type="text" name="youtube_handle" placeholder="@handle (optional)"
              style="flex:0 0 160px">
+      <input type="text" name="code" placeholder="Code, e.g. NATURE (optional)" maxlength="8"
+             style="flex:0 0 190px;text-transform:uppercase"
+             title="Short label for this channel's production numbers (NATURE-1, NATURE-2 ...). Permanent: a rename does not change it.">
       <textarea name="writing_style" required rows="5"
                 placeholder="Writing style (required) - how every script for this channel sounds: voice, pacing, hook, structure, CTA. Research it outside WhisperRadar and paste it here. It is loaded into stage 1 for every video; nothing is generated."
                 style="flex:1 1 100%"></textarea>
@@ -210,7 +213,7 @@
           </div>
           {% endif %}
         </td>
-        <td class="muted mono">{{ ch["youtube_handle"] or "" }}</td>
+        <td class="muted mono">{{ ch["youtube_handle"] or "" }}{% if ch["code"] %}<div title="Production labels: {{ ch['code'] }}-1, {{ ch['code'] }}-2 ...">{{ ch["code"] }}</div>{% endif %}</td>
         <td>{% if ch["active"] %}<span class="badge on">active</span>
             {% else %}<span class="badge off">paused</span>{% endif %}</td>
         <td>
@@ -259,6 +262,9 @@
               </label>
               <label>handle
                 <input type="text" name="youtube_handle" value="{{ ch['youtube_handle'] or '' }}" style="width:140px">
+              </label>
+              <label title="Permanent label for production numbers (CODE-1, CODE-2 ...). A rename keeps it; changing it relabels every production of this channel.">code
+                <input type="text" name="code" value="{{ ch['code'] or '' }}" maxlength="8" style="width:90px;text-transform:uppercase">
               </label>
               <label>state
                 <select name="active">

@@ -1,6 +1,7 @@
 """SQLite storage for channels, videos and run history."""
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -232,6 +233,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE productions ADD COLUMN voice TEXT")
     if "own_channel_id" not in cols:
         conn.execute("ALTER TABLE productions ADD COLUMN own_channel_id INTEGER")
+    if "channel_no" not in cols:
+        # the production's number inside its own channel (channel A #1, #2 ...;
+        # channel B #1 ...). Display only: the id stays the key everywhere.
+        conn.execute("ALTER TABLE productions ADD COLUMN channel_no INTEGER")
+    _backfill_channel_numbers(conn)
     if "handover" not in cols:
         # JSON {"plan": template id, "script": template id}: what the judge
         # passes to the writer (handover.py); NULL = the default template
@@ -313,6 +319,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("writing_style", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "own_channels", "opening_styles", "TEXT")
+    # permanent short label for the channel (NATURE, TLM ...): production
+    # labels are CODE-number and survive a rename
+    _add_column_if_missing(conn, "own_channels", "code", "TEXT")
+    _assign_channel_codes(conn)
     _add_column_if_missing(conn, "productions", "opening_config", "TEXT")
     # how long a recorded step took (seconds); NULL for steps recorded before
     # this existed or outside a job
@@ -997,6 +1007,98 @@ def set_stage_provider(conn, pid: int, stage: str, name: str | None) -> None:
     update_production(conn, pid, stage_providers=json.dumps(data))
 
 
+def _backfill_channel_numbers(conn) -> None:
+    """Give every production without a channel number the next one in its
+    channel, oldest first. Idempotent; numbers are never reused or shifted."""
+    rows = conn.execute(
+        "SELECT id, own_channel_id FROM productions WHERE channel_no IS NULL"
+        " ORDER BY created_at, id").fetchall()
+    for r in rows:
+        conn.execute("UPDATE productions SET channel_no = ? WHERE id = ?",
+                     (take_channel_no(conn, r[1]), r[0]))
+    if rows:
+        conn.commit()
+
+
+def take_channel_no(conn, own_channel_id) -> int:
+    """Hand out the next number in a channel. A counter per channel (0 = no
+    channel) makes sure a deleted production's number is never given again."""
+    conn.execute("CREATE TABLE IF NOT EXISTS channel_counters ("
+                 "chan INTEGER PRIMARY KEY, last_no INTEGER NOT NULL)")
+    key = own_channel_id or 0
+    seen = conn.execute(
+        "SELECT MAX(channel_no) FROM productions WHERE "
+        + ("own_channel_id IS NULL" if not key else "own_channel_id = ?"),
+        () if not key else (key,)).fetchone()[0] or 0
+    row = conn.execute("SELECT last_no FROM channel_counters WHERE chan = ?",
+                       (key,)).fetchone()
+    number = max(seen, row[0] if row else 0) + 1
+    conn.execute("INSERT INTO channel_counters (chan, last_no) VALUES (?, ?)"
+                 " ON CONFLICT(chan) DO UPDATE SET last_no = excluded.last_no",
+                 (key, number))
+    return number
+
+
+# codes picked by the owner for the channels that exist today; everything
+# else gets initials. Only used once, when a channel has no code yet.
+PREFERRED_CODES = {"the nature made us": "NATURE", "to live and more": "TLM",
+                   "simply ai explained": "AI"}
+
+
+def normalize_channel_code(raw) -> str:
+    code = re.sub(r"\s+", "", str(raw or "")).upper()
+    if not re.fullmatch(r"[A-Z0-9]{1,8}", code):
+        raise ValueError("A channel code is 1-8 letters or digits, e.g. NATURE or TLM")
+    return code
+
+
+def derive_channel_code(name: str, taken) -> str:
+    """Initials of the name (never reused: a clash gets a digit)."""
+    taken = {t.upper() for t in taken}
+    preferred = PREFERRED_CODES.get((name or "").strip().lower())
+    words = [w for w in re.findall(r"[A-Za-z0-9]+", name or "")
+             if w.lower() not in ("and", "of")]
+    base = preferred or ("".join(w[0] for w in words).upper() or "CH")[:6]
+    code, n = base, 2
+    while code in taken:
+        code, n = f"{base}{n}", n + 1
+    return code
+
+
+def _assign_channel_codes(conn) -> None:
+    """Give every channel without a code one, once; then keep codes unique."""
+    rows = conn.execute("SELECT id, name, code FROM own_channels ORDER BY id").fetchall()
+    taken = {r[2].upper() for r in rows if r[2]}
+    changed = False
+    for r in rows:
+        if not r[2]:
+            code = derive_channel_code(r[1], taken)
+            taken.add(code)
+            conn.execute("UPDATE own_channels SET code = ? WHERE id = ?", (code, r[0]))
+            changed = True
+    if changed:
+        conn.commit()
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_own_channels_code"
+                 " ON own_channels(code COLLATE NOCASE)")
+
+
+def channel_codes(channels) -> dict:
+    """id -> the channel's stored code (initials only if somehow missing)."""
+    codes: dict = {}
+    for ch in channels:
+        stored = ch["code"] if "code" in ch.keys() else None
+        codes[ch["id"]] = stored or derive_channel_code(ch["name"], codes.values())
+    return codes
+
+
+def production_label(prod, codes: dict) -> str:
+    """"TNMU-12" for a production in a channel, "#id" when it has none."""
+    ch, no = prod["own_channel_id"], prod["channel_no"]
+    if ch in codes and no:
+        return f"{codes[ch]}-{no}"
+    return f"#{prod['id']}"
+
+
 def create_production(conn, title: str, genre: str = "general",
                       source_video_id: str | None = None,
                       work_dir: str | None = None) -> int:
@@ -1006,10 +1108,11 @@ def create_production(conn, title: str, genre: str = "general",
     # table, so relying on it here would keep inserting UTC.
     cur = conn.execute(
         "INSERT INTO productions (title, genre, source_video_id, work_dir,"
-        " stage, created_at, updated_at)"
+        " stage, created_at, updated_at, channel_no)"
         " VALUES (?, ?, ?, ?, 'style', datetime('now', 'localtime'),"
-        " datetime('now', 'localtime'))",
-        (title, genre or "general", source_video_id, work_dir),
+        " datetime('now', 'localtime'), ?)",
+        (title, genre or "general", source_video_id, work_dir,
+         take_channel_no(conn, None)),
     )
     conn.commit()
     return cur.lastrowid
@@ -1032,6 +1135,14 @@ def update_production(conn, pid: int, **fields) -> None:
             raise ValueError(f"Unknown production field: {key}")
         cols.append(f"{key} = ?")
         vals.append(value)
+    if "own_channel_id" in fields:
+        current = conn.execute("SELECT own_channel_id FROM productions WHERE id = ?",
+                               (pid,)).fetchone()
+        if current is not None and current[0] != fields["own_channel_id"]:
+            # a new channel means the next free number there; the old number
+            # belongs to the old channel
+            cols.append("channel_no = ?")
+            vals.append(take_channel_no(conn, fields["own_channel_id"]))
     cols.append("updated_at = datetime('now', 'localtime')")
     vals.append(pid)
     conn.execute(f"UPDATE productions SET {', '.join(cols)} WHERE id = ?", vals)
@@ -1176,7 +1287,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 # monitored competitor/source channels) so the two never mix.
 
 _OWN_CHANNEL_FIELDS = {
-    "opening_styles",
+    "opening_styles", "code",
     "flow_account", "frame",
     "name", "description", "genre", "youtube_handle", "active",
     "handover_default", "video_options",
@@ -1231,6 +1342,13 @@ def get_own_channel(conn, key):
 
 def create_own_channel(conn, name: str, **fields) -> int:
     values = {k: v for k, v in fields.items() if k in _OWN_CHANNEL_FIELDS}
+    taken = [r[0] for r in conn.execute("SELECT code FROM own_channels WHERE code IS NOT NULL")]
+    if values.get("code"):
+        values["code"] = normalize_channel_code(values["code"])
+        if values["code"] in {t.upper() for t in taken}:
+            raise ValueError(f"The code {values['code']} is already used by another channel")
+    else:
+        values["code"] = derive_channel_code(name, taken)
     cols = ["name", *values]
     marks = ",".join("?" for _ in cols)
     cur = conn.execute(
@@ -1246,6 +1364,12 @@ def update_own_channel(conn, oc_id: int, **fields) -> None:
     for key, value in fields.items():
         if key not in _OWN_CHANNEL_FIELDS:
             raise ValueError(f"Unknown own_channel field: {key}")
+        if key == "code":
+            value = normalize_channel_code(value)
+            clash = conn.execute("SELECT name FROM own_channels WHERE code = ?"
+                                 " COLLATE NOCASE AND id != ?", (value, oc_id)).fetchone()
+            if clash:
+                raise ValueError(f"The code {value} is already used by {clash[0]}")
         cols.append(f"{key} = ?")
         vals.append(value)
     if not cols:

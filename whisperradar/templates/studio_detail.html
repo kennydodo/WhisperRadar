@@ -128,7 +128,7 @@
   </select>
   {% endmacro %}
   <a href="/studio" class="muted" style="font-size:13px">&larr; All productions</a> · <a href="/studio/{{ prod['id'] }}/opening">Opening choices</a>
-  <h1>{{ prod["title"] }}
+  <h1><span class="muted" style="font-size:.55em;font-weight:600" title="Internal number #{{ prod['id'] }}">{{ prod_label }}</span> {{ prod["title"] }}
     {% if prod["status"] == "ready" %}<span class="badge ready">ready to publish</span>{% endif %}
   </h1>
   <details style="margin:-4px 0 8px">
