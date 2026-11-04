@@ -816,6 +816,9 @@ def for_production(conn, prod) -> dict:
                         or glob["default_render_mode"]),
         "upscale": derived if derived is not None else configured,
         "upscale_warning": upscale_warning,
+        # Settings > Simple mode (global): stills download at Flow's size and
+        # are upscaled once, just before the final render
+        "simple_mode": bool(glob.get("simple_mode")),
         # Flow native: the level one local Real-ESRGAN pass upscales the
         # downloaded stills to (per channel; only used when the resolved
         # render resolution is "flow-native")

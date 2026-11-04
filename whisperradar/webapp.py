@@ -5803,6 +5803,9 @@ def create_app(cfg) -> Flask:
             str(eff.get("render_resolution") or "").lower(), "the channel's size")
 
         def worker():
+            # simple mode: the stills are at Flow's size - upscale them once now
+            autorun.upscale_before_render(cfg, pid, pdir, log=sjob.log.append,
+                                          cancel=lambda: bool(_job.cancel))
             studio.run_final_render(cfg, pdir, animate=bool(eff.get("animate_enabled")),
                                     window_seconds=eff.get("animate_seconds"),
                                     log=sjob.log.append, cancel=_Cancel())

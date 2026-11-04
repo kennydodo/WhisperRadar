@@ -122,5 +122,92 @@ class SimpleModeTests(unittest.TestCase):
         self.assertFalse(final.called)
 
 
+class SimpleModeUpscaleTests(unittest.TestCase):
+    """Simple mode downloads the stills at Flow's size and upscales them ONCE,
+    just before the final render. Normal mode keeps its own behaviour."""
+
+    def eff(self, simple, resolution="2k", upscale=2, native_level="off"):
+        return {"simple_mode": simple, "render_resolution": resolution, "upscale": upscale,
+                "flow_native_upscale": native_level, "animate_enabled": False,
+                "animate_seconds": None, "render_target": "premiere"}
+
+    def test_download_is_native_in_simple_mode_only(self):
+        self.assertEqual(autorun._upscale_for(self.eff(True)), 0)
+        self.assertEqual(autorun._upscale_for(self.eff(False)), 2)
+        self.assertEqual(autorun._upscale_for(self.eff(False, "4k", 4)), 4)
+
+    def test_no_pass_after_the_downloads_in_simple_mode(self):
+        flow_native = self.eff(True, "flow-native", 0, "2k")
+        self.assertEqual(autorun._download_upscale_tier(flow_native), "off")
+        normal = self.eff(False, "flow-native", 0, "2k")
+        self.assertEqual(autorun._download_upscale_tier(normal), "2k")
+        self.assertIn("upscaled just before", autorun._upscale_text(self.eff(True)))
+
+    def test_pass_runs_before_render_to_the_selected_resolution(self):
+        for resolution, upscale, tier in (("1080p", 1, "1k"), ("2k", 2, "2k"), ("4k", 4, "4k")):
+            with mock.patch.object(autorun, "_effective",
+                                   return_value=self.eff(True, resolution, upscale)), \
+                 mock.patch.object(studio, "upscale_images_locally",
+                                   return_value={"tier": tier}) as up:
+                got = autorun.upscale_before_render(None, 1, Path("p"))
+            self.assertEqual(up.call_args.kwargs["tier"], tier)
+            self.assertEqual(got, {"tier": tier})
+
+    def test_flow_native_uses_its_own_level_and_no_level_means_no_pass(self):
+        with mock.patch.object(autorun, "_effective",
+                               return_value=self.eff(True, "flow-native", 0, "2k")), \
+             mock.patch.object(studio, "upscale_images_locally", return_value={}) as up:
+            autorun.upscale_before_render(None, 1, Path("p"))
+        self.assertEqual(up.call_args.kwargs["tier"], "2k")
+        with mock.patch.object(autorun, "_effective",
+                               return_value=self.eff(True, "flow-native", 0, "off")), \
+             mock.patch.object(studio, "upscale_images_locally") as up:
+            self.assertIsNone(autorun.upscale_before_render(None, 1, Path("p")))
+        self.assertFalse(up.called)
+
+    def test_normal_mode_never_upscales_before_render(self):
+        with mock.patch.object(autorun, "_effective", return_value=self.eff(False)), \
+             mock.patch.object(studio, "upscale_images_locally") as up:
+            self.assertIsNone(autorun.upscale_before_render(None, 1, Path("p")))
+        self.assertFalse(up.called)
+
+    def test_auto_run_merge_upscales_then_renders(self):
+        calls = []
+        pdir = Path(tempfile.mkdtemp())
+        with mock.patch.object(studio, "prepare_project_folder", return_value=pdir), \
+             mock.patch.object(studio, "find_audio", return_value=Path("a.mp3")), \
+             mock.patch.object(studio, "find_srt", return_value=Path("a.srt")), \
+             mock.patch.object(studio, "find_images", return_value=[Path("x")]), \
+             mock.patch.object(autorun, "explainer_production", return_value=False), \
+             mock.patch.object(autorun, "_merge_pause_reason", return_value=None), \
+             mock.patch.object(autorun, "_simple_mode", return_value=True), \
+             mock.patch.object(autorun, "_effective", return_value=self.eff(True)), \
+             mock.patch.object(autorun, "_connect"), \
+             mock.patch.object(autorun.db, "add_step"), \
+             mock.patch.object(autorun, "upscale_before_render",
+                               side_effect=lambda *a, **k: calls.append("upscale")), \
+             mock.patch.object(studio, "run_final_render",
+                               side_effect=lambda *a, **k: calls.append("render") or Path("f")):
+            cfg = mock.Mock(studio_merge_command="")
+            autorun._run_merge(cfg, 1, None)
+        self.assertEqual(calls, ["upscale", "render"])
+
+
+class SimpleModeEffTests(unittest.TestCase):
+    def test_for_production_exposes_the_setting(self):
+        tmp = tempfile.TemporaryDirectory()
+        try:
+            conn = db.connect(Path(tmp.name) / "w.db")
+            db.init_db(conn)
+            pid = db.create_production(conn, "T", "general", None, None)
+            prod = db.get_production(conn, pid)
+            self.assertFalse(settings.for_production(conn, prod)["simple_mode"])
+            settings.save(conn, {"simple_mode": "1"})
+            self.assertTrue(settings.for_production(conn, prod)["simple_mode"])
+            conn.close()
+        finally:
+            wr_tmp.cleanup(tmp)
+
+
 if __name__ == "__main__":
     unittest.main()
