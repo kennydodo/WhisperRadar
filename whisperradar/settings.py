@@ -894,8 +894,8 @@ def for_production(conn, prod) -> dict:
         # Per channel only - no global setting; nothing set = today's brief.
         "brief_motion": row_get(own, "brief_motion") or None,
         # shot-type caps and host-in-frame shares: per channel only
-        "brief_types": briefs.effective_types(
-            None, row_get(own, "brief_types")),
+        "brief_types": briefs.scene_closeup_only(briefs.effective_types(
+            None, row_get(own, "brief_types"))),
         "brief_presentation": row_get(own, "brief_presentation") or "",
         # reveal shots (items shown one at a time) in the planning brief:
         # per channel only, off unless the channel turns them on

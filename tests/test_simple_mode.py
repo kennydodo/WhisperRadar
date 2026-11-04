@@ -126,7 +126,7 @@ class SimpleModeTests(unittest.TestCase):
 
 class SimpleModeShotTypeTests(unittest.TestCase):
     """Channel settings (every mode): only the SCN and CU limits are shown; the
-    other shot-type / host limits stay saved, in force and untouched."""
+    other shot-type / host limits stay saved but are overridden to zero."""
 
     SPEC = {"graphics_max": 25, "max": {"INF": 0, "CMP": 0},
             "host_ref": "CH_JOE", "host": {"SCN": 100, "INF": 0}}
@@ -272,3 +272,15 @@ class SimpleModeEffTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SceneCloseupOnlyTests(unittest.TestCase):
+    def test_only_scn_and_cu_remain(self):
+        from whisperradar import briefs
+        out = briefs.scene_closeup_only({"max": {"SCN": 30, "INF": 40}, "graphics_max": 25,
+                                         "host_ref": "H", "host": {"SCN": 100}})
+        self.assertEqual(out["graphics_max"], 0)
+        self.assertEqual(out["max"]["SCN"], 30)
+        for c in ("INF", "CMP", "PROC", "HYB", "OVR"):
+            self.assertEqual(out["max"][c], 0)
+        self.assertNotIn("host", out)

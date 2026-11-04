@@ -178,15 +178,19 @@ class SettingsAndChannelTests(unittest.TestCase):
 
     def test_defaults_change_nothing(self):
         e = self.eff()
-        self.assertIsNone(e["brief_types"])
+        self.assertEqual(e["brief_types"]["graphics_max"], 0)
+        self.assertEqual(e["brief_types"]["max"]["INF"], 0)
+        self.assertNotIn("host", e["brief_types"])
         self.assertIsNone(e["brief_motion"])
 
     def test_channel_spec_reaches_the_production(self):
         db.update_own_channel(self.conn, self.chan, brief_types=json.dumps(
             {"max": {"INF": 40}, "host_ref": "CH_H", "host": {"INF": 100}}))
         e = self.eff()
-        self.assertEqual(e["brief_types"]["max"], {"INF": 40})
-        self.assertEqual(e["brief_types"]["host"], {"INF": 100})
+        # hidden types are zero: the saved INF 40% / host rule are overridden
+        self.assertEqual(e["brief_types"]["max"]["INF"], 0)
+        self.assertEqual(e["brief_types"]["graphics_max"], 0)
+        self.assertNotIn("host", e["brief_types"])
 
     def test_channels_page_shows_the_saved_values(self):
         db.update_own_channel(self.conn, self.chan, brief_types=json.dumps(
