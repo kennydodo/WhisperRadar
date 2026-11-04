@@ -125,7 +125,7 @@ class SimpleModeTests(unittest.TestCase):
 
 
 class SimpleModeShotTypeTests(unittest.TestCase):
-    """Channel settings, simple mode: only the SCN and CU limits are shown; the
+    """Channel settings (every mode): only the SCN and CU limits are shown; the
     other shot-type / host limits stay saved, in force and untouched."""
 
     SPEC = {"graphics_max": 25, "max": {"INF": 0, "CMP": 0},
@@ -149,11 +149,12 @@ class SimpleModeShotTypeTests(unittest.TestCase):
     def page(self):
         return self.client.get("/my-channels").get_data(as_text=True)
 
-    def test_normal_mode_shows_everything(self):
+    def test_normal_mode_shows_only_scn_and_cu_too(self):
         text = self.page()
-        for bit in ("Diagrams, infographics and the host", "INF max %", "host reference name",
-                    "diagrams + infographics together, max %"):
-            self.assertIn(bit, text, bit)
+        self.assertIn("Scene and close-up limits", text)
+        self.assertIn("SCN max %", text)
+        self.assertNotIn("INF max %", text)
+        self.assertNotIn("host reference name", text)
 
     def test_simple_mode_shows_only_scn_and_cu(self):
         settings.save(self.conn, {"simple_mode": "1"})
