@@ -1120,6 +1120,26 @@ def empty_start_faults(built: dict, cues: list) -> list:
     return out
 
 
+def text_fit_faults(built: dict) -> list:
+    """Handwriting that would be written too small to read in its box (it is shrunk to fit the width,
+    which is how long lines ended up clipped or tiny): name the text so the writer shortens it."""
+    out = []
+    for sc in built.get("scenes") or []:
+        for o in sc.get("objects") or []:
+            if o.get("type") != "handwriting" or not o.get("box") or not o.get("text"):
+                continue
+            lines = str(o["text"]).split("\n")
+            box = o["box"]
+            h = float(box[3]) / len(lines)
+            size = min(h / recipes.LINE_RATIO,
+                       min((float(box[2]) * recipes.CANVAS_AR) / max(1.0, len(ln) * recipes.CHAR_W)
+                           for ln in lines))
+            if size < recipes.MIN_READABLE:
+                out.append(f"scene {sc.get('id')}: '{' '.join(lines)}' is too long for its place and would be "
+                           "written too small to read - shorten it")
+    return out
+
+
 def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms: list = None) -> list[str]:
     """Faults the code can find: the recipe builder's readable errors plus pacing."""
     if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
@@ -1152,6 +1172,7 @@ def check(plan, cues: list[dict], total_seconds: float, look: dict = None, terms
     faults.extend(count_faults(resolved, cues))
     faults.extend(number_faults(resolved, cues))
     faults.extend(empty_start_faults(built, cues))
+    faults.extend(text_fit_faults(built))
     faults.extend(motion_faults(resolved, cues, total_seconds, look))
     if resolved["scenes"][0]["cue_range"][0] != int(cues[0]["index"]):
         faults.append("the first scene must start with the very first words of the narration")

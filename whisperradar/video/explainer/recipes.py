@@ -61,7 +61,39 @@ def _compact(text: str) -> str:
     return re.sub(r"\s", "", text)
 
 
+# A handwriting line is written as tall as its box allows and then shrunk until it fits the box
+# width, so a long line in a short, narrow box ends up tiny or clipped. Text that cannot fit on one
+# line at a readable size is broken onto two lines before it is placed.
+CHAR_W = 0.5             # average glyph width / font size (the hand fonts are about 0.45-0.55)
+LINE_RATIO = 1.4         # box height / font size (matches pipe._fit_text)
+MIN_READABLE = 0.03      # smallest font size, as a share of the canvas height, we accept
+CANVAS_AR = 16 / 9
+
+
+def one_line_size(text: str, box) -> float:
+    """Font size (share of canvas height) the text gets when written on one line in this box."""
+    w, h = float(box[2]), float(box[3])
+    by_height = h / LINE_RATIO
+    by_width = (w * CANVAS_AR) / max(1.0, len(text) * CHAR_W)
+    return min(by_height, by_width)
+
+
+def fit_text(text: str, box):
+    """(text, lines): the text broken onto two lines when one line would be too small to read and
+    two lines (each at half the height) read better. Existing line breaks are left alone."""
+    if "\n" in text or " " not in text or one_line_size(text, box) >= MIN_READABLE:
+        return text, text.count("\n") + 1
+    two, _n = _lines(text, 0)                    # the most even split
+    h = float(box[3]) / 2
+    best_line = max(two.split("\n"), key=len)
+    two_size = min(h / LINE_RATIO, (float(box[2]) * CANVAS_AR) / max(1.0, len(best_line) * CHAR_W))
+    if two_size > one_line_size(text, box):
+        return two, 2
+    return text, 1
+
+
 def _text(oid, text, box, color, cue, group="", font=None, slow=1.0):
+    text, _nl = fit_text(text, box)
     n = max(1, len(_compact(text)))
     obj = {"id": oid, "type": "handwriting", "text": text, "box": _r(box), "color": color}
     if font:
