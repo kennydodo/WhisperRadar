@@ -99,6 +99,37 @@ timed chapters when reliable timings are missing or unusable; explain that
 limitation in notes rather than inventing timestamps. Keep research notes
 and internal SEO reasoning out of the public description.
 
+SCRIPT SOURCES IN DESCRIPTION: Every new package must include a public Sources
+section inside description.txt, not only in internal notes or a separate file.
+Read the production's saved research notes, manual_review source/review notes and
+source material; check the sources against the final script. Include descriptive
+source titles and direct, working URLs for the material factual claims, studies,
+statistics and technical documentation actually used. Prefer original research,
+official documentation and primary data. Distinguish a source video's inspiration
+from evidence for a factual claim; thumbnail-research examples are not script
+sources. Never invent links, authors, dates, studies or references, and do not cite
+a page that does not support the associated claim. Fictional examples and local
+arithmetic must not be presented as externally sourced findings. If supporting
+sources cannot be verified, explicitly flag the missing evidence in notes and
+request resolution rather than fabricate a bibliography or claim full sourcing.
+Keep the Sources section, chapters and all other description text within the
+existing 200-4500 character limit; shorten summary prose first. Existing saved
+packages are unchanged unless the user requests a backfill.
+
+COMMUNITY POST IMAGE: Future packaging also includes one original square 1:1
+community-post image and ready-to-post companion text, tailored to the final
+script and channel art direction. This is separate from the one-or-two thumbnail
+limit. Propose its concept/headline alongside packaging concepts for approval;
+never assume thumbnail approval also approves a different community headline.
+Use built-in image generation, inspect spelling and visual accuracy, and use
+borderless full-bleed artwork with no speech/thought bubbles. Encourage a
+specific topic-related discussion without invented claims. Return a separate
+community_post object with image_path (actual original generated_images path),
+text (post copy), image_text, prompt and idea. Preserve these assets only inside
+packaging/community-post/ when saving; never post to YouTube automatically. If
+the current saver does not import community_post, explicitly report that limit
+and arrange the authorized local save rather than claiming it was imported.
+
 THUMBNAILS: Communicate the same topic and promise visually. Use short readable
 headlines that add to the title rather than repeat it word for word. Do not
 stuff search phrases into thumbnail text or claim that text guarantees search

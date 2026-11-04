@@ -1935,3 +1935,14 @@ or revisions. Record exact artifact versions, open/resolved findings, user
 decisions and the next owner. Do not modify running-render inputs or represent
 manual review as an automated judge approval. This adds documentation only;
 it does not launch webchat, render, or change the app's stage/approval state.
+
+## Standing user image preference (2026-11-03)
+The user requires all future generated scene and thumbnail images to be borderless, full-bleed, edge-to-edge artwork. No outer borders, frames, panel outlines, dividing lines, gutters, margins, letterboxing or black bars. Multi-part comparisons must share a continuous background without panel framing. Keep ordinary character and object outlines. Apply this when writing or reviewing all future image prompts; do not alter existing generated images without authorization.
+
+
+## Script sources in public packaging descriptions (2026-11-03)
+User requires sources for future scripts to appear in the public packaging description itself. Include a Sources section with descriptive titles and verified direct links supporting the final script, preferably original studies, official documentation and primary data. Read saved research/manual-review source notes and check relevance; never invent citations or substitute thumbnail inspiration links for factual evidence. Clearly distinguish fictional examples and arithmetic from research findings. Flag unverifiable material claims for resolution. Keep the whole description, chapters and Sources within 200-4500 characters. Applies across channels; do not modify existing packages without a request. Shared PACKAGING_BRIEF and local worker instructions carry this requirement.
+
+
+## Community-post image in packaging (2026-11-03)
+User requires a separate image for a YouTube community post as part of future packaging. Create one original square full-bleed channel-style image plus topic-specific post copy. Discuss its concept/headline before generation alongside thumbnail proposals; thumbnail approval alone is not approval of a different community headline. Keep under packaging/community-post/, separate from video thumbnail choices. Use built-in image generation and inspect the result. Never automatically publish. The prompt now asks for community_post metadata; automatic server import is not yet implemented, so authorized manual saves must be explicit and verified rather than assumed.

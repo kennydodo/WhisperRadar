@@ -76,8 +76,9 @@ the production. If the built-in image tool is unavailable, fail honestly.
 Return ONLY a JSON object (no Markdown) with: title (recommended, <=100 chars),
 titles (one or two distinct objects with text <=100 chars and why), description
 (complete publish-ready text, 200-4500 chars; include verified timestamped chapters
-starting at 0:00 whenever usable subtitles are supplied, plus relevant hashtags),
+starting at 0:00 whenever usable subtitles are supplied, a Sources section with verified direct links supporting the final script, plus relevant hashtags),
 thumbnails (one or two objects with path, text, prompt, idea),
+community_post (image_path, text, image_text, prompt, idea; separate square discussion image),
 recommended_thumbnail (1-2), keywords (at least 20 distinct relevant search phrases, plain comma-separated text, maximum 500 characters total including commas and spaces), first_comment (short, topic-specific conversation starter for the user to post), notes. title must equal one of titles[].text.
 Each thumbnail path must identify a real generated PNG under the local
 Codex generated_images directory, not a copied file or an invented path.
