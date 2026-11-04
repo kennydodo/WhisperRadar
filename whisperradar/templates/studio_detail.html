@@ -1156,6 +1156,7 @@
           {% endif %}
         </div>
       </form>
+      {% if not simple_mode %}
       <h2>Visual style (how the images look)</h2>
       <div class="muted" style="font-size:12px; margin-bottom:6px">
         The art direction passed to the shotlist planner and applied to every image. It is not the writing style (how the script sounds).
@@ -1214,7 +1215,7 @@
           <button type="submit" {{ 'disabled' if job.running else '' }}>Save prompts</button>
         </div>
       </form>
-
+      {% endif %}
     {% elif stage == "refs" %}
       <div class="muted" style="font-size:12px; margin-bottom:8px">
         Reference images the shotlist attaches, generated <b>before</b> the

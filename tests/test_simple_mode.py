@@ -54,6 +54,8 @@ class SimpleModeTests(unittest.TestCase):
         self.assertIn("Plan from the script (beats)", shots)
         self.assertIn("Or the old way", shots)
         self.assertIn("Use an API LLM for the shotlist", shots)
+        for there in ("Visual style (how the images look)", "Character / reference bible", "Image prompts"):
+            self.assertIn(there, shots, there)
 
     def test_script_page_in_simple_mode(self):
         self.set_mode(True)
@@ -74,6 +76,9 @@ class SimpleModeTests(unittest.TestCase):
         self.assertNotIn("Or the old way", text)
         self.assertNotIn("Use an API LLM for the shotlist", text)
         self.assertNotIn("Save notes", text)
+        for gone in ("Visual style (how the images look)", "Character / reference bible",
+                     "Image prompts", "Upload bible file", "Extract prompts from shotlist"):
+            self.assertNotIn(gone, text, gone)
         self.assertIn("Shotlist with a judge", text)
         self.assertIn("/webchat/shots", text)
 
