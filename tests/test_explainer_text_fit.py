@@ -34,3 +34,17 @@ class FitTextTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PointsPromptTests(unittest.TestCase):
+    def test_writer_rules_offer_points_as_optional(self):
+        text = "\n".join(line for _lay, line in es.RULE_LINES)
+        self.assertIn("POINTS (optional", text)
+        self.assertIn("Most scenes need none", text)
+
+    def test_judge_checks_points(self):
+        self.assertIn("points (optional short bullets", es.judge_prompt("x", {"scenes": []}, "s"))
+
+    def test_judge_sees_the_points_of_a_scene(self):
+        import inspect
+        self.assertIn('"points: "', inspect.getsource(es))
