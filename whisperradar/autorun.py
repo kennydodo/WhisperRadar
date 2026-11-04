@@ -246,6 +246,15 @@ def _source_transcript_text(cfg, pid: int) -> str:
     return ""
 
 
+def _simple_mode(cfg) -> bool:
+    """Settings > Simple mode: the basics only (see settings.py)."""
+    conn = _connect(cfg)
+    try:
+        return bool(settings.load(conn).get("simple_mode"))
+    finally:
+        conn.close()
+
+
 def _effective(cfg, pid: int) -> dict:
     """Effective production/auto-run values for a production: global settings
     <- its own channel <- the production itself (see settings.for_production)."""
@@ -2120,6 +2129,21 @@ def _run_merge(cfg, pid: int, mode: str | None = None, log=None,
         if not out.exists():
             raise RuntimeError("merge produced no video")
         detail = "final.mp4"
+    elif mode is None and _simple_mode(cfg):
+        # simple mode: auto-run's merge is the FINAL VIDEO at the selected
+        # size, not a Premiere/CapCut project (those stay one click away)
+        eff_m = _effective(cfg, pid)
+
+        class _FinalCancel:
+            def is_set(self):
+                return bool(cancel() if callable(cancel) else
+                            (cancel.is_set() if cancel is not None else False))
+
+        studio.run_final_render(
+            cfg, pdir, animate=bool(eff_m.get("animate_enabled")),
+            window_seconds=eff_m.get("animate_seconds"), log=log,
+            cancel=_FinalCancel())
+        detail = "final video"
     else:
         # NLE project for the render target (the video itself is the final render)
         eff_m = _effective(cfg, pid)

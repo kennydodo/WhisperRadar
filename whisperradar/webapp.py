@@ -3740,6 +3740,7 @@ def create_app(cfg) -> Flask:
             if not prod:
                 abort(404)
             eff = settings.for_production(conn, prod)
+            simple_mode = bool(settings.load(conn).get("simple_mode"))
             own_channels = db.list_own_channels(conn)
             prod_label = db.production_label(prod, db.channel_codes(own_channels))
             steps = db.latest_steps(conn, pid)
@@ -3948,6 +3949,7 @@ def create_app(cfg) -> Flask:
                 str(eff.get("render_resolution") or "").lower(), ""),
             source_video=source_video, attach_sources=attach_sources,
             human_review=human_review.load(pdir),
+            simple_mode=simple_mode,
             review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
             llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
