@@ -305,7 +305,8 @@ class SceneSpec:
     cue_range: tuple                      # [first_cue, last_cue], inclusive, 1-based
     objects: list = field(default_factory=list)   # ObjectSpec
     events: list = field(default_factory=list)    # EventSpec
-    camera: Optional[str] = None          # None only in MVP (static viewport)
+    camera: Optional[dict] = None         # {from, to, move_ms}: see camera.py (None = static full frame)
+    base: str = ""                        # id of an earlier scene whose finished drawing starts on the board
     remotion: Optional[dict] = None       # {component, params}: drawn by the Remotion backend
 
     def to_dict(self) -> dict:
@@ -314,6 +315,8 @@ class SceneSpec:
              "events": [e.to_dict() for e in self.events]}
         if self.camera is not None:
             d["camera"] = self.camera
+        if self.base:
+            d["base"] = self.base
         if self.remotion is not None:
             d["remotion"] = self.remotion
         return d

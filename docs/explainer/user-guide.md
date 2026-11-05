@@ -273,6 +273,14 @@ Static layouts for plans (the writer is told when to use each):
 - `ladder` - an evidence ladder, weakest rung first; `here: true` marks where the claim stands.
 Text in these layouts is sized the same across the scene; it gets smaller together when a scene is crowded, never one label alone. New shape kinds: `frame` (dashed rounded box) and `pill`.
 
+### Persistent canvas and camera (optional)
+
+Static scenes can share one picture. All three keys are optional and nothing is added on its own:
+- `region`: [x, y, w, h] - draw the scene inside that part of the frame.
+- `base`: id of an earlier scene - its finished drawing is already on the board when this scene starts, so new things are added to it (give the new scene a free region).
+- `camera`: "region" (zoom to the scene's region), "overview" (back to the whole frame) or {"zoom": 1-3, "center": [x, y], "from"?, "move_ms"?}. The view slides at the start of the scene and holds. No `camera` = no movement. Channel option "camera moves" = off ignores every camera request.
+Scenes with a camera are drawn at up to 3x size and cropped, so zoomed views stay sharp (slower to render). Remotion scenes cannot use base or camera.
+
 ### Footers (off by default) and headline size
 
 The reference videos have no takeaway bar, so a channel's scenes show information where the

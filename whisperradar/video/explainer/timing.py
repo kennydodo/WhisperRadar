@@ -203,6 +203,9 @@ def compile_doc(doc, cues, fps: float, total_seconds: float = None,
             errors.extend(e.errors)
     if errors:
         raise ExplainerError(errors)
+    by_id = {c.spec.id: c for c in out}
+    for c in out:
+        c._scenes = by_id                  # a scene can start from an earlier one (base)
     return out
 
 

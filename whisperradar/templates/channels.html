@@ -845,6 +845,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>camera moves
+                <select name="explainer_camera">
+                  <option value="">inherit{% if xg.camera %} (global: {{ xg.camera }}){% else %} (on, only when a scene asks){% endif %}</option>
+                  {% for k in ['on', 'off'] %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('camera') == k else '' }}>{{ k }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>footer (takeaway bar)
                 <select name="explainer_footers">
                   <option value="">inherit{% if xg.footers %} (global: {{ xg.footers }}){% else %} (off){% endif %}</option>

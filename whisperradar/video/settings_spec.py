@@ -52,6 +52,7 @@ CHOICES = {
     "explainer.font_style": list(_font_style_keys()),
     "explainer.title_size": ["small", "normal", "large"],
     "explainer.footers": ["off", "on"],
+    "explainer.camera": ["on", "off"],
     "explainer.hand_font": ["strokes"] + _font_choices(),
     "explainer.text_weight": ["thin", "normal", "bold"],
     "explainer.letter_spacing": ["tight", "normal", "wide"],
@@ -85,6 +86,7 @@ HELP = {
                             "headlines (default), clean = one sans everywhere, handwritten = hand "
                             "fonts that write on. Blank = video1 unless this channel already picked "
                             "its own fonts below, which then stay as they are.",
+    "explainer.camera": "Camera moves (pan / zoom between parts of one drawing). They are always optional: only a scene whose plan asks for one gets one. off = ignore every camera request. Blank = on.",
     "explainer.footers": "Takeaway bar at the bottom of a scene. off (default): information appears "
                          "where the narration says it, as titles, labels and points. on: allow footers.",
     "explainer.title_size": "Size of scene headlines: small, normal (default; marker headlines are already a "

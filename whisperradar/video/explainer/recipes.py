@@ -31,6 +31,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
+from . import camera as cam_mod
 from . import font_styles
 from . import mechanisms
 from . import vocabulary
@@ -343,6 +344,45 @@ def _footer(s, sid, els):
     els.append(_text(f"{sid}_ft", f["text"], [0.1, 0.76, 0.8, 0.075], "text", cue, "footer"))
 
 
+def _into_region(s, sid, els):
+    """Draw the scene inside a part of the frame (so a base scene's drawing is not overlapped).
+    region = [x, y, w, h] as shares of the frame."""
+    r = s["region"]
+    if not (isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in r)
+            and r[2] > 0.1 and r[3] > 0.1 and r[0] >= 0 and r[1] >= 0 and r[0] + r[2] <= 1.0001 and r[1] + r[3] <= 1.0001):
+        raise ExplainerError([f"Scene {sid}: region must be [x, y, w, h] inside the frame (w and h at least 0.1)."])
+    rx, ry, rw, rh = [float(v) for v in r]
+    for el in els:
+        o = el.obj
+        if o.get("box"):
+            x, y, w, h = o["box"]
+            o["box"] = _r([rx + x * rw, ry + y * rh, w * rw, h * rh])
+        if o.get("points"):
+            o["points"] = [[round(rx + px * rw, 4), round(ry + py * rh, 4)] for px, py in o["points"]]
+
+
+def _camera_for(raw, region, prev_end):
+    """The scene's camera, only when the plan asks for one (camera: "region" | "overview" | {zoom, center,
+    move_ms}). Never added on its own. Returns (camera dict or None, end view)."""
+    c = raw.get("camera")
+    if not c:
+        return None, cam_mod.OVERVIEW
+    if c == "region":
+        if not region:
+            raise ExplainerError([f"Scene {raw.get('id')}: camera \"region\" needs a region."])
+        to = cam_mod.region_view(region)
+    elif c == "overview":
+        to = dict(cam_mod.OVERVIEW)
+    elif isinstance(c, dict):
+        to = {"zoom": float(c.get("zoom", 1)), "center": list(c.get("center") or [0.5, 0.5])}
+    else:
+        raise ExplainerError([f"Scene {raw.get('id')}: camera must be \"region\", \"overview\" or {{zoom, center}}."])
+    out = {"from": c.get("from") if isinstance(c, dict) and c.get("from") else prev_end, "to": to}
+    if isinstance(c, dict) and c.get("move_ms"):
+        out["move_ms"] = int(c["move_ms"])
+    return out, to
+
+
 def _scene_elements(s, idx):
     sid = re.sub(r"[^A-Za-z0-9_\-]", "", str(s.get("id") or f"s{idx + 1}")) or f"s{idx + 1}"
     if not sid[0].isalpha():
@@ -385,6 +425,8 @@ def _scene_elements(s, idx):
     else:
         _compare(s, sid, els, top)
     _footer(s, sid, els)
+    if s.get("region"):
+        _into_region(s, sid, els)
     for el in els:
         if not (s["cue_range"][0] <= el.cue <= s["cue_range"][1]):
             raise ExplainerError([f"Scene {sid}: object {el.obj['id']} is anchored to cue {el.cue}, "
@@ -1182,6 +1224,8 @@ def build(plan: dict, cues, look=None) -> dict:
                               else x for x in plan["scenes"]])
     _hold_previous(plan["scenes"], cue_ms)
     scenes, errors = [], []
+    prev_end = dict(cam_mod.OVERVIEW)
+    cam_off = str((look or {}).get("camera") or "").strip().lower() == "off" if isinstance(look, dict) else False
     preset = font_styles.resolve(look)
     title_font = (preset or {}).get("title") or ""
     tscale = font_styles.title_scale(look)
@@ -1210,10 +1254,21 @@ def build(plan: dict, cues, look=None) -> dict:
         except ExplainerError as exc:
             errors.extend(exc.errors)
             continue
-        scenes.append({
+        scene = {
             "id": s["id"], "shot_id": f"S{idx + 1:02d}_01", "cue_range": list(s["cue_range"]),
             "objects": [e.obj for e in els],
-            "events": _events(s, els, sched, cue_ms)})
+            "events": _events(s, els, sched, cue_ms)}
+        if s.get("base"):
+            scene["base"] = str(s["base"])
+        if not cam_off:                                  # a channel can switch every camera move off
+            try:
+                cam, prev_end = _camera_for(s, s.get("region"), prev_end)
+            except ExplainerError as exc:
+                errors.extend(exc.errors)
+                continue
+            if cam:
+                scene["camera"] = cam
+        scenes.append(scene)
     if errors:
         raise ExplainerError(errors)
     doc = {"schema_version": sc.SCHEMA_VERSION, "style": sc.STYLE_WHITEBOARD, "scenes": scenes,

@@ -77,3 +77,54 @@ class VocabularyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CameraTests(unittest.TestCase):
+    PLAN = {"scenes": [
+        {"id": "a", "cue_range": [1, 1], "layout": "hero", "title": "T", "region": [0, 0, 0.5, 0.5],
+         "items": [{"label": "x", "icon": "user"}], "camera": "region"},
+        {"id": "b", "cue_range": [2, 2], "layout": "hero", "title": "T", "region": [0.5, 0, 0.5, 0.5],
+         "base": "a", "items": [{"label": "y", "icon": "user"}]},
+        {"id": "c", "cue_range": [3, 3], "layout": "hero", "title": "T", "base": "b", "camera": "overview",
+         "region": [0, 0.5, 1, 0.5], "items": [{"label": "z", "icon": "user"}]}]}
+
+    def test_camera_only_when_asked(self):
+        d = recipes.build(self.PLAN, CUES, {})
+        by = {s["id"]: s for s in d["scenes"]}
+        self.assertEqual(by["a"]["camera"]["to"]["zoom"], 2.0)
+        self.assertNotIn("camera", by["b"])                  # region + base alone never move the view
+        self.assertEqual(by["b"]["base"], "a")
+        self.assertEqual(by["c"]["camera"]["from"]["zoom"], 1.0)
+
+    def test_pan_continues_from_the_previous_view(self):
+        plan = {"scenes": [dict(self.PLAN["scenes"][0]),
+                           dict(self.PLAN["scenes"][1], camera="region")]}
+        d = recipes.build(plan, CUES, {})
+        self.assertEqual(d["scenes"][1]["camera"]["from"]["center"], [0.25, 0.25])
+
+    def test_channel_can_switch_cameras_off(self):
+        d = recipes.build(self.PLAN, CUES, {"camera": "off"})
+        self.assertFalse(any("camera" in s for s in d["scenes"]))
+
+    def test_no_region_no_camera_scenes_unchanged(self):
+        plain = {"scenes": [{"id": "a", "cue_range": [1, 1], "layout": "hero", "items": [{"label": "x"}]}]}
+        d = recipes.build(plain, CUES, {})
+        self.assertNotIn("camera", d["scenes"][0])
+        self.assertNotIn("base", d["scenes"][0])
+
+    def test_document_validates_and_bad_base_is_rejected(self):
+        d = recipes.build(self.PLAN, CUES, {})
+        va.parse_doc(d, "", {})
+        d["scenes"][0]["base"] = "b"                        # not an earlier scene
+        with self.assertRaises(va.ExplainerError):
+            va.parse_doc(d, "", {})
+
+    def test_view_math(self):
+        from whisperradar.video.explainer import camera as cm
+        cam = {"from": {"zoom": 1, "center": [0.5, 0.5]}, "to": {"zoom": 2, "center": [0.25, 0.25]}, "move_ms": 1000}
+        self.assertEqual(cm.view_at(cam, 0, 30)[0], 1.0)
+        z, cx, cy = cm.view_at(cam, 60, 30)
+        self.assertAlmostEqual(z, 2.0)
+        self.assertAlmostEqual(cx, 0.25)
+        self.assertEqual(cm.supersample(cam), 2)
+        self.assertEqual(cm.supersample(None), 1)

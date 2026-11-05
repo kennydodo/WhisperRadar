@@ -81,6 +81,33 @@ def hand_font_for(obj, theme):
     return obj.font or (theme.hand_font if theme is not None else "")
 
 
+def _parse_camera(cam, where, errors):
+    """{from?, to, move_ms?}; each view {zoom: 1-3, center: [x, y] in 0-1}. None on a bad one."""
+    from . import camera as cm
+    if not isinstance(cam, dict) or not isinstance(cam.get("to"), dict):
+        errors.append(f"{where}: camera must be {{\"to\": {{\"zoom\": 1-{cm.MAX_ZOOM:g}, \"center\": [x, y]}}, "
+                      "\"from\"?, \"move_ms\"?}.")
+        return None
+    out = {}
+    for key in ("from", "to"):
+        v = cam.get(key)
+        if v is None:
+            continue
+        c = v.get("center") if isinstance(v, dict) else None
+        ok = (isinstance(v, dict) and _is_num(v.get("zoom", 1)) and 1 <= float(v.get("zoom", 1)) <= cm.MAX_ZOOM
+              and isinstance(c, list) and len(c) == 2 and all(_is_num(n) and 0 <= float(n) <= 1 for n in c))
+        if not ok:
+            errors.append(f"{where}: camera {key} needs zoom 1-{cm.MAX_ZOOM:g} and center [x, y] between 0 and 1.")
+            return None
+        out[key] = {"zoom": float(v.get("zoom", 1)), "center": [float(c[0]), float(c[1])]}
+    mv = cam.get("move_ms", cm.DEFAULT_MOVE_MS)
+    if not _is_num(mv) or not 100 <= float(mv) <= 5000:
+        errors.append(f"{where}: camera move_ms must be 100-5000.")
+        return None
+    out["move_ms"] = int(mv)
+    return out
+
+
 def _parse_object(raw, scene_id, errors, project_folder, theme=None):
     if not isinstance(raw, dict):
         errors.append(f"Scene {scene_id}: object entries must be JSON objects.")
@@ -583,8 +610,13 @@ def parse_doc(data, project_folder: str = "", look=None):
 
         camera = raw.get("camera")
         if camera is not None:
-            errors.append(f"{where}: camera is not supported in MVP "
-                          "(diagram scenes use a static full-frame viewport).")
+            camera = _parse_camera(camera, where, errors)
+        base = raw.get("base") or ""
+        if base and (not isinstance(base, str) or base not in [s.id for s in scenes]):
+            errors.append(f"{where}: base must be the id of an EARLIER scene (got {base!r}).")
+            base = ""
+        if base and raw.get("remotion") is not None:
+            errors.append(f"{where}: a Remotion scene cannot start from a base scene.")
         # whiteboard sanity: draw_strokes durations must be feasible (doc 16.7)
         for ev in events:
             if ev.action == sc.DRAW_STROKES:
@@ -609,7 +641,7 @@ def parse_doc(data, project_folder: str = "", look=None):
                 errors.append(f"{where}: a Remotion scene has no objects or events of its own.")
                 continue
         scenes.append(sc.SceneSpec(sid, shot_id.strip(), (int(cr[0]), int(cr[1])),
-                                   objects, events, remotion=remo))
+                                   objects, events, camera=camera, base=base, remotion=remo))
     if errors:
         raise ExplainerError(errors)
     if not scenes:
