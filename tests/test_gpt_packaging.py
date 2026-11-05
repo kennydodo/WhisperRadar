@@ -345,6 +345,9 @@ class GPTPackagingTests(unittest.TestCase):
         self.assertEqual(gp.complete(self.cfg, job["id"], job["claim_token"], result), saved)
         self.assertEqual(prodfiles.path(self.pdir, "description.txt").read_text().strip(), result["description"].strip())
         self.assertEqual(len(saved["thumbnails"]), 2)
+        image_files = {str(p) for p in thumbnails.thumbs_dir(self.pdir).rglob("*")
+                       if p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}}
+        self.assertEqual(image_files, set(saved["thumbnails"]))
         for path in saved["thumbnails"]:
             with Image.open(path) as image:
                 self.assertEqual(image.size, (1280, 720))

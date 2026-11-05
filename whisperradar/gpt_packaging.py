@@ -22,7 +22,16 @@ from pathlib import Path
 
 from . import autorun, db, packaging, prodfiles, studio, thumbnails
 
-PACKAGING_BRIEF = """CONTENT AND EVIDENCE RULES
+PACKAGING_BRIEF = """THUMBNAIL FILE DELIVERY
+Keep exactly ONE final upload-ready image per approved thumbnail design in
+packaging/thumbnails/. Do not save duplicate original/source images, alternate
+file formats of the same design, contact sheets, or preview images there.
+Inspect the final image directly. Multiple images are only for distinct approved
+designs, not copies of one design. Keep metadata files and the separate square
+community-post image in their appropriate locations. Preserve existing assets;
+this rule applies to new packaging and does not authorize deleting older files.
+
+CONTENT AND EVIDENCE RULES
 RESEARCH AND APPROVAL FIRST: Inspect relevant similar-video thumbnails and titles
 from several channels. Record source URLs, dates, visible headline/layout ideas
 and evidence limits. Views alone do not prove thumbnail CTR. Use inspiration,
@@ -536,7 +545,6 @@ def complete(cfg, jid, token, result):
         thumbnails.save_thumbs(pdir, {"concepts": concepts, "chosen": None,
             "status": "ready", "score": None, "provider": "codex",
             "recommended": recommended})
-        thumbnails.contact_sheet(pdir)
         (folder / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=2),
                                             encoding="utf-8")
         saved = {"production_id": row["production_id"], "title": kit["title"],

@@ -3,14 +3,14 @@
 The Finished page and Thumbnails page have a **Generate with GPT Pro** button.
 It queues only the clicked, ready production. Published productions have the button disabled and are refused by the server, including jobs queued before publication. A scheduled Codex task checks
 the local worker page once an hour, reads the final script and resolved
-channel/production style and Bible, inspects references, and generates four
+channel/production style and Bible, inspects references, and generates one or two approved
 finished thumbnails using Codex's built-in image tool. It returns a recommended
-title, four distinct title options and a complete YouTube description. The button label is not a model ID
+title, matching title options and a complete YouTube description. The button label is not a model ID
 and does not switch a ChatGPT subscription or select a separate Pro model.
 
 ## Files and review
 
-- `thumbnails/gpt-<job>-1.jpg`, `-2.jpg`, `-3.jpg`, `-4.jpg`: 1280x720, under 2 MB.
+- `packaging/thumbnails/gpt-<job>-1.jpg` (and `-2.jpg` for a second approved design): one 1280x720 upload-ready image per design, under 2 MB.
 - `title.txt`, `titles.txt` and `description.txt`: in the production's source folder.
 - `publish_kit.json` and `thumbnails/thumbs.json`: imported for the existing UI.
 - `thumbnails/jobs/<job>/`: source result and backups of replaced metadata/text.
@@ -84,3 +84,14 @@ Notes include one hypothesis and a 24h/7d/28d measurement plan, not an automatio
 This change does not connect to Studio or import analytics automatically.
 Restart the dashboard to load the updated Python code. Existing finished assets
 are unchanged; the brief applies when new packaging work runs.
+
+
+## Thumbnail file delivery (2026-11-05)
+
+Keep one final upload-ready image per approved design in
+`packaging/thumbnails/`. Do not add original PNG duplicates, alternate-format
+copies, contact sheets or preview images. Distinct approved designs may each
+have one image; metadata files are still required. The separate square community
+image belongs in `packaging/community-post/`. Inspect the final images directly.
+New imports no longer generate a contact sheet. Existing artwork and historical
+files are preserved; this rule does not trigger a cleanup or regeneration.
