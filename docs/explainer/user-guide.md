@@ -262,6 +262,15 @@ keeps them until it chooses a style; an explicit style overrides those three pic
 production's own explainer.json `fonts` still wins. The "pen strokes" hand option is
 separate (the engine's own letter shapes, not a font file).
 
+### Picture vocabulary layouts: cards, group, chips, callout
+
+Static layouts for plans (the writer is told when to use each):
+- `cards` - 2-4 cards, each a title, an icon and 1-4 `rows` (a row can carry its own `at`).
+- `group` - a dashed container (`caption`) holding 2-5 things, like a row inside a frame.
+- `chips` - 2-12 short pills for names the narrator lists.
+- `callout` - the real text on screen (a quote, a press-release sentence) with a `note` for its source and a `tag` (default "real example").
+Text in these layouts is sized the same across the scene; it gets smaller together when a scene is crowded, never one label alone. New shape kinds: `frame` (dashed rounded box) and `pill`.
+
 ### Footers (off by default) and headline size
 
 The reference videos have no takeaway bar, so a channel's scenes show information where the

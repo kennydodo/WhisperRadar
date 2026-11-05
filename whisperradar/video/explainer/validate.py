@@ -246,9 +246,9 @@ def _parse_object(raw, scene_id, errors, project_folder, theme=None):
                 return None
         obj.dashed = bool(raw.get("dashed", False))
         obj.filled = bool(raw.get("filled", False))
-        if (obj.dashed and kind != "line") or (obj.filled and kind != "card"):
+        if (obj.dashed and kind != "line") or (obj.filled and kind not in ("card", "pill")):
             errors.append(f"{where}: dashed is for line shapes and filled "
-                          "is for card shapes.")
+                          "is for card and pill shapes.")
             return None
         fit_to = raw.get("fit_to", "")
         if fit_to and (not isinstance(fit_to, str) or kind not in ("underline", "highlight")):

@@ -431,7 +431,7 @@ def _shape_strokes(spec, lo, canvas_px, theme, scale=1.0):
 def _shape_extras(img, draw, spec, strokes, theme, st, progress, lw_scale, alpha):
     """Card fill (drawn under the outline) and the glow of an emphasised shape."""
     color = sc.resolve_color(spec.color, theme) if spec.color else theme.foreground
-    if spec.kind == "card" and spec.filled and strokes and progress > 0:
+    if spec.kind in ("card", "pill") and spec.filled and strokes and progress > 0:
         poly = [(int(round(a)), int(round(b))) for a, b in strokes[0].points]
         bg = _hex_rgb(theme.background)
         inner = tuple(int(c * 0.45) for c in bg)

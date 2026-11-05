@@ -33,11 +33,12 @@ from dataclasses import dataclass, field
 
 from . import font_styles
 from . import mechanisms
+from . import vocabulary
 from . import schema as sc
 from . import strokes_library
 from .validate import ExplainerError
 
-LAYOUTS = ("row", "steps", "timeline", "compare", "stack", "hero", "memory", "precision", "offload")
+LAYOUTS = ("row", "steps", "timeline", "compare", "stack", "hero", "memory", "precision", "offload") + vocabulary.LAYOUTS
 CYCLE = ("yellow", "green", "blue", "pink", "orange", "purple")
 Y_BOTTOM = 0.83          # nothing below this: the subtitles live there
 GAP_MS = 70
@@ -379,6 +380,8 @@ def _scene_elements(s, idx):
         _hero(s, sid, els, top if s.get("title") else 0.12)
     elif layout in mechanisms.BUILDERS:
         mechanisms.BUILDERS[layout](sys.modules[__name__], s, sid, els, top)
+    elif layout in vocabulary.BUILDERS:
+        vocabulary.BUILDERS[layout](sys.modules[__name__], s, sid, els, top)
     else:
         _compare(s, sid, els, top)
     _footer(s, sid, els)
@@ -560,6 +563,10 @@ def resolve_anchors(plan: dict, cues) -> dict:
         s["items"] = [dict(i) for i in (s.get("items") or [])]
         for k, it in enumerate(s["items"]):
             anchor(it, where=f"item {k + 1} ({it.get('label', '')})")
+            if isinstance(it.get("rows"), list):
+                it["rows"] = [dict(x) if isinstance(x, dict) else {"text": str(x)} for x in it["rows"]]
+                for j, rw in enumerate(it["rows"]):
+                    anchor(rw, where=f"item {k + 1} row {j + 1}")
         if isinstance(s.get("footer"), dict):
             s["footer"] = dict(s["footer"])
             anchor(s["footer"], where="footer")

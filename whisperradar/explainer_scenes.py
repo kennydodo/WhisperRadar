@@ -76,7 +76,7 @@ ICONS = (
 # ---- the scene vocabulary, per genre ------------------------------------------------------
 # Every genre gets the text layouts and the GENERAL motion layouts (any topic). A genre adds its
 # specialised motion layouts. The writer only ever sees the layouts of its genre.
-TEXT_SET = ("row", "steps", "timeline", "stack", "hero", "compare")
+TEXT_SET = ("row", "steps", "timeline", "stack", "hero", "compare", "cards", "group", "chips", "callout")
 GENERAL_SET = ("flow", "bars", "line", "split", "grid", "counter")
 GENRE_LAYOUTS = {
     "tech": TEXT_SET + GENERAL_SET + ("pipeline", "generation", "levels", "code",
@@ -97,6 +97,16 @@ FORMAT_EXAMPLES = [
    "nodes": [{"label": "Browser", "icon": "globe", "at": "words"}, {"label": "Cache", "sub": "fast copy", "icon": "database", "at": "words"},
              {"label": "Server", "icon": "server", "at": "words"}],
    "sends": [{"label": "request", "back": "page", "at": "words"}, {"label": "request", "to": 2, "back": "hit", "at": "words"}]}"""),
+    ("cards", """  {"id": "checks", "start": "...", "layout": "cards", "title": "short",
+   "items": [{"label": "Who ran it", "icon": "user", "at": "words", "rows": ["Tencent itself", {"text": "no outside lab", "at": "words"}]},
+             {"label": "Which number", "icon": "calculator", "at": "words", "rows": ["49 of 770 experts"]}]}"""),
+    ("group", """  {"id": "lab", "start": "...", "layout": "group", "title": "short", "caption": "Inside the lab",
+   "items": [{"label": "Tests", "icon": "flask-conical", "at": "words"}, {"label": "Report", "icon": "file-text", "at": "words"}],
+   "connect": "arrow"}"""),
+    ("chips", """  {"id": "names", "start": "...", "layout": "chips", "title": "short",
+   "items": [{"label": "Terminal-Bench", "at": "words"}, {"label": "OSWorld", "at": "words"}]}"""),
+    ("callout", """  {"id": "quote", "start": "...", "layout": "callout", "title": "short", "tag": "real example",
+   "items": [{"label": "the sentence as it appears", "note": "Tencent press release", "at": "words"}]}"""),
     ("bars", """  {"id": "speed", "start": "...", "layout": "bars", "title": "short", "unit": "s", "ratio_to": 1,
    "items": [{"label": "Method A", "value": 21, "at": "words", "color": "red"}, {"label": "Method B", "value": 1, "at": "words", "color": "green"}],
    "limit": {"label": "budget", "value": 10, "at": "words"}}"""),
@@ -174,6 +184,10 @@ RULE_LINES = [
     (None, "- row: 2-4 things side by side. Add connect \"arrow\" for a flow, \"none\" for a set. steps: 3-5 numbered steps in order. timeline: 3-5 points in time."),
     (None, "- stack: 3-4 short lines, one per row, each with an icon. hero: ONE big icon with one short sentence (the label may be up to ~50 characters)."),
     (None, "- compare: exactly two sides, each with a header, an icon and 1-3 short points (right vs wrong, A vs B, before vs after)."),
+    (None, "- cards: 2-4 cards side by side, each a title (\"label\", up to ~14 characters), an icon and 1-4 short \"rows\" (strings, up to ~30 characters; or {\"text\", \"at\"} to show a row on its words) - several things that each have their own details (three tests, four tools, each model and what it did)."),
+    (None, "- group: a dashed container (\"caption\": what the container is) holding 2-5 things (\"items\" like row) - things that belong to one place or system (everything inside the lab, the parts of a company, a stack inside one machine)."),
+    (None, "- chips: 2-12 short pills (\"items\": label up to ~22 characters) - the names the narrator lists (tools, benchmarks, models, terms)."),
+    (None, "- callout: ONE \"items\" entry: \"label\" is the real text on screen (a quote, a sentence from a press release, a number with its context; up to ~160 characters), \"note\" says where it is from; \"tag\" (scene) defaults to \"real example\"."),
     (None, "MOTION LAYOUTS:"),
     ("flow", "- flow: 2-6 boxes in a row (\"nodes\": label up to 18 characters, 13 with 5-6 nodes; optional \"sub\" line and \"icon\"), each appearing on its words. \"sends\" (0-4): on its words a labelled token (what moves: \"request\", \"$100\", \"file\") travels from node \"from\" (default 1) to node \"to\" (default the last), lighting each box it passes; \"back\" (a label) makes it return (\"response\", \"receipt\", \"hit\"). Use it for requests and responses, payments, supply chains, data passing through steps, who asks whom."),
     ("bars", "- bars: 2-6 bars (\"items\": label up to 28 characters, \"value\", optional \"note\", \"icon\", \"color\"), each growing on its words with its value counting up; \"unit\" (s, GB, %, x) and \"prefix\" ($, EUR sign); \"ratio_to\": the number of the bar the others are compared to (shows x21 or 1/21); \"limit\": a dashed line (a budget, a memory size)."),
@@ -932,7 +946,7 @@ def count_faults(resolved: dict, cues: list) -> list:
     return faults
 
 
-TEXT_LAYOUTS = frozenset({"row", "steps", "timeline", "compare", "stack", "hero"})
+TEXT_LAYOUTS = frozenset({"row", "steps", "timeline", "compare", "stack", "hero", "cards", "group", "chips", "callout"})
 # What a genre must SHOW rather than list: at least half the narration time is motion, and text-only
 # scenes come in short runs. Unknown genres have no rule; a channel can override with
 # look["motion_min_share"] / ["text_run_max"] / ["text_run_seconds"] (0 turns a limit off) and pick its
