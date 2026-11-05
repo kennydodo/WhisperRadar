@@ -262,6 +262,14 @@ keeps them until it chooses a style; an explicit style overrides those three pic
 production's own explainer.json `fonts` still wins. The "pen strokes" hand option is
 separate (the engine's own letter shapes, not a font file).
 
+### Footers (off by default) and headline size
+
+The reference videos have no takeaway bar, so a channel's scenes show information where the
+narration says it (titles, labels, points) and any `footer` in a plan is not drawn. Turn it
+back on per channel with Video options > Explainer > "footer" = on. One exception: a footer
+the term check adds so that a spoken key term appears on screen is kept. "headline size"
+(small / normal / large) scales scene titles; marker headlines are already a little bigger.
+
 ### Handwriting: real hand fonts or the pen strokes
 
 `handwriting` objects write in one of two ways. Each channel (or object) picks:

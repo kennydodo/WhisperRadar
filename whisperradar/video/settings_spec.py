@@ -51,6 +51,7 @@ CHOICES = {
     "explainer.theme": _theme_choices(),
     "explainer.font_style": list(_font_style_keys()),
     "explainer.title_size": ["small", "normal", "large"],
+    "explainer.footers": ["off", "on"],
     "explainer.hand_font": ["strokes"] + _font_choices(),
     "explainer.text_weight": ["thin", "normal", "bold"],
     "explainer.letter_spacing": ["tight", "normal", "wide"],
@@ -84,6 +85,8 @@ HELP = {
                             "headlines (default), clean = one sans everywhere, handwritten = hand "
                             "fonts that write on. Blank = video1 unless this channel already picked "
                             "its own fonts below, which then stay as they are.",
+    "explainer.footers": "Takeaway bar at the bottom of a scene. off (default): information appears "
+                         "where the narration says it, as titles, labels and points. on: allow footers.",
     "explainer.title_size": "Size of scene headlines: small, normal (default; marker headlines are already a "
                             "little bigger than plain ones) or large. Blank = normal.",
     "explainer.hand_font": "Handwriting in explainer scenes. Pick a hand font from the repo fonts/ "

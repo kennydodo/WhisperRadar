@@ -49,3 +49,25 @@ class FontStyleTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FooterTests(unittest.TestCase):
+    PLAN = {"scenes": [dict(PLAN["scenes"][0], footer={"text": "Takeaway"})]}
+
+    def _ids(self, look):
+        data = recipes.build(self.PLAN, [FakeCue()], look)
+        return {o["id"] for o in data["scenes"][0]["objects"]}
+
+    def test_channel_look_drops_footers_by_default(self):
+        self.assertNotIn("a_ft", self._ids({}))
+
+    def test_footers_on_keeps_them(self):
+        self.assertIn("a_ft", self._ids({"footers": "on"}))
+
+    def test_bare_plan_keeps_footers(self):
+        self.assertIn("a_ft", self._ids(None))
+
+    def test_key_term_footer_survives(self):
+        plan = {"scenes": [dict(PLAN["scenes"][0], footer={"text": "NCM", "key": True})]}
+        data = recipes.build(plan, [FakeCue()], {})
+        self.assertIn("a_ft", {o["id"] for o in data["scenes"][0]["objects"]})

@@ -845,6 +845,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>footer (takeaway bar)
+                <select name="explainer_footers">
+                  <option value="">inherit{% if xg.footers %} (global: {{ xg.footers }}){% else %} (off){% endif %}</option>
+                  {% for k in ['off', 'on'] %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('footers') == k else '' }}>{{ k }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>headline size
                 <select name="explainer_title_size">
                   <option value="">inherit{% if xg.title_size %} (global: {{ xg.title_size }}){% else %} (normal){% endif %}</option>

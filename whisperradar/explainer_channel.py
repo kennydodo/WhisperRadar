@@ -15,7 +15,7 @@ from . import channel_types, db
 from .video import settings_spec as ss
 from .video.explainer import font_styles
 
-FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mode", "visual_mode"), ("theme", "explainer.theme"), ("font_style", "explainer.font_style"), ("title_size", "explainer.title_size"), ("hand_font", "explainer.hand_font"),
+FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mode", "visual_mode"), ("theme", "explainer.theme"), ("font_style", "explainer.font_style"), ("title_size", "explainer.title_size"), ("footers", "explainer.footers"), ("hand_font", "explainer.hand_font"),
           ("heading_font", "explainer.heading_font"),
           ("body_font", "explainer.body_font"), ("heading_color", "explainer.heading_color"),
           ("text_color", "explainer.text_color"), ("background", "explainer.background"),

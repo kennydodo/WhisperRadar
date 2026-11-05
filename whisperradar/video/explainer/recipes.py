@@ -1147,7 +1147,16 @@ def first_visible_ms(scene: dict, cue_ms: dict) -> int:
 
 
 def build(plan: dict, cues, look=None) -> dict:
-    """plan dict + SRT cues (video.parsing blocks) -> explainer.json dict."""
+    """plan dict + SRT cues (video.parsing blocks) -> explainer.json dict.
+    Footers (a takeaway bar under a scene) are not drawn for a channel (look given) unless its
+    "footers" setting is on: information appears where the narration says it, as titles,
+    labels and points. Without a look (bare plan) footers are kept."""
+    if (isinstance(plan, dict) and isinstance(look, dict) and isinstance(plan.get("scenes"), list)
+            and str(look.get("footers") or "").strip().lower() != "on"):
+        plan = dict(plan, scenes=[{k: v for k, v in x.items()
+                                   if not (k == "footer" and not (isinstance(v, dict) and v.get("key")))}
+                                  if isinstance(x, dict) else x
+                                  for x in plan["scenes"]])
     if isinstance(plan, dict) and any(isinstance(x, dict) and ("start" in x or any(
             isinstance(i, dict) and i.get("at") for i in (x.get("items") or [])))
             for x in plan.get("scenes") or []):
