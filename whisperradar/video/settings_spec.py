@@ -42,8 +42,14 @@ def _theme_choices() -> list:
     return list(themes.THEMES)
 
 
+def _font_style_keys():
+    from .explainer import font_styles
+    return font_styles.STYLES
+
+
 CHOICES = {
     "explainer.theme": _theme_choices(),
+    "explainer.font_style": list(_font_style_keys()),
     "explainer.hand_font": ["strokes"] + _font_choices(),
     "explainer.text_weight": ["thin", "normal", "bold"],
     "explainer.letter_spacing": ["tight", "normal", "wide"],
@@ -73,6 +79,10 @@ HELP = {
     "explainer.theme": "Board and chalk colours of explainer videos. chalkboard = dark board, "
                        "chalk colours (default look for new work); whiteboard_light = light board, "
                        "dark ink. Blank = whatever the production's explainer.json says.",
+    "explainer.font_style": "Look of text in explainer scenes: video1 = clean bold sans with marker "
+                            "headlines (default), clean = one sans everywhere, handwritten = hand "
+                            "fonts that write on. Blank = video1 unless this channel already picked "
+                            "its own fonts below, which then stay as they are.",
     "explainer.hand_font": "Handwriting in explainer scenes. Pick a hand font from the repo fonts/ "
                            "folder (text writes on left to right) or strokes (the built-in pen "
                            "letters, limited character set). Blank = the theme's default.",

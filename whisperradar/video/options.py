@@ -163,6 +163,7 @@ class ExplainerOptions:
     theme says. An explicit "theme" / "fonts" in a production's own
     explainer.json still wins for that production."""
     theme: str = ""                 # chalkboard | whiteboard_light | ... ("" = the doc's)
+    font_style: str = ""            # video1 (default) | clean | handwritten; presets the three fonts below
     hand_font: str = ""             # handwriting: a .ttf in fonts/, or "strokes" (pen letters)
     heading_font: str = ""          # typed headings / labels
     body_font: str = ""             # typed body text

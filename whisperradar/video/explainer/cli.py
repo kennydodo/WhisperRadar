@@ -100,7 +100,7 @@ def cmd_build(folder: str) -> int:
             raise ExplainerError([f"plan.json is not valid JSON: {e}"]) from None
     with open(srt, encoding="utf-8-sig") as fh:
         cues = parsing.parse_srt(fh.read())
-    doc = recipes.build(plan, cues)
+    doc = recipes.build(plan, cues, validate_mod.project_look(folder))
     out = os.path.join(folder, "explainer.json")
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1)

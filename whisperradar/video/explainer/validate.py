@@ -10,6 +10,7 @@ import os
 import re
 
 from . import schema as sc
+from . import font_styles
 from . import themes
 from . import strokes_library
 from . import glyphs
@@ -448,7 +449,8 @@ def parse_doc(data, project_folder: str = "", look=None):
     if theme_name is not None and not isinstance(theme_name, str):
         errors.append("theme must be a theme name string.")
         theme_name = None
-    look = look if isinstance(look, dict) else {}
+    has_look = isinstance(look, dict)
+    look = look if has_look else {}
     look_theme = str(look.get("theme") or "").strip().lower()
     if look_theme and theme_name is None:
         if look_theme in themes.THEMES:
@@ -506,6 +508,13 @@ def parse_doc(data, project_folder: str = "", look=None):
     # a graphic (motion_graphics) channel draws straight, clean lines; a whiteboard one wobbles by hand
     if str(look.get("visual_mode") or "").strip().lower() == "motion_graphics":
         theme.line_style = "straight"
+    # font style preset (default: video1), then any fonts the channel picked itself ...
+    fs_name = str(look.get("font_style") or "").strip().lower()
+    if fs_name and fs_name not in font_styles.STYLES:
+        errors.append(f"channel explainer font style {fs_name!r}: use {', '.join(font_styles.STYLES)}.")
+    preset = font_styles.resolve(look if has_look else None)
+    if preset:
+        _apply_fonts({k: preset[k] for k in ("hand", "heading", "body")}, "font style")
     # channel setting first (Video options, saved in the database) ...
     _apply_fonts({"hand": look.get("hand_font"), "heading": look.get("heading_font"),
                   "body": look.get("body_font")}, "channel explainer")

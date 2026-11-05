@@ -252,6 +252,16 @@ wins for that one production, so a script generator never has to set them.
 fades a drawing, shape or handwriting back (amount 0.1 to 0.95); `undim` brings it
 home. Dim everything except the thing being talked about.
 
+### Font style (channel setting, default "video1")
+
+One setting presets the fonts: **video1** (default) = clean bold sans (Inter) for labels and
+text with marker headlines (Caveat Brush) for scene titles; **clean** = Inter everywhere;
+**handwritten** = the earlier hand fonts that write on. Set it per channel in Video options >
+Explainer > "font style". A channel that already picked its own hand / heading / body font
+keeps them until it chooses a style; an explicit style overrides those three pickers, and a
+production's own explainer.json `fonts` still wins. The "pen strokes" hand option is
+separate (the engine's own letter shapes, not a font file).
+
 ### Handwriting: real hand fonts or the pen strokes
 
 `handwriting` objects write in one of two ways. Each channel (or object) picks:

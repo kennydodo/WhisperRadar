@@ -31,6 +31,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
+from . import font_styles
 from . import mechanisms
 from . import schema as sc
 from . import strokes_library
@@ -1158,6 +1159,8 @@ def build(plan: dict, cues, look=None) -> dict:
                               else x for x in plan["scenes"]])
     _hold_previous(plan["scenes"], cue_ms)
     scenes, errors = [], []
+    preset = font_styles.resolve(look)
+    title_font = (preset or {}).get("title") or ""
     for idx, raw in enumerate(plan["scenes"]):
         if isinstance(raw, dict) and raw.get("layout") in REMOTION_LAYOUTS:
             try:
@@ -1173,6 +1176,10 @@ def build(plan: dict, cues, look=None) -> dict:
             if pen != 1.0:
                 for e in els:
                     e.dur = max(e.min, int(e.dur * pen))
+            if title_font:
+                for e in els:
+                    if e.group == "title" and e.obj.get("type") == "handwriting":
+                        e.obj["font"] = title_font      # marker headline (font style "video1")
             sched = _schedule(s, els, cue_ms)
         except ExplainerError as exc:
             errors.extend(exc.errors)

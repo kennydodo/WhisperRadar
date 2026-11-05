@@ -837,6 +837,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>font style
+                <select name="explainer_font_style">
+                  <option value="">inherit{% if xg.font_style %} (global: {{ xg.font_style }}){% else %} (video1 default){% endif %}</option>
+                  {% for k, label in explainer_choices.font_styles %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('font_style') == k else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>hand-drawn writing
                 <select name="explainer_hand_font" class="xp-font" data-target="xp-hand-{{ ch['id'] }}">
                   <option value="">inherit{% if xg.hand_font %} (global: {{ xg.hand_font }}){% endif %}</option>

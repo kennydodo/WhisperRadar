@@ -13,8 +13,9 @@ from flask import abort, send_from_directory
 
 from . import channel_types, db
 from .video import settings_spec as ss
+from .video.explainer import font_styles
 
-FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mode", "visual_mode"), ("theme", "explainer.theme"), ("hand_font", "explainer.hand_font"),
+FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mode", "visual_mode"), ("theme", "explainer.theme"), ("font_style", "explainer.font_style"), ("hand_font", "explainer.hand_font"),
           ("heading_font", "explainer.heading_font"),
           ("body_font", "explainer.body_font"), ("heading_color", "explainer.heading_color"),
           ("text_color", "explainer.text_color"), ("background", "explainer.background"),
@@ -62,7 +63,7 @@ def choices() -> dict:
                           for t in channel_types.TYPES.values()},
             "themes": [(t, THEME_LABELS.get(t, t))
                        for t in ss.BY_PATH["explainer.theme"]["choices"]],
-            "hand_fonts": fonts, "fonts": fonts, "colors": CHALK}
+            "font_styles": [(k, font_styles.LABELS[k]) for k in font_styles.STYLES], "hand_fonts": fonts, "fonts": fonts, "colors": CHALK}
 
 
 def context(conn, own_channels) -> dict:
