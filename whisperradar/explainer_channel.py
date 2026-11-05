@@ -13,12 +13,13 @@ from flask import abort, send_from_directory
 
 from . import channel_types, db
 from .video import settings_spec as ss
+from .video.explainer import font_styles
 
-FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mode", "visual_mode"), ("theme", "explainer.theme"), ("hand_font", "explainer.hand_font"),
+FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mode", "visual_mode"), ("theme", "explainer.theme"), ("font_style", "explainer.font_style"), ("title_size", "explainer.title_size"), ("footers", "explainer.footers"), ("camera", "explainer.camera"), ("hand_font", "explainer.hand_font"),
           ("heading_font", "explainer.heading_font"),
           ("body_font", "explainer.body_font"), ("heading_color", "explainer.heading_color"),
           ("text_color", "explainer.text_color"), ("background", "explainer.background"),
-          ("text_weight", "explainer.text_weight"), ("letter_spacing", "explainer.letter_spacing"),
+          ("text_weight", "explainer.text_weight"), ("letter_spacing", "explainer.letter_spacing"), ("icon_weight", "explainer.icon_weight"), ("text_size", "explainer.text_size"),
           ("pen_speed", "explainer.pen_speed"), ("scenes_per_video", "explainer.scenes_per_video"),
           ("diagram_style", "explainer.diagram_style"), ("scene_fade", "explainer.scene_fade"),
           ("scene_genre", "explainer.scene_genre"), ("motion_min_share", "explainer.motion_min_share"),
@@ -62,7 +63,7 @@ def choices() -> dict:
                           for t in channel_types.TYPES.values()},
             "themes": [(t, THEME_LABELS.get(t, t))
                        for t in ss.BY_PATH["explainer.theme"]["choices"]],
-            "hand_fonts": fonts, "fonts": fonts, "colors": CHALK}
+            "font_styles": [(k, font_styles.LABELS[k]) for k in font_styles.STYLES], "hand_fonts": fonts, "fonts": fonts, "colors": CHALK}
 
 
 def context(conn, own_channels) -> dict:

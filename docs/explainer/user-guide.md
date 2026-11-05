@@ -252,6 +252,43 @@ wins for that one production, so a script generator never has to set them.
 fades a drawing, shape or handwriting back (amount 0.1 to 0.95); `undim` brings it
 home. Dim everything except the thing being talked about.
 
+### Font style (channel setting, default "video1")
+
+One setting presets the fonts: **video1** (default) = clean bold sans (Inter) for labels and
+text with marker headlines (Caveat Brush) for scene titles; **clean** = Inter everywhere;
+**handwritten** = the earlier hand fonts that write on. Set it per channel in Video options >
+Explainer > "font style". A channel that already picked its own hand / heading / body font
+keeps them until it chooses a style; an explicit style overrides those three pickers, and a
+production's own explainer.json `fonts` still wins. The "pen strokes" hand option is
+separate (the engine's own letter shapes, not a font file).
+
+### Picture vocabulary layouts: cards, group, chips, callout
+
+Static layouts for plans (the writer is told when to use each):
+- `cards` - 2-4 cards, each a title, an icon and 1-4 `rows` (a row can carry its own `at`).
+- `group` - a dashed container (`caption`) holding 2-5 things, like a row inside a frame.
+- `chips` - 2-12 short pills for names the narrator lists.
+- `callout` - the real text on screen (a quote, a press-release sentence) with a `note` for its source and a `tag` (default "real example").
+- `chain` - how a claim travels: steps with a `tag` saying who stands behind each (`independent` true = green, false = red) and `via` on the arrows.
+- `ladder` - an evidence ladder, weakest rung first; `here: true` marks where the claim stands.
+Text in these layouts is sized the same across the scene; it gets smaller together when a scene is crowded, never one label alone. New shape kinds: `frame` (dashed rounded box) and `pill`.
+
+### Persistent canvas and camera (optional)
+
+Static scenes can share one picture. All three keys are optional and nothing is added on its own:
+- `region`: [x, y, w, h] - draw the scene inside that part of the frame.
+- `base`: id of an earlier scene - its finished drawing is already on the board when this scene starts, so new things are added to it (give the new scene a free region).
+- `camera`: "region" (zoom to the scene's region), "overview" (back to the whole frame) or {"zoom": 1-3, "center": [x, y], "from"?, "move_ms"?}. The view slides at the start of the scene and holds. No `camera` = no movement. Channel option "camera moves" = off ignores every camera request.
+Scenes with a camera are drawn at up to 3x size and cropped, so zoomed views stay sharp (slower to render). Remotion scenes cannot use base or camera.
+
+### Footers (off by default) and headline size
+
+The reference videos have no takeaway bar, so a channel's scenes show information where the
+narration says it (titles, labels, points) and any `footer` in a plan is not drawn. Turn it
+back on per channel with Video options > Explainer > "footer" = on. One exception: a footer
+the term check adds so that a spoken key term appears on screen is kept. "headline size"
+(small / normal / large) scales scene titles; marker headlines are already a little bigger.
+
 ### Handwriting: real hand fonts or the pen strokes
 
 `handwriting` objects write in one of two ways. Each channel (or object) picks:
@@ -409,3 +446,16 @@ free for teams of up to three people; check its licence if that changes.
 Clips are cached separately in `out/remotion`, Stop works as for other scenes,
 and normal channels are unaffected. Remotion scenes render at 1920x1080 or at
 half size (960x540).
+
+### Lighter icons, no pen dot
+
+Icons are drawn with a lighter line by default (channel setting "icon weight": thin, light = default, normal = the older
+heavier line, bold). The small grey dot that followed the pen while it wrote is off. For lighter writing set "text weight" to
+thin (the font as designed); "normal" and "bold" thicken the letters like chalk.
+
+### System fonts and text size
+
+Calibri Light (`calibril.ttf`), Calibri, Arial and Times New Roman (with bold files) are offered in the font pickers when
+they exist in `C:/Windows/Fonts` on the PC that runs the app; they are read from there, never copied into the repo. The font
+style **Calibri Light** sets all three fonts to Calibri Light. "text size" (normal / small / smaller) shrinks the written text
+inside its box (small = 85%, smaller = 72%); pair it with "text weight" = thin for the lightest look.

@@ -28,12 +28,22 @@ GROUP_ORDER = ["output", "timing", "motion", "transitions", "render", "sound", "
                "explainer", "scene_inference", "shotlist", "naming", ""]
 _PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium",
             "slow", "slower", "veryslow"]
+# Windows fonts offered in the font pickers when the file exists (Calibri Light = calibril.ttf)
+SYSTEM_FONTS = ["calibril.ttf", "calibri.ttf", "calibrib.ttf", "arial.ttf", "arialbd.ttf",
+                "times.ttf", "timesbd.ttf"]
+
+
 def _font_choices() -> list:
     """Hand fonts a channel can pick: every .ttf/.otf in the repo fonts/ folder
     (read when the app starts) plus the built-in pen letters."""
     folder = Path(__file__).resolve().parents[2] / "fonts"
     names = sorted(p.name for p in folder.glob("*")
                    if p.suffix.lower() in (".ttf", ".otf")) if folder.is_dir() else []
+    # Windows system fonts the renderer can already find by file name (never copied into the repo)
+    sysdir = Path("C:/Windows/Fonts")
+    for name in SYSTEM_FONTS:
+        if (sysdir / name).is_file() and name not in names:
+            names.append(name)
     return names
 
 
@@ -42,11 +52,22 @@ def _theme_choices() -> list:
     return list(themes.THEMES)
 
 
+def _font_style_keys():
+    from .explainer import font_styles
+    return font_styles.STYLES
+
+
 CHOICES = {
     "explainer.theme": _theme_choices(),
+    "explainer.font_style": list(_font_style_keys()),
+    "explainer.title_size": ["small", "normal", "large"],
+    "explainer.footers": ["off", "on"],
+    "explainer.camera": ["on", "off"],
     "explainer.hand_font": ["strokes"] + _font_choices(),
     "explainer.text_weight": ["thin", "normal", "bold"],
     "explainer.letter_spacing": ["tight", "normal", "wide"],
+    "explainer.icon_weight": ["thin", "light", "normal", "bold"],
+    "explainer.text_size": ["normal", "small", "smaller"],
     "explainer.pen_speed": ["slow", "normal", "fast"],
     "explainer.scenes_per_video": ["few", "normal", "many"],
     "explainer.diagram_style": ["balanced", "icons", "minimal"],
@@ -73,6 +94,15 @@ HELP = {
     "explainer.theme": "Board and chalk colours of explainer videos. chalkboard = dark board, "
                        "chalk colours (default look for new work); whiteboard_light = light board, "
                        "dark ink. Blank = whatever the production's explainer.json says.",
+    "explainer.font_style": "Look of text in explainer scenes: video1 = clean bold sans with marker "
+                            "headlines (default), clean = one sans everywhere, handwritten = hand "
+                            "fonts that write on. Blank = video1 unless this channel already picked "
+                            "its own fonts below, which then stay as they are.",
+    "explainer.camera": "Camera moves (pan / zoom between parts of one drawing). They are always optional: only a scene whose plan asks for one gets one. off = ignore every camera request. Blank = on.",
+    "explainer.footers": "Takeaway bar at the bottom of a scene. off (default): information appears "
+                         "where the narration says it, as titles, labels and points. on: allow footers.",
+    "explainer.title_size": "Size of scene headlines: small, normal (default; marker headlines are already a "
+                            "little bigger than plain ones) or large. Blank = normal.",
     "explainer.hand_font": "Handwriting in explainer scenes. Pick a hand font from the repo fonts/ "
                            "folder (text writes on left to right) or strokes (the built-in pen "
                            "letters, limited character set). Blank = the theme's default.",
@@ -84,6 +114,9 @@ HELP = {
                             "Blank = chalk white.",
     "explainer.text_weight": "How heavy the hand-written text looks: thin (the font as designed), normal "
                              "or bold (thickened like chalk). Blank = thin.",
+    "explainer.text_size": "Size of the hand-written text in its box: normal, small or smaller. Blank = normal.",
+    "explainer.icon_weight": "Line weight of the drawn icons: thin, light (default), normal (the older, heavier "
+                             "line) or bold. Blank = light.",
     "explainer.letter_spacing": "Space between the letters of hand-written text: tight, normal or wide. "
                                 "Blank = normal.",
     "explainer.pen_speed": "How fast the pen draws: slow, normal or fast. Blank = normal. A scene with a lot "

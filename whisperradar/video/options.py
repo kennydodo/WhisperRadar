@@ -163,6 +163,10 @@ class ExplainerOptions:
     theme says. An explicit "theme" / "fonts" in a production's own
     explainer.json still wins for that production."""
     theme: str = ""                 # chalkboard | whiteboard_light | ... ("" = the doc's)
+    font_style: str = ""            # video1 (default) | clean | handwritten; presets the three fonts below
+    camera: str = ""                # on (default) | off: allow / ignore camera moves a plan asks for
+    footers: str = ""               # off (default) | on: takeaway bar under scenes
+    title_size: str = ""            # headline size: small | normal | large ("" = normal)
     hand_font: str = ""             # handwriting: a .ttf in fonts/, or "strokes" (pen letters)
     heading_font: str = ""          # typed headings / labels
     body_font: str = ""             # typed body text
@@ -172,6 +176,8 @@ class ExplainerOptions:
     text_weight: str = ""           # hand-written text: thin | normal | bold ("" = thin)
     format: str = ""                # whiteboard | motion_graphics: how an explainer channel is presented
     letter_spacing: str = ""        # tight | normal | wide ("" = normal)
+    icon_weight: str = ""           # icon line weight: thin | light | normal | bold ("" = light)
+    text_size: str = ""             # hand-written text: normal | small | smaller ("" = normal)
     pen_speed: str = ""             # slow | normal | fast ("" = normal): how fast the pen draws
     scenes_per_video: str = ""      # few | normal | many ("" = normal): how many scenes the planner aims for
     scene_fade: str = ""            # none | short | long ("" = none): dip to the board colour between pen scenes
@@ -296,6 +302,10 @@ class ProjectOptions:
             errors.append("Explainer text weight must be thin, normal or bold.")
         if self.explainer.letter_spacing and self.explainer.letter_spacing not in ("tight", "normal", "wide"):
             errors.append("Explainer letter spacing must be tight, normal or wide.")
+        if self.explainer.icon_weight and self.explainer.icon_weight not in ("thin", "light", "normal", "bold"):
+            errors.append("Explainer icon weight must be thin, light, normal or bold.")
+        if self.explainer.text_size and self.explainer.text_size not in ("normal", "small", "smaller"):
+            errors.append("Explainer text size must be normal, small or smaller.")
         for _name, _val, _ok in (("pen speed", self.explainer.pen_speed, ("slow", "normal", "fast")),
                                  ("scenes per video", self.explainer.scenes_per_video, ("few", "normal", "many")),
                                  ("diagram style", self.explainer.diagram_style, ("balanced", "icons", "minimal")),

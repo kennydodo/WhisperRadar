@@ -100,7 +100,7 @@ def cmd_build(folder: str) -> int:
             raise ExplainerError([f"plan.json is not valid JSON: {e}"]) from None
     with open(srt, encoding="utf-8-sig") as fh:
         cues = parsing.parse_srt(fh.read())
-    doc = recipes.build(plan, cues)
+    doc = recipes.build(plan, cues, validate_mod.project_look(folder))
     out = os.path.join(folder, "explainer.json")
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(doc, fh, indent=1)
@@ -110,13 +110,45 @@ def cmd_build(folder: str) -> int:
     return cmd_validate(folder)
 
 
+def _storyboard_camera(doc, cs, folder, out_dir, fps):
+    """Stills of a scene with a camera / base: the view at the start, middle and end."""
+    import dataclasses
+    from PIL import Image
+    from . import camera as cm, prepare as prep
+    W, H = doc.canvas
+    cam = cs.spec.camera
+    k = cm.supersample(cam)
+    zoom_end = cm._view(cam.get("to") or cm.OVERVIEW)["zoom"] if cam else 1.0
+    theme = dataclasses.replace(doc.theme, stroke_width=max(1, int(round(doc.theme.stroke_width / zoom_end))))
+    bg = tuple(int(doc.theme.background.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    plate_dir = os.path.join(out_dir, "plates")
+    laid = layout_scene(cs, theme, (W * k, H * k), project_folder=folder)
+    cs._project_folder = folder
+    loaded = prep._load_plates(doc, cs, laid, (W * k, H * k), plate_dir, folder)
+    base = (prep._base_image(doc, theme, cs._scenes, cs.spec.base, (W * k, H * k), plate_dir, folder, bg)
+            if cs.spec.base else None)
+    for tag, frac in (("start", 0.05), ("mid", 0.55), ("final", 0.999)):
+        frame = int(cs.duration_frames * frac)
+        img = base.copy() if base is not None else Image.new("RGB", (W * k, H * k), bg)
+        prep._paint(img, theme, cs, laid, loaded, frame)
+        img = cm.crop(img, cm.view_at(cam, frame, fps), (W, H)) if cam else img.resize((W, H), Image.LANCZOS)
+        path = os.path.join(out_dir, f"{cs.spec.id}_{tag}.png")
+        img.resize((W // 2, H // 2)).save(path)
+        print(f"storyboard: {path}")
+
+
 def cmd_storyboard(folder: str, out_dir: str = "") -> int:
     doc, cues, fps, total = _load_context(folder)
     compiled = compile_doc(doc, cues, fps, total_seconds=total)
     out_dir = out_dir or os.path.join(folder, "out", "explainer", "storyboard")
     os.makedirs(out_dir, exist_ok=True)
     from PIL import Image
+    by_id = {c.spec.id: c for c in compiled}
     for cs in compiled:
+        cs._scenes = by_id
+        if cs.spec.camera or cs.spec.base:
+            _storyboard_camera(doc, cs, folder, out_dir, fps)
+            continue
         laid = layout_scene(cs.spec, doc.theme, doc.canvas,
                             project_folder=folder)
         plates_dir = os.path.join(out_dir, "plates")

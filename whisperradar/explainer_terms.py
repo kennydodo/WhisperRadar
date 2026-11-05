@@ -155,14 +155,14 @@ def fault_text(m: dict, mmss: str) -> str:
     sid = m["scene"].get("id")
     if m["kind"] == "expansion":
         return (f"scene {sid}: the narrator spells out '{m['term']}' (what {m['of']} stands for, {mmss}) "
-                "but it is never shown on screen - write it in this scene's title, a label or the footer")
+                "but it is never shown on screen - write it in this scene's title, a label or a point")
     more = f" (it stands for {m['expansion']})" if m["expansion"] else ""
     return (f"scene {sid}: the narrator says '{m['term']}'{more} at {mmss} but it is never shown on screen - "
-            "write it in this scene's title, a label or the footer")
+            "write it in this scene's title, a label or a point")
 
 
 def insert_missing(plan: dict, resolved: dict, gaps: list) -> tuple:
-    """(plan, notes): add each missing term to the plan's scene - as the footer when it has none,
+    """(plan, notes): add each missing term to the plan's scene - as the footer when it has none (a key-term footer is the one footer a channel keeps),
     else as the title when it has none. A scene that has both is left for the writer."""
     notes = []
     by_id = {str(s.get("id")): s for s in plan.get("scenes") or [] if isinstance(s, dict)}

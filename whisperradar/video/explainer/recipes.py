@@ -31,12 +31,15 @@ import re
 import sys
 from dataclasses import dataclass, field
 
+from . import camera as cam_mod
+from . import font_styles
 from . import mechanisms
+from . import vocabulary
 from . import schema as sc
 from . import strokes_library
 from .validate import ExplainerError
 
-LAYOUTS = ("row", "steps", "timeline", "compare", "stack", "hero", "memory", "precision", "offload")
+LAYOUTS = ("row", "steps", "timeline", "compare", "stack", "hero", "memory", "precision", "offload") + vocabulary.LAYOUTS
 CYCLE = ("yellow", "green", "blue", "pink", "orange", "purple")
 Y_BOTTOM = 0.83          # nothing below this: the subtitles live there
 GAP_MS = 70
@@ -148,12 +151,13 @@ def _title(s, sid, els):
     if not t:
         return 0.27
     cue = s["cue_range"][0]
-    els.append(_text(f"{sid}_title", t, [0.07, 0.06, 0.86, 0.12], "heading", cue,
+    k = float(s.get("_title_scale") or 1.0)               # font style / channel "headline size"
+    els.append(_text(f"{sid}_title", t, [0.07, 0.06, 0.86, 0.12 * k], "heading", cue,
                      group="title"))
     w = min(0.86, len(t) * 0.027 + 0.02)
     els.append(_shape(f"{sid}_tline", "underline", cue, "orange", "title",
-                      box=[0.07, 0.06, w, 0.125], dur=450, fit_to=f"{sid}_title"))
-    return 0.27
+                      box=[0.07, 0.06, w, 0.125 * k], dur=450, fit_to=f"{sid}_title"))
+    return 0.27 + 0.12 * (k - 1.0)
 
 
 def _item_cue(s, items, i):
@@ -170,13 +174,16 @@ def _row(s, sid, els, top, numbered=False, timeline=False):
     n = len(items)
     x0, x1 = 0.07, 0.93
     cw = (x1 - x0) / n
-    ih = min(0.24, cw * 0.58 / WN)
+    ih = min(0.31, cw * 0.62 / WN)
     iw = ih * WN
     two = any(_lines(i.get("label", ""))[1] == 2 for i in items)
-    lh = 0.15 if two else 0.095
+    lh = 0.17 if two else 0.11
     note_h = 0.07 if any(i.get("note") for i in items) else 0
-    block = ih + (0.115 if timeline else 0.03) + lh + (0.01 + note_h if note_h else 0)   # timeline: line, nodes, then label
+    rest = (0.115 if timeline else 0.03) + lh + (0.01 + note_h if note_h else 0)   # timeline: line, nodes, then label
     avail_top, avail_bot = top, s["_bot"]
+    ih = max(0.12, min(ih, avail_bot - avail_top - rest))        # the icons give way so the labels fit above a footer
+    iw = ih * WN
+    block = ih + rest
     y_icon = avail_top + max(0.0, (avail_bot - avail_top - block) / 2)
     if timeline:
         y_line = y_icon + ih + 0.075
@@ -209,10 +216,10 @@ def _row(s, sid, els, top, numbered=False, timeline=False):
         if label:
             ly = (y_line + 0.04) if timeline else yy + ih + 0.03
             els.append(_text(f"{sid}_lb{i}", label, [cx - cw * 0.46, ly, cw * 0.92,
-                                                      0.15 if nl == 2 else 0.095],
+                                                      0.17 if nl == 2 else 0.11],
                              "text", cue, g))
         if it.get("note"):
-            ny = ((y_line + 0.04) if timeline else yy + ih + 0.03) + (0.15 if nl == 2 else 0.095) + 0.01
+            ny = ((y_line + 0.04) if timeline else yy + ih + 0.03) + (0.17 if nl == 2 else 0.11) + 0.01
             els.append(_text(f"{sid}_nt{i}", it["note"], [cx - cw * 0.46, ny, cw * 0.92, 0.065],
                              "grey", cue, g))
         if i and connect != "none" and not timeline:
@@ -231,10 +238,13 @@ def _row(s, sid, els, top, numbered=False, timeline=False):
 def _stack(s, sid, els, top):
     items = s["items"]
     n = len(items)
-    rh = min(0.17, (s["_bot"] - top) / n)
-    ih = rh * 0.78
+    rh = min(0.22, (s["_bot"] - top) / n)
+    ih = rh * 0.8
     iw = ih * WN
-    x_ic = 0.14
+    longest = max((len(str(i.get("label", ""))) for i in items), default=10)
+    block_w = iw + 0.04 + min(0.62, longest * 0.032)          # icon + words, centred in the frame
+    x_ic = max(0.08, 0.5 - block_w / 2)
+    top = top + max(0.0, ((s["_bot"] - top) - rh * n) / 2)    # centred between the title and the bottom
     connect = s.get("connect", "arrow")
     for i, it in enumerate(items):
         y = top + i * rh
@@ -266,12 +276,12 @@ def _hero(s, sid, els, top):
     col = _color(it, 0)
     y = top + (0.06 if not s.get("title") else 0.0)
     label, nl = _lines(it.get("label", ""), 26)
-    below = (0.2 if nl == 2 else 0.12) + (0.03 + (0.07 if it.get("note") else 0.0))
-    ih = max(0.14, min(0.34, s["_bot"] - y - below - 0.03))      # the icon gives way so the words clear the footer
+    below = (0.22 if nl == 2 else 0.14) + (0.03 + (0.07 if it.get("note") else 0.0))
+    ih = max(0.14, min(0.42, s["_bot"] - y - below - 0.03))      # the icon gives way so the words clear the footer
     iw = ih * WN
     if it.get("icon"):
         els.append(_icon(f"{sid}_ic0", _asset(it["icon"]), [0.5 - iw / 2, y, iw, ih], col, cue, "i0", sid))
-    els.append(_text(f"{sid}_lb0", label, [0.08, y + ih + 0.03, 0.84, 0.2 if nl == 2 else 0.12],
+    els.append(_text(f"{sid}_lb0", label, [0.08, y + ih + 0.03, 0.84, 0.22 if nl == 2 else 0.14],
                      "text", cue, "i0"))
     if it.get("note"):
         els.append(_text(f"{sid}_nt0", it["note"], [0.1, y + ih + 0.03 + (0.14 if nl == 2 else 0.11), 0.8, 0.07],
@@ -291,7 +301,7 @@ def _compare(s, sid, els, top):
         cue = int(side.get("cue") or s["cue_range"][0])
         g = f"i{k}"
         npts = len(side.get("points") or [])
-        card_h = min(s["_bot"] - top + 0.02, 0.2 + npts * 0.14 + 0.03)
+        card_h = min(s["_bot"] - top + 0.02, 0.22 + npts * 0.17 + 0.03)
         els.append(_shape(f"{sid}_card{k}", "card", cue, col, g, dur=900, filled=True,
                           box=[x, top - 0.02, 0.42, card_h]))
         hx = x + 0.025
@@ -299,11 +309,11 @@ def _compare(s, sid, els, top):
             els.append(_icon(f"{sid}_ic{k}", _asset(side["icon"]), [hx, top + 0.015, 0.1 * WN * 1.0, 0.1],
                              col, cue, g, sid))
             hx += 0.1 * WN + 0.02
-        els.append(_text(f"{sid}_hd{k}", side.get("header", ""), [hx, top + 0.005, x + 0.4 - hx, 0.12],
+        els.append(_text(f"{sid}_hd{k}", side.get("header", ""), [hx, top + 0.005, x + 0.4 - hx, 0.14],
                          col, cue, g))
         pts = side.get("points") or []
-        py = top + 0.17
-        step = min(0.14, (s["_bot"] - 0.02 - py) / max(1, len(pts)))
+        py = top + 0.19
+        step = min(0.17, (s["_bot"] - 0.02 - py) / max(1, len(pts)))
         for j, p in enumerate(pts):
             p = {"text": p} if isinstance(p, str) else dict(p)
             pcue = int(p.get("cue") or cue)
@@ -332,6 +342,45 @@ def _footer(s, sid, els):
                           box=[0.08, 0.76, min(0.84, len(f["text"]) * 0.028 + 0.06), 0.075],
                           fit_to=f"{sid}_ft"))
     els.append(_text(f"{sid}_ft", f["text"], [0.1, 0.76, 0.8, 0.075], "text", cue, "footer"))
+
+
+def _into_region(s, sid, els):
+    """Draw the scene inside a part of the frame (so a base scene's drawing is not overlapped).
+    region = [x, y, w, h] as shares of the frame."""
+    r = s["region"]
+    if not (isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in r)
+            and r[2] > 0.1 and r[3] > 0.1 and r[0] >= 0 and r[1] >= 0 and r[0] + r[2] <= 1.0001 and r[1] + r[3] <= 1.0001):
+        raise ExplainerError([f"Scene {sid}: region must be [x, y, w, h] inside the frame (w and h at least 0.1)."])
+    rx, ry, rw, rh = [float(v) for v in r]
+    for el in els:
+        o = el.obj
+        if o.get("box"):
+            x, y, w, h = o["box"]
+            o["box"] = _r([rx + x * rw, ry + y * rh, w * rw, h * rh])
+        if o.get("points"):
+            o["points"] = [[round(rx + px * rw, 4), round(ry + py * rh, 4)] for px, py in o["points"]]
+
+
+def _camera_for(raw, region, prev_end):
+    """The scene's camera, only when the plan asks for one (camera: "region" | "overview" | {zoom, center,
+    move_ms}). Never added on its own. Returns (camera dict or None, end view)."""
+    c = raw.get("camera")
+    if not c:
+        return None, cam_mod.OVERVIEW
+    if c == "region":
+        if not region:
+            raise ExplainerError([f"Scene {raw.get('id')}: camera \"region\" needs a region."])
+        to = cam_mod.region_view(region)
+    elif c == "overview":
+        to = dict(cam_mod.OVERVIEW)
+    elif isinstance(c, dict):
+        to = {"zoom": float(c.get("zoom", 1)), "center": list(c.get("center") or [0.5, 0.5])}
+    else:
+        raise ExplainerError([f"Scene {raw.get('id')}: camera must be \"region\", \"overview\" or {{zoom, center}}."])
+    out = {"from": c.get("from") if isinstance(c, dict) and c.get("from") else prev_end, "to": to}
+    if isinstance(c, dict) and c.get("move_ms"):
+        out["move_ms"] = int(c["move_ms"])
+    return out, to
 
 
 def _scene_elements(s, idx):
@@ -371,9 +420,13 @@ def _scene_elements(s, idx):
         _hero(s, sid, els, top if s.get("title") else 0.12)
     elif layout in mechanisms.BUILDERS:
         mechanisms.BUILDERS[layout](sys.modules[__name__], s, sid, els, top)
+    elif layout in vocabulary.BUILDERS:
+        vocabulary.BUILDERS[layout](sys.modules[__name__], s, sid, els, top)
     else:
         _compare(s, sid, els, top)
     _footer(s, sid, els)
+    if s.get("region"):
+        _into_region(s, sid, els)
     for el in els:
         if not (s["cue_range"][0] <= el.cue <= s["cue_range"][1]):
             raise ExplainerError([f"Scene {sid}: object {el.obj['id']} is anchored to cue {el.cue}, "
@@ -552,6 +605,10 @@ def resolve_anchors(plan: dict, cues) -> dict:
         s["items"] = [dict(i) for i in (s.get("items") or [])]
         for k, it in enumerate(s["items"]):
             anchor(it, where=f"item {k + 1} ({it.get('label', '')})")
+            if isinstance(it.get("rows"), list):
+                it["rows"] = [dict(x) if isinstance(x, dict) else {"text": str(x)} for x in it["rows"]]
+                for j, rw in enumerate(it["rows"]):
+                    anchor(rw, where=f"item {k + 1} row {j + 1}")
         if isinstance(s.get("footer"), dict):
             s["footer"] = dict(s["footer"])
             anchor(s["footer"], where="footer")
@@ -1145,7 +1202,16 @@ def first_visible_ms(scene: dict, cue_ms: dict) -> int:
 
 
 def build(plan: dict, cues, look=None) -> dict:
-    """plan dict + SRT cues (video.parsing blocks) -> explainer.json dict."""
+    """plan dict + SRT cues (video.parsing blocks) -> explainer.json dict.
+    Footers (a takeaway bar under a scene) are not drawn for a channel (look given) unless its
+    "footers" setting is on: information appears where the narration says it, as titles,
+    labels and points. Without a look (bare plan) footers are kept."""
+    if (isinstance(plan, dict) and isinstance(look, dict) and isinstance(plan.get("scenes"), list)
+            and str(look.get("footers") or "").strip().lower() != "on"):
+        plan = dict(plan, scenes=[{k: v for k, v in x.items()
+                                   if not (k == "footer" and not (isinstance(v, dict) and v.get("key")))}
+                                  if isinstance(x, dict) else x
+                                  for x in plan["scenes"]])
     if isinstance(plan, dict) and any(isinstance(x, dict) and ("start" in x or any(
             isinstance(i, dict) and i.get("at") for i in (x.get("items") or [])))
             for x in plan.get("scenes") or []):
@@ -1158,6 +1224,11 @@ def build(plan: dict, cues, look=None) -> dict:
                               else x for x in plan["scenes"]])
     _hold_previous(plan["scenes"], cue_ms)
     scenes, errors = [], []
+    prev_end = dict(cam_mod.OVERVIEW)
+    cam_off = str((look or {}).get("camera") or "").strip().lower() == "off" if isinstance(look, dict) else False
+    preset = font_styles.resolve(look)
+    title_font = (preset or {}).get("title") or ""
+    tscale = font_styles.title_scale(look)
     for idx, raw in enumerate(plan["scenes"]):
         if isinstance(raw, dict) and raw.get("layout") in REMOTION_LAYOUTS:
             try:
@@ -1166,6 +1237,8 @@ def build(plan: dict, cues, look=None) -> dict:
                 errors.extend(exc.errors)
             continue
         try:
+            if tscale != 1.0 and isinstance(raw, dict):
+                raw = dict(raw, _title_scale=tscale)
             s, els = _scene_elements(raw, idx)
             if idx == 0:
                 _lead_in(s, els, cue_ms)          # nothing before the first scene to hold
@@ -1173,14 +1246,29 @@ def build(plan: dict, cues, look=None) -> dict:
             if pen != 1.0:
                 for e in els:
                     e.dur = max(e.min, int(e.dur * pen))
+            if title_font:
+                for e in els:
+                    if e.group == "title" and e.obj.get("type") == "handwriting":
+                        e.obj["font"] = title_font      # marker headline (font style "video1")
             sched = _schedule(s, els, cue_ms)
         except ExplainerError as exc:
             errors.extend(exc.errors)
             continue
-        scenes.append({
+        scene = {
             "id": s["id"], "shot_id": f"S{idx + 1:02d}_01", "cue_range": list(s["cue_range"]),
             "objects": [e.obj for e in els],
-            "events": _events(s, els, sched, cue_ms)})
+            "events": _events(s, els, sched, cue_ms)}
+        if s.get("base"):
+            scene["base"] = str(s["base"])
+        if not cam_off:                                  # a channel can switch every camera move off
+            try:
+                cam, prev_end = _camera_for(s, s.get("region"), prev_end)
+            except ExplainerError as exc:
+                errors.extend(exc.errors)
+                continue
+            if cam:
+                scene["camera"] = cam
+        scenes.append(scene)
     if errors:
         raise ExplainerError(errors)
     doc = {"schema_version": sc.SCHEMA_VERSION, "style": sc.STYLE_WHITEBOARD, "scenes": scenes,

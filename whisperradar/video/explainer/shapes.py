@@ -16,6 +16,8 @@ Kinds and what they need:
   line       line from points[0] to points[1]            (dashed: true)
   check      tick mark in `box`
   cross      X mark in `box`
+  frame      dashed rounded container around `box` (groups things)
+  pill       rounded capsule around `box` (chips)         (filled: true darkens inside)
 """
 from __future__ import annotations
 
@@ -26,7 +28,7 @@ import random
 from .strokes import Stroke, flatten_cubic
 
 KINDS = ("card", "oval", "underline", "highlight", "brace", "arrow", "line",
-         "check", "cross")
+         "check", "cross", "frame", "pill")
 NEEDS_POINTS = ("arrow", "line")
 SIDES = ("left", "right", "top", "bottom")
 
@@ -102,6 +104,48 @@ def _card(box, rng, width):
     # the loop closes a few px off, like a real hand
     pts = [(px + rng.uniform(-0.6, 0.6), py) for px, py in pts]
     return [_stroke(_wobble(pts, max(1.2, width * 0.35), rng), width)]
+
+
+def _dashed(pts, width):
+    """Dashes along a polyline, each one pen move."""
+    dash, gap = width * 4.2, width * 3.0
+    out, cur, pen_down, left = [], [pts[0]], True, dash
+    for a, b in zip(pts, pts[1:]):
+        seg = math.hypot(b[0] - a[0], b[1] - a[1])
+        pos = 0.0
+        while seg - pos > 1e-6:
+            step = min(left, seg - pos)
+            t0, t1 = pos / seg, (pos + step) / seg
+            p0 = (a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0)
+            p1 = (a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1)
+            if pen_down:
+                cur = cur if len(cur) > 1 or cur[0] == p0 else [p0]
+                cur = [p0, p1] if len(cur) == 1 else cur + [p1]
+            pos += step
+            left -= step
+            if left <= 1e-6:
+                if pen_down and len(cur) > 1:
+                    out.append(_stroke(cur, width))
+                pen_down = not pen_down
+                left = dash if pen_down else gap
+                cur = [p1]
+    if pen_down and len(cur) > 1:
+        out.append(_stroke(cur, width))
+    return out
+
+
+def _frame(box, rng, width):
+    x, y, w, h = box
+    pts = _rounded_rect(x, y, w, h, min(w, h) * 0.07)
+    pts = pts + pts[:1]
+    return _dashed(pts, max(2.0, width * 0.8))
+
+
+def _pill(box, rng, width):
+    x, y, w, h = box
+    pts = _rounded_rect(x, y, w, h, h / 2)
+    pts = pts + pts[:3]
+    return [_stroke(_wobble(pts, max(0.8, width * 0.2), rng), width)]
 
 
 def _oval(box, rng, width):
@@ -228,6 +272,10 @@ def shape_strokes(spec, box_px, points_px, width: float, straight: bool = False)
     kind = spec.kind
     if kind == "card":
         return _card(box_px, rng, width)
+    if kind == "frame":
+        return _frame(box_px, rng, width)
+    if kind == "pill":
+        return _pill(box_px, rng, width)
     if kind == "oval":
         return _oval(box_px, rng, width)
     if kind == "underline":
