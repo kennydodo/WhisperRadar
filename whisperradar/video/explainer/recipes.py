@@ -172,13 +172,16 @@ def _row(s, sid, els, top, numbered=False, timeline=False):
     n = len(items)
     x0, x1 = 0.07, 0.93
     cw = (x1 - x0) / n
-    ih = min(0.24, cw * 0.58 / WN)
+    ih = min(0.31, cw * 0.62 / WN)
     iw = ih * WN
     two = any(_lines(i.get("label", ""))[1] == 2 for i in items)
-    lh = 0.15 if two else 0.095
+    lh = 0.17 if two else 0.11
     note_h = 0.07 if any(i.get("note") for i in items) else 0
-    block = ih + (0.115 if timeline else 0.03) + lh + (0.01 + note_h if note_h else 0)   # timeline: line, nodes, then label
+    rest = (0.115 if timeline else 0.03) + lh + (0.01 + note_h if note_h else 0)   # timeline: line, nodes, then label
     avail_top, avail_bot = top, s["_bot"]
+    ih = max(0.12, min(ih, avail_bot - avail_top - rest))        # the icons give way so the labels fit above a footer
+    iw = ih * WN
+    block = ih + rest
     y_icon = avail_top + max(0.0, (avail_bot - avail_top - block) / 2)
     if timeline:
         y_line = y_icon + ih + 0.075
@@ -211,10 +214,10 @@ def _row(s, sid, els, top, numbered=False, timeline=False):
         if label:
             ly = (y_line + 0.04) if timeline else yy + ih + 0.03
             els.append(_text(f"{sid}_lb{i}", label, [cx - cw * 0.46, ly, cw * 0.92,
-                                                      0.15 if nl == 2 else 0.095],
+                                                      0.17 if nl == 2 else 0.11],
                              "text", cue, g))
         if it.get("note"):
-            ny = ((y_line + 0.04) if timeline else yy + ih + 0.03) + (0.15 if nl == 2 else 0.095) + 0.01
+            ny = ((y_line + 0.04) if timeline else yy + ih + 0.03) + (0.17 if nl == 2 else 0.11) + 0.01
             els.append(_text(f"{sid}_nt{i}", it["note"], [cx - cw * 0.46, ny, cw * 0.92, 0.065],
                              "grey", cue, g))
         if i and connect != "none" and not timeline:
@@ -233,10 +236,13 @@ def _row(s, sid, els, top, numbered=False, timeline=False):
 def _stack(s, sid, els, top):
     items = s["items"]
     n = len(items)
-    rh = min(0.17, (s["_bot"] - top) / n)
-    ih = rh * 0.78
+    rh = min(0.22, (s["_bot"] - top) / n)
+    ih = rh * 0.8
     iw = ih * WN
-    x_ic = 0.14
+    longest = max((len(str(i.get("label", ""))) for i in items), default=10)
+    block_w = iw + 0.04 + min(0.62, longest * 0.032)          # icon + words, centred in the frame
+    x_ic = max(0.08, 0.5 - block_w / 2)
+    top = top + max(0.0, ((s["_bot"] - top) - rh * n) / 2)    # centred between the title and the bottom
     connect = s.get("connect", "arrow")
     for i, it in enumerate(items):
         y = top + i * rh
@@ -268,12 +274,12 @@ def _hero(s, sid, els, top):
     col = _color(it, 0)
     y = top + (0.06 if not s.get("title") else 0.0)
     label, nl = _lines(it.get("label", ""), 26)
-    below = (0.2 if nl == 2 else 0.12) + (0.03 + (0.07 if it.get("note") else 0.0))
-    ih = max(0.14, min(0.34, s["_bot"] - y - below - 0.03))      # the icon gives way so the words clear the footer
+    below = (0.22 if nl == 2 else 0.14) + (0.03 + (0.07 if it.get("note") else 0.0))
+    ih = max(0.14, min(0.42, s["_bot"] - y - below - 0.03))      # the icon gives way so the words clear the footer
     iw = ih * WN
     if it.get("icon"):
         els.append(_icon(f"{sid}_ic0", _asset(it["icon"]), [0.5 - iw / 2, y, iw, ih], col, cue, "i0", sid))
-    els.append(_text(f"{sid}_lb0", label, [0.08, y + ih + 0.03, 0.84, 0.2 if nl == 2 else 0.12],
+    els.append(_text(f"{sid}_lb0", label, [0.08, y + ih + 0.03, 0.84, 0.22 if nl == 2 else 0.14],
                      "text", cue, "i0"))
     if it.get("note"):
         els.append(_text(f"{sid}_nt0", it["note"], [0.1, y + ih + 0.03 + (0.14 if nl == 2 else 0.11), 0.8, 0.07],
@@ -293,7 +299,7 @@ def _compare(s, sid, els, top):
         cue = int(side.get("cue") or s["cue_range"][0])
         g = f"i{k}"
         npts = len(side.get("points") or [])
-        card_h = min(s["_bot"] - top + 0.02, 0.2 + npts * 0.14 + 0.03)
+        card_h = min(s["_bot"] - top + 0.02, 0.22 + npts * 0.17 + 0.03)
         els.append(_shape(f"{sid}_card{k}", "card", cue, col, g, dur=900, filled=True,
                           box=[x, top - 0.02, 0.42, card_h]))
         hx = x + 0.025
@@ -301,11 +307,11 @@ def _compare(s, sid, els, top):
             els.append(_icon(f"{sid}_ic{k}", _asset(side["icon"]), [hx, top + 0.015, 0.1 * WN * 1.0, 0.1],
                              col, cue, g, sid))
             hx += 0.1 * WN + 0.02
-        els.append(_text(f"{sid}_hd{k}", side.get("header", ""), [hx, top + 0.005, x + 0.4 - hx, 0.12],
+        els.append(_text(f"{sid}_hd{k}", side.get("header", ""), [hx, top + 0.005, x + 0.4 - hx, 0.14],
                          col, cue, g))
         pts = side.get("points") or []
-        py = top + 0.17
-        step = min(0.14, (s["_bot"] - 0.02 - py) / max(1, len(pts)))
+        py = top + 0.19
+        step = min(0.17, (s["_bot"] - 0.02 - py) / max(1, len(pts)))
         for j, p in enumerate(pts):
             p = {"text": p} if isinstance(p, str) else dict(p)
             pcue = int(p.get("cue") or cue)
