@@ -25,8 +25,14 @@ def _wrap(text, width, font):
     font size (a share of the canvas height) everywhere, it fits `width` (a share of the width).
     Equal sizes across a scene instead of each line shrinking to its own box."""
     chars = max(4, int(width * 1920 / (0.6 * font * 1080)))
-    lines = textwrap.wrap(str(text), chars) or [""]
+    lines = textwrap.wrap(str(text), chars, break_long_words=False) or [""]
     return "\n".join(lines), len(lines), len(lines) * font * 1.4
+
+
+def _longest_word(text, width, font):
+    """True when the longest word fits the width at this font size (no word is ever cut in two)."""
+    w = max((len(x) for x in str(text).split()), default=0)
+    return w * 0.6 * font * 1080 / 1920 <= width
 
 
 def _need(s, sid, lo, hi, what):
@@ -49,19 +55,23 @@ def cards(R, s, sid, els, top):
     gap = 0.03
     cw = ((X1 - X0) - gap * (n - 1)) / n
     bot = s["_bot"]
-    T_FONT, R_FONT = 0.066, 0.05
-    for _try in range(8):                 # smaller type (same in every card) until the cards fit the frame
+    bare = not any(it.get("rows") for it in items)           # titles only: a bigger icon and title
+    ICON_H = 0.19 if bare else 0.1
+    T_FONT, R_FONT = (0.095 if bare else 0.085), 0.062
+    for _try in range(14):                 # smaller type (same in every card) until the cards fit the frame
         rows_of, heads = [], []
         for it in items:
             rows = [{"text": r} if isinstance(r, str) else dict(r) for r in (it.get("rows") or [])][:4]
             rows_of.append([(r,) + _wrap(r.get("text", ""), cw - 0.045, R_FONT) for r in rows])
             heads.append(_wrap(it.get("label", ""), cw - 0.04, T_FONT))
         head_h = max(0.0, max(h[2] for h in heads))
-        need = 0.03 + 0.1 + head_h + 0.02 + max((sum(r[3] + 0.02 for r in rows) for rows in rows_of), default=0) + 0.02
-        if need <= bot - top or T_FONT < 0.04:
+        need = 0.03 + ICON_H + head_h + 0.02 + max((sum(r[3] + 0.02 for r in rows) for rows in rows_of), default=0) + 0.02
+        words_fit = all(_longest_word(it.get("label", ""), cw - 0.04, T_FONT) for it in items) and all(
+            _longest_word(r[0].get("text", ""), cw - 0.045, R_FONT) for rows in rows_of for r in rows)
+        if (need <= bot - top and words_fit) or T_FONT < 0.04:
             break
         T_FONT, R_FONT = T_FONT * 0.92, R_FONT * 0.92
-    ch = min(bot - top, max(need, 0.4))
+    ch = min(bot - top, max(need + 0.04, 0.42))
     y0 = top + max(0.0, (bot - top - ch) / 2)
     for k, (it, rows) in enumerate(zip(items, rows_of)):
         x = X0 + k * (cw + gap)
@@ -72,7 +82,7 @@ def cards(R, s, sid, els, top):
                             box=[x, y0, cw, ch]))
         y = y0 + 0.03
         if it.get("icon"):
-            ih = 0.1
+            ih = ICON_H
             els.append(R._icon(f"{sid}_ic{k}", R._asset(it["icon"]), [x + 0.02, y, ih * R.WN, ih], col, cue, g, sid))
             y += ih + 0.015
         txt, _n, h = heads[k]
