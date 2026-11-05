@@ -164,6 +164,7 @@ class ExplainerOptions:
     explainer.json still wins for that production."""
     theme: str = ""                 # chalkboard | whiteboard_light | ... ("" = the doc's)
     font_style: str = ""            # video1 (default) | clean | handwritten; presets the three fonts below
+    title_size: str = ""            # headline size: small | normal | large ("" = normal)
     hand_font: str = ""             # handwriting: a .ttf in fonts/, or "strokes" (pen letters)
     heading_font: str = ""          # typed headings / labels
     body_font: str = ""             # typed body text

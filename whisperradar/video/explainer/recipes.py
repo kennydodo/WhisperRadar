@@ -149,12 +149,13 @@ def _title(s, sid, els):
     if not t:
         return 0.27
     cue = s["cue_range"][0]
-    els.append(_text(f"{sid}_title", t, [0.07, 0.06, 0.86, 0.12], "heading", cue,
+    k = float(s.get("_title_scale") or 1.0)               # font style / channel "headline size"
+    els.append(_text(f"{sid}_title", t, [0.07, 0.06, 0.86, 0.12 * k], "heading", cue,
                      group="title"))
     w = min(0.86, len(t) * 0.027 + 0.02)
     els.append(_shape(f"{sid}_tline", "underline", cue, "orange", "title",
-                      box=[0.07, 0.06, w, 0.125], dur=450, fit_to=f"{sid}_title"))
-    return 0.27
+                      box=[0.07, 0.06, w, 0.125 * k], dur=450, fit_to=f"{sid}_title"))
+    return 0.27 + 0.12 * (k - 1.0)
 
 
 def _item_cue(s, items, i):
@@ -1161,6 +1162,7 @@ def build(plan: dict, cues, look=None) -> dict:
     scenes, errors = [], []
     preset = font_styles.resolve(look)
     title_font = (preset or {}).get("title") or ""
+    tscale = font_styles.title_scale(look)
     for idx, raw in enumerate(plan["scenes"]):
         if isinstance(raw, dict) and raw.get("layout") in REMOTION_LAYOUTS:
             try:
@@ -1169,6 +1171,8 @@ def build(plan: dict, cues, look=None) -> dict:
                 errors.extend(exc.errors)
             continue
         try:
+            if tscale != 1.0 and isinstance(raw, dict):
+                raw = dict(raw, _title_scale=tscale)
             s, els = _scene_elements(raw, idx)
             if idx == 0:
                 _lead_in(s, els, cue_ms)          # nothing before the first scene to hold

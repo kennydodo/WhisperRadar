@@ -38,3 +38,17 @@ def resolve(look):
     if any(str(look.get(k) or "").strip() for k in ("hand_font", "heading_font", "body_font")):
         return None
     return STYLES[DEFAULT_STYLE]
+
+
+TITLE_SIZES = {"small": 0.85, "normal": 1.0, "large": 1.2}
+MARKER_BOOST = 1.18          # the marker headline is drawn a little bigger than the sans one
+
+
+def title_scale(look):
+    """Headline size factor: channel "title_size" (small | normal | large) times the
+    marker boost when the style's headline font is the marker."""
+    if not isinstance(look, dict):
+        return 1.0
+    pick = TITLE_SIZES.get(str(look.get("title_size") or "").strip().lower(), 1.0)
+    preset = resolve(look)
+    return round(pick * (MARKER_BOOST if (preset or {}).get("title") else 1.0), 3)

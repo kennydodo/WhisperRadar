@@ -845,6 +845,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>headline size
+                <select name="explainer_title_size">
+                  <option value="">inherit{% if xg.title_size %} (global: {{ xg.title_size }}){% else %} (normal){% endif %}</option>
+                  {% for k in ['small', 'normal', 'large'] %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('title_size') == k else '' }}>{{ k }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>hand-drawn writing
                 <select name="explainer_hand_font" class="xp-font" data-target="xp-hand-{{ ch['id'] }}">
                   <option value="">inherit{% if xg.hand_font %} (global: {{ xg.hand_font }}){% endif %}</option>
