@@ -957,8 +957,8 @@
               {% endfor %}
             </div>
             <div class="muted" style="font-size:12px; margin:10px 0 4px">
-              Motion rule - how much of an explainer must <em>show</em> something instead of listing it
-              (checked on videos of 90 seconds or more; blank = the genre's rule, 0 = off).
+              Optional limits on text-only scenes. Blank or 0 = no limit: the narration decides how many scenes
+              are text and how many are drawn (a limit is checked on videos of 90 seconds or more).
             </div>
             <div class="inline">
               <label>scene genre
@@ -968,9 +968,9 @@
                   <option value="finance" {{ 'selected' if xv.get('scene_genre') == 'finance' else '' }}>finance</option>
                 </select>
               </label>
-              {% for key, label, dflt in [('motion_min_share', 'min. motion share (%)', '50'),
-                                          ('text_run_max', 'max text-only scenes in a row', '3'),
-                                          ('text_run_seconds', 'max text-only seconds in a row', '75')] %}
+              {% for key, label, dflt in [('motion_min_share', 'min. motion share (%)', 'no limit'),
+                                          ('text_run_max', 'max text-only scenes in a row', 'no limit'),
+                                          ('text_run_seconds', 'max text-only seconds in a row', 'no limit')] %}
               <label>{{ label }}
                 <input type="number" name="explainer_{{ key }}" min="0" step="any" style="width:110px"
                        value="{{ xv.get(key) if xv.get(key) not in (none, '') else '' }}"

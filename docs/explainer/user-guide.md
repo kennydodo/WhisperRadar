@@ -425,9 +425,12 @@ without moving any reveal off its words:
   memory, precision, offload, fit_chart.
 - `finance`: text layouts + the general layouts (no tech-only scenes in the writer's prompt).
 
-**Motion rule** (both genres): at least 50% of the narration time is motion scenes, at most
-3 text-only scenes (row, steps, timeline, compare, stack, hero) or 75 s of them in a row;
-checked on videos of 90 s or more. A channel can change or switch off each number.
+**Motion mix** (no default limit; changed 2026-11-05): the narration decides how many scenes are text and how
+many are drawn - as much text as the narration needs. The planner picks a motion layout where the narrator
+describes something that moves, is counted, measured or compared, and a text layout where the narrator states a
+claim, definition, quote, caveat or list. A channel can still opt in to a limit (Explainer settings: minimum motion
+share, most text-only scenes in a row, longest text-only seconds; blank or 0 = no limit); an opt-in limit is checked
+on videos of 90 s or more. The judge is shown the measured mix for information only.
 
 ## Remotion scenes (optional, experimental)
 
