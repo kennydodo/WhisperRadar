@@ -79,7 +79,7 @@ class ExplainerChannelTests(unittest.TestCase):
         self.assertEqual(self.saved(), {"explainer.scene_genre": "tech", "explainer.motion_min_share": "35",
                                         "explainer.text_run_max": "4", "explainer.text_run_seconds": "0"})
         html = self.client.get("/my-channels").get_data(as_text=True)
-        self.assertIn("Motion rule", html)
+        self.assertIn("Optional limits on text-only scenes", html)
         self.assertIn('name="explainer_motion_min_share"', html)
         self.assertIn('value="35"', html)
 

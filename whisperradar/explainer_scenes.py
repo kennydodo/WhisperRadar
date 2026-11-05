@@ -157,7 +157,7 @@ FORMAT = format_text("tech")
 # Rule lines tagged with the layout they are about; a line about a layout the genre does not have
 # is left out. Untagged lines (None) always apply.
 RULE_LINES = [
-    (None, "PICK THE PICTURE BY THE KIND OF IDEA - the viewer should WATCH the idea happen. Most of the video is motion scenes; text scenes are the short pauses between them:"),
+    (None, "PICK THE PICTURE BY WHAT THE NARRATION SAYS. The narration decides how many scenes are drawn and how many are text; there is no quota either way. Where the narrator describes something that moves, is counted, measured or compared, let the viewer WATCH it. Where the narrator states a claim, a definition, a quote, a caveat or a list, text is right, and as much text as the narration needs is fine:"),
     ("flow", "- something is handed on, asked for or moves (a request, a payment, a file, data, money, a signal, a decision passing through people or systems) -> flow"),
     ("bars", "- numbers set against each other (times, prices, sizes, scores, costs, before/after) -> bars"),
     ("line", "- something changes over time or grows (compound growth, a price, a trend, a curve, adoption, scaling) -> line"),
@@ -169,10 +169,9 @@ RULE_LINES = [
     ("levels", "- coarse to fine, a hierarchy, zooming in -> levels"),
     ("code", "- real code the narrator discusses -> code"),
     ("memory", "- what fits in a memory (GPU, RAM) with the narrator's sizes -> memory / precision / offload / fit_chart"),
-    (None, "- ONLY when none of these fits: a rule, warning or the one key sentence -> hero; two things compared point by point -> compare; ordered steps -> steps; separate facts -> stack or row. A video made mostly of hero, stack, row and compare scenes is a slide deck and is rejected."),
-    (None, "- First ask for every scene: what will the viewer understand by watching this that the words alone do not show? If the answer is only \"they read the same point\", pick a motion scene."),
-    (None, "- MOTION MIX (the app measures this and rejects plans that miss it): at least {motion_share} of the narration time must be motion scenes (everything except row, steps, timeline, compare, stack and hero), and never more than {text_run} text-only scenes or {text_seconds} seconds of them in a row. Claims, evaluations, caveats and examples can be drawn too: timings and results as bars, a share as split or grid, a trend as line, who passes what to whom as flow."),
-    (None, "TEXT LAYOUTS (the short pauses between motion scenes):"),
+    (None, "- Text layouts show what the narration itself states: a rule, warning or the one key sentence -> hero; two things compared point by point -> compare; ordered steps -> steps; separate facts -> stack or row. Use as many of them as the narration needs."),
+    (None, "- For every scene ask: what does the narration say here, and which picture shows exactly that? Do not turn a plain statement into a diagram only to add motion, and do not leave a described process, count, number or comparison as plain text."),
+    (None, "TEXT LAYOUTS (for what the narration states):"),
     (None, "- row: 2-4 things side by side. Add connect \"arrow\" for a flow, \"none\" for a set. steps: 3-5 numbered steps in order. timeline: 3-5 points in time."),
     (None, "- stack: 3-4 short lines, one per row, each with an icon; a footer fits under it. hero: ONE big icon with one short sentence (the label may be up to ~50 characters)."),
     (None, "- compare: exactly two sides, each with a header, an icon and 1-3 short points (right vs wrong, A vs B, before vs after)."),
@@ -189,7 +188,7 @@ RULE_LINES = [
     ("code", "- code: 2-12 lines (64 characters at most) typed out, with \"highlights\" (line, short note, \"at\") on the line that matters. Use it only for real code or a real excerpt the narrator discusses, never invented."),
     (None, "- ONE DIAGRAM, MANY BEATS: a motion scene may last 20-60 seconds and keep the same picture while the narrator moves through several points. Tie each change to the words that cause it (\"at\" on nodes, sends, bars, parts, steps, marks, stages, levels, highlights; generation rows take \"beats\": 2-3 {\"at\": words}). Anchors for different steps must be words said in different places. Every motion scene may carry a \"footer\" ({\"text\", \"at\"}): the one sentence that should stay on screen for the point. Without an anchor a step is spaced evenly, which does not follow the narrator, so always anchor them."),
     (None, "- POINTS (optional, motion scenes only): a scene may carry \"points\": [{\"text\": 2-8 words, \"at\": words}], 1-3 of them, that appear on the narrator's words beside the picture. Use one only when it shows something the picture cannot: a number, a condition or a takeaway the narrator says (\"only if the model is idle\", \"about 40% less\"). A point restates the idea in a few words, never the sentence, and adds no fact the narrator did not say. Most scenes need none; a diagram that reads clearly on its own stays clean. Each point is anchored to different words (at least a second apart) and never in the last seconds of the scene. If the picture's first element starts more than 2 s after the scene opens, start the picture earlier before reaching for a point. Do not repeat the footer or a label as a point."),
-    (None, "- \"motion\": {\"at\": words} is where the animation starts. Give each motion scene 8+ seconds. Colours, fonts and line style come from the channel; \"color\" on an item only carries meaning. Avoid the same layout three times in a row; titles under 48 characters."),
+    (None, "- \"motion\": {\"at\": words} is where the animation starts. Give each motion scene 8+ seconds. Colours, fonts and line style come from the channel; \"color\" on an item only carries meaning. Repeat a layout when the narration calls for it; titles under 48 characters."),
     (None, "- REVISION SAFETY: never remove a teaching point to fit a template. Use fewer decorative elements, a different supported layout, or a longer scene boundary. Illustrative diagrams must be labelled schematic; never imply measured speed from decorative motion. Stages, workers and tasks are different quantities."),
     (None, "- COUNTS ARE THE NARRATOR'S: if the narration says eight stages, draw eight; never change a count or a relationship to fit a component. If a component cannot draw it, pick another motion layout that can (a flow of up to 6 boxes, a grid, bars) and, only when none can, a steps or row scene with the exact count; say in the footer what is simplified. The app rejects a drawn count that differs from the stated one."),
     (None, "NUMBERS (the app checks them):"),
@@ -258,11 +257,22 @@ def look_hint(look: dict) -> str:
 
 def _rules_text(low, high, rule, genre: str = "tech") -> str:
     text = rules_for(genre).replace("{low}", str(low)).replace("{high}", str(high))
-    if rule:
-        return (text.replace("{motion_share}", f"{float(rule.get('min_share') or 0):.0%}")
-                .replace("{text_run}", str(int(rule.get("text_run") or 0)))
-                .replace("{text_seconds}", f"{float(rule.get('text_seconds') or 0):.0f}"))
-    return "\n".join(x for x in text.split("\n") if not x.startswith("- MOTION MIX"))
+    # No default limit: the narration decides how many scenes are text and how many are drawn.
+    # A channel that opted in to a limit gets exactly the limits it set, nothing else.
+    parts = []
+    share = float((rule or {}).get("min_share") or 0)
+    run = int((rule or {}).get("text_run") or 0)
+    secs = float((rule or {}).get("text_seconds") or 0)
+    if share > 0:
+        parts.append(f"at least {share:.0%} of the narration time must be motion scenes (everything except row, steps, timeline, compare, stack and hero)")
+    if run > 0:
+        parts.append(f"never more than {run} text-only scenes in a row")
+    if secs > 0:
+        parts.append(f"never more than {secs:.0f} seconds of text-only scenes in a row")
+    if parts:
+        text += ("\n- MOTION MIX (this channel's own limit; the app measures it and rejects plans that miss it): "
+                 + "; ".join(parts) + ".")
+    return text
 
 
 GENRE_INTRO = {
@@ -555,7 +565,7 @@ def _atomic_json(path, data):
 def judge_prompt(narration: str, plan: dict, summary: str, min_score: float = MIN_SCORE) -> str:
     return f"""You are a strict reviewer of an explainer video's scene plan (hand-drawn whiteboard style). A narrator reads the NARRATION; the plan says what is drawn while each part is spoken. The code already checked the format and the timing. You judge the TEACHING.
 
-Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (something handed on or requested = flow, numbers set against each other = bars, change over time = line, parts of a whole = split, a count out of a total or a board = grid; a rule or warning = hero, two things compared point by point = compare, a plain list = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: not the same layout scene after scene, but no gimmicks either; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does. (10) you are given the exact animation specification of every motion scene (stages, rows, levels, code, footer, step anchors): check that counts match the narration, every slot is real text, each step is anchored to the words that cause it, nothing the narrator says is left out, and that watching it teaches the idea; judge only what the specification says is drawn, never call a scene 'only a footer' when it lists animation. (9) the video does not read as a slide deck: where the narration explains a process, a hand-off, a quantity, a comparison of numbers, a change over time, a share, a dependency or evidence, the scene is a motion scene (flow, bars, line, split, grid, counter, pipeline, generation, levels, code, ...) whose steps are anchored to the narrator's words; a hero/stack/row/compare scene over such narration is a fault, and text scenes should be the short pauses between motion scenes, not most of the video. Numbers in bars, split and line must be the narrator's, or the scene is tagged illustrative. (11) points (optional short bullets on motion scenes): each restates what the narrator says in a few words, adds no new fact, is not a copy of the sentence or of the footer, and is on only where the picture cannot show it; points on every scene, or more than three in one, are a fault. (8) every key name or acronym the narrator says (and what it stands for, when spelled out) is written on screen in the scene where it is said; a missing one is a fault.
+Score 1-10 on: (1) every scene shows the idea the narrator is saying in that moment, with the picture that fits (something handed on or requested = flow, numbers set against each other = bars, change over time = line, parts of a whole = split, a count out of a total or a board = grid; a rule or warning = hero, two things compared point by point = compare, a plain list = stack); (2) nothing is invented or wrong against the narration, numbers and units are right; (3) labels are short, plain and readable aloud; (4) variety: the layout changes when the kind of idea in the narration changes (repeating a layout is fine when the narration repeats the kind of idea), and no gimmicks; (5) pacing: a new picture when the idea changes, not too busy, not a long stretch with no new picture; (6) icons and colours mean what they say (green good, red problem); an icon that only repeats its label, or an arrow that suggests a flow that is not there, is a fault; (7) number scenes (memory, precision, offload, fit_chart, counter): every number and unit matches what the narrator says, the arithmetic is right (size = params x bits / 8), nothing is invented, and a scene that should say "illustrative" does. (10) you are given the exact animation specification of every motion scene (stages, rows, levels, code, footer, step anchors): check that counts match the narration, every slot is real text, each step is anchored to the words that cause it, nothing the narrator says is left out, and that watching it teaches the idea; judge only what the specification says is drawn, never call a scene 'only a footer' when it lists animation. (9) the video does not read as a slide deck: where the narration explains a process, a hand-off, a quantity, a comparison of numbers, a change over time, a share, a dependency or evidence, the scene is a motion scene (flow, bars, line, split, grid, counter, pipeline, generation, levels, code, ...) whose steps are anchored to the narrator's words; a hero/stack/row/compare scene over such narration is a fault, and text scenes should be the short pauses between motion scenes, not most of the video. Numbers in bars, split and line must be the narrator's, or the scene is tagged illustrative. (11) points (optional short bullets on motion scenes): each restates what the narrator says in a few words, adds no new fact, is not a copy of the sentence or of the footer, and is on only where the picture cannot show it; points on every scene, or more than three in one, are a fault. (8) every key name or acronym the narrator says (and what it stands for, when spelled out) is written on screen in the scene where it is said; a missing one is a fault.
 
 NARRATION:
 {narration}
@@ -935,12 +945,11 @@ def count_faults(resolved: dict, cues: list) -> list:
 
 
 TEXT_LAYOUTS = frozenset({"row", "steps", "timeline", "compare", "stack", "hero"})
-# What a genre must SHOW rather than list: at least half the narration time is motion, and text-only
-# scenes come in short runs. Unknown genres have no rule; a channel can override with
-# look["motion_min_share"] / ["text_run_max"] / ["text_run_seconds"] (0 turns a limit off) and pick its
-# genre with look["scene_genre"]. Videos under 90 seconds are exempt.
-MOTION_RULES = {"tech": {"min_share": 0.50, "text_run": 3, "text_seconds": 75.0},
-                "finance": {"min_share": 0.50, "text_run": 3, "text_seconds": 75.0}}
+# NO default limit (changed 2026-11-05 on branch explainer-narration-led): the narration decides how many scenes
+# are text and how many are drawn. A channel may still OPT IN to a limit with look["motion_min_share"] /
+# ["text_run_max"] / ["text_run_seconds"] (a value of 0 means no limit); the genre only picks the scene set.
+# An opt-in limit is not applied to videos under 90 seconds.
+MOTION_RULES = {"tech": {}, "finance": {}}
 MOTION_MIN_SECONDS = 90.0
 
 
@@ -988,8 +997,8 @@ def motion_measure(resolved: dict, cues: list) -> dict:
 
 
 def motion_faults(resolved: dict, cues: list, total_seconds: float, look: dict | None = None) -> list:
-    """The enforced motion mix: no long stretch of text-only scenes and a minimum share of mechanism /
-    diagram / evidence time. Each fault names the scene ids so the writer can change exactly those."""
+    """The opt-in motion mix (no default): a limit on text-only stretches and/or a minimum share of mechanism /
+    diagram / evidence time, only when the channel set one. Each fault names the scene ids so the writer can change exactly those."""
     rule = motion_rule(look)
     if not rule or total_seconds < MOTION_MIN_SECONDS:
         return []
@@ -1018,7 +1027,7 @@ def motion_summary(resolved: dict, cues: list, look: dict | None = None) -> str:
     runs = sorted(m["runs"], key=lambda r: -r[1])[:1]
     longest = f"; longest text-only stretch {len(runs[0][0])} scenes / {runs[0][1]:.0f} s" if runs else ""
     return (f"MEASURED MIX: {m['share']:.0%} of the narration time is a motion scene, "
-            f"the rest is text layouts{longest}.")
+            f"the rest is text layouts{longest}. Information only: the narration decides how many scenes are text.")
 
 
 _FAULT_SCENE = re.compile(r"^[Ss]cene (\S+?):")

@@ -176,10 +176,10 @@ class ExplainerOptions:
     scenes_per_video: str = ""      # few | normal | many ("" = normal): how many scenes the planner aims for
     scene_fade: str = ""            # none | short | long ("" = none): dip to the board colour between pen scenes
     diagram_style: str = ""         # balanced | icons | minimal ("" = balanced): how picture-heavy scenes are
-    scene_genre: str = ""           # tech | finance ("" = tech): which motion rule and scene set the planner follows
-    motion_min_share: str = ""      # percent of narration time that must show a mechanism/diagram ("" = genre rule, 0 = off)
-    text_run_max: str = ""          # most text-only scenes in a row ("" = genre rule, 0 = off)
-    text_run_seconds: str = ""      # longest stretch of text-only scenes in seconds ("" = genre rule, 0 = off)
+    scene_genre: str = ""           # tech | finance ("" = tech): which scene set the planner may use
+    motion_min_share: str = ""      # optional: percent of narration time that must show a mechanism/diagram ("" or 0 = no limit)
+    text_run_max: str = ""          # optional: most text-only scenes in a row ("" or 0 = no limit)
+    text_run_seconds: str = ""      # optional: longest stretch of text-only scenes in seconds ("" or 0 = no limit)
 
 
 @dataclass
