@@ -446,3 +446,9 @@ free for teams of up to three people; check its licence if that changes.
 Clips are cached separately in `out/remotion`, Stop works as for other scenes,
 and normal channels are unaffected. Remotion scenes render at 1920x1080 or at
 half size (960x540).
+
+### Lighter icons, no pen dot
+
+Icons are drawn with a lighter line by default (channel setting "icon weight": thin, light = default, normal = the older
+heavier line, bold). The small grey dot that followed the pen while it wrote is off. For lighter writing set "text weight" to
+thin (the font as designed); "normal" and "bold" thicken the letters like chalk.

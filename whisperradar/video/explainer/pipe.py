@@ -253,6 +253,10 @@ def _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, canvas_px):
         x, y, w, h = lo.box_px
         scale = min(w / asset.viewBox[0], h / asset.viewBox[1])
         strokes = _scale_strokes(asset.strokes, scale, x, y)
+        k = ICON_FACTOR.get(getattr(theme, "icon_weight", ""), ICON_FACTOR[""])
+        if k != 1.0:
+            for s_ in strokes:
+                s_.width = s_.width * k
 
     erase = float(st.erase_progress)
     draw_progress = float(st.progress) * (1.0 - erase)
@@ -302,7 +306,7 @@ def _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, canvas_px):
     if (spec.type == sc.STROKE_ASSET and spec.fill_after_draw
             and draw_progress >= 1.0):
         _fill_stroke_silhouette(draw, strokes, theme, alpha)
-    if st.drawing and tip and erase == 0.0 and spec.opacity >= 1.0:
+    if SHOW_PEN_NIB and st.drawing and tip and erase == 0.0 and spec.opacity >= 1.0:
         r = max(2, int(round(4 * lw_scale)))
         draw.ellipse([tip[0] - r, tip[1] - r, tip[0] + r, tip[1] + r],
                      fill=_with_alpha(theme.muted, alpha))
@@ -322,6 +326,11 @@ _WRITE_CACHE: dict = {}
 # how much of the old chalk thickening each text weight keeps, and the extra space
 # between letters (a fraction of the font size) for each spacing choice
 WEIGHT_FACTOR = {"": 0.0, "thin": 0.0, "normal": 0.5, "bold": 1.0}
+# icon line weight against the original pen width (1.0): the default is light, close to the thin
+# lines of the Remotion scenes; "normal" is the old, heavier icon
+# the small grey dot that followed the pen while it wrote; off (it read as a stray dot on screen)
+SHOW_PEN_NIB = False
+ICON_FACTOR = {"": 0.6, "light": 0.6, "thin": 0.4, "normal": 1.0, "bold": 1.3}
 TRACKING_EM = {"": 0.04, "normal": 0.04, "tight": 0.0, "wide": 0.09}
 
 
@@ -411,7 +420,7 @@ def _write_on(img, draw, spec, lo, st, theme, alpha, font_path):
     vis = ImageChops.multiply(mask, reveal).point(lambda v: v * alpha // 255)
     color = _stroke_color(Stroke(points=[(0, 0), (1, 0)]), spec, theme)
     img.paste(_hex_rgb(color), (0, 0), vis)
-    if st.drawing and tip and st.erase_progress == 0.0:
+    if SHOW_PEN_NIB and st.drawing and tip and st.erase_progress == 0.0:
         r = max(2, int(round(4 * max(1.0, W / 1920.0))))
         draw.ellipse([tip[0] - r, tip[1] - r, tip[0] + r, tip[1] + r],
                      fill=_with_alpha(theme.muted, alpha))

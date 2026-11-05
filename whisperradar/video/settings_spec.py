@@ -56,6 +56,7 @@ CHOICES = {
     "explainer.hand_font": ["strokes"] + _font_choices(),
     "explainer.text_weight": ["thin", "normal", "bold"],
     "explainer.letter_spacing": ["tight", "normal", "wide"],
+    "explainer.icon_weight": ["thin", "light", "normal", "bold"],
     "explainer.pen_speed": ["slow", "normal", "fast"],
     "explainer.scenes_per_video": ["few", "normal", "many"],
     "explainer.diagram_style": ["balanced", "icons", "minimal"],
@@ -102,6 +103,8 @@ HELP = {
                             "Blank = chalk white.",
     "explainer.text_weight": "How heavy the hand-written text looks: thin (the font as designed), normal "
                              "or bold (thickened like chalk). Blank = thin.",
+    "explainer.icon_weight": "Line weight of the drawn icons: thin, light (default), normal (the older, heavier "
+                             "line) or bold. Blank = light.",
     "explainer.letter_spacing": "Space between the letters of hand-written text: tight, normal or wide. "
                                 "Blank = normal.",
     "explainer.pen_speed": "How fast the pen draws: slow, normal or fast. Blank = normal. A scene with a lot "

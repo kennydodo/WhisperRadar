@@ -916,6 +916,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>icon weight
+                <select name="explainer_icon_weight">
+                  <option value="">inherit{% if xg.icon_weight %} (global: {{ xg.icon_weight }}){% else %} (light){% endif %}</option>
+                  {% for v in ['thin', 'light', 'normal', 'bold'] %}
+                  <option value="{{ v }}" {{ 'selected' if xv.get('icon_weight') == v else '' }}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>letter spacing
                 <select name="explainer_letter_spacing" class="xp-style" data-ch="{{ ch['id'] }}">
                   <option value="">inherit{% if xg.letter_spacing %} (global: {{ xg.letter_spacing }}){% else %} (normal){% endif %}</option>

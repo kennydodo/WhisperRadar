@@ -526,7 +526,8 @@ def parse_doc(data, project_folder: str = "", look=None):
             if key == "text_color":
                 theme.foreground = hexval
     for key, allowed in (("text_weight", ("thin", "normal", "bold")),
-                         ("letter_spacing", ("tight", "normal", "wide"))):
+                         ("letter_spacing", ("tight", "normal", "wide")),
+                         ("icon_weight", ("thin", "light", "normal", "bold"))):
         val = str(look.get(key) or "").strip().lower()
         if val and val not in allowed:
             errors.append(f"channel explainer {key.replace('_', ' ')} {val!r}: use {', '.join(allowed)}.")

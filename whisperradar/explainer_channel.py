@@ -19,7 +19,7 @@ FIELDS = (("channel_type", "channel_type"), ("format", "explainer.format"), ("mo
           ("heading_font", "explainer.heading_font"),
           ("body_font", "explainer.body_font"), ("heading_color", "explainer.heading_color"),
           ("text_color", "explainer.text_color"), ("background", "explainer.background"),
-          ("text_weight", "explainer.text_weight"), ("letter_spacing", "explainer.letter_spacing"),
+          ("text_weight", "explainer.text_weight"), ("letter_spacing", "explainer.letter_spacing"), ("icon_weight", "explainer.icon_weight"),
           ("pen_speed", "explainer.pen_speed"), ("scenes_per_video", "explainer.scenes_per_video"),
           ("diagram_style", "explainer.diagram_style"), ("scene_fade", "explainer.scene_fade"),
           ("scene_genre", "explainer.scene_genre"), ("motion_min_share", "explainer.motion_min_share"),

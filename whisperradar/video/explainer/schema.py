@@ -339,6 +339,7 @@ class ThemeSpec:
     text_color: str = ""                  # "" = chalk white (labels, points, footers)
     text_weight: str = ""                 # hand-written text: "" / thin, normal, bold
     letter_spacing: str = ""              # "" / normal, tight, wide
+    icon_weight: str = ""                 # icon line weight: "" / light, thin, normal, bold
     line_style: str = ""                  # "" = hand-drawn wobble, "straight" = clean graphic lines
     heading_size: int = 72
     body_size: int = 44
@@ -361,6 +362,7 @@ class ThemeSpec:
             **({"text_color": self.text_color} if self.text_color else {}),
             **({"text_weight": self.text_weight} if self.text_weight else {}),
             **({"letter_spacing": self.letter_spacing} if self.letter_spacing else {}),
+            **({"icon_weight": self.icon_weight} if self.icon_weight else {}),
             **({"line_style": self.line_style} if self.line_style else {})}
 
 
