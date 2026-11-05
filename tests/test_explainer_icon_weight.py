@@ -24,3 +24,22 @@ class IconWeightTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TextSizeTests(unittest.TestCase):
+    def test_text_size_smaller_shrinks_the_written_size(self):
+        import os
+        font = "/usr/share/fonts/truetype/crosextra/Carlito-Regular.ttf"
+        if not os.path.isfile(font):
+            self.skipTest("no test font")
+        box = (0, 0, 1200, 120)
+        a = pipe._fit_text(font, "Hello world", box, 0, 0.04, pipe.TEXT_SIZE["normal"])[1]
+        b = pipe._fit_text(font, "Hello world", box, 0, 0.04, pipe.TEXT_SIZE["small"])[1]
+        self.assertLess(b, a)
+
+    def test_system_fonts_offered_only_when_present(self):
+        from whisperradar.video import settings_spec
+        self.assertIn("calibril.ttf", settings_spec.SYSTEM_FONTS)
+        names = settings_spec._font_choices()
+        self.assertTrue(all(n in names or not __import__("os").path.isfile("C:/Windows/Fonts/" + n)
+                            for n in settings_spec.SYSTEM_FONTS))

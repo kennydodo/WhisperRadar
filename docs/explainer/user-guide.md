@@ -452,3 +452,10 @@ half size (960x540).
 Icons are drawn with a lighter line by default (channel setting "icon weight": thin, light = default, normal = the older
 heavier line, bold). The small grey dot that followed the pen while it wrote is off. For lighter writing set "text weight" to
 thin (the font as designed); "normal" and "bold" thicken the letters like chalk.
+
+### System fonts and text size
+
+Calibri Light (`calibril.ttf`), Calibri, Arial and Times New Roman (with bold files) are offered in the font pickers when
+they exist in `C:/Windows/Fonts` on the PC that runs the app; they are read from there, never copied into the repo. The font
+style **Calibri Light** sets all three fonts to Calibri Light. "text size" (normal / small / smaller) shrinks the written text
+inside its box (small = 85%, smaller = 72%); pair it with "text weight" = thin for the lightest look.

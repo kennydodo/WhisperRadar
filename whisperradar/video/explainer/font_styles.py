@@ -14,6 +14,8 @@ STYLES = {
                "title": "CaveatBrush-Regular.ttf"},
     "clean": {"hand": "Inter-Bold.ttf", "heading": "Inter-Bold.ttf", "body": "Inter-Regular.ttf",
               "title": ""},
+    "calibri-light": {"hand": "calibril.ttf", "heading": "calibril.ttf", "body": "calibril.ttf",
+                      "title": ""},
     "handwritten": {"hand": "Neucha-Regular.ttf", "heading": "Delius-Regular.ttf",
                     "body": "Delius-Regular.ttf", "title": ""},
 }
@@ -21,6 +23,7 @@ STYLES = {
 LABELS = {
     "video1": "Video 1 - clean sans, marker headlines (default)",
     "clean": "Clean - one sans everywhere",
+    "calibri-light": "Calibri Light - thin Windows sans everywhere (needs Calibri Light on this PC)",
     "handwritten": "Handwritten - hand fonts that write on",
 }
 

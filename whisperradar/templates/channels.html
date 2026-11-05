@@ -916,6 +916,14 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>text size
+                <select name="explainer_text_size">
+                  <option value="">inherit{% if xg.text_size %} (global: {{ xg.text_size }}){% else %} (normal){% endif %}</option>
+                  {% for v in ['normal', 'small', 'smaller'] %}
+                  <option value="{{ v }}" {{ 'selected' if xv.get('text_size') == v else '' }}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>icon weight
                 <select name="explainer_icon_weight">
                   <option value="">inherit{% if xg.icon_weight %} (global: {{ xg.icon_weight }}){% else %} (light){% endif %}</option>

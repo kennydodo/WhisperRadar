@@ -28,12 +28,22 @@ GROUP_ORDER = ["output", "timing", "motion", "transitions", "render", "sound", "
                "explainer", "scene_inference", "shotlist", "naming", ""]
 _PRESETS = ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium",
             "slow", "slower", "veryslow"]
+# Windows fonts offered in the font pickers when the file exists (Calibri Light = calibril.ttf)
+SYSTEM_FONTS = ["calibril.ttf", "calibri.ttf", "calibrib.ttf", "arial.ttf", "arialbd.ttf",
+                "times.ttf", "timesbd.ttf"]
+
+
 def _font_choices() -> list:
     """Hand fonts a channel can pick: every .ttf/.otf in the repo fonts/ folder
     (read when the app starts) plus the built-in pen letters."""
     folder = Path(__file__).resolve().parents[2] / "fonts"
     names = sorted(p.name for p in folder.glob("*")
                    if p.suffix.lower() in (".ttf", ".otf")) if folder.is_dir() else []
+    # Windows system fonts the renderer can already find by file name (never copied into the repo)
+    sysdir = Path("C:/Windows/Fonts")
+    for name in SYSTEM_FONTS:
+        if (sysdir / name).is_file() and name not in names:
+            names.append(name)
     return names
 
 
@@ -57,6 +67,7 @@ CHOICES = {
     "explainer.text_weight": ["thin", "normal", "bold"],
     "explainer.letter_spacing": ["tight", "normal", "wide"],
     "explainer.icon_weight": ["thin", "light", "normal", "bold"],
+    "explainer.text_size": ["normal", "small", "smaller"],
     "explainer.pen_speed": ["slow", "normal", "fast"],
     "explainer.scenes_per_video": ["few", "normal", "many"],
     "explainer.diagram_style": ["balanced", "icons", "minimal"],
@@ -103,6 +114,7 @@ HELP = {
                             "Blank = chalk white.",
     "explainer.text_weight": "How heavy the hand-written text looks: thin (the font as designed), normal "
                              "or bold (thickened like chalk). Blank = thin.",
+    "explainer.text_size": "Size of the hand-written text in its box: normal, small or smaller. Blank = normal.",
     "explainer.icon_weight": "Line weight of the drawn icons: thin, light (default), normal (the older, heavier "
                              "line) or bold. Blank = light.",
     "explainer.letter_spacing": "Space between the letters of hand-written text: tight, normal or wide. "
