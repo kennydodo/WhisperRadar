@@ -76,7 +76,7 @@ ICONS = (
 # ---- the scene vocabulary, per genre ------------------------------------------------------
 # Every genre gets the text layouts and the GENERAL motion layouts (any topic). A genre adds its
 # specialised motion layouts. The writer only ever sees the layouts of its genre.
-TEXT_SET = ("row", "steps", "timeline", "stack", "hero", "compare", "cards", "group", "chips", "callout")
+TEXT_SET = ("row", "steps", "timeline", "stack", "hero", "compare", "cards", "group", "chips", "callout", "chain", "ladder")
 GENERAL_SET = ("flow", "bars", "line", "split", "grid", "counter")
 GENRE_LAYOUTS = {
     "tech": TEXT_SET + GENERAL_SET + ("pipeline", "generation", "levels", "code",
@@ -107,6 +107,13 @@ FORMAT_EXAMPLES = [
    "items": [{"label": "Terminal-Bench", "at": "words"}, {"label": "OSWorld", "at": "words"}]}"""),
     ("callout", """  {"id": "quote", "start": "...", "layout": "callout", "title": "short", "tag": "real example",
    "items": [{"label": "the sentence as it appears", "note": "Tencent press release", "at": "words"}]}"""),
+    ("chain", """  {"id": "route", "start": "...", "layout": "chain", "title": "short",
+   "items": [{"label": "Lab tests", "icon": "flask-conical", "tag": "company's own", "independent": false, "at": "words"},
+             {"label": "Press release", "icon": "newspaper", "tag": "paid", "independent": false, "via": "numbers", "at": "words"},
+             {"label": "You", "icon": "user", "tag": "unchecked", "via": "headline", "at": "words"}]}"""),
+    ("ladder", """  {"id": "proof", "start": "...", "layout": "ladder", "title": "short", "here_label": "Hy4 today",
+   "items": [{"label": "Company's own table", "note": "a claim", "here": true, "at": "words"},
+             {"label": "Independent measurement", "note": "a result", "at": "words"}]}"""),
     ("bars", """  {"id": "speed", "start": "...", "layout": "bars", "title": "short", "unit": "s", "ratio_to": 1,
    "items": [{"label": "Method A", "value": 21, "at": "words", "color": "red"}, {"label": "Method B", "value": 1, "at": "words", "color": "green"}],
    "limit": {"label": "budget", "value": 10, "at": "words"}}"""),
@@ -188,6 +195,8 @@ RULE_LINES = [
     (None, "- group: a dashed container (\"caption\": what the container is) holding 2-5 things (\"items\" like row) - things that belong to one place or system (everything inside the lab, the parts of a company, a stack inside one machine)."),
     (None, "- chips: 2-12 short pills (\"items\": label up to ~22 characters) - the names the narrator lists (tools, benchmarks, models, terms)."),
     (None, "- callout: ONE \"items\" entry: \"label\" is the real text on screen (a quote, a sentence from a press release, a number with its context; up to ~160 characters), \"note\" says where it is from; \"tag\" (scene) defaults to \"real example\"."),
+    (None, "- chain: 2-5 steps showing how a claim, money or data travels, each with an icon, a label, a \"tag\" saying who stands behind it (\"Tencent's own\", \"independent\") with \"independent\": true (green) or false (red), and \"via\" (what moves into that step) - who ran a test, where a number came from, who repeated it."),
+    (None, "- ladder: 2-5 rungs of evidence, WEAKEST FIRST (\"label\" up to ~26 characters, optional \"note\"), drawn bottom to top; \"here\": true marks the rung the claim has reached (\"here_label\" says what, default \"we are here\") - a claim, a company table, an independent measurement, a replication."),
     (None, "MOTION LAYOUTS:"),
     ("flow", "- flow: 2-6 boxes in a row (\"nodes\": label up to 18 characters, 13 with 5-6 nodes; optional \"sub\" line and \"icon\"), each appearing on its words. \"sends\" (0-4): on its words a labelled token (what moves: \"request\", \"$100\", \"file\") travels from node \"from\" (default 1) to node \"to\" (default the last), lighting each box it passes; \"back\" (a label) makes it return (\"response\", \"receipt\", \"hit\"). Use it for requests and responses, payments, supply chains, data passing through steps, who asks whom."),
     ("bars", "- bars: 2-6 bars (\"items\": label up to 28 characters, \"value\", optional \"note\", \"icon\", \"color\"), each growing on its words with its value counting up; \"unit\" (s, GB, %, x) and \"prefix\" ($, EUR sign); \"ratio_to\": the number of the bar the others are compared to (shows x21 or 1/21); \"limit\": a dashed line (a budget, a memory size)."),
@@ -946,7 +955,7 @@ def count_faults(resolved: dict, cues: list) -> list:
     return faults
 
 
-TEXT_LAYOUTS = frozenset({"row", "steps", "timeline", "compare", "stack", "hero", "cards", "group", "chips", "callout"})
+TEXT_LAYOUTS = frozenset({"row", "steps", "timeline", "compare", "stack", "hero", "cards", "group", "chips", "callout", "chain", "ladder"})
 # What a genre must SHOW rather than list: at least half the narration time is motion, and text-only
 # scenes come in short runs. Unknown genres have no rule; a channel can override with
 # look["motion_min_share"] / ["text_run_max"] / ["text_run_seconds"] (0 turns a limit off) and pick its

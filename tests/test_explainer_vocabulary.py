@@ -48,6 +48,19 @@ class VocabularyTests(unittest.TestCase):
         self.assertTrue({"q_box", "q_tag", "q_lb0", "q_nt0"} <= ids(d))
         va.parse_doc(d, "", {})
 
+    def test_chain(self):
+        d = build({"id": "h", "layout": "chain", "items": [
+            {"label": "Lab", "icon": "flask-conical", "tag": "own", "independent": False},
+            {"label": "You", "icon": "user", "tag": "unchecked", "via": "headline"}]})
+        self.assertTrue({"h_ic0", "h_pill0", "h_tg1", "h_cn1", "h_vi1"} <= ids(d))
+        va.parse_doc(d, "", {})
+
+    def test_ladder_marks_where_we_are(self):
+        d = build({"id": "l", "layout": "ladder", "here_label": "today", "items": [
+            {"label": "Claim", "here": True}, {"label": "Independent", "note": "result"}]})
+        self.assertTrue({"l_rung0", "l_rung1", "l_here", "l_hl", "l_nt1"} <= ids(d))
+        va.parse_doc(d, "", {})
+
     def test_frame_and_pill_shapes(self):
         class S:
             id, kind, curve, dashed, side = "x", "frame", 0, False, ""
@@ -56,7 +69,7 @@ class VocabularyTests(unittest.TestCase):
         self.assertEqual(len(shapes.shape_strokes(S, (10, 10, 400, 100), None, 4)), 1)
 
     def test_writer_knows_the_layouts(self):
-        for lay in ("cards", "group", "chips", "callout"):
+        for lay in ("cards", "group", "chips", "callout", "chain", "ladder"):
             self.assertIn(lay, es.GENRE_LAYOUTS["tech"])
             self.assertIn(lay, es.GENRE_LAYOUTS["finance"])
             self.assertIn(lay, es.TEXT_LAYOUTS)

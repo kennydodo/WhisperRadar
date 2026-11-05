@@ -9,6 +9,14 @@
            up to ~160 characters), note (where it comes from), icon; scene tag (default
            "real example").
 
+  chain    how a claim travels: 2-5 steps with arrows, each with an icon, a label and a tag
+           saying who stands behind it. Item: label, icon, tag ("Tencent's own", "independent"),
+           independent (true = green tag, false = red tag, absent = grey), via (what travels
+           into this step, shown on the arrow), at.
+  ladder   evidence ladder: 2-5 rungs, weakest first (drawn bottom to top, each longer than the
+           last). Item: label (up to ~26 characters), note, here (true marks the rung the claim
+           has reached), at. Scene: here_label (default "we are here").
+
 Built from the same shape / handwriting primitives as every other layout.
 """
 from __future__ import annotations
@@ -161,5 +169,82 @@ def callout(R, s, sid, els, top):
     return els
 
 
-BUILDERS = {"cards": cards, "group": group, "chips": chips, "callout": callout}
+def chain(R, s, sid, els, top):
+    _need(s, sid, 2, 5, "steps")
+    items, n = s["items"], len(s["items"])
+    cw = (X1 - X0) / n
+    ih = min(0.22, cw * 0.55 / R.WN)
+    iw = ih * R.WN
+    LB_FONT, TG_FONT = 0.058, 0.043
+    lh_max = max(_wrap(it.get("label", ""), cw * 0.92, LB_FONT)[2] for it in items)
+    block = 0.05 + ih + 0.03 + lh_max + 0.03 + 0.085
+    bot = s["_bot"]
+    y = top + max(0.0, (bot - top - block) / 2) + 0.05
+    for k, it in enumerate(items):
+        cx = X0 + cw * (k + 0.5)
+        cue = R._item_cue(s, items, k)
+        col = R._color(it, k)
+        g = f"i{k}"
+        if it.get("icon"):
+            els.append(R._icon(f"{sid}_ic{k}", R._asset(it["icon"]), [cx - iw / 2, y, iw, ih], col, cue, g, sid))
+        lab, nl, lh = _wrap(it.get("label", ""), cw * 0.92, LB_FONT)
+        els.append(R._text(f"{sid}_lb{k}", lab, [cx - cw * 0.46, y + ih + 0.03, cw * 0.92, lh], "text", cue, g))
+        tag = str(it.get("tag") or "").strip()
+        if tag:
+            ind = it.get("independent")
+            tcol = "green" if ind is True else ("red" if ind is False else "grey")
+            tw = min(cw * 0.98, len(tag) * 0.6 * TG_FONT * 0.5625 + 0.045)
+            ty = y + ih + 0.03 + lh_max + 0.03
+            els.append(R._shape(f"{sid}_pill{k}", "pill", cue, tcol, g, dur=500, filled=True, box=[cx - tw / 2, ty, tw, 0.085]))
+            els.append(R._text(f"{sid}_tg{k}", tag, [cx - tw / 2 + 0.018, ty + 0.011, tw - 0.036, TG_FONT * 1.4], tcol, cue, g))
+        if k:
+            gx0 = cx - cw + iw / 2 + 0.012
+            gx1 = cx - iw / 2 - 0.012
+            ym = y + ih / 2
+            if gx1 - gx0 > 0.03:
+                els.append(R._shape(f"{sid}_cn{k}", "arrow", cue, "grey", g, dur=550, strokes=2,
+                                    points=[[gx0, ym], [gx1, ym]], curve=0.05))
+                via = str(it.get("via") or "").strip()
+                if via:
+                    vw = min(gx1 - gx0 + 0.04, 0.0215 * len(via) + 0.02)
+                    els.append(R._text(f"{sid}_vi{k}", via, [(gx0 + gx1) / 2 - vw / 2, ym - 0.11, vw, 0.06], "grey", cue, g))
+    return els
+
+
+def ladder(R, s, sid, els, top):
+    _need(s, sid, 2, 5, "rungs")
+    items, n = s["items"], len(s["items"])
+    bot = s["_bot"]
+    gap = 0.02
+    rh = min(0.14, (bot - top - 0.02) / n - gap)
+    block = n * rh + (n - 1) * gap
+    y_top = top + max(0.0, (bot - top - block) / 2)
+    x0 = 0.2
+    L_FONT = 0.052
+    for k, it in enumerate(items):                         # k = 0 weakest, drawn at the bottom
+        row = n - 1 - k
+        y = y_top + row * (rh + gap)
+        lab = str(it.get("label", ""))
+        w = max(0.26 + 0.3 * (k / max(1, n - 1)), len(lab) * 0.6 * L_FONT * 0.5625 + 0.05)
+        cue = R._item_cue(s, items, k)
+        here = bool(it.get("here"))
+        col = "orange" if here else R._color(it, k)
+        g = f"i{k}"
+        els.append(R._shape(f"{sid}_rung{k}", "card", cue, col, g, dur=700, filled=True, box=[x0, y, w, rh]))
+        els.append(R._text(f"{sid}_lb{k}", lab, [x0 + 0.02, y + (rh - L_FONT * 1.4) / 2, w - 0.04, L_FONT * 1.4],
+                           "text", cue, g))
+        if it.get("note"):
+            els.append(R._text(f"{sid}_nt{k}", str(it["note"]), [x0 + w + 0.02, y + (rh - L_FONT * 1.2) / 2, 0.95 - (x0 + w + 0.02), L_FONT * 1.2],
+                               "grey", cue, g))
+        if here:
+            els.append(R._shape(f"{sid}_here", "arrow", cue, "orange", g, dur=500, strokes=2,
+                                points=[[x0 - 0.015, y + rh / 2], [x0 - 0.075, y + rh / 2]] if False else
+                                [[0.075, y + rh / 2], [x0 - 0.012, y + rh / 2]], curve=0.0))
+            els.append(R._text(f"{sid}_hl", str(s.get("here_label") or "we are here"), [0.04, y + rh / 2 - 0.1, 0.16, 0.07],
+                               "orange", cue, g))
+    return els
+
+
+BUILDERS = {"cards": cards, "group": group, "chips": chips, "callout": callout,
+            "chain": chain, "ladder": ladder}
 LAYOUTS = tuple(BUILDERS)

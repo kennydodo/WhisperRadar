@@ -269,6 +269,8 @@ Static layouts for plans (the writer is told when to use each):
 - `group` - a dashed container (`caption`) holding 2-5 things, like a row inside a frame.
 - `chips` - 2-12 short pills for names the narrator lists.
 - `callout` - the real text on screen (a quote, a press-release sentence) with a `note` for its source and a `tag` (default "real example").
+- `chain` - how a claim travels: steps with a `tag` saying who stands behind each (`independent` true = green, false = red) and `via` on the arrows.
+- `ladder` - an evidence ladder, weakest rung first; `here: true` marks where the claim stands.
 Text in these layouts is sized the same across the scene; it gets smaller together when a scene is crowded, never one label alone. New shape kinds: `frame` (dashed rounded box) and `pill`.
 
 ### Footers (off by default) and headline size
