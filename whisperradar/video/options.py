@@ -183,6 +183,7 @@ class ExplainerOptions:
     scene_fade: str = ""            # none | short | long ("" = none): dip to the board colour between pen scenes
     diagram_style: str = ""         # balanced | icons | minimal ("" = balanced): how picture-heavy scenes are
     scene_genre: str = ""           # tech | finance ("" = tech): which scene set the planner may use
+    preset: str = ""                # a named bundle of the look settings (explainer_presets); resolved by WhisperRadar, never written to a production
     motion_min_share: str = ""      # optional: percent of narration time that must show a mechanism/diagram ("" or 0 = no limit)
     text_run_max: str = ""          # optional: most text-only scenes in a row ("" or 0 = no limit)
     text_run_seconds: str = ""      # optional: longest stretch of text-only scenes in seconds ("" or 0 = no limit)

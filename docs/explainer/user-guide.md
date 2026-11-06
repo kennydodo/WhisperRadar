@@ -22,6 +22,22 @@ are skipped. **Nothing is deleted** when you switch a channel's type: those valu
 again if you switch back. A channel that only has the older `visual_mode` is read as the matching type, so no
 migration is needed. More types can be added in `whisperradar/channel_types.py`.
 
+## 0b. Explainer presets (one dropdown for the whole look)
+
+Set an explainer channel up in one place: **My channels > Explainer > preset**. A preset is a named bundle of
+look settings (theme, video type, text size and weight, fonts, colours ...). Built in: *Chalkboard explainer*,
+*Whiteboard explainer*, *Coding lesson* (chalkboard, tech, small thin text), *Finance (dark, graphic)*.
+
+Order of precedence, lowest first: global Video options < the channel's preset < fields set on the channel.
+So you can pick "Coding lesson" and still change, say, the font on the same page. When a channel sets a field
+that differs from the preset, the form lists it and offers **use the preset as it is** (clears those fields on
+save). "Video type" is the old "scene genre" (tech, finance ...).
+
+Make your own preset on **/explainer/presets** (link on the channel form and on Video options): copy a preset,
+change values, name it, save. Deleting a preset in use sends those channels back to their own fields.
+The preset key is resolved when settings are computed; it is never written into a production's imgtovideo.json.
+Channels that already have their own saved fields keep overriding the preset until you tick the reset box.
+
 ## 0. Choosing a visual mode
 
 Per production/channel (Video options -> `visual_mode`):

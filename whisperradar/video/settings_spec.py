@@ -128,6 +128,7 @@ HELP = {
     "explainer.scene_fade": "A cross-fade where one scene gives way to the next: the outgoing picture stays "
                             "under the incoming one (never a dip to the bare board): none (a hard cut), short "
                             "(0.25 s) or long (0.5 s). Every scene keeps its start time. Blank = none.",
+    "explainer.preset": "A named bundle of look settings (My channels > Explainer, or Explainer presets). Fields set on the channel still win over the preset.",
     "explainer.scene_genre": "Which kind of explainer this is: it picks the scene set the planner may use: tech "
                              "(systems, AI, software) or finance (money, investing; no tech-only scenes). Blank = tech.",
     "explainer.motion_min_share": "Optional. Percent of the narration time that must be drawn as a motion scene (flow, "
@@ -340,9 +341,11 @@ def save_channel(conn, oc_id, values: dict) -> None:
 
 
 def effective(conn, own_channel_id) -> dict:
-    """channel overrides on top of the global ones."""
-    from .. import channel_types
+    """global values, then the channel's preset, then the channel's own explicit values.
+    The preset key itself is resolved here and never returned (it is not a production option)."""
+    from .. import channel_types, explainer_presets
     vals = load_global(conn)
+    channel = {}
     if own_channel_id not in (None, ""):
         channel = load_channel(conn, own_channel_id)
         # An explicit legacy channel mode is still a channel-level choice. Resolve
@@ -352,7 +355,11 @@ def effective(conn, own_channel_id) -> dict:
             channel["channel_type"] = channel_types.from_visual_mode(channel["visual_mode"]).key
             if channel_types.type_of(channel).formats and not channel.get("explainer.format"):
                 channel["explainer.format"] = channel_types.format_of(channel)
-        vals.update(channel)
+    preset = channel.get(explainer_presets.PRESET_PATH) or vals.get(explainer_presets.PRESET_PATH) or ""
+    if preset:
+        vals.update(explainer_presets.values_of(conn, preset))
+    vals.update(channel)
+    vals.pop(explainer_presets.PRESET_PATH, None)
     return channel_types.normalize(vals)
 
 
