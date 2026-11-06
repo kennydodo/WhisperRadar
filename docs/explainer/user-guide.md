@@ -472,7 +472,8 @@ They can be scenes on their own or the `diagram` of a code_lesson.
 panel; tests check that the plan code equals the snippet files and the output equals the run output.
 
 **Demo:** `docs/explainer/demo/rag-course-demo/` (snippets, `build_plan.py`, `narration.srt`, `plan.json`).
-Rebuild with `python docs/explainer/demo/rag-course-demo/build_plan.py`. Tests:
+Rebuild with `python docs/explainer/demo/rag-course-demo/build_plan.py`; render each scene to a clip with
+`python docs/explainer/demo/rag-course-demo/render_demo.py [--scale 0.5] [--only cosine]` (clips in the demo folder's git-ignored `out/`). Tests:
 `python -m unittest discover -s tests -p "test_explainer_code_lesson.py"`.
 
 ### Lighter icons, no pen dot
