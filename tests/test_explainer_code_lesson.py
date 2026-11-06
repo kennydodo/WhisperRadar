@@ -97,6 +97,24 @@ class CodeLessonCompileTests(unittest.TestCase):
             build(motion={"at": "words number 6"})
 
 
+class OtherLanguageTests(unittest.TestCase):
+    """Any file name works; the renderer colours by extension (py, js/ts/java/go..., sql, sh, json)."""
+
+    def test_non_python_files_compile_and_pass(self):
+        for name, lines in (("app.ts", ["// add", "const n: number = 1;", "console.log(n + 1);"]),
+                            ("q.sql", ["-- top rows", "SELECT name FROM users", "WHERE id > 3;"]),
+                            ("run.sh", ["# build", "npm ci && npm test"]),
+                            ("data.json", ["{", "  \"ok\": true", "}"])):
+            p = params(filename=name, lines=lines)
+            self.assertEqual(p["filename"], name)
+            self.assertEqual(rb.check_block({"component": "code_lesson", "params": p}, "x"), [], name)
+
+    def test_the_renderer_knows_every_extension_the_docs_name(self):
+        src = (ROOT / "tools/remotion/src/components/CodeLesson.jsx").read_text(encoding="utf-8")
+        for ext in ("py", "js", "ts", "java", "go", "rs", "sql", "sh", "json"):
+            self.assertRegex(src, rf"\b{ext}: '")
+
+
 class CodeLessonCheckTests(unittest.TestCase):
     def test_good_block_passes(self):
         self.assertEqual(rb.check_block(block(chips=[{"label": "TF-IDF", "start_ms": 0}],

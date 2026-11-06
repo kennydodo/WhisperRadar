@@ -462,6 +462,9 @@ lines the code is limited to 14 lines), and an optional `diagram` with `diagram_
 `beside` (shrunk to the right of the editor) or `before_then_beside`. The diagram can be any general layout or one of the
 LLM pictures below.
 
+**Languages:** the colouring follows the `filename` extension: `.py` (default), `.js/.ts/.tsx/.java/.go/.rs/.c/.cs/...`,
+`.sql`, `.sh`, `.json`, `.yaml`. Any other name is coloured as Python.
+
 **LLM pictures** (schematic, tagged illustrative by default): `tokens`, `embeddings`, `attention`, `next_token`.
 They can be scenes on their own or the `diagram` of a code_lesson.
 

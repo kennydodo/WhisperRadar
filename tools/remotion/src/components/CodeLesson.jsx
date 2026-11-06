@@ -22,31 +22,61 @@ const DIAGRAMS = {flow: Flow, pipeline: Pipeline, generation: Generation, levels
   line: Line, grid: Grid, split: Split, counter: Counter, tokens: Tokens, embeddings: Embeddings, attention: Attention,
   next_token: NextToken};
 
-const KEYWORDS = new Set(['def', 'return', 'for', 'in', 'if', 'elif', 'else', 'while', 'import', 'from', 'as', 'class', 'await',
-  'async', 'const', 'let', 'function', 'with', 'try', 'except', 'lambda', 'not', 'and', 'or', 'is', 'pass', 'yield', 'raise',
-  'True', 'False', 'None', 'self']);
+const PY_KW = ['def', 'return', 'for', 'in', 'if', 'elif', 'else', 'while', 'import', 'from', 'as', 'class', 'await', 'async',
+  'with', 'try', 'except', 'finally', 'lambda', 'not', 'and', 'or', 'is', 'pass', 'yield', 'raise', 'break', 'continue',
+  'True', 'False', 'None', 'self'];
+const C_KW = ['function', 'return', 'for', 'if', 'else', 'while', 'do', 'switch', 'case', 'break', 'continue', 'const', 'let', 'var',
+  'class', 'new', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'finally', 'throw', 'typeof', 'in', 'of',
+  'true', 'false', 'null', 'undefined', 'this', 'interface', 'type', 'extends', 'implements', 'public', 'private', 'static',
+  'void', 'int', 'string', 'bool', 'boolean', 'float', 'double', 'func', 'package', 'struct', 'fn', 'mut', 'use', 'pub', 'impl'];
+const SQL_KW = ['select', 'from', 'where', 'group', 'by', 'order', 'having', 'join', 'left', 'right', 'inner', 'outer', 'on', 'as',
+  'insert', 'into', 'values', 'update', 'set', 'delete', 'create', 'table', 'index', 'drop', 'alter', 'and', 'or', 'not', 'null',
+  'limit', 'distinct', 'union', 'in', 'is', 'like', 'between', 'case', 'when', 'then', 'else', 'end', 'primary', 'key', 'asc', 'desc'];
+const SH_KW = ['if', 'then', 'else', 'fi', 'for', 'do', 'done', 'while', 'in', 'case', 'esac', 'function', 'return', 'export'];
 const BUILTINS = new Set(['print', 'len', 'range', 'str', 'int', 'float', 'list', 'dict', 'set', 'sorted', 'sum', 'max', 'min',
-  'zip', 'enumerate', 'open', 'map', 'filter']);
-const TOKEN = /(#.*$|"[^"]*"|'[^']*'|@\w+|\b\d+(?:\.\d+)?\b|[A-Za-z_]\w*|\s+|.)/g;
+  'zip', 'enumerate', 'open', 'map', 'filter', 'console', 'log', 'require', 'JSON', 'Math', 'Promise', 'fetch']);
+const LANGS = {
+  py: {kw: new Set(PY_KW), com: '#', ci: false},
+  js: {kw: new Set(C_KW), com: '//', ci: false},
+  sql: {kw: new Set(SQL_KW), com: '--', ci: true},
+  sh: {kw: new Set(SH_KW), com: '#', ci: false},
+  json: {kw: new Set(['true', 'false', 'null']), com: null, ci: false},
+  txt: {kw: new Set(), com: null, ci: false},
+};
+const EXT = {py: 'py', js: 'js', jsx: 'js', ts: 'js', tsx: 'js', java: 'js', go: 'js', rs: 'js', c: 'js', cpp: 'js', cs: 'js', kt: 'js',
+  swift: 'js', php: 'js', sql: 'sql', sh: 'sh', bash: 'sh', zsh: 'sh', json: 'json', yaml: 'sh', yml: 'sh', toml: 'sh', txt: 'txt', md: 'txt'};
+// The language comes from the file name's extension (default Python, the earlier behaviour).
+export const langOf = (filename) => {
+  const m = /\.([A-Za-z0-9]+)$/.exec(filename || '');
+  return LANGS[(m && EXT[m[1].toLowerCase()]) || 'py'];
+};
+const TOKENS = new Map();
+const tokenRe = (lang) => {
+  if (!TOKENS.has(lang)) {
+    const c = lang.com ? lang.com.replace(/[/\-#]/g, '\\$&') + '.*$|' : '';
+    TOKENS.set(lang, new RegExp('(' + c + "\"[^\"]*\"|'[^']*'|`[^`]*`|@\\w+|\\b\\d+(?:\\.\\d+)?\\b|[A-Za-z_]\\w*|\\s+|.)", 'g'));
+  }
+  return TOKENS.get(lang);
+};
 
 // One line of code to coloured spans (keywords, builtins, calls, strings, numbers, comments).
-export const tintLine = (line, pal) => {
+export const tintLine = (line, pal, lang = LANGS.py) => {
   const col = {kw: pal.accent, str: pal.good, num: pal.accent2, com: pal.dim, fn: mix(pal.accent, '#ffffff', 0.35),
     bi: mix(pal.accent2, '#ffffff', 0.2), dec: pal.accent2};
   const out = [];
   let m, k = 0, prev = '';
-  TOKEN.lastIndex = 0;
+  const TOKEN = new RegExp(tokenRe(lang).source, 'g');
   while ((m = TOKEN.exec(line)) && m[0] !== '') {
     const s = m[0];
     let c = null, italic = false;
-    if (s[0] === '#') { c = col.com; italic = true; }
-    else if (s[0] === '"' || s[0] === "'") c = col.str;
-    else if (s[0] === '@') c = col.dec;
+    if (lang.com && s.startsWith(lang.com)) { c = col.com; italic = true; }
+    else if (s[0] === '"' || s[0] === "'" || s[0] === '`') c = col.str;
+    else if (s[0] === '@' && lang === LANGS.py) c = col.dec;
     else if (/^\d/.test(s)) c = col.num;
     else if (/^[A-Za-z_]/.test(s)) {
       const rest = line.slice(m.index + s.length);
-      if (KEYWORDS.has(s)) c = col.kw;
-      else if (prev === 'def' || prev === 'class' || /^\(/.test(rest)) c = BUILTINS.has(s) ? col.bi : col.fn;
+      if (lang.kw.has(lang.ci ? s.toLowerCase() : s)) c = col.kw;
+      else if (lang.kw.size && (prev === 'def' || prev === 'class' || prev === 'function' || /^\(/.test(rest))) c = BUILTINS.has(s) ? col.bi : col.fn;
     }
     out.push(c ? <span key={k++} style={{color: c, fontStyle: italic ? 'italic' : 'normal'}}>{s}</span> : <span key={k++}>{s}</span>);
     if (/\S/.test(s)) prev = s;
@@ -137,7 +167,7 @@ export const CodeLesson = ({title, sub, filename, lines, highlights, chips, outp
           return <div key={i} style={{position: 'relative', height: LH, display: 'flex', alignItems: 'center', fontFamily: pal.monoF,
             fontSize: FS, color: pal.text, whiteSpace: 'pre'}}>
             <span style={{width: 58, paddingRight: 18, textAlign: 'right', color: pal.dim, fontSize: FS - 5, opacity: 0.8}}>{i + 1}</span>
-            <span>{tintLine(ln.slice(0, show), pal)}</span>
+            <span>{tintLine(ln.slice(0, show), pal, langOf(filename))}</span>
             {here ? <span style={{width: Math.round(FS * 0.55), height: FS + 2, marginLeft: 1, background: pal.accent,
               opacity: Math.floor(ms / 400) % 2 === 0 || show < ln.length ? 0.95 : 0.2}} /> : null}
             {note ? <span style={{position: 'absolute', right: 20, fontFamily: pal.sansF, fontSize: FS - 3, color: pal.accent2, opacity: np,
