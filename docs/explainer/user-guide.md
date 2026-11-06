@@ -450,6 +450,28 @@ Clips are cached separately in `out/remotion`, Stop works as for other scenes,
 and normal channels are unaffected. Remotion scenes render at 1920x1080 or at
 half size (960x540).
 
+### Coding lessons and "how LLMs work" pictures (Remotion)
+
+For teaching and coding channels (tech genre). All of these are Remotion layouts.
+
+**`code_lesson`** - an editor card (file name bar, line numbers, syntax colours) where real code is typed on the
+narrator's words. Fields: `file`, `code` (real, runnable text; at most 19 lines, 88 chars wide, or 60 when a side
+rail/diagram narrows the card), `chips` (concept labels on the left), `highlights` (`line`, `at`, optional short
+`note`; a note shows only if it fits beside the line), `output` (stdout shown in a panel under the card; with 3 output
+lines the code is limited to 14 lines), and an optional `diagram` with `diagram_place`: `before` (full screen first),
+`beside` (shrunk to the right of the editor) or `before_then_beside`. The diagram can be any general layout or one of the
+LLM pictures below.
+
+**LLM pictures** (schematic, tagged illustrative by default): `tokens`, `embeddings`, `attention`, `next_token`.
+They can be scenes on their own or the `diagram` of a code_lesson.
+
+**Real-code rule:** code must be real. The demo builder runs each snippet and puts the actual stdout in the output
+panel; tests check that the plan code equals the snippet files and the output equals the run output.
+
+**Demo:** `docs/explainer/demo/rag-course-demo/` (snippets, `build_plan.py`, `narration.srt`, `plan.json`).
+Rebuild with `python docs/explainer/demo/rag-course-demo/build_plan.py`. Tests:
+`python -m unittest discover -s tests -p "test_explainer_code_lesson.py"`.
+
 ### Lighter icons, no pen dot
 
 Icons are drawn with a lighter line by default (channel setting "icon weight": thin, light = default, normal = the older

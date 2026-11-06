@@ -5,6 +5,14 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## DONE (2026-11-06) - coding-lesson explainer layout (branch explainer-coding-session)
+
+New Remotion layout `code_lesson` (typed real code, chips, highlights/notes, output panel, diagram before/beside/before_then_beside)
+and schematic pictures `tokens`, `embeddings`, `attention`, `next_token`. Python: `recipes.py` (`_code_lesson_params`, `_llm_params`),
+`remotion_backend.py` (validators mirror the renderer geometry), `explainer_scenes.py` (tech genre prompt/examples). Tests:
+`tests/test_explainer_code_lesson.py`. Demo: `docs/explainer/demo/rag-course-demo/`. Docs: user-guide "Coding lessons".
+Not yet verified: planner with a live LLM, full-video render on Windows fonts.
+
 ## DONE (2026-10-06) - gallery recovery after the account-throttle pause
 
 When Flow throttles the ACCOUNT ("We noticed some unusual activity") the images
