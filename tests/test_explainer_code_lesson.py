@@ -180,5 +180,38 @@ class LlmPictureTests(unittest.TestCase):
         self.assertGreaterEqual(p["start_ms"], recipes.CODE_LESSON_DIAGRAM_MIN_MS)
 
 
+class PlannerKnowsTheLayoutsTests(unittest.TestCase):
+    NEW = ("code_lesson", "tokens", "embeddings", "attention", "next_token")
+
+    def test_tech_writer_is_told_about_them_and_finance_is_not(self):
+        for lay in self.NEW:
+            self.assertIn(lay, es.GENRE_LAYOUTS["tech"])
+            self.assertNotIn(lay, es.GENRE_LAYOUTS["finance"])
+            self.assertIn(lay, es.rules_for("tech"))
+            self.assertIn(f'"layout": "{lay}"', es.format_text("tech"))
+            self.assertNotIn(f'"layout": "{lay}"', es.format_text("finance"))
+
+    def test_the_examples_the_writer_sees_compile(self):
+        import json
+        for lay in self.NEW:
+            text = dict(es.FORMAT_EXAMPLES)[lay]
+            n = [1]
+
+            def anchors(x):
+                if isinstance(x, dict):
+                    return {k: ("words number %d" % (min(n.__setitem__(0, n[0] + 1) or n[0], 5)) if k == "at" and v == "words" else anchors(v))
+                            for k, v in x.items()}
+                if isinstance(x, list):
+                    return [anchors(v) for v in x]
+                return x
+            scene = anchors(json.loads(text))
+            scene["start"] = "words number 1"
+            try:
+                out = recipes.build({"scenes": [scene]}, cues())["scenes"][0]["remotion"]
+            except Exception as exc:                                  # show which example broke
+                self.fail(f"{lay}: {exc}")
+            self.assertEqual(out["component"], lay)
+
+
 if __name__ == "__main__":
     unittest.main()
