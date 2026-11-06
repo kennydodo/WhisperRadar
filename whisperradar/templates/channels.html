@@ -808,26 +808,6 @@
               explainer.json can still override one video.
             </div>
             <div class="inline">
-              <label title="One choice sets the look and the scene set. Fields below still override it.">preset
-                <select name="explainer_preset" class="xp-preset" data-info="xp-presetinfo-{{ ch['id'] }}">
-                  <option value="">none - use the fields below</option>
-                  {% for p in explainer_presets %}
-                  <option value="{{ p.key }}" data-summary="{{ p.summary }}" data-help="{{ p.help }}" {{ 'selected' if xv.get('preset') == p.key else '' }}>{{ p.label }}{% if not p.builtin %} (mine){% endif %}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              <a href="/explainer/presets" style="align-self:end">Explainer presets</a>
-            </div>
-            <div class="muted" id="xp-presetinfo-{{ ch['id'] }}" style="font-size:12px; margin:4px 0 8px"></div>
-            {% set ov = explainer_overrides.get(ch['id'], []) %}
-            {% if ov %}
-            <div class="muted" style="font-size:12px; margin:0 0 8px">
-              These fields on this channel override the preset:
-              {% for o in ov %}{{ o.label }} {{ o.own }} (preset: {{ o.preset }}){% if not loop.last %}, {% endif %}{% endfor %}.
-              <label style="display:inline"><input type="checkbox" name="explainer_reset_custom" value="1"> use the preset as it is (clears these when saved)</label>
-            </div>
-            {% endif %}
-            <div class="inline">
               <label>channel type
                 <select name="explainer_channel_type" id="xp-type-{{ ch['id'] }}" class="xp-type"
                         data-global="{{ xg.type }}">
@@ -848,6 +828,26 @@
             </div>
             <div class="muted" style="font-size:12px">Changing the type hides what it does not use; nothing is deleted, so switching back finds your visual style, bible and references as they were.</div>
             <div id="xp-box-{{ ch['id'] }}" data-needs="scenes">
+            <div class="inline">
+              <label title="One choice sets the look and the scene set. Fields below still override it.">preset
+                <select name="explainer_preset" class="xp-preset" data-info="xp-presetinfo-{{ ch['id'] }}">
+                  <option value="">none - use the fields below</option>
+                  {% for p in explainer_presets %}
+                  <option value="{{ p.key }}" data-summary="{{ p.summary }}" data-help="{{ p.help }}" {{ 'selected' if xv.get('preset') == p.key else '' }}>{{ p.label }}{% if not p.builtin %} (mine){% endif %}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <a href="/explainer/presets" style="align-self:end">Explainer presets</a>
+            </div>
+            <div class="muted" id="xp-presetinfo-{{ ch['id'] }}" style="font-size:12px; margin:4px 0 8px"></div>
+            {% set ov = explainer_overrides.get(ch['id'], []) %}
+            {% if ov %}
+            <div class="muted" style="font-size:12px; margin:0 0 8px">
+              These fields on this channel override the preset:
+              {% for o in ov %}{{ o.label }} {{ o.own }} (preset: {{ o.preset }}){% if not loop.last %}, {% endif %}{% endfor %}.
+              <label style="display:inline"><input type="checkbox" name="explainer_reset_custom" value="1"> use the preset as it is (clears these when saved)</label>
+            </div>
+            {% endif %}
             <div class="inline">
               <label>theme
                 <select name="explainer_theme">
