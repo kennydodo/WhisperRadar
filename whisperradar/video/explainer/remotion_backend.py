@@ -429,7 +429,7 @@ def _check_split(p: dict, where: str) -> list:
 # code_lesson geometry (px), kept in step with tools/remotion/src/components/CodeLesson.jsx
 CL_BOTTOM = 935                       # nothing may run below this (the footer sits at 950)
 CL_PLACES = ("before", "beside", "before_then_beside")
-CL_DIAGRAMS = ("flow", "bars", "line", "grid", "split")
+CL_DIAGRAMS = ("flow", "bars", "line", "grid", "split", "tokens", "embeddings", "attention", "next_token")
 
 
 def _check_code_lesson(p: dict, where: str) -> list:
@@ -485,9 +485,97 @@ def _check_code_lesson(p: dict, where: str) -> list:
     return errs
 
 
+# ---- how an LLM works: schematic pictures --------------------------------------------
+
+def _frac(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1
+
+
+def _check_tokens(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    if not _text(p.get("text"), 90):
+        errs.append(f"{where}: text must be 90 characters at most.")
+    tk = p.get("tokens")
+    if not isinstance(tk, list) or not 2 <= len(tk) <= 12:
+        return errs + [f"{where}: tokens must be a list of 2-12 tokens."]
+    for k, t in enumerate(tk, 1):
+        if (not isinstance(t, dict) or not isinstance(t.get("text"), str) or not t["text"].strip() or len(t["text"]) > 14
+                or not (t.get("id") is None or (isinstance(t.get("id"), int) and not isinstance(t.get("id"), bool)))
+                or not _ms(t.get("at_ms"))):
+            errs.append(f"{where}: token {k} needs text (14 characters at most) and a whole-number id.")
+            break
+    return errs
+
+
+def _check_embeddings(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    dots = p.get("dots")
+    if not isinstance(dots, list) or not 4 <= len(dots) <= 14:
+        return errs + [f"{where}: dots must be a list of 4-14 points."]
+    for k, d in enumerate(dots, 1):
+        if (not isinstance(d, dict) or not _text(d.get("label"), 24) or not _frac(d.get("x")) or not _frac(d.get("y"))
+                or not _ms(d.get("at_ms"))):
+            errs.append(f"{where}: dot {k} needs a label (24 characters) and x, y between 0 and 1.")
+            break
+    q = p.get("query")
+    if q is not None and (not isinstance(q, dict) or not _text(q.get("label"), 40) or not _frac(q.get("x"))
+                          or not _frac(q.get("y")) or not _ms(q.get("at_ms"))):
+        errs.append(f"{where}: query needs a label (40 characters) and x, y between 0 and 1.")
+    nr = p.get("nearest")
+    if nr is not None:
+        if q is None:
+            errs.append(f"{where}: nearest needs a query.")
+        elif (not isinstance(nr, dict) or not isinstance(nr.get("count"), int) or not 1 <= nr["count"] <= 3
+              or not _ms(nr.get("at_ms"))):
+            errs.append(f"{where}: nearest needs count 1-3.")
+    return errs
+
+
+def _check_attention(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    w = p.get("words")
+    if not isinstance(w, list) or not 4 <= len(w) <= 12 or not all(isinstance(x, str) and 0 < len(x) <= 14 for x in w):
+        return errs + [f"{where}: words must be 4-12 words of 14 characters at most."]
+    f = p.get("focus")
+    if not isinstance(f, int) or isinstance(f, bool) or not 0 <= f < len(w):
+        errs.append(f"{where}: focus must be the number of one of the words.")
+    lk = p.get("links")
+    if not isinstance(lk, list) or not 1 <= len(lk) <= 4:
+        return errs + [f"{where}: links must be 1-4 links from the focus word."]
+    for k, x in enumerate(lk, 1):
+        if (not isinstance(x, dict) or not isinstance(x.get("to"), int) or isinstance(x.get("to"), bool)
+                or not 0 <= x["to"] < len(w) or x["to"] == f or not _num_ok(x.get("weight"))
+                or not 0 < x["weight"] <= 1 or not _ms(x.get("at_ms"))):
+            errs.append(f"{where}: link {k} needs a target word other than the focus and a weight above 0, up to 1.")
+            break
+    return errs
+
+
+def _check_next_token(p: dict, where: str) -> list:
+    errs = _common_text(p, where)
+    if not _text(p.get("lead"), 80):
+        errs.append(f"{where}: lead (the text so far) must be 80 characters at most.")
+    op = p.get("options")
+    if not isinstance(op, list) or not 2 <= len(op) <= 6:
+        return errs + [f"{where}: options must be a list of 2-6 candidates."]
+    for k, o in enumerate(op, 1):
+        if (not isinstance(o, dict) or not _text(o.get("word"), 14) or not _num_ok(o.get("p")) or not 0 < o["p"] <= 1
+                or not _ms(o.get("at_ms"))):
+            errs.append(f"{where}: option {k} needs a word (14 characters) and a chance above 0, up to 1.")
+            return errs
+    if sum(o["p"] for o in op) > 1.0001:
+        errs.append(f"{where}: the chances add up to {sum(o['p'] for o in op):.2f}, more than 1.")
+    pk = p.get("pick")
+    if pk is not None and (not isinstance(pk, dict) or not isinstance(pk.get("option"), int)
+                           or not 1 <= pk["option"] <= len(op) or not _ms(pk.get("at_ms"))):
+        errs.append(f"{where}: pick needs the number of one of the options.")
+    return errs
+
+
 COMPONENTS = {"fit_chart": _check_fit_chart, "counter": _check_counter, "screenshot": _check_screenshot,
               "pipeline": _check_pipeline, "generation": _check_generation, "code": _check_code,
-              "code_lesson": _check_code_lesson,
+              "code_lesson": _check_code_lesson, "tokens": _check_tokens, "embeddings": _check_embeddings,
+              "attention": _check_attention, "next_token": _check_next_token,
               "levels": _check_levels, "bars": _check_bars, "flow": _check_flow, "line": _check_line,
               "grid": _check_grid, "split": _check_split}
 

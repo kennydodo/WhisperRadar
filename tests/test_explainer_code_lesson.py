@@ -124,5 +124,61 @@ class CodeLessonCheckTests(unittest.TestCase):
             self.assertTrue(rb.check_block(bad, "S"), bad)
 
 
+def llm(**kw):
+    """Compile one LLM-picture scene; return its remotion params."""
+    s = {"id": "pic", "start": "words number 1", "motion": {"at": "words number 1"}}
+    s.update(kw)
+    return recipes.build({"scenes": [s]}, cues())["scenes"][0]["remotion"]["params"]
+
+
+class LlmPictureTests(unittest.TestCase):
+    def test_tokens_split_on_the_words(self):
+        p = llm(layout="tokens", text="RAG lets a model look things up",
+                tokens=[{"text": "RAG", "id": 49, "at": "words number 1"}, {"text": " lets", "id": 8128, "at": "words number 3"}])
+        self.assertEqual([t["at_ms"] for t in p["tokens"]], [0, 10000])
+        self.assertTrue(p["illustrative"])                       # schematic unless the scene says otherwise
+        self.assertEqual(rb.check_block({"component": "tokens", "params": p}, "S"), [])
+
+    def test_embeddings_query_and_nearest(self):
+        dots = [{"label": f"d{i}", "x": 0.1 * i, "y": 0.5} for i in range(1, 6)]
+        p = llm(layout="embeddings", dots=dots, query={"label": "q", "x": 0.3, "y": 0.6, "at": "words number 2"},
+                nearest={"count": 2, "at": "words number 3"})
+        self.assertEqual(p["query"]["at_ms"], 5000)
+        self.assertEqual(p["nearest"], {"count": 2, "at_ms": 10000})
+        self.assertEqual(rb.check_block({"component": "embeddings", "params": p}, "S"), [])
+
+    def test_attention_is_one_based_in_the_plan(self):
+        p = llm(layout="attention", words=["The", "animal", "was", "tired", "because", "it"], focus=6,
+                links=[{"to": 2, "weight": 0.6, "at": "words number 2"}])
+        self.assertEqual(p["focus"], 5)
+        self.assertEqual(p["links"][0]["to"], 1)
+        self.assertEqual(rb.check_block({"component": "attention", "params": p}, "S"), [])
+
+    def test_next_token_pick(self):
+        p = llm(layout="next_token", lead="The capital of France is",
+                options=[{"word": "Paris", "p": 0.86, "at": "words number 1"}, {"word": "Lyon", "p": 0.06}],
+                pick={"option": 1, "at": "words number 3"})
+        self.assertEqual(p["pick"], {"option": 1, "at_ms": 10000})
+        self.assertEqual(rb.check_block({"component": "next_token", "params": p}, "S"), [])
+
+    def test_bad_pictures_are_rejected(self):
+        bad = [
+            {"component": "tokens", "params": {"text": "x", "tokens": [{"text": "a", "id": 1, "at_ms": 0}]}},
+            {"component": "embeddings", "params": {"dots": [{"label": "a", "x": 2, "y": 0, "at_ms": 0}] * 4}},
+            {"component": "attention", "params": {"words": list("abcd"), "focus": 9, "links": [{"to": 1, "weight": 0.5, "at_ms": 0}]}},
+            {"component": "attention", "params": {"words": list("abcd"), "focus": 1, "links": [{"to": 1, "weight": 0.5, "at_ms": 0}]}},
+            {"component": "next_token", "params": {"lead": "x", "options": [
+                {"word": "a", "p": 0.7, "at_ms": 0}, {"word": "b", "p": 0.6, "at_ms": 0}]}},
+        ]
+        for b in bad:
+            self.assertTrue(rb.check_block(b, "S"), b)
+
+    def test_a_picture_can_be_the_diagram_of_a_code_scene(self):
+        p = params(motion={"at": "words number 1"}, diagram="next_token", lead="The capital of France is",
+                   options=[{"word": "Paris", "p": 0.86, "at": "words number 1"}, {"word": "Lyon", "p": 0.06}])
+        self.assertEqual(p["diagram"]["component"], "next_token")
+        self.assertGreaterEqual(p["start_ms"], recipes.CODE_LESSON_DIAGRAM_MIN_MS)
+
+
 if __name__ == "__main__":
     unittest.main()

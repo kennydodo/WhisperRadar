@@ -9,13 +9,18 @@ import {Line} from './Line.jsx';
 import {Grid} from './Grid.jsx';
 import {Split} from './Split.jsx';
 import {Counter} from './Counter.jsx';
+import {Tokens} from './Tokens.jsx';
+import {Embeddings} from './Embeddings.jsx';
+import {Attention} from './Attention.jsx';
+import {NextToken} from './NextToken.jsx';
 
 // A teaching-channel code scene: the concept diagram first (full screen), then a small-type editor
 // that is typed out on the narrator's words, with an optional output panel and concept chips.
 // Layout of the diagram: "before" (full screen, then gone), "beside" (half size next to the editor)
 // or "before_then_beside" (full screen, then it shrinks to the right while the editor opens).
 const DIAGRAMS = {flow: Flow, pipeline: Pipeline, generation: Generation, levels: Levels, bars: Bars,
-  line: Line, grid: Grid, split: Split, counter: Counter};
+  line: Line, grid: Grid, split: Split, counter: Counter, tokens: Tokens, embeddings: Embeddings, attention: Attention,
+  next_token: NextToken};
 
 const KEYWORDS = new Set(['def', 'return', 'for', 'in', 'if', 'elif', 'else', 'while', 'import', 'from', 'as', 'class', 'await',
   'async', 'const', 'let', 'function', 'with', 'try', 'except', 'lambda', 'not', 'and', 'or', 'is', 'pass', 'yield', 'raise',

@@ -7,6 +7,10 @@ import {Pipeline} from './components/Pipeline.jsx';
 import {Generation} from './components/Generation.jsx';
 import {CodePanel} from './components/CodePanel.jsx';
 import {CodeLesson} from './components/CodeLesson.jsx';
+import {Tokens} from './components/Tokens.jsx';
+import {Embeddings} from './components/Embeddings.jsx';
+import {Attention} from './components/Attention.jsx';
+import {NextToken} from './components/NextToken.jsx';
 import {Levels} from './components/Levels.jsx';
 import {Bars} from './components/Bars.jsx';
 import {Flow} from './components/Flow.jsx';
@@ -18,7 +22,7 @@ import {Backdrop, PointsColumn, usePal} from './motion.jsx';
 // Allowlisted components. The Python side validates names and parameters
 // before anything reaches here; unknown names render nothing.
 const REGISTRY = {fit_chart: FitChart, screenshot: ScreenshotZoom};
-const MOTION = {pipeline: Pipeline, generation: Generation, code: CodePanel, code_lesson: CodeLesson, levels: Levels,
+const MOTION = {pipeline: Pipeline, generation: Generation, code: CodePanel, code_lesson: CodeLesson, tokens: Tokens, embeddings: Embeddings, attention: Attention, next_token: NextToken, levels: Levels,
   bars: Bars, flow: Flow, line: Line, grid: Grid, split: Split, counter: Counter};
 
 export const Scene = ({component, params, theme, fade}) => {

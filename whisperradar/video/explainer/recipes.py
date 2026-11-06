@@ -616,7 +616,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
             s["points"] = [dict(x) if isinstance(x, dict) else {"text": str(x)} for x in s["points"]]
             for k, x in enumerate(s["points"]):
                 anchor(x, where=f"point {k + 1}")
-        for key in ("counter", "zoom", "motion", "output"):
+        for key in ("counter", "zoom", "motion", "output", "query", "nearest", "pick"):
             if isinstance(s.get(key), dict):
                 s[key] = dict(s[key])
                 anchor(s[key], where=key)
@@ -627,7 +627,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
         if isinstance(s.get("limit"), dict):
             s["limit"] = dict(s["limit"])
             anchor(s["limit"], where="limit")
-        for key in ("stages", "highlights", "levels", "nodes", "sends", "steps", "marks", "series", "chips"):
+        for key in ("stages", "highlights", "levels", "nodes", "sends", "steps", "marks", "series", "chips", "tokens", "dots", "links", "options"):
             if isinstance(s.get(key), list):
                 s[key] = [dict(x) if isinstance(x, dict) else x for x in s[key]]
                 for k, x in enumerate(s[key]):
@@ -669,7 +669,10 @@ def resolve_anchors(plan: dict, cues) -> dict:
 
 # General motion layouts work for any topic (tech, finance, ...); the others are specialised.
 GENERAL_LAYOUTS = ("bars", "flow", "line", "grid", "split")
-REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code", "code_lesson", "levels") + GENERAL_LAYOUTS
+# How an AI/LLM works: schematic pictures of tokens, embeddings, attention and next-token choice
+LLM_LAYOUTS = ("tokens", "embeddings", "attention", "next_token")
+REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code", "code_lesson", "levels") \
+    + GENERAL_LAYOUTS + LLM_LAYOUTS
 FIT_CHART_MS = 1900          # a bar finishes growing, and its labels appear, within this
 
 
@@ -831,10 +834,11 @@ def _code_lesson_params(raw: dict, sid: str, cr, cue_ms: dict, start: int, dur: 
     place = raw.get("diagram_place") or "before_then_beside"
     diagram = None
     if dname:
-        if dname not in GENERAL_LAYOUTS:
-            raise ExplainerError([f"Scene {sid}: diagram must be one of {', '.join(GENERAL_LAYOUTS)}."])
-        dparams = _general_params({k: v for k, v in raw.items() if k not in ("motion", "footer", "title", "sub", "points")},
-                                  sid, dname, cr, cue_ms, start, dur)
+        if dname not in GENERAL_LAYOUTS + LLM_LAYOUTS:
+            raise ExplainerError([f"Scene {sid}: diagram must be one of {', '.join(GENERAL_LAYOUTS + LLM_LAYOUTS)}."])
+        draw = {k: v for k, v in raw.items() if k not in ("motion", "footer", "title", "sub", "points")}
+        dparams = (_llm_params(draw, sid, dname, cr, cue_ms, start, dur) if dname in LLM_LAYOUTS
+                   else _general_params(draw, sid, dname, cr, cue_ms, start, dur))
         diagram = {"place": place, "component": dname, "params": dparams}
         params["diagram"] = diagram
 
@@ -893,6 +897,73 @@ def _all_at_ms(node):
     elif isinstance(node, list):
         for v in node:
             yield from _all_at_ms(v)
+
+
+def _llm_params(raw: dict, sid: str, layout: str, cr, cue_ms: dict, start: int, dur: int) -> dict:
+    """tokens / embeddings / attention / next_token -> component params with scene-relative ms.
+    Same rules as the general layouts: narration anchors become at_ms, unanchored steps are spaced
+    evenly, an anchor said too late for its animation is moved earlier (never past the scene).
+    The pictures are schematic: "illustrative" is on unless the scene says false."""
+    def at_of(spec, default):
+        cue = spec.get("cue") if isinstance(spec, dict) else None
+        if cue is None:
+            return default
+        if cue not in cue_ms or not cr[0] <= cue <= cr[1]:
+            raise ExplainerError([f"Scene {sid}: \"{spec.get('at', '')}\" is anchored outside the scene."])
+        a, b = cue_ms[cue]
+        frac = spec.get("cue_frac") if isinstance(spec.get("cue_frac"), (int, float)) else 0.0
+        return max(int(a + max(0.0, min(0.95, frac)) * (b - a) - start), 0)
+
+    m = raw.get("motion") if isinstance(raw.get("motion"), dict) else {}
+    st = max(at_of(m, 400), 400)
+    latest = max(st, dur - TAIL_MS - 1500)
+
+    def seq(items, gap, as_dict):
+        out = []
+        for k, x in enumerate(items or []):
+            x = dict(x) if isinstance(x, dict) else as_dict(x)
+            x["at_ms"] = int(min(at_of(x, st + k * gap), latest))
+            x.pop("at", None); x.pop("cue", None); x.pop("cue_frac", None)
+            out.append(x)
+        return out
+
+    params = {k: v for k, v in raw.items() if k in ("title", "sub")}
+    params["illustrative"] = raw.get("illustrative") is not False
+    if layout == "tokens":
+        params["text"] = str(raw.get("text") or "")
+        params["tokens"] = seq(raw.get("tokens"), 500, lambda t: {"text": str(t)})
+    elif layout == "embeddings":
+        params["dots"] = seq(raw.get("dots"), 250, lambda t: {"label": str(t)})
+        q = raw.get("query")
+        if isinstance(q, dict):
+            q = dict(q)
+            q["at_ms"] = int(min(at_of(q, st + len(params["dots"]) * 250 + 600), latest))
+            params["query"] = {k: v for k, v in q.items() if k not in ("at", "cue", "cue_frac")}
+            nr = raw.get("nearest")
+            if isinstance(nr, dict):
+                params["nearest"] = {"count": nr.get("count", 2),
+                                     "at_ms": int(min(at_of(nr, q["at_ms"] + 1300), latest))}
+    elif layout == "attention":
+        words = [str(w) for w in (raw.get("words") or [])]
+        params["words"] = words
+        params["focus"] = int(raw.get("focus") or 1) - 1                # 1-based in the plan
+        links = seq(raw.get("links"), 900, lambda t: {})
+        for x in links:
+            if isinstance(x.get("to"), int):
+                x["to"] = x["to"] - 1
+        params["links"] = links
+    elif layout == "next_token":
+        params["lead"] = str(raw.get("lead") or "")
+        params["options"] = seq(raw.get("options"), 600, lambda t: {"word": str(t)})
+        pk = raw.get("pick")
+        if isinstance(pk, dict):
+            last = max([o["at_ms"] for o in params["options"]] or [st])
+            params["pick"] = {"option": pk.get("option"), "at_ms": int(min(at_of(pk, last + 1200), latest))}
+    ft = raw.get("footer")
+    ft = {"text": ft} if isinstance(ft, str) else ft
+    if isinstance(ft, dict) and ft.get("text"):
+        params["footer"] = {"text": str(ft["text"]), "start_ms": int(min(at_of(ft, st + 600), max(dur - TAIL_MS - 700, st)))}
+    return params
 
 
 def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
@@ -1058,6 +1129,8 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
             params["run_ms"] = int(needed)
     elif layout == "code_lesson":
         params = _code_lesson_params(raw, sid, cr, cue_ms, start, dur)
+    elif layout in LLM_LAYOUTS:
+        params = _llm_params(raw, sid, layout, cr, cue_ms, start, dur)
     elif layout in GENERAL_LAYOUTS:
         params = _general_params(raw, sid, layout, cr, cue_ms, start, dur)
     else:
