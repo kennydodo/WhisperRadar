@@ -454,6 +454,13 @@ def _check_code_lesson(p: dict, where: str) -> list:
     for key, n in (("title", 48), ("sub", 70)):
         if key in p and not isinstance(p[key], str) or len(p.get(key) or "") > n:
             errs.append(f"{where}: {key} must be text of {n} characters at most.")
+    if not errs:                                    # a note beside a line must clear the code (same rule as the renderer)
+        fs, cw = (20, 820) if narrow else (24, 1580 if p.get("chips") else 1700)
+        for h in p.get("highlights") or []:
+            note = str(h.get("note") or "")
+            if note and 58 + len(ln[h["line"] - 1]) * 0.6 * fs + (len(note) + 3) * 0.52 * (fs - 3) + 40 > cw:
+                errs.append(f"{where}: the note on line {h['line']} ('{note}') would run into the code; "
+                            "shorten it or put it on a shorter line.")
     chips = p.get("chips")
     if chips is not None:
         if (not isinstance(chips, list) or not 1 <= len(chips) <= 5 or not all(

@@ -106,8 +106,9 @@ class CodeLessonCheckTests(unittest.TestCase):
         long = "x" * 70
         self.assertEqual(rb.check_block(block(lines=["a", long]), "S"), [])
         diagram = {"place": "beside", "component": "flow",
-                   "params": {"nodes": [{"label": "A"}, {"label": "B"}]}}
-        self.assertTrue(rb.check_block(block(lines=["a", long], diagram=diagram), "S"))
+                   "params": {"nodes": [{"label": "A", "at_ms": 0}, {"label": "B", "at_ms": 500}]}}
+        errs = rb.check_block(block(lines=["a", long], diagram=diagram), "S")
+        self.assertTrue(any("characters at most" in e for e in errs), errs)      # the line, not the diagram, is the fault
 
     def test_too_tall_is_rejected(self):
         lines = [f"x{i} = {i}" for i in range(15)]
@@ -211,6 +212,56 @@ class PlannerKnowsTheLayoutsTests(unittest.TestCase):
             except Exception as exc:                                  # show which example broke
                 self.fail(f"{lay}: {exc}")
             self.assertEqual(out["component"], lay)
+
+
+class NoteFitTests(unittest.TestCase):
+    def test_a_note_that_would_cover_the_code_is_rejected(self):
+        long_line = "return a @ b / (np.linalg.norm(a) * np.linalg.norm(b))"
+        diagram = {"place": "beside", "component": "flow", "params": {"nodes": [{"label": "A", "at_ms": 0}, {"label": "B", "at_ms": 500}]}}
+        bad = block(lines=["x = 1", long_line], diagram=diagram, highlights=[{"line": 2, "start_ms": 0, "note": "angle between vectors"}])
+        self.assertTrue(any("run into the code" in e for e in rb.check_block(bad, "S")))
+        ok = block(lines=["def cosine(a, b):", long_line], diagram=diagram, highlights=[{"line": 1, "start_ms": 0, "note": "angle between vectors"}])
+        self.assertEqual(rb.check_block(ok, "S"), [])
+        wide = block(lines=["x = 1", long_line], highlights=[{"line": 2, "start_ms": 0, "note": "angle between vectors"}])
+        self.assertEqual(rb.check_block(wide, "S"), [])        # plenty of room without a diagram
+
+
+DEMO = ROOT / "docs" / "explainer" / "demo" / "rag-course-demo"
+SNIPPETS = {"chunking": "01_chunking.py", "keyword_search": "02_keyword_search.py",
+            "cosine": "03_cosine_similarity.py", "prompt": "04_prompt.py"}
+
+
+class RagDemoTests(unittest.TestCase):
+    """The RAG Crash Course demo: compiles, and what is on screen is what really ran."""
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        cls.plan = json.loads((DEMO / "plan.json").read_text(encoding="utf-8"))
+        cls.srt = (DEMO / "narration.srt").read_text(encoding="utf-8")
+
+    def test_plan_compiles_with_every_new_layout(self):
+        doc = recipes.build(self.plan, es._cue_objs(studio.parse_srt_cues(self.srt)))
+        used = {s["remotion"]["component"] for s in doc["scenes"]}
+        self.assertTrue({"code_lesson", "embeddings", "next_token", "flow"} <= used, used)
+
+    def test_code_on_screen_is_the_snippet_file(self):
+        for s in self.plan["scenes"]:
+            if s["id"] in SNIPPETS:
+                text = (DEMO / "snippets" / SNIPPETS[s["id"]]).read_text(encoding="utf-8").rstrip("\n")
+                self.assertEqual(s["lines"], text.split("\n"), s["id"])
+
+    def test_output_on_screen_is_what_the_snippet_prints(self):
+        try:
+            import numpy, sklearn  # noqa: F401
+        except ImportError:
+            self.skipTest("numpy and scikit-learn are needed to run the snippets")
+        import subprocess
+        for s in self.plan["scenes"]:
+            if s["id"] in SNIPPETS:
+                ran = subprocess.run([sys.executable, str(DEMO / "snippets" / SNIPPETS[s["id"]])], capture_output=True,
+                                     text=True, timeout=120, check=True).stdout.rstrip("\n")
+                self.assertEqual(s["output"]["lines"], ran.split("\n"), s["id"])
 
 
 if __name__ == "__main__":

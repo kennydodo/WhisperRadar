@@ -60,8 +60,8 @@ const Chips = ({chips, pal, vertical, left, top, gate = 1}) => {
     {chips.map((c, i) => {
       const p = prog(ms, c.start_ms || 0, 450) * gate;
       const col = roleColor(pal, c.color, i);
-      return <div key={i} style={{opacity: p, transform: `translateX(${(1 - p) * -18}px)`, padding: vertical ? '12px 26px' : '8px 22px', borderRadius: 6,
-        minWidth: vertical ? 168 : undefined, textAlign: 'center', fontFamily: pal.sansF, fontWeight: 700, fontSize: vertical ? 30 : 26, color: '#0b0f12',
+      return <div key={i} style={{opacity: p, transform: `translateX(${(1 - p) * -18}px)`, padding: vertical ? '12px 14px' : '8px 22px', borderRadius: 6,
+        width: vertical ? 200 : undefined, boxSizing: 'border-box', lineHeight: 1.15, textAlign: 'center', fontFamily: pal.sansF, fontWeight: 700, fontSize: vertical ? 27 : 26, color: '#0b0f12',
         background: `linear-gradient(135deg, ${col}, ${mix(col, pal.bg, 0.4)})`, boxShadow: '0 6px 18px rgba(0,0,0,0.35)'}}>{c.label}</div>;
     })}
   </div>;
@@ -130,7 +130,9 @@ export const CodeLesson = ({title, sub, filename, lines, highlights, chips, outp
           const show = Math.max(0, Math.min(ln.length, typed - used));
           const here = typed - used >= 0 && typed - used <= ln.length && typed < total;
           used += ln.length + 1;
-          const note = hl.find((h) => h.line === i + 1 && h.note);
+          const cand = hl.find((h) => h.line === i + 1 && h.note);
+          // a note is only drawn where it clears the code (the validator rejects the rest)
+          const note = cand && 58 + ln.length * 0.6 * FS + (cand.note.length + 3) * 0.52 * (FS - 3) + 40 <= CW ? cand : null;
           const np = note ? prog(ms, start_ms + note.start_ms + 250, 450) : 0;
           return <div key={i} style={{position: 'relative', height: LH, display: 'flex', alignItems: 'center', fontFamily: pal.monoF,
             fontSize: FS, color: pal.text, whiteSpace: 'pre'}}>
