@@ -616,7 +616,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
             s["points"] = [dict(x) if isinstance(x, dict) else {"text": str(x)} for x in s["points"]]
             for k, x in enumerate(s["points"]):
                 anchor(x, where=f"point {k + 1}")
-        for key in ("counter", "zoom", "motion"):
+        for key in ("counter", "zoom", "motion", "output"):
             if isinstance(s.get(key), dict):
                 s[key] = dict(s[key])
                 anchor(s[key], where=key)
@@ -627,7 +627,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
         if isinstance(s.get("limit"), dict):
             s["limit"] = dict(s["limit"])
             anchor(s["limit"], where="limit")
-        for key in ("stages", "highlights", "levels", "nodes", "sends", "steps", "marks", "series"):
+        for key in ("stages", "highlights", "levels", "nodes", "sends", "steps", "marks", "series", "chips"):
             if isinstance(s.get(key), list):
                 s[key] = [dict(x) if isinstance(x, dict) else x for x in s[key]]
                 for k, x in enumerate(s[key]):
@@ -669,7 +669,7 @@ def resolve_anchors(plan: dict, cues) -> dict:
 
 # General motion layouts work for any topic (tech, finance, ...); the others are specialised.
 GENERAL_LAYOUTS = ("bars", "flow", "line", "grid", "split")
-REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code", "levels") + GENERAL_LAYOUTS
+REMOTION_LAYOUTS = ("fit_chart", "counter", "screenshot", "pipeline", "generation", "code", "code_lesson", "levels") + GENERAL_LAYOUTS
 FIT_CHART_MS = 1900          # a bar finishes growing, and its labels appear, within this
 
 
@@ -804,6 +804,95 @@ def _general_params(raw: dict, sid: str, layout: str, cr, cue_ms: dict, start: i
         fs = min(fs, max(latest - 700, st))
         params["footer"] = {"text": str(ft["text"]), "start_ms": int(fs)}
     return params
+
+
+CODE_LESSON_DIAGRAM_MIN_MS = 2500     # a diagram that comes first needs this long on screen before the code opens
+
+
+def _code_lesson_params(raw: dict, sid: str, cr, cue_ms: dict, start: int, dur: int) -> dict:
+    """code_lesson: typed code (small type) + optional chips, output panel and a diagram that comes
+    first and/or sits beside the editor. The diagram is one of the general layouts, written at the top
+    level of the scene ("diagram": "flow", "nodes": [...]) so its steps anchor to words like any other."""
+    def at_of(spec, default):
+        cue = spec.get("cue") if isinstance(spec, dict) else None
+        if cue is None:
+            return default
+        if cue not in cue_ms or not cr[0] <= cue <= cr[1]:
+            raise ExplainerError([f"Scene {sid}: \"{spec.get('at', '')}\" is anchored outside the scene."])
+        return max(int(cue_ms[cue][0] - start), 0)
+
+    def finish(st, anim, label):
+        if st + anim > dur - TAIL_MS:
+            raise ExplainerError([f"Scene {sid}: {label} starts too late to finish before the scene ends; "
+                                  "give it earlier words."])
+
+    params = {k: v for k, v in raw.items() if k in ("title", "sub", "filename", "lines")}
+    dname = raw.get("diagram")
+    place = raw.get("diagram_place") or "before_then_beside"
+    diagram = None
+    if dname:
+        if dname not in GENERAL_LAYOUTS:
+            raise ExplainerError([f"Scene {sid}: diagram must be one of {', '.join(GENERAL_LAYOUTS)}."])
+        dparams = _general_params({k: v for k, v in raw.items() if k not in ("motion", "footer", "title", "sub", "points")},
+                                  sid, dname, cr, cue_ms, start, dur)
+        diagram = {"place": place, "component": dname, "params": dparams}
+        params["diagram"] = diagram
+
+    m = dict(raw.get("motion") or {})
+    st = max(at_of(m, 400), 400)
+    if diagram and place in ("before", "before_then_beside"):
+        st = max(st, CODE_LESSON_DIAGRAM_MIN_MS)
+    n_chars = len("\n".join(raw.get("lines") or []))
+    type_ms = int(m.get("type_ms") or min(max(n_chars * 45, 2500), 9000))
+    finish(st, type_ms, "the code")
+    params["start_ms"] = int(st)
+    params["type_ms"] = type_ms
+
+    if diagram and place == "before":
+        last = max([x for x in _all_at_ms(diagram["params"])] or [0])
+        if last + 1200 > st:
+            raise ExplainerError([f"Scene {sid}: the diagram is still animating (until {last} ms) when the code opens "
+                                  f"({st} ms) and it then disappears; anchor its steps earlier, start the code later, "
+                                  "or use diagram_place \"before_then_beside\"."])
+
+    hls = []
+    for k, h in enumerate(raw.get("highlights") or []):
+        if isinstance(h, dict):
+            at = at_of(h, None)
+            hls.append(dict(h, start_ms=max(at - st, 0) if at is not None else int(h.get("start_ms", type_ms))))
+    params["highlights"] = hls
+
+    chips = []
+    for k, c in enumerate(raw.get("chips") or []):
+        c = {"label": c} if isinstance(c, str) else dict(c)
+        chips.append({"label": str(c.get("label", "")), "color": c.get("color"),
+                      "start_ms": int(at_of(c, 300 + 250 * k))})
+    if chips:
+        params["chips"] = [{k: v for k, v in c.items() if v is not None} for c in chips]
+
+    o = raw.get("output")
+    if isinstance(o, dict) and o.get("lines"):
+        params["output"] = {"label": str(o.get("label") or "Output"), "lines": [str(x) for x in o["lines"]],
+                            "start_ms": int(max(at_of(o, st + type_ms + 400), st))}
+    ft = raw.get("footer")
+    ft = {"text": ft} if isinstance(ft, str) else ft
+    if isinstance(ft, dict) and ft.get("text"):
+        fs = at_of(ft, st + 600)
+        params["footer"] = {"text": str(ft["text"]), "start_ms": int(min(fs, max(dur - TAIL_MS - 700, st)))}
+    return params
+
+
+def _all_at_ms(node):
+    """Every at_ms inside a compiled block (the moments its animation changes)."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "at_ms" and isinstance(v, (int, float)):
+                yield int(v)
+            else:
+                yield from _all_at_ms(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _all_at_ms(v)
 
 
 def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
@@ -967,6 +1056,8 @@ def _remotion_scene(raw: dict, idx: int, cue_ms: dict, style=None) -> dict:
             needed = max(run, last - st + 1200)
             must_finish(st, needed, "the anchored levels")
             params["run_ms"] = int(needed)
+    elif layout == "code_lesson":
+        params = _code_lesson_params(raw, sid, cr, cue_ms, start, dur)
     elif layout in GENERAL_LAYOUTS:
         params = _general_params(raw, sid, layout, cr, cue_ms, start, dur)
     else:

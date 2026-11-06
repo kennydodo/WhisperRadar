@@ -426,8 +426,68 @@ def _check_split(p: dict, where: str) -> list:
     return errs
 
 
+# code_lesson geometry (px), kept in step with tools/remotion/src/components/CodeLesson.jsx
+CL_BOTTOM = 935                       # nothing may run below this (the footer sits at 950)
+CL_PLACES = ("before", "beside", "before_then_beside")
+CL_DIAGRAMS = ("flow", "bars", "line", "grid", "split")
+
+
+def _check_code_lesson(p: dict, where: str) -> list:
+    errs = []
+    d = p.get("diagram")
+    narrow = isinstance(d, dict) and d.get("place") in ("beside", "before_then_beside")
+    maxc = 60 if narrow else 88                     # characters per line that fit the editor
+    ln = p.get("lines")
+    if not isinstance(ln, list) or not 2 <= len(ln) <= 19 or not all(isinstance(x, str) and len(x) <= maxc for x in ln):
+        errs.append(f"{where}: lines must be 2-19 lines of {maxc} characters at most"
+                    f"{' (the editor shares the screen with the diagram)' if narrow else ''}.")
+        ln = ln if isinstance(ln, list) else []
+    if not _text(p.get("filename"), 40):
+        errs.append(f"{where}: filename must be short text.")
+    if not _ms(p.get("start_ms")) or not _ms(p.get("type_ms")) or p.get("type_ms", 0) < 800:
+        errs.append(f"{where}: start_ms >= 0 and type_ms >= 800 are needed.")
+    for h in p.get("highlights") or []:
+        if (not isinstance(h, dict) or not isinstance(h.get("line"), int) or not 1 <= h["line"] <= max(len(ln), 1)
+                or not _ms(h.get("start_ms")) or len(str(h.get("note", ""))) > 40):
+            errs.append(f"{where}: each highlight needs line (1-{len(ln)}), start_ms and an optional note (40 characters).")
+            break
+    for key, n in (("title", 48), ("sub", 70)):
+        if key in p and not isinstance(p[key], str) or len(p.get(key) or "") > n:
+            errs.append(f"{where}: {key} must be text of {n} characters at most.")
+    chips = p.get("chips")
+    if chips is not None:
+        if (not isinstance(chips, list) or not 1 <= len(chips) <= 5 or not all(
+                isinstance(c, dict) and _text(c.get("label"), 14) and _ms(c.get("start_ms")) for c in chips)):
+            errs.append(f"{where}: chips must be 1-5 items, each with a label of 14 characters at most.")
+    o = p.get("output")
+    out_lines = 0
+    if o is not None:
+        ol = o.get("lines") if isinstance(o, dict) else None
+        if (not isinstance(ol, list) or not 1 <= len(ol) <= 8 or not all(isinstance(x, str) and len(x) <= maxc for x in ol)
+                or not _ms(o.get("start_ms")) or not _text(o.get("label"), 20)):
+            errs.append(f"{where}: output needs a label (20 characters), 1-8 lines of {maxc} characters at most and start_ms.")
+        else:
+            out_lines = len(ol)
+    if d is not None:
+        if (not isinstance(d, dict) or d.get("place") not in CL_PLACES or d.get("component") not in CL_DIAGRAMS
+                or not isinstance(d.get("params"), dict)):
+            errs.append(f"{where}: diagram needs place ({', '.join(CL_PLACES)}), component "
+                        f"({', '.join(CL_DIAGRAMS)}) and params.")
+        else:
+            errs += COMPONENTS[d["component"]](d["params"], f"{where} diagram")
+    # does it all fit on the screen? (chips in a row push the editor down when a diagram shares the screen)
+    top = 262 if (p.get("chips") and narrow) else 205
+    lh = 30 if narrow else 34
+    h = top + 48 + 28 + len(ln) * lh + (16 + 36 + 22 + out_lines * 28 if out_lines else 0)
+    if not errs and h > CL_BOTTOM:
+        errs.append(f"{where}: the code and output are {h - CL_BOTTOM} px too tall for the screen; "
+                    "use fewer code lines or output lines.")
+    return errs
+
+
 COMPONENTS = {"fit_chart": _check_fit_chart, "counter": _check_counter, "screenshot": _check_screenshot,
               "pipeline": _check_pipeline, "generation": _check_generation, "code": _check_code,
+              "code_lesson": _check_code_lesson,
               "levels": _check_levels, "bars": _check_bars, "flow": _check_flow, "line": _check_line,
               "grid": _check_grid, "split": _check_split}
 
