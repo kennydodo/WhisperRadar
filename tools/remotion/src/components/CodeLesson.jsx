@@ -29,6 +29,13 @@ const C_KW = ['function', 'return', 'for', 'if', 'else', 'while', 'do', 'switch'
   'class', 'new', 'import', 'export', 'from', 'default', 'async', 'await', 'try', 'catch', 'finally', 'throw', 'typeof', 'in', 'of',
   'true', 'false', 'null', 'undefined', 'this', 'interface', 'type', 'extends', 'implements', 'public', 'private', 'static',
   'void', 'int', 'string', 'bool', 'boolean', 'float', 'double', 'func', 'package', 'struct', 'fn', 'mut', 'use', 'pub', 'impl'];
+const CS_KW = ['using', 'namespace', 'class', 'record', 'struct', 'interface', 'enum', 'public', 'private', 'protected', 'internal',
+  'static', 'readonly', 'sealed', 'abstract', 'virtual', 'override', 'async', 'await', 'var', 'new', 'return', 'if', 'else', 'for',
+  'foreach', 'while', 'switch', 'case', 'break', 'continue', 'try', 'catch', 'finally', 'throw', 'in', 'is', 'as', 'null', 'true',
+  'false', 'this', 'base', 'void', 'int', 'long', 'string', 'bool', 'double', 'decimal', 'float', 'object', 'get', 'set', 'init',
+  'required', 'where', 'select', 'from', 'orderby', 'yield', 'out', 'ref', 'params', 'default', 'typeof', 'nameof', 'with'];
+const PS_KW = ['function', 'param', 'if', 'elseif', 'else', 'foreach', 'for', 'while', 'switch', 'return', 'try', 'catch', 'finally',
+  'throw', 'in', 'begin', 'process', 'end', 'break', 'continue', 'exit'];
 const SQL_KW = ['select', 'from', 'where', 'group', 'by', 'order', 'having', 'join', 'left', 'right', 'inner', 'outer', 'on', 'as',
   'insert', 'into', 'values', 'update', 'set', 'delete', 'create', 'table', 'index', 'drop', 'alter', 'and', 'or', 'not', 'null',
   'limit', 'distinct', 'union', 'in', 'is', 'like', 'between', 'case', 'when', 'then', 'else', 'end', 'primary', 'key', 'asc', 'desc'];
@@ -38,12 +45,15 @@ const BUILTINS = new Set(['print', 'len', 'range', 'str', 'int', 'float', 'list'
 const LANGS = {
   py: {kw: new Set(PY_KW), com: '#', ci: false},
   js: {kw: new Set(C_KW), com: '//', ci: false},
+  cs: {kw: new Set(CS_KW), com: '//', ci: false},
+  ps: {kw: new Set(PS_KW), com: '#', ci: true},
   sql: {kw: new Set(SQL_KW), com: '--', ci: true},
   sh: {kw: new Set(SH_KW), com: '#', ci: false},
   json: {kw: new Set(['true', 'false', 'null']), com: null, ci: false},
   txt: {kw: new Set(), com: null, ci: false},
 };
-const EXT = {py: 'py', js: 'js', jsx: 'js', ts: 'js', tsx: 'js', java: 'js', go: 'js', rs: 'js', c: 'js', cpp: 'js', cs: 'js', kt: 'js',
+const EXT = {py: 'py', js: 'js', jsx: 'js', ts: 'js', tsx: 'js', java: 'js', go: 'js', rs: 'js', c: 'js', cpp: 'js', cs: 'cs', razor: 'cs', cshtml: 'cs', fs: 'txt', vb: 'txt', kt: 'js', dart: 'js', scala: 'js', rb: 'sh', pl: 'sh', r: 'sh', ps1: 'ps', psm1: 'ps', cmd: 'txt', bat: 'txt',
+  xml: 'txt', csproj: 'txt', html: 'txt', css: 'txt', dockerfile: 'sh', ini: 'sh', env: 'sh',
   swift: 'js', php: 'js', sql: 'sql', sh: 'sh', bash: 'sh', zsh: 'sh', json: 'json', yaml: 'sh', yml: 'sh', toml: 'sh', txt: 'txt', md: 'txt'};
 // The language comes from the file name's extension (default Python, the earlier behaviour).
 export const langOf = (filename) => {

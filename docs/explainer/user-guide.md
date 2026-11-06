@@ -462,8 +462,14 @@ lines the code is limited to 14 lines), and an optional `diagram` with `diagram_
 `beside` (shrunk to the right of the editor) or `before_then_beside`. The diagram can be any general layout or one of the
 LLM pictures below.
 
-**Languages:** the colouring follows the `filename` extension: `.py` (default), `.js/.ts/.tsx/.java/.go/.rs/.c/.cs/...`,
-`.sql`, `.sh`, `.json`, `.yaml`. Any other name is coloured as Python.
+**Any topic, any language:** the RAG demo is only an example. The colouring follows the `filename` extension: `.py`
+(default), `.cs/.razor/.cshtml` (C#/.NET), `.js/.ts/.tsx/.java/.go/.rs/.c/.cpp/.kt/.dart`, `.sql`, `.sh`, `.ps1`,
+`.json/.yaml`; `.xml/.csproj/.html/.css` are shown plain with comments/strings only. Any other name is coloured as Python.
+The tech planner is told the topic can be anything (an ASP.NET API, SQL joins, a React hook...).
+
+**Real output in any language:** `python -m whisperradar.video.explainer.code_output "dotnet run --project Demo"` runs the
+command that runs the video's code and prints the lines for the output panel. It fails if the command fails, prints nothing,
+or prints more than the panel shows (8 lines, 80 characters), so nothing on screen is invented.
 
 **LLM pictures** (schematic, tagged illustrative by default): `tokens`, `embeddings`, `attention`, `next_token`.
 They can be scenes on their own or the `diagram` of a code_lesson.

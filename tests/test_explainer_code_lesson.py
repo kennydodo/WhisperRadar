@@ -115,6 +115,36 @@ class OtherLanguageTests(unittest.TestCase):
             self.assertRegex(src, rf"\b{ext}: '")
 
 
+class CodeOutputTests(unittest.TestCase):
+    """The output panel comes from really running the code, whatever the language."""
+
+    def test_captures_real_output(self):
+        from whisperradar.video.explainer import code_output as co
+        self.assertEqual(co.capture([sys.executable, "-c", "print('a'); print('b')"]), ["a", "b"])
+
+    def test_refuses_failures_silence_and_overflow(self):
+        from whisperradar.video.explainer import code_output as co
+        for cmd, text in (([sys.executable, "-c", "raise SystemExit(3)"], "failed"),
+                          ([sys.executable, "-c", "pass"], "nothing"),
+                          ([sys.executable, "-c", "print('x'*90)"], "characters"),
+                          (["no-such-tool-xyz"], "not found")):
+            with self.assertRaises(co.OutputError) as cm:
+                co.capture(cmd)
+            self.assertIn(text, str(cm.exception))
+        with self.assertRaises(co.OutputError):
+            co.capture([sys.executable, "-c", "print('\\n'.join('l' * 9))"], max_lines=4)
+
+    def test_csharp_and_dotnet_names_are_known(self):
+        src = (ROOT / "tools/remotion/src/components/CodeLesson.jsx").read_text(encoding="utf-8")
+        for word in ("namespace", "foreach", "record", "cs: 'cs'", "csproj", "ps1"):
+            self.assertIn(word, src)
+        p = params(filename="Program.cs", lines=["using System;", "var n = 3;", "Console.WriteLine(n);"])
+        self.assertEqual(rb.check_block({"component": "code_lesson", "params": p}, "x"), [])
+
+    def test_the_writer_is_told_any_language_is_fine(self):
+        self.assertIn("C#/.NET", " ".join(t for _, t in es.RULE_LINES))
+
+
 class CodeLessonCheckTests(unittest.TestCase):
     def test_good_block_passes(self):
         self.assertEqual(rb.check_block(block(chips=[{"label": "TF-IDF", "start_ms": 0}],
