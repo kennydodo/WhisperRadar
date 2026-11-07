@@ -1,5 +1,7 @@
 yt-dlp>=2025.1.26
 faster-whisper>=1.1.1
+# faster-whisper 1.2.1 still passes metadata_errors, removed in PyAV 19.
+av<19
 # GPU (CUDA) inference DLLs for faster-whisper on Windows - transcribe.py
 # auto-locates them; without these, Whisper silently runs on CPU
 nvidia-cublas-cu12>=12,<13
