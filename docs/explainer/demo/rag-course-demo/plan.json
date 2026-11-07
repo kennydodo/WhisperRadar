@@ -1,0 +1,391 @@
+{
+ "theme": "chalkboard",
+ "scenes": [
+  {
+   "id": "how_rag_works",
+   "start": "Retrieval augmented generation",
+   "layout": "flow",
+   "title": "How RAG works",
+   "nodes": [
+    {
+     "label": "Question",
+     "at": "A question comes in"
+    },
+    {
+     "label": "Search",
+     "sub": "find chunks",
+     "at": "a search step finds"
+    },
+    {
+     "label": "LLM",
+     "sub": "writes the answer",
+     "at": "the language model writes"
+    },
+    {
+     "label": "Answer",
+     "at": "using only those chunks"
+    }
+   ],
+   "sends": [
+    {
+     "label": "chunks",
+     "from": 2,
+     "to": 3,
+     "at": "the most relevant chunks"
+    }
+   ]
+  },
+  {
+   "id": "chunking",
+   "start": "First, we split the text",
+   "layout": "code_lesson",
+   "title": "Step 1: split into chunks",
+   "filename": "chunking.py",
+   "motion": {
+    "at": "Here is a short handbook"
+   },
+   "lines": [
+    "text = (\"Items can be returned within 30 days for a full refund. \"",
+    "        \"Shipping takes 3 to 5 working days. \"",
+    "        \"Our stores open at 9 am and close at 6 pm.\")",
+    "",
+    "sentences = [s.strip() + \".\" for s in text.split(\".\") if s.strip()]",
+    "",
+    "def chunk(sentences, size):",
+    "    return [\" \".join(sentences[i:i + size])",
+    "            for i in range(0, len(sentences), size)]",
+    "",
+    "chunks = chunk(sentences, 1)",
+    "for i, c in enumerate(chunks):",
+    "    print(i, c)"
+   ],
+   "highlights": [
+    {
+     "line": 5,
+     "at": "We cut it into sentences",
+     "note": "one per sentence"
+    },
+    {
+     "line": 7,
+     "at": "The chunk function steps",
+     "note": "size at a time"
+    }
+   ],
+   "output": {
+    "label": "Output",
+    "lines": [
+     "0 Items can be returned within 30 days for a full refund.",
+     "1 Shipping takes 3 to 5 working days.",
+     "2 Our stores open at 9 am and close at 6 pm."
+    ],
+    "at": "Running it prints"
+   },
+   "footer": {
+    "text": "Small chunks keep the search precise",
+    "at": "Small chunks keep the search precise"
+   }
+  },
+  {
+   "id": "keyword_search",
+   "start": "Now the search",
+   "layout": "code_lesson",
+   "title": "Step 2: keyword search",
+   "filename": "keyword_search.py",
+   "motion": {
+    "at": "Now the search"
+   },
+   "chips": [
+    {
+     "label": "Keyword search",
+     "color": "accent",
+     "at": "Now the search"
+    },
+    {
+     "label": "TF-IDF",
+     "color": "good",
+     "at": "keyword search with TF-IDF"
+    }
+   ],
+   "lines": [
+    "from sklearn.feature_extraction.text import TfidfVectorizer",
+    "from sklearn.metrics.pairwise import cosine_similarity",
+    "chunks = [\"Items can be returned within 30 days for a full refund.\",",
+    "          \"Shipping takes 3 to 5 working days.\",",
+    "          \"Our stores open at 9 am and close at 6 pm.\"]",
+    "",
+    "vectorizer = TfidfVectorizer()",
+    "chunk_vectors = vectorizer.fit_transform(chunks)",
+    "",
+    "query = \"How do I send an item back?\"",
+    "scores = cosine_similarity(vectorizer.transform([query]), chunk_vectors)[0]",
+    "",
+    "for chunk, score in zip(chunks, scores):",
+    "    print(f\"{score:.2f}  {chunk}\")"
+   ],
+   "highlights": [
+    {
+     "line": 7,
+     "at": "We build a vectorizer",
+     "note": "learns word weights"
+    },
+    {
+     "line": 10,
+     "at": "how do I send an item back",
+     "note": "the question"
+    }
+   ],
+   "output": {
+    "label": "Output",
+    "lines": [
+     "0.00  Items can be returned within 30 days for a full refund.",
+     "0.00  Shipping takes 3 to 5 working days.",
+     "0.00  Our stores open at 9 am and close at 6 pm."
+    ],
+    "at": "Look at the output"
+   },
+   "footer": {
+    "text": "Same words match, same meaning does not",
+    "at": "Keyword search only matches"
+   }
+  },
+  {
+   "id": "embeddings",
+   "start": "Embeddings fix this",
+   "layout": "embeddings",
+   "title": "Step 3: embeddings",
+   "sub": "Similar meanings sit close together",
+   "motion": {
+    "at": "An embedding turns a text into a point"
+   },
+   "dots": [
+    {
+     "label": "refund policy",
+     "x": 0.27,
+     "y": 0.46,
+     "group": "returns",
+     "at": "Refund policy and returns"
+    },
+    {
+     "label": "returns",
+     "x": 0.2,
+     "y": 0.3,
+     "group": "returns",
+     "at": "end up near each other"
+    },
+    {
+     "label": "exchange rules",
+     "x": 0.13,
+     "y": 0.52,
+     "group": "returns",
+     "at": "near each other"
+    },
+    {
+     "label": "shipping times",
+     "x": 0.74,
+     "y": 0.24,
+     "group": "delivery",
+     "at": "far from shipping times"
+    },
+    {
+     "label": "delivery cost",
+     "x": 0.84,
+     "y": 0.42,
+     "group": "delivery",
+     "at": "shipping times"
+    },
+    {
+     "label": "opening hours",
+     "x": 0.5,
+     "y": 0.84,
+     "group": "info",
+     "at": "similar meanings sit close"
+    }
+   ],
+   "query": {
+    "label": "How do I send an item back?",
+    "x": 0.34,
+    "y": 0.64,
+    "at": "Now the question lands"
+   },
+   "nearest": {
+    "count": 2,
+    "at": "its nearest neighbours"
+   },
+   "footer": {
+    "text": "A flat picture of hundreds of dimensions",
+    "at": "This is a flat picture"
+   }
+  },
+  {
+   "id": "cosine",
+   "start": "Closeness is measured",
+   "layout": "code_lesson",
+   "title": "Step 4: measure closeness",
+   "filename": "cosine.py",
+   "motion": {
+    "at": "Closeness is measured"
+   },
+   "lines": [
+    "import numpy as np",
+    "",
+    "def cosine(a, b):",
+    "    return a @ b / (np.linalg.norm(a) * np.linalg.norm(b))",
+    "",
+    "# toy 2-D vectors: (about returns, about delivery)",
+    "vectors = {",
+    "    \"refund policy\": np.array([0.9, 0.1]),",
+    "    \"shipping times\": np.array([0.1, 0.9]),",
+    "    \"opening hours\": np.array([0.1, 0.5]),",
+    "}",
+    "query = np.array([0.8, 0.2])  # the question",
+    "",
+    "for name, vec in vectors.items():",
+    "    print(f\"{cosine(query, vec):.2f}  {name}\")"
+   ],
+   "highlights": [
+    {
+     "line": 3,
+     "at": "The function compares the angle",
+     "note": "angle between vectors"
+    },
+    {
+     "line": 14,
+     "at": "We score the question",
+     "note": "question vs each chunk"
+    }
+   ],
+   "output": {
+    "label": "Output",
+    "lines": [
+     "0.99  refund policy",
+     "0.35  shipping times",
+     "0.43  opening hours"
+    ],
+    "at": "Refund policy scores highest"
+   },
+   "diagram": "embeddings",
+   "diagram_place": "before_then_beside",
+   "dots": [
+    {
+     "label": "refund policy",
+     "x": 0.3,
+     "y": 0.5,
+     "group": "returns",
+     "at": "Closeness is measured"
+    },
+    {
+     "label": "shipping times",
+     "x": 0.78,
+     "y": 0.28,
+     "group": "delivery",
+     "at": "Closeness is measured"
+    },
+    {
+     "label": "opening hours",
+     "x": 0.58,
+     "y": 0.8,
+     "group": "info",
+     "at": "Closeness is measured"
+    },
+    {
+     "label": "returns",
+     "x": 0.17,
+     "y": 0.33,
+     "group": "returns",
+     "at": "Closeness is measured"
+    }
+   ],
+   "query": {
+    "label": "the question",
+    "x": 0.36,
+    "y": 0.64,
+    "at": "Closeness is measured"
+   },
+   "nearest": {
+    "count": 1,
+    "at": "Here we use tiny two dimensional vectors"
+   }
+  },
+  {
+   "id": "prompt",
+   "start": "Finally, we give the best chunk",
+   "layout": "code_lesson",
+   "title": "Step 5: build the prompt",
+   "filename": "prompt.py",
+   "motion": {
+    "at": "Finally, we give the best chunk"
+   },
+   "lines": [
+    "question = \"How do I send an item back?\"",
+    "best = \"Items can be returned within 30 days for a full refund.\"",
+    "",
+    "prompt = f\"\"\"Answer using only this context.",
+    "",
+    "Context: {best}",
+    "",
+    "Question: {question}\"\"\"",
+    "",
+    "print(prompt)"
+   ],
+   "highlights": [
+    {
+     "line": 4,
+     "at": "We tell the model to answer",
+     "note": "only this context"
+    }
+   ],
+   "output": {
+    "label": "Output",
+    "lines": [
+     "Answer using only this context.",
+     "",
+     "Context: Items can be returned within 30 days for a full refund.",
+     "",
+     "Question: How do I send an item back?"
+    ],
+    "at": "Printing it shows"
+   },
+   "footer": {
+    "text": "Retrieved context + question = the prompt",
+    "at": "This is the augmented"
+   }
+  },
+  {
+   "id": "next_token",
+   "start": "The model then writes its answer",
+   "layout": "next_token",
+   "title": "Then the model writes",
+   "lead": "Answer: Items can be returned within",
+   "motion": {
+    "at": "At each step it scores"
+   },
+   "options": [
+    {
+     "word": "30",
+     "p": 0.88,
+     "at": "At each step it scores"
+    },
+    {
+     "word": "14",
+     "p": 0.06
+    },
+    {
+     "word": "60",
+     "p": 0.03
+    },
+    {
+     "word": "90",
+     "p": 0.01
+    }
+   ],
+   "pick": {
+    "option": 1,
+    "at": "The likeliest one is picked"
+   },
+   "footer": {
+    "text": "The answer is grounded in the context",
+    "at": "grounded in your documents"
+   }
+  }
+ ]
+}

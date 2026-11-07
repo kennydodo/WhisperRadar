@@ -203,7 +203,8 @@ def _fit_shapes(out, theme, project_folder: str) -> None:
             continue
         weight = theme.stroke_width / 5.0 * pipe.WEIGHT_FACTOR.get(getattr(theme, "text_weight", ""), 0.0)
         tw = pipe.text_width_px(font, tgt.spec.text, tgt.box_px, weight,
-                                pipe.TRACKING_EM.get(getattr(theme, "letter_spacing", ""), 0.04))
+                                pipe.TRACKING_EM.get(getattr(theme, "letter_spacing", ""), 0.04),
+                                pipe.TEXT_SIZE.get(getattr(theme, "text_size", ""), 1.0))
         tx, _ty, _tw, _th = tgt.box_px
         x, y, w, h = lo.box_px
         pad = int(round(0.012 * W))

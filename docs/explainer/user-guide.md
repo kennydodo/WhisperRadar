@@ -22,6 +22,22 @@ are skipped. **Nothing is deleted** when you switch a channel's type: those valu
 again if you switch back. A channel that only has the older `visual_mode` is read as the matching type, so no
 migration is needed. More types can be added in `whisperradar/channel_types.py`.
 
+## 0b. Explainer presets (one dropdown for the whole look)
+
+Set an explainer channel up in one place: **My channels > Explainer > preset**. A preset is a named bundle of
+look settings (theme, video type, text size and weight, fonts, colours ...). Built in: *Chalkboard explainer*,
+*Whiteboard explainer*, *Coding lesson* (chalkboard, tech, small thin text), *Finance (dark, graphic)*.
+
+Order of precedence, lowest first: global Video options < the channel's preset < fields set on the channel.
+So you can pick "Coding lesson" and still change, say, the font on the same page. When a channel sets a field
+that differs from the preset, the form lists it and offers **use the preset as it is** (clears those fields on
+save). "Video type" is the old "scene genre" (tech, finance ...).
+
+Make your own preset on **/explainer/presets** (link on the channel form and on Video options): copy a preset,
+change values, name it, save. Deleting a preset in use sends those channels back to their own fields.
+The preset key is resolved when settings are computed; it is never written into a production's imgtovideo.json.
+Channels that already have their own saved fields keep overriding the preset until you tick the reset box.
+
 ## 0. Choosing a visual mode
 
 Per production/channel (Video options -> `visual_mode`):
@@ -252,6 +268,43 @@ wins for that one production, so a script generator never has to set them.
 fades a drawing, shape or handwriting back (amount 0.1 to 0.95); `undim` brings it
 home. Dim everything except the thing being talked about.
 
+### Font style (channel setting, default "video1")
+
+One setting presets the fonts: **video1** (default) = clean bold sans (Inter) for labels and
+text with marker headlines (Caveat Brush) for scene titles; **clean** = Inter everywhere;
+**handwritten** = the earlier hand fonts that write on. Set it per channel in Video options >
+Explainer > "font style". A channel that already picked its own hand / heading / body font
+keeps them until it chooses a style; an explicit style overrides those three pickers, and a
+production's own explainer.json `fonts` still wins. The "pen strokes" hand option is
+separate (the engine's own letter shapes, not a font file).
+
+### Picture vocabulary layouts: cards, group, chips, callout
+
+Static layouts for plans (the writer is told when to use each):
+- `cards` - 2-4 cards, each a title, an icon and 1-4 `rows` (a row can carry its own `at`).
+- `group` - a dashed container (`caption`) holding 2-5 things, like a row inside a frame.
+- `chips` - 2-12 short pills for names the narrator lists.
+- `callout` - the real text on screen (a quote, a press-release sentence) with a `note` for its source and a `tag` (default "real example").
+- `chain` - how a claim travels: steps with a `tag` saying who stands behind each (`independent` true = green, false = red) and `via` on the arrows.
+- `ladder` - an evidence ladder, weakest rung first; `here: true` marks where the claim stands.
+Text in these layouts is sized the same across the scene; it gets smaller together when a scene is crowded, never one label alone. New shape kinds: `frame` (dashed rounded box) and `pill`.
+
+### Persistent canvas and camera (optional)
+
+Static scenes can share one picture. All three keys are optional and nothing is added on its own:
+- `region`: [x, y, w, h] - draw the scene inside that part of the frame.
+- `base`: id of an earlier scene - its finished drawing is already on the board when this scene starts, so new things are added to it (give the new scene a free region).
+- `camera`: "region" (zoom to the scene's region), "overview" (back to the whole frame) or {"zoom": 1-3, "center": [x, y], "from"?, "move_ms"?}. The view slides at the start of the scene and holds. No `camera` = no movement. Channel option "camera moves" = off ignores every camera request.
+Scenes with a camera are drawn at up to 3x size and cropped, so zoomed views stay sharp (slower to render). Remotion scenes cannot use base or camera.
+
+### Footers (off by default) and headline size
+
+The reference videos have no takeaway bar, so a channel's scenes show information where the
+narration says it (titles, labels, points) and any `footer` in a plan is not drawn. Turn it
+back on per channel with Video options > Explainer > "footer" = on. One exception: a footer
+the term check adds so that a spoken key term appears on screen is kept. "headline size"
+(small / normal / large) scales scene titles; marker headlines are already a little bigger.
+
 ### Handwriting: real hand fonts or the pen strokes
 
 `handwriting` objects write in one of two ways. Each channel (or object) picks:
@@ -388,9 +441,12 @@ without moving any reveal off its words:
   memory, precision, offload, fit_chart.
 - `finance`: text layouts + the general layouts (no tech-only scenes in the writer's prompt).
 
-**Motion rule** (both genres): at least 50% of the narration time is motion scenes, at most
-3 text-only scenes (row, steps, timeline, compare, stack, hero) or 75 s of them in a row;
-checked on videos of 90 s or more. A channel can change or switch off each number.
+**Motion mix** (no default limit; changed 2026-11-05): the narration decides how many scenes are text and how
+many are drawn - as much text as the narration needs. The planner picks a motion layout where the narrator
+describes something that moves, is counted, measured or compared, and a text layout where the narrator states a
+claim, definition, quote, caveat or list. A channel can still opt in to a limit (Explainer settings: minimum motion
+share, most text-only scenes in a row, longest text-only seconds; blank or 0 = no limit); an opt-in limit is checked
+on videos of 90 s or more. The judge is shown the measured mix for information only.
 
 ## Remotion scenes (optional, experimental)
 
@@ -409,3 +465,48 @@ free for teams of up to three people; check its licence if that changes.
 Clips are cached separately in `out/remotion`, Stop works as for other scenes,
 and normal channels are unaffected. Remotion scenes render at 1920x1080 or at
 half size (960x540).
+
+### Coding lessons and "how LLMs work" pictures (Remotion)
+
+For teaching and coding channels (tech genre). All of these are Remotion layouts.
+
+**`code_lesson`** - an editor card (file name bar, line numbers, syntax colours) where real code is typed on the
+narrator's words. Fields: `file`, `code` (real, runnable text; at most 19 lines, 88 chars wide, or 60 when a side
+rail/diagram narrows the card), `chips` (concept labels on the left), `highlights` (`line`, `at`, optional short
+`note`; a note shows only if it fits beside the line), `output` (stdout shown in a panel under the card; with 3 output
+lines the code is limited to 14 lines), and an optional `diagram` with `diagram_place`: `before` (full screen first),
+`beside` (shrunk to the right of the editor) or `before_then_beside`. The diagram can be any general layout or one of the
+LLM pictures below.
+
+**Any topic, any language:** the RAG demo is only an example. The colouring follows the `filename` extension: `.py`
+(default), `.cs/.razor/.cshtml` (C#/.NET), `.js/.ts/.tsx/.java/.go/.rs/.c/.cpp/.kt/.dart`, `.sql`, `.sh`, `.ps1`,
+`.json/.yaml`; `.xml/.csproj/.html/.css` are shown plain with comments/strings only. Any other name is coloured as Python.
+The tech planner is told the topic can be anything (an ASP.NET API, SQL joins, a React hook...).
+
+**Real output in any language:** `python -m whisperradar.video.explainer.code_output "dotnet run --project Demo"` runs the
+command that runs the video's code and prints the lines for the output panel. It fails if the command fails, prints nothing,
+or prints more than the panel shows (8 lines, 80 characters), so nothing on screen is invented.
+
+**LLM pictures** (schematic, tagged illustrative by default): `tokens`, `embeddings`, `attention`, `next_token`.
+They can be scenes on their own or the `diagram` of a code_lesson.
+
+**Real-code rule:** code must be real. The demo builder runs each snippet and puts the actual stdout in the output
+panel; tests check that the plan code equals the snippet files and the output equals the run output.
+
+**Demo:** `docs/explainer/demo/rag-course-demo/` (snippets, `build_plan.py`, `narration.srt`, `plan.json`).
+Rebuild with `python docs/explainer/demo/rag-course-demo/build_plan.py`; render each scene to a clip with
+`python docs/explainer/demo/rag-course-demo/render_demo.py [--scale 0.5] [--only cosine]` (clips in the demo folder's git-ignored `out/`). Tests:
+`python -m unittest discover -s tests -p "test_explainer_code_lesson.py"`.
+
+### Lighter icons, no pen dot
+
+Icons are drawn with a lighter line by default (channel setting "icon weight": thin, light = default, normal = the older
+heavier line, bold). The small grey dot that followed the pen while it wrote is off. For lighter writing set "text weight" to
+thin (the font as designed); "normal" and "bold" thicken the letters like chalk.
+
+### System fonts and text size
+
+Calibri Light (`calibril.ttf`), Calibri, Arial and Times New Roman (with bold files) are offered in the font pickers when
+they exist in `C:/Windows/Fonts` on the PC that runs the app; they are read from there, never copied into the repo. The font
+style **Calibri Light** sets all three fonts to Calibri Light. "text size" (normal / small / smaller) shrinks the written text
+inside its box (small = 85%, smaller = 72%); pair it with "text weight" = thin for the lightest look.

@@ -5,6 +5,14 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## DONE (2026-11-06) - coding-lesson explainer layout (branch explainer-coding-session)
+
+New Remotion layout `code_lesson` (typed real code, chips, highlights/notes, output panel, diagram before/beside/before_then_beside)
+and schematic pictures `tokens`, `embeddings`, `attention`, `next_token`. Python: `recipes.py` (`_code_lesson_params`, `_llm_params`),
+`remotion_backend.py` (validators mirror the renderer geometry), `explainer_scenes.py` (tech genre prompt/examples). Tests:
+`tests/test_explainer_code_lesson.py`. Demo: `docs/explainer/demo/rag-course-demo/`. Docs: user-guide "Coding lessons".
+Not yet verified: planner with a live LLM, full-video render on Windows fonts.
+
 ## DONE (2026-10-06) - gallery recovery after the account-throttle pause
 
 When Flow throttles the ACCOUNT ("We noticed some unusual activity") the images
@@ -2004,3 +2012,35 @@ Validation:
 - After fixing, report the actual root cause, files changed, test results and
   any remaining live-verification requirement. Do not launch a generation run
   merely because this handoff exists.
+## Explainer visual upgrade plan - gap vs reference videos (2026-11-05)
+Written by Claude after a visual review requested by the user. Principle from the user: **scenes are made from the narration; use as much text as the narration needs; NO fixed quotas or caps** (no minimum motion share, no maximum text scenes, no fixed seconds). Anything below that sounds like a quota is a diagnostic, not a gate.
+
+**References reviewed** (6 still frames each, low resolution; motion and transitions NOT observed):
+- Hayk Simonyan, "System Design Explained: APIs, Databases, Caching, CDNs, Load Balancing & Production Infra" (https://www.youtube.com/watch?v=oYxTTirKY8M, 2h04): dark canvas, full-frame diagrams made of UI cards, brand logos, dashed container groups, labelled request/response arrows, a hand-drawn teal marker headline plus clean vector art and a clean sans for titles/labels, real-example callouts, a packet travelling a dashed line for TCP.
+- KodeKloud, "Don't learn AI Agents without Learning these Fundamentals" (https://www.youtube.com/watch?v=ZaPbP9DwBOE, 57 min): natural-looking handwriting in white and blue chalk on black; ONE persistent master diagram ("Tech Corp's AI Application" hub with RAG/LLM spokes) that comes back later with more annotations; zooms into regions; small sketches (database cylinders, neural net, agent), curved labelled arrows; real doc/lab screens.
+- **Fonts:** the user wants the fonts of these two videos, not the current ones. Exact font names are NOT identified (frames are ~470 px wide). What is visible: video 1 = a clean sans (Inter/Helvetica-like) for titles and labels plus a brush-marker handwriting headline; video 2 = natural slanted monoline handwriting. `fonts/` ships only handwriting/comic fonts (Gaegu, Patrick Hand, Kalam, Caveat, Architects Daughter, Shadows Into Light, Indie Flower, Gloria Hallelujah, Handlee, Neucha, Covered By Your Grace, Comic Neue, Amatic SC, Delius); there is NO clean sans. The chalkboard stills use wide-tracked rounded fonts (Neucha/Delius). Needs: full-resolution frames from the user (or the user naming the fonts) to match; then add OFL font files to `fonts/` + `fonts/licenses/` and set them per channel (explainer.heading_font / hand_font / body_font).
+
+**What ours looks like today** (storyboard stills of docs/explainer/demo/*, plus production "This AI Model Beats Qwen 3.8 27B..." plan.json):
+- Content sits in the top 40-60% of the frame; the rest is empty.
+- Generic Lucide icons, no concept-specific or brand visuals, no mechanism with moving parts.
+- Qwen plan: 68 scenes, all text layouts (stack 19, hero 19, compare 15, row 8, steps 7), zero motion scenes, even where the narration describes processes and numbers. Motion layouts exist (flow, bars, line, split, grid, pipeline, levels, generation, code, fit_chart, memory, precision, offload, screenshot) but the plan used none.
+- Every scene starts on a blank board; no camera moves (schema rejects `camera`).
+- Side finding: that plan.json does not build against its current subtitles.srt (3 anchor errors: unpublished-rows, not-giant-killer, long-context-advantage); `explainer_scenes.check()` returns early on a build error, so its other checks do not run until anchors are fixed. Not fixed; the production is the user's.
+- Not verified: Remotion motion scenes were not rendered (Windows Node only).
+
+**Where the removed rule came from:** the default motion mix (50% motion, <= 3 text-only scenes or 75 s in a row) was added in commit 13c8217 (2026-10-31, "Enforce a motion mix in scene plans; fix cramped motion scenes", under the user's git name). The user did not agree it.
+
+**Steps (each ends with a storyboard contact sheet the user looks at):**
+1. DONE and merged into master 2026-11-05 (was branch `explainer-narration-led`, commit 9bc2131): default motion limits removed (`MOTION_RULES` empty; a channel can still opt in, blank or 0 = no limit); writer prompt now picks the picture by what the narration says, no quota either way, "slide deck is rejected" / "text scenes are short pauses" / "avoid same layout three times" removed; judge criterion 4 no longer asks for variety for its own sake; measured mix shown to the judge as information only; channel form, settings help and user guide reworded; tests updated (test_motion_mix, test_explainer_channel; 125 related tests pass). The user tests it by checking out that branch and restarting the dashboard.
+2. Typography: identify and add the reference fonts (see Fonts above), including a clean sans for titles/labels and a natural handwriting for annotations; per-channel setting; storyboard comparison.
+3. Composition: let a scene's picture use the frame (larger icons/text, better vertical balance for stack/compare/hero/row); judged by looking at stills against the references, not by a numeric gate.
+4. Vocabulary: `card` (icon + title + rows), dashed `container`, `chips`, "real example" callout, brand marks from a permissively licensed icon set (check licence; text wordmark fallback).
+5. Mechanisms for the claims-vs-reality niche: claim -> who ran the test -> source chain, benchmark race, evidence ladder, mixture-of-experts shelves (grid).
+6. Persistent canvas + zoom: one master diagram per video, region zooms keyed to narration cues (new `camera`/canvas support in the Remotion backend; biggest item).
+
+**First test case:** the Hy4 script (production "Tencent Says Hy4 Rivals The Best AI What They Left Out"): experts grid 49 of 770, bars for Terminal-Bench and OSWorld, flow Tencent -> partner -> press release -> reader, screenshot zoom on the press-release sentence, precision/memory for the preview weights size.
+
+**Status 2026-11-05 (all merged into master):** steps 2-6 are done. Font styles (video1 default: Inter + Caveat Brush titles, clean, handwritten, calibri-light; `explainer.font_style`, `title_size`, `text_size`, `icon_weight`; Windows Calibri/Arial/Times offered in the pickers when present in C:/Windows/Fonts); footers off by default (`explainer.footers`); composition upsizing; layouts cards/group/chips/callout/chain/ladder (`vocabulary.py`); optional persistent canvas and camera (`region`, `base`, `camera`; channel switch "camera moves"); lighter icon line by default and the pen-nib dot off. Brand logos were NOT done (Simple Icons are CC0 but trademarks; the renderer draws strokes) and need the user's call. Remotion scenes still cannot be rendered on Linux. Production 59 (Hy4) has a plan.json using only master-layouts (no cards/chips/callout) so it also compiles on the older renderer.
+
+**Constraints:** respect running renders (do not stop/restart or change their inputs); a manual review is not an automated judge pass; changes land on a branch for the user to test before merging.
+2. DONE on master 2026-11-06: explainer presets. `whisperradar/explainer_presets.py` (built-in chalkboard/whiteboard/coding_lesson/finance_dark + user presets in db setting `explainer_presets`); `settings_spec.effective` layers global < preset < channel and never returns `explainer.preset`; channel form dropdown + overrides notice + "use the preset as it is" reset; "scene genre" shown as "video type"; page `/explainer/presets` (routes in `explainer_channel.register`); note on Video options. Tests: `tests/test_explainer_presets.py`. Guide section 0b.

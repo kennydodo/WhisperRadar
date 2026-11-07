@@ -26,6 +26,8 @@ from .timing import CompiledScene
 
 
 def needs_pipe(scene: CompiledScene) -> bool:
+    if getattr(scene.spec, "camera", None) or getattr(scene.spec, "base", ""):
+        return True
     if any(o.type in (sc.PATH, sc.BAR, sc.COUNTER, sc.GRID, sc.BLOCKS,
                       sc.STROKE_ASSET, sc.HANDWRITING, sc.SHAPE)
            for o in scene.spec.objects):

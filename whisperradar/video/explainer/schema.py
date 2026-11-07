@@ -305,7 +305,8 @@ class SceneSpec:
     cue_range: tuple                      # [first_cue, last_cue], inclusive, 1-based
     objects: list = field(default_factory=list)   # ObjectSpec
     events: list = field(default_factory=list)    # EventSpec
-    camera: Optional[str] = None          # None only in MVP (static viewport)
+    camera: Optional[dict] = None         # {from, to, move_ms}: see camera.py (None = static full frame)
+    base: str = ""                        # id of an earlier scene whose finished drawing starts on the board
     remotion: Optional[dict] = None       # {component, params}: drawn by the Remotion backend
 
     def to_dict(self) -> dict:
@@ -314,6 +315,8 @@ class SceneSpec:
              "events": [e.to_dict() for e in self.events]}
         if self.camera is not None:
             d["camera"] = self.camera
+        if self.base:
+            d["base"] = self.base
         if self.remotion is not None:
             d["remotion"] = self.remotion
         return d
@@ -336,6 +339,8 @@ class ThemeSpec:
     text_color: str = ""                  # "" = chalk white (labels, points, footers)
     text_weight: str = ""                 # hand-written text: "" / thin, normal, bold
     letter_spacing: str = ""              # "" / normal, tight, wide
+    icon_weight: str = ""                 # icon line weight: "" / light, thin, normal, bold
+    text_size: str = ""                   # hand-written text size: "" / normal, small, smaller
     line_style: str = ""                  # "" = hand-drawn wobble, "straight" = clean graphic lines
     heading_size: int = 72
     body_size: int = 44
@@ -358,6 +363,8 @@ class ThemeSpec:
             **({"text_color": self.text_color} if self.text_color else {}),
             **({"text_weight": self.text_weight} if self.text_weight else {}),
             **({"letter_spacing": self.letter_spacing} if self.letter_spacing else {}),
+            **({"icon_weight": self.icon_weight} if self.icon_weight else {}),
+            **({"text_size": self.text_size} if self.text_size else {}),
             **({"line_style": self.line_style} if self.line_style else {})}
 
 
