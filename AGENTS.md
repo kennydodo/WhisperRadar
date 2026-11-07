@@ -1958,3 +1958,49 @@ For future POV Finance Replica thumbnails, use Joe as the recurring lead and use
 
 ## POV Finance Replica shotlist props
 For POV Finance Replica shotlists, avoid stacks or piles of coins as financial shorthand. Use story props such as receipts, bills, a calendar or a handwritten calculation. Ordinary coins are fine when the narration calls for them. Natural stacks of papers, envelopes, receipts and moving boxes are fine.
+
+
+## TODO for Claude — watched-channel Style & bible attachment failure (2026-11-07)
+
+User requested this handoff for Claude to implement. Investigation only so far;
+no implementation, settings changes or rerun was performed. This concerns
+Watched channels > More > Style & bible, NOT the production-page Bible editor.
+
+Confirmed example: Kai, channel UCgUfJoPtkt7-RiiuYh4vmGA.
+- The menu links correctly to /watched/<channel_id>/look; look_routes is registered.
+- data/logs/studio.log: 2026-11-07 15:54:28 run started; 15:54:52 collected
+  13 frames and selected 10 images; 15:55:06 ChatGpt began attaching images.
+- At 15:57:08 the run failed: "the attached file(s) never showed up in the chat:
+  f01.jpg, f03.jpg, f04.jpg, f05.jpg, f06.jpg, f07.jpg, f08.jpg, f09.jpg,
+  f10.jpg, t02.jpg". There was no completed style.md, bible.md or meta.json
+  in this channel's data/channel_look directory when inspected.
+- This establishes failure in upload confirmation, not whether the underlying
+  upload failed or the current ChatGPT UI was not recognised. Do not claim a
+  selector regression or server fault without observing evidence.
+
+Implementation investigation:
+- Inspect whisperradar/webchat.py attachment submission, _wait_for_uploads,
+  _thumb_count, _upload_error and _fix_failed_uploads against the current
+  ChatGPT composer. _wait_for_uploads currently requires every filename to
+  increase in body.innerText, or enough new visible thumbnails for an all-image
+  upload; it times out after 120 seconds.
+- Determine whether files never reach the composer, upload asynchronously,
+  display as thumbnails not recognised by the detector, or show an error.
+  Add useful bounded diagnostics that distinguish those cases without dumping
+  private chat contents. Do not simply remove the check or extend the timeout.
+- Preserve the requirement that all requested images are successfully attached
+  before sending. Handle pending/failed uploads honestly and avoid confusing
+  existing conversation images with newly attached images.
+- Review whisperradar/channel_look.py and look_routes.py plus templates/look.html
+  for clear failure feedback. Preserve previous successful style/bible/frame
+  results when a refresh fails; do not publish partial or invented results.
+
+Validation:
+- Add focused offline regression coverage for the actual confirmed failure,
+  including image-only previews, incomplete/failed upload, and existing images
+  in a conversation as relevant. No paid/model calls in tests.
+- Run relevant webchat/channel-look tests. Any live smoke check should be
+  explicit, supervised and reported separately from offline test evidence.
+- After fixing, report the actual root cause, files changed, test results and
+  any remaining live-verification requirement. Do not launch a generation run
+  merely because this handoff exists.
