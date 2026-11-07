@@ -1,0 +1,364 @@
+# How to Create a Daily Routine That Finally Works (Samurai Method)
+
+**Format:** spoken-word YouTube narration, faceless voiceover  
+**Story:** Nora, Akira Mori, Tess and Dev are fictional, and the script says so on air.  
+**Method:** Few, Form, Cue, Storm. Named 'the Samurai Method' as the author's own framing, and the script says so.
+
+---
+
+## Narration with visual cues
+
+### Hook
+
+*Visual cues:* Whiteboard with a perfect fifteen-item plan, then the same board slowly covered in crossed-out lines by Thursday. Text overlay: 'Built for a day that never happens'.
+
+Your daily routine did not fail because you are lazy. It failed because it was written for a person who does not exist.
+
+A person who never gets a phone call at seven in the morning. Who never has a bad night. Who has no Tuesday.
+
+You probably know the feeling. On Sunday evening, you build the perfect plan. By Thursday, you are explaining to the plan why you are not available.
+
+Maybe you have done this five times. Maybe fifty. And each time, the story you tell yourself is the same: I just need more discipline.
+
+But look at the plan. Ten items. A five o'clock alarm. No room for anything to go wrong. That is not a plan for a person. It is a plan for a day that never happens.
+
+So here is the question for this video. What does a routine look like when it is built for a real person, with real Tuesdays?
+
+### The short answer
+
+*Visual cues:* Four cards appear one at a time: FEW, FORM, CUE, STORM, each with its one-line meaning. Small on-screen note: 'The Samurai Method = my name for four ideas, not a historical schedule'.
+
+Here is the short answer first, so you know what you are getting.
+
+A routine that works has four parts. I call them Few, Form, Cue, and Storm.
+
+Few. Keep only a handful of things, three at most, and make each one small.
+
+Form. Do each one the same way every time, so you do not have to decide how.
+
+Cue. Tie each one to something that already happens in your day, like making coffee, instead of to a time on the clock.
+
+And Storm. Decide in advance what the very small version is, for the day everything goes wrong.
+
+That is the whole method. The rest of the video shows how it works through a story, and at the end, you will build yours in about ten minutes.
+
+One honest note about the name. The Samurai Method is my name for these four ideas. I took them from samurai writings and from martial arts training, and I will tell you exactly which sources. It is not a record of how samurai really spent their days. I do not know that, and nobody should claim to know it from a few books. Some parts of the method have research behind them, and I will say which. The rest is old practice wisdom, offered as a starting point, not as proof.
+
+Now let's meet someone who tried the opposite.
+
+### Chapter one. The Whiteboard
+
+*Visual cues:* Label 'Fictional example'. Nora's apartment, whiteboard with fourteen items (water written twice). Calendar showing Monday restarts. Milkman et al. 2014 card: searches and gym visits rise around week, month, holiday starts; caption 'observational pattern, not proof of cause'. Journal scene at 11:40 with a clock.
+
+Nora is a fictional example. I made her up to show a pattern. The details are invented, but I think you will recognize the pattern.
+
+Nora is thirty-three, and she is a freelance illustrator who works from her apartment. Her clients live in four time zones, so no two of her days look alike. Monday might start with a call at eight. Wednesday might start with an email, sent at midnight, that says, quick question, are you free? She loves the work. She does not love the way her days dissolve.
+
+So, like many people, she went looking for a routine. She read articles about morning routines. She watched videos of people who wake at five, drink water the color of a swimming pool, write in a journal, and then, apparently, run a company before breakfast. By Sunday, she had built her own.
+
+It lived on a whiteboard above her desk. Fourteen items. Wake at five. Cold shower. Stretch for ten minutes. Meditate. Journal. Language app. Read twenty pages. Sketch for an hour before email. Walk. Meal prep. Drink water, which she wrote down twice, for emphasis. And a few more.
+
+On Monday, she did eleven of the fourteen. She felt like a new person. On Tuesday, she did nine. On Wednesday, a client moved a deadline forward by two days, and the whiteboard simply watched. By Thursday, it was a very large way to feel guilty.
+
+Then she did what many of us do. On Friday she told herself, Monday is a fresh start. And on Monday she tried again, with an improved board. Fifteen items.
+
+There may be a reason this feels so natural. In twenty fourteen, Katherine Milkman and her colleagues reported that Google searches for the word diet, and visits to a university gym, rose around dates that feel like new beginnings. The start of a week. The start of a month. The day after a holiday. That was observational data, so it shows a pattern, not a cause. But it fits what most of us know from experience. We are very good at starting. Starting was never Nora's problem.
+
+Her problem was that every one of her routines ended with the first bad day.
+
+The low point came on a Thursday in October. She had promised a client some sketches by noon. At eleven forty, she was on item nine, in her journal, writing a long paragraph about why she was behind. She was writing about being late, while being late.
+
+The client was kind about it. But when Nora closed her laptop that evening, she said something out loud to her empty apartment. I am spending more time running my routine than living my life.
+
+A few days later, she told her friend Tess about it over coffee. Tess listened, stirred her drink for a while, and said, come with me on Thursday. I joined a kendo class. It is the least productive-looking thing I have ever done. And it is the only habit I have kept for a year.
+
+Kendo is a Japanese sword art that uses bamboo practice swords. Nora had never held one in her life. She went mostly to be polite.
+
+### Chapter two. The Gym With the Wooden Floor
+
+*Visual cues:* Community-center gym, wooden floor, bows at the door, ten slow practice swings. Mori as a calm math teacher. Cards: Dokkodo (about a week before Musashi's death, 1645; 21 lines; one translation) and Five Rings (1643-1645; 'The Way is in training'; 'Pay attention even to trifles'), captioned 'English translations differ'.
+
+The class met in the gym of a community center, on a wooden floor that smelled of floor polish and old sneakers. Nora sat on a bench at the side, with a cup of tea she did not need, and watched.
+
+The teacher was Akira Mori. He was seventy-one, small, quiet, and he had taught high school mathematics for thirty-five years. He taught kendo in the evenings, and he spoke the way a mathematician writes, with no extra words.
+
+What Nora noticed first was how little happened. Everyone bowed at the door. Everyone bowed to the teacher. There was a short warm-up. Then came the part Tess had mentioned: ten practice swings, done slowly, in a line, exactly the same way. Mori had a Japanese word for it. Suburi. It simply means repeated practice swings.
+
+Nobody asked what they should work on today. Nobody had a plan on a whiteboard. The class started the same way, and it ended the same way, and in between, people got a little better.
+
+Afterward, Mori noticed her watching. Tess introduced her, and somehow, within five minutes, Nora was telling a retired math teacher about her fourteen-item routine. She even showed him a photo of the board.
+
+He studied it for a long time. Then he handed the phone back.
+
+This is a very good list, he said, of the person you would like to be on a day when nothing goes wrong.
+
+Nora laughed, because it was true, and because it hurt.
+
+I do not teach routines, he said. I teach practice that is small enough to survive your worst day. Do you know the last thing Musashi wrote?
+
+She knew the name, vaguely. Miyamoto Musashi, the famous swordsman.
+
+It is a short text called the Dokkodo, Mori said. He wrote it about a week before he died, in sixteen forty-five, for one of his students. It has twenty-one short lines. One English translation of one line says: do not collect weapons or practice with weapons beyond what is useful.
+
+Nora frowned. That sounds like the opposite of a swordsman.
+
+It sounds like a man who spent his life practicing, Mori said, and knew that more is not the same as better. Practice what is useful. Then stop.
+
+He added one more. Musashi also wrote a longer book, the Book of Five Rings, around sixteen forty-three to sixteen forty-five. In one translation, it says the Way is in training, and it tells the reader to pay attention even to trifles.
+
+Trifles, Mori said. Small things, done every day. That is all a routine is.
+
+I should be honest with you about those quotes. They are English translations, and translations differ. I am using them as ideas to think with, not as proof of how Musashi lived. But the idea holds up well: practice what is useful, and do not despise small things.
+
+Mori gave Nora an assignment. Come back on Saturday, he said, with three things. Not four. If you bring four, I will know you did not listen.
+
+On the way home, Nora took out her phone and opened the photo of the whiteboard. Fourteen items. Which three?
+
+It was the hardest cutting she had done since her university thesis.
+
+### Chapter three. Few
+
+*Visual cues:* Two lists on screen: three kept, eleven moved to 'Later'. Open / Work / Close icons. Lamp wobbling after swing four (light animation). Caption: 'Three is Mori's rule of thumb, not a research finding'. Mid-roll line on screen: 'Stay with me'.
+
+On Saturday, Nora arrived with a list of three, and a list of eleven things she had crossed out, which she held up like evidence.
+
+Mori read the three. Then he did something she did not expect. He asked her why she had chosen them.
+
+She explained. One to start the day: ten minutes of movement, because she sat all day. One for the work that mattered: an hour on her own illustration project, before she opened email, because client work always took over the morning. And one to close the day: write down tomorrow's first task on a card, and put the card on her keyboard.
+
+Good, Mori said. Notice what you did. You did not choose the three best habits in the world. You chose the three that protect your day. One to open, one to work, one to close.
+
+And the eleven? Nora asked. Meditation, language app, reading?
+
+They are not bad ideas, he said. Put them on a list called Later. A routine is not the place for everything you want. It is the place for what you will do even when the day goes badly.
+
+I want to be clear about something. No study tells you that three is the right number. It is Mori's practical rule, and a good starting point. If you can sustain four, fine. But if your routines usually break by Thursday, the safest move is to try fewer things, not stronger willpower.
+
+Then he lent her an old bamboo practice sword, called a shinai, and said, for the movement part, ten swings. Not ten minutes. Ten swings.
+
+The first time Nora swung it in her apartment, she hit the lamp on swing four. The lamp survived. Her dignity was less certain.
+
+I should say this plainly, since I am talking about swords. You do not need one. Ten stretches, ten squats, or ten slow breaths do the same job. The point is a small, physical start to the day. And please keep real swords away from your lamp.
+
+There was another thing Nora noticed in the first week, and it surprised her. Three items felt almost insulting. Two of them took almost no time, and the third was just one hour. She kept thinking, is this all? Surely I should be doing more.
+
+Mori had predicted this. The urge to add is the old routine trying to come back, he said. Leave it alone for two weeks. If you still want more after that, add one thing. One. That is his own rule of thumb, not a research finding.
+
+By Friday of the first week, Nora had done the whole routine on four of the five days. It was the first time in two years that a routine had lasted past Wednesday, and it took far less effort than the old one.
+
+But Mori was not impressed. He only asked, what did you do first on Wednesday?
+
+She had to think. On Wednesday, she had done the sketching hour first, because she felt inspired. Then she had forgotten the swings.
+
+Stay with me, because the next part is about why the order matters more than you would expect, and why the form is the part that does the work.
+
+### Chapter four. Form
+
+*Visual cues:* Index card writes itself: time, place, order, count. Kata explainer: 'a set sequence of movements practiced the same way each time'. Split screen: fixed order vs shuffled order. Caption: 'An idea behind forms, not a proven rule'.
+
+There is a word in Japanese martial arts, kata, which means a set sequence of movements, practiced the same way every time. Some are practiced alone and some with a partner, and the idea is to repeat them over and over to build the basics.
+
+Mori applied the same idea to Nora's three items.
+
+A form, he said, has four parts. What you do. How much. In what order. And where. If you leave any of them open, you are not practicing. You are negotiating.
+
+So they wrote the form on an index card:
+
+First, at six thirty, in the living room, ten swings. Then, at the desk, one hour on the personal project, with email closed. Last, when the day is over, one card for tomorrow.
+
+Nora added the six thirty herself, because that is what the videos said. Same time. Same place. Same order. Same count.
+
+Why does this matter? Mori's answer was simple. If the form is fixed, then at seven in the morning, when you are tired and your mind is a fog, you do not have to decide anything. You do not ask, what shall I do today, or, should I start with the sketching? You just start at the beginning of the form.
+
+I should be careful here. I am not citing a study for that point. It is the idea behind forms in martial arts, and many people find it true, but it is an idea, not a proven rule. Try it, and see if it helps you.
+
+Nora tried to be clever. The following week, she changed the order every day, because she believed in creative flexibility. On Monday, work first. On Tuesday, swings first. On Wednesday, she skipped the swings and told herself she would catch up later.
+
+When she described this to Mori, he nodded, without any hint of judgment. Flexibility is wonderful on day one hundred, he said. On day three, it is a loophole.
+
+And there is a second use of form that Nora did not expect. A form tells you when you are done. After the ten swings, there were no more swings. After the card, the day was closed. There was no guilty extra, no nagging voice saying, you could also have meditated.
+
+That, Nora said later, was the best part. The routine had an end.
+
+Two weeks in, she noticed something else. She had stopped thinking of it as a routine at all. It had become just the way her day started. She was not saying to herself, now I do my routine. She was saying, now I swing.
+
+And that is when it ran into its first real problem. Her alarm clock.
+
+### Chapter five. Cue
+
+*Visual cues:* Clock vs kettle graphic. If-then card: 'When I switch on the kettle, I do ten swings.' Gollwitzer & Sheeran 2006 card: 94 tests, medium-to-large effect, goals varied. Wood et al. 2005 card: 115 students, habits mostly continued when the setting stayed similar; caption 'a link, not proof'.
+
+The plan said six thirty. That was when Nora planned to start her swings. And on days when she had no early calls, it worked perfectly.
+
+But a client in Singapore booked a seven o'clock call for a Tuesday. On Wednesday, she worked until two in the morning and woke at nine. On Thursday, a deadline arrived. At six thirty, she was either asleep, or on a call, or already late. The routine had a time, but her life did not.
+
+She told Mori on the next Saturday. I keep missing the start, she said. My days are different every day.
+
+Then the clock is the wrong anchor, he said. When does your day begin?
+
+It depends.
+
+Then what always happens? Something that happens every day, even when your schedule falls apart.
+
+Nora thought. I make coffee, she said. Always. Even when I haven't slept.
+
+Then that is your cue.
+
+They wrote it as an if-then plan. When I switch on the kettle, I do my ten swings while the water boils.
+
+It sounds almost too simple. But it changed how Nora felt about the whole thing. The kettle became, as she put it, the most productive appliance in her apartment. She did not have to remember. She did not have to check the time. The cue was already part of her day, so the routine was attached to something that already happened.
+
+They did the same for the other two. When I sit at the desk with my coffee, I open the personal project before I open email. And when I close the laptop at the end of the day, I write one card for tomorrow.
+
+Researchers have studied plans like this. This kind of plan is called an implementation intention, and the idea is simply to decide in advance when and where you will act. In two thousand six, Peter Gollwitzer and Paschal Sheeran combined the results of ninety-four tests of these plans. Overall, people who made them were more likely to reach their goals, and the researchers described the effect as medium to large. I should add that the goals in those studies were many and varied, and not all were about daily routines. But it supports a simple idea: a plan that says exactly when and where is often easier to follow than a good intention.
+
+There is also research on why the setting matters. In two thousand five, Wendy Wood and her colleagues followed one hundred and fifteen students who transferred to a new university. They found that strong habits, such as exercising or watching television, mostly continued when the setting stayed similar. When the setting changed a lot, the habits were more likely to be disrupted. That study followed students as they were. It did not change their surroundings itself, so it shows a link, not proof. But it suggests something useful: your habits may be tied to the places and moments where you do them.
+
+For the next three weeks, everything worked. Nora did not feel heroic. She did not wake at five. But she did her swings while the kettle boiled, she worked on her own project each morning, and she closed each day with a card on the keyboard. She was getting more done on her illustration project than she had in months.
+
+Then the cold arrived, and the revisions arrived on the same day.
+
+### Chapter six. Storm
+
+*Visual cues:* Nora under a blanket, forty revision notes on screen. Phone call with Mori. Hagakure card: written down 1709-1716, 'one translation', 'one reading'; small note 'Skip if this topic is hard for you'. Storm card: one swing, one line, one card. Lally et al. 2009 card: 96 volunteers, one missed opportunity did not make an important difference, long breaks not tested.
+
+It began with a sore throat on Monday. By Tuesday, Nora had a fever. And on Tuesday morning, a client sent forty revision notes, with the message, can we have these by Friday?
+
+The kettle was still there. The index card was still on the desk. And Nora was lying on the sofa under a blanket, looking at the ceiling.
+
+She did not do the swings. She did not open her project. She did not write a card.
+
+On Wednesday she did not either. And then, on Wednesday night, she heard the old voice, the one that had spoken eleven times before. Well, the routine is ruined. Start again on Monday.
+
+She picked up her phone, almost out of habit, to write a new plan. A bigger one, with a recovery period. Instead, she sent Mori a message. I am ill. I have forty revisions. I have ruined it.
+
+He called, which surprised her. His voice was calm. Did you swing once today?
+
+No.
+
+Then tomorrow, once.
+
+Once?
+
+Once, he said. One swing. If you can do two, do two. But one is enough.
+
+Nora nearly laughed. Then he told her why.
+
+There is an old Japanese book called the Hagakure, he said. It was written down between seventeen oh nine and seventeen sixteen, from the talks of a retired samurai named Yamamoto Tsunetomo. In one translation, a passage says that the way of the samurai is, morning after morning, the practice of death.
+
+I know that sounds heavy. I want to be careful. I am not asking you to do anything like it. One reading of the passage is that the aim was to keep a warrior's mind free from fear, so that fear would not freeze him at the wrong moment. That is the only part worth borrowing. Not the death. The preparing. And if this topic is hard for you, skip this part. The plan works without it.
+
+Mori put it in plain words. Each morning, imagine what could go wrong today. Then decide, in advance, what you will still do.
+
+That is a Storm plan, he said. You make it on a good day, so you do not have to invent it on a bad one.
+
+So, still sick, Nora wrote a new card. The Storm version. Bad day: one swing. One line on the project. One card for tomorrow.
+
+She read it back and laughed, for the first time in days. It was so small that it was impossible to say she had no time.
+
+On Thursday, she did it. One swing, standing in the kitchen in her socks, with a fever and a blanket. One line on the illustration, which was a very bad line. One card. It took four minutes.
+
+And here is what she noticed. That evening, when she thought about her routine, she did not feel that she had failed. She felt that she had kept it. The routine had become smaller for a few days. It had not ended.
+
+That fits something researchers have found about missed days. In two thousand nine, Phillippa Lally and her colleagues at University College London followed ninety-six volunteers who were building new daily habits. Missing one opportunity did not make an important difference to how the habit developed. The study did not test long breaks, and it was about building habits, not about illness or bad weeks. So I would not push it too far. But the message is useful. One missed day is not the end.
+
+Mori added a rule for the Storm plan, and I think it is an important one. The Storm version is for a bad day. It is not a new routine. If the Storm version becomes your whole week, then something is wrong, and the answer is to look at the plan, or your workload, or your health, and not to push harder.
+
+Nora finished the revisions on Friday morning. She was not proud of the revisions. But she was glad about the card on her keyboard.
+
+Then, a month later, the setting changed.
+
+### Chapter seven. The Stairwell
+
+*Visual cues:* Office stairwell, bamboo sword poking out of a bag, security guard nodding. New if-then cues written. 30-day tally graphic: 19 full, 8 storm version, 3 nothing (fictional example). Dev's 23-habit app, cut to three. Whiteboard now holds a grocery list.
+
+In month three, a big client asked Nora to work at their office for a week. A different building, a different desk, no kettle. She packed her laptop, her cards, and her shinai, which stuck out of her bag like a very polite weapon.
+
+On Monday, the routine disappeared. She did not do the swings, because there was no kettle. She did not do the project hour, because her new desk faced a wall of meetings. By Tuesday afternoon, she was thinking, it only works at home.
+
+That evening she did what Mori had taught her to do. She did not make a new routine. She looked at the cues.
+
+The form was fine. Ten swings, one hour, one card. The cues were the problem. They belonged to her apartment. Her old cues had stopped working because the setting had changed. That fits the idea from the setting research, though that research only shows a link.
+
+So she wrote new ones. When I put my bag down at the new desk, I walk to the stairwell and do my ten swings. When I come back, I open the project before email. And when I close the laptop, I write the card.
+
+On Wednesday morning, she stood in a fire stairwell on the fourth floor, swinging a bamboo sword at nothing. A security guard walked past, looked at her for a moment, and nodded, as if he had seen worse.
+
+By Friday, the new cues felt normal. When she returned home, the kettle cue came back without any effort.
+
+Now let me tell you how things looked half a year later, because it is not what you might expect.
+
+Nora does not wake at five. She wakes at different times, depending on the day. Her whiteboard now holds her grocery list. She still has bad days. She still has weeks that go wrong.
+
+In the last thirty days, she did all three items on nineteen days. She did the Storm version on eight. And on three days, she did nothing at all, because she was traveling, or ill, or just done. That adds up to thirty. And she did not treat any of it as a failure, because the plan had room for all of it.
+
+If you asked Nora what changed, she would not say that she found discipline. She would say that she stopped building routines for a person who does not exist.
+
+One day, a colleague at her co-working space, a developer named Dev, showed her his habit app. Twenty-three habits. Color coded. With charts. He said, I keep falling off, and I do not know why.
+
+Nora looked at the screen for a moment. Then she said, cut it to three. And write down what you will do on the worst day of the month.
+
+Dev stared at her. That is it?
+
+That is the method, she said. It does not look like much. That is the point.
+
+That evening she told Mori. It finally works, she said.
+
+He raised an eyebrow. Ask me again after your next bad week.
+
+She smiled. But she knew what he meant. A routine does not prove itself on good days. It proves itself on the other ones.
+
+### Chapter eight. Build Yours in Ten Minutes
+
+*Visual cues:* Four-step list animating one step at a time: Few, Form, Cue, Storm. 'Honest limits' card. One-sentence takeaway on screen. Final card: Three items / Cue for each / Storm version. End screen with subscribe and comment prompt.
+
+Let me bring this back to you. You can do this in about ten minutes, with a pen and one piece of paper.
+
+Few. Write down no more than three things. One to open the day, one to do the work that matters, and one to close it. Everything else goes on a list called Later. If three feels too small, good. That means it might survive.
+
+Form. For each of the three, write what you do, how much, in what order, and where. Make it so clear that someone else could follow it. Then make it a little smaller than you think you need.
+
+Cue. For each one, finish this sentence. When I do this, I do that. Choose something that happens every day, even on bad days, like the kettle, brushing your teeth, or sitting down at your desk. Avoid cues that depend on a time of day, unless your day really is the same every day.
+
+Storm. Write the tiny version of each item. The one you could do while ill, late, or heartbroken. One swing. One line. One card. Put it on the same piece of paper. Make it on a good day, so you never have to invent it on a bad one.
+
+Now a few honest limits. This is a framework, not a proven method. The research I mentioned supports parts of it, such as the role of the setting, if-then plans, and the fact that one missed day was not a disaster. But those studies used different people and different habits, and no study has tested the whole method. The samurai sources are English translations of texts written in a very different time, and I used them as ideas, not as a record of daily life. And if your hours are set by other people, such as shift work or caring for someone, the cue idea helps, because it does not depend on the clock. If a health problem makes even the Storm version impossible for weeks, please talk to a doctor.
+
+Here is the whole thing in one sentence. A routine that works is a few small forms, tied to a cue, with a plan for the day it all goes wrong.
+
+And that answers the question we started with. Why does a perfect routine fall apart by Thursday? Because it was built for a day with no trouble in it. Build for the bad day first, and the good days are easy.
+
+So here is a small challenge. Tonight, take ten minutes. Write your three. Write your cue for each. Write the Storm version. Then put the paper somewhere you will see it, and do nothing else. Do not buy a planner. Do not start on Monday. Start with the kettle.
+
+If this video helped you, subscribe for more videos about how change really works. And tell me in the comments what your three items are. Writing them down makes it real, and I would love to read them.
+
+Thank you for watching all the way to the end. Go and find your kettle.
+
+---
+
+## Facts and sources
+
+| Claim in script | Source | Status |
+|---|---|---|
+| Dokkodo: written about a week before Musashi died in 1645, for a student; 21 precepts; one English translation of one line: 'Do not collect weapons or practice with weapons beyond what is useful' | https://en.wikipedia.org/wiki/Dokk%C5%8Dd%C5%8D ; https://martialmusings.com/the-way-of-walking-alone/ | Verified on pages. Wording is one translation, flagged on air as 'one English translation' |
+| Book of Five Rings written about 1643 to 1645; Earth book includes 'The Way is in training' and 'Pay attention even to trifles' | https://en.wikipedia.org/wiki/Go_Rin_No_Sho | Verified via Wikipedia; translations differ, flagged on air. The popular 'thousand days to forge' quote was NOT used because it could not be verified |
+| Hagakure: Yamamoto Tsunetomo's talks written down 1709 to 1716, compiled by Tashiro Tsuramoto | https://en.wikipedia.org/wiki/Yamamoto_Tsunetomo | Verified |
+| Hagakure passage: 'the way of the samurai is, morning after morning, the practice of death'; one reading: aim was to keep the mind free from fear | https://themathesontrust.org/papers/fareasternreligions/mt-hagakure.pdf | FLAG: verified only through this secondary paper (section 118 in its citation); original text and translation not checked. Script says 'in one translation' and 'one reading'. A skip-this-part line is included. Cut the passage if you prefer |
+| Kata: set sequences of movements repeated to build basics | https://selfdefensekarate.org/index.php/Kata (a karate site) | Verified generally. FLAG: 'some are practiced alone and some with a partner' is from general knowledge (kendo kata are partner forms), not from the page |
+| Suburi: repeated practice swings | https://aikidodavis.com/how-to-practice-suburi/ | Verified |
+| Milkman and colleagues (2014): Google searches for 'diet' and university gym visits rose around temporal landmarks such as start of week, month, after holidays; observational | https://www.psychologicalscience.org/news/minds-business/why-monday-is-the-best-day-for-setting-new-goals.html ; paper: https://faculty.wharton.upenn.edu/wp-content/uploads/2014/06/Dai_Fresh_Start_2014_Mgmt_Sci.pdf | Verified via APS summary. FLAG: original paper not opened. Script says 'observational data, a pattern not a cause' |
+| Gollwitzer & Sheeran (2006): 94 tests of implementation intentions, medium-to-large effect; goals varied | https://kops.uni-konstanz.de/entities/publication/2e749bfb-8533-437c-8203-7e788c910c5f | Verified on page |
+| Wood, Tam & Guerrero Witt (2005): 115 students transferring universities; strong habits mostly continued when the setting stayed similar; link, not proof | https://dornsife.usc.edu/wendy-wood/wp-content/uploads/sites/183/2023/10/Wood.Tam_.GuerreroWitt.2005_Changing_circumstances_disrupting_habits.pdf | Verified in the paper |
+| Lally et al. (2009): 96 volunteers; missing one opportunity did not make an important difference; long breaks not tested | https://www.ucl.ac.uk/news/2009/aug/how-long-does-it-take-form-habit ; https://www.thebehavioralscientist.com/articles/how-long-to-form-a-habit | Verified via summaries. 66-day figure deliberately not used |
+| Three items, one to open / work / close; ten swings; cue-attached if-then plans; fixed form reduces decisions; Storm version; add one thing after two weeks | Mori's practical rules and the author's reasoning | Not research. Labelled on air as rule of thumb or 'an idea, not a proven rule' |
+| Nora, Mori, Tess, Dev, all dialogue, the 30-day tally (19 + 8 + 3 = 30) | Invented | Labelled 'a fictional example' on air; arithmetic checked |
+
+## Pre-publish checklist
+
+- [ ] Put the source links above in the video description.
+- [ ] Decide whether to keep the Hagakure passage (verified only through a secondary paper). The script works without it if you cut that section and its skip-this-part line.
+- [ ] Listen to one TTS render for these respellings: Doh-koh-doh, Hah-gah-koo-reh, Moo-sah-shee, Ah-kee-rah Moh-ree, soo-boo-ree, shee-nye, ken-doh, kah-tah, Goll-vit-ser. Names left unrespelled: Milkman, Sheeran, Lally, Wood, Nora, Tess, Dev.
+- [ ] Keep the 'fictional example' line in Chapter one and the honest-limits section in Chapter eight.
+- [ ] Decide whether to keep the spoken 'Chapter ...' labels.
+- [ ] Replace the closing lines with your channel sign-off if you have one.
+- [ ] Turn on YouTube's disclosure setting for AI-generated or synthetic voice, if applicable.

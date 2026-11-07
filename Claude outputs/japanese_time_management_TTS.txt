@@ -1,0 +1,373 @@
+You cannot make time for everything. Nobody can. If a video promises you that, it is selling you a planner.
+
+But you can make time for the things that matter. And the easiest way to do it is not to squeeze more into your day. It is to stop losing the hours you already have.
+
+You know the feeling. It is Sunday evening, and you are looking at the week ahead. Work. Family. The thing you promised a friend. The project you keep meaning to start. The email you keep meaning to answer. And a small voice says: where is the time going to come from?
+
+The honest answer is that most of it is already there. It is leaking out through a hole you have never looked at.
+
+Now, there is no single thing called Japanese time management. But some of the best ideas about time came out of Japanese factories, from people whose whole job was to find lost hours and give them back.
+
+I have taken four of those ideas and turned them into four steps for an ordinary life. They are simple. And they work on a very different problem from the one you think you have.
+
+Here is the short answer first, so you know what you are getting.
+
+The four steps are Count, Cap, Even, and Pull.
+
+Count. Spend one week writing down where your time actually goes. Not where you think it goes. You are looking for waste.
+
+Cap. Put a limit on how many things you are working on at once. Three is a good place to start. Everything else waits in line.
+
+Even. Spread your work across the week instead of cramming it, and leave empty space in every day, so a surprise does not wreck you.
+
+And Pull. Start a new thing only when something else finishes. Never before.
+
+That is the whole method. The rest of the video is a story about a man who tried it, and at the end, you will build your own in about fifteen minutes.
+
+One note about the name. This is my framework. It borrows from the Toyota Production System and from a tool called kanban, and I will tell you exactly which parts come from where. It is not an ancient Japanese secret, and the research behind it is partial. I will say where the evidence is strong and where it is only a good idea.
+
+Now let's meet the man with no time.
+
+Chapter one. The Man With No Time
+
+Ben is a fictional example. I made him up to show a pattern. The details are invented, but I think you will recognize the pattern.
+
+Ben is forty-one. He manages a busy dental practice, and at home he has a wife named Clara, a nine-year-old, and a six-year-old who has recently decided that bedtime is a negotiation. Ben is good at his job. People ask him how he handles so much. He smiles and says, I don't. That is the true answer.
+
+Ask Ben how his week is going, and he will say the same four words. I have no time. He says it to his staff. He says it to Clara. He says it, at ten at night, to the ceiling.
+
+Here is what Ben had open, on the Sunday this story starts. A new booking system at work, half installed. The staff rota for the next quarter. A tax form for the practice. A kitchen at home with tiles on one wall and none on the others. An evening course in Spanish. A plan to run three times a week. A photo book of the children, which he had been making for two years. A shed to clear. A book club he had joined and not attended. And a project on his phone called organize my projects.
+
+There were fourteen open things in all. Not one of them was finished. And Ben felt, with a certain grim logic, that the answer was more hours.
+
+So he tried the usual things. He bought a planner with a leather cover. He woke earlier. He stayed up later. He wrote a perfect schedule on Sunday night, one that gave every task exactly one hour.
+
+And here is the first thing worth noticing. Almost nothing took an hour.
+
+Researchers have a name for this. It is the planning fallacy. In a well-known study published in nineteen ninety-four, Roger Buehler and his colleagues asked university students to predict how long their final-year thesis would take. On average, the students' best guess was about thirty-four days. The theses took about fifty-six days. Fewer than a third of the students finished within the time they had predicted.
+
+That was students, doing one kind of task. It does not prove that you will be off by the same amount. But it fits what most of us know. We guess the time for a task as if nothing will go wrong, and then something goes wrong.
+
+Ben was a textbook case. The tax form was an hour, he said. It took three. The rota was an hour. It took two, plus a phone call he had not planned for. By Wednesday, every hour in his schedule was a lie, and the lies were stacking up like dishes.
+
+On Thursday night, he was standing at his kitchen window with a cold cup of tea, looking at the half-tiled wall. And he saw, in the garden next door, a light on in a shed.
+
+His neighbor, Sachiko Endo, was sixty-six years old, and she was sitting in the shed at nine o'clock at night, perfectly calm, reading a newspaper with a magnifying glass.
+
+She looked up and waved. And then she said something through the open window that Ben would remember for a long time.
+
+You don't have a time problem, she said. You have a factory problem.
+
+Chapter two. The Neighbor From Aichi
+
+Ben did what any polite person would do. He pretended he had not heard it, and then, the next morning, he asked about it over the fence.
+
+Sachiko laughed. She had been waiting for someone to ask.
+
+She had spent thirty-one years working in a car-parts factory in Aichi, the region around Nagoya, where much of Japan's car industry grew up. She started on the line, and she finished as a supervisor. She had retired three years ago, moved to a new city to be near her daughter, and bought the house next to Ben's.
+
+I did not invent anything, she told him. I just watched good people work for thirty years, and I learned what they were really doing. They were not working harder than other people. They were wasting less.
+
+Then she wrote three Japanese words on the back of an envelope.
+
+Muda. Mura. Muri.
+
+These come from the Toyota Production System, she said, which was shaped by an engineer named Taiichi Ohno. They are three different ways of losing time.
+
+Muda is waste. It means activity that adds no value. Waiting. Searching. Doing a job twice. Making things nobody asked for.
+
+Mura is unevenness. It means a process that swings between too much and too little. A line that is flooded on Monday and empty on Thursday.
+
+Muri is overburden. It means asking too much of a person or a machine, until things break.
+
+Ben looked at the envelope. That is for factories, he said. I run a dental practice.
+
+You run a factory, she said. It makes appointments. And at home, you run a very small factory that makes dinners and bedtimes. The ideas are about work and people. They fit more places than you might think.
+
+A word on the limits. People are not machines, and a household is not a production line. Sachiko was the first to say so. She picked these ideas up on the factory floor and had been trying them on her own kitchen for years. Some fit well. Some did not fit at all. She told Ben to keep what worked, and drop the rest.
+
+Then she asked him one question. How much time did you spend yesterday?
+
+On what?
+
+On everything. In order. Write it down, she said. For one week. Do not change anything yet. Just count.
+
+Ben said he already knew where his time went. It went to work, and to the children, and to the project list.
+
+Sachiko smiled in a way that suggested she had heard this sentence before, from a great many people, including herself.
+
+You think you know, she said. Everyone does. A factory also thinks it knows, until somebody walks the floor with a clipboard.
+
+She turned the envelope over. On the front, she had drawn a grid. Time down the side, days across the top. Write what you were doing, she said. Every few hours is enough. Be boring and be honest.
+
+Ben put the envelope in his pocket. He expected it to be a waste of a week.
+
+It turned out to be the most useful week he had had in years. But it did not feel like it, at first. It felt like being caught.
+
+Chapter three. Count
+
+For seven days, Ben carried a small notebook and a pen. Three times a day, at ten, at three, and at nine at night, he wrote down what he had done since the last check. Not what he had meant to do. What he had done.
+
+By the middle of the week, he was embarrassed. By the end, he was fascinated.
+
+On Sunday, he sat at the kitchen table and added up the minutes. Then he did it again, because he did not believe the answer.
+
+Eleven hours. Over one week, Ben had found about eleven hours that were pure waste. Not rest, and not play. Waste.
+
+Three hours went on re-reading and searching. The same twenty emails opened four times each, because he never decided what to do with them. Files he knew he had saved somewhere. The tax form's login, found in three different places.
+
+Four hours went on meetings that ended with no decision. Everyone nodded, everyone left, and a week later, the same meeting happened again.
+
+Two and a half hours went on doing things twice. Mistakes in the rota, caused by rushing. A booking he had to redo.
+
+And one and a half hours went on scrolling his phone late at night, in the quiet after the children were asleep, when he told himself he was resting and did not feel rested.
+
+Three plus four plus two and a half plus one and a half. That is eleven.
+
+Sachiko looked at the page for a long time. She tapped the line about scrolling.
+
+I am not telling you to remove this one, she said. If it is rest, keep it, and enjoy it. What I do not like is that you called it rest and it did not feel like rest. Keep what you would choose again. Drop what you did out of habit.
+
+She drew three boxes. Stop. Shrink. Keep.
+
+The meetings with no decision, she said. What would stop them?
+
+Ben thought. A rule, he said. No meeting without a question to answer and a name beside the decision.
+
+Good. That is a stop. The searching?
+
+A shared folder, with a proper name for each thing. One place for the tax login.
+
+That is a shrink. And the late scrolling?
+
+Half of it, Ben said. I will keep half.
+
+That is honest, Sachiko said. Half is a good number.
+
+Here is a thing she said that Ben wrote down. When you count, you are not looking for guilt. You are looking for the hole in the bucket. You can carry water faster for years, or you can fix the hole.
+
+Over the next month, by his own rough count, Ben recovered about six hours a week. That is a fictional example, and your number will be different. But there is a lesson in it. The hours were never missing. They were being used, just not by him.
+
+He felt much better. He felt, in fact, like a man who had won.
+
+Sachiko looked at him with the expression of someone watching a person admire a hole in the ground.
+
+Now, she said, you have found the leaks. That is the easy part. But the bucket is still too full. Do you know why you still have fourteen things open?
+
+Ben did not.
+
+Come over on Saturday, she said. Bring your project list. And bring a pair of scissors.
+
+Chapter four. Cap
+
+On Saturday, Ben sat at Sachiko's kitchen table with a list of fourteen projects, a pair of scissors, and a nervous feeling.
+
+She had him cut the list into strips. One project per strip. Fourteen strips, laid out on the table like a very small and very sad deck of cards.
+
+Now, she said, which of these are you actually working on? Not which ones you care about. Which ones are in progress, this week, with your hands?
+
+Ben pointed. The tax form. The booking system. The rota. The tiles. The photo book. The running.
+
+Six, Sachiko said. And the others?
+
+Waiting, he said. But I think about them.
+
+She nodded. That is also work, she said, but a kind that gets you nothing. It is the part that wears you out and produces no results.
+
+Then she drew three columns on a sheet of cardboard and taped it to the inside of a cupboard door. Waiting. Doing. Done.
+
+This is called a kanban board, she said. In the factory, we used cards that told the next station what to make and when. Kanban just means signal card. It was popularized by Taiichi Ohno, and the idea underneath it is very simple. Do not start more than you can finish. You limit the work in progress.
+
+Ben said that sounded like common sense.
+
+It is, she said. And almost nobody does it. She tapped the Doing column. How many cards can sit here?
+
+Ben looked at six strips and tried to be brave. Four, he said.
+
+Three, said Sachiko.
+
+Why three?
+
+I will tell you something about queues, she said, and then you can decide. There is a simple rule from queueing math, called Little's law. In a stable system, the number of things in progress equals how fast you finish them, multiplied by how long each one takes. If your finishing speed stays the same, and you start more things, each one takes longer.
+
+Read that again slowly. If you start more things and finish at the same speed, each one takes longer.
+
+Ben stared at the cardboard. That means my six projects take twice as long as three would.
+
+In a simple system, yes, she said. It is not an exact law for human beings, and Ben's finishing speed is not a constant. But the direction is real. Every thing you start and leave half done is stock sitting on the floor. In a factory, we call that inventory, and it is a form of muda. It costs space, it hides problems, and it cannot be sold.
+
+There is also research on why juggling hurts. In two thousand one, Joshua Rubinstein, David Meyer, and Jeffrey Evans ran experiments in which young adults switched between tasks like solving math problems and sorting shapes. Every switch cost a little time, and the cost was larger when the tasks were more complex or less familiar. The cost per switch was small, sometimes a fraction of a second. But in a day with a hundred switches, small things add up. I would not push this too far. It was a laboratory study with simple tasks, and real life is messier. But it matches the feeling of having six things open and finishing none.
+
+Ben picked up the three strips he would keep in Doing. Tax form. Booking system. Tiles.
+
+The rota, he said. It's due in a month.
+
+Then it goes in Waiting, with a date on it. You will pull it in when it is time.
+
+And the photo book?
+
+Waiting.
+
+And the running?
+
+Ben looked at her. Sachiko raised an eyebrow. It was the first time he noticed that she was not unkind. She was only, always, correct.
+
+Running is your health, she said. If you want it, it can be a standing habit and not a project. Put it in the corner of the board, with a time.
+
+Ben moved eleven strips into the Waiting column, one at a time. It felt like leaving eleven people at a bus stop.
+
+By Friday of that week, the tiles were done. A wall that had been unfinished for fourteen months took one afternoon, because nothing else was competing for it. Ben stood in front of it with a small, silly smile.
+
+That was the whole point, Sachiko said, when he told her. It does not make you faster. It stops you from being slow at six things at once.
+
+But she did not smile back. She looked at his week. His Monday was a wall of appointments. His Tuesday was almost as full. And his Thursday, for no reason he could explain, was nearly empty.
+
+Now we have a different problem, she said. Look at your days.
+
+Chapter five. Even
+
+Sachiko spread Ben's notebook on the table and pointed.
+
+On Monday, he had written nine things. On Tuesday, eight. On Wednesday, four. On Thursday, two. And on Friday, he had put everything he had skipped, which was seven.
+
+Mura, she said. Do you remember? Unevenness. Your week is a mountain range.
+
+Ben had to admit it was true. Monday was crushing because the practice was busy after the weekend. By Thursday, he was exhausted, so he did very little. And on Friday, he panicked and tried to make up for it, which is how he made the mistakes that cost him the extra two and a half hours.
+
+In a factory, she said, an uneven line is expensive. The machines sit idle, and then they are overloaded, and then something breaks. It is cheaper to make a steady amount every day, even if it is less than the maximum.
+
+Why does that fit a person? Ben asked.
+
+Because you are a line too, she said. You have a speed that is steady if you let it be steady, and a speed that is frantic if you cram.
+
+So they drew a new week. Not with more in it. With the same work, spread out. The rota would be done on Wednesday, in the quiet part of the practice's week. The tax form would be done in small pieces, twenty minutes each morning, so it would not hang over the weekend. The heavy appointments would be spread over the days that could take them.
+
+And then Sachiko did something that made Ben uncomfortable. She took a pen and drew a line through a third of every day.
+
+What is that? he asked.
+
+That is the part you do not book, she said. Muri is overburden. It is what happens when every minute is promised. A machine at full load for a whole day will break, and so will you. I leave about a third of each day empty. In my factory, we called it slack. It is not wasted time. It is how a surprise fits into the day without tipping over the whole line.
+
+A third felt like a lot. Ben said so.
+
+It is my own rule of thumb, she said, not a law. It could be a quarter for you. It could be a half, in a hard season. But you should have a number, and it should not be zero.
+
+There is some support for the idea underneath. The planning fallacy research suggests that we guess how long things take as if nothing will go wrong. A buffer is a way of admitting that something will. But the exact amount is a matter of judgment, and it depends on your job, your family, and the season you are in.
+
+The first week of the even schedule felt strange. Ben had the creeping feeling that he was doing something wrong. Thursday afternoon had an empty block of ninety minutes in it, and he found himself looking at it as if it were a spare room in a house. He kept wanting to put something in it.
+
+He did not. And at ten past three, one of his hygienists came in to say that the sterilizer had broken, and the afternoon patients needed to be moved. In the old week, that would have been a disaster. In this week, there was a block of time for it. He fixed the problem, moved the patients, and was home at six.
+
+That evening, he realized something. For the first time in months, a problem at work had been a problem and nothing more. It had not eaten his dinner.
+
+He told Sachiko over the fence. She nodded, as if he had just told her the sun had come up.
+
+Good, she said. Now we find out whether it holds when it really matters.
+
+She said it lightly. She did not say what she knew. That in about three weeks, he was going to be tested.
+
+Chapter six. Pull
+
+It started with a Monday. The practice's longest-serving hygienist, a woman who had been there for eleven years, handed in her notice. She was kind about it, and Ben was kind in return, and then he went into his office and shut the door and put his head in his hands.
+
+Then, on Wednesday, his daughter woke up with a fever and a rash. Chicken pox, said the doctor. Ten days at home, with some days worse than others.
+
+That was the storm. A resignation, a sick child, a rota that now had a hole in it, and a booking system half installed. A week when the old Ben would have said, well, that's it, I'll start again next month.
+
+And here is what the old Ben would have done first. He would have panicked and added things. He would have made a bigger schedule to catch up. He would have started three new tasks, to feel in control, and finished none.
+
+But Ben had the cardboard in the cupboard.
+
+On Wednesday night, with his daughter finally asleep, he stood in the kitchen and looked at it. Three cards in Doing. Tax form, booking system, rota. A few in Waiting. And in the corner, a note in his own handwriting that said: When it goes wrong, finish the nearest thing. Do not start anything.
+
+He looked at the three and asked the question Sachiko had taught him. Which one is closest to done?
+
+The tax form. It needed one more evening.
+
+He did it that night, in forty minutes. Then he moved it to Done and felt a small, absurd flash of power.
+
+This is what pull means. Sachiko had explained it on the day they made the board. In a factory, a station does not produce parts because it has spare time. It produces when the next station asks for more. Work is pulled from downstream, not pushed from upstream. For Ben, the idea was simple: a new task enters the Doing column only when another one leaves it.
+
+The next day, he sat down with the practice's staff and made a list of what the resignation actually changed. Not everything. Two things: the rota had to be rewritten, and a replacement had to be found. He moved the booking system back to Waiting, with a date, and told his team why. They were relieved. One of them said, I wondered when you would stop trying to do everything.
+
+His daughter recovered over the next ten days. Ben worked from home on three of them. He did not do the full schedule. He did the smallest version of it: one card of work, in the morning, while she slept. The rest of the day belonged to cartoons, soup, and a great deal of calamine lotion.
+
+There is one more thing about that week. On the sixth day, Ben was tired. Properly tired. He looked at his board, and he did not do the work. He went to bed at eight, and he did not feel guilty. Sachiko had told him on the first day: if the board starts to feel like a whip, take the whip away. Sometimes the right thing to do is to pause.
+
+By the end of the second week, the rota was finished. The replacement was found. It was not a perfect fortnight, but nothing had collapsed, and nothing had been abandoned in a panic.
+
+Then came the relapse, because there is always a relapse.
+
+Three weeks later, the board had three cards in Doing again: the booking system, the photo book, and the search for a new hygienist. Then a colleague mentioned a course on dental practice management. It was only one evening a week for ten weeks. It looked exactly like the kind of thing that Ben would love. He signed up that night and put a card in the Doing column. Four cards. Then he saw an online photography class. Five.
+
+Sachiko noticed within days. She did not say anything. She only came over with a cup of tea and stood in front of the cardboard in his cupboard for a long minute, as a doctor looks at an X-ray.
+
+Who is pulling? she said.
+
+Ben opened his mouth to answer, and shut it again.
+
+You are pushing, she said. You have a gap, and you have filled it. That is not pull. That is the old habit coming back, wearing new clothes.
+
+It's good stuff, though, Ben said. The course is useful.
+
+I am sure it is, she said. Good things are the most dangerous, because you cannot say no to them with a clear conscience. She tapped the board. What leaves, so this can come in?
+
+That was the question. Not no, but what leaves. Ben took a long time to answer, because both new cards looked good, and the cards already in Doing were things he had promised to himself and to his family.
+
+In the end, he deleted the photography class. He moved the management course to Waiting, with a date for next term. He did not get to keep everything. Nobody does.
+
+When he said so out loud, Sachiko nodded.
+
+That is the part nobody likes, she said. Making time for everything is impossible. Making time for what matters means deciding, again and again, what waits.
+
+Chapter seven. Six Months Later
+
+Half a year after the Thursday night at the window, Ben's life looked, from the outside, almost unchanged. He had the same job, the same house, and the same two children, though the older one was now ten and the younger one had discovered the word actually.
+
+But the inside was different.
+
+The cardboard was still in the cupboard. It was a little torn, and it had a coffee ring on it. There were three cards in Doing. There were seven in Waiting, with dates. There was a column of Done that Clara had begun to take photographs of, because she said it was the only thing in the house that made her feel she was winning.
+
+The booking system had been installed and was working. The photo book had been finished, in eight evenings, once it was finally allowed to be the only thing in Doing. The shed had been cleared. The Spanish class had been crossed off for good, and Ben had made peace with it.
+
+He still had days when he said, I have no time. But he said it less often. And when he said it, he now knew what to do. He looked at the board, and the notebook, and the empty part of the day, and he asked which of the three it was. Waste, unevenness, or overload.
+
+He did not make time for everything. He made a great deal of time for three things at a time, and a short, truthful list of what came next.
+
+One evening in the autumn, he found Sachiko in her garden, trimming a hedge in the last of the light. He had brought her a box of mochi from a bakery he had passed, as a clumsy thank-you.
+
+She took the box and looked inside, and said, who told you I like these?
+
+Nobody, he said. I just hoped.
+
+She laughed, a short surprised laugh. Then she looked at him, and said the sentence he had been waiting to hear for months.
+
+You don't have a time problem, she said. You never did.
+
+I know, Ben said. I have a factory problem.
+
+Not anymore, she said. Now you have a small, calm factory. And a better view.
+
+He carried the empty box back across the grass. In his kitchen, the cardboard hung in its cupboard, with three cards in a row, and a gap beside them, where the next thing would arrive when something else was done.
+
+Chapter eight. Build Yours in Fifteen Minutes
+
+Let me bring this back to you. You can build this in about fifteen minutes, with a pen, paper, and a calm cup of tea.
+
+Count. This one takes a week, but you can start tonight. Carry a small notebook. At three points in the day, write down what you did since the last check. Not what you planned. What you did. At the end of the week, add up the waste. Look for repeated searching, meetings with no decision, work done twice, and time you called rest that did not feel like rest. Then sort each into Stop, Shrink, or Keep.
+
+Cap. Write down everything you currently have open, one thing per slip of paper. Be honest, and include the ones you only think about. Then choose three to be in progress. Three is a starting point, not a law. If your life is very hectic, try two. Everything else goes in a Waiting pile, with a date beside it.
+
+Even. Look at your week. Where are the mountains and the valleys? Move work from the heavy days to the light ones. Then draw a line through about a third of each day, and leave it empty. That number is a rule of thumb. It may be a quarter for you, or a half, in a hard season. But it should not be zero.
+
+And Pull. Make one rule. A new task enters Doing only when another one leaves. When something good arrives, ask the question: what leaves so this can come in? Sometimes the answer is that nothing leaves, and the new thing waits. That is also an answer.
+
+Now a word on the limits. This is a framework, not a proven method. The ideas come from Japanese manufacturing, and people are not machines. The research supports parts of it. People do underestimate how long tasks take, and switching between tasks does cost time. But the studies I mentioned used students and simple lab tasks, and no one has tested the whole method on a family. If your hours are set by other people, as in shift work or caring for someone, you may have less room to choose, and a smaller buffer is better than none. And if you feel constantly overwhelmed, flat, or exhausted for weeks, please talk to a doctor. That is not a time-management problem.
+
+That brings us back to the question we started with. Where is the time going to come from? Most of it was already there, leaking out through waste, unevenness, and overload. Find the leaks. Limit what is open. Spread the load. And let new work be pulled in, not pushed.
+
+So here is a small challenge. Tonight, take fifteen minutes. Write down everything that is open in your life. Circle three. Move the rest to a Waiting pile. And put one empty block in tomorrow, with nothing in it. Do not buy a planner. Do not start on Monday. Start with the pile of paper.
+
+If this video helped you, subscribe for more videos about how change really works. And tell me in the comments what you moved to Waiting. Writing it down makes it real, and I would love to read it.
+
+Thank you for watching all the way to the end.

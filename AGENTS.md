@@ -1946,3 +1946,15 @@ User requires sources for future scripts to appear in the public packaging descr
 
 ## Community-post image in packaging (2026-11-03)
 User requires a separate image for a YouTube community post as part of future packaging. Create one original square full-bleed channel-style image plus topic-specific post copy. Discuss its concept/headline before generation alongside thumbnail proposals; thumbnail approval alone is not approval of a different community headline. Keep under packaging/community-post/, separate from video thumbnail choices. Use built-in image generation and inspect the result. Never automatically publish. The prompt now asks for community_post metadata; automatic server import is not yet implemented, so authorized manual saves must be explicit and verified rather than assumed.
+
+
+## Packaging delivery preference (2026-11-04)
+For future production packaging, save the publish kit and copy-ready text under the production's packaging/ folder, with thumbnail assets under packaging/thumbnails/ and separate community post assets and copy under packaging/community-post/. Also provide the copy-ready packaging in the Codex chat or as a linked chat deliverable so Kehinde can copy it directly.
+
+
+## POV Finance Replica thumbnail character
+For future POV Finance Replica thumbnails, use Joe as the recurring lead and use the saved CH_JOE.png character reference from PFR-13 (production 120) or the matching production reference when available. Preserve previously generated thumbnails unless Kehinde explicitly asks for a revision.
+
+
+## POV Finance Replica shotlist props
+For POV Finance Replica shotlists, avoid stacks or piles of coins as financial shorthand. Use story props such as receipts, bills, a calendar or a handwritten calculation. Ordinary coins are fine when the narration calls for them. Natural stacks of papers, envelopes, receipts and moving boxes are fine.

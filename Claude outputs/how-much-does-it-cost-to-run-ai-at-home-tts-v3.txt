@@ -1,0 +1,83 @@
+Running AI at home sounds free. You buy the computer once, and after that, every answer costs nothing. Is that true?
+
+Not quite. Running AI at home has two costs: a one-time cost for the hardware, and a running cost for the electricity. In the examples we'll look at, the hardware was the bigger part. And whether home beats a hosted service depends mostly on one thing: how much you use it.
+
+Let's start with a made-up example. Dana writes with AI every day. She's thinking about buying a used graphics card for six hundred dollars, so she can run models on her own computer instead of paying a hosted service. Her question is simple. Which one is cheaper? To answer it, she needs one number she can compare: what it costs her to produce a million tokens of text. A token is a small piece of a word, roughly three quarters of a word in English. By the end of this video, you'll be able to work out that number for your own setup, with a calculator and a few minutes of measuring.
+
+We'll build it in three parts. First, electricity. Then the hardware. Then the comparison. Let's begin with electricity, because it's the part that feels hardest to guess.
+
+Electricity is billed in kilowatt hours. Here's what that means. A watt is a rate of using power. A kilowatt is a thousand watts. If something draws one thousand watts for one hour, it has used one kilowatt hour. A one hundred watt light bulb left on for ten hours also uses one kilowatt hour.
+
+So the formula has three pieces. Watts, times hours, divided by one thousand, gives kilowatt hours. Then kilowatt hours times your price per kilowatt hour gives money.
+
+What's the price? It depends on where you live, and your electricity bill shows yours. For a rough national figure in the United States, the Energy Information Administration's October twenty twenty-six outlook projects an average residential price of about eighteen cents per kilowatt hour for this year. Yours may be higher or lower. Dana will use eighteen cents, because it's a convenient round number.
+
+Now the watts. Here's a detail that catches people out: a computer doesn't draw one fixed amount of power. It draws a lot while the model is writing, and much less while it sits waiting. So you need two numbers, the load power while writing, and the idle power while waiting.
+
+Let's look at one real measurement. An article on Towards Data Science measured a Mac Studio with an Apple M three Ultra chip and ninety-six gigabytes of memory. For a dense model, Qwen three point six with twenty-seven billion parameters, it recorded about one hundred thirty-eight watts and about twenty-one and a half tokens per second. The author read the chip's power from software, and says the readings were calibrated against a meter at the wall.
+
+That's one machine and one model. Another computer, or another model, will draw a different amount. So don't borrow a number. Measure your own. A plug-in power meter, which costs little, sits between the wall socket and your computer and shows the watts directly. Read it once while the computer is idle, and once while the model is writing a long answer.
+
+Now let's turn watts into the number we want: electricity cost per million tokens. We need the time it takes to write a million tokens. That's one million divided by the tokens per second, which gives seconds. Divide by thirty-six hundred to get hours.
+
+Take the Mac Studio. One million divided by twenty-one and a half is about forty-six thousand five hundred seconds. That's about twelve point nine hours. At one hundred thirty-eight watts, twelve point nine hours is about one thousand seven hundred eighty-three watt hours. Divide by one thousand, and that's about one point eight kilowatt hours. The article used a price of thirty-one cents. One point eight times thirty-one cents is about fifty-five cents. The article reports fifty-five cents too.
+
+Two cautions about that figure. First, the article's number is for a computer writing nonstop. The author says that real traffic, with gaps between requests, raises the cost per token by roughly two to three times. Second, it counts electricity only. The author calls the Mac itself by far the larger cost. Which brings us back to Dana.
+
+Dana's setup, in invented numbers, looks like this. Her computer draws three hundred watts while the model writes, and forty watts while it waits. She asks it to write for about one hour a day, at thirty tokens per second. To keep the example simple, her work is mostly asking for new text, so we'll count only the tokens the model writes, on both the home side and the hosted side. We'll come back to that.
+
+One more decision first, which electricity counts. If you leave a computer on all day only for AI, count the waiting power too. If the computer would already be on, count only the extra electricity from running AI. Dana's computer is on only because of her AI work, so we'll count all of it.
+
+Let's do her electricity. One hour at three hundred watts is three hundred watt hours, or point three kilowatt hours. The other twenty-three hours, at forty watts, come to nine hundred twenty watt hours, or point nine two kilowatt hours. The total is one point two two kilowatt hours a day. Over thirty days, that's about thirty-six point six kilowatt hours. At eighteen cents, it's about six dollars and fifty-nine cents a month.
+
+Notice where the cost came from. The writing hour used about a quarter of the energy. The waiting hours used the rest. For a light user, idle power is a bigger part of the bill than most people expect. If Dana turns her computer off or lets it sleep, that part shrinks. We'll test that in a moment, once we have the hardware cost.
+
+Now, how many tokens does she produce? Thirty tokens per second, times thirty-six hundred seconds, is one hundred eight thousand tokens an hour. Over thirty days, that's three point two four million tokens a month.
+
+Part two: the hardware. Dana pays six hundred dollars once, but she'll use the card for years. So we spread the cost over its useful life. Say she expects to use it for three years, which is thirty-six months. Six hundred divided by thirty-six is about sixteen dollars and sixty-seven cents a month. That three-year figure is a choice, not a fact. If she could sell the card for something at the end, she should subtract that first. And if she already owns a suitable card, the hardware part is much smaller, though not zero, because the card could be sold.
+
+Part three: add them up. Hardware, sixteen sixty-seven. Electricity, six fifty-nine. About twenty-three dollars and twenty-six cents a month. Divide by three point two four million tokens, and that's about seven dollars and eighteen cents per million tokens.
+
+Now let's test the sleep idea. Suppose, as another invented number, her computer sleeps at five watts when she isn't using it. Putting it to sleep cuts Dana's monthly electricity from about six dollars sixty to two dollars twenty-four. The arithmetic is on screen. That's a real saving, and idle power was worth fixing. But the hardware is still sixteen sixty-seven a month, nearly nine tenths of her new total of about eighteen dollars and ninety-one cents. The card's price is still the bigger part. We'll keep the always-on figure of seven dollars and eighteen cents per million for the comparison.
+
+Now compare. Say a hosted service charges three dollars per million tokens the model writes. That's an invented price, and it counts only output, to match what we counted at home. Real prices differ by model and change often, and a real hosted bill usually lists the text you send separately from the text it writes. So look up the current price for the hosted model you would actually use. On Dana's three point two four million tokens written, a three-dollar price comes to nine dollars and seventy-two cents a month.
+
+That output-only shortcut matters. Suppose you paste in a long document and ask for a short answer. Most of the work is reading, and a hosted service charges for that reading. At home, reading the document takes time and electricity too. So when you do this for yourself, measure the electricity used for the whole task at home, reading included. For the hosted service, price the input and the output separately.
+
+So at one hour a day, hosted wins. Her home setup costs about twenty-three dollars a month. The hosted service costs about ten. The price of the card is spread over very few tokens.
+
+Now change one thing. Dana starts running a program that writes for ten hours a day, at the same speed. That's ten times the tokens, or thirty-two point four million a month. Her electricity changes too. Ten hours at three hundred watts is three kilowatt hours. The other fourteen hours, at forty watts, are about point five six. That's three point five six kilowatt hours a day, or one hundred six point eight a month. At eighteen cents, about nineteen dollars and twenty-two cents.
+
+Add the hardware's sixteen sixty-seven, and the home total is about thirty-five dollars and eighty-nine cents a month. Divide by thirty-two point four million tokens, and that's about one dollar and eleven cents per million. The hosted service, at three dollars per million, would cost ninety-seven dollars and twenty cents. Now home wins by a wide margin.
+
+Same card, same electricity price. The difference is use. The hardware cost is mostly fixed, so the more text you produce, the more tokens share it. In this example, the hosted price per million stays the same however much you use.
+
+So where's the crossover? Dana's home cost has a fixed part, about twenty-one dollars and eighty-five cents a month, covering the hardware and the waiting power. For every extra hour Dana runs the model each day, her monthly electricity cost rises by about a dollar forty, while the hosted bill rises by about nine dollars and seventy-two cents. Set them equal, and for the always-on setup the crossover comes at about two point six hours of writing a day, or roughly eight and a half million tokens a month. Below that, hosted is cheaper in this example. Above it, home is. That figure is for the always-on computer, not the sleeping one. The full calculation is on screen, along with the same example at double the electricity price. At double the price, home still loses at one hour a day and still wins at ten.
+
+These are invented numbers, so don't copy that crossover. Copy the method. Your hardware cost, your electricity price, your speed and the hosted price will give a different answer.
+
+Before you decide, here is what the arithmetic leaves out.
+
+First, quality. The comparison only makes sense if the model you can run at home does the job as well as the hosted one you're pricing. A cheaper model that does the task badly isn't a saving. Compare two models that give you answers you'd accept.
+
+Second, your time. Setting up, updating and fixing a home machine takes hours, and those hours have a value to you.
+
+Third, reasons other than cost. Some people run models at home for privacy, or so the tool works without an internet connection. Those can be reasons to choose home even when hosted is cheaper.
+
+Now let's turn this into a method you can use today. Five steps.
+
+Step one. Find your price per kilowatt hour on your electricity bill.
+
+Step two. Decide which electricity counts. If the computer would be on anyway, count only the extra. If you leave it on for AI, count the waiting power too. Measure with a plug-in meter, once while it's idle, and again while the model works.
+
+Step three. Measure your speed on a real session, with the prompts and documents you actually use, including the time spent reading them. Some apps show reading speed separately. If yours doesn't, time the whole session with a clock.
+
+Step four. Count how long the model is actually working during a typical day.
+
+Step five. Add up the total monthly cost of the same tasks both ways. At home, that's the hardware divided by the months you expect to use it, plus the electricity from your meter readings. For hosted AI, include what you send and what you get back. Then compare the two totals, and divide by the work done if you want a cost per million tokens.
+
+Now back to Dana. Before she spends six hundred dollars, she checks her real usage for a month. She's writing about one hour a day. In her example, that's below the crossover, so hosted is cheaper, and she keeps paying the hosted service for now. If her work grows past roughly two and a half hours a day, she'll run the numbers again.
+
+Price the same month of work both ways. That tells you whether buying the card saves you money.
+
+If this was useful, subscribe to Simply AI Explained. I explain one AI idea at a time, with something you can try yourself. Thanks for watching.

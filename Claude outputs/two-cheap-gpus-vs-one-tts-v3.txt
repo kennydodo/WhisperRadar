@@ -1,0 +1,93 @@
+Two cheaper graphics cards can cost about the same as one expensive card, and together they can hold more memory. So two should beat one. Right?
+
+It depends on what you mean by beat. In this video, I'll show you what two cards share, what they don't, and how to work out which setup fits the way you actually use local AI.
+
+Two cards can give your model more room. In the test we'll look at, the pair handled longer conversations, while the single card wrote replies faster at the same context length.
+
+Let's start with a made-up example. Priya has saved up to run AI models on her own computer. She's found two options for roughly the same money. Option one is a single high-end card with twenty-four gigabytes of V-RAM, the memory on the graphics card itself. Option two is a pair of budget cards, with sixteen gigabytes each. Two times sixteen is thirty-two, which is a third more memory than twenty-four. The choice looks obvious. Then she reads a forum comment: "The two cards don't add up the way you think." What does that mean?
+
+By the end of this video, you'll be able to explain that comment with arithmetic you can do on paper, and decide what you would buy in Priya's place.
+
+For real numbers, I'll use one published comparison. The single card is the R T X thirty ninety, with twenty-four gigabytes. The pair is two R T X fifty sixty Ti cards, with sixteen gigabytes each. The same ideas apply to other cards. But the measurements I quote belong to these.
+
+Let's begin with the job memory does. It does two different jobs, and they behave very differently when you add a second card.
+
+The first job is capacity. The model file, plus the notes the model keeps about your conversation, has to fit. If it doesn't, part of the model spills into your computer's normal memory, and the model can slow down a lot.
+
+The second job is speed. We'll get to that in a moment, because that's where the forum comment comes from.
+
+Capacity first, which is the good news. Common tools can split one model across two cards, so the memory adds up. Ollama's documentation says that when a model won't fit on one graphics card, it's spread across the available cards. Two cards of sixteen give you thirty-two gigabytes to work with. In practice it's a bit less, because each card also needs room for the software.
+
+Let's try it with invented numbers. Say Priya's favorite model has a file of twenty gigabytes. For a short chat, the conversation notes take about one gigabyte, and we'll leave about two for the software. That's twenty-three in total. It fits on the single twenty-four gigabyte card, with one to spare.
+
+Now she pastes in a very long document. The notes grow to about six gigabytes. The total becomes twenty plus six plus two, which is twenty-eight. That no longer fits on twenty-four. It does fit across thirty-two, with four to spare. Same model, same person. A longer conversation changed which setup was enough. Those are invented numbers, and the two gigabytes for software is an assumption. Your own app's estimate will use more details about your setup.
+
+So for capacity, two cards can genuinely beat one. Now, speed.
+
+Here's the idea that decides most of this video. To write one word, a model reads through its whole set of numbers, from start to finish. Then it does it all again for the next word. A word, or a piece of one, is called a token. So how fast a card can write is limited mainly by how fast it can read its own memory. That reading speed is called memory bandwidth, and it's measured in gigabytes per second.
+
+That gives us a rough estimate, for a dense model that uses all of its numbers for every word. Divide the memory bandwidth by the size of the model file, and you get a ceiling on tokens per second. Real software lands below that ceiling, so treat it as an upper limit.
+
+Published specifications list the thirty ninety at about nine hundred thirty-six gigabytes per second. Each fifty sixty Ti is listed at about four hundred forty-eight. Take Priya's twenty gigabyte model, and imagine a single card could hold all of it. For the thirty ninety, nine hundred thirty-six divided by twenty is about forty-seven tokens per second. For one fifty sixty Ti, four hundred forty-eight divided by twenty is about twenty-two. Those are ceilings, not predictions.
+
+Now the question that matters. What happens when the model is split across the pair?
+
+The usual method is called a layer split. A model is built from layers, stacked one after another. The tool puts the first half of the layers on card one, and the second half on card two. When a word is being written, the information passes through card one's layers, and then through card two's.
+
+Notice what that means. While card one works, card two waits. Then card two works while card one waits. InsiderLLM's guide and the Local A I Master guide both describe this as a pipeline, where for a single request only one card is busy at a time.
+
+Let's do the arithmetic. Twenty gigabytes split in half is ten gigabytes on each card. Card one reads ten gigabytes at four hundred forty-eight gigabytes per second. That takes about twenty-two milliseconds, and a millisecond is a thousandth of a second. Then card two does the same, another twenty-two. The total is about forty-five milliseconds, which works out to about twenty-two tokens per second. That's exactly the ceiling for one card reading all twenty gigabytes by itself. With two identical cards taking turns in a layer split, their bandwidth doesn't add together for one reply. You gained the room. You did not gain the speed.
+
+That is what the forum comment meant. The memory adds up. For one reply with this kind of split, the speed doesn't.
+
+There is another way to split a model, called a row split. Here both cards work on every layer at the same time, and each reads only its share. In theory, that could nearly double the speed. But the cards have to swap partial results after every layer, which needs a very fast connection between them. InsiderLLM's multi-GPU guide reports prompt-processing speeds in llama dot C P P on two R T X forty ninety cards. The layer split reached about twelve hundred eighty-seven tokens per second. The row split managed about five hundred eighty-two, less than half as fast. An experimental tensor split in the same report reached about one thousand seventy-two, closer to the layer split, but still behind it. On ordinary home computers, the connection between cards is the P C I Express slot, and the guide recommends the layer split there.
+
+Now let's check the theory against a real test. Hardware Corner compared the two setups, using llama dot C P P and two Qwen three models, both in four-bit versions. The first is a dense model with thirty-two billion parameters.
+
+At about four thousand tokens of conversation, the pair wrote about eighteen tokens per second. The single thirty ninety wrote about thirty-five. So the single card was roughly twice as fast. And our rough estimate said the memory speeds differ by about two to one, because nine hundred thirty-six divided by four hundred forty-eight is about two point one. The estimate and the test agree, roughly. The other context lengths are on screen.
+
+The second model is a mixture-of-experts model with thirty billion parameters. It uses only a small part of itself for each word, so it writes faster for its size, although the whole file still has to fit in memory. On this model too, the single card wrote faster at the same context length. The full table is on screen.
+
+Here is where the pair showed its value. Its tables continue much further. On the mixture-of-experts model, it reached about one hundred thirty-one thousand tokens of conversation, at about thirteen tokens per second. The single card's table for that model stops at about fifty-seven thousand. Longer conversations need more room, and the pair had more.
+
+A caution about this test. It's one author's measurements. The article's own summary figures don't fully agree with each other, and it doesn't say whether runs were repeated. Treat it as one good data point, not a law.
+
+Next question: does the same pattern appear elsewhere? InsiderLLM's guide reports a test with an eight-billion-parameter model, small enough to fit on a single thirty ninety. One card wrote about one hundred twelve tokens per second. Two cards, about one hundred eight. Six cards, about one hundred one. When a model already fits on one card, adding cards didn't speed it up. It slowed it down a little. The guide's own advice is not to buy a second card to make a small model faster, but to run a bigger one.
+
+When does a second card clearly win? When the alternative is spilling into normal memory. The same guide reports a seventy-billion-parameter model, in a four-bit version, on two thirty ninety cards, writing about sixteen to eighteen tokens per second. On one thirty ninety, with the rest of the model in normal memory, about one. For comparison, the Local A I Master guide lists the four-bit Llama three point three seventy-billion model at about forty-two gigabytes. A file that size fits across forty-eight gigabytes, but not on twenty-four, and not on thirty-two either. Notice that this wouldn't have helped Priya. Neither of her options holds that model.
+
+Now there is one situation where more cards really can multiply speed: many requests at once. You can run a separate copy of the model on each card and serve different people. A package called llama R documents a test of a small model on four older data-center cards. Four separate copies produced far more total output than splitting one model four ways. But that's about serving several users, which is a different problem from one person chatting.
+
+So far, we've compared memory and speed. Let's talk about what else changes when you add a second card, because that's where many builds go wrong.
+
+First, space and slots. Two cards need two slots, and enough room between them for air. The InsiderLLM guide reports temperatures about fifteen degrees Celsius lower when cards aren't touching. Hardware Corner suggests an eight hundred watt power supply for the pair of fifty sixty Ti cards, and stresses case airflow.
+
+Second, power. On paper, the pair is rated at about one hundred eighty watts each, so three hundred sixty in total. The thirty ninety is rated at about three hundred fifty. Those are rated maximums, not what you'll measure. Still, the pair isn't automatically cheaper to run.
+
+Third, the connection between the cards. Many home motherboards divide the lanes between two cards, and some give the second slot only four lanes. For the row-style split, the InsiderLLM guide reports a penalty of thirty-five to forty percent on such a board. The layer split moves much less data between cards, so it suits a slow link better. Check your motherboard manual before you buy. A special connector called N V Link joins some older high-end cards directly. The guide calls the thirty ninety the last consumer NVIDIA card to support it.
+
+Fourth, mixing cards. A pair of different cards works in some tools, but the slower card limits the pair. The guide's example is a thirty ninety plus a thirty sixty, which gives thirty-six gigabytes but runs slower than two thirty nineties.
+
+Fifth, your software. Ollama's documentation says it spreads a model across cards when the model won't fit on one. LM Studio, as of its zero point three point fourteen release in March twenty twenty-five, lets you turn individual cards on or off, and set the order in which cards are filled. The fill-order option was for NVIDIA cards only at the time. Check your version.
+
+And sixth, prices, which move. In late twenty twenty-five, Hardware Corner put the pair at about eight hundred eighty dollars and a used thirty ninety at about eight hundred, a negligible gap. A later guide, InsiderLLM, reported used thirty nineties at twelve hundred to fourteen hundred dollars each by August twenty twenty-six, based on sold listings. Both numbers are from third parties, and neither may match today's listings. Check current prices, and whether a used card comes with a return window.
+
+Now let's turn all of this into a method you can use today. Five steps.
+
+Step one. Work out what has to fit. Take the model file size from its download page, add room for the conversation length you actually need, and add a little for the software. Then ask your app for its own estimate.
+
+Step two. Does it fit on one card, with a little margin? If so, a second card is unlikely to speed up one reply with the layer split we've looked at. A single card is also simpler to set up.
+
+Step three. If it doesn't fit, list your real alternatives. A smaller model. A version with fewer bits. A shorter conversation. Spilling into normal memory. Or a second card. The seventy-billion-parameter example shows spilling can be far slower than a second card.
+
+Step four. Estimate the speed ceiling, as a rough guide for a dense model. Take the memory bandwidth of the card doing the work, and divide by the file size. With two identical cards in a layer split, the cards take turns, so use one card's bandwidth, not the sum. Then expect real speeds to land lower.
+
+Step five. Check the practical side. Do you have two slots with enough space, enough lanes, enough power, and enough airflow? Does your software support splitting across cards? And if you can, test before you commit.
+
+Now back to Priya, our made-up example. She works through the steps. Her usual model is about twenty gigabytes. For everyday chats, it fits on the single twenty-four gigabyte card. She cares most about how fast the words appear, and for a dense model like the one tested, the single card wrote about twice as fast. She chooses the single card.
+
+A friend of Priya's, also made up, feeds long documents into a mixture-of-experts model, and wants conversations of a hundred thousand tokens or more. The friend's arithmetic says the single card runs out of room, and the pair has space to spare. The friend chooses the pair. Same arithmetic, different answers, because they need different things.
+
+Work out what has to fit first. Then compare how fast each setup writes the answer.
+
+If this was useful, subscribe to Simply AI Explained. I explain one AI idea at a time, with something you can try yourself. Thanks for watching.

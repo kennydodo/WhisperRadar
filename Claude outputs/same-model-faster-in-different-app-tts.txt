@@ -1,0 +1,69 @@
+You download the same model in two apps. In one, the words stream out quickly. In the other, they crawl. Same model, same computer. So what's different?
+
+The model file is only one ingredient. The app decides where the model runs, which software does the math, how much memory to set aside for your conversation, and sometimes which version of the model file it loads. In the test we'll look at, three ways of running one model file landed within about ten percent of each other on one computer. On a Mac, the slowest came in about twenty-nine percent below the fastest. So the app can matter a little or a lot, depending on the computer and what it chose.
+
+Let's start with a made-up example. Sam has a graphics card with twelve gigabytes of V-RAM, the memory on the graphics card itself. He downloads a model whose file is nine gigabytes. In his first app, replies stream out at a comfortable pace. He tries a second app, loads what looks like the same model, and the replies come out far slower. Nothing is broken. Sam wants to know whether the second app changed the model. By the end of this video, you'll be able to find the cause with a short checklist, and in Sam's case, you'll see the numbers on paper.
+
+First, what does an app actually do? The model file is a long list of numbers, called weights, that the model learned during training. The file can't run itself. An app loads it, decides where each piece lives in memory, does the math to produce each token, and keeps track of your conversation. A token is a small piece of a word, roughly three quarters of a word in English.
+
+Many local apps use an open-source engine called llama dot C P P underneath, or their own engines, and each app bundles its own version and chooses its own default settings. So when you compare two apps, you aren't only comparing model against model. You're comparing the model plus the app, plus its settings, plus its version.
+
+Let's go through the causes in the order they usually matter. The first is where the model runs.
+
+A model is built from layers, stacked one after another. To write one token, the information passes through every layer. An app can put all the layers on the graphics card, or some on the card and the rest in your computer's normal memory, where the main processor, the C P U, runs them. Many apps offer a setting for this. LM Studio's G P U offload slider, for example, sets how many layers the graphics card handles. NVIDIA's own article about it says the rest runs on the C P U.
+
+Why does that matter so much? Because every token has to pass through every layer. The slowest part sets the pace. And normal memory is far slower to read than the card's own memory, which is the same bandwidth idea from earlier videos.
+
+Here's the key point for Sam. Fitting the model isn't only about the file. The card also has to hold the conversation notes, which grow with the context length, meaning how much conversation the app sets aside room for. Apps choose different defaults for that setting, and some change it depending on your version or your card's memory. So check the setting in your own app.
+
+Let's do Sam's arithmetic, with invented overhead. For a model like Llama three point one with eight billion parameters, and notes stored at sixteen bits, they take about half a gigabyte at a context of four thousand tokens, and about four gigabytes at thirty-two thousand. I'm rounding. The exact context sizes and units are on screen. Other models and settings differ. For this example, assume one gigabyte of software overhead.
+
+The first app sets the context to four thousand. The total is nine for the file, plus one for overhead, plus half a gigabyte for the notes, which is ten and a half. The card has twelve, so everything fits, with one and a half to spare.
+
+The second app sets the context to thirty-two thousand. The total is nine, plus one, plus four, which is fourteen. The card has twelve. That's two gigabytes too many. In Sam's example, the second app is set to put some layers in system memory when the workload won't fit.
+
+Same model file. Same card. A different context setting decided whether the whole model fit on the card.
+
+Let's find Sam's limit. The card has twelve gigabytes. The file takes nine, and overhead takes one, so two gigabytes are left for the conversation notes. At four thousand tokens, the notes take half a gigabyte. At eight thousand, about one. At sixteen thousand, about two, which fills the card exactly, with nothing to spare. At thirty-two thousand, about four, which doesn't fit. So in this example, the longest comfortable setting is somewhere around eight thousand tokens. The sixteen thousand setting fits only on paper, because real overhead can be larger than our assumed one gigabyte. The notes figures are on screen.
+
+How costly is a spill? Here's one measurement. InventiveHQ tested a fourteen-billion-parameter Qwen two point five Coder model, in a four-bit version, on an R T X fifty sixty Ti with sixteen gigabytes. With every layer on the card, it wrote about forty-three tokens per second. With eight of its forty-eight layers moved to the C P U, it fell to about twelve and a half. With the card not used at all, about three. Notice how steep that is. Moving a sixth of the layers off the card cost most of the speed. That's one card, one model and one setup, so don't treat the exact numbers as universal, and a different spill will cost a different amount. But a steep drop once layers leave the card is what this test shows, and it's the kind of drop Sam would look for.
+
+How would Sam see this? Most apps show how many layers are on the card, or how much V-RAM is in use. Your system's own monitor shows card memory too. If the number of layers on the card is lower than the total, that's your first suspect.
+
+The second cause is the software behind the app. Let's look at a test. InventiveHQ ran the same Qwen two point five Coder model, seven billion parameters, four-bit, as the same file in three ways: llama dot C P P directly, LM Studio, and Ollama. Each was asked the same twelve prompts, with the same settings for how the model picks words, writing two hundred fifty-six tokens each. The test measured how long it took to get the whole reply, then divided the tokens by that time. So it includes the app's own overhead, and it isn't pure writing speed. I'll call it overall speed.
+
+On the R T X fifty sixty Ti computer, llama dot C P P came in at about seventy-seven tokens per second overall. LM Studio, about seventy-seven too, and the author calls the small gap noise. Ollama, about sixty-nine, roughly ten percent behind.
+
+Now the same test on a MacBook with an Apple M three Max chip. llama dot C P P came in at about fifty-three and a half. Ollama, about forty-six, roughly fourteen percent behind. And LM Studio, about thirty-eight, roughly twenty-nine percent behind.
+
+Look at what changed. The model file didn't change. The ranking did. On one computer, LM Studio matched the direct engine. On the other, it was the slowest of the three. The author's explanation is that each app bundles its own version of the engine, and some bundled versions lag behind the newest one. He says he couldn't pin the versions, and that he measured each app as shipped. He doesn't list the exact settings either. So the test shows that the ranking changed, but it doesn't isolate which version or setting caused it. Treat his explanation as likely, not proven.
+
+A caution about this test. It's one author, small test suites, no repeat runs reported, and one model size. It shows that app choice can matter. It doesn't tell you which app is fastest for you.
+
+The third cause is that the file itself may not be the same. Here the words "same model" can mislead you. In March twenty twenty-six, Ollama published a preview for Apple Silicon Macs. In the company's own test, the same Qwen three point five model family, with thirty-five billion parameters, ran faster than before.
+
+That sounds like the same model simply running faster. But look at what changed. The preview used Apple's M L X engine, and a different four-bit model file. The announcement says it applied to one named model, on Macs with more than thirty-two gigabytes of memory. And it's Ollama's own measurement, on one setup. So the model name stayed the same, but the file and the engine didn't. If you're comparing two apps, check which file each one actually loaded.
+
+There's a fourth group of causes, the smaller settings. Apps choose defaults for things like how many tokens they process at once, how many C P U threads to use, and whether to use a memory-saving method called flash attention. These can change speed. But I don't have a controlled measurement to quote, so treat them as items to compare, not as a promise.
+
+How can you see these causes in your own apps? Most of them leave clues. Ollama has a verbose option that prints timing statistics after each reply, including how fast it read the prompt and how fast it wrote the answer. Its server log can also show which engine handled the request. An article on the Ollama update suggests looking there, because the log names the engine that ran. LM Studio shows its own speed readout in the chat window, and its model settings show the context length and the number of layers on the card. And a system monitor shows how much V-RAM is in use. None of this takes more than a few minutes, and it turns a vague feeling that one app is slower into a few specific numbers you can compare.
+
+That's four causes. The model file didn't change in the first two. In the third, the file did. Now let's turn this into a method you can use today. Five steps.
+
+Step one. Record what each app is doing now. Write down the model file name, its size in gigabytes, its number of bits, which is often called the quantization, the context length, how many layers are on the card, and the app's version. Fewer bits make the file smaller, and can change the answers slightly.
+
+Step two. Make the two setups match. Name, size and bit depth are useful clues. Loading exactly the same file in both apps is stronger evidence. Then set the same context length in both.
+
+Step three. Check where each one ran. Look at how many layers are on the card, and how much V-RAM is in use. If anything is in normal memory, fix that first.
+
+Step four. Warm up both apps, then rerun the same prompt in each. A model does two jobs on every request. First it reads your prompt. Then it writes the reply one token at a time. So write down three numbers separately: the time until the first token appears, the speed of the reply, and the total response time. A long document with a short answer can look slow in total time even when the reply speed is fine. If loading time matters to you, measure that separately too.
+
+Step five. Change one setting at a time, rerun the same prompt, and write down what happened. If you change three things at once, you won't know which one mattered.
+
+Now back to Sam, our made-up example. He works through the steps, and he writes his results in a small table: file, context, layers on the card, speed, and version. The file is the same in both apps, nine gigabytes. The prompt is the same. Then he checks where each one ran. In the second app, the context is set to thirty-two thousand, and the layer count on the card is lower than the total. That matches our arithmetic: fourteen gigabytes needed, twelve available.
+
+He picks the simplest fix. Sam lowers the context in the second app to four thousand, and runs the same prompt again. This time, all the layers fit on the card. The replies come out faster. If he had needed long conversations, a smaller four-bit file of about five gigabytes would also have fit: five, plus one, plus four, is ten, on a card with twelve. That version may change answers slightly, so he'd compare them first.
+
+So when two apps disagree, don't ask which app is faster. Start with the file, the context, and where the model ran. Then compare the same kind of speed.
+
+If this was useful, subscribe to Simply AI Explained. I explain one AI idea at a time, with something you can try yourself. Thanks for watching.
