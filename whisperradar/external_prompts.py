@@ -325,6 +325,7 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                   else source),
         niche_block=studio.judge_niche_block(cfg, prod["genre"]),
         guard=guard, style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
+        vertical=studio.production_frame(cfg, pid) == "9:16",
         judge_direction=handover.instruction(cfg, prod, "script_judge"))
     if files is not None:
         text = _swap_blocks(

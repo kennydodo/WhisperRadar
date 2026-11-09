@@ -3237,8 +3237,8 @@ SHORTS_SCRIPT_RULES = """SHORT-FORM RULES (this is a vertical YouTube Short, abo
   bold claim. No greeting, no channel intro, no "in this video".
 - One idea only. Short spoken sentences; every sentence moves the story on.
 - Keep a steady, fast rhythm: a new detail or image about every 2-4 seconds.
-- End on the payoff or a line that makes people replay it. No long outro and
-  no "subscribe" padding."""
+- End on one clear takeaway in a single short line, one that also makes people
+  want to replay it. No long outro and no "subscribe" padding."""
 
 
 def script_target_words(setting: int | None, source_words: int,
@@ -4097,7 +4097,8 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "",
                   niche_block: str = "", earlier: list | None = None,
-                  guard: bool = True, style_limit: int = 6000) -> str:
+                  guard: bool = True, style_limit: int = 6000,
+                  vertical: bool = False) -> str:
     """`guard` False = the hand-over template lets the judge speak about the
     original to the writer (see handover.py).
     `source` is the writer's BRIEF (topic + keywords); `original` is the
@@ -4112,6 +4113,16 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"the ORIGINAL: {', '.join(shared)}. A character or company name in "
         f"this list is a copied name unless it is a real, well-known "
         f"institution." if shared else "")
+    short_note = ""
+    if vertical:
+        short_note = (
+            "- VERTICAL SHORT. This is a vertical YouTube Short of about "
+            "45-55 seconds (about 130 words), not a long video. This "
+            "replaces the 15-second hook window in the criteria and the "
+            "checklist: judge the hook on the first sentence. The takeaway is one short closing line, "
+            "and it may also be the line that makes people replay it. One "
+            "idea only: do not ask for more depth, sections or examples, "
+            "and do not penalise the script for being short.\n")
     direction = (extra_direction or "").strip()
     direction_block = ""
     if direction:
@@ -4130,7 +4141,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"Measured 5-gram overlap with the original: {overlap:.1%}. "
         f"Treat high overlap as an originality failure.\n\n"
         f"{SCRIPT_EDITORIAL_DEFAULTS}\n{SCRIPT_JUDGE_DEFAULTS}\n"
-        f"HOW TO JUDGE:\n"
+        f"HOW TO JUDGE:\n{short_note}"
         f"- REPETITION AND QUALIFICATIONS. Check for repeated meaning, not "
         f"just repeated wording. Each section must add a distinct mechanism, "
         f"consequence, or action. Preserve brief callbacks that add a new "

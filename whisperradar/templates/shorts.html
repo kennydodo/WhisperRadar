@@ -23,6 +23,11 @@
   .msg { color:var(--green); } .err { color:var(--red); }
   table { width:100%; border-collapse:collapse; }
   td, th { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  .badge { font-size:12px; padding:1px 8px; border-radius:10px; border:1px solid var(--border); }
+  .badge.created { color:var(--green); } .badge.skipped { color:var(--muted); }
+  .warn { color:#e0b25c; }
+  button.ghost { background:transparent; border:1px solid var(--border); color:var(--muted); padding:4px 10px; }
+  td input.t { width:70px; } td input.title { width:100%; min-width:200px; }
 </style>
 </head>
 <body><div class="wrap">
@@ -31,6 +36,46 @@
   <div class="muted">Cuts the strongest 20&ndash;58 second moments of the finished video into vertical 9:16 clips with captions burned in.</div>
   {% if msg %}<p class="msg">{{ msg }}</p>{% endif %}
   {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  {% macro clk(x) %}{{ '%d:%02d' % (x // 60, x % 60) }}{% endmacro %}
+  {% if splan %}
+  <div class="panel">
+    <b>Short ideas for this video</b>
+    <div class="muted">Proposed from the subtitles. Nothing is created until you tick a Short and press the button; you can edit the times and the title first.</div>
+    {% if sstale %}<p class="warn">The subtitles changed since these were proposed. Re-plan to get ideas that match the new text.</p>{% endif %}
+    <form method="post" action="/studio/{{ prod['id'] }}/shorts/plan/create" style="margin-top:10px">
+      <table><thead><tr><th></th><th>from</th><th>to</th><th>title / opens with</th><th>score</th><th></th></tr></thead><tbody>
+      {% for it in splan['items'] %}
+        <tr>
+          {% if it['status'] == 'proposed' %}
+          <td><input type="checkbox" name="pick" value="{{ it['id'] }}" style="width:auto"></td>
+          <td><input class="t" name="start_{{ it['id'] }}" value="{{ clk(it['start']) }}"></td>
+          <td><input class="t" name="end_{{ it['id'] }}" value="{{ clk(it['end']) }}"></td>
+          <td><input class="title" name="title_{{ it['id'] }}" value="{{ it['title'] }}"><div class="muted">{{ it['hook'] }}</div></td>
+          <td>{{ it['score'] }}</td>
+          <td><button type="submit" class="ghost" formnovalidate formaction="/studio/{{ prod['id'] }}/shorts/plan/{{ it['id'] }}/skip">skip</button></td>
+          {% else %}
+          <td></td><td>{{ clk(it['start']) }}</td><td>{{ clk(it['end']) }}</td>
+          <td>{{ it['title'] }}<div class="muted">{{ it['hook'] }}</div></td>
+          <td><span class="badge {{ it['status'] }}">{{ it['status'] }}</span></td>
+          <td>{% if it['status'] == 'created' and it.get('pid') %}<a href="/studio/{{ it['pid'] }}">open</a>
+              {% elif it['status'] == 'skipped' %}<button type="submit" class="ghost" formnovalidate formaction="/studio/{{ prod['id'] }}/shorts/plan/{{ it['id'] }}/unskip">bring back</button>{% endif %}</td>
+          {% endif %}
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="muted">No ideas in this plan.</td></tr>
+      {% endfor %}
+      </tbody></table>
+      <div style="margin-top:10px">
+        <button type="submit">Create the ticked Shorts</button>
+        <button type="submit" class="ghost" formnovalidate formaction="/studio/{{ prod['id'] }}/shorts/plan/replan">Re-plan</button>
+      </div>
+    </form>
+    {% if splan.get('previous_created') %}<div class="muted" style="margin-top:8px">Made from earlier subtitles:
+      {% for it in splan['previous_created'] %}{% if it.get('pid') %}<a href="/studio/{{ it['pid'] }}">{{ it['title'] }}</a>{% if not loop.last %}, {% endif %}{% endif %}{% endfor %}</div>{% endif %}
+  </div>
+  {% elif not is_short %}
+  <div class="panel muted">Short ideas appear here once this video has subtitles.</div>
+  {% endif %}
   <div class="panel">
     {% if not ready %}<div class="muted">Needs the finished video (final.mp4) and its subtitles in this production.</div>{% endif %}
     {% if plan %}<table><thead><tr><th>#</th><th>from</th><th>to</th><th>opens with</th><th>score</th><th></th></tr></thead><tbody>
