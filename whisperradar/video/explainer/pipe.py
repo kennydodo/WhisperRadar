@@ -253,6 +253,10 @@ def _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, canvas_px):
         x, y, w, h = lo.box_px
         scale = min(w / asset.viewBox[0], h / asset.viewBox[1])
         strokes = _scale_strokes(asset.strokes, scale, x, y)
+        k = ICON_FACTOR.get(getattr(theme, "icon_weight", ""), ICON_FACTOR[""])
+        if k != 1.0:
+            for s_ in strokes:
+                s_.width = s_.width * k
 
     erase = float(st.erase_progress)
     draw_progress = float(st.progress) * (1.0 - erase)
@@ -302,7 +306,7 @@ def _draw_stroke_object(img, draw, scene, lo, st, theme, alpha, canvas_px):
     if (spec.type == sc.STROKE_ASSET and spec.fill_after_draw
             and draw_progress >= 1.0):
         _fill_stroke_silhouette(draw, strokes, theme, alpha)
-    if st.drawing and tip and erase == 0.0 and spec.opacity >= 1.0:
+    if SHOW_PEN_NIB and st.drawing and tip and erase == 0.0 and spec.opacity >= 1.0:
         r = max(2, int(round(4 * lw_scale)))
         draw.ellipse([tip[0] - r, tip[1] - r, tip[0] + r, tip[1] + r],
                      fill=_with_alpha(theme.muted, alpha))
@@ -322,6 +326,13 @@ _WRITE_CACHE: dict = {}
 # how much of the old chalk thickening each text weight keeps, and the extra space
 # between letters (a fraction of the font size) for each spacing choice
 WEIGHT_FACTOR = {"": 0.0, "thin": 0.0, "normal": 0.5, "bold": 1.0}
+# icon line weight against the original pen width (1.0): the default is light, close to the thin
+# lines of the Remotion scenes; "normal" is the old, heavier icon
+# the small grey dot that followed the pen while it wrote; off (it read as a stray dot on screen)
+SHOW_PEN_NIB = False
+# text size: how much of the box height the hand-written text fills (1.0 = as tall as the box allows)
+TEXT_SIZE = {"": 1.0, "normal": 1.0, "small": 0.85, "smaller": 0.72}
+ICON_FACTOR = {"": 0.6, "light": 0.6, "thin": 0.4, "normal": 1.0, "bold": 1.3}
 TRACKING_EM = {"": 0.04, "normal": 0.04, "tight": 0.0, "wide": 0.09}
 
 
@@ -329,12 +340,12 @@ def _tracked_width(font, ln, track):
     return sum(font.getlength(ch) for ch in ln) + track * max(0, len(ln) - 1)
 
 
-def text_width_px(font_path, text, box_px, weight, tracking=0.04) -> int:
+def text_width_px(font_path, text, box_px, weight, tracking=0.04, scale=1.0) -> int:
     """Width in pixels of the widest line as _write_layer will write it in this box."""
-    return int(_fit_text(font_path, text, box_px, weight, tracking)[5])
+    return int(_fit_text(font_path, text, box_px, weight, tracking, scale)[5])
 
 
-def _fit_text(font_path, text, box_px, weight, tracking):
+def _fit_text(font_path, text, box_px, weight, tracking, scale=1.0):
     """(font, size, stroke, track, lines, widest) - the size the text is written at: as tall as the box
     allows, shrunk until the widest line fits the box width."""
     from PIL import ImageFont
@@ -342,7 +353,7 @@ def _fit_text(font_path, text, box_px, weight, tracking):
     lines = text.split("\n")
     probe = ImageFont.truetype(font_path, 100).getmetrics()
     ratio = max(1.2, (probe[0] + probe[1]) / 100.0)      # tall fonts need taller lines
-    size = max(8, int(h / len(lines) / ratio))
+    size = max(8, int(h / len(lines) / ratio * scale))
     while True:
         font = ImageFont.truetype(font_path, size)
         sw = max(0, int(round(size * weight / 36.0)))
@@ -354,16 +365,16 @@ def _fit_text(font_path, text, box_px, weight, tracking):
     return font, size, sw, track, lines, max(widths)
 
 
-def _write_layer(font_path, text, box_px, canvas_px, weight, tracking=0.04):
+def _write_layer(font_path, text, box_px, canvas_px, weight, tracking=0.04, scale=1.0):
     """Greyscale mask of the whole text plus each line's x-extent: built once
     per (font, text, box) and reused for every frame of the write-on."""
     from PIL import ImageFont
-    key = (font_path, text, box_px, canvas_px, weight, tracking)
+    key = (font_path, text, box_px, canvas_px, weight, tracking, scale)
     hit = _WRITE_CACHE.get(key)
     if hit is not None:
         return hit
     x, y, w, h = box_px
-    font, size, sw, track, lines, _widest = _fit_text(font_path, text, box_px, weight, tracking)
+    font, size, sw, track, lines, _widest = _fit_text(font_path, text, box_px, weight, tracking, scale)
     widths = [_tracked_width(font, ln, track) + 2 * sw for ln in lines]
     ascent, descent = font.getmetrics()
     lh = max(size * 1.2, ascent + descent + 2 * sw)   # tails of g/y/p must stay inside the line
@@ -390,7 +401,8 @@ def _write_on(img, draw, spec, lo, st, theme, alpha, font_path):
     mask, extents = _write_layer(
         font_path, spec.text, lo.box_px, (W, H),
         theme.stroke_width / 5.0 * WEIGHT_FACTOR.get(getattr(theme, "text_weight", ""), 0.0),
-        TRACKING_EM.get(getattr(theme, "letter_spacing", ""), 0.04))
+        TRACKING_EM.get(getattr(theme, "letter_spacing", ""), 0.04),
+        TEXT_SIZE.get(getattr(theme, "text_size", ""), 1.0))
     frac = _clamp01(float(st.progress) * (1.0 - float(st.erase_progress)))
     if frac <= 0 and st.alpha <= 0:
         return
@@ -411,7 +423,7 @@ def _write_on(img, draw, spec, lo, st, theme, alpha, font_path):
     vis = ImageChops.multiply(mask, reveal).point(lambda v: v * alpha // 255)
     color = _stroke_color(Stroke(points=[(0, 0), (1, 0)]), spec, theme)
     img.paste(_hex_rgb(color), (0, 0), vis)
-    if st.drawing and tip and st.erase_progress == 0.0:
+    if SHOW_PEN_NIB and st.drawing and tip and st.erase_progress == 0.0:
         r = max(2, int(round(4 * max(1.0, W / 1920.0))))
         draw.ellipse([tip[0] - r, tip[1] - r, tip[0] + r, tip[1] + r],
                      fill=_with_alpha(theme.muted, alpha))
@@ -431,7 +443,7 @@ def _shape_strokes(spec, lo, canvas_px, theme, scale=1.0):
 def _shape_extras(img, draw, spec, strokes, theme, st, progress, lw_scale, alpha):
     """Card fill (drawn under the outline) and the glow of an emphasised shape."""
     color = sc.resolve_color(spec.color, theme) if spec.color else theme.foreground
-    if spec.kind == "card" and spec.filled and strokes and progress > 0:
+    if spec.kind in ("card", "pill") and spec.filled and strokes and progress > 0:
         poly = [(int(round(a)), int(round(b))) for a, b in strokes[0].points]
         bg = _hex_rgb(theme.background)
         inner = tuple(int(c * 0.45) for c in bg)

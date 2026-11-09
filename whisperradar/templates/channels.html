@@ -829,11 +829,63 @@
             <div class="muted" style="font-size:12px">Changing the type hides what it does not use; nothing is deleted, so switching back finds your visual style, bible and references as they were.</div>
             <div id="xp-box-{{ ch['id'] }}" data-needs="scenes">
             <div class="inline">
+              <label title="One choice sets the look and the scene set. Fields below still override it.">preset
+                <select name="explainer_preset" class="xp-preset" data-info="xp-presetinfo-{{ ch['id'] }}">
+                  <option value="">none - use the fields below</option>
+                  {% for p in explainer_presets %}
+                  <option value="{{ p.key }}" data-summary="{{ p.summary }}" data-help="{{ p.help }}" {{ 'selected' if xv.get('preset') == p.key else '' }}>{{ p.label }}{% if not p.builtin %} (mine){% endif %}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <a href="/explainer/presets" style="align-self:end">Explainer presets</a>
+            </div>
+            <div class="muted" id="xp-presetinfo-{{ ch['id'] }}" style="font-size:12px; margin:4px 0 8px"></div>
+            {% set ov = explainer_overrides.get(ch['id'], []) %}
+            {% if ov %}
+            <div class="muted" style="font-size:12px; margin:0 0 8px">
+              These fields on this channel override the preset:
+              {% for o in ov %}{{ o.label }} {{ o.own }} (preset: {{ o.preset }}){% if not loop.last %}, {% endif %}{% endfor %}.
+              <label style="display:inline"><input type="checkbox" name="explainer_reset_custom" value="1"> use the preset as it is (clears these when saved)</label>
+            </div>
+            {% endif %}
+            <div class="inline">
               <label>theme
                 <select name="explainer_theme">
                   <option value="">inherit{% if xg.theme %} (global: {{ xg.theme }}){% endif %}</option>
                   {% for t, label in explainer_choices.themes %}
                   <option value="{{ t }}" {{ 'selected' if xv.get('theme') == t else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>font style
+                <select name="explainer_font_style">
+                  <option value="">inherit{% if xg.font_style %} (global: {{ xg.font_style }}){% else %} (video1 default){% endif %}</option>
+                  {% for k, label in explainer_choices.font_styles %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('font_style') == k else '' }}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>camera moves
+                <select name="explainer_camera">
+                  <option value="">inherit{% if xg.camera %} (global: {{ xg.camera }}){% else %} (on, only when a scene asks){% endif %}</option>
+                  {% for k in ['on', 'off'] %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('camera') == k else '' }}>{{ k }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>footer (takeaway bar)
+                <select name="explainer_footers">
+                  <option value="">inherit{% if xg.footers %} (global: {{ xg.footers }}){% else %} (off){% endif %}</option>
+                  {% for k in ['off', 'on'] %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('footers') == k else '' }}>{{ k }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>headline size
+                <select name="explainer_title_size">
+                  <option value="">inherit{% if xg.title_size %} (global: {{ xg.title_size }}){% else %} (normal){% endif %}</option>
+                  {% for k in ['small', 'normal', 'large'] %}
+                  <option value="{{ k }}" {{ 'selected' if xv.get('title_size') == k else '' }}>{{ k }}</option>
                   {% endfor %}
                 </select>
               </label>
@@ -884,6 +936,22 @@
                   {% endfor %}
                 </select>
               </label>
+              <label>text size
+                <select name="explainer_text_size">
+                  <option value="">inherit{% if xg.text_size %} (global: {{ xg.text_size }}){% else %} (normal){% endif %}</option>
+                  {% for v in ['normal', 'small', 'smaller'] %}
+                  <option value="{{ v }}" {{ 'selected' if xv.get('text_size') == v else '' }}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label>icon weight
+                <select name="explainer_icon_weight">
+                  <option value="">inherit{% if xg.icon_weight %} (global: {{ xg.icon_weight }}){% else %} (light){% endif %}</option>
+                  {% for v in ['thin', 'light', 'normal', 'bold'] %}
+                  <option value="{{ v }}" {{ 'selected' if xv.get('icon_weight') == v else '' }}>{{ v }}</option>
+                  {% endfor %}
+                </select>
+              </label>
               <label>letter spacing
                 <select name="explainer_letter_spacing" class="xp-style" data-ch="{{ ch['id'] }}">
                   <option value="">inherit{% if xg.letter_spacing %} (global: {{ xg.letter_spacing }}){% else %} (normal){% endif %}</option>
@@ -909,20 +977,20 @@
               {% endfor %}
             </div>
             <div class="muted" style="font-size:12px; margin:10px 0 4px">
-              Motion rule - how much of an explainer must <em>show</em> something instead of listing it
-              (checked on videos of 90 seconds or more; blank = the genre's rule, 0 = off).
+              Optional limits on text-only scenes. Blank or 0 = no limit: the narration decides how many scenes
+              are text and how many are drawn (a limit is checked on videos of 90 seconds or more).
             </div>
             <div class="inline">
-              <label>scene genre
+              <label title="Which scene set the planner may use. tech includes the coding lesson and the LLM pictures.">video type
                 <select name="explainer_scene_genre">
                   <option value="">inherit{% if xg.get('scene_genre') %} (global: {{ xg.get('scene_genre') }}){% else %} (tech){% endif %}</option>
-                  <option value="tech" {{ 'selected' if xv.get('scene_genre') == 'tech' else '' }}>tech</option>
-                  <option value="finance" {{ 'selected' if xv.get('scene_genre') == 'finance' else '' }}>finance</option>
+                  <option value="tech" {{ 'selected' if xv.get('scene_genre') == 'tech' else '' }}>tech - systems, AI, software, coding lessons</option>
+                  <option value="finance" {{ 'selected' if xv.get('scene_genre') == 'finance' else '' }}>finance - money, investing</option>
                 </select>
               </label>
-              {% for key, label, dflt in [('motion_min_share', 'min. motion share (%)', '50'),
-                                          ('text_run_max', 'max text-only scenes in a row', '3'),
-                                          ('text_run_seconds', 'max text-only seconds in a row', '75')] %}
+              {% for key, label, dflt in [('motion_min_share', 'min. motion share (%)', 'no limit'),
+                                          ('text_run_max', 'max text-only scenes in a row', 'no limit'),
+                                          ('text_run_seconds', 'max text-only seconds in a row', 'no limit')] %}
               <label>{{ label }}
                 <input type="number" name="explainer_{{ key }}" min="0" step="any" style="width:110px"
                        value="{{ xv.get(key) if xv.get(key) not in (none, '') else '' }}"
@@ -1100,6 +1168,17 @@
   document.querySelectorAll('select.xp-type').forEach(function (sel) {
     sel.addEventListener('change', function () { wrXpType(sel); });
     wrXpType(sel);
+  });
+  function wrXpPreset(sel) {
+    var box = document.getElementById(sel.getAttribute('data-info'));
+    if (!box) return;
+    var o = sel.options[sel.selectedIndex];
+    var sum = o && o.getAttribute('data-summary');
+    box.textContent = sum ? (o.getAttribute('data-help') ? o.getAttribute('data-help') + ' Sets: ' : 'Sets: ') + sum + '.' : '';
+  }
+  document.querySelectorAll('select.xp-preset').forEach(function (sel) {
+    sel.addEventListener('change', function () { wrXpPreset(sel); });
+    wrXpPreset(sel);
   });
   function wrXpFont(sel) {
     var t = document.getElementById(sel.getAttribute('data-target'));

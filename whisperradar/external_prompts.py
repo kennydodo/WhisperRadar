@@ -269,7 +269,10 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
            f"- no more than {float(eff['script_max_overlap']):.0%} of its "
            f"5-word runs shared with the source material (above "
            f"{float(eff['script_hard_overlap']):.0%} is rejected outright)\n"
-           f"- it ends on a complete sentence, never cut off")
+           f"- it ends on a complete sentence, never cut off\n"
+           f"- the closing passage states one clear takeaway, and the script "
+           f"has a concrete hook, delivers the title's promise, and repeats "
+           f"nothing")
     if not style:
         text = text.replace("No style guide provided.", _NO_STYLE_ASK)
         text = text.replace("Follow the STYLE GUIDE above precisely.",
@@ -322,6 +325,7 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                   else source),
         niche_block=studio.judge_niche_block(cfg, prod["genre"]),
         guard=guard, style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
+        vertical=studio.production_frame(cfg, pid) == "9:16",
         judge_direction=handover.instruction(cfg, prod, "script_judge"))
     if files is not None:
         text = _swap_blocks(

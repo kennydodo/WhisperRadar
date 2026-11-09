@@ -7,11 +7,11 @@ from tests.test_external_prompts import Base
 
 
 class ScanTests(unittest.TestCase):
-    def test_ads_segues_and_ctas_are_separate(self):
+    def test_cta_is_informational_and_promo_is_not_scanned(self):
         report = sr.scan("Sponsored by Example. Watch this next video. Subscribe.")
         categories = {f["category"] for f in report["findings"]}
-        self.assertTrue({"Advertisement", "Promotional segue", "CTA"} <= categories)
-        self.assertTrue(all(f["severity"] == "info" for f in report["findings"] if f["category"] == "CTA"))
+        self.assertEqual(categories, {"CTA"})
+        self.assertTrue(all(f["severity"] == "info" for f in report["findings"]))
 
     def test_numbering_and_absolutes(self):
         report = sr.scan("Weapon two: fire. Weapon four: care. Predators never cross fire.")
@@ -61,7 +61,7 @@ class WorkflowTests(Base):
         __import__('whisperradar.cli_llm', fromlist=['save']).save(self.cfg, {'default': 'codex', 'codex_enabled': 'on', 'claude_enabled': 'on', 'show_fixes': 'on'})
         app = __import__("whisperradar.webapp", fromlist=["create_app"]).create_app(self.cfg)
         client = app.test_client()
-        client.post(f"/studio/{self.pid}/script/save", data={"script": "Sponsored by Example."})
+        client.post(f"/studio/{self.pid}/script/save", data={"script": "A guaranteed result."})
         report = sr.ensure(self.pdir)
         self.assertTrue(sr.pending(self.pdir, self.cfg))
         page = client.get(f"/studio/{self.pid}?stage=script")
@@ -75,7 +75,7 @@ class WorkflowTests(Base):
     def test_review_off_hides_the_box_and_does_not_hold_audio(self):
         app = __import__("whisperradar.webapp", fromlist=["create_app"]).create_app(self.cfg)
         client = app.test_client()
-        client.post(f"/studio/{self.pid}/script/save", data={"script": "Sponsored by Example."})
+        client.post(f"/studio/{self.pid}/script/save", data={"script": "A guaranteed result."})
         self.assertFalse(sr.review_enabled(self.cfg))
         self.assertFalse(sr.pending(self.pdir, self.cfg))
         self.assertTrue(sr.pending(self.pdir))            # the scan itself still runs
@@ -85,7 +85,7 @@ class WorkflowTests(Base):
 
     def test_browser_save_scans(self):
         from whisperradar.webstages import save_script
-        save_script(self.cfg, self.pid, "Watch this next video.", "test", False)
+        save_script(self.cfg, self.pid, "A guaranteed result.", "test", False)
         self.assertTrue(sr.pending(self.pdir))
 
     def test_audio_pauses_before_hook(self):

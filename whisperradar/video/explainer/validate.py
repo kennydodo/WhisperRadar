@@ -10,6 +10,7 @@ import os
 import re
 
 from . import schema as sc
+from . import font_styles
 from . import themes
 from . import strokes_library
 from . import glyphs
@@ -78,6 +79,33 @@ def hand_font_for(obj, theme):
     if obj.font == "strokes":
         return ""
     return obj.font or (theme.hand_font if theme is not None else "")
+
+
+def _parse_camera(cam, where, errors):
+    """{from?, to, move_ms?}; each view {zoom: 1-3, center: [x, y] in 0-1}. None on a bad one."""
+    from . import camera as cm
+    if not isinstance(cam, dict) or not isinstance(cam.get("to"), dict):
+        errors.append(f"{where}: camera must be {{\"to\": {{\"zoom\": 1-{cm.MAX_ZOOM:g}, \"center\": [x, y]}}, "
+                      "\"from\"?, \"move_ms\"?}.")
+        return None
+    out = {}
+    for key in ("from", "to"):
+        v = cam.get(key)
+        if v is None:
+            continue
+        c = v.get("center") if isinstance(v, dict) else None
+        ok = (isinstance(v, dict) and _is_num(v.get("zoom", 1)) and 1 <= float(v.get("zoom", 1)) <= cm.MAX_ZOOM
+              and isinstance(c, list) and len(c) == 2 and all(_is_num(n) and 0 <= float(n) <= 1 for n in c))
+        if not ok:
+            errors.append(f"{where}: camera {key} needs zoom 1-{cm.MAX_ZOOM:g} and center [x, y] between 0 and 1.")
+            return None
+        out[key] = {"zoom": float(v.get("zoom", 1)), "center": [float(c[0]), float(c[1])]}
+    mv = cam.get("move_ms", cm.DEFAULT_MOVE_MS)
+    if not _is_num(mv) or not 100 <= float(mv) <= 5000:
+        errors.append(f"{where}: camera move_ms must be 100-5000.")
+        return None
+    out["move_ms"] = int(mv)
+    return out
 
 
 def _parse_object(raw, scene_id, errors, project_folder, theme=None):
@@ -245,9 +273,9 @@ def _parse_object(raw, scene_id, errors, project_folder, theme=None):
                 return None
         obj.dashed = bool(raw.get("dashed", False))
         obj.filled = bool(raw.get("filled", False))
-        if (obj.dashed and kind != "line") or (obj.filled and kind != "card"):
+        if (obj.dashed and kind != "line") or (obj.filled and kind not in ("card", "pill")):
             errors.append(f"{where}: dashed is for line shapes and filled "
-                          "is for card shapes.")
+                          "is for card and pill shapes.")
             return None
         fit_to = raw.get("fit_to", "")
         if fit_to and (not isinstance(fit_to, str) or kind not in ("underline", "highlight")):
@@ -448,7 +476,8 @@ def parse_doc(data, project_folder: str = "", look=None):
     if theme_name is not None and not isinstance(theme_name, str):
         errors.append("theme must be a theme name string.")
         theme_name = None
-    look = look if isinstance(look, dict) else {}
+    has_look = isinstance(look, dict)
+    look = look if has_look else {}
     look_theme = str(look.get("theme") or "").strip().lower()
     if look_theme and theme_name is None:
         if look_theme in themes.THEMES:
@@ -497,7 +526,9 @@ def parse_doc(data, project_folder: str = "", look=None):
             if key == "text_color":
                 theme.foreground = hexval
     for key, allowed in (("text_weight", ("thin", "normal", "bold")),
-                         ("letter_spacing", ("tight", "normal", "wide"))):
+                         ("letter_spacing", ("tight", "normal", "wide")),
+                         ("icon_weight", ("thin", "light", "normal", "bold")),
+                         ("text_size", ("normal", "small", "smaller"))):
         val = str(look.get(key) or "").strip().lower()
         if val and val not in allowed:
             errors.append(f"channel explainer {key.replace('_', ' ')} {val!r}: use {', '.join(allowed)}.")
@@ -506,6 +537,13 @@ def parse_doc(data, project_folder: str = "", look=None):
     # a graphic (motion_graphics) channel draws straight, clean lines; a whiteboard one wobbles by hand
     if str(look.get("visual_mode") or "").strip().lower() == "motion_graphics":
         theme.line_style = "straight"
+    # font style preset (default: video1), then any fonts the channel picked itself ...
+    fs_name = str(look.get("font_style") or "").strip().lower()
+    if fs_name and fs_name not in font_styles.STYLES:
+        errors.append(f"channel explainer font style {fs_name!r}: use {', '.join(font_styles.STYLES)}.")
+    preset = font_styles.resolve(look if has_look else None)
+    if preset:
+        _apply_fonts({k: preset[k] for k in ("hand", "heading", "body")}, "font style")
     # channel setting first (Video options, saved in the database) ...
     _apply_fonts({"hand": look.get("hand_font"), "heading": look.get("heading_font"),
                   "body": look.get("body_font")}, "channel explainer")
@@ -574,8 +612,13 @@ def parse_doc(data, project_folder: str = "", look=None):
 
         camera = raw.get("camera")
         if camera is not None:
-            errors.append(f"{where}: camera is not supported in MVP "
-                          "(diagram scenes use a static full-frame viewport).")
+            camera = _parse_camera(camera, where, errors)
+        base = raw.get("base") or ""
+        if base and (not isinstance(base, str) or base not in [s.id for s in scenes]):
+            errors.append(f"{where}: base must be the id of an EARLIER scene (got {base!r}).")
+            base = ""
+        if base and raw.get("remotion") is not None:
+            errors.append(f"{where}: a Remotion scene cannot start from a base scene.")
         # whiteboard sanity: draw_strokes durations must be feasible (doc 16.7)
         for ev in events:
             if ev.action == sc.DRAW_STROKES:
@@ -600,7 +643,7 @@ def parse_doc(data, project_folder: str = "", look=None):
                 errors.append(f"{where}: a Remotion scene has no objects or events of its own.")
                 continue
         scenes.append(sc.SceneSpec(sid, shot_id.strip(), (int(cr[0]), int(cr[1])),
-                                   objects, events, remotion=remo))
+                                   objects, events, camera=camera, base=base, remotion=remo))
     if errors:
         raise ExplainerError(errors)
     if not scenes:

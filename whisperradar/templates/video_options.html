@@ -47,6 +47,7 @@
     {% for g in groups %}
     <div class="panel">
       <h2>{{ g.title }}</h2>
+      {% if g.group == 'explainer' %}<p class="muted" style="font-size:12px">The look of a channel's explainer videos is normally chosen as a <b>preset</b> on <a href="/my-channels">My channels</a> (Explainer section); presets are edited on <a href="/explainer/presets">Explainer presets</a>. These are only global defaults that a preset or a channel field overrides.</p>{% endif %}
       {% for s in g['items'] %}
       {% set name = 'v::' ~ s.path %}
       {% set cur = values.get(s.path) %}

@@ -16,35 +16,44 @@ def build(layouts, each=30.0):
     return resolved, cues, each * len(layouts)
 
 
+OPT_IN = {"motion_min_share": "50", "text_run_max": "3", "text_run_seconds": "75"}   # a channel's own limits
+
+
 class MotionMix(unittest.TestCase):
-    def test_long_text_run_is_a_fault(self):
+    """No default limit: the narration decides. A channel may still opt in to limits."""
+
+    def test_no_default_limit(self):
+        for layouts in (["row"] * 12, ["hero", "stack", "compare"] * 4, ["row"] * 8 + ["pipeline"] * 4):
+            r, c, t = build(layouts)
+            self.assertEqual(es.motion_faults(r, c, t), [])
+            self.assertEqual(es.motion_faults(r, c, t, {"scene_genre": "finance"}), [])
+        self.assertEqual(es.motion_rule({}), {})
+        self.assertEqual(es.motion_rule({"scene_genre": "finance"}), {})
+
+    def test_opt_in_long_text_run_is_a_fault(self):
         r, c, t = build(["row"] * 8 + ["pipeline"] * 4)
-        faults = es.motion_faults(r, c, t)
+        faults = es.motion_faults(r, c, t, OPT_IN)
         self.assertTrue(any("8 text-only scenes in a row" in f for f in faults))
         self.assertIn("s1", " ".join(faults))
 
-    def test_good_mix_passes(self):
+    def test_opt_in_good_mix_passes(self):
         r, c, t = build(["row", "flow", "pipeline", "row", "levels", "compare", "bars", "hero"])
-        self.assertEqual(es.motion_faults(r, c, t), [])
+        self.assertEqual(es.motion_faults(r, c, t, OPT_IN), [])
 
-    def test_share_shortfall(self):
+    def test_opt_in_share_shortfall(self):
         # no run over the cap, but only 1 of 10 scenes (10%) shows a mechanism
         r, c, t = build(["row", "steps", "row", "pipeline", "row", "steps", "row", "hero", "row", "stack"])
-        faults = es.motion_faults(r, c, t)
+        faults = es.motion_faults(r, c, t, OPT_IN)
         self.assertTrue(any("only 10%" in f for f in faults), faults)
 
-    def test_short_video_exempt(self):
+    def test_opt_in_short_video_exempt(self):
         r, c, t = build(["row"] * 4, each=20.0)
         self.assertLess(t, es.MOTION_MIN_SECONDS)
-        self.assertEqual(es.motion_faults(r, c, t), [])
+        self.assertEqual(es.motion_faults(r, c, t, OPT_IN), [])
 
-    def test_unknown_genre_has_no_rule(self):
+    def test_unknown_genre_with_opt_in(self):
         r, c, t = build(["row"] * 10)
-        self.assertEqual(es.motion_faults(r, c, t, {"scene_genre": "lifestyle"}), [])
-
-    def test_finance_has_the_same_rule(self):
-        r, c, t = build(["row"] * 10)
-        self.assertTrue(es.motion_faults(r, c, t, {"scene_genre": "finance"}))
+        self.assertTrue(es.motion_faults(r, c, t, dict(OPT_IN, scene_genre="lifestyle")))
 
     def test_look_overrides(self):
         r, c, t = build(["row"] * 8 + ["pipeline"] * 4)
@@ -60,17 +69,35 @@ class MotionMix(unittest.TestCase):
         self.assertEqual(es.motion_faults(r, c, t, {"motion_min_share": "0", "text_run_max": "0",
                                                     "text_run_seconds": "0"}), [])
 
-    def test_judge_sees_measured_mix(self):
+    def test_judge_sees_measured_mix_for_information(self):
         r, c, t = build(["row", "pipeline", "row", "row"])
         line = es.motion_summary(r, c)
         self.assertIn("25%", line)
         self.assertIn("longest text-only stretch 2 scenes", line)
+        self.assertIn("the narration decides", line)
 
-    def test_writer_prompt_states_numbers(self):
+    def test_default_prompt_is_narration_led_with_no_quota(self):
+        for secs in (60, 600):
+            p = es.writer_prompt("x", secs)
+            self.assertNotIn("MOTION MIX", p)
+            self.assertNotIn("{motion_share}", p)
+            self.assertIn("PICK THE PICTURE BY WHAT THE NARRATION SAYS", p)
+            self.assertIn("there is no quota either way", p)
+            self.assertIn("as much text as the narration needs is fine", p)
         long = es.writer_prompt("x", 600)
-        self.assertIn("at least 50% of the narration time", long)
-        self.assertNotIn("{motion_share}", long)
-        self.assertNotIn("MOTION MIX", es.writer_prompt("x", 60))
+        for gone in ("slide deck", "Most of the video is motion scenes", "the short pauses between motion scenes",
+                     "Avoid the same layout three times in a row", "pick a motion scene"):
+            self.assertNotIn(gone, long)
+
+    def test_opt_in_limits_reach_the_prompt_exactly(self):
+        p = es.writer_prompt("x", 600, rule={"min_share": 0.5, "text_run": 3, "text_seconds": 75.0})
+        self.assertIn("at least 50% of the narration time", p)
+        self.assertIn("never more than 3 text-only scenes in a row", p)
+        self.assertIn("never more than 75 seconds of text-only scenes", p)
+        only_run = es.writer_prompt("x", 600, rule={"text_run": 5})
+        self.assertIn("never more than 5 text-only scenes in a row", only_run)
+        self.assertNotIn("at least 0%", only_run)
+        self.assertNotIn("never more than 0", only_run)
 
     def test_prompt_no_longer_rations_motion(self):
         long = es.writer_prompt("x", 600)

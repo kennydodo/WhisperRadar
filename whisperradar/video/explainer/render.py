@@ -350,6 +350,9 @@ def render_video(folder: str, audio: str = "", final: bool = True,
             canvas = None
         else:
             log(f"[explainer] scenes are drawn at {canvas[0]}x{canvas[1]} (the channel's render resolution)")
+    by_id = {c.spec.id: c for c in compiled}
+    for c in compiled:
+        c._scenes = by_id                    # base scenes are looked up here
     clips, n, t0 = [], len(compiled), time.time()
     for i, cs in enumerate(compiled, 1):
         before = time.time()

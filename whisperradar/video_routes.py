@@ -30,6 +30,8 @@ def sfx_list() -> list[dict]:
 def _groups():
     out = []
     for s in ss.SPEC:
+        if s["path"] == "explainer.preset":
+            continue        # chosen on My channels > Explainer; kept by the save below
         if not out or out[-1]["group"] != s["group"]:
             out.append({"group": s["group"], "title": s["title"], "items": []})
         out[-1]["items"].append(s)
@@ -99,6 +101,15 @@ def register(app, cfg) -> None:
         values, errors = ss.parse_form(request.form)
         if not errors:
             errors = ss.validate(values)
+        if not errors:
+            conn = db.connect(cfg.db_path)
+            try:
+                db.init_db(conn)
+                old = ss.load_channel(conn, scope) if scope else ss.load_global(conn)
+            finally:
+                conn.close()
+            if old.get("explainer.preset"):             # not on this page: keep the channel's preset
+                values["explainer.preset"] = old["explainer.preset"]
         back = "/video-options" + (f"?channel={quote(scope)}" if scope else "")
         sep = "&" if "?" in back else "?"
         if errors:

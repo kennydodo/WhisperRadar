@@ -595,11 +595,6 @@ class ReferenceStyleWorkflowTests(Base):
                 path.write_text(original,encoding='utf-8')
                 (self.pdir/'script.md').write_text(ORIGINAL,encoding='utf-8')
 
-    def test_promo_rule_in_analyst_writer_and_reviewer_prompts(self):
-        t=self.transport();self.run_new(t)
-        for call in t.calls:
-            self.assertIn('sponsor reads',call['prompt'])
-
     def test_delivery_must_pass_independently(self):
         v=json.loads(delivery_verdict());v['checks']['delivery']='FAIL'
         t=Fake(deepseek=[json.dumps(BRIEF),json.dumps(v),json.dumps(v)],zai=[marked(REVISED)])

@@ -318,6 +318,8 @@ class ClosingTheGaps(unittest.TestCase):
             _json.dump(plan_dict, fh)
         with open(os.path.join(d, "subtitles.srt"), "w") as fh:
             fh.write("\n\n".join(f"{c['index']}\n{c['start']} --> {c['end']}\n{c['text']}" for c in CUES) + "\n")
+        with open(os.path.join(d, "imgtovideo.json"), "w") as fh:
+            _json.dump({"explainer": {"footers": "on"}}, fh)      # these tests exercise footers
         return d
 
     def test_unmarked_generated_file_is_migrated_with_a_backup(self):

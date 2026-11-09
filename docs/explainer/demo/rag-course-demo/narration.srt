@@ -1,0 +1,136 @@
+1
+00:00:00,000 --> 00:00:05,500
+Retrieval augmented generation, or RAG, lets a model look things up before it answers.
+
+2
+00:00:06,000 --> 00:00:11,500
+A question comes in, a search step finds the most relevant chunks of your documents,
+
+3
+00:00:12,000 --> 00:00:17,500
+and the language model writes its answer using only those chunks.
+
+4
+00:00:18,000 --> 00:00:23,500
+Let's build each step, starting with how documents are split into chunks.
+
+5
+00:00:24,000 --> 00:00:29,500
+First, we split the text. Here is a short handbook as one string.
+
+6
+00:00:30,000 --> 00:00:35,500
+We cut it into sentences, then group them into chunks of a chosen size.
+
+7
+00:00:36,000 --> 00:00:41,500
+The chunk function steps through the sentences, size at a time.
+
+8
+00:00:42,000 --> 00:00:47,500
+Running it prints one chunk per line, each with its own number.
+
+9
+00:00:48,000 --> 00:00:53,500
+Small chunks keep the search precise, so each answer comes from the right place.
+
+10
+00:00:54,000 --> 00:00:59,500
+Now the search. The simplest approach is keyword search with TF-IDF.
+
+11
+00:01:00,000 --> 00:01:05,500
+We build a vectorizer, and it learns how important each word is.
+
+12
+00:01:06,000 --> 00:01:11,500
+Then we ask a question: how do I send an item back?
+
+13
+00:01:12,000 --> 00:01:17,500
+Every chunk gets a score. Look at the output.
+
+14
+00:01:18,000 --> 00:01:23,500
+All zeros. The handbook says returned and refund, but the question says send back.
+
+15
+00:01:24,000 --> 00:01:29,500
+Keyword search only matches the same words, not the same meaning.
+
+16
+00:01:30,000 --> 00:01:35,500
+Embeddings fix this. An embedding turns a text into a point, so that similar meanings sit close together.
+
+17
+00:01:36,000 --> 00:01:41,500
+Refund policy and returns end up near each other, far from shipping times.
+
+18
+00:01:42,000 --> 00:01:47,500
+Now the question lands among them, and its nearest neighbours are the returns chunks.
+
+19
+00:01:48,000 --> 00:01:53,500
+This is a flat picture; real embeddings have hundreds of dimensions.
+
+20
+00:01:54,000 --> 00:01:59,500
+Closeness is measured with cosine similarity.
+
+21
+00:02:00,000 --> 00:02:05,500
+Here we use tiny two dimensional vectors, made up to show the idea.
+
+22
+00:02:06,000 --> 00:02:11,500
+The function compares the angle between two vectors.
+
+23
+00:02:12,000 --> 00:02:17,500
+We score the question against each chunk.
+
+24
+00:02:18,000 --> 00:02:23,500
+Refund policy scores highest, and the other two score much lower.
+
+25
+00:02:24,000 --> 00:02:29,500
+A real embedding model does the same, with far more numbers.
+
+26
+00:02:30,000 --> 00:02:35,500
+Finally, we give the best chunk to the model inside a prompt.
+
+27
+00:02:36,000 --> 00:02:41,500
+The prompt holds the question and the retrieved context.
+
+28
+00:02:42,000 --> 00:02:47,500
+We tell the model to answer using only that context.
+
+29
+00:02:48,000 --> 00:02:53,500
+Printing it shows exactly what the model will read.
+
+30
+00:02:54,000 --> 00:02:59,500
+This is the augmented in retrieval augmented generation.
+
+31
+00:03:00,000 --> 00:03:05,500
+The model then writes its answer one token at a time.
+
+32
+00:03:06,000 --> 00:03:11,500
+At each step it scores every candidate for the next word.
+
+33
+00:03:12,000 --> 00:03:17,500
+The likeliest one is picked, and the process repeats.
+
+34
+00:03:18,000 --> 00:03:23,500
+Because the context is in the prompt, the answer is grounded in your documents.
+
