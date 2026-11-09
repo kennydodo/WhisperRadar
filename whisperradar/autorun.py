@@ -540,16 +540,24 @@ def _research_notes(cfg, pdir: Path, title: str, genre: str,
 def _script_gate(words: int, target_words: int, overlap: float,
                  score: float | None, min_rating: float, max_overlap: float,
                  hard_overlap: float,
-                 judge_error: str | None = None) -> tuple[bool, list[str], bool, bool]:
-    """Judge quality and originality; word count is informational only.
+                 judge_error: str | None = None,
+                 *, min_words: int | None = None) -> tuple[bool, list[str], bool, bool]:
+    """Judge quality and originality. Word count is informational only,
+    unless `min_words` is given (the creator typed a Target words number): then
+    a draft under it cannot pass.
 
-    Keep the legacy length flags false so length cannot trigger retry nudges
-    or influence selection of the best draft.
+    The too_long flag stays false so length cannot influence selection of the
+    best draft except through the required minimum.
     """
     too_long = too_short = False
     passed = (overlap <= max_overlap and overlap <= hard_overlap
               and score is not None and score >= min_rating)
     reasons: list[str] = []
+    if min_words and words < min_words:
+        too_short = True
+        passed = False
+        reasons.append(f"length {words} words, {min_words - words} under the "
+                       f"required minimum of {min_words}")
     if score is None:
         reasons.append("the judge could not rate the draft"
                        + (f" ({judge_error})" if judge_error else ""))

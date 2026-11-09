@@ -245,6 +245,8 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
     style = (style_guide if style_guide is not None
              else _writing_style(ctx)).strip()
     facts = (notes if notes is not None else _research_notes(ctx)).strip()
+    # a typed Target words number is a requirement; the default is a guide
+    required = studio.script_words_override(prod) is not None
     target_words = _target_words(cfg, pid, target_words)
     out_files: list[dict] = []
     if files is not None:
@@ -255,15 +257,24 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         _title(ctx, title), prod["genre"], facts,
         style_guide=_STYLE_TOKEN if (files is not None and style) else style,
         target_words=int(target_words), variation=variation,
+        target_required=required,
         vertical=studio.production_frame(cfg, pid) == "9:16",
         style_variant=studio.style_variant(cfg, pid=pid),
         style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
         extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
+    if required:
+        lo, hi = studio.script_length_range(int(target_words))
+        length_bar = (f"- between {lo} and {hi} words (the creator asked for "
+                      f"{int(target_words)}); a script under {lo} words is "
+                      f"rejected\n")
+    else:
+        length_bar = (f"- around {int(target_words)} words is a flexible guide, "
+                      f"not a requirement; assess completeness and pacing, "
+                      f"never length alone\n")
     bar = (f"\n\nQUALITY BAR - a script is only accepted when ALL of these "
            f"hold:\n"
-           f"- around {int(target_words)} words is a flexible guide, not a "
-           f"requirement; assess completeness and pacing, never length alone\n"
+           + length_bar +
            f"- an overall rating of at least {_bar(eff['script_min_rating'])}"
            f"/10 from a strict editor\n"
            f"- no more than {float(eff['script_max_overlap']):.0%} of its "

@@ -3230,6 +3230,19 @@ def script_words_override(prod) -> int | None:
 
 DEFAULT_SCRIPT_WORDS = 4000
 
+# When the creator types a Target words number for a production, it is a
+# requirement: the script must land within this share of it (the software
+# rejects a script under the floor). Without a typed number the target stays a
+# flexible guide.
+SCRIPT_LENGTH_TOLERANCE = 0.05
+
+
+def script_length_range(target: int) -> tuple[int, int]:
+    """(minimum, maximum) words for a required target."""
+    t = int(target)
+    return (int(round(t * (1 - SCRIPT_LENGTH_TOLERANCE))),
+            int(round(t * (1 + SCRIPT_LENGTH_TOLERANCE))))
+
 SHORTS_SCRIPT_WORDS = 130   # about 50 seconds spoken, inside the 60 s limit
 
 SHORTS_SCRIPT_RULES = """SHORT-FORM RULES (this is a vertical YouTube Short, about 45-55 seconds spoken):
@@ -4031,6 +4044,11 @@ def judge_niche_block(cfg, genre: str) -> str:
     return npf.judge_block(npf.playbook_for(genre, user) or npf.GENERIC)
 
 
+_FLEXIBLE_LENGTH_RULE = """- FLEXIBLE LENGTH: the word target is a guide, not a requirement or acceptance
+  range. Judge completeness, pacing and repetition. Never pad or cut useful
+  material simply to reach a number, or penalise length alone.
+"""
+
 SCRIPT_EDITORIAL_DEFAULTS = """DEFAULT SCRIPT RULES (apply alongside channel style):
 - SIMPLE SPOKEN ENGLISH: use familiar words, natural dialogue, and sentences
   understood on first hearing. Explain necessary technical terms. Replace
@@ -4730,10 +4748,27 @@ def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = DEFAULT_SCRIPT_WORDS,
                   variation: str = "", extra_direction: str = "",
                   style_variant: str | None = None,
-                  style_limit: int = 6000, vertical: bool = False) -> str:
+                  style_limit: int = 6000, vertical: bool = False,
+                  target_required: bool = False) -> str:
     if vertical:
         extra_direction = ((extra_direction or "").strip() + "\n\n"
                            + SHORTS_SCRIPT_RULES).strip()
+    editorial = SCRIPT_EDITORIAL_DEFAULTS
+    if target_required:
+        editorial = editorial.replace(_FLEXIBLE_LENGTH_RULE, "")
+        lo, hi = script_length_range(target_words)
+        length_rule = (
+            f"- LENGTH IS REQUIRED. The creator asked for {target_words} words: "
+            f"write between {lo} and {hi} words. A script under {lo} words is "
+            f"rejected. Reach the length with new material (a mechanism, a "
+            f"concrete example, a consequence, a change in stakes), never by "
+            f"repeating a point, restating the ending or padding.")
+    else:
+        length_rule = (
+            f"- Aim around {target_words} words as a flexible guide, not a "
+            f"requirement.\n  Let the topic's depth and natural pacing determine "
+            f"the final length. Never pad\n  a complete script or cut useful "
+            f"content to match a number.")
     facts = (source_text or "").strip()[:4000]      # a ~100-word brief
     if facts:
         facts_block = ("BRIEF (what the video is about, and the KEYWORDS you "
@@ -4786,7 +4821,7 @@ TIME BEATS FOR THIS SCRIPT (about {target_words} words in total):
 {extra}
 TASK: Write an original YouTube script titled "{title}".
 {var_block}
-{SCRIPT_EDITORIAL_DEFAULTS}
+{editorial}
 
 Rules:
 - Follow the STYLE GUIDE above precisely. The script must feel like it was
@@ -4829,9 +4864,7 @@ Rules:
   same caveat across sections.
 - Earn attention early using the selected opening approach. When no approach is
   selected, follow the channel's opening style.
-- Aim around {target_words} words as a flexible guide, not a requirement.
-  Let the topic's depth and natural pacing determine the final length. Never pad
-  a complete script or cut useful content to match a number. Conversational,
+{length_rule} Conversational,
   no stage directions, no scene labels. Use the narrator's person and voice
   the STYLE GUIDE describes (second person only when it says so or gives none).
 - Write ONE ending. Land the final point once, in a single short closing passage,

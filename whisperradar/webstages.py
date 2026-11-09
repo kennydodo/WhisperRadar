@@ -500,7 +500,17 @@ def _wc(text: str) -> int:
     return len(re.findall(r"\w+", text or ""))
 
 
-def _length_delta(words: int, target: int) -> str:
+def _length_delta(words: int, target: int, floor: int | None = None) -> str:
+    if floor:
+        hi = studio.script_length_range(target)[1]
+        if words < floor:
+            return (f"Your draft was {words} words, {floor - words} under the "
+                    f"required minimum of {floor} (the creator asked for "
+                    f"{target}, so write {floor}-{hi}). Add new material "
+                    "(a mechanism, a concrete example, a consequence), never "
+                    "repetition or padding.")
+        return (f"Your draft was {words} words; the required range is "
+                f"{floor}-{hi}. Keep it inside that range.")
     return (f"Your draft was {words} words; {target} is a flexible guide, "
             "not a requirement. Change length only to improve completeness "
             "or pacing, never to meet a count.")
@@ -508,7 +518,7 @@ def _length_delta(words: int, target: int) -> str:
 
 def _script_feedback(words: int, target: int, reasons: list[str],
                      judged: dict, truncated: bool,
-                     direction: str = "") -> str:
+                     direction: str = "", floor: int | None = None) -> str:
     lines = [f"The editor did NOT accept this draft. Why: "
              f"{'; '.join(reasons) or 'see below'}."]
     if truncated:
@@ -526,7 +536,7 @@ def _script_feedback(words: int, target: int, reasons: list[str],
         lines += [f"- {w}" for w in judged["weak_spans"]]
     lines.append(
         f"Rewrite the COMPLETE script, fixing required corrections above and keeping "
-        f"what the editor did not criticise. {_length_delta(words, target)} "
+        f"what the editor did not criticise. {_length_delta(words, target, floor)} "
         f"Keep keywords natural; do not add filler or cut useful content just "
         f"to reach the guide. The story, research "
         f"and wording stay your own. Same reply format as before: the finished script "
@@ -542,6 +552,9 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     ctx = ep._context(cfg, pid)
     eff = ctx["eff"]
     target = ep._target_words(cfg, pid, None)
+    # a typed Target words number is a requirement: a draft under 95% of it fails
+    floor = (studio.script_length_range(target)[0]
+             if studio.script_words_override(ctx["prod"]) is not None else None)
     source = autorun._source_transcript_text(cfg, pid)
     min_rating = float(eff["script_min_rating"])
     max_overlap = float(eff["script_max_overlap"])
@@ -652,7 +665,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             + " ".join(str(raw or "").split())[:120])
         passed, reasons, too_long, too_short = autorun._script_gate(
             words, target, overlap, score, min_rating, max_overlap,
-            hard_overlap, err)
+            hard_overlap, err, min_words=floor)
         cut = studio.script_looks_truncated(script)
         struct = (studio.structure_copy(script, source) if source.strip()
                   else {"flag": False})
@@ -667,7 +680,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             judged["feedback"].append(studio.structure_reason(struct))
         if judged.get("must_fix"):
             passed = False
-            reasons.append(f"{len(judged['must_fix'])} required correction(s) "
+            reasons.append(f"{len(judged['must_fix'])} correction(s) "
                            f"required by the judge")
         from . import plan as _plan
         meta = _plan.meta_mentions(script)
@@ -710,7 +723,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             log("stopped by you")
             break
         to_writer = _script_feedback(words, target, reasons, judged, cut,
-                                     writer_dir)
+                                     writer_dir, floor)
         _dump(cfg, pid, f"script_to_writer_round{rnd}", to_writer)
         reply = transport.ask(
             writer, to_writer, (),
@@ -721,6 +734,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         # ending, no copying and a score near the bar is taken
         ok = [a for a in attempts
               if not a["must_fix"] and not a["cut"] and not a.get("struct")
+              and not a["too_short"]
               and a["overlap"] <= hard_overlap and a["score"]
               and a["score"] >= min_rating - SOFT_MARGIN]
         if ok:
