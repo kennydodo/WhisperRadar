@@ -4001,6 +4001,21 @@ def verdict_blockers(reply: dict) -> tuple[list[str], int]:
                 out.append(line)
         elif status == "unverified":
             unverified += 1
+    # the checklist's takeaway item blocks too: a judge that marks it failed
+    # but forgets to list it in must_fix must not let the script through
+    for item in reply.get("checklist") or []:
+        if not isinstance(item, dict):
+            continue
+        if "takeaway" not in str(item.get("item") or "").lower():
+            continue
+        if str(item.get("pass")).strip().lower() not in ("false", "fail", "no", "0"):
+            continue
+        if any("takeaway" in x.lower() for x in out):
+            continue
+        quote = str(item.get("quote") or "").strip()
+        out.append("Takeaway - the closing passage leaves no clear takeaway"
+                   + (f' (closing line: "{quote}")' if quote else "")
+                   + ". End on one clear thing to remember or do, in plain words.")
     return out, unverified
 
 
