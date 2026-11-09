@@ -496,8 +496,10 @@ def save_shotlist(cfg, pid: int, data: dict, detail: str,
 # ---- script -----------------------------------------------------------------------
 
 def _wc(text: str) -> int:
-    """Word count exactly as the manual external prompts measure it."""
-    return len(re.findall(r"\w+", text or ""))
+    """Word count the way a word processor counts it: runs of text between
+    spaces, so "don't", "$1,200" and "well-known" are one word each. The typed
+    Target words range is checked with this count."""
+    return len((text or "").split())
 
 
 def _length_delta(words: int, target: int, floor: int | None = None) -> str:

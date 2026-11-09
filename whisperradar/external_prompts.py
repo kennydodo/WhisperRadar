@@ -347,7 +347,7 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                      f"ONLY): in the attached {SOURCE_FACTS_FILE} (read all "
                      f"of it).")
     target = _target_words(cfg, pid, target_words)
-    words = len(re.findall(r"\w+", script))
+    words = len((script or "").split())      # as a word processor counts
     cut = studio.script_looks_truncated(script)
     extra = []
     if own_script:

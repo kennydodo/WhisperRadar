@@ -484,7 +484,8 @@ class JudgeSameChatTests(unittest.TestCase):
         self.assertNotIn("Add about", text)
 
     def test_word_count_matches_manual_prompts_and_feedback_is_exact(self):
-        self.assertEqual(ws._wc("It's a well-known fact."), 6)
+        # counted like a word processor: contractions and hyphenated words are one
+        self.assertEqual(ws._wc("It's a well-known fact."), 4)
         over = ws._length_delta(1500, 1000)
         self.assertIn("1500 words", over)
         self.assertIn("not a requirement", over)

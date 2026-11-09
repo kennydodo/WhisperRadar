@@ -51,6 +51,10 @@ class RequiredLengthTests(unittest.TestCase):
         self.assertTrue(passed)
         self.assertFalse(too_short)
 
+    def test_words_are_counted_like_a_word_processor(self):
+        text = "It's a well-known $1,200 trick. Don't miss it."
+        self.assertEqual(webstages._wc(text), 8)    # the old regex count was 12
+
     def test_writer_feedback_says_how_many_words_are_missing(self):
         text = webstages._length_delta(3900, 5000, 4750)
         self.assertIn("850 under the required minimum of 4750", text)
