@@ -13,14 +13,6 @@ class NoSponsorTests(unittest.TestCase):
         p = studio.style_prompt_from_scratch("T", "science")
         self.assertIn("No sponsor read", p)
 
-    def test_script_writer_never_writes_ads_or_invents_offers(self):
-        p = studio.script_prompt(
-            "T", "g", "facts",
-            "## Structure\n- 35-40%: Mid-roll sponsor CTA (course promotion)")
-        self.assertIn("Write NO sponsor read", p)
-        self.assertIn("even if the style guide mentions one", p)
-
-
 if __name__ == "__main__":
     unittest.main()
 
@@ -50,11 +42,6 @@ class PromoCheckTests(unittest.TestCase):
                      "The course of the river changed.",
                      "A rule of thumb for rest."):
             self.assertEqual(plan.promo_mentions(text), [], text)
-
-    def test_judge_prompt_makes_promotion_a_must_fix(self):
-        p = studio.rating_prompt("T", "g", "script", "src", "style", 0.0)
-        self.assertIn("NO PROMOTION, AT ANY POSITION", p)
-        self.assertIn("must_fix", p)
 
 
 class DropPromoLinesTests(unittest.TestCase):

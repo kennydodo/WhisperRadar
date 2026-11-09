@@ -4152,28 +4152,41 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"- SEVERITY. \"must_fix\" is ONLY for a real error that would "
         f"mislead the viewer or contradict the script (a wrong figure that "
         f"changes the conclusion, double counting, a false claim stated as "
-        f"fact, material story contradiction, broken promise, or language "
-        f"that prevents understanding). Maximum 3 items, the most serious first. Anything smaller "
+        f"fact, material story contradiction, broken promise, language "
+        f"that prevents understanding, or no clear takeaway in the closing "
+        f"passage). Maximum 3 items, the most serious first. Anything smaller "
         f"- rounding, simplification, an unstated assumption, a possible "
         f"nitpick - goes in \"feedback\" and never blocks. A script with "
         f"anything in \"must_fix\" or a claim marked \"wrong\" cannot "
         f"pass; one without them is judged on the writing. Invented story "
         f"details (characters, companies, places) are fine and are NOT "
         f"errors.\n"
+        f"- CHECKLIST. After scoring, run this checklist. For each item "
+        f"answer pass or fail and quote the line of the SCRIPT that proves it "
+        f"(under 15 words).\n"
+        f"  1. hook: the first 15 seconds give a concrete reason to keep "
+        f"listening.\n"
+        f"  2. originality: own story, structure and wording; no copied "
+        f"names or beats.\n"
+        f"  3. accuracy: every material claim is verified, none wrong or "
+        f"invented.\n"
+        f"  4. structure: clear beats, logical order, no filler or repeated "
+        f"points.\n"
+        f"  5. pacing: holds attention to the end at a spoken pace.\n"
+        f"  6. style_fit: obeys the style guide and matches the ORIGINAL's "
+        f"tone.\n"
+        f"  7. ending: lands a payoff rather than trailing off.\n"
+        f"  8. takeaway: the closing passage leaves the listener with one "
+        f"clear thing to remember or do, in plain words. FAIL if the ending "
+        f"only summarizes, trails off, or leaves the point implied.\n"
+        f"  A FAIL on item 8 must also be written into \"must_fix\" and "
+        f"blocks the script. A FAIL on items 1-7 goes into \"feedback\", "
+        f"unless it already meets the SEVERITY rule for must_fix.\n"
         + (f"- EARLIER ROUNDS already raised: {'; '.join(str(x) for x in earlier)[:1500]}. "
            f"Check whether each is fixed. Raise a NEW must_fix only for a "
            f"material error you would have flagged in round 1; new polish "
            f"goes in feedback.\n" if earlier else "")
         +
-        f"- NO PROMOTION, AT ANY POSITION. A sponsor read, ad, course or "
-        f"product promotion, discount or promo code, QR code, link or offer "
-        f"anywhere in the script (start, middle or end) is a failure: put it "
-        f"in \"must_fix\" (the passage -> promotion is not allowed -> remove "
-        f"it). Even if the STYLE GUIDE mentions one, it is not wanted. The "
-        f"word \"sponsor\" inside the story is fine - only an ad-read is a "
-        f"failure. Never pass on a point that asks the writer to add or "
-        f"keep a sponsor read, ad or promotion; drop it. The "
-        f"closing subscribe/like/next-video call to action is fine.\n"
         f"- Every \"must_fix\" and \"feedback\" entry is usable by the "
         f"writer as written: the passage of the SCRIPT, why it is wrong, "
         f"and what must change. Keep mandatory corrections (must_fix) apart "
@@ -4216,7 +4229,8 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f'"claims": [{{"claim": "<exact claim>", "status": "verified|wrong|unverified", "support": "<what you found>", "correction": "<fix or empty>"}}, ...], '
         f'"must_fix": ["<required correction: passage -> problem -> specific fix>", ...], '
         f'"feedback": ["<optional improvement, free of anything from the original>", ...], '
-        f'"weak_spans": ["<a passage of the SCRIPT that reads weak>", ...]}}'
+        f'"weak_spans": ["<a passage of the SCRIPT that reads weak>", ...], '
+        f'"checklist": [{{"item": "<name>", "pass": true, "quote": "<line>"}}, ...]}}'
     )
 
 
@@ -4440,9 +4454,7 @@ Rules:
 - Describe patterns abstractly (e.g. "short punchy sentences, averages 8-12 words").
 - Fit the genre and the channel; do not invent facts about the topic.
 - Be concrete enough that another writer could follow the style without seeing any example.
-- No sponsor read, ad, course or product promotion beat at any position. CTA Style covers ONLY the
-  closing call to action (subscribe, like, watch next): no links, QR codes,
-  discount codes or offers.
+- CTA Style covers ONLY the closing call to action (subscribe, like, watch next).
 
 Output ONLY the style guide markdown."""
 
@@ -4487,11 +4499,6 @@ Rules:
 - Describe patterns abstractly (e.g. "short punchy sentences, averages 8-12 words").
 - Do NOT quote, copy, or paraphrase any phrase or sentence from the transcript.
 - Be concrete enough that another writer could imitate the style without ever seeing the transcript.
-- IGNORE every sponsor read, ad, course or product promotion and self-promotion in
-  the transcript, WHEREVER it sits (any minute, any percentage of the video): they
-  are not part of the writing style. Do NOT list them as a beat
-  in Structure (work out the timing as if they were not there) and do NOT describe
-  them in CTA Style.
 - CTA Style covers ONLY the closing call to action (subscribe, like, watch next).
   Do not mention links, QR codes, discount codes, offers or products.
 
@@ -4631,7 +4638,6 @@ _TB_RULES = """- TIME BEATS. In the Structure section describe each beat by its 
   completely different subject. Give the timing of every beat ONLY as a share of
   the total runtime (e.g. "0-5%", "35-48%"): never minutes or seconds, and never
   state how long the reference is. Use 6-12 beats covering 0-100% without gaps.
-  No beat may be a sponsor, ad, course or product promotion, wherever it sits.
   The writer will build its OWN story in this rhythm."""
 
 
@@ -4709,9 +4715,7 @@ def script_prompt(title: str, genre: str, source_text: str,
     else:
         facts_block = ("No brief available - write from the title alone and "
                        "research the topic yourself.")
-    from . import plan as _plan_mod
-    # a sponsor/ad/promotion point in the guide is never handed to the writer
-    style = _plan_mod.drop_promo_lines((style_guide or "").strip()).strip()
+    style = (style_guide or "").strip()
     if style:
         if style_variant == "classic":
             style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
@@ -4761,6 +4765,19 @@ TASK: Write an original YouTube script titled "{title}".
 Rules:
 - Follow the STYLE GUIDE above precisely. The script must feel like it was
   written by the writer described there.
+- WRITE FOR THE EAR. Where the selected opening approach or the STYLE GUIDE
+  says otherwise, they win. Otherwise:
+  * Hook: the first sentence or two give the listener a concrete reason to keep
+    listening: a specific surprise, a question they care about, or a stake.
+    Plain words, never a vague teaser.
+  * Curiosity: open a question early and answer it later than the listener
+    expects. Every section raises or resolves something.
+  * Flow: each sentence follows from the one before it. If a sentence could move
+    elsewhere without the listener noticing, cut it or connect it.
+  * Emotion: show what is at stake for a real person through a concrete moment
+    or consequence before explaining the idea.
+  * Payoff: deliver the promise of the title, and end on one clear takeaway the
+    listener will remember or can act on, in plain words.
 - You write this script yourself, from scratch. Research the topic on your own
   (use your web search if you have it) and build the script from what you
   find. You have NOT been given any existing script: never try to recall,
@@ -4779,22 +4796,11 @@ Rules:
 - Story dressing is yours to invent: if the script needs a character, a company, a
   place or personal figures, make up NEW ones. Never reuse a character name,
   company name or scenario detail from an earlier script of this channel.
-- State each idea ONCE, where it best belongs, then move on. Before writing a
-  sentence, check for repeated meaning, not just repeated wording. Each section
-  must add a distinct mechanism, consequence, or action. Merge or cut passages
-  that make the same point without adding anything. Preserve brief callbacks
-  that add a new interpretation; repeating an explanation is padding, not pacing.
-- State a necessary qualification where it matters most. Avoid repeating the
-  same caveat across sections unless it changes the advice. Keep qualifications
-  needed to avoid misleading the viewer, but do not turn each example into a
-  disclaimer or repeat the same exception in different words.
-- In a narrative, give each scene a distinct dramatic purpose. If two scenes
-  establish the same problem and reach the same conclusion without changing
-  the stakes, relationship, or understanding, merge them or cut one. After a
-  scene clearly demonstrates an idea, do not explain it again unless the
-  interpretation adds something the audience could not infer. A callback,
-  emotional resolution, and thematic payoff may happen in one scene; do not
-  write a separate conclusion for each.
+- Say each idea once, where it belongs. Every section or scene adds something
+  new (a mechanism, a consequence, an action, a change in stakes). Merge or cut
+  passages that repeat a point, but keep a callback that adds a new meaning and
+  any qualification needed to avoid misleading the viewer. Do not repeat the
+  same caveat across sections.
 - Earn attention early using the selected opening approach. When no approach is
   selected, follow the channel's opening style.
 - Aim around {target_words} words as a flexible guide, not a requirement.
@@ -4806,12 +4812,6 @@ Rules:
   then go straight into the call to action - do not summarize the video, restate
   the thesis, or add a second "so what does this all mean" passage before it.
 - End with a short call to action matching the style guide's CTA style.
-- Write NO sponsor read, ad, course or product promotion, discount code, QR code,
-  link or offer anywhere in the script, at ANY point of the video (start, middle or
-  end), even if the style guide mentions one. (The word "sponsor" is fine when it
-  is part of the story itself; the narration just must never read as an ad.) The
-  closing call to action is the only promotion; never invent a product, course or
-  offer.
 
 Output ONLY the script text, preceded by the opening-style metadata comment
 only when the selected opening instructions request one."""

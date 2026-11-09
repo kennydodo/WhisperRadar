@@ -8,7 +8,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-VERSION = 1
+VERSION = 2
 REPORT = "script_readiness.json"
 REVIEW = "script_warning_review.json"
 _review_lock = threading.RLock()
@@ -65,8 +65,6 @@ def scan(text):
                          "line": text.count("\n", 0, start) + 1,
                          "passage": quote[:650], "reason": reason})
     rules = [
-        ("Advertisement", r"\b(?:sponsored by|sponsor(?:ed|ship)?|promo code|discount code|affiliate link|free trial|use (?:my|our) code|link in (?:the )?description)\b", "Possible commercial promotion; check context before narration."),
-        ("Promotional segue", r"\b(?:watch (?:this|the) next|next video|another video on (?:the|this) channel|course (?:called|named)|today.s partner)\b", "Check that the promoted video/product exists and that this segue belongs in your script."),
         ("Link", r"https?://[^\s]+|www\.[^\s]+", "A URL may be source material or an advertisement; decide whether it should be spoken."),
         ("Drafting residue", r"\b(?:as an ai|here(?:.s| is) (?:the|your) (?:revised |final )?script|write a message|claude responded|insert (?:sponsor|cta)|TODO|\[placeholder\])\b", "Possible non-narration drafting text; remove or confirm it.", "warning"),
         ("Strong factual claim", r"\b(?:always|never|every single|guaranteed|for the first time|oldest|nothing in the machinery differs|spoilage[^.\n]{0,35}stops)\b", "Absolute or historical priority claim: qualify it or verify the supporting evidence."),
