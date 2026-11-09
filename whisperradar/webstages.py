@@ -667,7 +667,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             judged["feedback"].append(studio.structure_reason(struct))
         if judged.get("must_fix"):
             passed = False
-            reasons.append(f"{len(judged['must_fix'])} factual correction(s) "
+            reasons.append(f"{len(judged['must_fix'])} required correction(s) "
                            f"required by the judge")
         from . import plan as _plan
         meta = _plan.meta_mentions(script)
