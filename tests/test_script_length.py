@@ -1,9 +1,15 @@
 import json
+import sys
 import unittest
+from pathlib import Path
+from unittest import mock
 
-from test_external_prompts import Base
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
-from whisperradar import autorun, db, external_prompts as ep, studio, webstages
+from tests.test_external_prompts import Base  # noqa: E402
+from tests.test_webstages import Fake, verdict, words  # noqa: E402
+from whisperradar import autorun, db, external_prompts as ep, studio, webstages  # noqa: E402
 
 
 class RequiredLengthTests(unittest.TestCase):
@@ -73,6 +79,53 @@ class TypedTargetReachesThePromptTests(Base):
         text = ep.script_writer_prompt(self.cfg, self.pid)
         self.assertIn("flexible guide", text)
         self.assertNotIn("LENGTH IS REQUIRED", text)
+
+
+class ScriptLoopLengthAndTakeawayTests(Base):
+    """run_script wiring, with a scripted fake transport (no browser)."""
+
+    def _type_target(self, n):
+        conn = db.connect(self.cfg.db_path)
+        try:
+            db.update_production(conn, self.pid, stage_extras=json.dumps(
+                {"script_words": str(n)}))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def run_loop(self, t, rounds=3):
+        with mock.patch.object(ep, "_target_words", return_value=100):
+            return webstages.run_script(self.cfg, self.pid, t, "zai",
+                                        "deepseek", rounds=rounds,
+                                        log=lambda m: None)
+
+    def test_typed_target_rejects_a_short_draft_then_accepts_one_in_range(self):
+        self._type_target(100)                      # floor 95
+        t = Fake(zai=[words(90, "a"), words(100, "b")],
+                 deepseek=[verdict(9), verdict(9)])
+        out = self.run_loop(t)
+        self.assertTrue(out.startswith("b0"))
+        self.assertIn("5 under the required minimum of 95", t.calls[2]["prompt"])
+
+    def test_no_typed_target_keeps_the_old_way(self):
+        t = Fake(zai=[words(90, "a")], deepseek=[verdict(9)])
+        out = self.run_loop(t)                      # length is not enforced
+        self.assertTrue(out.startswith("a0"))
+
+    def test_failed_takeaway_blocks_a_high_scoring_script(self):
+        failing = json.dumps({
+            "score": 9, "criteria": {}, "feedback": [], "weak_spans": [],
+            "checklist": [{"item": "takeaway", "pass": False,
+                           "quote": "And that is all."}]})
+        passing = json.dumps({
+            "score": 9, "criteria": {}, "feedback": [], "weak_spans": [],
+            "checklist": [{"item": "takeaway", "pass": True,
+                           "quote": "Check the date."}]})
+        t = Fake(zai=[words(100, "a"), words(100, "b")],
+                 deepseek=[failing, passing])
+        out = self.run_loop(t)
+        self.assertTrue(out.startswith("b0"))       # round 1 was not accepted
+        self.assertIn("Takeaway", t.calls[2]["prompt"])
 
 
 if __name__ == "__main__":
