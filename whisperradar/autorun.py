@@ -993,6 +993,9 @@ def _run_srt(cfg, pid: int) -> None:
         )
     finally:
         conn.close()
+    # propose Shorts for this video (nothing is created until you choose)
+    from . import shorts_plan
+    shorts_plan.plan_after_subtitles(cfg, pid)
 
 
 _BEST_EVER_FILE = "best_ever.json"

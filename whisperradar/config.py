@@ -84,6 +84,13 @@ class Config:
         self.studio_video_engine = (
             (studio.get("video_engine") or "csharp").strip().lower())
         self.studio_script_words = studio.get("script_words") or None
+        # Short proposals after the subtitles (nothing is created by itself).
+        # studio.shorts_plan: false switches the proposals off;
+        # shorts_minutes_per: about one Short per this many minutes of narration;
+        # shorts_max: never propose more than this many per video.
+        self.studio_shorts_plan = studio.get("shorts_plan") is not False
+        self.studio_shorts_minutes_per = float(studio.get("shorts_minutes_per") or 3.0)
+        self.studio_shorts_max = int(studio.get("shorts_max") or 6)
         self.renderly_url = (studio.get("renderly_url") or
                              "http://127.0.0.1:8022").rstrip("/")
         self.renderly_channel = studio.get("renderly_channel") or None

@@ -534,6 +534,9 @@ def create_app(cfg) -> Flask:
         pass
     app.jinja_env.globals["webchat_custom_sites"] = webchat.custom_sites_ui
     app.jinja_env.globals["flow_prompt_limit"] = studio.FLOWBATCH_MAX_PROMPT_CHARS
+    from . import shorts_plan
+    app.jinja_env.globals["shorts_waiting"] = \
+        lambda pid: shorts_plan.waiting_count(cfg, pid)
     app.jinja_env.filters["views"] = format_views
     app.jinja_env.filters["fromjson"] = (
         lambda v: briefs.normalize_custom(v) or {})
@@ -4780,6 +4783,7 @@ def create_app(cfg) -> Flask:
             db.add_step(conn, pid, "srt", "manual")
         finally:
             conn.close()
+        shorts_plan.plan_after_subtitles(cfg, pid)
         return _studio_url(pid, msg="Subtitles saved")
 
     @app.post("/studio/<int:pid>/refs/upload")
@@ -6437,9 +6441,81 @@ def create_app(cfg) -> Flask:
         d = shorts_mod.shorts_dir(pdir)
         files = sorted(p.name for p in d.glob("short*.mp4")) \
             if d.is_dir() else []
+        # proposals for new Short productions (made after the subtitles; a
+        # video without a plan yet - older ones - gets one on first visit)
+        splan = shorts_plan.plan_for_production(cfg, pid)
+        sstale = False
+        if splan is not None and studio.find_srt(pdir):
+            sstale = shorts_plan.is_stale(splan, studio.find_srt(pdir).read_text(
+                encoding="utf-8", errors="replace"))
         return render_template(
             "shorts.html", prod=prod, ready=ready, plan=plan, files=files,
+            splan=splan, sstale=sstale, is_short=(pdir / "short_source.json").exists(),
             msg=request.args.get("msg"), error=request.args.get("error"))
+
+    @app.post("/studio/<int:pid>/shorts/plan/replan")
+    def studio_shorts_replan(pid):
+        """Propose again (after the subtitles changed, or to get new ideas).
+        Shorts already created or skipped are kept."""
+        try:
+            plan = shorts_plan.plan_for_production(cfg, pid, refresh=True)
+        except ValueError as exc:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(str(exc)))
+        if plan is None:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(
+                "This video cannot get Short proposals (no subtitles, or it is a Short itself)"))
+        return redirect(f"/studio/{pid}/shorts?msg=" + quote(
+            f"{len(shorts_plan.waiting(plan))} Short idea(s) proposed"))
+
+    @app.post("/studio/<int:pid>/shorts/plan/<item_id>/skip")
+    def studio_shorts_skip(pid, item_id):
+        try:
+            shorts_plan.mark_skipped(studio.prod_dir(cfg, pid), item_id)
+        except KeyError as exc:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(str(exc.args[0])))
+        return redirect(f"/studio/{pid}/shorts?msg=Skipped")
+
+    @app.post("/studio/<int:pid>/shorts/plan/<item_id>/unskip")
+    def studio_shorts_unskip(pid, item_id):
+        try:
+            shorts_plan.unskip(studio.prod_dir(cfg, pid), item_id)
+        except KeyError as exc:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(str(exc.args[0])))
+        return redirect(f"/studio/{pid}/shorts?msg=Back+in+the+list")
+
+    @app.post("/studio/<int:pid>/shorts/plan/create")
+    def studio_shorts_create_selected(pid):
+        """Create a new vertical production for each ticked proposal. Nothing
+        is created for a proposal you did not tick."""
+        from . import shortfrom
+        pdir = studio.prod_dir(cfg, pid)
+        plan = shorts_plan.load(pdir)
+        picked = request.form.getlist("pick")
+        if plan is None or not picked:
+            return redirect(f"/studio/{pid}/shorts?error=" + quote(
+                "Tick at least one Short to create"))
+        made, problems = [], []
+        for item_id in picked:
+            try:
+                item = shorts_plan.update_item(
+                    pdir, item_id,
+                    start=shorts_plan.parse_clock(request.form.get(f"start_{item_id}")),
+                    end=shorts_plan.parse_clock(request.form.get(f"end_{item_id}")),
+                    title=request.form.get(f"title_{item_id}"))
+                new_pid = shortfrom.create(
+                    cfg, pid, f"{item['start']:.2f}", f"{item['end']:.2f}", item["title"])
+                shorts_plan.mark_created(pdir, item_id, new_pid)
+                made.append(new_pid)
+            except (shortfrom.ShortError, ValueError, KeyError) as exc:
+                problems.append(f"{item_id}: {exc.args[0] if exc.args else exc}")
+        if made and not problems and len(made) == 1:
+            return redirect(f"/studio/{made[0]}?msg=" + quote(
+                "New Short created from the video - plan its shots next"))
+        text = f"{len(made)} Short(s) created" if made else ""
+        if problems:
+            return redirect(f"/studio/{pid}/shorts?" + ("msg=" + quote(text) + "&" if text else "")
+                            + "error=" + quote("; ".join(problems)))
+        return redirect(f"/studio/{pid}/shorts?msg=" + quote(text))
 
     @app.post("/studio/<int:pid>/shorts/make")
     def studio_shorts_make(pid):
