@@ -2329,11 +2329,6 @@ def create_app(cfg) -> Flask:
                             + quote("Channel name is required"))
         writing_style = textfiles.normalize_newlines(
             request.form.get("writing_style") or "").strip()
-        if not writing_style:
-            return redirect("/my-channels?error=" + quote(
-                "A writing style is required for a new channel - research it "
-                "outside WhisperRadar (or build it from the style and bible "
-                "research) and paste it in the Writing style box"))
         conn = db.connect(cfg.db_path)
         db.init_db(conn)
         try:
@@ -6622,6 +6617,8 @@ def create_app(cfg) -> Flask:
     look_routes.register(app, cfg, research_job)
     from . import opening_routes
     opening_routes.register(app, cfg)
+    from . import script_rules_routes
+    script_rules_routes.register(app, cfg)
     from . import instructions_routes
     instructions_routes.register(app, cfg)
     from . import exploding_routes

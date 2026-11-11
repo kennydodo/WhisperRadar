@@ -3243,17 +3243,6 @@ def script_length_range(target: int) -> tuple[int, int]:
     return (int(round(t * (1 - SCRIPT_LENGTH_TOLERANCE))),
             int(round(t * (1 + SCRIPT_LENGTH_TOLERANCE))))
 
-# A typed Target words number also has a ceiling: a draft more than this share
-# over it cannot pass (the writer is asked for +-5%, this only rejects clear
-# overshoots).
-SCRIPT_MAX_OVER = 0.10
-
-
-def script_max_words(target: int) -> int:
-    """Maximum words for a required target."""
-    return int(round(int(target) * (1 + SCRIPT_MAX_OVER)))
-
-
 SHORTS_SCRIPT_WORDS = 130   # about 50 seconds spoken, inside the 60 s limit
 
 SHORTS_SCRIPT_RULES = """SHORT-FORM RULES (this is a vertical YouTube Short, about 45-55 seconds spoken):
@@ -4076,9 +4065,10 @@ SCRIPT_EDITORIAL_DEFAULTS = """DEFAULT SCRIPT RULES (apply alongside channel sty
   its uncertainty; never turn a guess into a vague claim of established fact.
   Promise references in the description only if an actual checked source list
   has been supplied with the production's research; do not invent one.
-- FICTIONAL DISCLOSURE: identify invented illustrative stories as fictional in
-  a brief natural line. Call a story a composite only with documented case
-  material. Fiction illustrates a method; it does not prove that method works.
+- FICTION: do not add a line announcing that a story is fictional. Call a story
+  a composite only with documented case material, and never present an invented
+  character as a real person. Fiction illustrates a method; it does not prove
+  that method works.
 - REALISTIC ADVICE: avoid universal diagnoses, guaranteed results, unsupported
   comparisons, and claims that habits replace appropriate professional care.
   Keep instructions practical and flexible, with qualifications where relevant.
@@ -4126,7 +4116,7 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
                   style_guide: str, overlap: float,
                   extra_direction: str = "", original: str = "",
                   niche_block: str = "", earlier: list | None = None,
-                  guard: bool = True, style_limit: int = 6000,
+                  guard: bool = True, style_limit: int = 10**6,
                   vertical: bool = False) -> str:
     """`guard` False = the hand-over template lets the judge speak about the
     original to the writer (see handover.py).
@@ -4759,7 +4749,7 @@ def script_prompt(title: str, genre: str, source_text: str,
                   style_guide: str = "", target_words: int = DEFAULT_SCRIPT_WORDS,
                   variation: str = "", extra_direction: str = "",
                   style_variant: str | None = None,
-                  style_limit: int = 6000, vertical: bool = False,
+                  style_limit: int = 10**6, vertical: bool = False,
                   target_required: bool = False) -> str:
     if vertical:
         extra_direction = ((extra_direction or "").strip() + "\n\n"

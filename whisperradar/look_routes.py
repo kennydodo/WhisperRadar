@@ -32,7 +32,28 @@ def register(app, cfg, sjob) -> None:
             max_frames=channel_look.MAX_FRAMES,
             send_count=channel_look.SEND_COUNT,
             max_send=channel_look.MAX_ATTACH,
-            msg=request.args.get("msg"), error=request.args.get("error"))
+            msg=request.args.get("msg"),
+            error=request.args.get("error") or _failure(ch))
+
+    LOOK_JOBS = ("style & bible", "writing style")
+
+    def _failure(ch) -> str:
+        """Why the LAST style & bible / writing-style job for this channel
+        failed, or "". Only that job's own error: the slot is shared with other
+        watched-channel work, so a different job's failure is never shown."""
+        try:
+            if sjob.running or not sjob.error:
+                return ""
+            kind = str(sjob.kind or "")
+            error = str(sjob.error)
+        except Exception:  # noqa: BLE001
+            return ""
+        if not (kind.startswith(LOOK_JOBS) and kind.endswith(f"({ch['name']})")):
+            return ""
+        kept = ("" if not channel_look.load(cfg, ch["channel_id"]) else
+                " Your previous style guide, bible and frames were kept "
+                "unchanged.")
+        return f"The last attempt failed: {error[:400]}.{kept}"
 
     @app.get("/watched/<key>/look/status")
     def look_status(key):
@@ -41,7 +62,9 @@ def register(app, cfg, sjob) -> None:
             last = str(list(sjob.log)[-1])[:300]
         except Exception:  # noqa: BLE001
             last = ""
-        return jsonify(running=bool(sjob.running), last=last)
+        ch = _channel(key)
+        return jsonify(running=bool(sjob.running), last=last,
+                       error="" if ch is None else _failure(ch))
 
     @app.get("/watched/<key>/look/frame/<name>")
     def look_frame(key, name):

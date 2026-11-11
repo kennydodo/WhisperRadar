@@ -1,8 +1,8 @@
 # Character names no script may use, for every channel.
 # One name per line, or several separated by commas. Lines starting with # are ignored.
 # Add names any time; no restart is needed.
-Elena, Maya, Sarah, Chen, Emma
+Elena, Maya, Sarah, Chen, Emma, Mara, Blackwood, Brady, Elara, Emily, Evans, Henderson, Lily, Marcus, Martinez, Nakamura, Patel, Rodriguez, Sarah, Thompson, Lyra
 Marcus, Kenji, Mariko, Naomi, Ben
-Clara, Fumiko, Yui, Mio, Sachiko
+Clara, Fumiko, Yui, Mio, Sachiko, Sato
 Raphael, Christopher, Daniel, Jessica, Dana
 Yamato

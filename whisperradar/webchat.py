@@ -2019,11 +2019,105 @@ def _thumb_count(page) -> int:
         return 0
 
 
+# Bounded facts about the page's attachment state, used ONLY to explain a
+# failed upload check. Numbers and flags only: no text from the chat, no file
+# names, nothing private.
+_UPLOAD_DIAG_JS = """() => {
+  const vis = e => { const r = e.getBoundingClientRect();
+                     return r.width > 0 && r.height > 0; };
+  const side = e => { const r = e.getBoundingClientRect();
+                      return Math.min(r.width, r.height); };
+  const imgs = [...document.querySelectorAll('img')].filter(vis);
+  const inputs = [...document.querySelectorAll('input[type=file]')];
+  const err = /server busy|upload(ing)? (failed|error)|failed to upload|couldn.?t upload|can.?t upload|upload fail|try again|retry/i;
+  let error = false;
+  for (const el of document.querySelectorAll('div,span,li,p')) {
+    if (!vis(el)) continue;
+    const t = (el.innerText || '').trim();
+    if (t && t.length <= 200 && err.test(t)) { error = true; break; }
+  }
+  return {
+    inputs: inputs.length,
+    input_files: inputs.reduce((n, i) => n + (i.files ? i.files.length : 0), 0),
+    big: imgs.filter(i => side(i) >= 40).length,
+    small: imgs.filter(i => side(i) >= 16 && side(i) < 40).length,
+    blob: imgs.filter(i => /^(blob|data):/.test(i.src || '')).length,
+    remove: [...document.querySelectorAll('button,[role=button]')].filter(
+      b => vis(b) && /remove|delete|dismiss/i.test(
+        b.getAttribute('aria-label') || '')).length,
+    progress: document.querySelectorAll(
+      '[role=progressbar],progress,[aria-busy=true]').length,
+    error: error
+  };
+}"""
+
+_DIAG_KEYS = ("inputs", "input_files", "big", "small", "blob", "remove",
+              "progress")
+
+
+def _upload_diagnostics(page) -> dict:
+    """The page's attachment facts (see _UPLOAD_DIAG_JS), or {} when they
+    cannot be read. Never raises."""
+    try:
+        d = page.evaluate(_UPLOAD_DIAG_JS)
+    except Exception:  # noqa: BLE001
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    out = {}
+    for k in _DIAG_KEYS:
+        try:
+            out[k] = int(d.get(k) or 0)
+        except (TypeError, ValueError):
+            out[k] = 0
+    out["error"] = bool(d.get("error"))
+    return out
+
+
+def _diagnose_upload(n_files: int, seen: dict, thumbs_now, now: dict) -> str:
+    """One plain sentence on WHY the attachments were not confirmed, from
+    counts only. Tells apart: an error showing, uploads still in progress,
+    only some previews appearing, previews this check cannot recognise, and
+    nothing appearing at all. It states what the page shows; it never claims a
+    cause the counts cannot prove."""
+    if not now:
+        return "the page's attachment state could not be read"
+    base = seen.get("__diag__") or {}
+    if now.get("error") and not base.get("error"):
+        return ("the page is showing an upload error (a retry / try again "
+                "message)")
+    if now.get("progress", 0) > base.get("progress", 0):
+        return (f"uploads look unfinished ({now['progress']} progress "
+                f"indicator(s) on the page) - the site may be slow")
+    got = max(0, int(thumbs_now) - int(seen.get("__thumbs__", thumbs_now)))
+    if 0 < got < n_files:
+        return (f"only {got} of {n_files} image previews appeared - the site "
+                f"may have dropped or rejected the rest (a per-message limit?)")
+    extra = {k: max(0, now.get(k, 0) - base.get(k, 0))
+             for k in ("big", "small", "blob", "remove")}
+    if got == 0 and any(extra[k] for k in ("small", "blob", "remove")):
+        return (f"new attachment-like elements appeared (blob images "
+                f"{extra['blob']}, small images {extra['small']}, remove "
+                f"buttons {extra['remove']}) but no new preview of 40 px or "
+                f"more - the preview check may not recognise this composer")
+    if got == 0:
+        return ("no new image previews or attachment buttons appeared - the "
+                "files may not have reached the page")
+    return "the page's attachment state is inconclusive"
+
+
+def _diag_counts(now: dict, base: dict) -> str:
+    """'key=now (was before)' for each fact: for the error message and log."""
+    return ", ".join(f"{k}={now.get(k, 0)} (was {base.get(k, 0)})"
+                     for k in _DIAG_KEYS)
+
+
 def _name_counts(page, files) -> dict:
     body = page.evaluate("()=>document.body.innerText") or ""
     counts = {Path(str(f)).name: body.count(Path(str(f)).name) for f in files}
     if files and all(_is_image(n) for n in counts):
         counts["__thumbs__"] = _thumb_count(page)
+        counts["__diag__"] = _upload_diagnostics(page)
     return counts
 
 
@@ -2142,6 +2236,7 @@ def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
     seen = seen or {}
     all_images = bool(names) and all(_is_image(n) for n in names)
     t0 = clock()
+    said = False
     while True:
         body = page.evaluate("()=>document.body.innerText") or ""
         by_name = all(body.count(n) > seen.get(n, 0) for n in names)
@@ -2151,9 +2246,23 @@ def _wait_for_uploads(page, files, clock, log, limit: float = 120.0,
             page.wait_for_timeout(int(settle * 1000))   # let the upload finish
             _fix_failed_uploads(page, names, clock, log)
             return
+        if all_images and not said and clock() - t0 > limit / 2:
+            said = True            # once, halfway: what the page shows so far
+            now = _upload_diagnostics(page)
+            log("still waiting for the image attachments to show: "
+                + _diagnose_upload(len(names), seen, _thumb_count(page), now))
         if clock() - t0 > limit:
+            detail = ""
+            if all_images:
+                now = _upload_diagnostics(page)
+                why = _diagnose_upload(len(names), seen, _thumb_count(page),
+                                       now)
+                detail = f" - {why}"
+                if now:
+                    detail += (" [page: " + _diag_counts(
+                        now, seen.get("__diag__") or {}) + "]")
             raise WebChatError("the attached file(s) never showed up in the "
-                               "chat: " + ", ".join(names))
+                               "chat: " + ", ".join(names) + detail)
         page.wait_for_timeout(1000)
 
 

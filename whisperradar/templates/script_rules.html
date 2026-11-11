@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Script rules · WhisperRadar</title>{% include '_opening_css.html' %}</head><body><main>
+<nav><a href="/my-channels">← Back</a></nav>
+<h1>Script rules</h1><h2>{{ name }}</h2>
+<p>Rules for this channel's scripts. They go to the script writer and the script judge, and <strong>override the app's default script rules (shown below) wherever they conflict</strong>. Leave empty to use only the app's defaults.</p>
+{% if msg %}<p class="success" role="status">{{ msg }}</p>{% endif %}{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/my-channels/{{ ident }}/script-rules">
+<label>Channel script rules<textarea name="script_rules" rows="16" maxlength="{{ max_chars }}">{{ rules }}</textarea></label>
+<p class="muted">Up to {{ max_chars }} characters. Takes effect the next time a script prompt is generated or reviewed.</p>
+<button>Save script rules</button></form>
+<h2>App default script rules (overridden by the rules above)</h2>
+<pre class="card" style="white-space:pre-wrap">{{ defaults }}</pre>
+</main></body></html>

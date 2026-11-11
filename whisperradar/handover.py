@@ -52,8 +52,43 @@ def instruction(cfg, prod, key: str) -> str:
         from . import openings
         policy = openings.instruction(cfg, prod, writer=key == "script")
         names = avoid_names_instruction(cfg, writer=key == "script")
-        return "\n\n".join(x for x in (note, policy, names) if x)
+        rules = channel_rules_instruction(cfg, prod, writer=key == "script")
+        return "\n\n".join(x for x in (rules, note, policy, names) if x)
     return note
+
+
+# ------------------------------------------------------ channel script rules
+def channel_rules_instruction(cfg, prod, *, writer: bool) -> str:
+    """The channel's own script rules (own_channels.script_rules), worded so
+    they win over the app's default script rules wherever the two conflict."""
+    from . import db
+    try:
+        own_id = prod["own_channel_id"]
+    except (KeyError, IndexError, TypeError):
+        return ""
+    if not own_id:
+        return ""
+    conn = db.connect(cfg.db_path)
+    try:
+        channel = db.get_own_channel(conn, own_id)
+    finally:
+        conn.close()
+    try:
+        rules = (channel["script_rules"] or "").strip() if channel is not None else ""
+    except (KeyError, IndexError):
+        rules = ""
+    if not rules:
+        return ""
+    if writer:
+        return ("CHANNEL SCRIPT RULES (set by the creator for this channel). Where "
+                "they conflict with the DEFAULT SCRIPT RULES, the general rules in "
+                "this prompt or any other general guidance, these channel rules "
+                f"win and must be followed:\n{rules}")
+    return ("CHANNEL SCRIPT RULES (set by the creator for this channel). They "
+            "override the DEFAULT SCRIPT RULES and these review instructions "
+            "wherever they conflict. Judge the draft against them; a clear breach "
+            "is a required correction (must_fix). Never ask the writer to soften "
+            f"or remove something these rules require:\n{rules}")
 
 
 # ---------------------------------------------------- character names to avoid

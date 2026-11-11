@@ -319,6 +319,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
                          ("writing_style", "TEXT")):
         _add_column_if_missing(conn, "own_channels", column, decl)
     _add_column_if_missing(conn, "own_channels", "opening_styles", "TEXT")
+    # the channel's own script rules: they override the app's default rules
+    _add_column_if_missing(conn, "own_channels", "script_rules", "TEXT")
     # permanent short label for the channel (NATURE, TLM ...): production
     # labels are CODE-number and survive a rename
     _add_column_if_missing(conn, "own_channels", "code", "TEXT")
@@ -1287,7 +1289,7 @@ def finish_run(conn, run_id: int, **counts) -> None:
 # monitored competitor/source channels) so the two never mix.
 
 _OWN_CHANNEL_FIELDS = {
-    "opening_styles", "code",
+    "opening_styles", "script_rules", "code",
     "flow_account", "frame",
     "name", "description", "genre", "youtube_handle", "active",
     "handover_default", "video_options",

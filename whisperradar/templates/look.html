@@ -196,7 +196,9 @@
         seen = true;
         note.style.display = ''; note.textContent = 'Running... ' + (j.last || '');
       } else if (seen) {
-        location.href = location.pathname;       // done: show the result
+        // done: show the result, or why it failed (the old results stay)
+        location.href = location.pathname + (j.error
+          ? '?error=' + encodeURIComponent(j.error) : '');
         return;
       }
       setTimeout(tick, 3000);

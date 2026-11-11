@@ -146,8 +146,8 @@
       <input type="text" name="code" placeholder="Code, e.g. NATURE (optional)" maxlength="8"
              style="flex:0 0 190px;text-transform:uppercase"
              title="Short label for this channel's production numbers (NATURE-1, NATURE-2 ...). Permanent: a rename does not change it.">
-      <textarea name="writing_style" required rows="5"
-                placeholder="Writing style (required) - how every script for this channel sounds: voice, pacing, hook, structure, CTA. Research it outside WhisperRadar and paste it here. It is loaded into stage 1 for every video; nothing is generated."
+      <textarea name="writing_style" rows="5"
+                placeholder="Writing style (optional, can be added later) - how every script for this channel sounds: voice, pacing, hook, structure, CTA. Research it outside WhisperRadar and paste it here. It is loaded into stage 1 for every video; nothing is generated."
                 style="flex:1 1 100%"></textarea>
       <button type="submit">Create channel</button>
     </form>
@@ -188,12 +188,12 @@
         <th style="width:24px"><input type="checkbox" title="select all"
             onclick="document.querySelectorAll('input.exp-pick').forEach(function(c){c.checked=this.checked}.bind(this)); updateOwnBar()"></th>
         <th>Name</th><th>Genre</th><th>Handle</th><th>State</th>
-        <th>Renderly</th><th></th>
+        <th></th>
       </tr>
       {% for ch in own_channels %}
       <tr>
         <td><input type="checkbox" class="exp-pick" name="id" value="{{ ch['id'] }}" form="export-form" onchange="updateOwnBar()"></td>
-        <td>{{ ch["name"] }} <a href="/my-channels/{{ ch['id'] }}/opening" style="font-size:12px">Opening choices</a>
+        <td>{{ ch["name"] }} <a href="/my-channels/{{ ch['id'] }}/opening" style="font-size:12px">Opening choices</a> <a href="/my-channels/{{ ch['id'] }}/script-rules" style="font-size:12px">Script rules</a>
           {% if ch["description"] %}<div class="muted" style="font-size:12px">{{ ch["description"] }}</div>{% endif %}
           <div class="muted mono" style="font-size:11px">
             {{ ch["default_engine"] or "inherit" }} &middot; {{ ch["default_render_mode"] or "inherit" }}
@@ -216,13 +216,6 @@
         <td class="muted mono">{{ ch["youtube_handle"] or "" }}{% if ch["code"] %}<div title="Production labels: {{ ch['code'] }}-1, {{ ch['code'] }}-2 ...">{{ ch["code"] }}</div>{% endif %}</td>
         <td>{% if ch["active"] %}<span class="badge on">active</span>
             {% else %}<span class="badge off">paused</span>{% endif %}</td>
-        <td>
-          {% set link = links.get(ch["id"]) %}
-          {% if link and link.linked %}<span class="badge on">linked</span>
-          {% elif link and link.id %}<span class="badge warn">adoptable</span>
-          {% else %}<span class="badge off">unlinked</span>{% endif %}
-          <div class="muted" style="font-size:12px">{{ link.detail if link else "" }}</div>
-        </td>
         <td style="text-align:right; white-space:nowrap">
           <button type="button" class="ghost" onclick="toggleEdit({{ ch['id'] }})"
                   title="Edit this channel and its production defaults (voice, image engine, render mode, upscale, auto-run, caps, seed folders, Flow project)">edit / defaults</button>
@@ -244,7 +237,7 @@
         </td>
       </tr>
       <tr id="edit-{{ ch['id'] }}" style="display:none">
-        <td colspan="7" style="background:var(--panel2)">
+        <td colspan="6" style="background:var(--panel2)">
           <form method="post" action="/my-channels/edit">
             <input type="hidden" name="id" value="{{ ch['id'] }}">
             <div class="grp-tools muted"><a href="#" onclick="return wrGroups(this, true)">expand all</a> &middot; <a href="#" onclick="return wrGroups(this, false)">collapse all</a></div>
