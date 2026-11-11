@@ -1,0 +1,8 @@
+# Character names no script may use, for every channel.
+# One name per line, or several separated by commas. Lines starting with # are ignored.
+# Add names any time; no restart is needed.
+Elena, Maya, Sarah, Chen, Emma
+Marcus, Kenji, Mariko, Naomi, Ben
+Clara, Fumiko, Yui, Mio, Sachiko
+Raphael, Christopher, Daniel, Jessica, Dana
+Yamato

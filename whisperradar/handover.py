@@ -51,8 +51,50 @@ def instruction(cfg, prod, key: str) -> str:
     if key in ("script", "script_judge"):
         from . import openings
         policy = openings.instruction(cfg, prod, writer=key == "script")
-        return "\n\n".join(x for x in (note, policy) if x)
+        names = avoid_names_instruction(cfg, writer=key == "script")
+        return "\n\n".join(x for x in (note, policy, names) if x)
     return note
+
+
+# ---------------------------------------------------- character names to avoid
+AVOID_NAMES_FILE = "avoid_names.txt"
+
+
+def avoid_names(cfg) -> list[str]:
+    """Names no script may give a character, for every channel. They are read
+    on each call from data/avoid_names.txt (next to the database): one name per
+    line or comma separated, '#' starts a comment. Edit the file to add names;
+    no restart is needed. A missing file means no restriction."""
+    from pathlib import Path
+    try:
+        text = (Path(cfg.db_path).parent / AVOID_NAMES_FILE).read_text(
+            encoding="utf-8")
+    except (OSError, AttributeError, TypeError):
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+    for line in text.splitlines():
+        for part in line.split("#", 1)[0].split(","):
+            part = part.strip()
+            if part and part.lower() not in seen:
+                seen.add(part.lower())
+                names.append(part)
+    return names
+
+
+def avoid_names_instruction(cfg, *, writer: bool) -> str:
+    names = avoid_names(cfg)
+    if not names:
+        return ""
+    listed = ", ".join(names)
+    if writer:
+        return ("CHARACTER NAMES TO AVOID: never give any of these names to a "
+                "character (main character, mentor, family, colleague or "
+                f"example person): {listed}. Choose other names that fit the "
+                "setting and are not common default names.")
+    return ("CHARACTER NAMES TO AVOID: the creator has banned these names for "
+            f"any character: {listed}. A character with one of these names is "
+            "a required correction (must_fix).")
 
 
 # ------------------------------------------------------------ script stage
