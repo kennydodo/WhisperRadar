@@ -541,13 +541,14 @@ def _script_gate(words: int, target_words: int, overlap: float,
                  score: float | None, min_rating: float, max_overlap: float,
                  hard_overlap: float,
                  judge_error: str | None = None,
-                 *, min_words: int | None = None) -> tuple[bool, list[str], bool, bool]:
+                 *, min_words: int | None = None,
+                 max_words: int | None = None) -> tuple[bool, list[str], bool, bool]:
     """Judge quality and originality. Word count is informational only,
     unless `min_words` is given (the creator typed a Target words number): then
-    a draft under it cannot pass.
+    a draft under it cannot pass; with `max_words` a draft over it cannot pass.
 
-    The too_long flag stays false so length cannot influence selection of the
-    best draft except through the required minimum.
+    Without a typed target, too_long stays false so length cannot influence
+    selection of the best draft.
     """
     too_long = too_short = False
     passed = (overlap <= max_overlap and overlap <= hard_overlap
@@ -558,6 +559,11 @@ def _script_gate(words: int, target_words: int, overlap: float,
         passed = False
         reasons.append(f"length {words} words, {min_words - words} under the "
                        f"required minimum of {min_words}")
+    if max_words and words > max_words:
+        too_long = True
+        passed = False
+        reasons.append(f"length {words} words, {words - max_words} over the "
+                       f"maximum of {max_words}")
     if score is None:
         reasons.append("the judge could not rate the draft"
                        + (f" ({judge_error})" if judge_error else ""))

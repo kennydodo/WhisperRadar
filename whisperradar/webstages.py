@@ -557,6 +557,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     # a typed Target words number is a requirement: a draft under 95% of it fails
     floor = (studio.script_length_range(target)[0]
              if studio.script_words_override(ctx["prod"]) is not None else None)
+    ceiling = (studio.script_max_words(target)
+               if studio.script_words_override(ctx["prod"]) is not None else None)
     source = autorun._source_transcript_text(cfg, pid)
     min_rating = float(eff["script_min_rating"])
     max_overlap = float(eff["script_max_overlap"])
@@ -667,7 +669,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
             + " ".join(str(raw or "").split())[:120])
         passed, reasons, too_long, too_short = autorun._script_gate(
             words, target, overlap, score, min_rating, max_overlap,
-            hard_overlap, err, min_words=floor)
+            hard_overlap, err, min_words=floor, max_words=ceiling)
         cut = studio.script_looks_truncated(script)
         struct = (studio.structure_copy(script, source) if source.strip()
                   else {"flag": False})
@@ -736,7 +738,7 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
         # ending, no copying and a score near the bar is taken
         ok = [a for a in attempts
               if not a["must_fix"] and not a["cut"] and not a.get("struct")
-              and not a["too_short"]
+              and not a["too_short"] and not a["too_long"]
               and a["overlap"] <= hard_overlap and a["score"]
               and a["score"] >= min_rating - SOFT_MARGIN]
         if ok:
