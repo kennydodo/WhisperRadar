@@ -3243,6 +3243,16 @@ def script_length_range(target: int) -> tuple[int, int]:
     return (int(round(t * (1 - SCRIPT_LENGTH_TOLERANCE))),
             int(round(t * (1 + SCRIPT_LENGTH_TOLERANCE))))
 
+
+# Ceiling for a typed Target words number: a draft more than this share over
+# the target cannot pass the gate.
+SCRIPT_MAX_OVER = 0.10
+
+
+def script_max_words(target: int) -> int:
+    """Maximum words for a required target (target + SCRIPT_MAX_OVER)."""
+    return int(round(int(target) * (1 + SCRIPT_MAX_OVER)))
+
 SHORTS_SCRIPT_WORDS = 130   # about 50 seconds spoken, inside the 60 s limit
 
 SHORTS_SCRIPT_RULES = """SHORT-FORM RULES (this is a vertical YouTube Short, about 45-55 seconds spoken):
