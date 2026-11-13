@@ -607,12 +607,16 @@ SPEC: list[dict] = [
     },
 ]
 
+FLOW_ACCOUNTS = ("1", "2", "3", "4", "5")   # at most 5 Flow sessions
+
 SPEC.extend([
     {"key": "flow_multi_account", "type": "bool", "default": False,
      "label": "Enable multiple Flow accounts",
-     "help": "Opt in to two isolated Flow sessions. One browser job per account; different accounts can run in parallel. Off preserves the legacy session."},
+     "help": "Opt in to up to five isolated Flow sessions. One browser job per account; different accounts can run in parallel. Off preserves the legacy session."},
     {"key": "flow_default_account", "type": "choice", "default": "1",
-     "choices": ["1", "2"], "choice_labels": {"1": "Flow Account 1 (existing login)", "2": "Flow Account 2"},
+     "choices": list(FLOW_ACCOUNTS),
+     "choice_labels": {a: ("Flow Account 1 (existing login)" if a == "1"
+                           else f"Flow Account {a}") for a in FLOW_ACCOUNTS},
      "label": "Default Flow account", "help": "Used for new, unassigned productions only when multiple accounts are enabled. Existing projects keep their original account."},
 ])
 SPEC.append({

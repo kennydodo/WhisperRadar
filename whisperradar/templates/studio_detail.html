@@ -343,7 +343,7 @@
         <form method="post" action="/studio/{{ prod['id'] }}/flow-account">
           <label>Flow account
             <select name="flow_account" {{ 'disabled' if job.running else '' }}>
-              {% for account in ['1', '2'] %}
+              {% for account in flow_account_ids %}
               <option value="{{ account }}" {{ 'selected' if production_flow_account(prod) == account else '' }}>Flow Account {{ account }}</option>
               {% endfor %}
             </select>

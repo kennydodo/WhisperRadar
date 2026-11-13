@@ -298,8 +298,8 @@
   {% if flow_accounts_enabled %}
   <div class="tabpanel" data-tab="Production &amp; images"><div class="panel">
     <h2>Flow accounts</h2>
-    <p class="muted">Account 1 uses your existing login. Sign in to a different Google account in Account 2. Each account handles one browser job at a time. Enable this feature while no Flow job is running.</p>
-    {% for account in ['1', '2'] %}
+    <p class="muted">Account 1 uses your existing login. Sign in to a different Google account in each of the other accounts (up to 5). Each account handles one browser job at a time. Enable this feature while no Flow job is running.</p>
+    {% for account in flow_account_ids %}
     <form method="post" action="/flow-accounts/{{ account }}/login" style="margin-bottom:10px">
       <button>Sign in to Flow Account {{ account }}</button>
       <span>{{ flow_login_status.get(account, '') }}</span>

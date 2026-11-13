@@ -191,6 +191,40 @@ class FlowAccountsTests(unittest.TestCase):
         self.assertEqual(fa.selection(self.cfg, self.pdir, self.pid), '1')
         with self.assertRaises(ValueError): fa.choose(self.cfg, self.pdir, self.pid, '2')
 
+    def test_up_to_five_accounts_each_get_their_own_profile(self):
+        self.assertEqual(fa.ACCOUNTS, ('1', '2', '3', '4', '5'))
+        for account in ('3', '4', '5'):
+            self.assertEqual(fa.valid(account), account)
+            flags = fa.account_flags(self.cfg, account)
+            self.assertIn(str(fa.root(self.cfg) / account / 'profile'), flags)
+            self.assertIn(str(fa.root(self.cfg) / account / 'runtime'), flags)
+        for bad in ('0', '6', '', 'x'):
+            with self.assertRaises(ValueError):
+                fa.valid(bad)
+        self.enable()
+        fa.choose(self.cfg, self.pdir, self.pid, '4')
+        self.assertEqual(fa.selection(self.cfg, self.pdir, self.pid), '4')
+
+    def test_release_unlocks_the_account_for_a_new_choice(self):
+        self.enable()
+        fa.choose(self.cfg, self.pdir, self.pid, '3')
+        self.run_job()
+        self.assertTrue(fa.read_owner(self.pdir)['bound'])
+        db.update_production(self.conn, self.pid,
+                             flow_project_url='https://flow.test/project/x',
+                             flow_project_id='x')
+        (self.pdir / 'refs_project.json').write_text('{"projectUrl": "x"}')
+        with self.assertRaises(ValueError):
+            fa.choose(self.cfg, self.pdir, self.pid, '5')
+        gone = fa.release(self.cfg, self.pdir, self.pid)
+        self.assertIn(fa.OWNER_FILE, gone)
+        self.assertIn('refs_project.json', gone)
+        self.assertIsNone(fa.read_owner(self.pdir))
+        row = db.get_production(self.conn, self.pid)
+        self.assertIsNone(row['flow_project_url'])
+        fa.choose(self.cfg, self.pdir, self.pid, '5')
+        self.assertEqual(fa.selection(self.cfg, self.pdir, self.pid), '5')
+
     def test_uninitialised_database_defaults_off(self):
         empty = Path(self.tmp.name) / 'empty.db'
         empty.touch()

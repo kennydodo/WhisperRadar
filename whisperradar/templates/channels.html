@@ -346,7 +346,7 @@
               <label data-needs="images">Flow account
                 <select name="flow_account">
                   <option value="">inherit (Settings)</option>
-                  {% for account in ['1', '2'] %}
+                  {% for account in flow_account_ids %}
                   <option value="{{ account }}" {{ 'selected' if ch['flow_account'] == account else '' }}>Flow Account {{ account }}</option>
                   {% endfor %}
                 </select>

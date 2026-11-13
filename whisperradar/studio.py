@@ -1150,7 +1150,7 @@ def flow_project_url_for(cfg, pid: int,
     except Exception as exc:  # noqa: BLE001 - never block generation on this
         log.debug("could not read the production's Flow project: %s", exc)
     active = getattr(flow_accounts.LOCAL, "active", None)
-    if active and active[1] == "2":
+    if active and active[1] != "1":
         return None, "none"  # The legacy global project belongs to Account 1.
     url = (cfg.flowbatch_project_url or "").strip() or None
     return url, "config" if url else "none"

@@ -462,6 +462,7 @@ def create_app(cfg) -> Flask:
     def _flow_account_context():
         return {"frame_labels": frames.LABELS,
                 "flow_accounts_enabled": flow_accounts.enabled(cfg),
+                "flow_account_ids": flow_accounts.ACCOUNTS,
                 "flow_login_status": dict(flow_login_status),
                 "production_flow_account": lambda prod: flow_accounts.selection(
                     cfg, Path(prod["work_dir"]) if prod["work_dir"] else cfg.studio_dir / str(prod["id"]), prod["id"])}
@@ -2517,7 +2518,7 @@ def create_app(cfg) -> Flask:
         # per-channel production defaults; empty means "inherit the global"
         if "flow_account" in request.form and flow_accounts.enabled(cfg):
             raw = request.form.get("flow_account", "")
-            if raw not in ("", "1", "2"):
+            if raw and raw not in flow_accounts.ACCOUNTS:
                 abort(400, "Invalid Flow account")
             fields["flow_account"] = raw or None
         for key in ("default_voice", "bible_dir", "refs_dir",
@@ -3975,7 +3976,7 @@ def create_app(cfg) -> Flask:
             own_channel_name=eff["own_channel_name"],
             channel_ws=studio.channel_writing_style_for(cfg, prod),
             flow_project_url_default=(eff["flow_project_url"] or
-                ("" if flow_accounts.enabled(cfg) and flow_accounts.selection(cfg, pdir, pid) == "2"
+                ("" if flow_accounts.enabled(cfg) and flow_accounts.selection(cfg, pdir, pid) != "1"
                  else cfg.flowbatch_project_url) or ""),
             flowbatch_ready=studio.flowbatch_ready(cfg),
             own_channels=own_channels,
@@ -4253,6 +4254,11 @@ def create_app(cfg) -> Flask:
                         if out_dir.exists():
                             shutil.rmtree(out_dir, ignore_errors=True)
                             removed.append("out/")
+                if db.STAGES.index(first) <= db.STAGES.index("shots"):
+                    # the Flow project is thrown away with the refs/images:
+                    # release the Flow account so a new one can be chosen
+                    removed += [f"Flow account lock ({n})" for n in
+                                flow_accounts.release(cfg, pdir, pid)]
                 db.delete_steps(conn, pid, reset)
                 # "start over" means back to the CHANNEL's settings: every
                 # per-production choice that overrides one is dropped, and the

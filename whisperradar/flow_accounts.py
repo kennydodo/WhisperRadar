@@ -16,6 +16,9 @@ from . import db, prodfiles, settings
 
 LOCAL = threading.local()
 OWNER_FILE = "flow_account.json"
+ACCOUNTS = settings.FLOW_ACCOUNTS     # "1" is the legacy login, up to "5"
+# project records that tie a production to the account that made them
+PROJECT_RECORDS = ("flow_prepare.json", "refs_project.json", "flowbatch.json")
 
 
 def options(cfg):
@@ -38,8 +41,8 @@ def enabled(cfg):
 
 
 def valid(account):
-    if account not in ("1", "2"):
-        raise ValueError("Choose Flow Account 1 or Flow Account 2")
+    if account not in ACCOUNTS:
+        raise ValueError(f"Choose a Flow account from 1 to {len(ACCOUNTS)}")
     return account
 
 
@@ -198,7 +201,7 @@ def isolated(fn):
             owner = read_owner(pdir)
             if not enabled(cfg):
                 if owner and owner["account"] != "1":
-                    raise RuntimeError("This project belongs to Flow Account 2. Enable multiple Flow accounts to resume it.")
+                    raise RuntimeError(f"This project belongs to Flow Account {owner['account']}. Enable multiple Flow accounts to resume it.")
                 with lease(cfg, "1", bound.arguments.get("cancel"), bound.arguments.get("log")):
                     LOCAL.active = (cfg, "1")
                     LOCAL.legacy = True
@@ -247,3 +250,27 @@ def _choose(cfg, pdir, pid, account):
         conn.close()
     with lease(cfg, account, wait=False):
         write_owner(pdir, account, bool(old and old.get("bound")))
+
+
+def release(cfg, pdir, pid):
+    """Start over from the shotlist stage or earlier: the Flow project (made
+    in refs/images) is thrown away, so the production is no longer tied to an
+    account and the user can choose another one. Returns what was cleared."""
+    pdir = Path(pdir)
+    gone = []
+    for name in (OWNER_FILE, *PROJECT_RECORDS):
+        for f in {pdir / name, prodfiles.path(pdir, name)}:
+            if f.exists():
+                f.unlink()
+                gone.append(f.name)
+    conn = db.connect(cfg.db_path)
+    try:
+        prod = db.get_production(conn, pid)
+        if prod is not None and (prod["flow_project_url"]
+                                 or prod["flow_project_id"]):
+            db.update_production(conn, pid, flow_project_url=None,
+                                 flow_project_id=None)
+            gone.append("flow project")
+    finally:
+        conn.close()
+    return gone
