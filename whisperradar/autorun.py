@@ -275,6 +275,20 @@ def lean_script(cfg) -> bool:
         conn.close()
 
 
+def source_wait(cfg, pid: int, stage: str = "script") -> dict | None:
+    """The source-transcript wait (source_prep.state) that applies to `stage`,
+    else None. Only the script stage works from the original, so only it
+    waits - and only while it still has to run: not when script.md exists,
+    not in Lean script (which never uses an original)."""
+    if stage != "script":
+        return None
+    if studio.find_script(studio.prod_dir(cfg, pid)):
+        return None
+    if lean_script(cfg):
+        return None
+    return source_prep.state(cfg, pid)
+
+
 def _effective(cfg, pid: int) -> dict:
     """Effective production/auto-run values for a production: global settings
     <- its own channel <- the production itself (see settings.for_production)."""
@@ -2388,8 +2402,8 @@ def stage_action(cfg, pid: int, stage: str) -> dict:
     """What auto-run would do for one stage right now:
     {stage, action: 'skip'|'run'|'pause', detail}."""
     pdir = studio.prod_dir(cfg, pid)
-    wait = source_prep.state(cfg, pid)
-    if wait and stage != "style":
+    wait = source_wait(cfg, pid, stage)
+    if wait:
         # nothing to compare with or take points from until it is there
         return {"stage": stage, "action": "pause", "detail": wait["text"]}
     explainer = explainer_production(cfg, pid)

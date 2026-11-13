@@ -2029,7 +2029,12 @@
     if (hasMerge) {
       html += '<div class="warn">⚠ The merge stage builds a preview draft + NLE export and can take a long time.</div>';
     }
-    if (data.providers && data.providers.length) {
+    // The LLM box only matters while a text stage (style, script, shotlist /
+    // scene plan) still has to run; after that nothing uses an LLM.
+    const needsLlm = data.plan.some(function (e) {
+      return e.action === 'run' && (e.stage === 'style' || e.stage === 'script' || e.stage === 'shots');
+    });
+    if (needsLlm && data.providers && data.providers.length) {
       // Default option keeps each stage on whatever it already resolves to -
       // its own saved per-stage pick (Studio > that stage's dropdown), else
       // the global Default LLM. Picking a provider here instead forces THAT
@@ -2042,6 +2047,9 @@
       html += '<label style="display:block; margin:10px 0 0">LLM for the text stages (style, script, {{ 'plan' if explainer_mode else 'shotlist' }})' +
         '<select id="ar_provider">' + opts + '</select>' +
         '<span class="muted" style="font-size:12px">leave on "Use each stage\'s own pick" to keep whatever you chose per stage; only override here to force one LLM for the whole run</span></label>';
+    }
+    if (!needsLlm) {
+      html += '<div style="margin-top:10px"><b>Are you sure you want to continue?</b></div>';
     }
     html += '<div class="muted" style="font-size:12px; margin-top:8px">Fixes made here count immediately (the plan refreshes). Anything left over pauses the run mid-way - handle it, then click Resume. A server restart cancels a running auto-run.</div>';
     body.innerHTML = html;

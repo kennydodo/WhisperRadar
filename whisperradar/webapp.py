@@ -3751,7 +3751,7 @@ def create_app(cfg) -> Flask:
                 conn, status="transcribed", limit=500))
         finally:
             conn.close()
-        source_wait = source_prep.state(cfg, pid)
+        source_wait = autorun.source_wait(cfg, pid, "script")
 
         stage = request.args.get("stage") or prod["stage"]
         if stage not in db.STAGES:
@@ -6190,7 +6190,7 @@ def create_app(cfg) -> Flask:
                 return redirect("/studio?error=Unknown+production")
         finally:
             conn.close()
-        wait = source_prep.state(cfg, pid)
+        wait = autorun.source_wait(cfg, pid, "script")
         if wait:
             return _autorun_after_source(pid, wait)
         plan = autorun.build_plan(cfg, pid)

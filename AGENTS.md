@@ -1965,8 +1965,9 @@ For future POV Finance Replica thumbnails, use Joe as the recurring lead and use
 
 
 ## POV Finance Replica shotlist props
-For POV Finance Replica shotlists, avoid stacks or piles of coins as financial shorthand. Use story props such as receipts, bills, a calendar or a handwritten calculation. Ordinary coins are fine when the narration calls for them. Natural stacks of papers, envelopes, receipts and moving boxes are fine.
+Kehinde's explicit definition (2026-11-08): Joe experiences the story, and viewers watch him experience it. Joe must be visibly present in EVERY scene, recognisable from CH_JOE with face and upper body/full body. POV is the narrative perspective, not a literal camera through his eyes. Use varied wide actions, medium interactions and closer compositions that retain Joe. Do not remove Joe or make hands-only/prop-only scenes. Keep papers only for necessary narrated document, receipt, signing or writing actions; no decorative paper clutter, infographic cards, coin piles or floating bills. Use motivated devices without replacing the story with screens. Full-bleed 16:9 and ZI/ZO only. This supersedes the earlier incorrect first-person/hands-only guidance. See C:/Users/Kehinde/.codex/skills/pov-story-visuals/SKILL.md. These character/framing rules are specific to POV Finance Replica; Nature Made Us retains its own cast and visual language.
 
+Do not add channel names, titles, branding, watermarks or decorative captions to generated images unless expressly requested. Describe the drawing style without using the channel name as an image-generation prefix.
 
 ## TODO for Claude — watched-channel Style & bible attachment failure (2026-11-07)
 
@@ -2044,3 +2045,7 @@ Written by Claude after a visual review requested by the user. Principle from th
 
 **Constraints:** respect running renders (do not stop/restart or change their inputs); a manual review is not an automated judge pass; changes land on a branch for the user to test before merging.
 2. DONE on master 2026-11-06: explainer presets. `whisperradar/explainer_presets.py` (built-in chalkboard/whiteboard/coding_lesson/finance_dark + user presets in db setting `explainer_presets`); `settings_spec.effective` layers global < preset < channel and never returns `explainer.preset`; channel form dropdown + overrides notice + "use the preset as it is" reset; "scene genre" shown as "video type"; page `/explainer/presets` (routes in `explainer_channel.register`); note on Video options. Tests: `tests/test_explainer_presets.py`. Guide section 0b.
+
+
+## Camera movement preference (Kehinde, 2026-11-08)
+For future shotlists, use only ZI and ZO unless Kehinde explicitly changes this instruction. No PU, PD, pans, tilts or ST static-reveal shots. Remove reveal/grid/land fields when converting an existing reveal or pan to an ordinary zoom, and update asset names and the active generation batch consistently. Production 132 is Nature Made Us: retain its flat hand-drawn cartoon language across ancient and modern scenes; do not impose Joe or the finance channel's cast/framing on it. Keep modern infants in modern clothes and distinguish material evidence, modern experiments and uncertain prehistoric reconstructions.
