@@ -217,6 +217,32 @@
     }
     if (isSettings) { try { applyServer(window.WR_SERVER_OPTS || {}); } catch (e) {} }
     else restoreSel();
+    // "Same chats as the script": remember the last ticked / unticked value of
+    // this form (same per-form key as the picks above) instead of always
+    // falling back to the HTML default. Until it has been used, the default
+    // in the page stays.
+    var CHK = KEY + ':chk';
+    var chkBoxes = function () {
+      return form.querySelectorAll('input[type=checkbox][name=same_chats]');
+    };
+    function saveChk() {
+      try {
+        var o = {};
+        chkBoxes().forEach(function (x) { o[x.name] = x.checked; });
+        localStorage.setItem(CHK, JSON.stringify(o));
+      } catch (e) {}
+    }
+    function restoreChk() {
+      try {
+        var o = JSON.parse(localStorage.getItem(CHK) || '{}') || {};
+        chkBoxes().forEach(function (x) {
+          if (typeof o[x.name] === 'boolean') x.checked = o[x.name];
+        });
+      } catch (e) {}
+    }
+    if (!isSettings) restoreChk();
+    chkBoxes().forEach(function (x) { x.addEventListener('change', saveChk); });
+    form.addEventListener('submit', saveChk);
     form.querySelectorAll('select[name=writer], select[name=judge], select[name=autorun_writer], select[name=autorun_judge]').forEach(function (x) {
       x.addEventListener('change', sync);
       x.addEventListener('change', saveSel);
