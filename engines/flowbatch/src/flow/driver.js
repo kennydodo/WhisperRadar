@@ -645,6 +645,7 @@ export class FlowDriver {
   // ------------------------------------------------------------------ prompt
 
   async clearPrompt() {
+    this.expectedPrompt = null;
     const box = await this.find('promptBox');
     await box.locator.click();
     await this.page.keyboard.press('Control+A').catch(() => {});
@@ -652,19 +653,50 @@ export class FlowDriver {
     await sleep(150);
   }
 
-  async setPrompt(text) {
+  async readPrompt() {
     const box = await this.find('promptBox');
-    await box.locator.click();
-    await this.page.keyboard.press('Control+A').catch(() => {});
-    await this.page.keyboard.press('Delete').catch(() => {});
-    await sleep(120);
-    try {
-      await box.locator.fill(text);
-    } catch {
-      await box.locator.click();
-      await this.page.keyboard.type(text, { delay: 8 });
+    return box.locator.evaluate((node) =>
+      typeof node.value === 'string' ? node.value : (node.innerText ?? node.textContent ?? ''),
+    );
+  }
+
+  async assertPrompt(expected) {
+    const normalize = (value) => String(value).replace(/\s+/g, ' ').trim();
+    const actual = await this.readPrompt();
+    if (normalize(actual) !== normalize(expected)) {
+      throw new GenerationError(
+        `Flow prompt insertion incomplete or changed: expected ${expected.length} characters, ` +
+        `read back ${actual.length}. Generation was not submitted. Check the prompt editor and retry.`,
+      );
     }
-    await sleep(200);
+  }
+
+  async setPrompt(text) {
+    this.expectedPrompt = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await this.clearPrompt();
+      const box = await this.find('promptBox');
+      try {
+        if (attempt === 0) await box.locator.fill(text);
+        else {
+          await box.locator.click();
+          await this.page.keyboard.type(text, { delay: 8 });
+        }
+      } catch {
+        // A failed fill may have inserted a prefix; clear it before typing again.
+        await this.clearPrompt();
+        await box.locator.click();
+        await this.page.keyboard.type(text, { delay: 8 });
+      }
+      await sleep(200);
+      try {
+        await this.assertPrompt(text);
+        this.expectedPrompt = text;
+        return;
+      } catch (error) {
+        if (attempt === 1) throw error;
+      }
+    }
   }
 
   /** Append text at the end of the prompt box without clearing it. */
@@ -1248,6 +1280,7 @@ export class FlowDriver {
     await this.page.keyboard.press('Escape').catch(() => {});
     await sleep(300);
 
+    if (this.expectedPrompt != null) await this.assertPrompt(this.expectedPrompt);
     const button = await this.find('generateButton', { requireEnabled: true, timeout: 15000 });
     // Whatever is already on screen is another item's outcome, not this one's.
     await this.markStaleAlerts();
