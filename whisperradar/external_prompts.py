@@ -167,6 +167,12 @@ def _swap_blocks(text: str, out_files: list, style_ref: str = "",
                   lambda m: orig_ref, text)
     text = re.sub(r"CHANNEL STYLE GUIDE:\n" + re.escape(_STYLE_TOKEN),
                   lambda m: style_ref, text)
+    # Lean script: the style guide is a formula (see studio.script_prompt)
+    text = re.sub(r"FORMULA \(the structure and rules for this script:.*?\):\n"
+                  + re.escape(_STYLE_TOKEN), lambda m: style_ref, text,
+                  flags=re.S)
+    text = re.sub(r"CHANNEL FORMULA:\n" + re.escape(_STYLE_TOKEN),
+                  lambda m: style_ref, text)
     return text
 
 
@@ -242,9 +248,12 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
                          full_style: bool = False) -> str:
     ctx = _context(cfg, pid)
     eff, prod = ctx["eff"], ctx["prod"]
+    lean = autorun.lean_script(cfg)     # Settings > Lean script
     style = (style_guide if style_guide is not None
              else _writing_style(ctx)).strip()
-    facts = (notes if notes is not None else _research_notes(ctx)).strip()
+    # lean: only the title and the formula - no brief, no notes
+    facts = "" if lean else (notes if notes is not None
+                             else _research_notes(ctx)).strip()
     # a typed Target words number is a requirement; the default is a guide
     required = studio.script_words_override(prod) is not None
     target_words = _target_words(cfg, pid, target_words)
@@ -252,6 +261,7 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
     if files is not None:
         if style:
             _add_file(out_files, WRITING_STYLE_FILE, style,
+                      "the formula for this script - follow it" if lean else
                       "the writing style guide - match it exactly")
     text = studio.script_prompt(
         _title(ctx, title), prod["genre"], facts,
@@ -260,7 +270,8 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
         target_required=required,
         vertical=studio.production_frame(cfg, pid) == "9:16",
         style_variant=studio.style_variant(cfg, pid=pid),
-        style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
+        style_limit=(10**6 if (full_style or lean) else STYLE_INLINE_MAX),
+        lean=lean,
         extra_direction=packplan.with_plan(cfg, prod,
                                          handover.instruction(cfg, prod, "script")))
     if required:
@@ -277,10 +288,12 @@ def script_writer_prompt(cfg, pid: int, title: str = "",
            + length_bar +
            f"- an overall rating of at least {_bar(eff['script_min_rating'])}"
            f"/10 from a strict editor\n"
-           f"- no more than {float(eff['script_max_overlap']):.0%} of its "
-           f"5-word runs shared with the source material (above "
-           f"{float(eff['script_hard_overlap']):.0%} is rejected outright)\n"
-           f"- it ends on a complete sentence, never cut off\n"
+           + ("" if lean else
+              f"- no more than {float(eff['script_max_overlap']):.0%} of its "
+              f"5-word runs shared with the source material (above "
+              f"{float(eff['script_hard_overlap']):.0%} is rejected "
+              f"outright)\n")
+           + f"- it ends on a complete sentence, never cut off\n"
            f"- the closing passage states one clear takeaway, and the script "
            f"has a concrete hook, delivers the title's promise, and repeats "
            f"nothing")
@@ -310,13 +323,16 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
     own_script = not script
     ctx = _context(cfg, pid)
     eff, prod = ctx["eff"], ctx["prod"]
+    lean = autorun.lean_script(cfg)     # Settings > Lean script
     guard = handover.for_production(cfg, prod, "script")["guard"]
     style = (style_guide if style_guide is not None
              else _writing_style(ctx)).strip()
-    source = autorun._source_transcript_text(cfg, pid)
+    # lean: no original at all - the judge works from the formula
+    source = "" if lean else autorun._source_transcript_text(cfg, pid)
     # the writer's BRIEF (topic + keywords); the original script is shown to
     # the judge for tone, style, hook, flow and ending only
-    facts = (notes if notes is not None else _research_notes(ctx)).strip()
+    facts = "" if lean else (notes if notes is not None
+                             else _research_notes(ctx)).strip()
     overlap = studio.overlap_ratio(script, source) if source.strip() else 0.0
     out_files: list[dict] = []
     if files is not None:
@@ -326,6 +342,7 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                       "and ending only; never facts, points or names")
         if style:
             _add_file(out_files, WRITING_STYLE_FILE, style,
+                      "the formula the script must follow" if lean else
                       "the writing style guide the script should match")
     text = studio.rating_prompt(
         _title(ctx, title), prod["genre"], script, facts,
@@ -335,14 +352,18 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
         original=(_ORIG_TOKEN if (files is not None and source.strip())
                   else source),
         niche_block=studio.judge_niche_block(cfg, prod["genre"]),
-        guard=guard, style_limit=(10**6 if full_style else STYLE_INLINE_MAX),
+        guard=guard,
+        style_limit=(10**6 if (full_style or lean) else STYLE_INLINE_MAX),
         vertical=studio.production_frame(cfg, pid) == "9:16",
+        lean=lean,
         judge_direction=handover.instruction(cfg, prod, "script_judge"))
     if files is not None:
         text = _swap_blocks(
             text, out_files,
-            style_ref=f"CHANNEL STYLE GUIDE: in the attached "
-                      f"{WRITING_STYLE_FILE} (read all of it).",
+            style_ref=(f"CHANNEL FORMULA: in the attached "
+                       f"{WRITING_STYLE_FILE} (read all of it)." if lean else
+                       f"CHANNEL STYLE GUIDE: in the attached "
+                       f"{WRITING_STYLE_FILE} (read all of it)."),
             orig_ref=f"ORIGINAL (for tone, style, hook, flow and ending "
                      f"ONLY): in the attached {SOURCE_FACTS_FILE} (read all "
                      f"of it).")
@@ -367,8 +388,9 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
                   f"{st['order']:.0%} of those follow the source's order"
                   f"{' - TOO CLOSE, fail it' if st['flag'] else ''}.")
     measured = ("" if own_script else
-                f" Measured by software, do not re-estimate: overlap above; "
-                f"length {words} words; ending "
+                f" Measured by software, do not re-estimate: "
+                + ("" if lean else "overlap above; ")
+                + f"length {words} words; ending "
                 f"{'LOOKS CUT OFF' if cut else 'is complete'}."
                 + struct_txt)
     bar = (f"\n\nTHE CHANNEL'S BAR: the script passes only if ALL hold - "
@@ -406,6 +428,36 @@ def script_judge_prompt(cfg, pid: int, script: str, title: str = "",
            f"Score the writing honestly on its own merits - do not raise or "
            f"lower a score to fit the bar. After the scores, state PASS or "
            f"FAIL separately and list which bar items failed.")
+    if lean:
+        bar = (f"\n\nTHE CHANNEL'S BAR: the script passes only if ALL hold - "
+               f"overall score at least {_bar(eff['script_min_rating'])}; "
+               f"it follows the FORMULA and the channel's script rules; ends "
+               f"on a complete sentence; word guide {target} is not enforced "
+               f"and length alone never fails or lowers the score; it is "
+               f"spoken narration only - it never mentions or alludes to the "
+               f"thumbnail, cover, video title or packaging.{measured}\n"
+               f"Judge it BEAT BY BEAT against the FORMULA (there is no "
+               f"original script): its beats in order, its roles, voice, "
+               f"tests and ending framework, its checklist and its "
+               f"never-list. The FORMULA gives the pattern, never the "
+               f"content: a name, line, object or figure copied from its "
+               f"examples fails originality.\n"
+               f"If the script mentions the thumbnail, cover, title or "
+               f"packaging, FAIL it, quote each sentence in weak_spans and "
+               f"write in feedback: remove it.\n"
+               f"Your feedback and weak_spans are forwarded to the writer, "
+               f"who has only the FORMULA. Describe the problem and the kind "
+               f"of change needed in your own words; never quote the "
+               f"FORMULA's examples back, and for names or figures say "
+               f"'invent your own'.\n"
+               f"A script with anything in \"must_fix\" (or a claim marked "
+               f"\"wrong\") FAILS whatever its score: never state PASS while "
+               f"asking for a necessary factual correction, and never claim "
+               f"verification you did not do - mark such claims "
+               f"\"unverified\".\n"
+               f"Score the writing honestly on its own merits - do not raise "
+               f"or lower a score to fit the bar. After the scores, state "
+               f"PASS or FAIL separately and list which bar items failed.")
     if files is not None:
         files.extend(out_files)
     if files is not None or own_script:

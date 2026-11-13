@@ -4127,8 +4127,10 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
                   extra_direction: str = "", original: str = "",
                   niche_block: str = "", earlier: list | None = None,
                   guard: bool = True, style_limit: int = 10**6,
-                  vertical: bool = False) -> str:
-    """`guard` False = the hand-over template lets the judge speak about the
+                  vertical: bool = False, lean: bool = False) -> str:
+    """`lean` (Settings > Lean script): no original and no overlap; the judge
+    works from the FORMULA (passed as `style_guide`) and the channel's rules.
+    `guard` False = the hand-over template lets the judge speak about the
     original to the writer (see handover.py).
     `source` is the writer's BRIEF (topic + keywords); `original` is the
     existing video's script, shown to the judge ONLY to compare tone, style,
@@ -4152,6 +4154,68 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
             "and it may also be the line that makes people replay it. One "
             "idea only: do not ask for more depth, sections or examples, "
             "and do not penalise the script for being short.\n")
+    check2 = ("  2. originality: own story, structure and wording; no copied "
+              "names or beats.\n")
+    check6 = ("  6. style_fit: obeys the style guide and matches the ORIGINAL's "
+              "tone.\n")
+    orig_rule = (
+        "- Use the ORIGINAL only to check TONE, STYLE, HOOK, FLOW and ENDING: "
+        "does the script's voice, pacing and energy match it, is the hook as "
+        "strong and of a comparable kind, does the flow build the same way, "
+        "does the ending land as well? It must match in quality and feel, "
+        "NOT copy: never compare or require the ORIGINAL's points, facts, "
+        "examples, story or character names. If the script follows the "
+        "original's sequence of beats, reuses its names or scenario, or "
+        "echoes its opening or ending wording, fail originality.\n")
+    guard_rule = (
+        "- Your feedback and weak_spans are forwarded to the writer, who has "
+        "NEVER seen the ORIGINAL. They may contain ONLY: advice about tone, "
+        "style, pacing, hook strength or ending strength in your own words "
+        "(e.g. 'the hook is slow - open with a sharper question'), real-world "
+        "corrections, and keywords to use. They must NEVER contain anything "
+        "from the ORIGINAL: no sentence, phrase, name, company, place, "
+        "figure, event, opening or ending, and never 'do what the original "
+        "does'. Never tell the writer to match the original's facts.\n"
+        if guard else
+        "- Your feedback and weak_spans are forwarded to the writer, who "
+        "has never seen the ORIGINAL. You may refer to it to explain what "
+        "to change.\n")
+    orig_block = ("ORIGINAL (for tone, style, hook, flow and ending ONLY):\n"
+                  f"{orig or '(none)'}\n\n")
+    style_label = "CHANNEL STYLE GUIDE"
+    kw_rule = ("- Check the KEYWORDS from the BRIEF are used naturally; list "
+               "any that are missing in feedback.\n")
+    brief_block = ("BRIEF AND KEYWORDS GIVEN TO THE WRITER:\n"
+                   f"{brief or '(none)'}\n\n")
+    if lean:
+        kw_rule = ""
+        brief_block = ("WHAT THE WRITER WAS GIVEN: only the video title and "
+                       "the FORMULA below.\n\n")
+        orig = ""
+        names_note = ""
+        check2 = ("  2. originality: own story, names, objects and figures; "
+                  "nothing taken from the FORMULA's own examples; no copied "
+                  "wording.\n")
+        check6 = ("  6. style_fit: follows the FORMULA: its beats in order, "
+                  "roles, voice, tests, ending framework and its checklist, "
+                  "and the channel's script rules.\n")
+        orig_rule = (
+            "- JUDGE AGAINST THE FORMULA. There is no original script. Go "
+            "through the FORMULA beat by beat: is each required beat, role, "
+            "device and rule present, in the order it gives, and does the "
+            "ending follow its framework? A missing or out-of-order beat or "
+            "a broken rule is feedback, or must_fix when the channel's "
+            "script rules or the FORMULA's own never-list are clearly "
+            "broken. The FORMULA gives the pattern, never the content: any "
+            "name, line, object or figure copied from its examples fails "
+            "originality and is a must_fix.\n")
+        guard_rule = (
+            "- Your feedback and weak_spans are forwarded to the writer, who "
+            "has only the FORMULA. Describe each problem and the kind of "
+            "change needed in your own words; never quote the FORMULA's "
+            "examples back, and for names or figures say 'invent your own'.\n")
+        orig_block = ""
+        style_label = "CHANNEL FORMULA"
     direction = (extra_direction or "").strip()
     direction_block = ""
     if direction:
@@ -4162,14 +4226,15 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
             f"penalise it for doing what the direction asks, even where that "
             f"differs from the title or the ORIGINAL's own structure or "
             f"count. Invented facts are still penalised.\n\n")
-    return (
+    text = (
         f"You are a demanding but fair YouTube script editor for the channel "
         f"genre '{genre}'. Score this script for the video \"{title}\". "
         f"The bar is a script a viewer enjoys and is not misled by.\n\n"
         f"Score each criterion 1-10:\n{rubric}\n\n"
-        f"Measured 5-gram overlap with the original: {overlap:.1%}. "
-        f"Treat high overlap as an originality failure.\n\n"
-        f"{SCRIPT_EDITORIAL_DEFAULTS}\n{SCRIPT_JUDGE_DEFAULTS}\n"
+        + ("" if lean else
+           f"Measured 5-gram overlap with the original: {overlap:.1%}. "
+           f"Treat high overlap as an originality failure.\n\n")
+        + f"{SCRIPT_EDITORIAL_DEFAULTS}\n{SCRIPT_JUDGE_DEFAULTS}\n"
         f"HOW TO JUDGE:\n{short_note}"
         f"- REPETITION AND QUALIFICATIONS. Check for repeated meaning, not "
         f"just repeated wording. Each section must add a distinct mechanism, "
@@ -4221,15 +4286,13 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"(under 15 words).\n"
         f"  1. hook: the first 15 seconds give a concrete reason to keep "
         f"listening.\n"
-        f"  2. originality: own story, structure and wording; no copied "
-        f"names or beats.\n"
+        f"{check2}"
         f"  3. accuracy: every material claim is verified, none wrong or "
         f"invented.\n"
         f"  4. structure: clear beats, logical order, no filler or repeated "
         f"points.\n"
         f"  5. pacing: holds attention to the end at a spoken pace.\n"
-        f"  6. style_fit: obeys the style guide and matches the ORIGINAL's "
-        f"tone.\n"
+        f"{check6}"
         f"  7. ending: lands a payoff rather than trailing off.\n"
         f"  8. takeaway: the closing passage leaves the listener with one "
         f"clear thing to remember or do, in plain words. FAIL if the ending "
@@ -4246,35 +4309,13 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f"writer as written: the passage of the SCRIPT, why it is wrong, "
         f"and what must change. Keep mandatory corrections (must_fix) apart "
         f"from optional polish (feedback) so the writer keeps what works.\n"
-        f"- Use the ORIGINAL only to check TONE, STYLE, HOOK, FLOW and ENDING: "
-        f"does the script's voice, pacing and energy match it, is the hook as "
-        f"strong and of a comparable kind, does the flow build the same way, "
-        f"does the ending land as well? It must match in quality and feel, "
-        f"NOT copy: never compare or require the ORIGINAL's points, facts, "
-        f"examples, story or character names. If the script follows the "
-        f"original's sequence of beats, reuses its names or scenario, or "
-        f"echoes its opening or ending wording, fail originality.\n"
-        f"- Check the KEYWORDS from the BRIEF are used naturally; list any "
-        f"that are missing in feedback.\n"
-        + (
-        f"- Your feedback and weak_spans are forwarded to the writer, who has "
-        f"NEVER seen the ORIGINAL. They may contain ONLY: advice about tone, "
-        f"style, pacing, hook strength or ending strength in your own words "
-        f"(e.g. 'the hook is slow - open with a sharper question'), real-world "
-        f"corrections, and keywords to use. They must NEVER contain anything "
-        f"from the ORIGINAL: no sentence, phrase, name, company, place, "
-        f"figure, event, opening or ending, and never 'do what the original "
-        f"does'. Never tell the writer to match the original's facts.\n"
-          if guard else
-          f"- Your feedback and weak_spans are forwarded to the writer, who "
-          f"has never seen the ORIGINAL. You may refer to it to explain what "
-          f"to change.\n")
-        +
+        f"{orig_rule}"
+        f"{kw_rule}"
+        f"{guard_rule}"
         f"{names_note}\n\n"
-        f"BRIEF AND KEYWORDS GIVEN TO THE WRITER:\n{brief or '(none)'}\n\n"
-        f"ORIGINAL (for tone, style, hook, flow and ending ONLY):\n"
-        f"{orig or '(none)'}\n\n"
-        f"CHANNEL STYLE GUIDE:\n{(style_guide or '(none)')[:style_limit]}\n\n"
+        f"{brief_block}"
+        f"{orig_block}"
+        f"{style_label}:\n{(style_guide or '(none)')[:style_limit]}\n\n"
         f"{direction_block}"
         f"SCRIPT:\n{script or ''}\n\n"
         f"Reply with ONLY a JSON object:\n"
@@ -4287,6 +4328,16 @@ def _rating_prompt_base(title: str, genre: str, script: str, source: str,
         f'"weak_spans": ["<a passage of the SCRIPT that reads weak>", ...], '
         f'"checklist": [{{"item": "<name>", "pass": true, "quote": "<line>"}}, ...]}}'
     )
+    if lean:
+        text = (text
+                .replace("match the ORIGINAL's tone, style, hook and ending "
+                         "quality?", "follow the FORMULA's beats, voice and "
+                         "ending framework?")
+                .replace("never saw the ORIGINAL, so verify",
+                         "had no original to copy, so verify")
+                .replace("free of anything from the original",
+                         "free of the formula's example content"))
+    return text
 
 
 def rating_prompt(*args, judge_direction: str = "", **kwargs) -> str:
@@ -4760,7 +4811,9 @@ def script_prompt(title: str, genre: str, source_text: str,
                   variation: str = "", extra_direction: str = "",
                   style_variant: str | None = None,
                   style_limit: int = 10**6, vertical: bool = False,
-                  target_required: bool = False) -> str:
+                  target_required: bool = False, lean: bool = False) -> str:
+    """`lean` (Settings > Lean script): `style_guide` is a FORMULA the script
+    is built from; only the title and the formula are given."""
     if vertical:
         extra_direction = ((extra_direction or "").strip() + "\n\n"
                            + SHORTS_SCRIPT_RULES).strip()
@@ -4788,7 +4841,13 @@ def script_prompt(title: str, genre: str, source_text: str,
         facts_block = ("No brief available - write from the title alone and "
                        "research the topic yourself.")
     style = (style_guide or "").strip()
-    if style:
+    if style and lean:
+        style_block = f"""FORMULA (the structure and rules for this script: follow its
+beats, roles, voice, tests and ending framework, in order. It describes
+patterns only. Invent every name, object, place, amount, line and event
+yourself, and never reuse an example or a figure that appears in it):
+{style[:style_limit]}"""
+    elif style:
         if style_variant == "classic":
             style_block = f"""STYLE GUIDE (match this exactly - tone, pacing, rhythm,
 hook pattern, structure, and CTA style all come from it):
@@ -4813,7 +4872,7 @@ TIME BEATS FOR THIS SCRIPT (about {target_words} words in total):
 {table}""" if table else "")
     else:
         style_block = "No style guide provided."
-    beat_rule = ("" if style_variant == "classic" else
+    beat_rule = ("" if (style_variant == "classic" or lean) else
                  "\n  Keep the STYLE GUIDE's time-beat rhythm (each beat's role "
                  "and its share of the runtime), but fill every beat with YOUR "
                  "own story and ideas, never the reference's.")
@@ -4824,7 +4883,7 @@ TIME BEATS FOR THIS SCRIPT (about {target_words} words in total):
                  f"conflicts with the brief on structure or the number of "
                  f"points, the direction wins - but never invent facts to "
                  f"satisfy it):\n{extra}\n")
-    return f"""You are an original YouTube scriptwriter for a {genre} channel.
+    text = f"""You are an original YouTube scriptwriter for a {genre} channel.
 
 {style_block}
 
@@ -4885,6 +4944,17 @@ Rules:
 
 Output ONLY the script text, preceded by the opening-style metadata comment
 only when the selected opening instructions request one."""
+    if lean:
+        text = text.replace(
+            "- Choose your OWN story structure and decide yourself what the viewer "
+            "should\n  learn first, where the tension or surprise lands, and how it "
+            "ends.",
+            "- Follow the FORMULA's structure, beats and ending framework. Make "
+            "the story,\n  characters, objects and figures your own; the formula "
+            "gives the pattern, never the content.")
+        text = text.replace("STYLE GUIDE", "FORMULA").replace(
+            "style guide's", "formula's")
+    return text
 
 
 # Notes are built PART BY PART. One call over a whole transcript used to hit a

@@ -265,6 +265,16 @@ def _simple_mode(cfg) -> bool:
         conn.close()
 
 
+def lean_script(cfg) -> bool:
+    """Settings > Lean script: the script stage works from a formula only (no
+    original script, no brief from one, no overlap check). See settings.py."""
+    conn = _connect(cfg)
+    try:
+        return bool(settings.load(conn).get("lean_script"))
+    finally:
+        conn.close()
+
+
 def _effective(cfg, pid: int) -> dict:
     """Effective production/auto-run values for a production: global settings
     <- its own channel <- the production itself (see settings.for_production)."""

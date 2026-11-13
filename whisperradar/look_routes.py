@@ -35,7 +35,7 @@ def register(app, cfg, sjob) -> None:
             msg=request.args.get("msg"),
             error=request.args.get("error") or _failure(ch))
 
-    LOOK_JOBS = ("style & bible", "writing style")
+    LOOK_JOBS = ("style & bible", "writing style", "formula")
 
     def _failure(ch) -> str:
         """Why the LAST style & bible / writing-style job for this channel
@@ -150,6 +150,24 @@ def register(app, cfg, sjob) -> None:
                       "Started - asking the chat for the writing style from "
                       "the transcripts of several videos. This page reloads "
                       "itself when done.")
+
+    @app.post("/watched/<key>/look/formula")
+    def look_formula(key):
+        """Lean script: ask for a formula from the channel's 5 most viewed
+        transcribed scripts (no download, no frames)."""
+        ch = _channel(key)
+        if ch is None:
+            return redirect("/watched?error=Unknown+channel")
+        cid = ch["channel_id"]
+
+        def call(site, transport, hint):
+            channel_look.regenerate_formula(cfg, cid, site, transport,
+                                            sjob.log.append, hint=hint)
+
+        return _start(ch, "formula", call,
+                      "Started - asking the chat for the formula from the "
+                      "transcripts of the channel's 5 most viewed scripts. "
+                      "This page reloads itself when done.")
 
     @app.post("/watched/<key>/look/regen")
     def look_regen(key):

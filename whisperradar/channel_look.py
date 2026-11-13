@@ -42,6 +42,9 @@ EXCERPT_CHARS = 700
 WRITING_FILE = "writing_style.md"
 TRANSCRIPT_VIDEOS = 6          # transcripts the writing style is built from
 TRANSCRIPT_CHARS = 9000        # per video: opening and ending are kept
+FORMULA_FILE = "formula.md"    # Settings > Lean script: the channel's formula
+FORMULA_VIDEOS = 5             # scripts the formula is built from
+FORMULA_CHARS = 16000          # per script: opening and ending are kept
 STYLE_MARK = "=== STYLE GUIDE ==="
 BIBLE_MARK = "=== BIBLE ==="
 
@@ -67,6 +70,10 @@ def load(cfg, channel_id: str) -> dict | None:
         meta["writing_style"] = (d / WRITING_FILE).read_text(encoding="utf-8")
     except OSError:
         meta["writing_style"] = ""
+    try:
+        meta["formula"] = (d / FORMULA_FILE).read_text(encoding="utf-8")
+    except OSError:
+        meta["formula"] = ""
     meta["files"] = sorted(p.name for p in (d / "frames").glob("*.jpg"))
     meta["sent"] = [n for n in meta.get("sent") or [] if n in meta["files"]]
     return meta
@@ -499,6 +506,124 @@ def regenerate_writing(cfg, channel_id: str, site: str, transport, log,
     return meta
 
 
+# ----------------------------------------------------------- lean formula
+FORMULA_RULES = """You are given {n} scripts from ONE channel (the transcripts
+below, each headed '### Video N'). Write the CHANNEL FORMULA: a document a
+writer will use, on its own, to write a new script for this channel, and an
+editor will use to judge it. Neither will ever see these scripts, so the
+formula must carry everything that makes the channel's scripts work, as
+patterns.
+
+DESCRIBE, NEVER QUOTE. This is the most important rule:
+- No sentence or phrase from any video, not even a short one. When a line or
+  phrase recurs, describe the KIND of line, where it lands and the job it
+  does, in your own words.
+- No names of people, companies, brands, places, products or objects from any
+  video. Describe roles and kinds instead (a quiet older person, a worn
+  possession, a visible spender).
+- No fixed numbers, amounts, ages, dates or counts from any video. Say how
+  numbers behave instead: which figures must agree with which, what grows
+  from what, what a milestone looks like, what ranges are sensible as shares
+  or proportions. Every value in a new script is invented by the writer.
+- Use only what repeats in at least three of the {n} scripts; say plainly
+  where the scripts differ and which choices are open.
+
+Write these sections, in this order, each as clear instructions:
+1. THE IDEA: the one story every script tells, in one paragraph, and what
+   the viewer is meant to feel and learn. Give the length range the scripts
+   share as words and as minutes.
+2. THE CAST: every recurring role (the viewer or protagonist, the foil or
+   rival, the mentor or guide, the close person, optional extras): its
+   function, how it is introduced, how it behaves, what it never does. Names
+   rotate; roles do not.
+3. THE STRUCTURE: every beat in order, each with its share of the runtime
+   (as percentages), what happens, the feeling, what the viewer takes away,
+   and how it hands over to the next beat. Start with the opening and end
+   with the closing.
+4. THE SET PIECES: the recurring tests, scenes or moves the story must
+   contain (what triggers them, how the protagonist handles them, how the
+   scene ends), and where each lands.
+5. NUMBERS AND TIME: how figures, dates, ages and amounts are used and how
+   they must agree with each other, written as relations and rules.
+6. EMOTION AND UPS AND DOWNS: what hurts, what lifts, how fear, doubt, pride
+   and loneliness are shown (in the body and in action, never announced), and
+   how the emotional line moves from start to end.
+7. VOICE: person, tense, sentence length and rhythm, how paragraphs end,
+   dialogue habits, sensory detail, transitions, devices that recur and how
+   often. Describe the devices; do not quote them.
+8. THE OPENING AND THE ENDING: the pattern of each, in order, as a framework
+   (what it contains, in which order, what it must not contain).
+9. WHAT CHANGES FROM SCRIPT TO SCRIPT: the angles, starting points and dials
+   a writer may turn, and the parts that never change.
+10. NEVER: what the scripts avoid, plus these standing rules: never copy a
+    name, line, object or figure from any example; invent all story content.
+11. CHECKLIST: 15 to 25 yes/no items an editor can check a draft against.
+
+Write plain markdown with '## ' headings. Do not mention the videos, their
+titles or their topics. Output ONLY the formula."""
+
+
+def formula_prompt(name: str, genre: str, videos: list[dict],
+                   hint: str = "") -> str:
+    parts = []
+    for i, v in enumerate(videos, 1):
+        t = _transcript_text(v, FORMULA_CHARS)
+        if t:
+            parts.append(f"### Video {i}\n{t}")
+    if not parts:
+        raise RuntimeError("No transcripts are stored for this channel's "
+                           "videos yet - transcribe a few first")
+    head = (f"Channel genre: {genre or 'general'}.\n"
+            + (f"What I know about the channel: {hint.strip()}\n"
+               if hint and hint.strip() else ""))
+    return (head + FORMULA_RULES.format(n=len(parts))
+            + "\n\nTRANSCRIPTS:\n\n" + "\n\n".join(parts) + "\n")
+
+
+def formula_ready(text: str) -> bool:
+    """A COMPLETE formula: its last two sections are in and it is formula-sized."""
+    t = (text or "").lower()
+    return "checklist" in t and "never" in t and t.count("##") >= 8 \
+        and len(t.strip()) >= 3000
+
+
+def regenerate_formula(cfg, channel_id: str, site: str, transport, log,
+                       hint: str = "") -> dict:
+    """Lean script: ask for the channel's formula from the transcripts of its
+    FORMULA_VIDEOS most viewed scripts. The old one stays if the chat fails."""
+    conn = db.connect(cfg.db_path)
+    try:
+        ch = db.get_channel(conn, channel_id)
+        if ch is None:
+            raise RuntimeError("Unknown watched channel")
+        name, cid, genre = ch["name"], ch["channel_id"], ch["genre"]
+        videos = pick_transcribed(conn, cid, FORMULA_VIDEOS)
+    finally:
+        conn.close()
+    if len(videos) < 3:
+        raise RuntimeError("A formula needs at least 3 transcribed videos of "
+                           f"this channel; {len(videos)} found")
+    prompt = formula_prompt(name, genre, videos, hint)
+    log(f"asking the web chat for the formula from {len(videos)} script(s)")
+    reply = str(transport.ask(site, prompt, ready=formula_ready) or "").strip()
+    if not reply:
+        raise RuntimeError("The chat answered the formula with nothing usable")
+    d = look_dir(cfg, cid)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / FORMULA_FILE).write_text(reply + "\n", encoding="utf-8")
+    try:
+        meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = {"channel": name, "site": site, "frames": 0, "sent": [],
+                "videos": [], "at": __import__("time").strftime("%Y-%m-%d %H:%M")}
+    meta["formula_videos"] = [v["title"] for v in videos]
+    meta["formula_at"] = __import__("time").strftime("%Y-%m-%d %H:%M")
+    meta["formula_site"] = site
+    (d / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    log("saved the formula")
+    return meta
+
+
 def _save(d: Path, name, site, style, bible, pool_n, send, titles, extra=None):
     d.mkdir(parents=True, exist_ok=True)
     (d / "style.md").write_text(style + "\n", encoding="utf-8")
@@ -508,7 +633,8 @@ def _save(d: Path, name, site, style, bible, pool_n, send, titles, extra=None):
             "at": __import__("time").strftime("%Y-%m-%d %H:%M")}
     try:        # a refresh of the look keeps the writing style it belongs with
         old = json.loads((d / "meta.json").read_text(encoding="utf-8"))
-        for k in ("writing_videos", "writing_at", "writing_site"):
+        for k in ("writing_videos", "writing_at", "writing_site",
+                  "formula_videos", "formula_at", "formula_site"):
             if k in old:
                 meta[k] = old[k]
     except (OSError, ValueError):

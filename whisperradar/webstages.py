@@ -559,7 +559,19 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
              if studio.script_words_override(ctx["prod"]) is not None else None)
     ceiling = (studio.script_max_words(target)
                if studio.script_words_override(ctx["prod"]) is not None else None)
-    source = autorun._source_transcript_text(cfg, pid)
+    lean = autorun.lean_script(cfg)     # Settings > Lean script
+    # lean: the writer and the judge get only the formula (and the title);
+    # no original, so no brief from it and no overlap or story-order check
+    source = "" if lean else autorun._source_transcript_text(cfg, pid)
+    if lean:
+        if not ep._writing_style(ctx).strip():
+            raise StageFailed(
+                "Lean script is on, but this production has no formula. "
+                "Paste or upload one in its Writing style box (or generate "
+                "one on a watched channel from its 5 most viewed scripts), "
+                "then run the script again.")
+        log("Lean script: only the title and the formula go to the writer "
+            "and the judge")
     min_rating = float(eff["script_min_rating"])
     max_overlap = float(eff["script_max_overlap"])
     hard_overlap = float(eff["script_hard_overlap"])
@@ -576,7 +588,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
     def long_enough(text: str) -> bool:        # not just "Thinking..." / a stub
         return _wc(text) >= 0.5 * target
 
-    brief_text, _chat = ensure_brief(cfg, pid, transport, judge, log)
+    brief_text, _chat = (("", False) if lean else
+                         ensure_brief(cfg, pid, transport, judge, log))
 
     # a style guide over the inline limit is attached whole, never cut
     attach_style = ep.style_needs_file(cfg, pid)
@@ -619,7 +632,8 @@ def run_script(cfg, pid: int, transport, writer: str = "zai",
                 raw = _nudge_judge(transport, judge, log, _is_script_verdict)
             elif judge_open:
                 raw = _send(transport, judge,
-                            lambda f: _script_followup(script, words, target, overlap,
+                            lambda f: _script_followup(script, words, target,
+                                                       None if lean else overlap,
                                                        studio.script_looks_truncated(script),
                                                        struct0, judge_dir), log,
                             new_chat=False, ready=_is_script_verdict)

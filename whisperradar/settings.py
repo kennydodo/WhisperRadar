@@ -629,12 +629,25 @@ SPEC.append({
             "everything again.",
 })
 
+SPEC.append({
+    "key": "lean_script", "type": "bool", "default": False,
+    "label": "Lean script",
+    "help": "The script stage uses only a formula: the writer gets the "
+            "title and the formula, the judge gets the draft, the formula "
+            "and the channel's script rules. No original script, no brief "
+            "from an original and no overlap check. Upload the formula in "
+            "the channel's Writing style box, or generate one on a watched "
+            "channel (Style, bible & writing style > Generate formula) from "
+            "its 5 most viewed scripts. Does not change Auto Run. Works with "
+            "or without Simple mode.",
+})
+
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 
 # The settings page renders these groups in order; a key missing from every
 # group lands in "Other", so adding a SPEC entry can never hide it.
 GROUPS: list[tuple[str, list[str]]] = [
-    ("Simple mode", ["simple_mode"]),
+    ("Simple mode", ["simple_mode", "lean_script"]),
     ("LLM", ["llm_default", "producer_llm_provider", "llm_fallback_provider",
              "ai33_api_key", "ai33_base_url"]),
     ("Auto Run", [

@@ -109,6 +109,17 @@
     <pre id="writing" style="display:none"></pre>
     {% endif %}
   </div>
+  <div class="panel">
+    <h2>Formula (Lean script) <button class="ghost" type="button" onclick="cp('formula')">copy</button>
+      {% if sites %}<button type="submit" form="lookform" formaction="/watched/{{ ch['channel_id'] }}/look/formula" title="Ask for a formula from the transcripts of this channel's 5 most viewed scripts - nothing is downloaded">Generate formula</button>{% endif %}</h2>
+    {% if look.formula %}
+    <p class="muted" style="margin:0">Made {{ look.formula_at }} from {{ look.formula_videos|length }} script transcript(s). It describes patterns only (no quoted lines, names or fixed numbers). Paste it into the Writing style box of a channel or production and tick <b>Lean script</b> in Settings.</p>
+    <pre id="formula">{{ look.formula }}</pre>
+    {% else %}
+    <p class="muted" style="margin:0">None yet. It is built from the 5 most viewed transcribed scripts of this channel; press <b>Generate formula</b> after some are transcribed.</p>
+    <pre id="formula" style="display:none"></pre>
+    {% endif %}
+  </div>
   {% if look.style %}
   <div class="panel">
     <h2>Style guide <button class="ghost" type="button" onclick="cp('style')">copy</button>
