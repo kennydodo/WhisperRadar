@@ -523,6 +523,9 @@ def planning_context_prompt(cfg, ctx: dict, plan: dict, narration: str,
         cfg, profile, eff.get("brief_presentation") or "")
     pacing = briefs.pacing_note(profile, plan["total_s"], len(plan["cues"]),
                                plan["max_hold"], plan["min_align"])
+    if getattr(cfg, "studio_prompt_fidelity", False):
+        from . import fidelity
+        brief += fidelity.brief_block()
     return studio.shotlist_prompt(
         brief, narration, ctx["visual_style"],
         extra_direction=db.stage_extra(ctx["prod"], "shots"),
@@ -752,6 +755,9 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
              studio.shotlist_structural_faults(data, n)
              + studio.shotlist_pacing(data, cues, plan["max_hold"],
                                       plan["profile"])[0])
+    if local is not None and getattr(cfg, "studio_prompt_fidelity", False):
+        from . import fidelity
+        local = local + fidelity.faults(data, cues)
     rules = _hard_rules(plan, eff, ctx, n)
     audit = (_alignment_rules(ctx["visual_style"])
              + studio.density_audit_block(ctx["density"]))

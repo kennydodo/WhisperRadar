@@ -91,6 +91,9 @@ studio:
   # is read fresh on every run; without the {{SLOT}} markers it only supports
   # the Standard motion profile (see brief_template.md for the slots).
   manifest_brief: null
+  # shotlist planning: every image lists what its cues show ("shows") and the
+  # app checks each prompt against it before any reviewer is called. Off = as before.
+  prompt_fidelity: false
   imagegen_command: null # optional override; default routes through Renderly
   merge_command: null    # optional override; default runs ImgToVideo.Cli
 

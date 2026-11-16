@@ -450,6 +450,8 @@ def build_shotlist(beats: list[dict], ranges: list[tuple[int, int]], style: str,
                 shot["reveal"]["assets"] = assets
         shots.append(shot)
         image = {"file": name, "prompt": b["prompt"]}
+        if b.get("shows"):          # what the beat's own narration shows (fidelity.py)
+            image["shows"] = b["shows"]
         if "refs" in b:
             image["refs"] = b["refs"]
         if reveal_images:

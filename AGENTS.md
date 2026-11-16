@@ -5,6 +5,20 @@ Run: `python wr.py serve` (dashboard at http://127.0.0.1:8540). Tests: `python -
 Lint/typecheck: none. Backend: `whisperradar/` (stdlib Flask, SQLite at `data/whisperradar.db`).
 Docs: `README.md`. Key surfaces: dashboard/channels/transcripts (`webapp.py` + `dashboard.html`), Studio pipeline (`webapp.py` studio routes + `studio.py` + `templates/studio_detail.html`).
 
+## DONE (2026-11-17) - prompt fidelity check for shotlists (branch feat/prompt-fidelity, OFF by default)
+
+Goal: every image prompt shows what ITS OWN cues say. With `studio.prompt_fidelity: true` in config.yaml the planning
+brief gets one appended block (`fidelity.brief_block`, ~970 chars; the template itself is unchanged) asking for a
+`"shows"` list on every new image (2-4 short visible things the narration at that shot's cues names, written before
+the prompt). `fidelity.faults` then adds free code checks to `external_prompts.shotlist_judge_prompt`'s local faults
+(so the web-chat writer loop and the beats step both get them): missing/oversized `shows`, an item not written into
+the prompt, no item named in the shot's own narration (with a hint when it matches the previous/next shot = wrong cue
+range), and a reused image whose `shows` is not named at the reusing cues. Word matching only (stemmed, stop words and
+numbers ignored), deliberately lenient: one grounded item is enough, so metaphors/diagrams pass. Each fault names its
+asset, so `shotlist_fix_scope` shows that shot and its narration to the fixer. `beats.build_shotlist` copies a beat's
+`shows` onto its image. Tests: `tests/test_fidelity.py`. NOT yet run in a live chat: unknown how reliably a web-chat
+writer fills `shows`, and how many extra fix rounds it costs. The built-in (API) planner path in `studio.py` is not wired.
+
 ## DONE (2026-11-06) - coding-lesson explainer layout (branch explainer-coding-session)
 
 New Remotion layout `code_lesson` (typed real code, chips, highlights/notes, output panel, diagram before/beside/before_then_beside)

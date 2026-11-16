@@ -119,6 +119,9 @@ class Config:
         self.flowbatch_project_url = \
             (studio.get("flowbatch_project_url") or "").strip() or None
         self.studio_manifest_brief = studio.get("manifest_brief") or None
+        # shotlist planning: every image lists what its cues show, and the app
+        # checks the prompt against it (fidelity.py). Off unless set.
+        self.studio_prompt_fidelity = bool(studio.get("prompt_fidelity", False))
         self.studio_dir = base_dir / "data" / "studio"
 
 
