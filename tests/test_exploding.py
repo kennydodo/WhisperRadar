@@ -375,5 +375,72 @@ class RankedTests(Base):
         self.assertEqual([c["channel_id"] for c in exploding.ranked(data, new_only=True)], ["UCrepeat"])
 
 
+class LanguageTests(unittest.TestCase):
+    """English only keeps out a channel that is plainly in another script or
+    language, even when it declares no language; thin text stays in."""
+
+    def ok(self, name, about, titles):
+        return exploding._lang_ok({"name": name, "about": about, "default_language": ""}, titles)
+
+    def test_other_scripts_are_not_english(self):
+        self.assertFalse(self.ok("Тёмыч", "Телега", ["CLAUDE CODE БЕСПЛАТНО НАВСЕГДА — подгон от Nvidia"]))
+        self.assertFalse(self.ok("Claude Code業務自動化の教科書", "", ["どんなアプリも2分半で丸裸にして丸ごと複製する"]))
+        self.assertFalse(self.ok("AI with Thiru", "", ["Claude AI + Unity MCP இனி AI-யே Game Create பண்ணும்"]))
+
+    def test_other_languages_in_latin_letters_are_not_english(self):
+        self.assertFalse(self.ok("Thomas Berton", "À 23 ans, j'étais déjà un mordu de tech",
+                                 ["31 façons INCROYABLES d'utiliser Claude en 2027", "Comment utiliser Claude pour le code"]))
+        self.assertFalse(self.ok("Julio", "", ["Google acaba de CAMBIAR Claude Code (y es GRATIS) para los que empiezan con una IA"]))
+        self.assertFalse(self.ok("Qissa", "", ["Zalim Bahu Ne Ghareeb Saas Sasur Ki Zindagi Azaab Kar Di aur ghar ka sukoon"]))
+
+    def test_english_and_thin_text_stay(self):
+        self.assertTrue(self.ok("Beau Johnson", "I build with AI agents", ["How I use Claude Code for everything", "Why your agents fail"]))
+        self.assertTrue(self.ok("Café Dev", "", ["Claude Code tips"]))          # an accent is not a language
+        self.assertTrue(self.ok("", "", []))
+        self.assertTrue(exploding._lang_ok({"default_language": "en", "name": "Тёмыч"}, []))   # a declared language decides
+
+    def test_the_upload_titles_are_checked_before_scoring(self):
+        ov = {"channel_id": "UCru", "name": "Dev", "about": "", "default_language": "", "subscribers": 900,
+              "videos": 30, "created_at": iso(200)}
+        ups = [{"video_id": f"v{i}", "title": "Нейросети и агенты для всех", "published_at": iso(20 + 6 * i),
+                "view_count": 1000, "duration": 600} for i in range(12)]
+        ups.append({"video_id": "hit", "title": "Claude Code бесплатно навсегда", "published_at": iso(3),
+                    "view_count": 20000, "duration": 600})
+        self.assertIsNone(exploding.evaluate(ov, ups, {**exploding.DEFAULTS, "english_only": True}, NOW))
+        self.assertIsNotNone(exploding.evaluate(ov, ups, {**exploding.DEFAULTS, "english_only": False}, NOW))
+
+
+class FoundTests(unittest.TestCase):
+    """The page can show the latest search first and one search phrase alone."""
+
+    def data(self):
+        def c(cid, score, seen, queries):
+            return {"channel_id": cid, "score": score, "last_seen": seen, "queries": queries, "subscribers": 1,
+                    "best": {"multiplier": 5.0, "age_days": 2, "views": 9000}}
+        return {"dismissed": [], "channels": {
+            "old-high": c("old-high", 90, "2026-10-29T21:07:00+00:00", ["like: Rust vs Python"]),
+            "new-low": c("new-low", 49, "2026-11-16T21:59:42+00:00", ["Claude Code"]),
+            "new-high": c("new-high", 80, "2026-11-16T21:59:42+00:00", ["claude code", "AI agents explained"]),
+            "mid": c("mid", 70, "2026-11-16T21:58:27+00:00", ["AI agents explained"])}}
+
+    def ids(self, **kw):
+        return [c["channel_id"] for c in exploding.ranked(self.data(), **kw)]
+
+    def test_latest_search_first_then_score(self):
+        self.assertEqual(self.ids(sort="found"), ["new-high", "new-low", "mid", "old-high"])
+        self.assertEqual(self.ids()[0], "old-high")                      # the plain call still sorts by score
+
+    def test_one_phrase_alone_ignoring_case(self):
+        self.assertEqual(self.ids(query="Claude Code"), ["new-high", "new-low"])
+        self.assertEqual(self.ids(query="ai agents explained", sort="found"), ["new-high", "mid"])
+        self.assertEqual(self.ids(query="nothing like it"), [])
+
+    def test_phrases_latest_first_one_per_spelling(self):
+        got = exploding.phrases(self.data())
+        self.assertEqual(len(got), 3)
+        self.assertEqual({got[0].casefold(), got[1].casefold()}, {"claude code", "ai agents explained"})
+        self.assertEqual(got[2], "like: Rust vs Python")
+
+
 if __name__ == "__main__":
     unittest.main()

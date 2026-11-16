@@ -39,7 +39,8 @@
 <div class="panel">
   <form class="filters" method="get" action="/research" style="margin:0">
     <input type="hidden" name="tab" value="exploding">
-    <label>sort<select name="xsort">{% for s in ex.sorts %}<option value="{{ s }}" {{ 'selected' if s == ex.sort }}>{{ {'score': 'score', 'multiplier': 'biggest multiple', 'subs': 'smallest', 'fresh': 'newest', 'views': 'most views'}[s] }}</option>{% endfor %}</select></label>
+    <label>sort<select name="xsort">{% for s in ex.sorts %}<option value="{{ s }}" {{ 'selected' if s == ex.sort }}>{{ {'found': 'latest search first', 'score': 'score', 'multiplier': 'biggest multiple', 'subs': 'smallest', 'fresh': 'newest video', 'views': 'most views'}[s] }}</option>{% endfor %}</select></label>
+    {% if ex.phrases %}<label>found via<select name="xq" style="max-width:260px"><option value="">every search</option>{% for q in ex.phrases %}<option value="{{ q }}" {{ 'selected' if q|lower == ex.f.xq|lower }}>{{ q }}</option>{% endfor %}</select></label>{% endif %}
     <label>min score<input type="number" name="xscore" value="{{ ex.f.xscore }}" min="0" max="100" style="width:60px"></label>
     <label>max subs<input type="number" name="xsubs" value="{{ ex.f.xsubs }}" min="0" step="1000" style="width:90px"></label>
     <label><input type="checkbox" name="xnew" value="1" {{ 'checked' if ex.f.xnew }}> channel under 1 year old</label>

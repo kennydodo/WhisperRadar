@@ -70,6 +70,25 @@ class ExplodingRouteTests(unittest.TestCase):
         self.assertIn("Alpha", html)
         self.assertNotIn("Hit Beta", html)
 
+    def seen(self, cid, when, queries):
+        data = exploding.load(self.cfg)
+        data["channels"][cid].update(last_seen=when, queries=queries)
+        exploding.save(self.cfg, data)
+
+    def test_latest_search_comes_first_and_one_phrase_can_be_shown_alone(self):
+        self.seen("UCa", "2026-10-29T21:07:00+00:00", ["old topic"])           # Alpha: higher score, older search
+        self.seen("UCb", "2026-11-16T21:59:42+00:00", ["Claude Code"])         # Beta: found by the latest search
+        html = self.page()
+        self.assertLess(html.index("Hit Beta"), html.index("Hit Alpha"))
+        self.assertIn("latest search first", html)
+        self.assertIn('<option value="Claude Code"', html)
+        html = self.page("&xsort=score")
+        self.assertLess(html.index("Hit Alpha"), html.index("Hit Beta"))
+        html = self.page("&xq=claude+code")
+        self.assertIn("Hit Beta", html)
+        self.assertNotIn("Hit Alpha", html)
+        self.assertIn("Hit Alpha", self.page("&xq=never+searched"))            # an unknown phrase filters nothing
+
     def test_empty_topics_are_refused(self):
         os.environ[youtube_api.ENV_KEY] = "K" * 30
         r = self.client.post("/research/exploding/run", data={"queries": "  "})

@@ -71,13 +71,17 @@ def register(app, cfg, research_job) -> None:
         watched = _watched()
         opts = _opts(args)
         sort = args.get("xsort") if args.get("xsort") in exploding.SORTS \
-            else "score"
+            else "found"
+        found_by = exploding.phrases(data)
+        xq = args.get("xq") or ""
+        if xq.casefold() not in [q.casefold() for q in found_by]:
+            xq = ""
         shown = exploding.ranked(
             data,
             min_score=_num(args, "xscore", 0, int, 0),
             max_subs=_num(args, "xsubs", 0, int, 0) or None,
             sort=sort, watched=watched,
-            new_only=args.get("xnew") == "1")
+            new_only=args.get("xnew") == "1", query=xq)
         n_q = len(exploding.clean_queries(args.get("queries") or ""))
         sopts = _sopts(args)
         last_opts = _last_opts(data)
@@ -102,7 +106,8 @@ def register(app, cfg, research_job) -> None:
             "fmt": outliers.fmt_views,
             "f": {"xscore": args.get("xscore", ""),
                   "xsubs": args.get("xsubs", ""),
-                  "xnew": args.get("xnew") == "1"},
+                  "xnew": args.get("xnew") == "1", "xq": xq},
+            "phrases": found_by,
         }
 
     app.jinja_env.globals["exploding_view"] = view

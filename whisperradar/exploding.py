@@ -40,6 +40,7 @@ import json
 import math
 import re
 import statistics
+import unicodedata
 from pathlib import Path
 
 from . import outliers, youtube_api
@@ -316,12 +317,45 @@ def channel_overview(client, ids: list[str], cache=None, now=None
     return out
 
 
+# Everyday words of other languages written in Latin letters. Two of them, and
+# more than the English ones, mark a channel as not English.
+_OTHER_WORDS = frozenset("""le la les des est pour avec une que comment pourquoi dans sur vous nous
+el los las para con por como qué una del más esto der die das und ist mit wie nicht ich für ein eine
+uma não você com isso mais il di che per gli della questo sono yang dan untuk dengan ini itu tidak
+ve bir için bu nasıl mein aapka hoon mera hai aur ke ki ka kya kaise nahi lo ikada cheyali ela""".split())
+_ENGLISH_WORDS = frozenset("""the and your this that with without how why our their these those from
+for you we is are to of what when it in on my can will""".split())
+NON_LATIN_SHARE = 0.2         # this share of non-Latin letters = evidently not English
+
+
+def _evidently_foreign(ch: dict, titles: list[str]) -> bool:
+    """True when the channel's own text shows another language: a good share
+    of its letters are not Latin (Cyrillic, Japanese, Tamil...), or it uses
+    more everyday words of another language than of English."""
+    text = " ".join([ch.get("name", ""), ch.get("about", ""), *titles])
+    # letters and the marks that belong to them (Tamil, Hindi... write vowels
+    # as marks); an accented Latin letter is still Latin
+    letters = [c for c in text if unicodedata.category(c)[0] in "LM"]
+    if not letters:
+        return False
+    other_script = sum(1 for c in letters if not c.isascii()
+                       and "LATIN" not in unicodedata.name(c, ""))
+    if other_script / len(letters) >= NON_LATIN_SHARE:
+        return True
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    other = sum(w in _OTHER_WORDS for w in words)
+    return other >= 2 and other > sum(w in _ENGLISH_WORDS for w in words)
+
+
 def _lang_ok(ch: dict, titles: list[str]) -> bool:
-    """True unless the channel is evidently not English. Uses the app's own
-    conservative text check when available."""
+    """True unless the channel is evidently not English. A channel whose text
+    is too thin to tell stays in; one that is plainly written in another
+    script or language does not."""
     declared = (ch.get("default_language") or "").lower().split("-")[0]
     if declared:
         return declared == "en"
+    if _evidently_foreign(ch, titles):
+        return False
     try:
         from .channel_discovery import language_info
         code, _ = language_info({"default_language": "", "about": ch.get("about", ""),
@@ -469,7 +503,12 @@ def summarize(items: list[dict], ov: dict, opts: dict, now) -> dict | None:
 
 
 def evaluate(ov: dict, uploads: list[dict], opts: dict, now) -> dict | None:
-    """Score a channel from its (fetched or saved) uploads."""
+    """Score a channel from its (fetched or saved) uploads. With English only
+    on, the upload titles are a second, fuller language check: the search
+    sees one or two titles, this sees the channel's recent work."""
+    if opts.get("english_only") and not _lang_ok(
+            ov, [u.get("title", "") for u in uploads[:25]]):
+        return None
     rows = [{"video_id": u["video_id"], "channel_id": ov["channel_id"],
              "channel_name": ov.get("name", ""), "genre": "",
              "title": u["title"],
@@ -769,15 +808,32 @@ def snowball(cfg, client, opts=None, sopts=None, watched=(),
 
 # ---- reading the saved result ----------------------------------------------------------------
 
-SORTS = ("score", "multiplier", "subs", "fresh", "views")
+SORTS = ("found", "score", "multiplier", "subs", "fresh", "views")
+
+
+def phrases(data: dict) -> list[str]:
+    """The search phrases the saved channels were found by, the most recently
+    used first. Upper and lower case count as one phrase."""
+    latest: dict[str, tuple[str, str]] = {}
+    for c in data.get("channels", {}).values():
+        seen = c.get("last_seen") or ""
+        for q in c.get("queries", []):
+            key = q.casefold()
+            if key not in latest or seen > latest[key][0]:
+                latest[key] = (seen, q)
+    return [q for _, q in sorted(latest.values(), key=lambda v: v[0], reverse=True)]
 
 
 def ranked(data: dict, *, min_score: int = 0, max_subs: int | None = None,
            min_mult: float = 0.0, sort: str = "score", watched=(),
-           new_only: bool = False) -> list[dict]:
-    """The saved channels, filtered and sorted for the page."""
+           new_only: bool = False, query: str = "") -> list[dict]:
+    """The saved channels, filtered and sorted for the page. `query` keeps the
+    channels one search phrase found; sort "found" puts the latest search's
+    channels first (best score first within a search)."""
+    want = (query or "").casefold()
     rows = [c for c in data.get("channels", {}).values()
             if c["channel_id"] not in set(watched)
+            and (not want or want in [q.casefold() for q in c.get("queries", [])])
             and c["channel_id"] not in set(data.get("dismissed", []))
             and c["score"] >= min_score
             and c["best"]["multiplier"] >= min_mult
@@ -792,4 +848,6 @@ def ranked(data: dict, *, min_score: int = 0, max_subs: int | None = None,
         "views": lambda c: -c["best"]["views"],
     }
     rows.sort(key=keys.get(sort, keys["score"]))
+    if sort == "found":       # stable: score order holds within one search
+        rows.sort(key=lambda c: c.get("last_seen") or "", reverse=True)
     return rows
