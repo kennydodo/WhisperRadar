@@ -90,6 +90,8 @@ studio:
   # motion profile + presentation (My Channels > Planning brief). A custom file
   # is read fresh on every run; without the {{SLOT}} markers it only supports
   # the Standard motion profile (see brief_template.md for the slots).
+  # The shorter built-in brief (same rules, about 40% fewer characters):
+  #   manifest_brief: whisperradar/brief_template_compact.md
   manifest_brief: null
   # shotlist planning: every image lists what its cues show ("shows") and the
   # app checks each prompt against it before any reviewer is called. Off = as before.

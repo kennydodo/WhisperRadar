@@ -19,6 +19,18 @@ asset, so `shotlist_fix_scope` shows that shot and its narration to the fixer. `
 `shows` onto its image. Tests: `tests/test_fidelity.py`. NOT yet run in a live chat: unknown how reliably a web-chat
 writer fills `shows`, and how many extra fix rounds it costs. The built-in (API) planner path in `studio.py` is not wired.
 
+## DONE (2026-11-17) - compact planning brief (branch feat/prompt-fidelity, opt-in)
+
+`whisperradar/brief_template_compact.md` is the manifest-authoring brief with the repetition removed: 24,663 -> 13,323
+characters as a template, about 40% shorter rendered for every motion profile. Same slots, same rules, same JSON shape.
+Select it with `studio.manifest_brief: whisperradar/brief_template_compact.md` in config.yaml; `brief_template.md` is
+untouched (a test pins it word for word). Cuts: the closing checklist is 5 lines pointing back at the sections; refs are
+explained once (Section 6); Sections 4 and 10 are folded into 2 and 1; 11A-11C are tightened. Anchors other code needs are
+kept and tested (`tests/test_brief_compact.py`): `## SECTION 1 `, `## SECTION 5 - DESIGN VISUALS THAT EXPLAIN` (em dash),
+`## SECTION 8 `, checklist line `2. Grouping by visual idea`, sections 8/11A/11B/11C and the `**A reference prompt
+describes ONLY` line (skeleton planner), and no `---` line. NOT yet run in a live chat: plan quality against the long
+brief is unmeasured.
+
 ## DONE (2026-11-06) - coding-lesson explainer layout (branch explainer-coding-session)
 
 New Remotion layout `code_lesson` (typed real code, chips, highlights/notes, output panel, diagram before/beside/before_then_beside)
