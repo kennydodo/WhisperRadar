@@ -686,9 +686,9 @@ def _hard_rules(plan: dict, eff: dict, ctx: dict, n_cues: int) -> str:
             + (f" Supplied files that exist: "
                f"{', '.join(supplied)}." if supplied else ""))
     lines.append(
-        f"DETAIL: at least {plan['min_align']:.0%} of the shots must "
-        f"have an image prompt that is complete for its narration (verdict "
-        f"\"ok\" in the audit below).")
+        f"DETAIL: every shot must have an image prompt that is complete for "
+        f"its narration (verdict \"ok\" in the audit below); any weak or "
+        f"missing shot is sent back to be fixed.")
     return "\n".join(f"{i}. {line}" for i, line in enumerate(lines, 1))
 
 
@@ -832,8 +832,7 @@ def shotlist_judge_prompt(cfg, pid: int, shotlist_text: str,
         '"missing": ["<element the narration requires that the prompt does '
         'not state>", ...], "reason": "<one short line>"}], '
         '"detailed_ratio": <share of ALL shots whose prompt is complete, '
-        '0-1>, "pass": <true only if faults is empty and detailed_ratio >= '
-        f'{plan["min_align"]:g}>, "fixes": ["<the most useful changes, in '
+        '0-1>, "pass": <true only if faults is empty and "shots" is empty>, "fixes": ["<the most useful changes, in '
         'order>", ...]}\n'
         "In \"shots\" list ONLY the weak or missing shots (an ok shot is "
         "simply left out), so the reply stays short. In \"faults\" list only "

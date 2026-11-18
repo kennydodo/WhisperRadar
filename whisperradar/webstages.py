@@ -807,7 +807,7 @@ def _plan_followup(text: str, files) -> str:
         "as before. First check that every point you raised earlier is now "
         "fixed, then check that nothing else regressed. Do not invent new "
         "faults for things that are correct. The narration is unchanged "
-        "(use narration.txt from earlier in this chat).\n\n")
+        "(use the original narration supplied earlier in this chat).\n\n")
     if files is None:
         return head + "The revised shotlist:\n\n" + text
     files.append({"name": "shotlist.json", "text": text.strip() + "\n",
@@ -1227,7 +1227,9 @@ def run_shotlist(cfg, pid: int, transport, writer: str = "zai",
             hard = local + [f for f in faults if f not in local]
             weak = _weak_list(verdict)
             fixes = [str(x) for x in (verdict.get("fixes") or [])]
-            passed = verdict.get("pass") is True and not hard
+            # a weak or missing shot is never accepted: it goes back to the
+            # writer as a patch and is re-checked, whatever the ratio says
+            passed = verdict.get("pass") is True and not hard and not weak
             ratio = verdict.get("detailed_ratio")
             log(f"round {rnd}: {len(hard)} fault(s), {len(weak)} weak shot(s), "
                 f"detailed {ratio} - "

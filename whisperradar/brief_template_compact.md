@@ -40,9 +40,9 @@ Main beats are sections of meaning, not scene changes.
 Choose the strongest visual function per idea:
 - **SCN** scene / character / environment · **CU** close-up / detail · **INF** infographic / diagram · **CMP** comparison (A vs B, before/after, myth vs evidence) · **PROC** process / stages · **HYB** scene + explanatory graphics · **OVR** conceptual overview
 
-Vary camera angle, distance, subject placement, environment, focal object, metaphor, diagram structure, scale and negative space. Avoid "person standing + floating icons".
+Vary camera angle, distance, subject placement, environment, focal object, diagram structure, scale and negative space. Avoid "person standing + floating icons".
 
-For finance, statistics and data, show the mechanism itself: compound growth = stacks growing across time; inflation = the same basket costing more; debt = a self-feeding loop; two strategies = side by side; diversification = distributed assets; cash flow = money entering and leaving a system. The picture must teach before any text is added.
+For finance, statistics and data, show the actual situation as an everyday scene, with a small supporting graphic only where a figure needs it: compound growth = a balance at two dates; inflation = the same basket costing more; debt = a balance and its interest on a statement; two strategies = side by side; diversification = money in several accounts; cash flow = income in and bills out. No stand-in objects (Section 11D). The picture must teach before any text is added.
 
 {{MOTION_SECTION}}
 
@@ -102,7 +102,7 @@ Canvas per motion code in the filename (compose each image for it; you write no 
 
 ## SECTION 8 — TEXT INSIDE IMAGES
 
-Follow the channel's text policy. If it says no generated text: no readable words, numbers, labels or signage; communicate through icons, arrows, shapes, relative size, grouping and metaphor.
+Follow the channel's text policy. If it says no generated text: no readable words, numbers, labels or signage; communicate through icons, arrows, shapes, relative size, grouping and the plain literal objects the narration names - never a metaphor.
 
 **When the channel permits numbers, numerical coverage is REQUIRED.** Find the figures that carry the explanation or comparison (amounts, rates, totals, counts, ages, dates, periods). At the image where each matters, write the exact figure in the prompt with its unit and meaning: a $520 monthly payment over 84 months with a $43,680 total is named as monthly payment, loan term and total cost. Do not replace an essential figure with a blank slip, a generic percentage sign or stacks of different sizes. Related figures may share one comparison image; never make an image only to repeat a number.
 
@@ -112,7 +112,7 @@ When the renderer draws the text, put the figures and their meaning in the shot'
 
 ## SECTION 9 — FILENAMING
 
-`S##_##_TYPE_MOTION.png`: main beat, sub-beat, TYPE code, MOTION code, e.g. `S04_03_INF_ST.png`. Uppercase codes, lowercase `.png`, every new filename unique. Never rename or renumber an existing entry; a new image takes the next unused number in its scene (gaps are fine).
+`S##_##_TYPE_MOTION.png`: main beat, sub-beat, TYPE code, MOTION code, e.g. `S04_03_INF_{{EX_C}}.png`. Uppercase codes, lowercase `.png`, every new filename unique. Never rename or renumber an existing entry; a new image takes the next unused number in its scene (gaps are fine).
 
 ## SECTION 11 — OUTPUT SAFETY
 
@@ -142,11 +142,24 @@ When the narration describes an act aimed at a specific subject (signing, speaki
 
 When the narration says a specific subject felt or showed a reaction at that moment (grief, joy, fear, surprise, relief...), the prompt gives the visible cue on that subject: eyes, mouth, brow, posture, gesture. A prop or icon beside a neutral face does not show it. This does not apply when an emotion is only discussed as an idea or a general claim ("bonding releases oxytocin"); there an icon or diagram is fine.
 
+## SECTION 11D — THE PICTURE SHOWS THE NARRATION'S MEANING THROUGH EVERYDAY ACTION
+
+Core rule: show the narration's intended meaning through believable everyday actions. Priorities, in order: right subject, action, setting and event status (actual, hypothetical and planned kept as such); one coherent visible moment; charts that clarify, never dominate; enough concrete detail. Concision serves these.
+
+- Read the whole thought first and group cues around one action or explanation; never illustrate a fragment on its own.
+- Default to the real everyday situation: who does what to what, with the right person, objects, setting and amounts. A plan is shown being planned, a hypothetical as a hypothetical.
+- Figurative language never becomes scenery or an invented activity: "spending leaks" is finding recurring charges; "turn off renewal" is changing an account setting. Do not introduce pipes, valves, switches, gates, rivers, lanterns, ladders, towers, trains or giant money bars or blocks as substitutes for financial concepts; retain them when the narration genuinely describes them. Exception: Section 11A.
+- Charts support the scene: the person and the task are the subject, with a small comparison beside them (Maya setting up her transfer, $500 → $300 savings + $200 debt payment). A figure is a number on a phone, paper or small chart, never an object a person lifts.
+- Show the narrated action accurately without forcing activity: a person who only sits or looks has not paid or cancelled; an informational passage can be a calm scene with a useful graphic. No waving, pointing, thumbs-up or posing unless narrated.
+- Describe the scene, not its purpose (no "communicates" sentences; "no readable text" is fine). Keep prompts concise and specific. Use as much detail as the image needs, without repetition, and stay within the engine's character budget. Props are literal (a phone timer is fine). One coherent moment per image; never drop a later action. A CU shot is framed close; helpful background is fine. Sign-offs stay in the scene. Show a third party's place for real.
+- Nothing the cues do not name and the action does not need. Preserve any recurring protagonist or presenter explicitly required by the channel's style, bible, or presentation instructions, even when the cues only convey information. Their presence alone is not unrelated content.
+
 ## SECTION 12 — BEFORE YOU OUTPUT
 
-Re-read your plan against these five points; each is explained above:
+Re-read your plan against these six points; each is explained above:
 1. Coverage: every cue 1..N exactly once, and the last shot ends at the final cue.
 2. Grouping by visual idea: most shots span several cues of one developing idea; no shot stitches unrelated visuals; {{CHECK_HOLD}}
 3. {{CHECK_MOTION}}
 4. Lengths: the master is under 1800 characters and every prompt under 2400; re-read the master and the longest prompts.
 5. Prompts: content only; refs only where the subject is visible; nothing against Section 11A; every essential figure present when the channel permits numbers (Section 8).
+6. Action and relevance (Section 11D): each prompt shows the narration's meaning as believable everyday action (Section 11D): the whole thought, no metaphor made literal, a supporting chart that does not dominate, no filler, nothing unnamed, and the prompt rules above.

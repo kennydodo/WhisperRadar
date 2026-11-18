@@ -358,26 +358,34 @@ Motion must vary. A video where every shot is ZI has the same problem as one whe
 
 ZOOMS_ONLY = MotionProfile(
     key="zooms_only",
-    label="Zooms only - push in and pull out",
-    description="ST, ZI, ZO. No pans or tilts at all: the calmest look, "
-                "for channels where side-scrolling feels wrong.",
-    allowed=("ST", "ZI", "ZO"),
+    label="Zooms only - push in and pull out (ZI/ZO)",
+    description="ZI and ZO only. No static shots, no pans or tilts at all: "
+                "every shot is a slow push in or pull out.",
+    allowed=("ZI", "ZO"),
+    st_max_share=None, st_max_hold=None, static_long_hold=None,
     code_max_share=0.65, code_share_overrides={},
     slots={
+        "HOLD_RULE": (
+            "A hold that runs long (roughly 15 seconds or more) is "
+            "acceptable only when the idea keeps developing - every shot "
+            "carries motion on this channel (Section 7)."),
         "MOTION_SECTION": """\
 ### Motion — zooms only
 
-This channel uses only three motion codes: ZI (slow push in), ZO (slow pull out) and ST (static). Never use PL, PR, PU, PD or PV - there are no pans or tilts here, and a plan that uses them fails review. Ignore every rule elsewhere in this brief that asks for them.
+This channel uses only two motion codes: ZI (slow push in) and ZO (slow pull out). Never use ST, PL, PR, PU, PD or PV - there is no static shot, no pan and no tilt here, and a plan that uses any of them fails review. Ignore every rule elsewhere in this brief that asks for them, including any rule about static shots or an ST share.
 
-ST is the exception: only on very short holds (~1-2 cues) and ~10% of shots at most. Every other shot carries a zoom chosen while designing the image: push IN (ZI) to move toward a detail, a character or a mechanism; pull OUT (ZO) to reveal context, scale or a whole comparison. Because every canvas is the standard 2304x1296 with centered overscan, keep the main subject near the center and leave breathing room around it - nothing parked in a side third.
+Every shot carries a zoom chosen while designing the image: push IN (ZI) to move toward a detail, a character or a mechanism; pull OUT (ZO) to reveal context, scale or a whole comparison. Because every canvas is the standard 2304x1296 with centered overscan, keep the main subject near the center and leave breathing room around it - nothing parked in a side third.
 
 Alternate the two zooms so the video breathes in and out: neither ZI nor ZO above ~65% of shots, and avoid more than three of the same zoom in a row.""",
         "MOTION_FIELD_RULE": (
-            "- `motion`: ST | ZI | ZO — **must match the motion code in the asset's own filename**. This channel has no pans or tilts: never write PL, PR, PU, PD or PV. **ST is rare and special:** only on very short holds — roughly 1–2 cues (~2–4 seconds) — and capped at ~10% of shots. Every other shot is ZI or ZO; neither above ~65% of shots."),
-        "CANVAS_SPEC": "ST/ZI/ZO: 2304x1296",
+            "- `motion`: ZI | ZO — **must match the motion code in the asset's own filename**. This channel has no static shots, pans or tilts: never write ST, PL, PR, PU, PD or PV. Every shot is ZI or ZO; neither above ~65% of shots."),
+        "CANVAS_SPEC": "ZI/ZO: 2304x1296",
+        "CHECK_HOLD": (
+            "long holds are acceptable only where the idea keeps developing "
+            "- every shot carries motion on this channel."),
         "CHECK_MOTION": (
-            "Only ST, ZI and ZO are used - no PL/PR/PU/PD/PV anywhere. ST appears only on ~1–2-cue shots, capped at ~10% of shots. Neither ZI nor ZO exceeds ~65% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - sparingly, never on the last shot."),
-        "EX_A": "ZO", "EX_B": "ST", "EX_C": "ZI",
+            "Only ZI and ZO are used - never ST, PL, PR, PU, PD or PV anywhere. Neither ZI nor ZO exceeds ~65% of shots. Every motion code in `shots[].motion` matches the motion code in that shot's own filename. Transitions: CROSSFADE, DIP or DIP_WHITE, or SLIDE_LEFT/SLIDE_RIGHT/SLIDE_UP/SLIDE_DOWN at main-beat changes only - sparingly, never on the last shot."),
+        "EX_A": "ZO", "EX_B": "ZI", "EX_C": "ZO",
     })
 
 FAST_PACED = MotionProfile(
@@ -1065,6 +1073,10 @@ def resolve_profile(key, min_hold=None, max_hold=None,
         keep = tuple(c for c in (prof.allowed or MOTION_CODES)
                      if c in VERTICAL_MOTIONS) or ("ST",)
         prof = replace(prof, allowed=keep)
+    if prof.reveal and prof.allowed and "ST" not in prof.allowed:
+        # a reveal shot is cut into slices of one still image, so it is always
+        # ST: a channel without a static code cannot have reveal shots
+        prof = replace(prof, reveal=False, reveal_strict=False)
     return prof
 
 
@@ -1261,7 +1273,7 @@ def text_overlay_block() -> str:
         "So EVERY image prompt must produce an image with NO readable text at all - no words, "
         "numbers, labels, percentages, titles, captions, letters, logos or signage, anywhere in "
         "the picture (this replaces any text policy in the channel style). Show the idea with "
-        "icons, arrows, shapes and metaphor.\n\n"
+        "plain icons, arrows, shapes and the literal objects the narration names - never a metaphor.\n\n"
         "Words the viewer must read go in the shot instead, as `\"overlays\"`: a list of "
         "`{\"text\": \"...\", \"style\": \"...\", \"position\": \"...\", \"start\": 0.5, "
         "\"end\": 3.0, \"anim\": \"fade\", \"cue\": 14}`.\n"

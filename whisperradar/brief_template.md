@@ -50,9 +50,9 @@ Never create an image because another cue began, time passed, the narrator rephr
 Choose the strongest visual function per idea:
 - **SCN** scene / character / environment · **CU** close-up / detail · **INF** infographic / diagram · **CMP** comparison (A vs B, before/after, myth vs evidence) · **PROC** process / stages · **HYB** scene + explanatory graphics · **OVR** conceptual overview
 
-Vary camera angle, distance, subject placement, environment, focal object, metaphor, diagram structure, scale, subject count, negative space. Avoid "person standing + floating icons" for every image.
+Vary camera angle, distance, subject placement, environment, focal object, diagram structure, scale, subject count, negative space. Avoid "person standing + floating icons" for every image.
 
-For finance/statistics/data-heavy narration, represent the actual mechanism: compound growth = progressively growing stacks across time; inflation = the same basket costing more over time; debt = a self-feeding loop; two strategies = side-by-side structure; diversification = distributed assets; cash flow = money entering/leaving a system. The visual must teach before any editor-added text.
+For finance/statistics/data-heavy narration, show the actual situation the narration describes as an everyday scene, with a small supporting graphic only where a figure or comparison needs it (a number on a phone screen, a paper, a plain small chart): compound growth = a balance at two dates; inflation = the same basket costing more over time; debt = a balance and its interest on a statement; two strategies = side by side; diversification = money held in several accounts; cash flow = income coming in and bills going out. No stand-in objects (see Section 11D). The visual must teach before any editor-added text.
 
 {{MOTION_SECTION}}
 
@@ -119,7 +119,7 @@ Raw JSON. No fences, no commentary. Exactly this shape:
 
 ## SECTION 8 — TEXT INSIDE IMAGES
 
-Follow the supplied channel text policy. If the project says no generated text: no readable words, numbers, labels, percentages, titles, captions, letters, or signage. Communicate through icons, arrows, shapes, pictograms, relative size, grouping, quantity, and visual metaphor.
+Follow the supplied channel text policy. If the project says no generated text: no readable words, numbers, labels, percentages, titles, captions, letters, or signage. Communicate through icons, arrows, shapes, pictograms, relative size, grouping, quantity, and the plain literal objects the narration names (a phone screen, a paper, a receipt) - never a metaphor.
 
 **Numerical coverage is REQUIRED when the channel permits numbers.** Identify the figures that carry the narration's explanation or comparison: amounts, rates, totals, counts, ages, dates and time periods. At the visual idea where each matters, explicitly write the exact figure in the relevant image prompt, together with its unit and meaning. For example, narration comparing a $520 monthly payment over 84 months with a $43,680 total needs those figures identified as monthly payment, loan term and total cost; a 22% credit-card rate must be identified as an annual interest rate when that is what the narration states. Do not replace essential figures with blank slips, unlabeled tags, generic percentage signs or differently sized stacks. You may group related figures in one clear comparison; do not create a new image just to repeat a number.
 
@@ -129,7 +129,7 @@ Use only figures actually supplied by the narration or explicit creator instruct
 
 ## SECTION 9 — FILENAMING
 
-`S##_##_TYPE_MOTION.png` — main beat, sub-beat, TYPE code, MOTION code. Example: `S04_03_INF_ST.png`. Sub-beat numbers are stable identifiers: never rename or renumber an existing entry — new images allocate the next unused index in their scene (gaps are fine; nothing orders by filename, the assembler sequences by cue ranges). Uppercase codes, `.png` lowercase. Every generated filename is unique. Reused shots reference the exact existing filename.
+`S##_##_TYPE_MOTION.png` — main beat, sub-beat, TYPE code, MOTION code. Example: `S04_03_INF_{{EX_C}}.png`. Sub-beat numbers are stable identifiers: never rename or renumber an existing entry — new images allocate the next unused index in their scene (gaps are fine; nothing orders by filename, the assembler sequences by cue ranges). Uppercase codes, `.png` lowercase. Every generated filename is unique. Reused shots reference the exact existing filename.
 
 ## SECTION 10 — TIMING
 
@@ -137,7 +137,7 @@ All timing derives from the SRT. A shot begins when its visual idea begins and e
 
 ## SECTION 11 — OUTPUT SAFETY
 
-If you approach your output limit: stop after the last COMPLETE entry, close all brackets cleanly, end the message, then continue in the next message with only the missing content. Never end mid-token — a file ending like `"asset": "S03_15_CU_ST` is a hard failure. When you resume, pick up the cue ranges exactly where you stopped and continue through the final cue of the SRT — a message that stops early must always be followed by continuation messages until every cue is covered.
+If you approach your output limit: stop after the last COMPLETE entry, close all brackets cleanly, end the message, then continue in the next message with only the missing content. Never end mid-token — a file ending like `"asset": "S03_15_CU_{{EX_C}}` is a hard failure. When you resume, pick up the cue ranges exactly where you stopped and continue through the final cue of the SRT — a message that stops early must always be followed by continuation messages until every cue is covered.
 
 ## SECTION 11A — IMAGE CONTENT POLICY (the image generator REFUSES prompts that break it)
 
@@ -165,6 +165,29 @@ When the narration states that a subject felt or showed a specific emotional rea
 
 This does not extend to narration that only discusses an emotion as a concept, process or general claim rather than a subject's reaction at that moment ("bonding releases oxytocin", "pet owners report better mental health") — that stays narration's job like any other internal or statistical claim, and INF/CMP explainer diagrams illustrating such claims with icons are unaffected. The line is whether a specific subject is shown having the reaction: if so, show it on them; if the beat is describing the idea rather than a moment, an icon or prop remains fine.
 
+## SECTION 11D — THE PICTURE SHOWS THE NARRATION'S MEANING THROUGH BELIEVABLE EVERYDAY ACTION
+
+Core rule: show the narration's intended meaning through believable everyday actions. Do not turn figurative financial language into literal scenery or invented activities. Use charts only where they clarify the explanation, usually as a supporting element that does not dominate the scene. Preserve actual, hypothetical and planned events accurately.
+
+Priorities, in order: the right subject, action, setting and event status; one coherent visible moment; charts that clarify without dominating; enough concrete detail to generate the scene. Concise wording serves these and never outweighs them.
+
+- Read the complete thought first. Before choosing a picture, read the whole sentence or passage the shot's cues belong to, and group cues around one meaningful action or explanation. Never illustrate a fragment on its own ("at a steep, quiet price" belongs to the thought it finishes).
+- Default to the actual everyday situation: reviewing transactions, cancelling a subscription, cooking instead of ordering delivery, setting up a bank transfer, checking renewal settings, paying the mechanic. Say who does what to what ("she taps Pay on the utility bill on her phone"), with the right person, objects, setting and amounts.
+- Keep the status of the event. A real event is shown happening; a planned one is shown being planned or set up (writing the plan, scheduling the transfer), not already done; a hypothetical is shown as a hypothetical (comparing two options on paper), not as something that happened.
+- Figurative language never becomes an invented activity or scenery. "Spending leaks" leads to finding recurring charges on a statement; "turn off renewal" is changing an account setting on a phone or laptop. Do not introduce plumbing, pipes, valves, household switches, levers, gates, rivers, lanterns, ladders, towers, trains, giant bars, blocks or slices of money, or buildings as substitutes for financial concepts; retain them when the narration genuinely describes them. Only exception to the literal rule: Section 11A sensitive topics, shown by implication.
+- Charts support the scene. The person and the financial task are the main subject, with a small supporting graphic that clarifies (Maya setting up her transfer on her phone, with a small comparison beside her: $500 surplus → $300 savings + $200 debt payment). A figure appears as a number on a phone screen, a paper, a receipt or a small plain chart, never as a physical object a person carries, lifts or pushes. A standalone chart is for passages it explains better than an everyday scene, and it is plain, with no desk clutter.
+- Show the intended action accurately; do not force activity. A person who only sits, looks at or holds something has not paid, cancelled, transferred or found it, so when the cues narrate an action, show that action. When the passage is informational (a figure, a comparison, a trend), a calm scene with a useful supporting graphic is right, and nobody needs to "do something" extra.
+- No filler. Never add waving, pointing, a thumbs-up, gesturing or smiling at the viewer, or posing unless the cues narrate it.
+- No unrelated items. Every person, object, prop and setting detail is named in the cues (or the neighbouring cues of the same thought) or is needed to understand the action. No extra people, decoration or stock props. If a detail could be deleted without changing what the cues say, delete it.
+- Preserve any recurring protagonist or presenter explicitly required by the channel's style, bible, or presentation instructions, even when the cues only convey information. Their presence alone is not unrelated content.
+- Prompts describe the scene, not its purpose: people, objects, action, framing. No sentences about what the image "communicates", "emphasizes", "teaches" or "suggests", and no instructions about how the viewer should read it. Short constraints that protect the image are fine ("no readable text", "no other people"). Keep prompts concise and specific. Use as much detail as the image needs, without repetition, and stay within the engine's character budget.
+- Props are literal. An object appears when the cues name it or the action naturally uses it, as what it is: a phone timer and a kitchen timer are both fine when a timer is narrated or natural. Never use a blank or unrelated object as a stand-in for something else.
+- One coherent moment per image. When the cues narrate a sequence, either pick one moment that visibly contains the narrated result (the laptop already in the drawer) or split the beats across neighboring shots. Never drop a later narrated action by showing only the first beat.
+- Framing fits the file code. A CU shot is framed close on the face, hands or key object; background that helps explain the action may appear. SCN and other shots are medium or wide.
+- Endings and calls to action stay in the scene. For "comment below", "share this", "see you next time", the protagonist keeps doing something ordinary in the setting (texting, tea, looking out a window), never posing toward, inviting or addressing the viewer, unless the channel's presentation instructions require a presenter who does.
+- Show the real thing for a third party's habit, place or era (a school routine, a traditional room): the real setting with the people involved, not the protagonist inside a look-alike. Attach the protagonist's reference only to images where they appear.
+- Before output, check each prompt against its cues: is the financial action or explanation the intended one; are the person, objects, setting and amounts right; has an event been invented or figurative language made literal; does the supporting graphic clarify rather than dominate? Sections 11B and 11C ask for a gesture or an emotion only where the cues narrate one.
+
 ## SECTION 12 — FINAL VALIDATION CHECKLIST
 
 Before output, verify:
@@ -178,3 +201,4 @@ Before output, verify:
 8. Every `refs` name on an image exists in the top-level `refs` registry, spelled exactly as the reference bible supplies it; refs appear only where the subject is actually visible, chosen to fit the beat (never all of them); first ref is the dominant subject; no image carries more than 10 refs; INF/PROC diagrams carry none; a supplied recurring character is actually cast somewhere in the plan. Omit the whole registry when no reference bible exists.
 9. Content policy (Section 11A): no prompt or refPrompt names a real person, shows a minor in distress or undressed, depicts gore, wounds, nudity, self-harm, drug use, weapons in use, hate symbols, real brands or logos. Anything dark is shown by implication (aftermath, silhouette, object, wide shot), not depiction.
 10. Numerical coverage (Section 8): when the channel permits numbers, every figure essential to an explanation or comparison is explicitly specified in the relevant image prompt or enabled renderer overlay, with its correct unit, meaning and necessary qualifiers. No essential figure is replaced by a blank prop or a generic symbol; no unsupported figure or result is invented. Recheck the prompts for the main financial/statistical comparisons against the narration before output.
+11. Action and relevance (Section 11D): each prompt shows the narration's meaning through believable everyday action: the complete thought, the right person, objects, setting and amounts, planned/hypothetical events kept as such, no metaphor made literal, a supporting chart that does not dominate, no filler gesture, nothing the cues do not name, no purpose-commentary, literal props, one coherent moment per image, framing that matches the file code, scene-bound endings.

@@ -5,12 +5,14 @@ prompt: the 2-4 concrete, visible things the narration at that shot's cues
 names. That gives the app something it can check without a chat round:
 
     grounded   at least one `shows` item uses the narration's own words at
-               those cues (a metaphor may fill the other items);
+               those cues (the other items name other literal things those cues name);
     drifted    none does, but the items match the previous or next shot's
                cues - the classic off-by-one cue-range mistake;
     in prompt  every `shows` item is actually written into the prompt;
     reuse      an image shown again over other cues still shows something
-               those cues name.
+               those cues name;
+    filler     the prompt adds a gesture the cues never mention (waving,
+               pointing, a thumbs-up) instead of the action they narrate.
 
 Everything is word matching on the narration, so it is deliberately lenient:
 a fault means "plainly not about these cues", never "could be better" - that
@@ -33,6 +35,49 @@ second next last new old own same other another such can could will would shall 
 must do does did done have has had having about above after again against before below between
 during through while if because until near beside behind front back left right top bottom side
 wide close shot view scene image picture showing shows shown visible""".split())
+
+
+# Filler gestures that stand in for the narrated action. A fault only when the
+# prompt AFFIRMS a character making the gesture (not "ocean waves", "an arrow
+# pointing to", or "no waving") and the narration at the shot's cues does not
+# itself contain the stem.
+_NEGATION = re.compile(
+    r"\b(?:no|not|never|without|avoid|avoiding|don'?t|do not|doesn'?t|nobody|"
+    r"nor|neither|ban(?:ned)?|instead of)\b[^.;:\n]{0,40}$", re.I)
+_INANIMATE = re.compile(
+    r"\b(?:arrows?|lines?|needles?|signs?|signposts?|markers?|chevrons?|labels?|"
+    r"indicators?|paths?|roads?|compass|beams?|streaks?|trends?|curves?|bars?|"
+    r"graphs?|charts?|ocean|sea|water|heat|radio|sound|light|flags?)\s+(?:\w+\s+)?$",
+    re.I)
+_FILLERS = (
+    (re.compile(r"\bwav(?:es|ed|ing)\s+(?:at|to|hello|goodbye|his|her|their|"
+                r"a hand|an arm|one hand|both|the camera|the viewer)\b"
+                r"|\b(?:he|she|they|man|woman|boy|girl|person|character|friend|"
+                r"customer|presenter|joe)\s+wav(?:es|ed)\b", re.I),
+     "wav", "waving"),
+    (re.compile(r"\bpoint(?:s|ed|ing)\s+(?:at|to|toward|towards|up|down|out|"
+                r"ahead|forward)\b", re.I), "point", "pointing"),
+    (re.compile(r"\bthumbs?[- ]?up\b", re.I), "thumb", "a thumbs-up"),
+    (re.compile(r"\bgestur(?:es|ed|ing)\b", re.I), "gestur", "gesturing"),
+)
+
+
+def _affirmed(pat, text) -> bool:
+    for m in pat.finditer(text):
+        before = text[:m.start()]
+        if _NEGATION.search(before[-60:]) or _INANIMATE.search(before[-30:]):
+            continue
+        return True
+    return False
+
+
+def filler_gestures(prompt, narration) -> list[str]:
+    """Names of filler gestures a character makes in the prompt that the
+    narration never mentions."""
+    said = str(narration or "").lower()
+    text = str(prompt or "")
+    return [name for pat, stem, name in _FILLERS
+            if stem not in said and _affirmed(pat, text)]
 
 
 def _stem(word: str) -> str:
@@ -104,6 +149,14 @@ def faults(data: dict, cues: list[dict], limit: int = FAULT_LIMIT) -> list[str]:
                     f"({'; '.join(shows)}) is named there. Give those cues their own image.")
             continue
         first_use[asset] = n
+        rng_ = _range(shot)
+        spoken = " ".join(text.get(c, "") for c in range(rng_[0], rng_[1] + 1)) if rng_ else ""
+        extra = filler_gestures(image.get("prompt"), spoken)
+        if extra:
+            out.append(
+                f"{asset}: its prompt has {' and '.join(extra)}, which the narration at "
+                f"{label(shot)} never mentions. Show the action those cues narrate "
+                f"instead, performed by the subject.")
         if not MIN_ITEMS <= len(shows) <= MAX_ITEMS:
             out.append(
                 f"{asset}: add \"shows\" to this image - {MIN_ITEMS} to {MAX_ITEMS} short "
@@ -145,11 +198,13 @@ def brief_block() -> str:
         "its prompt: \"shows\": a list of " f"{MIN_ITEMS} to {MAX_ITEMS} short items (a few words "
         "each) naming the concrete, visible things the narration at THAT shot's cues talks about - "
         "the subject, the object, the action, the place. At least one item must use the "
-        "narration's own words from those cues; when the picture is a metaphor or a diagram, "
-        "the other items may name what stands for the idea. Then write the prompt so that every "
+        "narration's own words from those cues; the other items must also be literal things those cues talk about, "
+        "never a symbol or a metaphor. Then write the prompt so that every "
         "item in \"shows\" is plainly in it. Example: narration \"a branch snaps and the deer "
         "freeze at the edge of the clearing\" -> \"shows\": [\"deer frozen mid-step\", "
         "\"snapped branch\", \"edge of the clearing\"]. An image whose \"shows\" comes from other "
         "cues than its own, or whose prompt leaves an item out, is sent back. Reuse an image only "
-        "over cues that still name something in its \"shows\"; otherwise those cues get a new image."
+        "over cues that still name something in its \"shows\"; otherwise those cues get a new image. "
+        "\"shows\" and the prompt hold ONLY what those cues name or what the action needs: no "
+        "waving, pointing or other filler gesture, no figurative language drawn as scenery, and no unrelated prop or decoration."
     )

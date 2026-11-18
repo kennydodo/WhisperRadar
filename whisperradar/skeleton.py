@@ -778,6 +778,28 @@ def _section(name: str, template_text: str | None = None) -> str:
     return m.group(0).strip() if m else ""
 
 
+def _planner_11d(template_text: str | None = None) -> str:
+    """Section 11D for the picture writer.
+
+    The selected template's own wording is what the planner quotes. Only when
+    it is one of the bundled 11D texts (standard or compact) is the short
+    compact wording used instead, so the planner rules stay small; a custom or
+    edited 11D is kept exactly as written, and a template without 11D has
+    none."""
+    own = _section("11D", template_text)
+    if not own:
+        return ""
+    base = briefs.TEMPLATE_PATH.parent
+    try:
+        bundled = {_section("11D", (base / name).read_text(encoding="utf-8"))
+                   for name in ("brief_template.md", "brief_template_compact.md")}
+        short = _section("11D", (base / "brief_template_compact.md")
+                         .read_text(encoding="utf-8"))
+    except OSError:
+        return own
+    return short if own in bundled and short else own
+
+
 def _ref_subject_rule(template_text: str | None = None) -> str:
     text = template_text if template_text is not None \
         else briefs.TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -864,8 +886,10 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
         "or to pad variety.\n"
         + _picture_span_text(profile, _mean_cue(cues)),
         "CAMERA MOTION CODES (the app fixed one per shot). A pan or tilt "
-        "(PL, PR, PU, PD, PV) is binding - compose the image for it. ST, ZI "
-        "and ZO share one canvas and the app may swap between them to balance "
+        "(PL, PR, PU, PD, PV) is binding - compose the image for it. "
+        + "/".join(c for c in ("ST", "ZI", "ZO")
+                   if c in (profile.allowed or briefs.MOTION_CODES))
+        + " share one canvas and the app may swap between them to balance "
         "the channel's mix, so compose those centred with room to push in or "
         "pull out:\n" + "\n".join(
             f"- {c}: {briefs.MOTION_CODE_INFO[c][0]}"
@@ -875,12 +899,13 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
         "diagram; CMP comparison (A vs B, before/after, myth vs evidence); "
         "PROC process / stages; HYB scene + explanatory graphics; OVR "
         "conceptual overview. Vary camera angle, distance, subject placement, "
-        "environment, focal object, metaphor, diagram structure, scale and "
+        "environment, focal object, diagram structure, scale and "
         "subject count; avoid 'person standing + floating icons' on every "
         "image. For finance, statistics or data-heavy narration show the "
-        "actual mechanism (compound growth = growing stacks over time; "
-        "inflation = the same basket costing more) - the visual must teach "
-        "before any editor-added text." + (("\n" + kinds) if kinds else ""),
+        "actual situation as an everyday scene with a small supporting graphic "
+        "only where a figure needs it (compound growth = a balance at two "
+        "dates; inflation = the same basket costing more) - no stand-in "
+        "objects; the visual must teach before any editor-added text." + (("\n" + kinds) if kinds else ""),
         "IMAGE PROMPTS: describe ONLY what makes this image different from "
         "every other - subject and what it is DOING, the specific location, "
         "every prop the narration mentions, the spatial layout (who is where, "
@@ -895,6 +920,7 @@ def rules_text(profile, allow_refs: bool, supplied_refs: list[str],
         _section("11A", template_text),
         _section("11B", template_text),
         _section("11C", template_text),
+        _planner_11d(template_text),
     ]
     if not allow_refs:
         parts.append(

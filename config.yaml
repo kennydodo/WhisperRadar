@@ -90,7 +90,7 @@ studio:
   # motion profile + presentation (My Channels > Planning brief). A custom file
   # is read fresh on every run; without the {{SLOT}} markers it only supports
   # the Standard motion profile (see brief_template.md for the slots).
-  manifest_brief: null
+  manifest_brief: whisperradar/brief_template_compact.md
   imagegen_command: null # optional override; default routes through Renderly
   merge_command: null    # optional override; default runs ImgToVideo.Cli
 
