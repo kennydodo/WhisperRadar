@@ -431,6 +431,9 @@ def build_shotlist(beats: list[dict], ranges: list[tuple[int, int]], style: str,
         for k in SHOT_FIELDS:
             if k in b:
                 shot[k] = b[k]
+        for k in ("action", "note", "who", "where"):      # set by the storyboard flow only
+            if b.get(k):
+                shot[k] = b[k]
         reveal = b.get("reveal")
         reveal_images = []
         if (isinstance(reveal, dict) and isinstance(reveal.get("starts_with"), list)

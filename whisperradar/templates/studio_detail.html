@@ -683,6 +683,57 @@
         {% endif %}
       </details>
       {% endif %}
+      <div class="artifact" id="local_tts_box" style="margin-bottom:10px">
+        <strong>Listen locally (free, Piper)</strong>
+        <div class="muted" style="font-size:12px; margin:4px 0 8px">
+          Plays the saved script on your computer so you can check wording and pacing while you edit. It does not create or replace the production's audio (that still comes from your audio stage voice); save the script first to hear your latest edits.</div>
+        {% if local_tts_hint %}
+        <div class="warn" style="font-size:12px">{{ local_tts_hint }}</div>
+        {% else %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/listen">
+          <select name="local_voice" title="Local Piper voice">
+            {% for v in local_tts_voices %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+          </select>
+          <label class="muted" style="font-size:12px">speed
+            <input type="number" name="local_speed" min="0.5" max="2" step="0.05"
+                   value="{{ '%g' % local_tts_speed }}" style="width:70px"></label>
+          <button type="submit" class="secondary" id="local_tts_btn">Listen to the script</button>
+        </form>
+        <div id="local_tts_status" class="muted" style="font-size:12px; margin-top:6px"></div>
+        <audio id="local_tts_audio" controls style="display:none; margin-top:6px"></audio>
+        <script>
+        (function () {
+          const pid = {{ prod['id'] }};
+          const st = document.getElementById('local_tts_status');
+          const au = document.getElementById('local_tts_audio');
+          let shown = null;
+          function show(stamp) {
+            if (shown === stamp) return;
+            shown = stamp;
+            au.src = '/studio/file/' + pid + '/local_tts/preview.wav?t=' + (stamp || Date.now());
+            au.style.display = '';
+          }
+          function poll() {
+            fetch('/studio/' + pid + '/audio/listen.json').then(r => r.json()).then(j => {
+              if (j.state === 'running') {
+                st.textContent = 'Generating ' + j.done + ' / ' + j.total + ' paragraphs (' + j.voice + ')...';
+                setTimeout(poll, 1000);
+              } else if (j.state === 'error') {
+                st.textContent = 'Local preview failed: ' + j.error;
+              } else if (j.state === 'done') {
+                st.textContent = 'Ready: ' + Math.floor(j.seconds / 60) + ' min ' + Math.round(j.seconds % 60) + ' s at speed ' + j.speed + ' (' + j.voice + ').';
+                show(j.stamp);
+              } else if (j.ready) {
+                st.textContent = 'Previous local preview:';
+                show('old');
+              }
+            }).catch(() => {});
+          }
+          poll();
+        })();
+        </script>
+        {% endif %}
+      </div>
       <form method="post" action="/studio/{{ prod['id'] }}/script/save">
         <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
         <div class="muted" data-counter-for="script" style="font-size:12px;margin-top:4px"></div>
@@ -1012,7 +1063,7 @@
         sheet for reference. Note: Renderly does generation + upscale per image,
         so N images = ~2N operations in its history.
         {% if cue_count %} This production has <b>{{ cue_count }}</b> subtitle cues.{% endif %}
-        {% if shotlist_count %} Current shotlist: <b>{{ shotlist_count }}</b> images.{% endif %}
+        {% if shotlist_count %} Current shotlist: <b>{{ shotlist_count }}</b> images. <a href="/studio/{{ prod['id'] }}/storyboard" target="_blank">Open the storyboard</a>{% endif %}
         <br>Planning brief: <b>{{ brief_profile.label }}</b>{% if brief_profile.max_hold %} (holds {% if brief_profile.min_hold %}{{ '%g' % brief_profile.min_hold }}-{% else %}up to {% endif %}{{ '%g' % brief_profile.max_hold }}s){% endif %}{% if brief_presentation %}, with a presentation note{% endif %}
         (set per channel on <a href="/my-channels">My Channels</a>).
       </div>
@@ -1030,6 +1081,37 @@
       {% endif %}
       {% endmacro %}
       <style>details.substep > summary::before{content:"\25B8"; color:var(--muted)} details.substep[open] > summary::before{content:"\25BE"} details.substep > summary::-webkit-details-marker{display:none}</style>
+      <details class="substep" data-key="storyboard" {{ 'open' if simple_mode else '' }} style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
+        <summary style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; cursor:pointer">
+          <b>Storyboard &middot; decide what each shot shows first</b>
+          <span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">optional</span>
+          {% if storyboard_state %}
+            {% if storyboard_state.approved %}<span style="font-size:11px; color:var(--green); border:1px solid var(--green); border-radius:10px; padding:1px 8px">{{ storyboard_state.rows }} rows approved</span>
+            {% else %}<span style="font-size:11px; color:var(--yellow, #b54708); border:1px solid var(--border); border-radius:10px; padding:1px 8px">{{ storyboard_state.rows }} rows &middot; not approved{% if storyboard_state.faults %} &middot; {{ storyboard_state.faults }} fault(s){% endif %}</span>{% endif %}
+            {% if storyboard_state.stale %}<span style="font-size:11px; color:var(--red); border:1px solid var(--red); border-radius:10px; padding:1px 8px">{{ storyboard_state.stale }} shot(s) changed after their prompt</span>{% endif %}
+          {% else %}<span class="muted" style="font-size:11px; border:1px solid var(--border); border-radius:10px; padding:1px 8px">none yet &middot; the shotlist is planned the old way</span>{% endif %}
+        </summary>
+        <div class="muted" style="font-size:12px; margin-bottom:8px">
+          1) A chat reads the subtitles and writes one row per shot: who, where, whether it really happens, and one action. No prompts yet.
+          2) You read and edit the rows, then approve them. 3) Only then are the image prompts written, from the approved rows, and shotlist.json is saved. Skip this box to plan exactly as before.
+        </div>
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/storyboard" style="gap:8px; align-items:center; flex-wrap:wrap"
+              onsubmit="return wrConfirmSubmit(this, 'Write the storyboard rows in a web chat? A browser window opens. shotlist.json is not changed.')">
+          <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <label title="Continue in the chats the script stage used"><input type="checkbox" name="same_chats"> Same chats as the script</label>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>{{ 'Write the storyboard again' if storyboard_state else 'Write the storyboard in web chat' }}</button>
+          {% if storyboard_state %}<a class="btn secondary" style="font-size:12px" href="/studio/{{ prod['id'] }}/storyboard/edit" target="_blank">Review and edit the storyboard</a>{% endif %}
+        </form>
+        {% if storyboard_state and storyboard_state.approved %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/storyboard-prompts" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px"
+              onsubmit="return wrConfirmSubmit(this, 'Write the image prompts from the approved storyboard? This replaces shotlist.json when the checks pass (the old one is kept as shotlist_before_storyboard.json).')">
+          <label>Writer <select name="writer"><option value="deepseek_writer">DeepSeek</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
+          <label title="Continue in the same chat as the storyboard"><input type="checkbox" name="same_chats" checked> Same chats</label>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Write prompts from the approved storyboard</button>
+        </form>
+        {% endif %}
+        {{ stop_run(job, prod) }}
+      </details>
       {% if not simple_mode %}
       <details class="substep" data-key="elements" style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
         <summary style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; cursor:pointer">
@@ -1071,6 +1153,7 @@
           <div style="flex-basis:100%; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <label>Judge <select name="judge"><option value="deepseek_judge">DeepSeek judge account</option><option value="zai">z.ai</option><option value="chatgpt">ChatGPT</option></select></label>
           </div>
+          {% if storyboard_state %}<label style="flex-basis:100%" title="This production has a storyboard. By default this button writes the shotlist from the approved storyboard (and asks you to approve it first). Tick to run the old way and ignore it."><input type="checkbox" name="ignore_storyboard"> Ignore the storyboard ({{ 'approved' if storyboard_state.approved else 'not approved' }})</label>{% endif %}
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Plan beats in web chat</button>
         </form>
         {{ stop_run(job, prod) }}
@@ -1103,6 +1186,7 @@
         </div>
         <label title="Continue in the same z.ai / DeepSeek chats the script stage used, so both already know the script - as when you do it by hand. A chat that cannot be reopened is replaced by a new one."><input type="checkbox" name="same_chats" checked> Same chats as the script</label>
         <label title="Skip the writer's first answer: read the plan from the replies a previous run saved (webchat_debug), go straight to the judge, and keep using the writer chat that is still open."><input type="checkbox" name="resume_plan"> Reuse the saved plan</label>
+        {% if storyboard_state %}<label style="flex-basis:100%" title="This production has a storyboard. By default this button writes the shotlist from the approved storyboard (and asks you to approve it first). Tick to run the old way and ignore it."><input type="checkbox" name="ignore_storyboard"> Ignore the storyboard ({{ 'approved' if storyboard_state.approved else 'not approved' }})</label>{% endif %}
         <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}
                 title="Uses the external-LLM writer and judge prompts; the judge's feedback goes back to the writer. First time: python -m whisperradar.webchat login zai / deepseek">Run shotlist in web chat</button>
       </form>
@@ -1154,6 +1238,10 @@
           <button type="submit" {{ 'disabled' if job.running else '' }}>Save shotlist</button>
           {% if batch_sheet %}
           <a class="btn secondary" style="font-size:12px" href="/studio/file/{{ prod['id'] }}/batch_sheet.txt" target="_blank">View batch sheet</a>
+          {% endif %}
+          {% if shotlist_text %}
+          <a class="btn secondary" style="font-size:12px" href="/studio/{{ prod['id'] }}/storyboard" target="_blank" title="Read-only table: narration, who, action, prompt length, image">Storyboard</a>
+          <a class="btn secondary" style="font-size:12px" href="/studio/{{ prod['id'] }}/storyboard?export=1" title="Download the storyboard as one HTML file">Export storyboard</a>
           {% endif %}
         </div>
       </form>

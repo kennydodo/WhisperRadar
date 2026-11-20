@@ -1120,6 +1120,37 @@ def over_budget_text(budget: int, over: list, shown: int = 5) -> str:
     return "; ".join(parts) + (f"; and {more} more" if more > 0 else "")
 
 
+def ref_prompts_over_budget(prompts: dict, style: str = "",
+                            names=None) -> tuple[int, list]:
+    """(per-prompt budget, [(ref name, length, chars over)] worst first) for
+    REFERENCE-image prompts.
+
+    A reference is generated with the same style + one prompt limit as a shot,
+    so a ref prompt over the budget makes the style get dropped from that ref.
+    `names` limits the check to the refs that are actually generated."""
+    style = (style or "").strip()
+    budget = FLOWBATCH_MAX_PROMPT_CHARS - (len(style) + 1 if style else 0)
+    over = []
+    for name, text in (prompts or {}).items():
+        if names is not None and name not in names:
+            continue
+        n = len(str(text or ""))
+        if n > budget:
+            over.append((str(name), n, n - budget))
+    over.sort(key=lambda t: (-t[2], t[0]))
+    return budget, over
+
+
+def ref_over_budget_text(budget: int, over: list, shown: int = 5) -> str:
+    """'CH_JULIAN 758 chars (153 over); ...' for the worst `shown`."""
+    parts = [f"{f} {n} chars ({x} over)" for f, n, x in over[:shown]]
+    more = len(over) - shown
+    return "; ".join(parts) + (f"; and {more} more" if more > 0 else "")
+
+
+REF_STYLE_WARNING = "Reference images: visual style NOT attached"
+
+
 def flow_project_url_for(cfg, pid: int,
                          override: str | None = None) -> tuple[str | None, str]:
     """(url, source) for a production's Flow project.
@@ -1379,10 +1410,22 @@ def _write_refs_job(cfg, pdir: Path, pid: int, refs: dict) -> Path:
     # the channel's art direction, when it fits Flow's prompt ceiling
     if style and longest + len(style) + 1 <= FLOWBATCH_MAX_PROMPT_CHARS:
         job["style"] = style
+        _clear_ref_style_warning(cfg, pid)
     elif style:
         log.info("refs: omitting the %d-char style - ref prompts would exceed "
                  "Flow's %d-char limit", len(style),
                  FLOWBATCH_MAX_PROMPT_CHARS)
+        budget, over = ref_prompts_over_budget(
+            {n: r["prompt"] for n, r in refs.items()}, style)
+        _set_production_warning(
+            cfg, pid,
+            f"{REF_STYLE_WARNING} to the reference images: the style is "
+            f"{len(style)} chars and the longest reference prompt {longest}, "
+            f"over Flow's {FLOWBATCH_MAX_PROMPT_CHARS}-char limit (the style "
+            f"leaves {budget} chars per reference prompt). "
+            f"{len(over)} reference prompt(s) are too long: "
+            f"{ref_over_budget_text(budget, over)}. Shorten those "
+            f"refPrompts (or the style), then generate the references again.")
     job_path = prodfiles.wpath(pdir, "flowbatch_refs.json")
     job_path.write_text(json.dumps(job, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
@@ -1611,6 +1654,18 @@ def run_renderly_refs(cfg, pdir: Path, pid: int, refs: dict, channel=None,
         style_path = find_style(pdir)
         style = style_path.read_text(encoding="utf-8") if style_path else ""
     style = style.strip()
+    if style:
+        budget, over = ref_prompts_over_budget(
+            {n: r["prompt"] for n, r in refs.items()}, style)
+        if over:
+            note = (f"{REF_STYLE_WARNING} within Flow's "
+                    f"{FLOWBATCH_MAX_PROMPT_CHARS}-char limit: the "
+                    f"{len(style)}-char style leaves {budget} chars per "
+                    f"reference prompt and {len(over)} are longer: "
+                    f"{ref_over_budget_text(budget, over)}. Shorten those "
+                    f"refPrompts (or the style).")
+            _safe_log(log, f"refs: {note}")
+            _set_production_warning(cfg, pid, note)
 
     tmp_dir = Path(tempfile.mkdtemp(prefix=f"wr-{pid}-refs-"))
     try:
@@ -1713,6 +1768,24 @@ def _clear_style_warning(cfg, pid: int) -> None:
             prod = db.get_production(conn, pid)
             warn = (prod["warning"] if prod is not None else None) or ""
             if warn.startswith("Visual style NOT attached"):
+                db.update_production(conn, pid, warning=None)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _clear_ref_style_warning(cfg, pid: int) -> None:
+    """Drop a stale "reference style not attached" notice once it fits."""
+    from . import db
+
+    try:
+        conn = db.connect(cfg.db_path)
+        db.init_db(conn)
+        try:
+            prod = db.get_production(conn, pid)
+            warn = (prod["warning"] if prod is not None else None) or ""
+            if warn.startswith(REF_STYLE_WARNING):
                 db.update_production(conn, pid, warning=None)
         finally:
             conn.close()
@@ -5222,6 +5295,26 @@ def parse_shotlist_output(text: str) -> tuple[dict, str]:
     return data, tail.strip()
 
 
+def cue_table_text(data: dict, cues: dict[int, str]) -> str:
+    """The review table built from shotlist.json (no LLM): one row per shot
+    with its cue range, the narration at those cues, the planned action and
+    the judge's note. Shots without an action or note leave the cell empty."""
+    def cell(text: object) -> str:
+        return " ".join(str(text or "").split()).replace("|", "/")
+
+    rows = ["| Shot | Cues | Narration | Action | Note |",
+            "|---|---|---|---|---|"]
+    for s in (data.get("shots") or []):
+        if not isinstance(s, dict) or not s.get("asset"):
+            continue
+        rng = cue_range(s.get("cues")) or (0, 0)
+        narration = " ".join(cues.get(c, "") for c in range(rng[0], rng[1] + 1))
+        rows.append(f"| {cell(s.get('asset'))} | {rng[0]}-{rng[1]} | "
+                    f"{cell(narration)} | {cell(s.get('action'))} | "
+                    f"{cell(s.get('note'))} |")
+    return "\n".join(rows) + "\n"
+
+
 def batch_sheet_text(data: dict) -> str:
     """The readable image batch sheet, built from shotlist.json (no LLM, no
     stored copy that can go stale): master prompt, canvas per motion code,
@@ -6601,6 +6694,23 @@ def shotlist_structural_faults(data: dict, cue_count: int,
                 f"prompts - cut composition boilerplate and anything the style "
                 f"already says")
 
+    # Reference prompts share the same limit with the style: one that is too
+    # long makes the style get dropped from that reference image
+    ref_style = (data.get("style") or "").strip()
+    if ref_style and isinstance(data.get("refPrompts"), dict):
+        regs = data.get("refs") if isinstance(data.get("refs"), dict) else {}
+        todo = {n for n in data["refPrompts"]
+                if not (isinstance(regs.get(n), str) and regs.get(n).strip())}
+        rbudget, rover = ref_prompts_over_budget(
+            data["refPrompts"], ref_style, todo)
+        if rover:
+            faults.append(
+                f"{len(rover)} reference prompt(s) are too long for Flow "
+                f"(limit {FLOWBATCH_MAX_PROMPT_CHARS} for style + prompt; the "
+                f"{len(ref_style)}-char style leaves {max(rbudget, 0)} per "
+                f"reference): {ref_over_budget_text(rbudget, rover, 10)}. "
+                f"Shorten ONLY those refPrompts entries")
+
     # Reference registry: the names are the contract with Flow, so a bad or
     # undeclared name must fail here rather than become "reference not found,
     # skipping" on every rendered image. The CH_/BG_/OBJ_ convention is
@@ -6645,6 +6755,73 @@ def shotlist_structural_faults(data: dict, cue_count: int,
         faults.append("the shotlist declares "
                       f"{len(supplied)} supplied reference(s) but no image "
                       f"attaches any of them: {', '.join(sorted(supplied)[:6])}")
+    # A character's ref belongs only to that character: an image that names a
+    # declared character in its prompt must attach that ref, and an image must
+    # not attach a character ref whose name its prompt never mentions.
+    def _person(ref: str) -> str:
+        parts = ref[3:].split("_")
+        return parts[0].capitalize() if len(parts) == 1 and len(parts[0]) > 2 else ""
+    people = {n: _person(n) for n in declared if n.startswith("CH_")}
+    people = {n: p for n, p in people.items() if p}
+    # A shotlist built from an approved storyboard carries who is in every shot and the
+    # reviewed character / place maps: refs are then checked against who is PICTURED, not
+    # against names that merely appear in the prompt (a host, a person on the phone).
+    sb_chars = data.get("characters")
+    sb_places = data.get("locations") if isinstance(data.get("locations"), dict) else {}
+    sb_built = (isinstance(sb_chars, dict) and bool(shots)
+                and all(isinstance(sh.get("who"), list) for sh in shots))
+    if sb_built:
+        people = {}
+        by_asset = {str(sh.get("asset")): sh for sh in shots}
+        wrong_sb = []
+        for im in images:
+            sh = by_asset.get(str(im.get("file")))
+            if not sh:
+                continue
+            attached = [ref_name(r) for r in (im.get("refs") or []) if ref_name(r)]
+            want = []
+            for w in sh.get("who") or []:
+                want += [ref_name(x) for x in (sb_chars.get(w) or [])]
+            bg = ref_name(sb_places.get(str(sh.get("where") or "").strip()) or "")
+            if bg:
+                want.append(bg)
+            lack = [x for x in dict.fromkeys(want) if x not in attached]
+            extra = [x for x in attached
+                     if x.startswith(("CH_", "BG_")) and x not in want]
+            if lack or extra:
+                tag = str(im.get("file") or "")[:6]
+                bits = ([f"missing {', '.join(lack)}"] if lack else []) \
+                    + ([f"{', '.join(extra)} is not in this shot"] if extra else [])
+                wrong_sb.append(f"{tag}: {'; '.join(bits)}")
+        if wrong_sb:
+            faults.append(f"{len(wrong_sb)} image(s) do not carry the reviewed references of "
+                          f"who is pictured and where: {'; '.join(wrong_sb[:8])}")
+    # an age or outfit variant (CH_JOE_OLDER next to CH_JOE) is the same person
+    group = {n: {n} for n in people}
+    for n in declared:
+        if n.startswith("CH_") and n not in people:
+            first = n[3:].split("_")[0]
+            for base, p in people.items():
+                if first.capitalize() == p and n[3:] != first:
+                    group[base].add(n)
+    mixups = []
+    for i in images:
+        text = str(i.get("prompt") or "")
+        attached = {ref_name(r) for r in (i.get("refs") or [])}
+        named = {n for n, p in people.items()
+                 if re.search(rf"\b{re.escape(p)}(?:'s)?\b", text)}
+        wrong = {n for n in named if not (group[n] & attached)}
+        if named:
+            for n in people:
+                if n not in named and group[n] & attached:
+                    wrong.add(n)
+        if wrong:
+            mixups.append(f"{i.get('file')}: {', '.join(sorted(wrong))}")
+    if mixups:
+        faults.append(f"{len(mixups)} image(s) name a character without that "
+                      f"character's ref, or attach a character ref the prompt "
+                      f"does not name (a ref belongs only to its own "
+                      f"character): {'; '.join(mixups[:5])}")
     # A ref with no path AND no prompt can never be produced: the refs stage
     # would have nothing to generate it from, so the image would silently lose
     # its subject. (A path that exists on disk is checked by the refs stage,
@@ -6703,9 +6880,15 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
         if s.get("animate"):
             reveal_line += (f'  ANIMATED SHOT (becomes an 8s video clip), '
                             f'planned motion: "{str(s.get("ai_motion") or "")}"\n')
+        plan_line = ""
+        if str(s.get("action") or "").strip():
+            plan_line += f'  planned action: "{str(s.get("action")).strip()}"\n'
+        if str(s.get("note") or "").strip():
+            plan_line += (f'  note for you only (never sent to the image '
+                          f'model): "{str(s.get("note")).strip()}"\n')
         items.append(f'- asset: {s.get("asset")}\n'
                      f'  cues {rng[0]}-{rng[1]} narrate: "{narration}"\n'
-                     + reveal_line +
+                     + plan_line + reveal_line +
                      f'  image prompt: "{str(s.get("prompt"))}"')
     reveal_rules = ((REVEAL_JUDGE_RULES if any(
         shot_reveal(s) for s in chunk) else "")
@@ -6790,11 +6973,43 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
         "\"WRONG ACTION:\" for an action or event that is not the intended one "
         "(the verdict is then \"missing\"; e.g. \"WRONG ACTION: she looks at the bill, the narration says she "
         "pays it\"), or \"GRAPHIC DOMINATES:\" when a chart overshadows the "
-        "scene. Preserve any recurring protagonist or presenter explicitly "
-        "required by the channel's style, bible, or presentation instructions, "
-        "even when the narration only conveys information: their presence "
-        "alone is not unrelated content, and it must not be flagged or "
-        "removed.\n\n"
+        "scene. The channel's presenter (the recurring character the style or "
+        "bible calls the face of the channel) or a recurring story "
+        "protagonist may appear even when the narration only conveys "
+        "information; their presence alone is not unrelated content.\n\n"
+        "WHO IS ON SCREEN: an on-screen presenter named by the bible or style is the default person for general "
+        "narration, advice, introductions, transitions, conclusions and "
+        "\"you\" passages. When the cues follow a named story character's "
+        "situation, that character is on screen. Fault a prompt that shows "
+        "the wrong person for the cues, such as the presenter replacing the "
+        "named character the cues describe or a story character in general "
+        "advice (they share a scene only when the narration supports it), or one "
+        "that gives a person another character's name, with \"WRONG "
+        "SUBJECT:\" (the verdict is then \"missing\"). Fault repeated "
+        "identical settings only when the cue names a different place or "
+        "action.\n\n"
+        "NO ACTION: when the cues describe an action, the prompt must show it. "
+        "Fault a prompt in which the person only looks at, reads, reviews, "
+        "studies or holds a paper, notebook, statement, laptop or phone, "
+        "or only sits or stands, when the cues describe doing something "
+        "else (paying, cooking, walking, handing over, cancelling); reading, "
+        "reviewing or using a screen is correct when that is the narrated "
+        "task. Use \"NO ACTION:\" (the verdict is then \"weak\", or "
+        "\"missing\" if the narrated action is absent). Do not demand "
+        "activity the cues do not describe.\n\n"
+        "PLANNED ACTION AND NOTE: when a shot gives a planned action and a "
+        "note, first check them against the narration at its cues: an "
+        "action or note the narration does not support is itself a fault "
+        "(\"WRONG ACTION:\"), and is never the standard a prompt is judged "
+        "by. Only then check the prompt against the narration and, where "
+        "they hold up, the planned action. The note is for you and is not "
+        "part of the prompt.\n\n"
+        "IMAGINE CUES: when the narration asks the viewer to imagine, picture "
+        "or suppose something, the prompt must show that imagined moment "
+        "itself, with the presenter for a \"you\" passage or the story "
+        "character, still hypothetical; a generic desk, a chart or a "
+        "comparison instead is a WRONG ACTION. Not every opening or passage "
+        "is an imagine cue; apply this only where the narration asks for it.\n\n"
         "ORDER OF CHECKS: judge the scene first - the right subject, action, "
         "setting and event status; one coherent visible moment; a graphic that "
         "supports without dominating; enough concrete detail to generate it. "
@@ -6815,8 +7030,7 @@ def alignment_prompt(chunk: list[dict], cues: dict[int, str],
         "constraints such as \"no borders\"); "
         "poses the protagonist toward or addressing the viewer for a call to "
         "action or sign-off the narration does not describe as an action "
-        "(\"VIEWER-FACING:\" - not a fault when the channel's presentation "
-        "instructions require a presenter who addresses the viewer); or shows "
+        "(\"VIEWER-FACING:\"); or shows "
         "the protagonist inside a look-alike of a third party's habit, place "
         "or era instead of the real people and setting the narration names "
         "(\"WRONG SUBJECT:\").\n\n"

@@ -38,6 +38,9 @@ from flask import (
 
 from . import external_prompts, flow_accounts, prodfiles, prodtransfer
 from . import textfiles
+from . import local_tts
+from . import storyboard_view
+from . import storyboard as storyboard_mod
 from . import frames
 from . import motion
 from . import source_prep
@@ -3965,6 +3968,10 @@ def create_app(cfg) -> Flask:
                         else f"channel: {eff['own_channel_name']}"
                         if eff["own_channel_name"] and eff["voice"]
                         else ""), ai33_ready=bool(ai33.api_key(cfg)),
+            local_tts_voices=local_tts.list_voices(cfg),
+            local_tts_hint=local_tts.setup_hint(cfg),
+            storyboard_state=storyboard_state_for(pdir),
+            local_tts_speed=float(eff.get("narration_speed") or 1.0),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
             flow_upscale_default=autorun._upscale_for(eff),
@@ -4757,6 +4764,27 @@ def create_app(cfg) -> Flask:
         sjob.start(worker, "tts")
         return _studio_url(pid, msg="TTS started")
 
+    @app.post("/studio/<int:pid>/audio/listen")
+    def studio_audio_listen(pid):
+        """Free local preview of the script (Piper). Own thread, not the
+        studio job slot, so a running render is never blocked or touched."""
+        pdir = studio.prod_dir(cfg, pid)
+        script = studio.find_script(pdir)
+        if not script:
+            return _studio_url(pid, error="Write the script first")
+        err = local_tts.start(cfg, pid, pdir, script,
+                              (request.form.get("local_voice") or "").strip(),
+                              request.form.get("local_speed"))
+        if err:
+            return _studio_url(pid, error=err)
+        return _studio_url(pid, msg="Local preview started")
+
+    @app.get("/studio/<int:pid>/audio/listen.json")
+    def studio_audio_listen_status(pid):
+        st = local_tts.get_status(pid)
+        st["ready"] = local_tts.preview_path(studio.prod_dir(cfg, pid)).is_file()
+        return st
+
     @app.post("/studio/<int:pid>/srt/generate")
     def studio_srt_generate(pid):
         if sjob.running:
@@ -5278,8 +5306,25 @@ def create_app(cfg) -> Flask:
         """Run the script or shotlist stage in web chats (webstages.py): a
         writer chat and a judge chat, the judge's feedback going back to the
         writer. Uses the external-LLM prompts; the API loop is not involved."""
-        if stage not in ("script", "shots", "elements", "beats"):
+        if stage not in ("script", "shots", "elements", "beats", "storyboard",
+                         "storyboard-prompts"):
             return _studio_url(pid, error="Unknown web-chat stage")
+        redirected_to_storyboard = False
+        if stage in ("shots", "beats") and request.form.get("ignore_storyboard") != "on":
+            # A storyboard exists: it decides what each shot shows, so the shotlist
+            # is written from it (or not at all until it is approved).
+            _sb = storyboard_mod.load(studio.prod_dir(cfg, pid))
+            if _sb and _sb.get("rows"):
+                if not _sb.get("approved"):
+                    return _studio_url(pid, error="This production has a storyboard that is "
+                                       "not approved yet. Review and approve it first, or "
+                                       "tick 'Ignore the storyboard' to run without it.")
+                stage = "storyboard-prompts"
+                redirected_to_storyboard = True
+        if stage == "storyboard-prompts":
+            _sb = storyboard_mod.load(studio.prod_dir(cfg, pid))
+            if not _sb or not _sb.get("approved"):
+                return _studio_url(pid, error="Approve the storyboard first")
         if sjob.running:
             return _studio_url(pid, error="A job is already running")
         from . import webchat, webstages
@@ -5299,7 +5344,9 @@ def create_app(cfg) -> Flask:
             conn.close()
         log = sjob.log.append
         run = {"script": webstages.script_job, "elements": webstages.elements_job,
-               "beats": webstages.beats_job}.get(stage, webstages.shotlist_job)
+               "beats": webstages.beats_job, "storyboard": webstages.storyboard_job,
+               "storyboard-prompts": webstages.storyboard_prompts_job
+               }.get(stage, webstages.shotlist_job)
 
         job = sjob._real()
         options = _chat_options(request.form)
@@ -5307,24 +5354,31 @@ def create_app(cfg) -> Flask:
         if stage == "beats":
             options["beats_quality_judge"] = request.form.get("quality_judge") == "on"
             options["beats_same_chats"] = request.form.get("same_chats") == "on"
+        if stage in ("storyboard", "storyboard-prompts"):
+            options["beats_same_chats"] = request.form.get("same_chats") == "on"
 
         resume = (stage != "script"
                   and request.form.get("resume_plan") == "on")
         same_chats = request.form.get("same_chats") == "on"
 
         def worker():
-            if stage in ("script", "elements", "beats"):
+            if stage in ("script", "elements", "beats", "storyboard",
+                         "storyboard-prompts"):
                 run(cfg, pid, writer, judge, log, lambda: job.cancel,
                     options)
             else:
                 run(cfg, pid, writer, judge, log, lambda: job.cancel,
                     options, resume, same_chats)
 
-        label = {"script": "script", "elements": "elements", "beats": "beats"}.get(stage, "shotlist")
+        label = {"script": "script", "elements": "elements", "beats": "beats",
+                 "storyboard": "storyboard",
+                 "storyboard-prompts": "prompts from the storyboard"}.get(stage, "shotlist")
         sjob.start(worker, f"{label} in web chat ({writer} writes, "
                            f"{judge} judges)")
         return _studio_url(pid, msg=f"Web-chat {label} run started - a "
-                                    f"browser window will open")
+                                    f"browser window will open"
+                                    + (" (the shotlist is written from your approved "
+                                       "storyboard)" if redirected_to_storyboard else ""))
 
     @app.post("/studio/<int:pid>/human-review")
     def studio_human_review(pid):
@@ -5951,6 +6005,125 @@ def create_app(cfg) -> Flask:
         if not target.is_file():
             abort(404)
         return send_file(target)
+
+    def storyboard_state_for(pdir):
+        sb = storyboard_mod.load(pdir)
+        if sb is None:
+            return None
+        return {"rows": len(sb["rows"]), "approved": bool(sb.get("approved")),
+                "faults": len(sb.get("faults") or []),
+                "warnings": len(sb.get("warnings") or []),
+                "stale": len(storyboard_mod.out_of_date(sb))}
+
+    def _storyboard_recheck(pid, rows):
+        """(ranges, faults, warnings, cues) of rows against this production's
+        subtitles and channel settings."""
+        from . import webstages
+        ctx, plan, profile, cap, tol, allowed = webstages._storyboard_inputs(cfg, pid)
+        _s, ranges, faults, warns = storyboard_mod.check_rows(
+            rows, plan["cues"], allowed, cap, tol, profile=profile,
+            allow_reveal=profile.reveal)
+        return ranges, faults, warns, plan["cues"]
+
+    def _storyboard_title(pid):
+        conn = db.connect(cfg.db_path)
+        try:
+            row = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        return (row["title"] if row is not None and "title" in row.keys() else "") or f"production {pid}"
+
+    def _storyboard_provided_refs(pdir):
+        """Reference names that already have a file (or a path in the saved shotlist)."""
+        names = {Path(f).stem for f in studio.find_supplied_refs(pdir)}
+        try:
+            old = json.loads((Path(pdir) / "shotlist.json").read_text(encoding="utf-8"))
+            for n, v in (old.get("refs") or {}).items():
+                if isinstance(v, str) and v.strip():
+                    names.add(n)
+        except (OSError, ValueError, AttributeError):
+            pass
+        return names
+
+    @app.get("/studio/<int:pid>/storyboard/edit")
+    def studio_storyboard_edit(pid):
+        """The pass-1 storyboard as an editable table."""
+        pdir = studio.prod_dir(cfg, pid)
+        sb = storyboard_mod.load(pdir)
+        if sb is None:
+            return _studio_url(pid, error="Create the storyboard first")
+        cues = {}
+        srt = studio.find_srt(pdir)
+        if srt:
+            cues = {c["index"]: c["text"] for c in studio.parse_srt_cues(
+                srt.read_text(encoding="utf-8", errors="replace"))}
+        page = storyboard_view.render_edit_html(
+            sb, _storyboard_title(pid), pid, cues, storyboard_mod.STATUSES,
+            storyboard_mod.beatsmod.TYPE_CODES,
+            stale=storyboard_mod.out_of_date(sb),
+            msg=request.args.get("msg", ""), error=request.args.get("error", ""),
+            provided=_storyboard_provided_refs(pdir), cap=studio.REFS_ON_THE_FLY_CAP)
+        resp = make_response(page)
+        resp.headers["Content-Type"] = "text/html; charset=utf-8"
+        return resp
+
+    def _storyboard_save(pid, approve):
+        from urllib.parse import quote
+        pdir = studio.prod_dir(cfg, pid)
+        sb = storyboard_mod.load(pdir)
+        if sb is None:
+            return _studio_url(pid, error="Create the storyboard first")
+        rows = storyboard_mod.apply_edits(sb["rows"], request.form)
+        try:
+            ranges, faults, warns, _c = _storyboard_recheck(pid, rows)
+        except Exception as e:  # PromptError etc: show it, change nothing
+            return redirect(f"/studio/{pid}/storyboard/edit?error=" + quote(str(e)[:300]))
+        approved = bool(approve and not faults)
+        keep = sb.get("compiled") or {}
+        chars, locs = storyboard_mod.apply_maps(request.form)
+        storyboard_mod.save(pdir, rows, ranges, sb.get("style", ""), faults, warns,
+                            approved=approved, compiled=keep,
+                            characters=chars, locations=locs)
+        if approve and faults:
+            return redirect(f"/studio/{pid}/storyboard/edit?error=" + quote(
+                f"Not approved: {len(faults)} fault(s) left. Fix them first."))
+        return redirect(f"/studio/{pid}/storyboard/edit?msg=" + quote(
+            "Approved. You can write the prompts now." if approved else
+            f"Saved and checked: {len(faults)} fault(s), {len(warns)} warning(s). Not approved."))
+
+    @app.post("/studio/<int:pid>/storyboard/save")
+    def studio_storyboard_save(pid):
+        return _storyboard_save(pid, approve=False)
+
+    @app.post("/studio/<int:pid>/storyboard/approve")
+    def studio_storyboard_approve(pid):
+        return _storyboard_save(pid, approve=True)
+
+    @app.get("/studio/<int:pid>/storyboard")
+    def studio_storyboard(pid):
+        """Read-only storyboard of shotlist.json + the SRT (nothing written).
+        ?export=1 downloads it as one standalone HTML file."""
+        pdir = studio.prod_dir(cfg, pid)
+        try:
+            built = storyboard_view.load(pdir, studio.parse_srt_cues)
+        except ValueError:
+            return _studio_url(pid, error="shotlist.json is not valid JSON")
+        if built is None:
+            return _studio_url(pid, error="Create the shotlist first")
+        conn = db.connect(cfg.db_path)
+        try:
+            row = db.get_production(conn, pid)
+        finally:
+            conn.close()
+        title = (row["title"] if row is not None and "title" in row.keys() else "") or f"production {pid}"
+        export = request.args.get("export") == "1"
+        page = storyboard_view.render_html(
+            built, title, "" if export else f"/studio/file/{pid}/images/")
+        resp = make_response(page)
+        resp.headers["Content-Type"] = "text/html; charset=utf-8"
+        if export:
+            resp.headers["Content-Disposition"] = f'attachment; filename="storyboard-{pid}.html"'
+        return resp
 
     @app.get("/studio/<int:pid>/capcut.zip")
     def studio_capcut_zip(pid):

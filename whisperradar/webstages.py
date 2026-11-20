@@ -28,7 +28,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import autorun, beats as beatsmod, briefs, db, external_prompts as ep, handover, prodfiles, studio, webchat
+from . import autorun, beats as beatsmod, briefs, db, external_prompts as ep, handover, prodfiles, storyboard as sbmod, studio, webchat
 
 # Above this the prompt is split into attached files (external_prompts' files
 # mode). Both chat boxes took 30k+ characters when tried by hand.
@@ -1675,6 +1675,347 @@ def run_beats(cfg, pid: int, transport, writer: str = "zai",
     raise StageFailed(
         f"The beat plan did not pass the code checks. beats.json holds the last try; "
         f"shotlist.json was not changed. Still wrong: {(prev_faults or '')[:300]}")
+
+
+# ---- storyboard (decide what each shot shows BEFORE any prompt is written) -----------------
+
+STORYBOARD_CONTINUE = (
+    "continue - same task. Output ONLY the remaining rows as more entries ({...}, {...}) in a "
+    "new ```json block, as text in this chat (no file), starting at the next row after the "
+    "last complete one, then close the list and the object with ] }.")
+PROMPTS_CONTINUE = (
+    "continue - same task. Output ONLY the remaining prompts as more entries ({...}, {...}) "
+    "in a new ```json block, as text in this chat (no file), starting at the next n after "
+    "the last complete one, then close the list and the object with ] }.")
+STORYBOARD_MAX_ROUNDS = 3
+STORYBOARD_PROMPT_ROUNDS = 6
+
+
+def _collect_list(transport, site: str, reply: str, log, dump, name: str, key: str,
+                  parse_fn, ident, message: str):
+    """What `parse_fn` reads from the reply, sending 'continue' only while the
+    JSON is really cut off."""
+    dump(f"{name}_reply_1", reply)
+    body = _json_chunk(reply, True)
+    for i in range(MAX_CONTINUES + 1):
+        got = parse_fn(body)
+        if got:
+            return got
+        if i == MAX_CONTINUES:
+            break
+        log(f"{site}: no complete {key} list in the reply yet ({len(body):,} characters "
+            f"read) - sending 'continue' ({i + 1}/{MAX_CONTINUES})")
+        ask = message if "{" in body else (
+            BIBLE_MESSAGE if _ASKS_FOR_BIBLE.search(body) else PASTE_MESSAGE)
+        reply = transport.ask(site, ask, (), new_chat=False, ready=_has_json)
+        dump(f"{name}_reply_{i + 2}", reply)
+        body = sbmod.join_continuation(body, _json_chunk(reply, False), key, ident)
+    raise StageFailed(f"{site} never gave a readable {key} list ({len(body):,} characters "
+                      f"read). The raw replies are in the production's webchat_debug folder.")
+
+
+def _storyboard_inputs(cfg, pid: int):
+    ctx = ep._context(cfg, pid)
+    plan = ep._plan_inputs(cfg, pid, ctx)
+    profile = plan["profile"]
+    cap, tol = plan["max_hold"], profile.max_hold_tol
+    allowed = list(profile.allowed or briefs.MOTION_CODES)
+    return ctx, plan, profile, cap, tol, allowed
+
+
+def run_storyboard(cfg, pid: int, transport, writer: str = "zai",
+                   log: Callable[[str], None] = print,
+                   should_stop: Callable[[], bool] = lambda: False,
+                   same_chats: bool = False) -> dict:
+    """Pass 1: the writer returns storyboard ROWS (who, where, status, action; no
+    prompt). The app finds each row's cue range, runs the checks and saves
+    storyboard.json as an unapproved draft. shotlist.json is never touched."""
+    from . import elements
+    ctx, plan, profile, cap, tol, allowed = _storyboard_inputs(cfg, pid)
+    cues, pdir = plan["cues"], ctx["pdir"]
+    narration = "\n".join(c["text"] for c in cues)
+    max_words = beatsmod.words_per_beat(cap, tol, narration, plan["total_s"])
+    min_hold = getattr(profile, "min_hold", None) or 0
+    min_words = (beatsmod.min_words_per_beat(min_hold, narration, plan["total_s"])
+                 if min_hold else 0)
+    elements_md = elements.load_text(pdir)
+    channel_context = ep.planning_context_prompt(
+        cfg, ctx, plan, "Read the NARRATION below; rows use exact opening words instead of cue numbers.")
+    animation_note = ep._animation_note(ctx.get("eff", {}), cues)
+
+    def dump(name: str, text: str) -> None:
+        _dump(cfg, pid, name, text)
+
+    log(f"{len(cues)} cues, {len(narration.split())} words; a row is asked to stay under "
+        f"about {max_words} words ({cap:g}s limit); "
+        + ("elements.md used" if elements_md else "no elements.md"))
+
+    def build(files):
+        text = sbmod.prompt(beatsmod.sentences(cues), elements_md, ctx["visual_style"],
+                            ctx["bible"], allowed, cap, max_words,
+                            channel_context=channel_context, min_words=min_words,
+                            animation_note=animation_note)
+        dump("storyboard_prompt", text)
+        return text
+
+    kept = adopt_chats(cfg, pid, transport, {writer}, log) if same_chats else set()
+    reply, _ = _send_in(transport, writer, build, log, writer in kept, ready=_has_json)
+    parse_rows = lambda body: sbmod.parse(body, allowed)
+    got = _collect_list(transport, writer, reply, log, dump, "storyboard", "rows",
+                        parse_rows, sbmod.row_ident, STORYBOARD_CONTINUE)
+    rows = got["rows"]
+    log(f"{writer}: {len(rows)} row(s) received")
+    for rnd in range(1, STORYBOARD_MAX_ROUNDS + 1):
+        if should_stop():
+            raise StageFailed("Stopped by you.")
+        starts, ranges, faults, warnings = sbmod.check_rows(
+            rows, cues, allowed, cap, tol, profile=profile, allow_reveal=profile.reveal)
+        log(f"round {rnd}: {len(faults)} fault(s), {len(warnings)} warning(s)")
+        if not faults or rnd == STORYBOARD_MAX_ROUNDS:
+            break
+        reply = transport.ask(writer, sbmod.fix_prompt(faults, rows), (), new_chat=False,
+                              ready=_has_json)
+        try:
+            fixed = _collect_list(transport, writer, reply, log, dump, f"storyboard_fix{rnd}",
+                                  "rows", parse_rows, sbmod.row_ident, STORYBOARD_CONTINUE)
+        except StageFailed as e:
+            log(f"no usable correction ({e}) - keeping the rows as they are")
+            break
+        rows = fixed["rows"]
+    old = sbmod.path(pdir)
+    if old.is_file():
+        shutil.copyfile(old, pdir / "storyboard_before.json")
+    data = sbmod.save(pdir, rows, ranges, ctx["visual_style"], faults, warnings, approved=False)
+    log(f"storyboard.json saved ({len(rows)} rows, not approved)"
+        + (f"; {len(faults)} fault(s) must be fixed on the page before you can approve"
+           if faults else "; read it on the page, edit what you want, then approve"))
+    return data
+
+
+def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
+                           log: Callable[[str], None] = print,
+                           should_stop: Callable[[], bool] = lambda: False,
+                           same_chats: bool = False) -> dict:
+    """Pass 2: prompts for an APPROVED storyboard only. The casting, place, status
+    and action of every row are fixed; faults go back to the writer as per-row
+    prompt corrections. shotlist.json is written only when the checks pass."""
+    from . import planning_audit
+    ctx, plan, profile, cap, tol, allowed = _storyboard_inputs(cfg, pid)
+    cues, pdir = plan["cues"], ctx["pdir"]
+    sb = sbmod.load(pdir)
+    if not sb or not sb.get("approved"):
+        raise StageFailed("Approve the storyboard first; prompts are only written from an "
+                          "approved storyboard.")
+    rows = [dict(r) for r in sb["rows"]]
+    starts, ranges, faults, _w = sbmod.check_rows(
+        rows, cues, allowed, cap, tol, profile=profile, allow_reveal=profile.reveal)
+    if faults:
+        raise StageFailed("The approved storyboard no longer fits the subtitles: "
+                          + " | ".join(sbmod.relabel(f, sbmod.row_ids(rows)) for f in faults[:3])
+                          + ". Open the storyboard, fix it and approve again.")
+    style = (sb.get("style") or ctx["visual_style"] or "").strip()
+    auto_numbers, renderer_text = planning_audit.number_mode(cfg, ctx)
+
+    def dump(name: str, text: str) -> None:
+        _dump(cfg, pid, name, text)
+
+    # references: what the production already has, plus the supplied ones
+    old_path = pdir / "shotlist.json"
+    old = {}
+    if old_path.is_file():
+        try:
+            old = json.loads(old_path.read_text(encoding="utf-8"))
+        except ValueError:
+            old = {}
+    plan_meta: dict = {}
+    for k in ("refs", "refPrompts"):
+        if isinstance(old.get(k), dict):
+            plan_meta[k] = dict(old[k])
+    supplied = ({Path(f).stem: f"refs/{f}" for f in studio.find_supplied_refs(pdir)}
+                if plan["allow_refs"] else {})
+    refs_note, ref_budget = "", 0
+    have = sorted(set(plan_meta.get("refs", {})) | set(supplied))
+    characters = sbmod.sync_characters(rows, sb.get("characters"), known=have)
+    locations = sbmod.sync_locations(rows, sb.get("locations"))
+    # the references of every row are decided by the reviewed maps, not by the writer
+    row_refs = [sbmod.expected_refs(r, characters, locations) if plan["allow_refs"] else []
+                for r in rows]
+    if plan["allow_refs"]:
+        ref_budget = max(200, studio.FLOWBATCH_MAX_PROMPT_CHARS - (len(style) + 1 if style else 0))
+        needed = sorted({x for rr in row_refs for x in rr})
+        provided = set(supplied) | {n for n, v in plan_meta.get("refs", {}).items()
+                                    if isinstance(v, str) and v.strip()}
+        todo = [x for x in needed if x not in provided]
+        if len(todo) > studio.REFS_ON_THE_FLY_CAP:
+            raise StageFailed(
+                f"The reviewed character and place maps need {len(todo)} new references and "
+                f"the cap is {studio.REFS_ON_THE_FLY_CAP}. Nothing was sent to the writer. Open "
+                f"the storyboard, merge places (same BG_ name) or clear references you do not "
+                f"need, and approve again. New references: {', '.join(todo)}.")
+        refs_note = ("REFERENCES ARE DECIDED. Each row below carries its `refs`: the app "
+                     "attaches exactly those to the image, so the prompt must show those people "
+                     "and that place and no other reference. Existing files: "
+                     + (", ".join(sorted(supplied)) or "none")
+                     + ". Declare in top-level \"refs\" (name: null) AND write a `refPrompts` "
+                       "entry for every one of these that has no file: "
+                     + (", ".join(todo) or "none")
+                     + ". A CH_ prompt describes the person alone on a plain neutral "
+                       "background; a BG_ prompt describes the empty location with its own "
+                       "furniture and no people. Do not invent other references.")
+    else:
+        refs_note = "References are disabled for this channel: omit `refs` everywhere."
+
+    def merged_beats(by_n):
+        out = []
+        for n, r in enumerate(rows, 1):
+            b = dict(r)
+            b["prompt"] = (by_n.get(n) or {}).get("prompt", "")
+            extra = [x for x in ((by_n.get(n) or {}).get("refs") or [])
+                     if str(x).startswith("OBJ_")]
+            b["refs"] = (list(row_refs[n - 1]) + extra) if plan["allow_refs"] else []
+            if not b["refs"]:
+                b.pop("refs")
+            b["note"] = sbmod.note_for(r)
+            out.append(b)
+        return out
+
+    names = beatsmod.build_shotlist(
+        [dict(r, prompt="x") for r in rows], ranges, style, None, cues)[1]
+    by_n: dict[int, dict] = {}
+
+    def build(files):
+        text = sbmod.prompts_prompt(
+            rows, ranges, cues, style, ctx["bible"],
+            channel_context=ep.planning_context_prompt(
+                cfg, ctx, plan, "The storyboard rows below are approved; write their prompts."),
+            refs_note=refs_note, ref_budget=ref_budget, row_refs=row_refs)
+        dump("storyboard_prompts_prompt", text)
+        return text
+
+    kept = adopt_chats(cfg, pid, transport, {writer}, log) if same_chats else set()
+    reply, _ = _send_in(transport, writer, build, log, writer in kept, ready=_has_json)
+    parse_p = lambda body: (lambda r: r if r[0] else None)(sbmod.parse_prompts(body))
+    got, meta = _collect_list(transport, writer, reply, log, dump, "storyboard_prompts",
+                              "prompts", parse_p, sbmod.prompt_ident, PROMPTS_CONTINUE)
+    by_n.update(got)
+    for k, v in (meta or {}).items():
+        if v:
+            plan_meta.setdefault(k, {}).update(v)
+    log(f"{writer}: {len(by_n)} prompt(s) of {len(rows)} received")
+    prev_faults, same = None, 0
+    for rnd in range(1, STORYBOARD_PROMPT_ROUNDS + 2):
+        if should_stop():
+            raise StageFailed("Stopped by you.")
+        if supplied:
+            plan_meta.setdefault("refs", {}).update(supplied)
+            for nm in supplied:
+                plan_meta.get("refPrompts", {}).pop(nm, None)
+        faults = sbmod.consistency_faults(rows, names, by_n, characters)
+        beats = merged_beats(by_n)
+        data, _ = beatsmod.build_shotlist(beats, ranges, style, plan_meta, cues)
+        if plan["allow_refs"]:
+            data["characters"] = {k: v for k, v in characters.items() if v}
+            data["locations"] = {k: v for k, v in locations.items() if v}
+        if not plan["allow_refs"] and studio.shotlist_uses_refs(data):
+            faults.append("References are disabled for this channel: remove refs/refPrompts "
+                          "registries and refs on every image.")
+        if not faults:
+            numbers = planning_audit.numerical_report(
+                data, cues, auto=auto_numbers, overlays_enabled=renderer_text)
+            faults.extend(numbers["faults"])
+            try:
+                _, loc = ep.shotlist_judge_prompt(
+                    cfg, pid, json.dumps(data, ensure_ascii=False, indent=1), [])
+                faults.extend(str(x) for x in (loc or []))
+            except (ep.PromptError, RuntimeError, ValueError) as e:
+                faults.append(f"Code checks could not run: {e}")
+        if not faults:
+            if old_path.is_file():
+                shutil.copyfile(old_path, pdir / "shotlist_before_storyboard.json")
+            gap = save_shotlist(cfg, pid, data,
+                                f"web chat {writer}: {len(rows)} prompts from the approved "
+                                f"storyboard, round {rnd}", advance=True)
+            sb_rows = []
+            compiled = {}
+            for r, nm in zip(rows, names):
+                d = dict(r, asset=nm)
+                sb_rows.append(d)
+                compiled[nm] = sbmod.row_hash(r)
+            sbmod.save(pdir, sb_rows, ranges, style, [], sb.get("warnings") or [],
+                       approved=True, compiled=compiled,
+                       characters=characters, locations=locations)
+            log(f"round {rnd}: no faults - shotlist saved ({len(data['shots'])} shots)"
+                + (f"; coverage gap: {gap}" if gap else "; next stage unlocked"))
+            return data
+        log(f"round {rnd}: {len(faults)} fault(s): " + " | ".join(f[:140] for f in faults[:3]))
+        # the complete list and the candidate that failed, for inspection
+        dump(f"storyboard_prompts_faults_round{rnd}", "\n".join(faults))
+        dump(f"storyboard_prompts_candidate_round{rnd}",
+             json.dumps(data, ensure_ascii=False, indent=1))
+        key = "\n".join(faults)
+        same = same + 1 if key == prev_faults else 0
+        prev_faults = key
+        if same >= 2 or rnd > STORYBOARD_PROMPT_ROUNDS:
+            break
+        bad = sorted({n for n, nm in enumerate(names, 1)
+                      if any(f.startswith(nm) or nm in f for f in faults)})
+        if not bad:
+            bad = [n for n in range(1, len(rows) + 1) if n not in by_n] or list(range(1, len(rows) + 1))
+        lines = [f"- {f}" for f in faults[:40]]
+        asked = [dict(n=n, narration=" ".join(c["text"] for c in cues
+                                              if ranges[n - 1][0] <= int(c["index"]) <= ranges[n - 1][1]),
+                      who=rows[n - 1]["who"], where=rows[n - 1]["where"],
+                      status=rows[n - 1]["status"], action=rows[n - 1]["action"],
+                      prompt=(by_n.get(n) or {}).get("prompt", "")) for n in bad[:60]]
+        msg = ("Fix ONLY these rows' prompts. Keep who, where, status and action exactly as "
+               "approved. Reply with ONE ```json block: {\"prompts\": [{\"n\": N, \"prompt\": "
+               "\"...\", \"refs\": [...]}]} containing ONLY the rows below.\n\nFAULTS:\n"
+               + "\n".join(lines) + "\n\nROWS:\n"
+               + "\n".join(json.dumps(a, ensure_ascii=False) for a in asked) + "\n")
+        dump(f"storyboard_prompts_fix_prompt_round{rnd}", msg)
+        reply = transport.ask(writer, msg, (), new_chat=False, ready=_has_json)
+        try:
+            fixed, meta = _collect_list(transport, writer, reply, log, dump,
+                                        f"storyboard_prompts_fix{rnd}", "prompts", parse_p,
+                                        sbmod.prompt_ident, PROMPTS_CONTINUE)
+        except StageFailed as e:
+            log(f"no usable correction ({e})")
+            break
+        by_n.update(fixed)
+        for k, v in (meta or {}).items():
+            if v:
+                plan_meta.setdefault(k, {}).update(v)
+    raise StageFailed("The prompts did not pass the checks; shotlist.json was not changed. "
+                      f"Still wrong: {(prev_faults or '')[:300]}")
+
+
+def storyboard_job(cfg, pid: int, writer: str, judge: str, log,
+                   should_stop: Callable[[], bool] = lambda: False,
+                   options: dict | None = None) -> None:
+    options = dict(options or {})
+    same_chats = bool(options.pop("beats_same_chats", False))
+    with web_transport(cfg, log, options) as t:
+        log(f"settings: {t.options}")
+        t.set_stop(should_stop)
+        try:
+            run_storyboard(cfg, pid, t, writer, log, should_stop, same_chats=same_chats)
+        finally:
+            save_chats(cfg, pid, t)
+
+
+def storyboard_prompts_job(cfg, pid: int, writer: str, judge: str, log,
+                           should_stop: Callable[[], bool] = lambda: False,
+                           options: dict | None = None) -> None:
+    options = dict(options or {})
+    same_chats = bool(options.pop("beats_same_chats", False))
+    with web_transport(cfg, log, options) as t:
+        log(f"settings: {t.options}")
+        t.set_stop(should_stop)
+        try:
+            run_storyboard_prompts(cfg, pid, t, writer, log, should_stop, same_chats=same_chats)
+        finally:
+            save_chats(cfg, pid, t)
+
 
 
 def beats_job(cfg, pid: int, writer: str, judge: str, log,
