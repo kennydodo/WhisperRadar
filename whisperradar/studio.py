@@ -6461,7 +6461,7 @@ REF_NAME_RE = re.compile(r"^(CH|BG|OBJ)_[A-Z0-9]+(?:_[A-Z0-9]+)*$")
 # Refs a plan INVENTS for on-the-fly generation are capped: each one is a Flow
 # generation (credits), and a plan that leans on invented refs instead of the
 # supplied bible is a planning smell. Refs the user PROVIDES do not count.
-REFS_ON_THE_FLY_CAP = 20
+REFS_ON_THE_FLY_CAP = 100
 
 
 def ref_name(value) -> str:

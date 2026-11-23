@@ -331,11 +331,13 @@ class RunTests(unittest.TestCase):
     def test_pass_two_stops_before_the_writer_when_the_maps_exceed_the_reference_cap(self):
         ws, pdir, asked, saved, t = self.setup([])
         ws.ep._plan_inputs()["allow_refs"] = True
-        rows = [dict(r, who=[f"Person{i}x{n}" for i in range(8)]) for n, r in enumerate(THREE)]
+        from whisperradar import studio as _st
+        per_row = _st.REFS_ON_THE_FLY_CAP // len(THREE) + 1
+        rows = [dict(r, who=[f"Person{i}x{n}" for i in range(per_row)]) for n, r in enumerate(THREE)]
         sb.save(pdir, rows, [(1, 2), (3, 4), (5, 6)], "s", approved=True)
         with self.assertRaises(ws.StageFailed) as cm:
             ws.run_storyboard_prompts(None, 1, t, "zai", log=lambda m: None)
-        self.assertIn("the cap is 20", str(cm.exception))
+        self.assertIn(f"the cap is {_st.REFS_ON_THE_FLY_CAP}", str(cm.exception))
         self.assertEqual(asked, [])
 
     def test_pass_two_refuses_an_unapproved_storyboard(self):
@@ -562,8 +564,10 @@ class RouteTests(unittest.TestCase):
     def test_review_page_counts_new_references_against_the_cap(self):
         self.seed()
         page = self.client.get(f"/studio/{self.pid}/storyboard/edit").data
-        self.assertIn(b"new references, the cap is 20", page)
-        rows = [dict(r, who=[f"P{i}x{n}" for i in range(9)]) for n, r in enumerate(THREE)]
+        from whisperradar import studio as _st
+        self.assertIn(f"new references, the cap is {_st.REFS_ON_THE_FLY_CAP}".encode(), page)
+        per_row = _st.REFS_ON_THE_FLY_CAP // len(THREE) + 1
+        rows = [dict(r, who=[f"P{i}x{n}" for i in range(per_row)]) for n, r in enumerate(THREE)]
         sb.save(self.pdir, rows, [(1, 2), (3, 4), (5, 6)], "s")
         page = self.client.get(f"/studio/{self.pid}/storyboard/edit").data
         self.assertIn(b"remove ", page)

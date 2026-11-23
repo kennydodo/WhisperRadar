@@ -35,6 +35,19 @@ def _shotlist(refs=None, image_refs=None, images=2):
     return data
 
 
+class GeneratedReferenceCapTests(unittest.TestCase):
+    def test_73_and_100_new_references_pass_but_101_is_rejected(self):
+        for count, rejected in [(73, False), (100, False), (101, True)]:
+            with self.subTest(count=count):
+                names = [f"OBJ_ITEM_{i:03d}" for i in range(count)]
+                data = _shotlist(refs={name: None for name in names},
+                                 image_refs=[names, names])
+                data["refPrompts"] = {name: "One plain object." for name in names}
+                faults = studio.shotlist_structural_faults(data, 2)
+                cap_faults = [f for f in faults if "references would be generated" in f]
+                self.assertEqual(bool(cap_faults), rejected, faults)
+
+
 class SuppliedRefsTests(unittest.TestCase):
     def test_declared_but_unused_supplied_refs_are_a_fault(self):
         data = _shotlist(refs={"MAYA": "refs/MAYA.jpeg"},
