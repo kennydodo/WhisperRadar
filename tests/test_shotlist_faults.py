@@ -311,3 +311,151 @@ class StyleTooLongTests(unittest.TestCase):
         self.assertEqual(len(faults), 1)
         self.assertIn("Shorten ONLY those prompts", faults[0])
         self.assertIn("a0_ZI.png", faults[0])
+
+
+class PresenterRefTests(unittest.TestCase):
+    REFS = {"CH_FRIEDA": "refs/CH_FRIEDA.jpg", "CH_MAYA": None}
+
+    def _data(self, prompts, image_refs):
+        data = _shotlist(refs=dict(self.REFS), image_refs=image_refs)
+        for img, text in zip(data["images"], prompts):
+            img["prompt"] = text
+        data["refPrompts"] = {"CH_MAYA": "A woman."}
+        return data
+
+    def test_a_faceless_plan_still_fails(self):
+        faults = studio.shotlist_structural_faults(
+            self._data(["a desk", "a desk"], [None, None]), 2)
+        self.assertTrue(any("supplied reference" in f for f in faults), faults)
+
+    def test_presenter_and_story_character_each_with_their_own_ref_pass(self):
+        faults = studio.shotlist_structural_faults(self._data(
+            ["Frieda explains the rule at a desk.", "Maya pays the bill."],
+            [["CH_FRIEDA"], ["CH_MAYA"]]), 2)
+        self.assertEqual(faults, [])
+
+    def test_a_named_character_without_her_ref_is_a_fault(self):
+        faults = studio.shotlist_structural_faults(self._data(
+            ["Frieda explains the rule at a desk.", "Frieda smiles."],
+            [["CH_FRIEDA"], ["CH_MAYA"]]), 2)
+        self.assertTrue(any("belongs only to its own" in f for f in faults), faults)
+
+    def test_one_ref_on_the_other_character_is_a_fault(self):
+        faults = studio.shotlist_structural_faults(self._data(
+            ["Frieda explains the rule at a desk.", "Maya pays the bill."],
+            [["CH_FRIEDA"], ["CH_FRIEDA", "CH_MAYA"]]), 2)
+        self.assertTrue(any("belongs only to its own" in f for f in faults), faults)
+
+    def test_presenter_and_story_character_in_one_scene_pass(self):
+        faults = studio.shotlist_structural_faults(self._data(
+            ["Frieda shows Maya how to set up the transfer.", "Maya pays the bill."],
+            [["CH_FRIEDA", "CH_MAYA"], ["CH_MAYA"]]), 2)
+        self.assertEqual(faults, [])
+
+    def test_role_words_and_multi_word_refs_are_not_treated_as_names(self):
+        data = _shotlist(refs={"CH_HOUSE_CAT": None, "CH_MECHANIC": None},
+                         image_refs=[["CH_HOUSE_CAT"], ["CH_MECHANIC"]])
+        data["refPrompts"] = {"CH_HOUSE_CAT": "A cat.", "CH_MECHANIC": "A man."}
+        data["images"][0]["prompt"] = "The house cat sleeps in the house."
+        data["images"][1]["prompt"] = "The mechanic checks the car."
+        self.assertEqual(studio.shotlist_structural_faults(data, 2), [])
+
+
+class RefPromptBudgetTests(unittest.TestCase):
+    STYLE = "s" * 1800
+
+    def _data(self, ref_len, path=None):
+        data = _shotlist(refs={"CH_JOE": path}, image_refs=[["CH_JOE"], ["CH_JOE"]])
+        for img in data["images"]:
+            img["prompt"] = "Joe walks to the car."
+        data["style"] = self.STYLE
+        data["refPrompts"] = {"CH_JOE": "x" * ref_len}
+        return data
+
+    def test_a_reference_prompt_over_the_budget_is_a_fault(self):
+        faults = studio.shotlist_structural_faults(self._data(700), 2)
+        self.assertTrue(any("reference prompt" in f and "CH_JOE" in f
+                            for f in faults), faults)
+
+    def test_a_reference_prompt_that_fits_is_not(self):
+        faults = studio.shotlist_structural_faults(self._data(500), 2)
+        self.assertFalse(any("reference prompt" in f for f in faults), faults)
+
+    def test_a_reference_that_already_has_a_path_is_not_checked(self):
+        faults = studio.shotlist_structural_faults(
+            self._data(700, path="refs/CH_JOE.png"), 2)
+        self.assertFalse(any("reference prompt" in f for f in faults), faults)
+
+    def test_budget_helper_counts_the_style_and_the_joining_space(self):
+        budget, over = studio.ref_prompts_over_budget(
+            {"A": "x" * 620, "B": "x" * 619}, self.STYLE)
+        self.assertEqual(budget, studio.FLOWBATCH_MAX_PROMPT_CHARS - 1801)
+        self.assertEqual([o[0] for o in over], ["A"])
+
+    def test_refs_job_drops_the_style_and_warns_when_a_ref_prompt_is_too_long(self):
+        import tempfile
+        refs = {"CH_JOE": {"prompt": "x" * 700}}
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = Path(tmp)
+            (pdir / "shotlist.json").write_text(
+                '{"style": "' + self.STYLE + '"}', encoding="utf-8")
+            with mock.patch.object(studio, "flow_project_url_for",
+                                   return_value=(None, "")), \
+                    mock.patch.object(studio, "_set_production_warning") as warn, \
+                    mock.patch.object(studio, "_clear_ref_style_warning"):
+                path = studio._write_refs_job(mock.Mock(), pdir, 7, refs)
+            import json
+            job = json.loads(path.read_text(encoding="utf-8"))
+        self.assertNotIn("style", job)
+        warn.assert_called_once()
+        self.assertIn("CH_JOE", warn.call_args[0][2])
+        self.assertIn(studio.REF_STYLE_WARNING, warn.call_args[0][2])
+
+    def test_refs_job_keeps_the_style_and_clears_the_warning_when_it_fits(self):
+        import tempfile
+        refs = {"CH_JOE": {"prompt": "x" * 500}}
+        with tempfile.TemporaryDirectory() as tmp:
+            pdir = Path(tmp)
+            (pdir / "shotlist.json").write_text(
+                '{"style": "' + self.STYLE + '"}', encoding="utf-8")
+            with mock.patch.object(studio, "flow_project_url_for",
+                                   return_value=(None, "")), \
+                    mock.patch.object(studio, "_set_production_warning") as warn, \
+                    mock.patch.object(studio, "_clear_ref_style_warning") as clear:
+                path = studio._write_refs_job(mock.Mock(), pdir, 7, refs)
+            import json
+            job = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(job["style"], self.STYLE)
+        warn.assert_not_called()
+        clear.assert_called_once()
+
+
+class CharacterVariantRefTests(unittest.TestCase):
+    REFS = {"CH_JOE": "refs/CH_JOE.png", "CH_JOE_OLDER": None,
+            "CH_RESCUE_DOG": None}
+
+    def _data(self, prompts, image_refs):
+        data = _shotlist(refs=dict(self.REFS), image_refs=image_refs,
+                         images=len(prompts))
+        for img, text in zip(data["images"], prompts):
+            img["prompt"] = text
+        data["refPrompts"] = {"CH_JOE_OLDER": "A man.", "CH_RESCUE_DOG": "A dog."}
+        return data
+
+    def test_an_older_variant_ref_counts_as_the_same_person(self):
+        faults = studio.shotlist_structural_faults(self._data(
+            ["Joe walks the dog.", "Joe, age 37, checks his phone."],
+            [["CH_JOE", "CH_RESCUE_DOG"], ["CH_JOE_OLDER"]]), 2)
+        self.assertEqual(faults, [])
+
+    def test_naming_the_person_without_any_of_their_refs_is_a_fault(self):
+        faults = studio.shotlist_structural_faults(self._data(
+            ["Joe walks the dog.", "Joe, age 37, checks his phone."],
+            [["CH_JOE"], ["CH_RESCUE_DOG"]]), 2)
+        self.assertTrue(any("belongs only to its own" in f for f in faults), faults)
+
+    def test_an_image_that_names_no_character_is_not_checked_for_variant_refs(self):
+        data = self._data(["Joe walks the dog.", "A dog sleeps on a bed."],
+                          [["CH_JOE"], ["CH_JOE_OLDER"]])
+        faults = studio.shotlist_structural_faults(data, 2)
+        self.assertFalse(any("belongs only to its own" in f for f in faults), faults)

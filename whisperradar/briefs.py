@@ -1312,6 +1312,26 @@ def sfx_block(sfx: str) -> str:
         "deliberate emphasis only, never on most shots.\n")
 
 
+# ---- the storyboard's share of the brief -------------------------------------
+# The rules that tell the writer WHAT to show (not the shotlist format): how to split
+# by idea, explanatory visuals and motion, who is on screen, text in images, the
+# image content policy, showing the narrated action. Everything about shotlist.json,
+# references, filenames, cue timing, output safety and the final checklist is left out.
+STORYBOARD_SECTIONS = ("2", "5", "6B", "7C", "8", "11A", "11B", "11C", "11D")
+_SECTION_RE = re.compile(r"^## SECTION (\d+[A-Z]?)\b", re.M)
+
+
+def storyboard_brief(text: str) -> str:
+    """The rendered brief reduced to the sections in STORYBOARD_SECTIONS."""
+    marks = list(_SECTION_RE.finditer(text))
+    kept = []
+    for i, m in enumerate(marks):
+        if m.group(1) in STORYBOARD_SECTIONS:
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+            kept.append(text[m.start():end].strip())
+    return "\n\n".join(kept)
+
+
 # ---- rendering ---------------------------------------------------------------
 _MARKER_RE = re.compile(r"\{\{([A-Z_]+)\}\}")
 

@@ -25,8 +25,8 @@ class WriterBriefTests(unittest.TestCase):
                 self.assertLess(text.index("## SECTION 11C"), text.index("## SECTION 11D"))
                 self.assertLess(text.index("## SECTION 11D"), text.index("## SECTION 12"))
                 body = skeleton._section("11D", text)
-                for phrase in ("Core rule:", "Figurative language", "Charts support the scene", "forc",
-                               "planned", "hypothetical", "recurring protagonist or presenter"):
+                for phrase in ("Core rule:", "Figurative language", "Charts support the scene", "invent activity",
+                               "planned", "hypothetical", "recurring"):
                     self.assertIn(phrase, body)
                 self.assertNotIn("\n---\n", text)            # a '---' line would cut the brief
 
@@ -130,10 +130,9 @@ class FillerPrecisionTests(unittest.TestCase):
     def test_required_character_exception_in_prompts(self):
         from whisperradar import studio
         t = open("whisperradar/brief_template.md", encoding="utf-8").read()
-        self.assertIn("recurring protagonist or presenter", t)
-        self.assertIn("recurring protagonist or presenter", open("whisperradar/brief_template_compact.md", encoding="utf-8").read())
-        self.assertIn("recurring protagonist or presenter", studio.alignment_prompt.__code__.co_consts.__repr__()
-                      if False else open("whisperradar/studio.py", encoding="utf-8").read())
+        self.assertIn("presenter or story protagonist", t)
+        self.assertIn("presenter or lead", open("whisperradar/brief_template_compact.md", encoding="utf-8").read())
+        self.assertIn("recurring story protagonist", studio.alignment_prompt([{"asset": "S01_01_SCN_ZI.png", "cues": "1-1", "prompt": "x"}], {1: "y"}))
 
 
 class NoMetaphorTests(unittest.TestCase):
@@ -211,7 +210,8 @@ class PromptHygieneTests(unittest.TestCase):
         for prefix in ("COMMENTARY:", "STAND-IN PROP:", "MULTI-ACTION:", "FRAMING:",
                        "VIEWER-FACING:", "WRONG SUBJECT:"):
             self.assertIn(prefix, text)
-        self.assertIn("presentation instructions require a presenter", text)
+        self.assertNotIn("presentation instructions require a presenter", text)
+        self.assertIn("WHO IS ON SCREEN:", text)
         for phrase in ("a phone timer or a kitchen timer is a legitimate timer", "no readable text",
                        "drops a later narrated action", "background that helps explain the action"):
             self.assertIn(phrase, text)
@@ -263,3 +263,99 @@ class FollowupWordingTests(unittest.TestCase):
             self.assertIn("original narration supplied earlier in this chat", text)
             self.assertNotIn("narration.txt", text)
         self.assertEqual([f["name"] for f in files], ["shotlist.json"])
+
+
+class ImagineCueTests(unittest.TestCase):
+    def test_imagine_cues_show_the_imagined_moment(self):
+        for name, text in {"standard": briefs.read_template(),
+                           "compact": briefs.read_template(COMPACT)}.items():
+            with self.subTest(template=name):
+                body = skeleton._section("11D", text)
+                self.assertIn("imagine", body.lower())
+                self.assertIn('"you"', body)
+                self.assertIn("presenter", body)
+        judge = studio.alignment_prompt(
+            [{"asset": "S01_01_CU_ZI.png", "cues": "1-1", "prompt": "A woman holds a phone."}],
+            {1: "Picture checking your balance."})
+        self.assertIn("IMAGINE CUES", judge)
+        self.assertIn("imagined moment itself", judge)
+
+
+class PresenterDefaultTests(unittest.TestCase):
+    def test_briefs_and_judge_make_the_presenter_the_default(self):
+        for name, text in {"standard": briefs.read_template(),
+                           "compact": briefs.read_template(COMPACT)}.items():
+            with self.subTest(template=name):
+                body = skeleton._section("11D", text)
+                self.assertIn("Who is on screen", body)
+                self.assertIn("presenter", body)
+                self.assertNotIn("never drawn", body)
+                self.assertNotIn("narrator who only speaks", body)
+                for word in ("advice", "conclusions"):
+                    self.assertIn(word, body)
+        judge = studio.alignment_prompt(
+            [{"asset": "S01_01_SCN_ZI.png", "cues": "1-1", "prompt": "A woman holds a phone."}],
+            {1: "You open your banking app."})
+        self.assertIn("WHO IS ON SCREEN:", judge)
+        self.assertIn("WRONG SUBJECT:", judge)
+        self.assertNotIn("NARRATOR ON SCREEN", judge)
+        self.assertNotIn("never drawn in the scenes", judge)
+        self.assertIn("Not every opening", judge)
+        self.assertIn("share a scene only when the narration supports it", judge)
+        for t in (briefs.read_template(), briefs.read_template(COMPACT)):
+            self.assertIn("only when the narration supports it", skeleton._section("11D", t))
+
+
+class PresenterReferenceTests(unittest.TestCase):
+    def test_reference_rules_cast_the_presenter_and_keep_refs_exclusive(self):
+        std = briefs.read_template()
+        com = briefs.read_template(COMPACT)
+        for name, t in {"standard": std, "compact": com}.items():
+            with self.subTest(template=name):
+                self.assertNotIn("attached to no image", t)
+                self.assertNotIn("never cast", t)
+                self.assertIn("default person on screen", t)
+                self.assertIn("never", t.split("default person on screen")[0][-400:] + t)
+        self.assertIn("never on anyone", open("whisperradar/skeleton.py", encoding="utf-8").read())
+        src = open("whisperradar/external_prompts.py", encoding="utf-8").read()
+        self.assertIn("attached only to images that", src)
+        self.assertNotIn("except a narrator/presenter reference", src)
+
+
+class ActionPlanTests(unittest.TestCase):
+    def test_brief_requires_an_action_and_a_judge_only_note(self):
+        std = briefs.read_template()
+        self.assertIn("`action`", std)
+        self.assertIn("for the judge only", std)
+        self.assertIn("Do not invent activity to satisfy an action requirement", std)
+        self.assertIn("directly depicts the narrated task", std)
+        self.assertNotIn("not an everyday action by itself", std)
+        com = briefs.read_template(COMPACT)
+        self.assertIn("only when it is the narrated task", com)
+        self.assertIn("Never invent activity", com)
+        self.assertIn('"action"', com)
+        self.assertIn('"note"', com)
+        self.assertIn("for the judge only", com)
+
+    def test_judge_gets_action_and_note_and_has_a_no_action_fault(self):
+        shot = {"asset": "S01_01_SCN_ZI.png", "cues": "1-1",
+                "prompt": "A woman reads a statement.",
+                "action": "walks to the door and taps Pay on her phone",
+                "note": "Maya, actual event, her flat entrance"}
+        text = studio.alignment_prompt([shot], {1: "She pays the bill."})
+        self.assertIn('planned action: "walks to the door', text)
+        self.assertIn("note for you only", text)
+        self.assertIn("NO ACTION:", text)
+        self.assertIn("first check them against the narration", text)
+        self.assertIn("Do not demand activity", text)
+        plain = studio.alignment_prompt(
+            [{"asset": "a_ZI.png", "cues": "1-1", "prompt": "x"}], {1: "y"})
+        self.assertNotIn("planned action:", plain)
+
+    def test_cue_table_has_the_five_columns(self):
+        data = {"shots": [{"cues": "1-2", "asset": "S01_01_SCN_ZI.png",
+                           "action": "cooks | dinner", "note": "Maya, actual"}]}
+        table = studio.cue_table_text(data, {1: "She cooks.", 2: "Then eats."})
+        self.assertIn("| Shot | Cues | Narration | Action | Note |", table)
+        self.assertIn("| S01_01_SCN_ZI.png | 1-2 | She cooks. Then eats. | "
+                      "cooks / dinner | Maya, actual |", table)

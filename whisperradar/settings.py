@@ -550,7 +550,7 @@ SPEC: list[dict] = [
                 "ref's prompt) and put them where the engine can use them. "
                 "Refs you DO supply are used as-is, with whatever name they "
                 "have; generated ones are named per the CH_/BG_/OBJ_ "
-                "convention, capped at 20 per production. Off = the refs "
+                "convention, capped at 100 per production. Off = the refs "
                 "stage is skipped and those refs are simply not attached.",
     },
     {
@@ -646,12 +646,22 @@ SPEC.append({
             "or without Simple mode.",
 })
 
+SPEC.append({
+    "key": "show_storyboard", "type": "bool", "default": True,
+    "label": "Show the Storyboard section",
+    "help": "On: the Storyboard box (decide what each shot shows first, then "
+            "write the image prompts from it) appears in stage 5 of a "
+            "production. Off: the box is hidden. Nothing is deleted - an "
+            "existing storyboard stays on disk and is used as before - and "
+            "ticking it again brings the box back.",
+})
+
 SPEC_BY_KEY = {entry["key"]: entry for entry in SPEC}
 
 # The settings page renders these groups in order; a key missing from every
 # group lands in "Other", so adding a SPEC entry can never hide it.
 GROUPS: list[tuple[str, list[str]]] = [
-    ("Simple mode", ["simple_mode", "lean_script"]),
+    ("Simple mode", ["simple_mode", "lean_script", "show_storyboard"]),
     ("LLM", ["llm_default", "producer_llm_provider", "llm_fallback_provider",
              "ai33_api_key", "ai33_base_url"]),
     ("Auto Run", [

@@ -47,7 +47,7 @@ class CompactBriefTests(unittest.TestCase):
 
     def test_no_rule_was_dropped(self):
         must = ["BIBLE GATE", "covered exactly once", "last shot ends at the final cue", "1800 CHARACTERS",
-                "2400 CHARACTERS", "20 invented refs", "^(CH|BG|OBJ)_[A-Z0-9]+(_[A-Z0-9]+)*$", "never more than **10**",
+                "2400 CHARACTERS", "100 invented refs", "^(CH|BG|OBJ)_[A-Z0-9]+(_[A-Z0-9]+)*$", "never more than **10**",
                 "first name is the dominant subject", "INF and PROC diagrams carry none", "must be cast",
                 "One cue = one image is a failure", "a number, statistic or price arrives", "numerical coverage is REQUIRED",
                 "Never rename or renumber", "Never end mid-token", "Real, named people", "Real brands, logos",

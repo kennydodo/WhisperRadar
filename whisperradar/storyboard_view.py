@@ -224,6 +224,26 @@ def _by_row(messages) -> dict[int, list[str]]:
     return out
 
 
+RESIZE_JS = """<script>
+(function(){var t=document.getElementById('sbtable');if(!t)return;
+var cols=t.querySelectorAll('col'),ths=t.querySelectorAll('thead th'),K='wr_sb_cols2';
+var DEF=[80,440,210,210,130,400,170];
+function load(){try{return JSON.parse(localStorage.getItem(K)||'[]')}catch(e){return []}}
+function save(){try{localStorage.setItem(K,JSON.stringify(Array.prototype.map.call(cols,
+function(c){return parseInt(c.style.width,10)})))}catch(e){}}
+var w=load();for(var i=0;i<cols.length;i++){if(w[i]>=40)cols[i].style.width=w[i]+'px'}
+ths.forEach(function(th,i){var h=document.createElement('div');h.className='rz';
+h.title='Drag to resize, double-click to reset';th.appendChild(h);
+h.addEventListener('mousedown',function(e){e.preventDefault();var x=e.clientX,
+w0=parseInt(cols[i].style.width,10)||th.offsetWidth;h.classList.add('on');
+function mv(ev){cols[i].style.width=Math.max(40,w0+ev.clientX-x)+'px'}
+function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);
+h.classList.remove('on');save()}
+document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up)});
+h.addEventListener('dblclick',function(){cols[i].style.width=DEF[i]+'px';save()})})})();
+</script>"""
+
+
 def render_edit_html(sb: dict, title: str, pid: int, cues: dict[int, str],
                      statuses, types, stale=(), msg: str = "", error: str = "",
                      provided=(), cap: int = 20) -> str:
@@ -245,10 +265,25 @@ def render_edit_html(sb: dict, title: str, pid: int, cues: dict[int, str],
             "button.p{padding:7px 14px;border:0;border-radius:6px;background:#2b5cd6;color:#fff;cursor:pointer}"
             "button.s{padding:7px 14px;border:1px solid #bbb;border-radius:6px;background:#fff;cursor:pointer}"
             ".note{padding:8px 12px;border-radius:6px;margin:6px 0}"
+            "#sbwrap{overflow-x:auto}#sbtable{table-layout:fixed;width:auto;min-width:100%}"
+            "#sbtable th{position:relative;top:auto;overflow:hidden}"
+            ".rz{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize}"
+            ".rz:hover,.rz.on{background:#2b5cd6}"
+            "tr.rf>td{background:#fff1f0}tr.rw>td{background:#fffaeb}tr.rp>td{background:#fff4e5}"
+            "tr.rf>td.id{box-shadow:inset 4px 0 #d92d20}tr.rw>td.id{box-shadow:inset 4px 0 #f79009}"
+            "tr.rp>td.id{box-shadow:inset 4px 0 #7a5af8}"
+            ".pf{color:#5925dc}.tags a{display:inline-block;margin:1px 3px 1px 0;padding:1px 8px;"
+            "border-radius:10px;font-size:12px;text-decoration:none;color:#fff}"
+            ".tags a.f{background:#d92d20}.tags a.w{background:#f79009}.tags a.p{background:#7a5af8}"
+            "table.only tbody tr:not(.rf):not(.rw):not(.rp){display:none}"
             f"</style></head><body><h1>Storyboard - {_e(title)}</h1>")
     state = ("<span class='state' style='background:#d1fadf;color:#067647'>approved</span>"
              if approved else
              "<span class='state' style='background:#fef0c7;color:#93370d'>draft - not approved</span>")
+    pf_by_id, pf_general = sbmod.prompt_faults_by_id(sb.get("prompt_faults"))
+    f_ids = {ids[n - 1] for n in faults}
+    w_ids = {ids[n - 1] for n in warns} - f_ids
+    p_ids = {i for i in pf_by_id if i in set(ids)}
     out = [head, f"<div class='sum'>{len(rows)} rows · {state} · "
            f"{len(sb.get('faults') or [])} fault(s) · {len(sb.get('warnings') or [])} warning(s). "
            + ("<b>Structural checks passed; narration alignment still needs review.</b> "
@@ -262,6 +297,22 @@ def render_edit_html(sb: dict, title: str, pid: int, cues: dict[int, str],
         out.append(f"<div class='note' style='background:#fee4e2'>{_e(error)}</div>")
     for g in general:
         out.append(f"<div class='note' style='background:#fee4e2'>{_e(g)}</div>")
+    def tags(label, cls, group):
+        if not group:
+            return ""
+        links = "".join(f"<a class='{cls}' href='#{i}'>{i}</a>" for i in ids if i in group)
+        return f"<div><b>{label} ({len(group)}):</b> {links}</div>"
+    summary = (tags("Faults in the storyboard", "f", f_ids)
+               + tags("Warnings", "w", w_ids)
+               + tags("Problems from the last prompt run", "p", p_ids))
+    if summary or pf_general:
+        out.append("<div class='note tags' style='background:#fff;border:1px solid #ddd'>"
+                   + summary
+                   + "".join(f"<div class='pf'>Last prompt run: {_e(g)}</div>" for g in pf_general)
+                   + "<label style='display:block;margin-top:4px'><input type='checkbox' "
+                     "onchange=\"document.getElementById('sbtable').classList.toggle('only',"
+                     "this.checked)\"> Show only rows with a fault, warning or prompt problem"
+                     "</label></div>")
     if stale:
         out.append("<div class='note' style='background:#fef0c7'>"
                    f"{len(stale)} shot(s) changed after their prompt was written: "
@@ -271,8 +322,12 @@ def render_edit_html(sb: dict, title: str, pid: int, cues: dict[int, str],
                "<div class='btns'><button class='s' type='submit'>Save and check</button>"
                f"<button class='p' type='submit' formaction='/studio/{pid}/storyboard/approve'>"
                "Approve storyboard</button></div>"
-               "<table><thead><tr><th>Shot</th><th>Narration (cues)</th><th>Who</th><th>Where</th>"
-               "<th>Status</th><th>Action</th><th>Scene / type / motion</th></tr></thead><tbody>")
+               "<div id='sbwrap'><table id='sbtable'><colgroup>"
+               "<col style='width:80px'><col style='width:440px'><col style='width:210px'>"
+               "<col style='width:210px'><col style='width:170px'><col style='width:130px'><col style='width:400px'>"
+               "<col style='width:170px'></colgroup>"
+               "<thead><tr><th>Shot</th><th>Narration (cues)</th><th>Who</th><th>Where</th>"
+               "<th>Objects</th><th>Status</th><th>Action</th><th>Scene / type / motion</th></tr></thead><tbody>")
     for n, r in enumerate(rows, 1):
         a, _, z = (r.get("cues") or "").partition("-")
         try:
@@ -284,22 +339,30 @@ def render_edit_html(sb: dict, title: str, pid: int, cues: dict[int, str],
         flags += "".join(f"<div class='m'>⚠ {_e(w)}</div>" for w in warns.get(n, []))
         if r.get("asset") in stale:
             flags += "<div class='bad'>changed after its prompt was written</div>"
+        flags += "".join(f"<div class='pf'>prompt: {_e(x)}</div>" for x in pf_by_id.get(ids[n - 1], []))
+        cls = ("rf" if n in faults else "rw" if n in warns else "rp" if ids[n - 1] in p_ids else "")
         opts = "".join(f"<option value='{s}'{' selected' if r.get('status') == s else ''}>{s}</option>"
                        for s in ("",) + tuple(statuses))
         tsel = "".join(f"<option{' selected' if r.get('type') == t else ''}>{t}</option>" for t in types)
         out.append(
-            f"<tr><td class='id'>{_e(ids[n - 1])}<div class='m'>{_e(r.get('cues'))}</div></td>"
+            f"<tr id='{ids[n - 1]}' class='{cls}'><td class='id'>{_e(ids[n - 1])}<div class='m'>{_e(r.get('cues'))}</div></td>"
             f"<td>{_e(narr) or '<span class=u>cues unknown</span>'}"
             f"<details><summary>starts at</summary><textarea name='starts_with_{n}'>{_e(r.get('starts_with'))}</textarea></details></td>"
             f"<td><input class='c' name='who_{n}' value='{_e(', '.join(r.get('who') or []))}'></td>"
             f"<td><input class='c' name='where_{n}' value='{_e(r.get('where'))}'></td>"
+            f"<td><input class='c' name='objects_{n}' value='{_e(', '.join(r.get('objects') or []))}'></td>"
             f"<td><select name='status_{n}'>{opts}</select></td>"
             f"<td><textarea name='action_{n}'>{_e(r.get('action'))}</textarea>{flags}</td>"
-            f"<td><input class='c' style='width:48px' name='scene_{n}' value='{_e(r.get('scene'))}'> "
-            f"<select name='type_{n}'>{tsel}</select> "
-            f"<input class='c' style='width:48px' name='motion_{n}' value='{_e(r.get('motion'))}'></td></tr>")
+            f"<td style='white-space:nowrap'><input class='c' style='width:34px;padding:4px 2px;text-align:center' name='scene_{n}' value='{_e(r.get('scene'))}'> "
+            f"<select name='type_{n}' style='width:62px;padding:4px 0'>{tsel}</select> "
+            f"<input class='c' style='width:38px;padding:4px 2px;text-align:center' name='motion_{n}' value='{_e(r.get('motion'))}'></td></tr>")
     chars = sbmod.sync_characters(rows, sb.get("characters"))
     locs = sbmod.sync_locations(rows, sb.get("locations"))
+    objs = sbmod.sync_objects(rows, sb.get("objects"))
+    obj_n: dict = {}
+    for r in rows:
+        for o in r.get("objects") or []:
+            obj_n[o] = obj_n.get(o, 0) + 1
     who_n: dict = {}
     where_n: dict = {}
     for r in rows:
@@ -308,7 +371,8 @@ def render_edit_html(sb: dict, title: str, pid: int, cues: dict[int, str],
         w = (r.get("where") or "").strip()
         if w:
             where_n[w] = where_n.get(w, 0) + 1
-    out.append("</tbody></table>")
+    out.append("</tbody></table></div>")
+    out.append(RESIZE_JS)
     out.append("<h2>Characters and their references</h2><div class='sum'>Each shot gets exactly the "
                "references of the people in its Who column. List one or more reference names "
                "separated by commas (CH_JOE, CH_JOE_OLDER). Family members and age versions get "
@@ -331,7 +395,19 @@ def render_edit_html(sb: dict, title: str, pid: int, cues: dict[int, str],
         out.append(f"<tr><td>{_e(w)}<input type='hidden' name='loc_where_{i}' value='{_e(w)}'></td>"
                    f"<td>{where_n.get(w, 0)}</td>"
                    f"<td><input class='c' style='width:360px' name='loc_id_{i}' value='{_e(bg)}'></td></tr>")
-    names = {x for v in chars.values() for x in v} | {v for v in locs.values() if v}
+    out.append("</tbody></table>")
+    out.append("<h2>Objects and their references</h2><div class='sum'>An object listed in "
+               f"{sbmod.MIN_OBJECT_ROWS} or more shots gets an OBJ_ reference so it looks the same "
+               "every time, and that reference is attached to each shot that lists it. Edit the "
+               "Objects column above to add or fix objects. Give two spellings of one object the "
+               "same name to merge them. Empty = no reference.</div>"
+               "<table><thead><tr><th>Object</th><th>Shots</th><th>Reference</th></tr></thead><tbody>")
+    for i, (o, ob) in enumerate(sorted(objs.items(), key=lambda kv: (-obj_n.get(kv[0], 0), kv[0])), 1):
+        out.append(f"<tr><td>{_e(o)}<input type='hidden' name='obj_name_{i}' value='{_e(o)}'></td>"
+                   f"<td>{obj_n.get(o, 0)}</td>"
+                   f"<td><input class='c' style='width:360px' name='obj_id_{i}' value='{_e(ob)}'></td></tr>")
+    names = {x for v in chars.values() for x in v} | {v for v in locs.values() if v} \
+        | {v for v in objs.values() if v}
     new = sorted(names - set(provided))
     over = len(new) - cap
     style = "background:#fee4e2" if over > 0 else "background:#d1fadf"

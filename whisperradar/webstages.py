@@ -1723,13 +1723,9 @@ def _storyboard_inputs(cfg, pid: int):
     return ctx, plan, profile, cap, tol, allowed
 
 
-def run_storyboard(cfg, pid: int, transport, writer: str = "zai",
-                   log: Callable[[str], None] = print,
-                   should_stop: Callable[[], bool] = lambda: False,
-                   same_chats: bool = False) -> dict:
-    """Pass 1: the writer returns storyboard ROWS (who, where, status, action; no
-    prompt). The app finds each row's cue range, runs the checks and saves
-    storyboard.json as an unapproved draft. shotlist.json is never touched."""
+def _storyboard_parts(cfg, pid: int):
+    """Everything the pass-1 storyboard prompt is built from (shared by the web-chat
+    run and the copy-for-an-external-LLM button, so both send the same prompt)."""
     from . import elements
     ctx, plan, profile, cap, tol, allowed = _storyboard_inputs(cfg, pid)
     cues, pdir = plan["cues"], ctx["pdir"]
@@ -1739,9 +1735,33 @@ def run_storyboard(cfg, pid: int, transport, writer: str = "zai",
     min_words = (beatsmod.min_words_per_beat(min_hold, narration, plan["total_s"])
                  if min_hold else 0)
     elements_md = elements.load_text(pdir)
-    channel_context = ep.planning_context_prompt(
-        cfg, ctx, plan, "Read the NARRATION below; rows use exact opening words instead of cue numbers.")
+    channel_context = ep.storyboard_context(cfg, ctx, plan)
     animation_note = ep._animation_note(ctx.get("eff", {}), cues)
+    return (ctx, plan, profile, cap, tol, allowed, cues, pdir, narration, max_words,
+            min_words, elements_md, channel_context, animation_note)
+
+
+def storyboard_prompt_text(cfg, pid: int) -> str:
+    """The exact pass-1 prompt, for copying into an external LLM. No chat, no job."""
+    (ctx, plan, profile, cap, tol, allowed, cues, pdir, narration, max_words,
+     min_words, elements_md, channel_context, animation_note) = _storyboard_parts(cfg, pid)
+    return sbmod.prompt(beatsmod.sentences(cues), elements_md, ctx["visual_style"],
+                        ctx["bible"], allowed, cap, max_words,
+                        channel_context=channel_context, min_words=min_words,
+                        animation_note=animation_note,
+                        min_hold_s=getattr(profile, "min_hold", None) or 0,
+                        timing=plan.get("narration") or "")
+
+
+def run_storyboard(cfg, pid: int, transport, writer: str = "zai",
+                   log: Callable[[str], None] = print,
+                   should_stop: Callable[[], bool] = lambda: False,
+                   same_chats: bool = False) -> dict:
+    """Pass 1: the writer returns storyboard ROWS (who, where, status, action; no
+    prompt). The app finds each row's cue range, runs the checks and saves
+    storyboard.json as an unapproved draft. shotlist.json is never touched."""
+    ctx, plan, profile, cap, tol, allowed, cues, pdir, narration, max_words, \
+        min_words, elements_md, channel_context, animation_note = _storyboard_parts(cfg, pid)
 
     def dump(name: str, text: str) -> None:
         _dump(cfg, pid, name, text)
@@ -1754,7 +1774,9 @@ def run_storyboard(cfg, pid: int, transport, writer: str = "zai",
         text = sbmod.prompt(beatsmod.sentences(cues), elements_md, ctx["visual_style"],
                             ctx["bible"], allowed, cap, max_words,
                             channel_context=channel_context, min_words=min_words,
-                            animation_note=animation_note)
+                            animation_note=animation_note,
+                            min_hold_s=getattr(profile, "min_hold", None) or 0,
+                        timing=plan.get("narration") or "")
         dump("storyboard_prompt", text)
         return text
 
@@ -1837,8 +1859,9 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
     have = sorted(set(plan_meta.get("refs", {})) | set(supplied))
     characters = sbmod.sync_characters(rows, sb.get("characters"), known=have)
     locations = sbmod.sync_locations(rows, sb.get("locations"))
+    objects = sbmod.sync_objects(rows, sb.get("objects"))
     # the references of every row are decided by the reviewed maps, not by the writer
-    row_refs = [sbmod.expected_refs(r, characters, locations) if plan["allow_refs"] else []
+    row_refs = [sbmod.expected_refs(r, characters, locations, objects) if plan["allow_refs"] else []
                 for r in rows]
     if plan["allow_refs"]:
         ref_budget = max(200, studio.FLOWBATCH_MAX_PROMPT_CHARS - (len(style) + 1 if style else 0))
@@ -1847,6 +1870,8 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
                                     if isinstance(v, str) and v.strip()}
         todo = [x for x in needed if x not in provided]
         if len(todo) > studio.REFS_ON_THE_FLY_CAP:
+            sbmod.set_prompt_faults(pdir, [f"{len(todo)} new references are needed and the cap "
+                                           f"is {studio.REFS_ON_THE_FLY_CAP}: {', '.join(todo)}"])
             raise StageFailed(
                 f"The reviewed character and place maps need {len(todo)} new references and "
                 f"the cap is {studio.REFS_ON_THE_FLY_CAP}. Nothing was sent to the writer. Open "
@@ -1861,7 +1886,8 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
                      + (", ".join(todo) or "none")
                      + ". A CH_ prompt describes the person alone on a plain neutral "
                        "background; a BG_ prompt describes the empty location with its own "
-                       "furniture and no people. Do not invent other references.")
+                       "furniture and no people; an OBJ_ prompt describes the single object "
+                       "alone, empty, on a plain background. Do not invent other references.")
     else:
         refs_note = "References are disabled for this channel: omit `refs` everywhere."
 
@@ -1916,6 +1942,7 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
         if plan["allow_refs"]:
             data["characters"] = {k: v for k, v in characters.items() if v}
             data["locations"] = {k: v for k, v in locations.items() if v}
+            data["objects"] = {k: v for k, v in objects.items() if v}
         if not plan["allow_refs"] and studio.shotlist_uses_refs(data):
             faults.append("References are disabled for this channel: remove refs/refPrompts "
                           "registries and refs on every image.")
@@ -1937,19 +1964,25 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
                                 f"storyboard, round {rnd}", advance=True)
             sb_rows = []
             compiled = {}
-            for r, nm in zip(rows, names):
+            compiled_refs = {}
+            for r, nm, rr in zip(rows, names, row_refs):
                 d = dict(r, asset=nm)
                 sb_rows.append(d)
                 compiled[nm] = sbmod.row_hash(r)
+                if plan["allow_refs"]:          # references off: nothing to track
+                    compiled_refs[nm] = list(rr)
             sbmod.save(pdir, sb_rows, ranges, style, [], sb.get("warnings") or [],
                        approved=True, compiled=compiled,
-                       characters=characters, locations=locations)
+                       characters=characters, locations=locations, objects=objects,
+                       compiled_refs=compiled_refs)
+            sbmod.set_prompt_faults(pdir, [])
             log(f"round {rnd}: no faults - shotlist saved ({len(data['shots'])} shots)"
                 + (f"; coverage gap: {gap}" if gap else "; next stage unlocked"))
             return data
         log(f"round {rnd}: {len(faults)} fault(s): " + " | ".join(f[:140] for f in faults[:3]))
         # the complete list and the candidate that failed, for inspection
         dump(f"storyboard_prompts_faults_round{rnd}", "\n".join(faults))
+        sbmod.set_prompt_faults(pdir, [sbmod.relabel(f, sbmod.row_ids(rows)) for f in faults])
         dump(f"storyboard_prompts_candidate_round{rnd}",
              json.dumps(data, ensure_ascii=False, indent=1))
         key = "\n".join(faults)

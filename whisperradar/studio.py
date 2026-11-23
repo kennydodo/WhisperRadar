@@ -6768,6 +6768,7 @@ def shotlist_structural_faults(data: dict, cue_count: int,
     # against names that merely appear in the prompt (a host, a person on the phone).
     sb_chars = data.get("characters")
     sb_places = data.get("locations") if isinstance(data.get("locations"), dict) else {}
+    sb_objects = data.get("objects") if isinstance(data.get("objects"), dict) else {}
     sb_built = (isinstance(sb_chars, dict) and bool(shots)
                 and all(isinstance(sh.get("who"), list) for sh in shots))
     if sb_built:
@@ -6785,6 +6786,10 @@ def shotlist_structural_faults(data: dict, cue_count: int,
             bg = ref_name(sb_places.get(str(sh.get("where") or "").strip()) or "")
             if bg:
                 want.append(bg)
+            for o in sh.get("objects") or []:
+                ob = ref_name(sb_objects.get(o) or "")
+                if ob:
+                    want.append(ob)
             lack = [x for x in dict.fromkeys(want) if x not in attached]
             extra = [x for x in attached
                      if x.startswith(("CH_", "BG_")) and x not in want]

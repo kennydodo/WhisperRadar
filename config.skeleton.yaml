@@ -35,6 +35,9 @@ whisper:
 # live in the database, managed in the dashboard under Settings > LLM
 # providers and Settings > LLM (default LLM).
 studio:
+  # Folder with Piper voices (*.onnx + *.onnx.json) for the free local
+  # "Listen locally" preview in the script stage. See whisperradar/local_tts.py.
+  local_tts_voices_dir: data/piper_voices
   # Video engine for the merge stage: python = in-repo port, csharp = ImgToVideo.Cli.
   video_engine: python
   # Target script length in words. null = match the source transcript's

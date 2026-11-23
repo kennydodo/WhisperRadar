@@ -38,7 +38,6 @@ from flask import (
 
 from . import external_prompts, flow_accounts, prodfiles, prodtransfer
 from . import textfiles
-from . import local_tts
 from . import storyboard_view
 from . import storyboard as storyboard_mod
 from . import frames
@@ -3744,7 +3743,9 @@ def create_app(cfg) -> Flask:
             if not prod:
                 abort(404)
             eff = settings.for_production(conn, prod)
-            simple_mode = bool(settings.load(conn).get("simple_mode"))
+            _glob = settings.load(conn)
+            simple_mode = bool(_glob.get("simple_mode"))
+            show_storyboard = bool(_glob.get("show_storyboard", True))
             own_channels = db.list_own_channels(conn)
             prod_label = db.production_label(prod, db.channel_codes(own_channels))
             steps = db.latest_steps(conn, pid)
@@ -3954,6 +3955,7 @@ def create_app(cfg) -> Flask:
             source_video=source_video, attach_sources=attach_sources,
             human_review=human_review.load(pdir),
             simple_mode=simple_mode,
+            show_storyboard=show_storyboard,
             review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
             llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
@@ -3968,10 +3970,7 @@ def create_app(cfg) -> Flask:
                         else f"channel: {eff['own_channel_name']}"
                         if eff["own_channel_name"] and eff["voice"]
                         else ""), ai33_ready=bool(ai33.api_key(cfg)),
-            local_tts_voices=local_tts.list_voices(cfg),
-            local_tts_hint=local_tts.setup_hint(cfg),
             storyboard_state=storyboard_state_for(pdir),
-            local_tts_speed=float(eff.get("narration_speed") or 1.0),
             flow_refs=[p.name for p in sorted((pdir / "refs").glob("*"))
                        if p.is_file()] if (pdir / "refs").exists() else [],
             flow_upscale_default=autorun._upscale_for(eff),
@@ -4764,27 +4763,6 @@ def create_app(cfg) -> Flask:
         sjob.start(worker, "tts")
         return _studio_url(pid, msg="TTS started")
 
-    @app.post("/studio/<int:pid>/audio/listen")
-    def studio_audio_listen(pid):
-        """Free local preview of the script (Piper). Own thread, not the
-        studio job slot, so a running render is never blocked or touched."""
-        pdir = studio.prod_dir(cfg, pid)
-        script = studio.find_script(pdir)
-        if not script:
-            return _studio_url(pid, error="Write the script first")
-        err = local_tts.start(cfg, pid, pdir, script,
-                              (request.form.get("local_voice") or "").strip(),
-                              request.form.get("local_speed"))
-        if err:
-            return _studio_url(pid, error=err)
-        return _studio_url(pid, msg="Local preview started")
-
-    @app.get("/studio/<int:pid>/audio/listen.json")
-    def studio_audio_listen_status(pid):
-        st = local_tts.get_status(pid)
-        st["ready"] = local_tts.preview_path(studio.prod_dir(cfg, pid)).is_file()
-        return st
-
     @app.post("/studio/<int:pid>/srt/generate")
     def studio_srt_generate(pid):
         if sjob.running:
@@ -5275,6 +5253,15 @@ def create_app(cfg) -> Flask:
                     cfg, pid, script, title, style, notes, words, files)
                 return text, None
 
+            if kind == "storyboard_judge":
+                return external_prompts.storyboard_judge_prompt(cfg, pid, files)
+            if kind == "storyboard":
+                from . import webstages
+                try:
+                    return webstages.storyboard_prompt_text(cfg, pid), None
+                except KeyError as exc:
+                    raise external_prompts.PromptError(
+                        f"Could not build the storyboard prompt ({exc})")
             if kind == "shot_planner":
                 return external_prompts.shotlist_planner_prompt(
                     cfg, pid, files), None
@@ -5666,6 +5653,35 @@ def create_app(cfg) -> Flask:
         return _studio_url(
             pid, msg="Killed: " + ", ".join(report["killed"])
                      + ". Nothing will retry; rendered images are kept.")
+
+    # one Stop for every running task EXCEPT audio (tts) and subtitles (srt alignment)
+    _UNSTOPPABLE_KINDS = ("tts", "srt alignment")
+    _KILL_KINDS = ("image rendering", "image generation", "gallery recovery",
+                   "local upscale", "reference images", "motion clips")
+
+    @app.post("/studio/<int:pid>/job/stop")
+    def studio_job_stop(pid):
+        """Stop whatever is running (render, storyboard, shotlist, references,
+        motion, export...). Audio and subtitle jobs are left alone. The cancel flag
+        is set first; image-engine jobs also have their process tree killed."""
+        kind = str(sjob.kind or "")
+        if not sjob.running:
+            return _studio_url(pid, error="Nothing is running")
+        if kind.startswith(_UNSTOPPABLE_KINDS):
+            return _studio_url(pid, error=f"'{kind}' cannot be stopped from here")
+        if "auto-run" in kind and kind != "auto-run":
+            return _studio_url(pid, error="Use the auto-run stop button for this run")
+        sjob.cancel = True
+        if kind.startswith(_KILL_KINDS) or kind == "auto-run":
+            report = studio.kill_image_batch(studio.prod_dir(cfg, pid))
+            tail = ("Killed: " + ", ".join(report["killed"]) + "."
+                    if report["killed"] else "No process was running; it will not retry.")
+            return _studio_url(pid, msg="Stopped. " + tail + " Finished images are kept.")
+        if "web chat" in kind or kind.startswith("explainer"):
+            return _studio_url(pid, msg="Stopping after the current chat reply or scene; "
+                                        "your saved files are not changed.")
+        return _studio_url(pid, msg="Stop requested; it ends at the next safe point "
+                                    "(finished work is kept).")
 
     @app.post("/studio/<int:pid>/images/recover")
     def studio_images_recover(pid):
@@ -6081,15 +6097,45 @@ def create_app(cfg) -> Flask:
         approved = bool(approve and not faults)
         keep = sb.get("compiled") or {}
         chars, locs = storyboard_mod.apply_maps(request.form)
+        objs = storyboard_mod.apply_object_map(request.form)
         storyboard_mod.save(pdir, rows, ranges, sb.get("style", ""), faults, warns,
                             approved=approved, compiled=keep,
-                            characters=chars, locations=locs)
+                            characters=chars, locations=locs, objects=objs)
         if approve and faults:
             return redirect(f"/studio/{pid}/storyboard/edit?error=" + quote(
                 f"Not approved: {len(faults)} fault(s) left. Fix them first."))
         return redirect(f"/studio/{pid}/storyboard/edit?msg=" + quote(
             "Approved. You can write the prompts now." if approved else
             f"Saved and checked: {len(faults)} fault(s), {len(warns)} warning(s). Not approved."))
+
+    @app.post("/studio/<int:pid>/storyboard/import")
+    def studio_storyboard_import(pid):
+        """Rows written by an external LLM (from the copied prompt), pasted back.
+        They are checked like the app's own rows and saved as an UNAPPROVED
+        storyboard; the previous one is kept as storyboard_before.json."""
+        from . import webstages
+        pdir = studio.prod_dir(cfg, pid)
+        try:
+            ctx, plan, profile, cap, tol, allowed = webstages._storyboard_inputs(cfg, pid)
+        except Exception as e:
+            return _studio_url(pid, error=f"Cannot check the rows: {e}"[:300])
+        got = storyboard_mod.parse_many(request.form.get("reply") or "", allowed)
+        if not got:
+            return _studio_url(pid, error="No storyboard rows found in the pasted text. "
+                               "Paste the whole reply, including the JSON with \"rows\".")
+        rows = got["rows"]
+        _s, ranges, faults, warns = storyboard_mod.check_rows(
+            rows, plan["cues"], allowed, cap, tol, profile=profile,
+            allow_reveal=profile.reveal)
+        old = storyboard_mod.path(pdir)
+        if old.is_file():
+            shutil.copyfile(old, Path(pdir) / "storyboard_before.json")
+        storyboard_mod.save(pdir, rows, ranges, got["style"] or ctx.get("visual_style", ""),
+                            faults, warns, approved=False)
+        from urllib.parse import quote
+        return redirect(f"/studio/{pid}/storyboard/edit?msg=" + quote(
+            f"Imported {len(rows)} rows: {len(faults)} fault(s), {len(warns)} warning(s). "
+            "Not approved - read it, fix what is flagged, then approve."))
 
     @app.post("/studio/<int:pid>/storyboard/save")
     def studio_storyboard_save(pid):

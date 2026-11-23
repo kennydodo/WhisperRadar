@@ -357,7 +357,13 @@
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
   {% if job.pause_reason and not job.running and job.pid == prod['id'] %}<div class="banner job">Auto-run paused: {{ job.pause_reason }} - handle it, then click Resume.</div>{% endif %}
   {% if job.summary and not job.running and job.pid == prod['id'] %}<div class="banner ok">{{ job.summary }}</div>{% endif %}
-  <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</div>
+  <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes
+    {% if job.running and not (job.kind or '').startswith(('tts', 'srt alignment')) %}
+    <form method="post" action="/studio/{{ prod['id'] }}/job/stop" style="display:inline; margin-left:10px"
+          onsubmit="return wrConfirmSubmit(this, 'Stop {{ job.kind|e }}? Finished work is kept; nothing already saved is overwritten.')">
+      <button type="submit" class="secondary" style="background:var(--red); color:#fff" title="Stop the running task (render, storyboard, shotlist, references, motion, export)">&#9632; Stop</button>
+    </form>
+    {% endif %}</div>
   <pre class="artifact" id="jobbox" style="display:none; max-height:180px; overflow-y:auto; font-size:12px; color:var(--muted)"></pre>
 
   {% set STAGE_DISPLAY = {'style': 'writing style', 'shots': ('plan' if explainer_mode else 'shotlist'), 'srt': 'subtitles',
@@ -683,57 +689,6 @@
         {% endif %}
       </details>
       {% endif %}
-      <div class="artifact" id="local_tts_box" style="margin-bottom:10px">
-        <strong>Listen locally (free, Piper)</strong>
-        <div class="muted" style="font-size:12px; margin:4px 0 8px">
-          Plays the saved script on your computer so you can check wording and pacing while you edit. It does not create or replace the production's audio (that still comes from your audio stage voice); save the script first to hear your latest edits.</div>
-        {% if local_tts_hint %}
-        <div class="warn" style="font-size:12px">{{ local_tts_hint }}</div>
-        {% else %}
-        <form class="row" method="post" action="/studio/{{ prod['id'] }}/audio/listen">
-          <select name="local_voice" title="Local Piper voice">
-            {% for v in local_tts_voices %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
-          </select>
-          <label class="muted" style="font-size:12px">speed
-            <input type="number" name="local_speed" min="0.5" max="2" step="0.05"
-                   value="{{ '%g' % local_tts_speed }}" style="width:70px"></label>
-          <button type="submit" class="secondary" id="local_tts_btn">Listen to the script</button>
-        </form>
-        <div id="local_tts_status" class="muted" style="font-size:12px; margin-top:6px"></div>
-        <audio id="local_tts_audio" controls style="display:none; margin-top:6px"></audio>
-        <script>
-        (function () {
-          const pid = {{ prod['id'] }};
-          const st = document.getElementById('local_tts_status');
-          const au = document.getElementById('local_tts_audio');
-          let shown = null;
-          function show(stamp) {
-            if (shown === stamp) return;
-            shown = stamp;
-            au.src = '/studio/file/' + pid + '/local_tts/preview.wav?t=' + (stamp || Date.now());
-            au.style.display = '';
-          }
-          function poll() {
-            fetch('/studio/' + pid + '/audio/listen.json').then(r => r.json()).then(j => {
-              if (j.state === 'running') {
-                st.textContent = 'Generating ' + j.done + ' / ' + j.total + ' paragraphs (' + j.voice + ')...';
-                setTimeout(poll, 1000);
-              } else if (j.state === 'error') {
-                st.textContent = 'Local preview failed: ' + j.error;
-              } else if (j.state === 'done') {
-                st.textContent = 'Ready: ' + Math.floor(j.seconds / 60) + ' min ' + Math.round(j.seconds % 60) + ' s at speed ' + j.speed + ' (' + j.voice + ').';
-                show(j.stamp);
-              } else if (j.ready) {
-                st.textContent = 'Previous local preview:';
-                show('old');
-              }
-            }).catch(() => {});
-          }
-          poll();
-        })();
-        </script>
-        {% endif %}
-      </div>
       <form method="post" action="/studio/{{ prod['id'] }}/script/save">
         <textarea name="script" placeholder="Write or paste your original script here...">{{ script_text }}</textarea>
         <div class="muted" data-counter-for="script" style="font-size:12px;margin-top:4px"></div>
@@ -1081,6 +1036,7 @@
       {% endif %}
       {% endmacro %}
       <style>details.substep > summary::before{content:"\25B8"; color:var(--muted)} details.substep[open] > summary::before{content:"\25BE"} details.substep > summary::-webkit-details-marker{display:none}</style>
+      {% if show_storyboard %}
       <details class="substep" data-key="storyboard" {{ 'open' if simple_mode else '' }} style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
         <summary style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; cursor:pointer">
           <b>Storyboard &middot; decide what each shot shows first</b>
@@ -1102,6 +1058,22 @@
           <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>{{ 'Write the storyboard again' if storyboard_state else 'Write the storyboard in web chat' }}</button>
           {% if storyboard_state %}<a class="btn secondary" style="font-size:12px" href="/studio/{{ prod['id'] }}/storyboard/edit" target="_blank">Review and edit the storyboard</a>{% endif %}
         </form>
+        <div class="extbox" style="margin-top:8px">
+          <div class="actions">
+            <button type="button" class="secondary" onclick="wrExt(this,'storyboard_judge')" title="Prompt for an external LLM to review the SAVED storyboard (rows, narration and reference maps). The app's own code checks are shown under the box; nothing is run.">Copy storyboard judge prompt</button>
+            <button type="button" class="secondary" onclick="wrExt(this,'storyboard')" title="The exact prompt the app sends to the web chat, with this channel's min/max hold, style, bible and narration. Nothing is run.">Copy storyboard prompt for an external LLM</button>
+            <span class="extmsg muted" style="font-size:12px"></span>
+          </div>
+          <div class="extfiles" style="display:none"></div>
+          <textarea class="extout" readonly style="min-height:120px; margin-top:6px" placeholder="The prompt appears here - use Copy."></textarea>
+          <pre class="extfaults warn" style="display:none; white-space:pre-wrap; font-size:12px; margin-top:6px"></pre>
+        </div>
+        <form method="post" action="/studio/{{ prod['id'] }}/storyboard/import" style="margin-top:8px"
+              onsubmit="return wrConfirmSubmit(this, 'Import these rows as the storyboard? It is saved as NOT approved{% if storyboard_state %}; the current storyboard is kept as storyboard_before.json{% endif %}. shotlist.json is not changed.')">
+          <label style="display:block; font-size:12px" class="muted">Paste the external LLM's reply here (the JSON with "rows"; several replies, e.g. after "continue", can be pasted one after another)</label>
+          <textarea name="reply" style="min-height:90px; width:100%" placeholder='{"rows": [...]}'></textarea>
+          <button type="submit" class="secondary" {{ 'disabled' if job.running else '' }}>Import rows as the storyboard</button>
+        </form>
         {% if storyboard_state and storyboard_state.approved %}
         <form class="row" method="post" action="/studio/{{ prod['id'] }}/webchat/storyboard-prompts" style="gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px"
               onsubmit="return wrConfirmSubmit(this, 'Write the image prompts from the approved storyboard? This replaces shotlist.json when the checks pass (the old one is kept as shotlist_before_storyboard.json).')">
@@ -1112,6 +1084,7 @@
         {% endif %}
         {{ stop_run(job, prod) }}
       </details>
+      {% endif %}
       {% if not simple_mode %}
       <details class="substep" data-key="elements" style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
         <summary style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; cursor:pointer">

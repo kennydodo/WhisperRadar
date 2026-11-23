@@ -28,6 +28,115 @@ def reply(rows):
     return "```json\n" + json.dumps({"rows": rows}) + "\n```"
 
 
+class ObjectRefTests(unittest.TestCase):
+    def rows(self, counts):
+        out = []
+        for name, n in counts.items():
+            out += [dict(THREE[0], objects=[name]) for _ in range(n)]
+        return out
+
+    def test_object_in_three_rows_gets_a_reference_fewer_do_not(self):
+        m = sb.sync_objects(self.rows({"oak table": 3, "red mug": 2, "OBJ_ACCORD": 4}))
+        self.assertEqual(m["oak table"], "OBJ_OAK_TABLE")
+        self.assertEqual(m["red mug"], "")
+        self.assertEqual(m["OBJ_ACCORD"], "OBJ_ACCORD")
+
+    def test_person_choices_are_kept_and_refs_are_attached_to_the_rows(self):
+        rows = self.rows({"oak table": 3})
+        m = sb.sync_objects(rows, {"oak table": "OBJ_KITCHEN_TABLE"})
+        self.assertEqual(m["oak table"], "OBJ_KITCHEN_TABLE")
+        refs = sb.expected_refs(rows[0], {"Joe": ["CH_JOE"]}, {"restaurant": "BG_RESTAURANT"}, m)
+        self.assertEqual(refs, ["CH_JOE", "BG_RESTAURANT", "OBJ_KITCHEN_TABLE"])
+
+    def test_old_rows_keep_their_hash_and_objects_change_it(self):
+        old = dict(THREE[0])
+        self.assertEqual(sb.row_hash(old), sb.row_hash(dict(old, objects=[])))
+        self.assertNotEqual(sb.row_hash(old), sb.row_hash(dict(old, objects=["car"])))
+
+    def test_prompt_asks_for_objects_and_the_three_row_rule(self):
+        text = sb.prompt("One.", "", "style", "", ["ZI"], 12.0, 30)
+        self.assertIn('"objects"', text)
+        self.assertIn("3 or more", text)
+
+    def test_review_page_has_an_objects_table_and_saves_it(self):
+        from whisperradar import storyboard_view as sv
+        rows = [dict(r, cues="1", objects=["oak table"]) for r in THREE]
+        data = {"rows": rows, "approved": False, "faults": [], "warnings": [],
+                "characters": {}, "locations": {}, "objects": sb.sync_objects(rows)}
+        page = sv.render_edit_html(data, "T", 1, {}, sb.STATUSES, beats.TYPE_CODES, [])
+        self.assertIn("Objects and their references", page)
+        self.assertIn("name='obj_id_1' value='OBJ_OAK_TABLE'", page)
+        self.assertEqual(sb.apply_object_map({"obj_name_1": "oak table", "obj_id_1": "kitchen table"}),
+                         {"oak table": "OBJ_KITCHEN_TABLE"})
+
+
+class PacingTests(unittest.TestCase):
+    def test_pacing_block_gives_the_row_floor(self):
+        from whisperradar import external_prompts as ep
+        import types
+        text = ep.storyboard_pacing(types.SimpleNamespace(min_hold=0), 100, 12)
+        self.assertIn("at least 9 rows", text)
+        self.assertIn("too few rows is rejected", text)
+        slow = ep.storyboard_pacing(types.SimpleNamespace(min_hold=10), 120, 30)
+        self.assertIn("about 4 to 12 rows", slow)
+        self.assertEqual(ep.storyboard_pacing(None, 0, 12), "")
+
+    def test_single_cue_rows_are_a_fault_when_the_channel_limits_them(self):
+        import dataclasses
+        from whisperradar import briefs
+        cues = make_cues(4.0)
+        words = [" ".join(c["text"].split()[:4]) for c in cues]
+        rows = [row(w) for w in words]
+        prof = dataclasses.replace(briefs.STANDARD, single_cue_share=0.3)
+        _s, _r, faults, _w = sb.check_rows(rows, cues, ["ZI"], 12.0, 2.4, profile=prof)
+        self.assertTrue(any("fragmentation" in f for f in faults), faults)
+        off = sb.check_rows(rows, cues, ["ZI"], 12.0, 2.4, profile=briefs.STANDARD)[2]
+        self.assertFalse(any("fragmentation" in f for f in off))
+
+
+class StrictWhoAndStaleTests(unittest.TestCase):
+    def check(self, who, prompt, refs):
+        rows = [{"who": who, "where": "kitchen", "status": "actual", "action": "x"}]
+        return sb.consistency_faults(rows, ["S01_01"], {1: {"prompt": prompt + " kitchen"}},
+                                     {who[0]: refs})
+
+    def test_owner_name_or_place_word_is_not_enough(self):
+        parents = ["CH_JOE_FATHER", "CH_JOE_MOTHER"]
+        self.assertTrue(self.check(["Joe's parents"], "Joe stands alone in the", parents))
+        self.assertTrue(self.check(["Joe's parents"], "Joe's father stands in the", parents))
+        self.assertEqual(self.check(["Joe's parents"], "His mother and father stand in the", parents), [])
+        self.assertEqual(self.check(["Joe's parents"], "Joe's parents stand in the", parents), [])
+        self.assertEqual(self.check(["Joe's mother"], "Mom stirs a pot in the", ["CH_JOE_MOTHER"]), [])
+        self.assertTrue(self.check(["clinic receptionist"], "Joe stands alone in the clinic", ["CH_CLINIC_RECEPTIONIST"]))
+        self.assertEqual(self.check(["clinic receptionist"], "A receptionist types in the", ["CH_CLINIC_RECEPTIONIST"]), [])
+        self.assertTrue(self.check(["Joe"], "Sam stands in the", ["CH_JOE"]))
+
+    def test_changing_a_reference_map_marks_the_shot_stale_but_old_files_are_not(self):
+        rows = [dict(THREE[0], where="kitchen", asset="S01_01_SCN_ZI.png")]
+        data = {"rows": rows, "compiled": {"S01_01_SCN_ZI.png": sb.row_hash(rows[0])},
+                "characters": {"Joe": ["CH_JOE"]}, "locations": {"kitchen": "BG_OLD"}}
+        self.assertEqual(sb.out_of_date(data), [])                      # no refs recorded: row only
+        data["compiled_refs"] = {"S01_01_SCN_ZI.png": ["CH_JOE", "BG_OLD"]}
+        self.assertEqual(sb.out_of_date(data), [])
+        data["locations"] = {"kitchen": "BG_NEW"}
+        self.assertEqual(sb.out_of_date(data), ["S01_01_SCN_ZI.png"])
+
+
+class StoryboardBriefTests(unittest.TestCase):
+    def test_only_the_what_to_show_sections_survive(self):
+        from whisperradar import briefs, studio
+        for name in ("brief_template.md", "brief_template_compact.md"):
+            text = (Path(briefs.__file__).parent / name).read_text(encoding="utf-8")
+            text = briefs.render_brief(text, briefs.STANDARD, "The host is Ava.")
+            out = briefs.storyboard_brief(text)
+            self.assertIn("SECTION 11A", out)
+            self.assertIn("SECTION 8", out)
+            self.assertIn("The host is Ava.", out)
+            for gone in ("SECTION 7 ", "SECTION 9", "SECTION 12", "BIBLE GATE", "shotlist.json"):
+                self.assertNotIn(gone, out, (name, gone))
+            self.assertLess(len(out), len(text) * 0.7)
+
+
 class ParseTests(unittest.TestCase):
     def test_rows_are_cleaned(self):
         got = sb.parse(reply([
@@ -224,6 +333,10 @@ class ShotIdAndMapTests(unittest.TestCase):
         self.assertEqual(loc["bungalow kitchen"], "BG_BUNGALOW_KITCHEN")
         self.assertEqual(loc["cafe"], "BG_CAFE")
 
+    def test_place_ids_drop_the_possessive(self):
+        rows = [{"where": "Frieda's kitchen"}] * sb.MIN_PLACE_ROWS
+        self.assertEqual(sb.sync_locations(rows)["Frieda's kitchen"], "BG_FRIEDA_KITCHEN")
+
     def test_expected_refs_are_the_people_then_the_place(self):
         chars = {"Joe": ["CH_JOE"], "Joe's parents": ["CH_JOE_FATHER", "CH_JOE_MOTHER"]}
         self.assertEqual(sb.expected_refs(self.ROWS[1], chars, {"kitchen": "BG_KITCHEN"}),
@@ -291,6 +404,7 @@ class RunTests(unittest.TestCase):
         for p in (mock.patch.object(ws.ep, "_context", return_value=ctx),
                   mock.patch.object(ws.ep, "_plan_inputs", return_value=plan),
                   mock.patch.object(ws.ep, "planning_context_prompt", return_value="CHANNEL TEST RULES"),
+                  mock.patch.object(ws.ep, "storyboard_context", return_value="CHANNEL TEST RULES"),
                   mock.patch.object(ws.ep, "shotlist_judge_prompt", return_value=("", [])),
                   mock.patch.object(ws, "_dump"),
                   mock.patch.object(ws, "save_shotlist",
@@ -303,7 +417,9 @@ class RunTests(unittest.TestCase):
         ws, pdir, asked, saved, t = self.setup([reply(THREE)])
         data = ws.run_storyboard(None, 1, t, "zai", log=lambda m: None)
         self.assertEqual(len(asked), 1)
-        self.assertIn("STORYBOARD ADAPTER", asked[0])
+        self.assertIn("CHANNEL RULES", asked[0])
+        self.assertIn("CHANNEL TEST RULES", asked[0])
+        self.assertNotIn("shotlist.json", asked[0])
         self.assertIn("You do NOT write image prompts", asked[0])
         self.assertFalse(data["approved"])
         self.assertEqual([r["cues"] for r in sb.load(pdir)["rows"]], ["1-2", "3-4", "5-6"])
@@ -433,7 +549,8 @@ class RouteTests(unittest.TestCase):
         f = {}
         for n, r in enumerate(sb.load(self.pdir)["rows"], 1):
             for k in sb.EDITABLE:
-                f[f"{k}_{n}"] = ", ".join(r[k]) if k == "who" else str(r[k])
+                f[f"{k}_{n}"] = (", ".join(r.get(k) or []) if k in ("who", "objects")
+                                 else str(r.get(k, "")))
         f.update(over)
         return f
 
@@ -463,6 +580,68 @@ class RouteTests(unittest.TestCase):
         self.seed()
         page = self.client.get(f"/studio/{self.pid}?stage=shots").data
         self.assertIn(b"Review and edit the storyboard", page)
+
+    def test_storyboard_box_follows_the_show_setting(self):
+        from whisperradar import db, settings
+        self.assertTrue(settings.SPEC_BY_KEY["show_storyboard"]["default"])
+        self.assertIn("show_storyboard", dict(settings.GROUPS)["Simple mode"])
+        for simple in ("0", "1"):
+            conn = db.connect(self.cfg.db_path)
+            db.set_setting(conn, "simple_mode", simple)
+            db.set_setting(conn, "show_storyboard", "1")
+            conn.close()
+            page = self.client.get(f"/studio/{self.pid}?stage=shots").data
+            self.assertIn(b'data-key="storyboard"', page)
+            conn = db.connect(self.cfg.db_path)
+            db.set_setting(conn, "show_storyboard", "0")
+            conn.close()
+            page = self.client.get(f"/studio/{self.pid}?stage=shots").data
+            self.assertNotIn(b'data-key="storyboard"', page)
+            self.assertNotIn(b"Copy storyboard prompt", page)
+            self.assertIn(b"Shotlist", page)
+
+    def test_copy_prompt_button_and_endpoint_match_the_chat_prompt(self):
+        page = self.client.get(f"/studio/{self.pid}?stage=shots").data
+        self.assertIn(b"Copy storyboard prompt for an external LLM", page)
+        from whisperradar import webstages, briefs
+        import types
+        prof = types.SimpleNamespace(min_hold=3, max_hold=12)
+        parts = ({"visual_style": "Flat doodles", "bible": ""}, self.plan, prof, 12.0, 0,
+                 ALLOWED, self.plan["cues"], self.pdir, "n", 30, 7, "", "CHANNEL RULES", "")
+        with mock.patch.object(webstages, "_storyboard_parts", return_value=parts):
+            r = self.client.post(f"/studio/{self.pid}/external-prompt",
+                                 data={"kind": "storyboard"})
+            self.assertEqual(r.status_code, 200)
+            j = r.get_json()
+            self.assertIn("STORYBOARD artist", j["prompt"])
+            self.assertIn("at least 3 seconds", j["prompt"])
+            self.assertIn("at most about 30 words", j["prompt"])
+            self.assertEqual(j["chars"], len(j["prompt"]))
+            self.assertEqual(j["prompt"], webstages.storyboard_prompt_text(self.cfg, self.pid))
+
+    def test_import_pasted_reply_saves_unapproved_and_keeps_old(self):
+        self.seed(approved=True)
+        one = reply(THREE[:2])
+        two = reply(THREE[2:])
+        cut = '```json\n{"rows": [{"starts_with": "never fini'
+        r = self.client.post(f"/studio/{self.pid}/storyboard/import",
+                             data={"reply": "Here you go:\n" + one + "\ncontinue\n" + two + cut})
+        self.assertIn(r.status_code, (302, 303))
+        data = sb.load(self.pdir)
+        self.assertEqual(len(data["rows"]), 3)
+        self.assertFalse(data["approved"])
+        self.assertTrue((self.pdir / "storyboard_before.json").is_file())
+
+    def test_import_refuses_text_without_rows(self):
+        self.seed(approved=True)
+        r = self.client.post(f"/studio/{self.pid}/storyboard/import",
+                             data={"reply": "sorry, I cannot do that"}, follow_redirects=True)
+        self.assertIn(b"No storyboard rows found", r.data)
+        self.assertTrue(sb.load(self.pdir)["approved"])
+
+    def test_generic_stop_route_refuses_when_nothing_runs(self):
+        r = self.client.post(f"/studio/{self.pid}/job/stop", follow_redirects=True)
+        self.assertIn(b"Nothing is running", r.data)
 
     def test_edit_page_needs_a_storyboard_then_shows_rows(self):
         r = self.client.get(f"/studio/{self.pid}/storyboard/edit", follow_redirects=True)
@@ -572,6 +751,28 @@ class RouteTests(unittest.TestCase):
         page = self.client.get(f"/studio/{self.pid}/storyboard/edit").data
         self.assertIn(b"remove ", page)
 
+    def test_review_page_marks_rows_with_problems_and_has_resizable_columns(self):
+        rows = [dict(r) for r in THREE]
+        sb.save(self.pdir, rows, [(1, 2), (3, 4), (5, 6)], "s",
+                faults=["row 1: action is missing"], warnings=["row 2: same posture"])
+        sb.set_prompt_faults(self.pdir, [
+            "2 image(s) do not carry the reviewed references: S02_01_SCN_ZO.png: missing BG_X; "
+            "S01_02_SCN_ZO.png: CH_Y is not in this shot", "21 new references, cap 20"])
+        page = self.client.get(f"/studio/{self.pid}/storyboard/edit").data.decode()
+        self.assertIn("class='rf'", page)
+        self.assertIn("class='rw'", page)
+        self.assertIn("class='rp'", page)
+        self.assertIn("href='#S01_01'", page)
+        self.assertIn("Problems from the last prompt run (2)", page)
+        self.assertIn("missing BG_X", page)
+        self.assertIn("Last prompt run: 21 new references", page)
+        self.assertIn("Show only rows with a fault", page)
+        self.assertIn("<colgroup>", page)
+        self.assertIn("col-resize", page)
+        # saving the page keeps the stored prompt problems until the next run
+        self.client.post(f"/studio/{self.pid}/storyboard/save", data=self.form())
+        self.assertEqual(len(sb.load(self.pdir)["prompt_faults"]), 2)
+
     def test_edit_after_prompts_marks_the_shot_out_of_date(self):
         rows = [dict(r, asset=f"A{i}.png") for i, r in enumerate(THREE)]
         sb.save(self.pdir, rows, [(1, 2), (3, 4), (5, 6)], "s", approved=True,
@@ -586,3 +787,75 @@ class RouteTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StoryboardJudgePromptTests(RouteTests):
+    def setUp(self):
+        super().setUp()
+        srt = "".join(f"{c['index']}\n{c['start']} --> {c['end']}\n{c['text']}\n\n"
+                      for c in self.plan["cues"])
+        (self.pdir / "subtitles.srt").write_text(srt, encoding="utf-8")
+
+    def post(self, **kw):
+        return self.client.post(f"/studio/{self.pid}/external-prompt",
+                                data={"kind": "storyboard_judge", **kw})
+
+    def test_needs_a_saved_storyboard(self):
+        r = self.post()
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("storyboard", r.get_json()["error"].lower())
+
+    def test_prompt_holds_rows_rules_and_reply_schema(self):
+        self.seed()
+        r = self.post()
+        self.assertEqual(r.status_code, 200, r.data)
+        p = r.get_json()["prompt"]
+        self.assertIn("S01_01", p)
+        self.assertIn("MAXIMUM HOLD", p)
+        self.assertIn('"verdict"', p)
+        self.assertIn("3 or more rows", p)
+
+    def test_local_faults_are_shown_not_sent(self):
+        self.seed(rows=[dict(THREE[0])])
+        d = self.post().get_json()
+        self.assertTrue(d.get("local_faults"))
+        self.assertNotIn(d["local_faults"][0], d["prompt"])
+
+
+for _n in [n for n in dir(RouteTests) if n.startswith("test_")]:
+    setattr(StoryboardJudgePromptTests, _n, None)
+
+
+class TimingBlockTests(unittest.TestCase):
+    def test_cue_seconds_are_given_for_checking_not_as_rows(self):
+        t = sb.prompt("One. Two.", "", "style", "", ALLOWED, 20, 50, min_words=22,
+                      min_hold_s=8, timing="1: One. (2.0s)\n2: Two. (3.1s)")
+        self.assertIn("AUDIO TIMING", t)
+        self.assertIn("2: Two. (3.1s)", t)
+        self.assertIn("never make one row per cue", t)
+        self.assertIn("at least 8s", t)
+        self.assertNotIn("no cue numbers or timings", t)
+
+    def test_without_timing_the_old_wording_stays(self):
+        t = sb.prompt("One. Two.", "", "style", "", ALLOWED, 20, 50)
+        self.assertNotIn("AUDIO TIMING", t)
+        self.assertIn("no cue numbers or timings", t)
+
+
+class ShowStoryboardSettingTests(RouteTests):
+    def test_settings_page_has_a_checked_box_that_can_be_unticked(self):
+        page = self.client.get("/settings").data.decode()
+        i = page.index('name="show_storyboard"')
+        chunk = page[max(0, i - 200): i + 250]
+        self.assertIn("checked", chunk)
+        r = self.client.post("/settings/save", data={"show_storyboard": "0"})
+        self.assertLess(r.status_code, 400)
+        from whisperradar import db, settings
+        conn = db.connect(self.cfg.db_path)
+        self.assertFalse(settings.load(conn)["show_storyboard"])
+        conn.close()
+
+
+for _n in [n for n in dir(RouteTests) if n.startswith("test_")]:
+    if not _n.startswith("test_settings_page"):
+        setattr(ShowStoryboardSettingTests, _n, None)

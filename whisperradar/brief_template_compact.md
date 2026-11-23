@@ -53,7 +53,7 @@ Use ONLY the supplied channel style and bible; hardcode no art style. Preserve r
 References come from three sources, in this order:
 1. **SUPPLIED**: the bible or the inputs point at a file. Copy the entry once into the top-level `"refs"` registry, name and path exactly as given, even when the name breaks the naming convention. Never re-invent a supplied ref.
 2. **NOT NEEDED**: nothing in the story recurs. Emit none.
-3. **ON THE FLY**: the plan needs a reference with no supplied file. Add its name to `"refs"` with a `null` path and write its generation prompt into `"refPrompts"`. The name must match `^(CH|BG|OBJ)_[A-Z0-9]+(_[A-Z0-9]+)*$` (`CH_` characters, `BG_` backgrounds, `OBJ_` objects, e.g. `CH_MAYA`, `BG_BATHROOM_01`). At most **20 invented refs**; a one-off visual belongs in that image's prompt.
+3. **ON THE FLY**: the plan needs a reference with no supplied file. Add its name to `"refs"` with a `null` path and write its generation prompt into `"refPrompts"`. The name must match `^(CH|BG|OBJ)_[A-Z0-9]+(_[A-Z0-9]+)*$` (`CH_` characters, `BG_` backgrounds, `OBJ_` objects, e.g. `CH_MAYA`, `BG_BATHROOM_01`). At most **100 invented refs**; a one-off visual belongs in that image's prompt.
 
 When the plan uses any reference, the `"refs"` registry is REQUIRED and holds every bible entry; without a bible and without a needed reference, omit `"refs"` and `"refPrompts"` entirely.
 
@@ -61,7 +61,9 @@ When the plan uses any reference, the `"refs"` registry is REQUIRED and holds ev
 
 Per image, `"refs"` lists names from the registry (never a path), only for what that image actually shows; most images carry none or one. The first name is the dominant subject. Prefer 1–3, never more than **10**. INF and PROC diagrams carry none.
 
-A supplied recurring character must be cast: any shot that shows a person IS that character, named in the prompt with the ref attached. A plan that never uses a supplied character is a failure. Supplied location plates attach wherever that location recurs.
+**Recurring-subject rule (hard):** any character, location or object that appears in **3 or more shots** MUST have a ref in the registry (supplied or invented on the fly), attached to EVERY shot that shows it. Count before you finish; a subject in 3+ shots without a ref is a fault. A visual in only 1 or 2 shots stays in the prompt, no ref.
+
+A supplied recurring character must be cast: any shot that shows them IS that character, named in the prompt with the ref attached, and a ref is never attached to anyone else; a plan that never uses one is a failure. A supplied on-screen presenter is the default person on screen; a story character's scenes use their own ref, and the two share a scene only when the narration supports it. Supplied location plates attach wherever that location recurs.
 
 {{PRESENTATION}}
 
@@ -82,8 +84,8 @@ Canvas per motion code in the filename (compose each image for it; you write no 
     "CH_MAYA": "<generation prompt: who she is, look, wardrobe, era, framing - content only>"
   },
   "shots": [
-    { "cues": "7-9", "asset": "S01_03_SCN_{{EX_A}}.png", "scene": "S01", "motion": "{{EX_A}}" },
-    { "cues": "10-12", "asset": "S01_04_INF_{{EX_B}}.png", "scene": "S01", "motion": "{{EX_B}}", "transition": "CROSSFADE" }
+    { "cues": "7-9", "asset": "S01_03_SCN_{{EX_A}}.png", "scene": "S01", "motion": "{{EX_A}}", "action": "<what the person does, from the cues>", "note": "<who, where, event status>" },
+    { "cues": "10-12", "asset": "S01_04_INF_{{EX_B}}.png", "scene": "S01", "motion": "{{EX_B}}", "action": "<what the person does, from the cues>", "note": "<who, where, event status>", "transition": "CROSSFADE" }
   ],
   "images": [
     { "file": "S01_03_SCN_{{EX_A}}.png", "prompt": "<content only>", "refs": ["david_face", "CH_MAYA"] },
@@ -94,7 +96,7 @@ Canvas per motion code in the filename (compose each image for it; you write no 
 
 - `shots` first, `images` second.
 - `cues`: `"7"`, `"7-9"` or `[7,8,9]`. **Every cue from 1 to the last is covered exactly once, in order, with no gaps or overlaps, and the last shot ends at the final cue.** This outranks every pacing guideline: a shotlist that stops early is a hard failure.
-- `asset`: the exact filename, new or reused. `scene`: the main beat id.
+- `asset`: the exact filename, new or reused. `scene`: the main beat id. `action` (every shot that shows a person): what the person does while the cues play, taken from the cues alone and decided before the prompt, which is written from it; never invented to fill the field. `note`: for the judge only, never in the prompt: who is on screen, the setting, and whether the event is actual, hypothetical or planned.
 {{MOTION_FIELD_RULE}}
 - `transition`: omit for a cut. Allowed: CROSSFADE, DIP, DIP_WHITE, SLIDE_LEFT, SLIDE_RIGHT, SLIDE_UP, SLIDE_DOWN. Only at main-beat boundaries, and never on the last shot.
 - `images`: only new files, one entry each; every entry is used by a shot and every `asset` has an entry. A `prompt` is at most 2400 CHARACTERS and holds content only: subject, action, composition, layout, where the light comes from. No style words (palette, grade, "photorealistic", "cinematic", mood): the master prompt is the only place for style.
@@ -144,15 +146,16 @@ When the narration says a specific subject felt or showed a reaction at that mom
 
 ## SECTION 11D — THE PICTURE SHOWS THE NARRATION'S MEANING THROUGH EVERYDAY ACTION
 
-Core rule: show the narration's intended meaning through believable everyday actions. Priorities, in order: right subject, action, setting and event status (actual, hypothetical and planned kept as such); one coherent visible moment; charts that clarify, never dominate; enough concrete detail. Concision serves these.
+Core rule: show the narration's intended meaning through believable everyday actions. Priorities, in order: right subject, action, setting and event status (actual, hypothetical and planned kept as such); one coherent visible moment; charts that clarify, never dominate; enough concrete detail.
 
-- Read the whole thought first and group cues around one action or explanation; never illustrate a fragment on its own.
-- Default to the real everyday situation: who does what to what, with the right person, objects, setting and amounts. A plan is shown being planned, a hypothetical as a hypothetical.
-- Figurative language never becomes scenery or an invented activity: "spending leaks" is finding recurring charges; "turn off renewal" is changing an account setting. Do not introduce pipes, valves, switches, gates, rivers, lanterns, ladders, towers, trains or giant money bars or blocks as substitutes for financial concepts; retain them when the narration genuinely describes them. Exception: Section 11A.
-- Charts support the scene: the person and the task are the subject, with a small comparison beside them (Maya setting up her transfer, $500 → $300 savings + $200 debt payment). A figure is a number on a phone, paper or small chart, never an object a person lifts.
-- Show the narrated action accurately without forcing activity: a person who only sits or looks has not paid or cancelled; an informational passage can be a calm scene with a useful graphic. No waving, pointing, thumbs-up or posing unless narrated.
-- Describe the scene, not its purpose (no "communicates" sentences; "no readable text" is fine). Keep prompts concise and specific. Use as much detail as the image needs, without repetition, and stay within the engine's character budget. Props are literal (a phone timer is fine). One coherent moment per image; never drop a later action. A CU shot is framed close; helpful background is fine. Sign-offs stay in the scene. Show a third party's place for real.
-- Nothing the cues do not name and the action does not need. Preserve any recurring protagonist or presenter explicitly required by the channel's style, bible, or presentation instructions, even when the cues only convey information. Their presence alone is not unrelated content.
+- Read the whole thought first; group cues around one action or explanation, never a fragment.
+- Default to the real situation: who does what to what, with the right people, objects, setting, amounts. A plan is shown being planned; an imagine cue shows that moment itself.
+- Who is on screen: an on-screen presenter the bible names, for general narration, advice, intros, transitions, conclusions and "you"; a story character when the cues follow them; together only when the narration supports it.
+- Figurative language never becomes scenery or an invented activity: "spending leaks" is finding recurring charges; "turn off renewal" is changing an account setting. Do not introduce pipes, valves, switches, gates, rivers, lanterns, ladders, towers, trains or giant money bars as substitutes for financial concepts; keep them when the narration genuinely describes them. Exception: Section 11A.
+- Charts support the scene: the person and task are the subject, with a small comparison beside them. A figure is a number on a phone, paper or small chart, never an object a person lifts.
+- Show the narrated action: when the cues describe an action, show it; reading, reviewing or using a screen fits only when it is the narrated task. General explanation without a physical action shows the presenter explaining or a relevant visual. Never invent activity or wave, point, thumbs-up or pose unless narrated.
+- Describe the scene, not its purpose (no "communicates" sentences; "no readable text" is fine). Keep prompts specific and within the engine's character budget. Props are literal (a phone timer is fine). One coherent moment per image; never drop a later action. A CU shot is framed close; helpful background is fine. Sign-offs stay in the scene. Show a third party's place for real.
+- Nothing the cues do not name and the action does not need. Keep the presenter or lead.
 
 ## SECTION 12 — BEFORE YOU OUTPUT
 
@@ -161,5 +164,5 @@ Re-read your plan against these six points; each is explained above:
 2. Grouping by visual idea: most shots span several cues of one developing idea; no shot stitches unrelated visuals; {{CHECK_HOLD}}
 3. {{CHECK_MOTION}}
 4. Lengths: the master is under 1800 characters and every prompt under 2400; re-read the master and the longest prompts.
-5. Prompts: content only; refs only where the subject is visible; nothing against Section 11A; every essential figure present when the channel permits numbers (Section 8).
+5. Prompts: content only; every character, location or object in 3 or more shots has a ref attached to each of those shots; refs only where the subject is visible; nothing against Section 11A; every essential figure present when the channel permits numbers (Section 8).
 6. Action and relevance (Section 11D): each prompt shows the narration's meaning as believable everyday action (Section 11D): the whole thought, no metaphor made literal, a supporting chart that does not dominate, no filler, nothing unnamed, and the prompt rules above.
