@@ -28,7 +28,7 @@ import json
 import math
 import re
 
-from . import autorun, briefs, db, handover, studio
+from . import autorun, briefs, db, handover, refcatalog, studio
 from . import plan as packplan
 
 
@@ -532,6 +532,7 @@ def planning_context_prompt(cfg, ctx: dict, plan: dict, narration: str,
         brief, narration, ctx["visual_style"],
         extra_direction=db.stage_extra(ctx["prod"], "shots"),
         bible=ctx["bible"], supplied_refs=studio.find_supplied_refs(ctx["pdir"]),
+        ref_notes=refcatalog.notes(ctx["pdir"], studio.find_supplied_refs(ctx["pdir"])),
         pacing_note=pacing, allow_refs=plan["allow_refs"],
         animation_note=animation_note, density=ctx["density"])
 

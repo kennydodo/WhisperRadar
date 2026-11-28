@@ -1856,6 +1856,7 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
     supplied = ({Path(f).stem: f"refs/{f}" for f in studio.find_supplied_refs(pdir)}
                 if plan["allow_refs"] else {})
     refs_note, ref_budget = "", 0
+    disk_needed: dict = {}
     have = sorted(set(plan_meta.get("refs", {})) | set(supplied))
     characters = sbmod.sync_characters(rows, sb.get("characters"), known=have)
     locations = sbmod.sync_locations(rows, sb.get("locations"))
@@ -1866,8 +1867,12 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
     if plan["allow_refs"]:
         ref_budget = max(200, studio.FLOWBATCH_MAX_PROMPT_CHARS - (len(style) + 1 if style else 0))
         needed = sorted({x for rr in row_refs for x in rr})
-        provided = set(supplied) | {n for n, v in plan_meta.get("refs", {}).items()
-                                    if isinstance(v, str) and v.strip()}
+        # every image on disk counts as provided, not only this story's active ones: a row
+        # that maps to an object image from the library must not be generated a second time
+        on_disk = {Path(f).stem: f"refs/{f}" for f in studio.find_supplied_refs(pdir, active_only=False)}
+        disk_needed = {n: on_disk[n] for n in needed if n in on_disk and n not in supplied}
+        provided = set(supplied) | set(on_disk) | {n for n, v in plan_meta.get("refs", {}).items()
+                                                   if isinstance(v, str) and v.strip()}
         todo = [x for x in needed if x not in provided]
         if len(todo) > studio.REFS_ON_THE_FLY_CAP:
             sbmod.set_prompt_faults(pdir, [f"{len(todo)} new references are needed and the cap "
@@ -1932,9 +1937,9 @@ def run_storyboard_prompts(cfg, pid: int, transport, writer: str = "zai",
     for rnd in range(1, STORYBOARD_PROMPT_ROUNDS + 2):
         if should_stop():
             raise StageFailed("Stopped by you.")
-        if supplied:
-            plan_meta.setdefault("refs", {}).update(supplied)
-            for nm in supplied:
+        if supplied or disk_needed:
+            plan_meta.setdefault("refs", {}).update({**supplied, **disk_needed})
+            for nm in (*supplied, *disk_needed):
                 plan_meta.get("refPrompts", {}).pop(nm, None)
         faults = sbmod.consistency_faults(rows, names, by_n, characters)
         beats = merged_beats(by_n)

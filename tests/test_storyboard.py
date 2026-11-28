@@ -757,7 +757,7 @@ class RouteTests(unittest.TestCase):
                 faults=["row 1: action is missing"], warnings=["row 2: same posture"])
         sb.set_prompt_faults(self.pdir, [
             "2 image(s) do not carry the reviewed references: S02_01_SCN_ZO.png: missing BG_X; "
-            "S01_02_SCN_ZO.png: CH_Y is not in this shot", "21 new references, cap 20"])
+            "S01_02_SCN_ZO.png: CH_Y is not in this shot", "101 new references, cap 100"])
         page = self.client.get(f"/studio/{self.pid}/storyboard/edit").data.decode()
         self.assertIn("class='rf'", page)
         self.assertIn("class='rw'", page)
@@ -765,7 +765,7 @@ class RouteTests(unittest.TestCase):
         self.assertIn("href='#S01_01'", page)
         self.assertIn("Problems from the last prompt run (2)", page)
         self.assertIn("missing BG_X", page)
-        self.assertIn("Last prompt run: 21 new references", page)
+        self.assertIn("Last prompt run: 101 new references", page)
         self.assertIn("Show only rows with a fault", page)
         self.assertIn("<colgroup>", page)
         self.assertIn("col-resize", page)

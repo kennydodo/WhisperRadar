@@ -55,7 +55,7 @@ References come from three sources, in this order:
 2. **NOT NEEDED**: nothing in the story recurs. Emit none.
 3. **ON THE FLY**: the plan needs a reference with no supplied file. Add its name to `"refs"` with a `null` path and write its generation prompt into `"refPrompts"`. The name must match `^(CH|BG|OBJ)_[A-Z0-9]+(_[A-Z0-9]+)*$` (`CH_` characters, `BG_` backgrounds, `OBJ_` objects, e.g. `CH_MAYA`, `BG_BATHROOM_01`). At most **100 invented refs**; a one-off visual belongs in that image's prompt.
 
-When the plan uses any reference, the `"refs"` registry is REQUIRED and holds every bible entry; without a bible and without a needed reference, omit `"refs"` and `"refPrompts"` entirely.
+When the plan uses any reference, the `"refs"` registry is REQUIRED and holds every reference supplied for this story (the inputs list them, each with what it shows); without a bible and without a needed reference, omit `"refs"` and `"refPrompts"` entirely.
 
 **A reference prompt describes ONLY the subject itself, nothing around or inside it.** `CH_`: the person or character alone (look, wardrobe, pose) on a plain neutral background. `OBJ_`: the single object, empty, on a plain background (a basket with nothing in it; a phone with a blank screen). `BG_`: the empty location (the room with its own furniture; no people, animals or story props). The story's content goes into the per-image prompts.
 
@@ -63,7 +63,7 @@ Per image, `"refs"` lists names from the registry (never a path), only for what 
 
 **Recurring-subject rule (hard):** any character, location or object that appears in **3 or more shots** MUST have a ref in the registry (supplied or invented on the fly), attached to EVERY shot that shows it. Count before you finish; a subject in 3+ shots without a ref is a fault. A visual in only 1 or 2 shots stays in the prompt, no ref.
 
-A supplied recurring character must be cast: any shot that shows them IS that character, named in the prompt with the ref attached, and a ref is never attached to anyone else; a plan that never uses one is a failure. A supplied on-screen presenter is the default person on screen; a story character's scenes use their own ref, and the two share a scene only when the narration supports it. Supplied location plates attach wherever that location recurs.
+A supplied recurring character must be cast: any shot that shows them IS that character, named in the prompt with the ref attached, and a ref is never attached to anyone else; a plan that never uses one of the characters supplied for this story is a failure. The supplied list holds only the references chosen for this story: never use, copy or invent a reference for a file that is not listed. Supplied objects and places are reusable library images: attach one wherever its description matches what the shot shows, and leave it unused when the story never needs it. A supplied on-screen presenter is the default person on screen; a story character's scenes use their own ref, and the two share a scene only when the narration supports it. Supplied location plates attach wherever that location recurs.
 
 {{PRESENTATION}}
 

@@ -357,7 +357,7 @@
   {% if job.error %}<div class="banner err">Last job failed: {{ job.error }}</div>{% endif %}
   {% if job.pause_reason and not job.running and job.pid == prod['id'] %}<div class="banner job">Auto-run paused: {{ job.pause_reason }} - handle it, then click Resume.</div>{% endif %}
   {% if job.summary and not job.running and job.pid == prod['id'] %}<div class="banner ok">{{ job.summary }}</div>{% endif %}
-  <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes
+  <div class="banner job" id="jobbar" style="{{ '' if job.running else 'display:none' }}"><span id="jobtext">Working: {{ job.kind }}{% if job.stage %} - stage: {{ job.stage }}{% endif %} - this page updates when it finishes</span>
     {% if job.running and not (job.kind or '').startswith(('tts', 'srt alignment')) %}
     <form method="post" action="/studio/{{ prod['id'] }}/job/stop" style="display:inline; margin-left:10px"
           onsubmit="return wrConfirmSubmit(this, 'Stop {{ job.kind|e }}? Finished work is kept; nothing already saved is overwritten.')">
@@ -1036,6 +1036,30 @@
       {% endif %}
       {% endmacro %}
       <style>details.substep > summary::before{content:"\25B8"; color:var(--muted)} details.substep[open] > summary::before{content:"\25BE"} details.substep > summary::-webkit-details-marker{display:none}</style>
+      {% if ref_catalog or ref_catalog_off %}
+      <details class="substep" data-key="refcatalog" style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
+        <summary style="cursor:pointer"><b>References for this story</b>
+          {% if ref_catalog %}<span class="muted" style="font-size:12px">&middot; {{ ref_catalog|selectattr('active')|list|length }} of {{ ref_catalog|length }} reference images are given to the storyboard and the shotlist</span>{% else %}<span class="muted" style="font-size:12px">&middot; every image in refs\ is used</span>{% endif %}</summary>
+        {% if ref_catalog %}
+        <div class="muted" style="font-size:12px; margin:6px 0 8px">Characters (CH_) are picked by name from the script; objects (OBJ_) and places (BG_) by their name or aliases, and they are reusable. Tick or untick to change it; your choices stay when the script changes. Run the storyboard / shotlist again after changing it. Descriptions and aliases live in <span class="mono">refs_catalog.json</span> in this production (and <span class="mono">refs.json</span> in the channel's reference folder).</div>
+        <form method="post" action="/studio/{{ prod['id'] }}/refs/active">
+          <table style="width:100%; font-size:13px">
+            {% for r in ref_catalog %}
+            <tr>
+              <td style="width:24px"><input type="hidden" name="shown" value="{{ r.stem }}"><input type="checkbox" name="on" value="{{ r.stem }}" {{ 'checked' if r.active else '' }}></td>
+              <td class="mono" style="white-space:nowrap">{{ r.stem }}</td>
+              <td class="muted">{{ r.description }}{% if r.always %} &middot; always{% endif %}{% if r.used %} &middot; used by the plan{% endif %}{% if not r.on_disk %} &middot; <span style="color:var(--warn, #e0a030)">image missing</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </table>
+          <div style="margin-top:8px"><button type="submit" class="secondary">Save choices</button></div>
+        </form>
+        {% else %}
+        <div class="muted" style="font-size:12px; margin:6px 0 8px">This production predates the reference list, so every image in its refs folder goes to the writers. Build the list to describe them and use only the ones the story needs.</div>
+        <form method="post" action="/studio/{{ prod['id'] }}/refs/catalog"><button type="submit" class="secondary">Build the reference list</button></form>
+        {% endif %}
+      </details>
+      {% endif %}
       {% if show_storyboard %}
       <details class="substep" data-key="storyboard" {{ 'open' if simple_mode else '' }} style="border:1px solid var(--border); background:var(--panel2); border-radius:8px; padding:12px 14px; margin:12px 0">
         <summary style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:4px; cursor:pointer">
@@ -1322,6 +1346,13 @@
             Run refs stage
           </button>
         </form>
+        {% if job.running and (job.kind or '').startswith('reference images') %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/job/stop"
+              onsubmit="return wrConfirmSubmit(this, 'Stop reference image generation? This ends the running process now (FlowBatch and its Chrome) and does NOT retry. The reference being generated is lost; references already made are kept, and Run refs stage later only fills the gaps.')">
+          <button type="submit" class="secondary" style="background:var(--red); color:#fff"
+                  title="Stop reference generation now - no retry (finished references are kept)">&#9632; Stop reference generation</button>
+        </form>
+        {% endif %}
       </div>
       {% else %}
       <div class="muted">This shotlist declares no references - nothing to do here; continue to the images stage.</div>
@@ -1621,6 +1652,13 @@
             {{ 'Re-render final video' if final else 'Render final video' }}{% if final_size_label %} ({{ final_size_label }}){% endif %}
           </button>
         </form>
+        {% if job.running and (job.kind or '').startswith('final video') %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/job/stop"
+              onsubmit="return wrConfirmSubmit(this, 'Stop the final video render? It ends at the next safe point; images and project files are not changed.')">
+          <button type="submit" class="secondary" style="background:var(--red); color:#fff"
+                  title="Stop the final video render">&#9632; Stop render</button>
+        </form>
+        {% endif %}
       </div>
       {% endif %}
 
@@ -1652,6 +1690,13 @@
             {{ 'Re-render final video' if final else 'Render final video' }}{% if final_size_label %} ({{ final_size_label }}){% endif %}
           </button>
         </form>
+        {% if job.running and (job.kind or '').startswith('final video') %}
+        <form class="row" method="post" action="/studio/{{ prod['id'] }}/job/stop"
+              onsubmit="return wrConfirmSubmit(this, 'Stop the final video render? It ends at the next safe point; images and project files are not changed.')">
+          <button type="submit" class="secondary" style="background:var(--red); color:#fff"
+                  title="Stop the final video render">&#9632; Stop render</button>
+        </form>
+        {% endif %}
         {% endif %}
         <a class="btn" href="/studio/{{ prod['id'] }}/thumbnails" title="Thumbnails, titles and the description from GPT Pro">
           Thumbnails (GPT)</a>
@@ -1831,7 +1876,10 @@
         // (only when nothing typed on the page would be lost)
         if (bar) {
           bar.style.display = '';
-          bar.textContent = 'Working: ' + s.kind +
+          // update only the text span: assigning bar.textContent would delete
+          // the Stop button form that lives inside the bar
+          const jt = document.getElementById('jobtext');
+          (jt || bar).textContent = 'Working: ' + s.kind +
             (s.stage ? ' - stage: ' + s.stage : '') +
             ' - this page updates when it finishes';
         }

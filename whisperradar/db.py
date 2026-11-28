@@ -177,7 +177,7 @@ _VIDEO_FIELDS = {
 }
 
 
-def connect(db_path: Path, timeout: float = 5.0) -> sqlite3.Connection:
+def connect(db_path: Path, timeout: float = 30.0) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), timeout=timeout)
     conn.row_factory = sqlite3.Row

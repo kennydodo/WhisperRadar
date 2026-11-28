@@ -24,7 +24,7 @@ from collections import Counter
 
 from pathlib import Path
 
-from . import ai33, briefs, db, handover, motion, narration_speed, services, settings, source_prep, studio, transcribe
+from . import ai33, briefs, db, handover, motion, narration_speed, refcatalog, services, settings, source_prep, studio, transcribe
 from . import plan as packplan
 from .cli import format_duration
 
@@ -1305,6 +1305,7 @@ def _run_shots(cfg, pid: int, provider: str | None = None,
                     extra_direction=db.stage_extra(prod, "shots"),
                     bible=bible_text, feedback=feedback,
                     supplied_refs=studio.find_supplied_refs(pdir),
+                    ref_notes=refcatalog.notes(pdir, studio.find_supplied_refs(pdir)),
                     pacing_note=pacing_note, allow_refs=allow_refs,
                     animation_note=animation_note, density=density)
                 text = studio.llm_generate(

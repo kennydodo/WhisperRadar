@@ -38,6 +38,7 @@ from flask import (
 
 from . import external_prompts, flow_accounts, prodfiles, prodtransfer
 from . import textfiles
+from . import refcatalog
 from . import storyboard_view
 from . import storyboard as storyboard_mod
 from . import frames
@@ -805,8 +806,17 @@ def create_app(cfg) -> Flask:
         scheduler_job.start(worker,
                             f"scheduled auto-run ({channels} channel(s))")
 
+    # A SECOND server on the same data (start_dashboard_2.cmd, `serve --secondary`) must not
+    # run the Auto Run ticker or re-resume waiting productions: each server only knows its own
+    # in-memory "a job is running" flag, so both would start the same work. The first server
+    # does those; the second one only serves the pages and the buttons you press.
+    secondary = os.environ.get("WR_SECONDARY") == "1"
     sched = scheduler.Scheduler(cfg, scheduler_job, _start_producer)
-    sched.start()
+    if secondary:
+        logging.getLogger("whisperradar").info(
+            "secondary server: scheduler and start-up resume are off")
+    else:
+        sched.start()
 
     def _autostart_services() -> None:
         """Optionally bring the engine's services up with the dashboard, so
@@ -3113,7 +3123,12 @@ def create_app(cfg) -> Flask:
         direction = request.args.get("dir") or "desc"
         if direction not in ("asc", "desc"):
             direction = "desc"
-        status_filter = request.args.get("status") or "all"
+        # The tab is remembered in a cookie like the channel: Queue, Mark
+        # published and the other actions redirect back to a bare /finished,
+        # which would otherwise jump to "All". An explicit ?status= (the All
+        # tab sends status=all) always wins and updates the cookie.
+        status_filter = (request.args.get("status") if "status" in request.args
+                         else request.cookies.get("wr_finished_status")) or "all"
         if status_filter not in ("all", "ready", "youtube_queued", "published"):
             status_filter = "all"
 
@@ -3187,7 +3202,8 @@ def create_app(cfg) -> Flask:
                     "channel": "" if scope is None else scope}
             vals.update(overrides)
             return "&".join(f"{k}={quote(str(v))}" for k, v in vals.items()
-                            if (v or v == 0) and v != "" and v != "all")
+                            if (v or v == 0) and v != ""
+                            and (v != "all" or k == "status"))
 
         resp = make_response(render_template(
             "finished.html", items=items, sort=sort, dir=direction, qs=qs,
@@ -3202,6 +3218,8 @@ def create_app(cfg) -> Flask:
         else:
             resp.set_cookie("wr_finished_channel", str(scope),
                             max_age=60 * 60 * 24 * 365, samesite="Lax")
+        resp.set_cookie("wr_finished_status", status_filter,
+                        max_age=60 * 60 * 24 * 365, samesite="Lax")
         return resp
 
     @app.get("/gpt-pro/queue")
@@ -3717,7 +3735,8 @@ def create_app(cfg) -> Flask:
             except Exception:  # noqa: BLE001 - a bad marker must not stop the app
                 continue
 
-    _resume_after_source()
+    if not secondary:
+        _resume_after_source()
 
     @app.post("/studio/<int:pid>/source/fetch")
     def studio_source_fetch(pid):
@@ -3956,6 +3975,9 @@ def create_app(cfg) -> Flask:
             human_review=human_review.load(pdir),
             simple_mode=simple_mode,
             show_storyboard=show_storyboard,
+            ref_catalog=(refcatalog.overview(pdir) if refcatalog.has_catalog(pdir) else []),
+            ref_catalog_off=(not refcatalog.has_catalog(pdir)
+                             and bool(refcatalog.images_in(pdir / "refs"))),
             review_sites=[(k, v.name) for k, v in webchat.SITES.items()],
             llm_ready=llm_ready,
             llm_label=llm_label, providers=providers,
@@ -4813,6 +4835,36 @@ def create_app(cfg) -> Flask:
         if not saved:
             return _studio_url(pid, error="Only .png/.jpg/.jpeg/.webp refs")
         return _studio_url(pid, msg=f"{saved} reference image(s) added")
+
+    @app.post("/studio/<int:pid>/refs/catalog")
+    def studio_refs_catalog(pid):
+        """Describe this production's reference images and use only the ones the
+        story needs (older productions use every image until this is clicked)."""
+        pdir = studio.prod_dir(cfg, pid)
+        made = refcatalog.build_catalog(pdir)
+        refcatalog.active_stems(pdir)
+        note = "; ".join(made["warnings"])
+        return _studio_url(pid, msg=f"Reference list built: {made['entries']} image(s)"
+                           + (f" ({note})" if note else ""))
+
+    @app.post("/studio/<int:pid>/refs/active")
+    def studio_refs_active(pid):
+        """The 'References for this story' checkboxes: only real changes are saved,
+        so a script change can still suggest new ones for the rest."""
+        pdir = studio.prod_dir(cfg, pid)
+        if not refcatalog.has_catalog(pdir):
+            return _studio_url(pid, error="This production has no reference list yet")
+        shown = set(request.form.getlist("shown"))
+        checked = set(request.form.getlist("on")) & shown
+        now = refcatalog.active_stems(pdir)
+        now = set(refcatalog.catalog(pdir)) if now is None else now
+        add = sorted(checked - now)
+        remove = sorted((shown & now) - checked)
+        if add or remove:
+            refcatalog.set_manual(pdir, add=add, remove=remove)
+        return _studio_url(pid, msg=(f"References for this story saved: {len(add)} added, "
+                                     f"{len(remove)} removed. Run the storyboard / shotlist again to use them."
+                                     if add or remove else "No change"))
 
     @app.post("/studio/<int:pid>/refs/delete")
     def studio_refs_delete(pid):
@@ -6051,7 +6103,7 @@ def create_app(cfg) -> Flask:
 
     def _storyboard_provided_refs(pdir):
         """Reference names that already have a file (or a path in the saved shotlist)."""
-        names = {Path(f).stem for f in studio.find_supplied_refs(pdir)}
+        names = {Path(f).stem for f in studio.find_supplied_refs(pdir, active_only=False)}
         try:
             old = json.loads((Path(pdir) / "shotlist.json").read_text(encoding="utf-8"))
             for n, v in (old.get("refs") or {}).items():

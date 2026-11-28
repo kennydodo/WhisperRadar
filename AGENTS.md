@@ -634,14 +634,14 @@ UPDATE 2026-09-24 — the ON-THE-FLY mode is implemented end to end. The brief
 (manifest-authoring-brief.md) now teaches three refs modes: SUPPLIED (used
 verbatim, name kept even when it breaks the convention), NOT NEEDED (omit the
 registry), ON THE FLY (invent: `refs` path `null` + a generation prompt in the
-new top-level `refPrompts` map, names per CH_/BG_/OBJ_, HARD CAP 20 per
+new top-level `refPrompts` map, names per CH_/BG_/OBJ_, HARD CAP 100 per
 shotlist). The gate follows the same split: provided refs keep their names,
-only generated ones must match REF_NAME_RE, and >20 planned generations is a
-fault - the refs stage also hard-caps at 20. `parse_shotlist_output` needed no
+only generated ones must match REF_NAME_RE, and >100 planned generations is a
+fault - the refs stage also hard-caps at 100 (`studio.REFS_ON_THE_FLY_CAP`; it was 20 until raised). `parse_shotlist_output` needed no
 change (the extra keys pass through) and `shotlist_refs`/`refs_to_generate`
 already consumed this shape. Verified with synthetic shotlists: mixed
 provided+invented -> no faults; invented off-convention -> naming fault;
-25 invented -> cap fault; no prompt -> stranded; supplied file on disk ->
+101 invented -> cap fault; no prompt -> stranded; supplied file on disk ->
 provided, only the invented one lands in refs_to_generate.
 
 ### 4. `flow_batch.json` — REMOVED (2026-09-23)

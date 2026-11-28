@@ -476,6 +476,11 @@ def _serve_remote(cfg, args):
 
 
 def cmd_serve(cfg, args):
+    if getattr(args, "secondary", False):
+        # read by create_app (also in the reloader's child, which inherits the environment)
+        os.environ["WR_SECONDARY"] = "1"
+        print("SECONDARY server: scheduler and start-up resume are off - the first server "
+              "does those. Do not run the same production from both servers at once.")
     if getattr(args, "remote", False):
         return _serve_remote(cfg, args)
     print(f"WhisperRadar dashboard: http://{args.host}:{args.port}")
@@ -701,6 +706,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="phone access: also listen on this PC's Tailscale "
                         "address (needs WR_PASSWORD; waitress, no debugger, "
                         "no auto-reload)")
+    p.add_argument("--secondary", action="store_true",
+                   help="a second server on the same data (use another --port): "
+                        "scheduler and start-up resume stay off")
     p.add_argument("--no-reload", action="store_true",
                    help="use waitress instead of the auto-reloading dev "
                         "server (no auto-restart on code changes, but no "

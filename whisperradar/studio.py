@@ -24,7 +24,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import briefs, motion, flow_accounts, prodfiles
+from . import briefs, motion, flow_accounts, prodfiles, refcatalog
 
 log = logging.getLogger("whisperradar")
 
@@ -497,9 +497,12 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
     copied_refs = 0
     if refs_dir and refs_dir.is_dir():
         dest = pdir / "refs"
+        fresh = not dest.exists()
         for src in sorted(refs_dir.iterdir()):
             if not src.is_file():
                 continue
+            if src.name.lower() == refcatalog.LIBRARY_INDEX:
+                continue          # the catalog never goes into refs\ (Flow registers every file there)
             target = dest / src.name
             if target.exists():
                 continue
@@ -508,6 +511,17 @@ def seed_production(cfg, conn, prod, log=None) -> dict:
             copied_refs += 1
         if copied_refs:
             log(f"seeded {copied_refs} ref image(s) from {refs_dir}")
+        if copied_refs and fresh:
+            # a NEW production: describe its references and filter them to the story
+            # (an older production has no catalog and keeps using every image)
+            try:
+                made = refcatalog.build_catalog(pdir, library=refs_dir)
+                for w in made["warnings"]:
+                    log(f"reference catalog: {w}")
+                log(f"reference catalog: {made['entries']} entr(ies); the story's own "
+                    f"references are chosen when the storyboard starts")
+            except OSError as exc:
+                log(f"reference catalog not written ({exc}); every reference stays in use")
 
     return {"bible": copied_bible, "style": copied_style,
             "refs": copied_refs, "source": source,
@@ -1247,12 +1261,16 @@ def _refs_project_record(pdir: Path) -> dict:
         return {}
 
 
-def find_supplied_refs(pdir: Path) -> list[str]:
+def find_supplied_refs(pdir: Path, active_only: bool = True) -> list[str]:
     """Image files the USER put in the production's refs\\ folder (uploaded on
     the studio page or seeded from the channel) - files written by the refs
     generator are excluded via its manifest. Filenames only, e.g.
     'MAYA.png': the planning prompt lists them so the planner can attach the
-    exact registry paths instead of guessing at what might be on disk."""
+    exact registry paths instead of guessing at what might be on disk.
+
+    A production with a reference catalog (refcatalog.py) only lists the
+    references THIS story uses; pass active_only=False for every file on disk
+    (what exists, as opposed to what the writers are told about)."""
     refs_dir = pdir / "refs"
     if not refs_dir.is_dir():
         return []
@@ -1261,11 +1279,12 @@ def find_supplied_refs(pdir: Path) -> list[str]:
             prodfiles.path(pdir, REFS_GENERATED_MANIFEST).read_text(encoding="utf-8")))
     except (OSError, ValueError):
         generated = set()
-    return sorted(
+    names = sorted(
         f.name for f in refs_dir.iterdir()
         if f.is_file()
         and f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")
         and f.stem not in generated)
+    return refcatalog.filter_names(pdir, names) if active_only else names
 
 
 def shotlist_uses_refs(data: dict) -> bool:
@@ -5440,7 +5459,8 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
                     feedback: str = "",
                     supplied_refs: list[str] | None = None,
                     pacing_note: str = "", allow_refs: bool = True,
-                    animation_note: str = "", density: str = "") -> str:
+                    animation_note: str = "", density: str = "",
+                    ref_notes: dict[str, str] | None = None) -> str:
     """Assemble the manifest-authoring brief with its inputs: the narration
     (cue-delimited, timestamp-free - see compact_srt), the channel visual
     style, the optional character / reference bible, and the creator's
@@ -5482,18 +5502,23 @@ def shotlist_prompt(brief_text: str, narration: str, style_guide: str = "",
             "and the plan rejected. Any shotlist that references a name will "
             "be rejected and re-planned.")
     elif supplied_refs:
-        listing = "\n".join(f"- refs/{name}" for name in supplied_refs)
+        notes = ref_notes or {}
+        listing = "\n".join(
+            f"- refs/{name}" + (f" - {notes[Path(name).stem]}" if notes.get(Path(name).stem) else "")
+            for name in supplied_refs)
         refs_block = (
             f"\n\nSUPPLIED REFERENCE FILES ALREADY ON DISK (read this BEFORE "
             f"planning - in this production's refs folder; these are the ONLY "
-            f"reference files that exist):\n{listing}\n"
+            f"reference files chosen for this story"
+            + (", each with what it shows" if notes else "") + f"):\n{listing}\n"
             f"These files are used AS-IS. To attach one, put its name "
             f"(the file name without extension) in the shot's refs and "
             f"declare it in the refs registry with EXACTLY the path shown "
             f"above - never a different spelling, never a subfolder. Do NOT "
             f"write a refPrompts entry for a supplied file: it is never "
             f"generated. Attach a supplied character to every shot where it "
-            f"appears on screen. Every other reference you need (other "
+            f"appears on screen. A supplied object or place is a reusable image: "
+            f"attach it wherever its description matches what the shot shows. Every other reference you need (other "
             f"characters, environments, props) does NOT exist yet and is "
             f"generated on the fly before rendering: give each a CH_/BG_/OBJ_ "
             f"name and a detailed refPrompts entry.")
